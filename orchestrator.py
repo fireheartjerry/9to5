@@ -115,6 +115,16 @@ class Orchestrator:
                 delay *= 2
         return None
 
+    def _singleDeliverable(self, goal_elaborated: str) -> bool:
+        """True when the goal targets at most one distinct file with no multi-deliverable phrasing.
+        Used to collapse over-decomposed plans AND to forbid replan-adds that re-pad a trivial goal."""
+        import re
+        g = (goal_elaborated or "").lower()
+        files = set(re.findall(r"([A-Za-z0-9_.-]+\.(?:py|md|txt|json|js|ts|html|css|csv|ya?ml|cfg|ini|sh|bat))\b", g))
+        multi_phrase = any(w in g for w in ("multiple files", "several files", "multiple deliverables",
+                                            "as well as", "separate "))
+        return len(files) <= 1 and not multi_phrase
+
     def authorSubtaskPlan(self, goal_elaborated: str, architect_doc: str) -> list[dict]:
         system = (
             "You are the Planner for 9TO5. Break the specification into the MINIMAL ordered list of "
@@ -152,10 +162,8 @@ class Orchestrator:
         self-critique pass that rewrites every verify into a safe behavioral shape."""
         if not subs:
             return subs
-        g = (goal_elaborated or "").lower()
-        multi = any(w in g for w in (" and ", " then ", "multiple", "several", "as well as"))
-        if not multi and len(goal_elaborated or "") < 360 and len(subs) > 1:
-            LOG.info("plan self-check: collapsing %d subtasks -> 1 (trivial goal)", len(subs))
+        if self._singleDeliverable(goal_elaborated) and len(subs) > 1:
+            LOG.info("plan self-check: collapsing %d subtasks -> 1 (single deliverable)", len(subs))
             subs = [{"title": subs[0].get("title", "Implement the goal"),
                      "description": goal_elaborated,
                      "layer": max((s.get("layer", 3) for s in subs), default=3),
@@ -498,7 +506,7 @@ class Orchestrator:
         # Replan ONLY after a subtask that PASSED. Replanning after failures is the
         # churn engine (fail -> add remediation -> fail -> add ...) that livelocks runs;
         # the executor already retries failed subtasks up to MAX_SUBTASK_ATTEMPTS.
-        if final == "done":
+        if final == "done" and not self._singleDeliverable(state.meta.get("goal_elaborated", "")):
             decision = replanner.replan(state.meta["goal_elaborated"], state.subtasks, subtask, combined)
             if decision.get("action") == "mutate" and (decision.get("add") or decision.get("remove")):
                 dashboard.update(state, "replanning", f"replanning after {sid}")
