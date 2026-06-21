@@ -24,6 +24,15 @@
             "command": "C:\\supercritical\\venv\\Scripts\\python.exe C:\\supercritical\\agents\\hooks.py block_destructive"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\supercritical\\venv\\Scripts\\python.exe C:\\supercritical\\agents\\hooks.py self_modification_guard"
+          }
+        ]
       }
     ],
     "PostToolUse": [

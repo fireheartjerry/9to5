@@ -367,7 +367,7 @@ class Orchestrator:
                         exec_cwd: str | None = None) -> str:
         sid = subtask["subtask_id"]
         verify_spec = subtask.get("verify")
-        exec_cwd = exec_cwd or work_dir
+        exec_cwd = exec_cwd or self._execCwd(state, sid, work_dir)
         dashboard.update(state, "executing", f"-> {sid} {subtask['title']}")
 
         attempt = 0
@@ -550,6 +550,51 @@ class Orchestrator:
         LOG.info("Replan applied: %s", decision.get("reason", ""))
 
     # ===================================================================
+    # Self-referential support (9to5 modifying itself)
+    # ===================================================================
+    def _detectSelfReferential(self, state: TaskState, work_dir: str) -> bool:
+        text = f"{state.meta.get('goal_raw', '')} {state.meta.get('goal_elaborated', '')}".lower()
+        root = str(config.PROJECT_ROOT).lower()
+        markers = ["9to5", "supercritical", root, "itself", "self-referential",
+                   "self-modify", "self modify", "self-improve", "its own code"]
+        same_dir = os.path.abspath(work_dir).lower() == root
+        return same_dir or any(m in text for m in markers)
+
+    def _prepareSelfReferential(self, state: TaskState, work_dir: str,
+                                bus: ControlBus, dashboard: DiscordDashboard) -> None:
+        branch = f"{config.SELF_REF_BRANCH_PREFIX}{state.task_id[:8]}"
+        state.markSelfReferential(branch)
+        try:
+            chk = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"],
+                                 cwd=work_dir, capture_output=True, text=True)
+            if chk.returncode == 0 and "true" in (chk.stdout or "").lower():
+                subprocess.run(["git", "checkout", "-B", branch], cwd=work_dir, capture_output=True, text=True)
+                LOG.info("Self-referential task -> created/switched to branch %s", branch)
+            else:
+                LOG.warning("Self-ref task but %s is not a git repo; no isolation branch", work_dir)
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("self-ref branch creation failed: %s", e)
+        discord.sendEmbed({
+            "title": "🧬 Self-referential run (9to5 editing 9to5)",
+            "color": 0x9B59B6,
+            "fields": [
+                {"name": "Isolation branch", "value": f"`{branch}`"},
+                {"name": "Protected core files", "value": ", ".join(config.CORE_PROTECTED_FILES)},
+            ],
+        }, content=discord.humanPing())
+        dashboard.event(f"self-referential · branch {branch}")
+
+    def _execCwd(self, state: TaskState, sid: str | None, work_dir: str) -> str:
+        """For self-referential runs, give the executor an isolated cwd so the living
+        CLAUDE.md never clobbers the project's own CLAUDE.md. The project root remains
+        an ancestor (auto-read for architecture); edits/verify use absolute paths."""
+        if state.meta.get("is_self_referential") and os.path.abspath(work_dir) == os.path.abspath(str(config.PROJECT_ROOT)):
+            ctx = os.path.join(str(config.PROJECT_ROOT), ".sc-ctx", sid or "architect")
+            os.makedirs(ctx, exist_ok=True)
+            return ctx
+        return work_dir
+
+    # ===================================================================
     # Full pipeline (with resume + parallelism)
     # ===================================================================
     def runFull(self, state: TaskState, work_dir: str, auto_pr: bool = True,
@@ -567,17 +612,27 @@ class Orchestrator:
         self.writeIndex(state)
 
         try:
+            if not resume and self._detectSelfReferential(state, work_dir):
+                self._prepareSelfReferential(state, work_dir, bus, dashboard)
             if resume and state.subtasks:
                 architect_doc = self.obs.readNote(state.architectNoteRel()) or "(resumed; architect doc unavailable)"
-                dashboard.update(state, "executing", f"resuming at {sum(1 for s in state.subtasks if s['status']=='done')}/{len(state.subtasks)} done")
-                LOG.info("Resuming task %s", state.task_id)
+                prior = "\n".join(
+                    f"- {s['subtask_id']} [{s['status']}] {s['title']}"
+                    + (" (verify PASS)" if (s.get('verify_result') or {}).get('passed') else "")
+                    for s in state.subtasks if s['status'] in ('done', 'failed', 'removed'))
+                architect_doc += f"\n\n## Prior progress (resumed task)\n{prior or '(none)'}"
+                if state.meta.get("is_self_referential"):
+                    self._prepareSelfReferential(state, work_dir, bus, dashboard)
+                done_n = sum(1 for s in state.subtasks if s['status'] == 'done')
+                dashboard.update(state, "executing", f"resuming at {done_n}/{len(state.subtasks)} done")
+                LOG.info("Resuming task %s (%d/%d done)", state.task_id, done_n, len(state.subtasks))
             else:
                 # --- Phase 1: Architect ---
                 state.setStatus("architecting")
                 self._checkControl(state, bus, dashboard)
                 dashboard.update(state, "architecting", "authoring architecture")
                 arch_prompt = architect.authorArchitectPrompt(elaborated)
-                arch_res = executor.runClaude(arch_prompt, work_dir=work_dir,
+                arch_res = executor.runClaude(arch_prompt, work_dir=self._execCwd(state, "architect", work_dir),
                                               system_prompt=architect.ARCHITECT_SYSTEM_PROMPT, task_state=state)
                 architect_doc = (arch_res.get("stdout") or "").strip() or "(architect produced no output)"
                 self.obs.writeNote(state.architectNoteRel(), architect_doc)

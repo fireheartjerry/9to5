@@ -159,6 +159,11 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
         cmd += ["--effort", flag]
     # make the project's .claude (skills/agents/settings) discoverable from a sub-work-dir
     cmd += ["--add-dir", str(config.PROJECT_ROOT)]
+    # self-referential safety: forbid edits to the core files that run the loop
+    if task_state is not None and getattr(task_state, "meta", {}).get("is_self_referential"):
+        for core in config.CORE_PROTECTED_FILES:
+            core_abs = str(config.PROJECT_ROOT / core)
+            cmd += ["--disallowedTools", f"Edit({core_abs})", f"Write({core_abs})"]
 
     LOG.info("Claude run (cwd=%s effort=%s skills=%s subagent=%s hooks=%s/%s prompt=%dch)",
              work, flag or "default", spec.get("skills_to_invoke"), spec.get("subagent"),

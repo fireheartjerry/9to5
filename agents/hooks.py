@@ -184,6 +184,40 @@ def logAll(data):
     sys.exit(0)
 
 
+def selfModificationGuard(data):
+    """PreToolUse: during a SELF-REFERENTIAL task, block edits to the core files
+    that run the orchestrator loop (orchestrator.py, main.py, agents/hooks.py, config.py).
+    Exits 2 to block; exits 0 otherwise."""
+    try:
+        if data.get("tool_name", "") not in ("Edit", "Write", "MultiEdit"):
+            sys.exit(0)
+        file_path = (data.get("tool_input", {}) or {}).get("file_path", "") or ""
+        from state.task import TaskState
+        state = TaskState.loadLatest()
+        if state is None or not state.meta.get("is_self_referential"):
+            sys.exit(0)
+        protected = (config.CORE_PROTECTED_FILES if config
+                     else ("orchestrator.py", "main.py", "agents/hooks.py", "config.py"))
+        norm = file_path.replace("/", "\\").lower()
+        for core in protected:
+            core_norm = core.replace("/", "\\").lower()
+            if norm == core_norm or norm.endswith("\\" + core_norm):
+                reason = (f"self_modification_guard: BLOCKED edit to core file {file_path} during a "
+                          f"self-referential run. Edit other files or describe the change for review.")
+                try:
+                    import notifications.discord_bot as discord
+                    discord.sendBlocked(reason)
+                except Exception:
+                    pass
+                sys.stderr.write(reason + "\n")
+                sys.exit(2)
+        sys.exit(0)
+    except SystemExit:
+        raise
+    except Exception:
+        sys.exit(0)
+
+
 def main():
     """Dispatch to the requested handler based on argv[1]."""
     hook_name = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -197,6 +231,8 @@ def main():
         discordNotify(data)
     elif hook_name == "log_all":
         logAll(data)
+    elif hook_name == "self_modification_guard":
+        selfModificationGuard(data)
     else:
         sys.exit(0)
 

@@ -45,6 +45,8 @@ class TaskState:
                 "status": "created",
                 "blocked_reason": None,
                 "control_mode": config.CONTROL_MODE_DEFAULT,
+                "is_self_referential": False,
+                "self_ref_branch": None,
             },
             "plan": {"architect_design_doc": None, "subtasks": []},
             "adversary_reviews": [],
@@ -132,6 +134,12 @@ class TaskState:
 
     def setControlMode(self, mode: str) -> None:
         self.meta["control_mode"] = mode
+        self.save()
+
+    def markSelfReferential(self, branch: Optional[str] = None) -> None:
+        self.meta["is_self_referential"] = True
+        if branch:
+            self.meta["self_ref_branch"] = branch
         self.save()
 
     def recordVerify(self, subtask_id: str, result: dict) -> Optional[dict[str, Any]]:

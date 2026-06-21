@@ -44,6 +44,8 @@ def writeClaudioMd(task_state, subtask: Optional[dict], additional_context: str 
         (meta.get("goal_elaborated") or meta.get("goal_raw") or "").strip(),
         "",
     ]
+    if meta.get("is_self_referential"):
+        parts += [config.ARCHITECTURE_BRIEF, ""]
     if subtask:
         parts += [
             f"## Current subtask: {subtask.get('subtask_id')} — {subtask.get('title')}",

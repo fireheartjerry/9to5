@@ -125,6 +125,30 @@ AVAILABLE_SUBAGENTS: tuple[str, ...] = ("architect", "security-reviewer")
 AVAILABLE_PRE_HOOKS: tuple[str, ...] = ("block_destructive", "log_all")
 AVAILABLE_POST_HOOKS: tuple[str, ...] = ("write_obsidian", "discord_notify", "log_all")
 
+# --- Self-referential safety (9to5 modifying itself) ----------------------
+# When a task targets 9to5 itself: run on a dedicated git branch, inject the
+# architecture, and guard the core files that run the very loop executing it.
+CORE_PROTECTED_FILES: tuple[str, ...] = ("orchestrator.py", "main.py", "agents/hooks.py", "config.py")
+SELF_REF_BRANCH_PREFIX: str = "sc/"
+ARCHITECTURE_BRIEF: str = (
+    "## 9to5 architecture (you are operating ON 9to5 itself)\n"
+    "9to5 is an autonomous orchestrator: the BRAIN is local Ollama qwen2.5:7b (it authors JSON "
+    "invocation specs); the HANDS are the Claude Code CLI (you). Python is pure plumbing.\n"
+    "Key files: `orchestrator.py` (brain loop: plan->spec->execute->verify->retry->replan), "
+    "`main.py` (entry/CLI/resume/health/terminal-control), `config.py` (env+constants), "
+    "`agents/` (elaborator, architect, executor, adversary[stub], replanner, verifier, hooks), "
+    "`control.py` (ControlBus: abort/pause/gates), `memory/obsidian.py` (notes, REST+disk fallback), "
+    "`state/task.py` (lean task JSON), `notifications/` (discord_bot, dashboard, webdash, command_bot), "
+    "`health.py` (/health checks).\n"
+    "Invocation-spec keys: claude_md_inject, skills_to_invoke, effort_level, subagent, prompt, "
+    "pre_tool_hooks, post_tool_hooks. Conventions: ALL_CAPS constants, snake_case vars, camelCase "
+    "functions, pathlib.Path everywhere. Install root is C:\\supercritical (never move it).\n"
+    "SELF-MODIFICATION RULES: you are on a dedicated git branch. Do NOT edit the CORE files "
+    "(orchestrator.py, main.py, agents/hooks.py, config.py) -- they run the very loop executing you, "
+    "and editing them mid-run can corrupt the orchestrator. Make changes to OTHER files, add new "
+    "modules, or describe core-file changes in your output for human review."
+)
+
 # --- Effort levels --------------------------------------------------------
 # Ollama emits one of these per subtask; mapped to the CLI's --effort value.
 EFFORT_LEVELS: tuple[str, ...] = ("default", "high", "xhigh", "ultracode")
