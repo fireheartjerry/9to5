@@ -49,6 +49,29 @@ def _runShell(cmd: str, work_dir: str) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, shell=True, **common)
 
 
+def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
+    """Drop an obviously-broken brain-authored verify so the subtask falls back to
+    'executor exited 0' instead of failing forever on a malformed check.
+
+    Catches the common failure: a `python -c "<code>"` one-liner with a SyntaxError
+    (e.g. a compound statement after ';'). Returns the verify unchanged if it looks OK,
+    or None to disable it.
+    """
+    if not isinstance(verify, dict):
+        return None
+    cmd = (verify.get("cmd") or "").strip()
+    if not cmd:
+        return None
+    m = re.match(r"""(?:py|python|python3)\s+-c\s+(['"])(.*)\1\s*$""", cmd, re.DOTALL)
+    if m:
+        try:
+            compile(m.group(2), "<verify>", "exec")
+        except SyntaxError:
+            LOG.info("sanitizeVerify: dropping malformed python -c verify: %s", cmd)
+            return None
+    return verify
+
+
 def _evaluate(expect: str, returncode: int, stdout: str) -> bool:
     expect = (expect or config.VERIFY_DEFAULT_EXPECT).strip()
     if expect == "exit_zero":

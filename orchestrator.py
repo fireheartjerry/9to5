@@ -537,7 +537,7 @@ class Orchestrator:
                 diff.append(f"(skipped add '{add.get('title')}' -- MAX_SUBTASKS cap)")
                 break
             st = state.addSubtask(add.get("title", "untitled"), add.get("description", ""),
-                                  layer=add.get("layer", 3), verify=add.get("verify"))
+                                  layer=add.get("layer", 3), verify=verifier.sanitizeVerify(add.get("verify")))
             active += 1
             diff.append(f"+ {st['subtask_id']} {st['title']}")
         for rid in decision.get("remove", []) or []:
@@ -647,7 +647,7 @@ class Orchestrator:
                 dashboard.update(state, "planning", "authoring subtask plan")
                 for s in self.authorSubtaskPlan(elaborated, architect_doc)[:config.MAX_SUBTASKS]:
                     state.addSubtask(s.get("title", "untitled"), s.get("description", ""),
-                                     layer=s.get("layer", 3), verify=s.get("verify"))
+                                     layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))
                 discord.sendEmbed(discord.planningStartEmbed(state.meta["goal_raw"], len(state.subtasks)))
                 state.addNotification("planning_start", f"{len(state.subtasks)} subtasks")
                 self.writeIndex(state)
