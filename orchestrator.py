@@ -582,11 +582,19 @@ class Orchestrator:
     def runExecutionLoop(self, state: TaskState, architect_doc: str, work_dir: str,
                          bus: ControlBus, dashboard: DiscordDashboard, parallelism: int = 1) -> None:
         position = 0
-        guard = 0
+        iters = 0
+        no_progress = 0
+        prev_terminal = -1
         while True:
-            guard += 1
-            if guard > 100:
-                LOG.error("execution loop guard tripped (possible livelock); aborting")
+            iters += 1
+            # Guard on NO PROGRESS (subtasks reaching a terminal state), not raw iteration count,
+            # so a legitimately long 8-hour run with many subtasks is never false-aborted; only a
+            # true livelock (status churning with nothing completing) trips it.
+            terminal = sum(1 for s in state.subtasks if s["status"] in ("done", "failed", "removed"))
+            no_progress = no_progress + 1 if terminal == prev_terminal else 0
+            prev_terminal = terminal
+            if no_progress > 40 or iters > 2000:
+                LOG.error("execution loop livelock (no progress in %d iters); aborting", no_progress)
                 try:
                     discord.sendEmbed(discord.blockedEmbed("Execution loop guard tripped (possible livelock) — aborting"),
                                       content=discord.humanPing())
