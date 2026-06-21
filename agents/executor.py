@@ -27,6 +27,7 @@ the ``claude`` launcher is a ``.cmd`` shim invoked via ``cmd /c``.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -86,15 +87,17 @@ def effortFlag(effort_level: str) -> Optional[str]:
 # Headless `claude --print --dangerously-skip-permissions` does NOT run .claude
 # hooks or permissions, so 9TO5 enforces the block_destructive guardrail
 # here, in plumbing we control (deterministic, always-on in autonomous mode).
-_DESTRUCTIVE_PATTERNS = (
-    "rm -rf", "rm -fr", "rmdir /s", "del /f", "del /s", "format ",
-    "drop table", "git push --force", "git push -f", "mkfs", ":(){", ">/dev/sda",
+# Match destructive commands at a COMMAND POSITION (start of line, or after a shell separator)
+# with word boundaries -- so benign prose like "format the output" or "run rm later" never blocks.
+_DESTRUCTIVE_RE = re.compile(
+    r"(?:^|[\n;&|`]\s*)(rm\s+-[rf]{2}\b|rmdir\s+/s\b|del\s+/[fsq]\b|format\s+[a-z]:|drop\s+table\b|"
+    r"git\s+push\s+(?:--force\b|-f\b)|mkfs\b|:\(\)\s*\{|>\s*/dev/sd[a-z])",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 
 def scanDestructive(text: str) -> list[str]:
-    low = (text or "").lower()
-    return [p for p in _DESTRUCTIVE_PATTERNS if p in low]
+    return [m.group(1).strip() for m in _DESTRUCTIVE_RE.finditer(text or "")]
 
 
 def _alertBlocked(reason: str) -> None:

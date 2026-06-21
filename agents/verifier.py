@@ -42,8 +42,10 @@ def _runShell(cmd: str, work_dir: str) -> subprocess.CompletedProcess:
     and mangle the path.)
     """
     Path(work_dir).mkdir(parents=True, exist_ok=True)
+    # stdin=DEVNULL so a program that reads stdin gets EOF and exits instead of hanging to timeout.
     return subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", cwd=work_dir, timeout=config.VERIFY_TIMEOUT_SECONDS)
+                          errors="replace", cwd=work_dir, timeout=config.VERIFY_TIMEOUT_SECONDS,
+                          stdin=subprocess.DEVNULL)
 
 
 _VERIFY_STDLIB_OK = {
@@ -127,7 +129,8 @@ def runVerification(verify: Optional[dict], work_dir: str, executor_result: dict
     LOG.info("Verifying: %s  (expect: %s)", cmd, expect)
     try:
         proc = _runShell(cmd, work_dir)
-        passed = _evaluate(expect, proc.returncode, proc.stdout or "")
+        # search stdout AND stderr for stdout_contains/regex (programs legitimately print to stderr)
+        passed = _evaluate(expect, proc.returncode, (proc.stdout or "") + "\n" + (proc.stderr or ""))
         result = {
             "passed": passed,
             "cmd": cmd,
