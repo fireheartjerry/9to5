@@ -34,19 +34,16 @@ def _cap(text: Optional[str]) -> str:
 
 
 def _runShell(cmd: str, work_dir: str) -> subprocess.CompletedProcess:
-    """Run a verify command string in work_dir.
+    """Run a verify command string via the native shell (cmd.exe on Windows).
 
-    Prefer bash (git-bash on Windows): the brain frequently authors Unix-style
-    verifies (cat/grep/test) AND `python ...` works there too, so bash maximizes
-    compatibility. Falls back to the native shell (cmd.exe) when bash is absent.
+    Verifies are constrained to ``python <path>`` shapes, so the native shell is
+    correct: cmd.exe handles Windows backslash paths AND nested quotes the way a
+    human would type them. (bash would treat the backslashes in C:\\... as escapes
+    and mangle the path.)
     """
     Path(work_dir).mkdir(parents=True, exist_ok=True)
-    common = dict(capture_output=True, text=True, encoding="utf-8", errors="replace",
-                  cwd=work_dir, timeout=config.VERIFY_TIMEOUT_SECONDS)
-    bash = shutil.which("bash")
-    if bash:
-        return subprocess.run([bash, "-c", cmd], **common)
-    return subprocess.run(cmd, shell=True, **common)
+    return subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", cwd=work_dir, timeout=config.VERIFY_TIMEOUT_SECONDS)
 
 
 _VERIFY_STDLIB_OK = {

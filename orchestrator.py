@@ -605,8 +605,10 @@ class Orchestrator:
     def _detectSelfReferential(self, state: TaskState, work_dir: str) -> bool:
         text = f"{state.meta.get('goal_raw', '')} {state.meta.get('goal_elaborated', '')}".lower()
         root = str(config.PROJECT_ROOT).lower()
-        markers = ["9to5", "supercritical", root, "itself", "self-referential",
-                   "self-modify", "self modify", "self-improve", "its own code"]
+        # Explicit self-targeting keywords only -- NOT the bare install path, which
+        # appears in any goal that writes a file under C:\supercritical\... .
+        markers = ["9to5", "itself", "self-referential", "self-modify", "self modify",
+                   "self-improve", "its own code"]
         same_dir = os.path.abspath(work_dir).lower() == root
         return same_dir or any(m in text for m in markers)
 
