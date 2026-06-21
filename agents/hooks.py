@@ -220,8 +220,8 @@ def selfModificationGuard(data):
             bbase = bn.rsplit("\\", 1)[-1]
             # exact file, a file under a boundary dir, or a path ending in the boundary
             hit = norm == bn or norm.endswith("\\" + bn) or ("\\" + bn + "\\") in norm
-            # secret-family: a ".env" boundary also blocks .env.local / .env.production / .env.example
-            if not hit and bbase.startswith(".") and base.startswith(bbase):
+            # secret-family: a ".env" boundary also blocks .env.local / .env.production (NOT .envrc)
+            if not hit and bbase.startswith(".") and (base == bbase or base.startswith(bbase + ".")):
                 hit = True
             if hit:
                 reason = (f"self_modification_guard: BLOCKED edit to {file_path} -- it is a HARD BOUNDARY "

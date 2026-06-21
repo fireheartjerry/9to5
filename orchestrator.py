@@ -125,34 +125,45 @@ class Orchestrator:
                                             "as well as", "separate "))
         return len(files) <= 1 and not multi_phrase
 
-    def _repairVerify(self, subtask: dict, exec_cwd: str):
-        """Robust behavioral fallback verify when a brittle brain verify fails correct work:
-        find the primary artifact (abs path / relative-to-cwd / newest .py in the work dir) and run it
-        (exit_zero); else assert it is non-empty. Returns None only if no artifact can be found."""
+    def _repairVerify(self, subtask: dict, exec_cwd: str, t0: float = 0.0):
+        """SOUND behavioral fallback: find an artifact THIS attempt produced (modified at/after t0) and
+        run it (exit_zero), else assert a NON-.py artifact is non-empty. The mtime>=t0 gate means a
+        pre-existing input file, an unrelated repo file, or a stale artifact can never false-pass broken
+        work. Returns None (=> the subtask stays failed) when no qualifying fresh artifact exists."""
         import re
         import os
+
+        def _fresh(p: str) -> bool:
+            try:
+                return os.path.exists(p) and os.path.getmtime(p) >= t0
+            except Exception:  # noqa: BLE001
+                return False
+
         text = ((subtask.get("verify") or {}).get("cmd") or "") + "  " + (subtask.get("description") or "")
-        # 1) absolute .py that exists
-        m = re.search(r"([A-Za-z]:\\[^\s\"'`]+\.py|/[^\s\"'`]+\.py)", text)
-        if m and os.path.exists(m.group(1)):
-            return {"cmd": f'python "{m.group(1)}"', "expect": "exit_zero"}
-        # 2) any .py token resolved against exec_cwd
+        # 1) absolute .py referenced by the verify/description that THIS attempt wrote
+        for m in re.findall(r"([A-Za-z]:\\[^\s\"'`]+\.py|/[^\s\"'`]+\.py)", text):
+            if _fresh(m):
+                return {"cmd": f'python "{m}"', "expect": "exit_zero"}
+        # 2) relative .py token resolved against exec_cwd (preserve any subpath), written this attempt
         for cand in re.findall(r"([\w./\\-]+\.py)\b", text):
-            p = cand if os.path.isabs(cand) else os.path.join(exec_cwd, os.path.basename(cand))
-            if os.path.exists(p):
-                return {"cmd": f'python "{os.path.abspath(p)}"', "expect": "exit_zero"}
-        # 3) last resort: newest .py written into the work dir
+            if os.path.isabs(cand):
+                continue
+            p = os.path.normpath(os.path.join(exec_cwd, cand))
+            if _fresh(p):
+                return {"cmd": f'python "{p}"', "expect": "exit_zero"}
+        # 3) newest .py written into the work dir DURING this attempt
         try:
-            pys = [os.path.join(exec_cwd, f) for f in os.listdir(exec_cwd) if f.endswith(".py")]
-            if pys:
-                return {"cmd": f'python "{max(pys, key=os.path.getmtime)}"', "expect": "exit_zero"}
+            fresh = [os.path.join(exec_cwd, f) for f in os.listdir(exec_cwd)
+                     if f.endswith(".py") and _fresh(os.path.join(exec_cwd, f))]
+            if fresh:
+                return {"cmd": f'python "{max(fresh, key=os.path.getmtime)}"', "expect": "exit_zero"}
         except Exception:  # noqa: BLE001
             pass
-        # 4) any absolute non-py artifact -> non-empty check
-        m3 = re.search(r"([A-Za-z]:\\[^\s\"'`]+\.[A-Za-z0-9]{1,5}|/[^\s\"'`]+\.[A-Za-z0-9]{1,5})", text)
-        if m3 and os.path.exists(m3.group(1)):
-            p = m3.group(1)
-            return {"cmd": f"python -c \"import os,sys; sys.exit(0 if os.path.getsize(r'{p}')>0 else 1)\"",
+        # 4) a NON-.py artifact written this attempt -> non-empty check (never mask a broken .py)
+        for m in re.findall(r"([A-Za-z]:\\[^\s\"'`]+\.[A-Za-z0-9]{1,5}|/[^\s\"'`]+\.[A-Za-z0-9]{1,5})", text):
+            if m.lower().endswith(".py") or not _fresh(m):
+                continue
+            return {"cmd": f"python -c \"import os,sys; sys.exit(0 if os.path.getsize(r'{m}')>0 else 1)\"",
                     "expect": "exit_zero"}
         return None
 
@@ -488,6 +499,7 @@ class Orchestrator:
                      spec.get("effort_level"))
             dashboard.update(state, "executing", f"{sid} attempt {attempt} · effort {spec.get('effort_level')}",
                              effort=spec.get("effort_level"))
+            attempt_started = time.time()
             result = executor.runClaude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask)
             combined = result.get("stdout") or ""
             if result.get("stderr"):
@@ -501,7 +513,7 @@ class Orchestrator:
             # call); the artifact running cleanly is the real correctness signal. Only a genuinely broken
             # program (its own `python <file>` fails) stays failed.
             if not passed:
-                repaired = self._repairVerify(subtask, exec_cwd)
+                repaired = self._repairVerify(subtask, exec_cwd, attempt_started)
                 same = bool(repaired) and (repaired.get("cmd"), repaired.get("expect")) == \
                     ((verify_spec or {}).get("cmd"), (verify_spec or {}).get("expect"))
                 if repaired and not same:

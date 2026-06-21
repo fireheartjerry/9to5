@@ -129,8 +129,11 @@ def runVerification(verify: Optional[dict], work_dir: str, executor_result: dict
     LOG.info("Verifying: %s  (expect: %s)", cmd, expect)
     try:
         proc = _runShell(cmd, work_dir)
-        # search stdout AND stderr for stdout_contains/regex (programs legitimately print to stderr)
-        passed = _evaluate(expect, proc.returncode, (proc.stdout or "") + "\n" + (proc.stderr or ""))
+        # Fold stderr into the haystack ONLY when the program exited cleanly (rc==0) -- legitimate
+        # programs print to stderr, but a CRASHING program must not pass a stdout_contains gate via a
+        # needle that happens to appear in its traceback.
+        haystack = (proc.stdout or "") + (("\n" + (proc.stderr or "")) if proc.returncode == 0 else "")
+        passed = _evaluate(expect, proc.returncode, haystack)
         result = {
             "passed": passed,
             "cmd": cmd,
