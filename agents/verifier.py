@@ -16,6 +16,7 @@ module never asks the model anything -- it only executes and compares.
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -33,23 +34,19 @@ def _cap(text: Optional[str]) -> str:
 
 
 def _runShell(cmd: str, work_dir: str) -> subprocess.CompletedProcess:
-    """Run a shell command string in work_dir.
+    """Run a verify command string in work_dir.
 
-    ``shell=True`` with the raw string lets the platform shell (cmd.exe on
-    Windows, /bin/sh elsewhere) parse quoting exactly as a human would at a
-    prompt -- avoiding ``list2cmdline`` re-quoting of nested quotes.
+    Prefer bash (git-bash on Windows): the brain frequently authors Unix-style
+    verifies (cat/grep/test) AND `python ...` works there too, so bash maximizes
+    compatibility. Falls back to the native shell (cmd.exe) when bash is absent.
     """
     Path(work_dir).mkdir(parents=True, exist_ok=True)
-    return subprocess.run(
-        cmd,
-        shell=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        cwd=work_dir,
-        timeout=config.VERIFY_TIMEOUT_SECONDS,
-    )
+    common = dict(capture_output=True, text=True, encoding="utf-8", errors="replace",
+                  cwd=work_dir, timeout=config.VERIFY_TIMEOUT_SECONDS)
+    bash = shutil.which("bash")
+    if bash:
+        return subprocess.run([bash, "-c", cmd], **common)
+    return subprocess.run(cmd, shell=True, **common)
 
 
 def _evaluate(expect: str, returncode: int, stdout: str) -> bool:

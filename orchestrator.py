@@ -121,8 +121,9 @@ class Orchestrator:
             "Verify OBSERVABLE BEHAVIOR by RUNNING the program -- e.g. cmd 'python <absolute file path>' "
             "with expect exit_zero, or expect stdout_contains:<a short string you are CERTAIN it prints>. "
             "NEVER author a verify that imports internal names, functions, or constants -- you do not know "
-            "the implementation and guessed symbols will not exist. Never use bash-only syntax like <(...) "
-            "or echo -n (host shell is Windows cmd.exe). Keep the plan minimal -- this IS the complete plan."
+            "the implementation and guessed symbols will not exist. Verify commands run in bash (git-bash): "
+            "you MAY use python, cat, grep, test, ls; do NOT use cmd.exe-only builtins (findstr/type/dir). "
+            "Keep the plan minimal -- this IS the complete plan."
         )
         user = f"Specification:\n{goal_elaborated}\n\nArchitecture:\n{architect_doc[:4000]}\n\nReturn the plan JSON."
         resp = self._ollamaChat(system, user, want_json=True)
