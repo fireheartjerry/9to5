@@ -10,7 +10,7 @@ import ollama
 import config
 
 LOG = config.getLogger("elaborator")
-_OLLAMA = ollama.Client(host=config.OLLAMA_HOST)
+_OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
 
 ELABORATOR_SYSTEM = (
     "You are the Elaborator for 9TO5, an autonomous engineering orchestrator. "

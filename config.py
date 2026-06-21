@@ -76,6 +76,7 @@ SESSIONS_DIR_REL: str = "sessions"
 # --- Ollama (Orchestrator brain) -----------------------------------------
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+OLLAMA_TIMEOUT_SECONDS: int = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))  # prevent indefinite hangs
 
 # --- Claude Code CLI (Executor hands) ------------------------------------
 CLAUDE_CLI_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_CLI_TIMEOUT_SECONDS", "300"))

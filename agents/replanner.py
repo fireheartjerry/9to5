@@ -13,7 +13,7 @@ import ollama
 import config
 
 LOG = config.getLogger("replanner")
-_OLLAMA = ollama.Client(host=config.OLLAMA_HOST)
+_OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
 
 REPLANNER_SYSTEM = (
     "You are the Replanner for 9TO5. Given the goal, the current subtask list, "

@@ -16,7 +16,7 @@ import ollama
 import config
 
 LOG = config.getLogger("architect")
-_OLLAMA = ollama.Client(host=config.OLLAMA_HOST)
+_OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
 
 ARCHITECT_SYSTEM_PROMPT = (
     "You are the Architect. You produce a single, thorough architecture and design "

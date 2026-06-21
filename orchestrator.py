@@ -78,13 +78,34 @@ def _fmtElapsed(seconds: float) -> str:
 
 class Orchestrator:
     def __init__(self) -> None:
-        self.ollama = ollama.Client(host=config.OLLAMA_HOST)
+        self.ollama = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
         self.obs = ObsidianClient()
         self._state_lock = threading.Lock()
 
     # ===================================================================
     # Brain steps (Ollama authors plan + per-subtask invocation specs)
     # ===================================================================
+    def _ollamaChat(self, system: str, user: str, *, want_json: bool = False, retries: int = 3):
+        """Resilient Ollama call: exponential backoff on timeout/connection failure,
+        Discord blocked alert on final failure. Returns the response dict or None."""
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        delay = 2.0
+        for attempt in range(1, retries + 1):
+            try:
+                kwargs = {"format": "json"} if want_json else {}
+                return self.ollama.chat(model=config.OLLAMA_MODEL, messages=messages, **kwargs)
+            except Exception as e:  # noqa: BLE001
+                LOG.warning("Ollama call failed (attempt %d/%d): %s", attempt, retries, e)
+                if attempt >= retries:
+                    try:
+                        discord.sendEmbed(discord.blockedEmbed(f"Ollama failed after {retries} attempts: {e}"))
+                    except Exception:  # noqa: BLE001
+                        pass
+                    return None
+                time.sleep(delay)
+                delay *= 2
+        return None
+
     def authorSubtaskPlan(self, goal_elaborated: str, architect_doc: str) -> list[dict]:
         system = (
             "You are the Planner for 9TO5. Break the specification into an ordered list of "
@@ -104,13 +125,9 @@ class Orchestrator:
             "or echo -n (host shell is Windows cmd.exe). Keep the plan minimal -- this IS the complete plan."
         )
         user = f"Specification:\n{goal_elaborated}\n\nArchitecture:\n{architect_doc[:4000]}\n\nReturn the plan JSON."
+        resp = self._ollamaChat(system, user, want_json=True)
         try:
-            resp = self.ollama.chat(
-                model=config.OLLAMA_MODEL,
-                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-                format="json",
-            )
-            subs = (json.loads(resp["message"]["content"]) or {}).get("subtasks") or []
+            subs = ((json.loads(resp["message"]["content"]) or {}).get("subtasks") or []) if resp else []
         except Exception as e:  # noqa: BLE001
             LOG.warning("plan parse failed (%s); single fallback subtask", e)
             subs = []
@@ -151,14 +168,9 @@ class Orchestrator:
         if failure_feedback:
             user += f"PREVIOUS ATTEMPT FAILED THE VERIFICATION:\n{failure_feedback[:1200]}\n\n"
         user += "Output ONLY the JSON invocation spec for THIS subtask."
+        resp = self._ollamaChat(ORCHESTRATOR_CONSTITUTION, user, want_json=True)
         try:
-            resp = self.ollama.chat(
-                model=config.OLLAMA_MODEL,
-                messages=[{"role": "system", "content": ORCHESTRATOR_CONSTITUTION},
-                          {"role": "user", "content": user}],
-                format="json",
-            )
-            spec = json.loads(resp["message"]["content"])
+            spec = json.loads(resp["message"]["content"]) if resp else {}
         except Exception as e:  # noqa: BLE001
             LOG.warning("invocation-spec parse failed (%s); using minimal spec", e)
             spec = {}
@@ -466,7 +478,19 @@ class Orchestrator:
                 if subtask is None:
                     break
                 position += 1
-                self._executeSubtask(state, subtask, architect_doc, work_dir, bus, dashboard, position)
+                try:
+                    self._executeSubtask(state, subtask, architect_doc, work_dir, bus, dashboard, position)
+                except AbortRun:
+                    raise
+                except Exception as e:  # noqa: BLE001 -- one bad subtask must not kill the run
+                    LOG.error("Subtask %s crashed: %s", subtask.get("subtask_id"), e, exc_info=True)
+                    try:
+                        discord.sendEmbed(discord.blockedEmbed(f"Subtask {subtask.get('subtask_id')} crashed: {e}"))
+                    except Exception:  # noqa: BLE001
+                        pass
+                    with self._state_lock:
+                        state.updateSubtask(subtask["subtask_id"], status="failed", completed_at=nowIso())
+                        state.addNotification("subtask_crashed", f"{subtask.get('subtask_id')}: {e}")
                 continue
             # parallel: run the ready set (deps satisfied) concurrently
             ready = self._readySet(state)
@@ -617,6 +641,22 @@ class Orchestrator:
             dashboard.update(state, "aborted", f"aborted: {reason}")
             LOG.warning("Run aborted: %s", reason)
             return {"task_id": state.task_id, "status": "aborted", "reason": reason,
+                    "elapsed_seconds": round(elapsed, 1), "web_dashboard": web_url,
+                    "subtasks": [{"subtask_id": s["subtask_id"], "status": s["status"]} for s in state.subtasks]}
+        except Exception as e:  # noqa: BLE001 -- the core loop must NEVER crash silently
+            elapsed = time.time() - started
+            LOG.error("Run crashed: %s", e, exc_info=True)
+            try:
+                state.setStatus("blocked", blocked_reason=str(e))
+                self.writeIndex(state)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                discord.sendEmbed(discord.blockedEmbed(f"9to5 run crashed: {e}"), content=discord.humanPing())
+                dashboard.update(state, "blocked", f"crashed: {e}")
+            except Exception:  # noqa: BLE001
+                pass
+            return {"task_id": state.task_id, "status": "blocked", "reason": str(e),
                     "elapsed_seconds": round(elapsed, 1), "web_dashboard": web_url,
                     "subtasks": [{"subtask_id": s["subtask_id"], "status": s["status"]} for s in state.subtasks]}
         finally:
