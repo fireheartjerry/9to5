@@ -9,7 +9,7 @@ Degrades to a silent no-op when Discord is unconfigured.
 from __future__ import annotations
 
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import config
@@ -35,6 +35,27 @@ class DiscordDashboard:
 
     def event(self, text: str) -> None:
         self.events.append(f"`{datetime.now().strftime('%H:%M:%S')}` {text}")
+
+    @staticmethod
+    def _elapsed(started_at) -> str:
+        """Human duration since started_at (e.g. '1h 23m'); '—' if unknown."""
+        if not started_at:
+            return "—"
+        try:
+            start = datetime.fromisoformat(str(started_at))
+            now = datetime.now(start.tzinfo) if start.tzinfo else datetime.now()
+            secs = int((now - start).total_seconds())
+        except Exception:  # noqa: BLE001
+            return "—"
+        if secs < 0:
+            secs = 0
+        h, rem = divmod(secs, 3600)
+        mins = rem // 60
+        if h:
+            return f"{h}h {mins}m"
+        if mins:
+            return f"{mins}m"
+        return f"{secs}s"
 
     # ---- embed construction --------------------------------------------
     def _embed(self, state: TaskState, phase: str) -> dict:
@@ -62,22 +83,25 @@ class DiscordDashboard:
         return {
             "title": f"{emoji} 9TO5 · {phase}",
             "color": discord.statusColor(m["status"]),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "description": (
                 f"**{m['goal_raw'][:240]}**\n"
-                f"{discord.progressBar(done, total)}  ({done}/{total})\n"
+                f"{discord.progressBar(done, total)}\n"
                 f"{discord.subtaskTracker(state.subtasks)}"
             ),
             "fields": [
-                {"name": "Effort", "value": discord.effortBar(self.effort), "inline": False},
+                # Row A — fixed order, 3 inline so the row never reflows ragged
+                {"name": "Status", "value": f"`{m['status']}`", "inline": True},
                 {"name": "Model", "value": f"`{self.model}`", "inline": True},
                 {"name": "Mode / Layer", "value": f"{m.get('control_mode', 'watch')} · L3", "inline": True},
-                {"name": "Status", "value": f"`{m['status']}`", "inline": True},
-                {"name": "Current subtask", "value": cur_txt[:1000], "inline": False},
-                {"name": "Last verify", "value": verify_txt, "inline": False},
+                # Row B — fixed order, 3 inline
                 {"name": "🔁 Replans", "value": str(replans), "inline": True},
                 {"name": "⚔️ Adversary", "value": str(advs), "inline": True},
-                {"name": "Started", "value": discord.relTime(m.get("started_at")), "inline": True},
-                {"name": "Deadline", "value": discord.relTime(m.get("deadline_at")), "inline": True},
+                {"name": "Elapsed", "value": self._elapsed(m.get("started_at")), "inline": True},
+                # full-width detail rows
+                {"name": "Effort", "value": discord.effortBar(self.effort), "inline": False},
+                {"name": "Current subtask", "value": cur_txt[:1000], "inline": False},
+                {"name": "Last verify", "value": verify_txt, "inline": False},
                 {"name": "Recent events", "value": ("\n".join(self.events) or "—")[:1000], "inline": False},
             ],
             "footer": {"text": f"task {state.task_id[:8]} · web :{config.WEB_DASHBOARD_PORT} · !status !abort !pause"},

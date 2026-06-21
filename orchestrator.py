@@ -76,6 +76,15 @@ def _fmtElapsed(seconds: float) -> str:
     return f"{h}h{m:02d}m{s:02d}s"
 
 
+def _elapsedSince(started_at_iso: str) -> float:
+    """Total wall-clock seconds since the task's ORIGINAL start (correct across resumes)."""
+    try:
+        from datetime import datetime
+        return max(0.0, (datetime.now().astimezone() - datetime.fromisoformat(started_at_iso)).total_seconds())
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
 class Orchestrator:
     def __init__(self) -> None:
         self.ollama = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
@@ -108,22 +117,22 @@ class Orchestrator:
 
     def authorSubtaskPlan(self, goal_elaborated: str, architect_doc: str) -> list[dict]:
         system = (
-            "You are the Planner for 9TO5. Break the specification into an ordered list of "
-            "concrete, independently-executable subtasks for a coding agent. Honor the goal's "
-            "constraints (e.g. 'standard library only' => never add dependency-install steps). "
+            "You are the Planner for 9TO5. Break the specification into the MINIMAL ordered list of "
+            "concrete subtasks. For a trivial single-artifact goal (one script/file/function), use EXACTLY "
+            "ONE subtask -- never pad to a quota. Use more ONLY for genuinely independent deliverables. "
+            "Honor the goal's constraints (e.g. 'standard library only' => no dependency installs).\n"
             'Respond with JSON ONLY: {"subtasks": [{"title": "...", "description": "...", "layer": 3, '
-            '"effort_level": "default|high|xhigh|ultracode", "verify": {"cmd": "<portable shell command, '
-            'prefer python -c, run in the work dir, that proves this subtask is done>", '
-            '"expect": "exit_zero"}}]}. Use 2-6 subtasks. expect is one of exit_zero | '
-            "stdout_contains:<text> | stdout_regex:<pattern>. Every subtask MUST include a verify block. "
-            "Verify commands MUST use ONLY the Python standard library and tools that already exist; "
-            "NEVER import third-party packages (no pycodestyle, pytest, numpy, requests). "
-            "Verify OBSERVABLE BEHAVIOR by RUNNING the program -- e.g. cmd 'python <absolute file path>' "
-            "with expect exit_zero, or expect stdout_contains:<a short string you are CERTAIN it prints>. "
-            "NEVER author a verify that imports internal names, functions, or constants -- you do not know "
-            "the implementation and guessed symbols will not exist. Verify commands run in bash (git-bash): "
-            "you MAY use python, cat, grep, test, ls; do NOT use cmd.exe-only builtins (findstr/type/dir). "
-            "Keep the plan minimal -- this IS the complete plan."
+            '"effort_level": "default|high|xhigh|ultracode", "verify": {"cmd": "...", "expect": "..."}}]}. '
+            "1-4 subtasks total. Every subtask MUST include a verify block.\n"
+            "VERIFY RULES (a bad verify fails correct work -- follow EXACTLY):\n"
+            "- Check OBSERVABLE BEHAVIOR only, never implementation details.\n"
+            "- Use EXACTLY ONE of these shapes, always with ABSOLUTE file paths under "
+            + str(config.PROJECT_ROOT) + ":\n"
+            "  (a) cmd = python <ABSOLUTE path> ; expect = exit_zero            (the program runs cleanly)\n"
+            "  (b) cmd = python <ABSOLUTE path> ; expect = stdout_contains:<a short string you are CERTAIN it prints>\n"
+            '  (c) cmd = python -c "import os; assert os.path.getsize(r\'<ABSOLUTE path>\')>0" ; expect = exit_zero   (file exists, non-empty)\n'
+            "- NEVER import a project module or reference an internal function/class/constant name -- a "
+            "guessed symbol WILL fail. NEVER use grep/cat/test/ls/findstr/type."
         )
         user = f"Specification:\n{goal_elaborated}\n\nArchitecture:\n{architect_doc[:4000]}\n\nReturn the plan JSON."
         resp = self._ollamaChat(system, user, want_json=True)
@@ -135,6 +144,41 @@ class Orchestrator:
         if not subs:
             subs = [{"title": "Implement the goal", "description": goal_elaborated, "layer": 3,
                      "verify": None, "effort_level": "high"}]
+        return subs
+
+    def critiqueSubtaskPlan(self, goal_elaborated: str, subs: list[dict]) -> list[dict]:
+        """Self-check the plan BEFORE committing it: (1) deterministically collapse an
+        over-decomposed trivial goal to one subtask (zero token cost), then (2) a brain
+        self-critique pass that rewrites every verify into a safe behavioral shape."""
+        if not subs:
+            return subs
+        g = (goal_elaborated or "").lower()
+        multi = any(w in g for w in (" and ", " then ", "multiple", "several", "as well as"))
+        if not multi and len(goal_elaborated or "") < 360 and len(subs) > 1:
+            LOG.info("plan self-check: collapsing %d subtasks -> 1 (trivial goal)", len(subs))
+            subs = [{"title": subs[0].get("title", "Implement the goal"),
+                     "description": goal_elaborated,
+                     "layer": max((s.get("layer", 3) for s in subs), default=3),
+                     "effort_level": subs[0].get("effort_level", "high"),
+                     "verify": subs[0].get("verify")}]
+        system = (
+            "You are a strict reviewer of a 9TO5 subtask plan. Return a CORRECTED plan, JSON only, same "
+            'schema {"subtasks":[...]}. Make every verify RELIABLE: each verify.cmd must use ABSOLUTE paths '
+            "under " + str(config.PROJECT_ROOT) + " and be ONE of: 'python <abs>' (expect exit_zero); "
+            "'python <abs>' (expect stdout_contains:<a certain string>); or "
+            "'python -c \"import os; assert os.path.getsize(r'<abs>')>0\"' (expect exit_zero). "
+            "NEVER import a project module or guess an internal symbol; NEVER use grep/cat/test/findstr. "
+            "Collapse any over-decomposition into the fewest subtasks. Preserve titles/descriptions."
+        )
+        user = f"Goal:\n{goal_elaborated}\n\nPlan to fix:\n{json.dumps({'subtasks': subs})}\n\nReturn corrected JSON."
+        resp = self._ollamaChat(system, user, want_json=True)
+        try:
+            fixed = (json.loads(resp["message"]["content"]) or {}).get("subtasks") if resp else None
+            if fixed and isinstance(fixed, list) and all(isinstance(x, dict) and x.get("title") for x in fixed):
+                LOG.info("plan self-check: brain corrected plan -> %d subtasks", len(fixed))
+                return fixed
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("plan self-check parse failed (%s); keeping pre-critique plan", e)
         return subs
 
     def _sanitizeSpec(self, spec: dict, subtask: dict) -> dict:
@@ -399,7 +443,7 @@ class Orchestrator:
             if result.get("stderr"):
                 combined += "\n[stderr]\n" + result["stderr"]
 
-            vresult = verifier.runVerification(verify_spec, work_dir, result)
+            vresult = verifier.runVerification(verify_spec, exec_cwd, result)
             with self._state_lock:
                 state.recordVerify(sid, vresult)
             passed = bool(vresult["passed"])
@@ -471,8 +515,13 @@ class Orchestrator:
         while True:
             guard += 1
             if guard > 100:
-                LOG.warning("execution loop guard hit; stopping")
-                break
+                LOG.error("execution loop guard tripped (possible livelock); aborting")
+                try:
+                    discord.sendEmbed(discord.blockedEmbed("Execution loop guard tripped (possible livelock) — aborting"),
+                                      content=discord.humanPing())
+                except Exception:  # noqa: BLE001
+                    pass
+                raise AbortRun("execution loop guard tripped (livelock)")
             self._checkControl(state, bus, dashboard)
             if parallelism <= 1:
                 subtask = state.nextActionable()
@@ -569,8 +618,11 @@ class Orchestrator:
             chk = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"],
                                  cwd=work_dir, capture_output=True, text=True)
             if chk.returncode == 0 and "true" in (chk.stdout or "").lower():
-                subprocess.run(["git", "checkout", "-B", branch], cwd=work_dir, capture_output=True, text=True)
-                LOG.info("Self-referential task -> created/switched to branch %s", branch)
+                exists = subprocess.run(["git", "rev-parse", "--verify", branch],
+                                        cwd=work_dir, capture_output=True, text=True).returncode == 0
+                subprocess.run(["git", "checkout", branch] if exists else ["git", "checkout", "-B", branch],
+                               cwd=work_dir, capture_output=True, text=True)
+                LOG.info("Self-referential task -> %s branch %s", "resumed" if exists else "created", branch)
             else:
                 LOG.warning("Self-ref task but %s is not a git repo; no isolation branch", work_dir)
         except Exception as e:  # noqa: BLE001
@@ -616,6 +668,9 @@ class Orchestrator:
             if not resume and self._detectSelfReferential(state, work_dir):
                 self._prepareSelfReferential(state, work_dir, bus, dashboard)
             if resume and state.subtasks:
+                for s in state.subtasks:   # un-strand subtasks left mid-flight by a prior crash
+                    if s["status"] == "in_progress":
+                        state.updateSubtask(s["subtask_id"], status="pending")
                 architect_doc = self.obs.readNote(state.architectNoteRel()) or "(resumed; architect doc unavailable)"
                 prior = "\n".join(
                     f"- {s['subtask_id']} [{s['status']}] {s['title']}"
@@ -645,7 +700,8 @@ class Orchestrator:
                 # --- Phase 2: Planning ---
                 state.setStatus("planning")
                 dashboard.update(state, "planning", "authoring subtask plan")
-                for s in self.authorSubtaskPlan(elaborated, architect_doc)[:config.MAX_SUBTASKS]:
+                plan = self.critiqueSubtaskPlan(elaborated, self.authorSubtaskPlan(elaborated, architect_doc))
+                for s in plan[:config.MAX_SUBTASKS]:
                     state.addSubtask(s.get("title", "untitled"), s.get("description", ""),
                                      layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))
                 discord.sendEmbed(discord.planningStartEmbed(state.meta["goal_raw"], len(state.subtasks)))
@@ -661,7 +717,7 @@ class Orchestrator:
             # --- Phase 4: PR + complete ---
             self._checkControl(state, bus, dashboard, gate="pre_pr")
             pr = self.createPullRequest(state, work_dir) if auto_pr else {"skipped": True, "reason": "--no-pr"}
-            elapsed = time.time() - started
+            elapsed = _elapsedSince(state.meta["started_at"])
             done, total = state.progress()
             final_status = "done" if (total > 0 and done == total) else "partial"
             state.setStatus(final_status)
@@ -686,7 +742,7 @@ class Orchestrator:
 
         except (AbortRun, KeyboardInterrupt) as e:
             reason = "ctrl-c" if isinstance(e, KeyboardInterrupt) else str(e)
-            elapsed = time.time() - started
+            elapsed = _elapsedSince(state.meta["started_at"])
             state.setStatus("aborted", blocked_reason=reason)
             self.writeIndex(state)
             discord.sendEmbed({"title": "Run aborted", "color": _RED,
@@ -700,7 +756,7 @@ class Orchestrator:
                     "elapsed_seconds": round(elapsed, 1), "web_dashboard": web_url,
                     "subtasks": [{"subtask_id": s["subtask_id"], "status": s["status"]} for s in state.subtasks]}
         except Exception as e:  # noqa: BLE001 -- the core loop must NEVER crash silently
-            elapsed = time.time() - started
+            elapsed = _elapsedSince(state.meta["started_at"])
             LOG.error("Run crashed: %s", e, exc_info=True)
             try:
                 state.setStatus("blocked", blocked_reason=str(e))

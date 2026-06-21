@@ -141,7 +141,7 @@ def _vault() -> tuple[bool, str, str]:
 
 
 CHECKS = [
-    ("Ollama + qwen2.5:7b (GPU)", _ollama),
+    (f"Ollama + {config.OLLAMA_MODEL} (GPU)", _ollama),
     ("Claude Code CLI auth", _claudeCli),
     ("GitHub CLI auth", _gh),
     ("Obsidian REST", _obsidian),

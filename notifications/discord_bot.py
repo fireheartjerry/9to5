@@ -13,7 +13,7 @@ pings. The human (DISCORD_HUMAN_USER_ID) is @-pinged ONLY for severe events.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import requests
@@ -30,9 +30,17 @@ ORANGE = 0xE67E22
 RED = 0xE74C3C
 PURPLE = 0x9B59B6
 YELLOW = 0xF1C40F
-DIVIDER = "━━━━━━━━━━━━━━━━━━━━━"
 
-_STATUS_MARK = {"done": "✅", "in_progress": "⚡", "failed": "❌", "removed": "⏭️", "pending": "⬜"}
+# effort internal key -> human display label
+_EFFORT_LABELS = {
+    "low": "Low", "default": "Standard", "medium": "Standard",
+    "high": "High", "xhigh": "Very High", "ultracode": "Max",
+}
+
+
+def _nowIso() -> str:
+    """Native embed timestamp (RFC3339, UTC)."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 # =====================================================================
@@ -43,26 +51,28 @@ def humanPing() -> str:
     return f"<@{config.DISCORD_HUMAN_USER_ID}>" if config.DISCORD_HUMAN_USER_ID else ""
 
 
-def progressBar(done: int, total: int, width: int = 16) -> str:
+def progressBar(done: int, total: int, width: int = 12) -> str:
     total = max(int(total), 1)
     done = max(0, min(int(done), total))
     pct = int(round(100 * done / total))
     filled = int(round(width * done / total))
-    return f"[{'█' * filled}{'░' * (width - filled)}] {pct}%"
+    bar = f"{'▰' * filled}{'▱' * (width - filled)}"
+    return f"{bar}  {pct:>3}%  ({done}/{total})"
 
 
 def subtaskTracker(subtasks: list[dict], limit: int = 12) -> str:
-    items = subtasks[:limit]
-    out = " ".join(f"{_STATUS_MARK.get(s['status'], '⬜')} {s['subtask_id']}" for s in items)
-    if len(subtasks) > limit:
-        out += f"  +{len(subtasks) - limit}"
-    return out or "—"
+    n_done = sum(1 for s in subtasks if s.get("status") == "done")
+    n_running = sum(1 for s in subtasks if s.get("status") == "in_progress")
+    n_failed = sum(1 for s in subtasks if s.get("status") == "failed")
+    n_pending = len(subtasks) - n_done - n_running - n_failed
+    return f"✅ {n_done}  ⚡ {n_running}  ⬜ {max(n_pending, 0)}  ❌ {n_failed}"
 
 
 def effortBar(effort: Optional[str]) -> str:
     key = (effort or "default").lower()
     bar = config.EFFORT_BARS.get(key, config.EFFORT_BARS["default"])
-    return f"EFFORT {bar} {effort or 'default'}"
+    label = _EFFORT_LABELS.get(key, "Standard")
+    return f"{bar}  {label}"
 
 
 def statusColor(status: Optional[str]) -> int:
@@ -197,12 +207,12 @@ def sendEmbed(embed: dict, content: Optional[str] = None, components: Optional[l
 # =====================================================================
 def planningStartEmbed(goal: str, subtask_count: int) -> dict:
     return {
-        "title": "🟢 Planning started",
-        "color": BLUE,
+        "title": "🔵 Planning started",
+        "color": statusColor("planning"),
+        "description": (goal[:1500] or "-"),
+        "timestamp": _nowIso(),
         "fields": [
-            {"name": "Goal", "value": goal[:1000] or "-"},
             {"name": "Subtasks", "value": str(subtask_count), "inline": True},
-            {"name": "When", "value": relTime(), "inline": True},
         ],
     }
 
@@ -210,31 +220,42 @@ def planningStartEmbed(goal: str, subtask_count: int) -> dict:
 def architectDoneEmbed(doc_path: str) -> dict:
     return {
         "title": "🔵 Architecture complete",
-        "color": BLUE,
-        "fields": [{"name": "architect.md", "value": doc_path},
-                   {"name": "When", "value": relTime(), "inline": True}],
+        "color": statusColor("architecting"),
+        "timestamp": _nowIso(),
+        "fields": [{"name": "Design doc", "value": f"`{doc_path}`"}],
     }
 
 
 def adversaryTriggeredEmbed(subtask_title: str, reason: str, verdict: Optional[str] = None) -> dict:
+    v = (verdict or "").lower()
+    challenged = v in ("challenged", "rejected", "reject", "blocked", "fail")
+    color = statusColor("blocked") if challenged else statusColor("done")
+    if verdict is None:
+        color = statusColor("adversary")
     fields = [
         {"name": "Subtask", "value": subtask_title[:1000]},
         {"name": "Trigger", "value": reason[:1000]},
     ]
     if verdict is not None:
         fields.append({"name": "Verdict", "value": formatVerdict(verdict), "inline": True})
-    return {"title": "⚔️ Adversary review", "color": ORANGE, "fields": fields}
+    return {
+        "title": "⚔️ Adversary review",
+        "color": color,
+        "timestamp": _nowIso(),
+        "fields": fields,
+    }
 
 
 def blockedEmbed(reason: str, question: Optional[str] = None) -> dict:
     desc = f"**{reason[:1500]}**"
     if question:
-        desc += f"\n\nClaude Code is asking:\n```\n{question[:1500]}\n```"
+        quoted = "\n".join(f"> {line}" for line in question[:1500].splitlines() or [""])
+        desc += f"\n\nClaude Code is asking:\n{quoted}"
     return {
         "title": "🚨 BLOCKED — human decision required",
-        "color": RED,
+        "color": statusColor("blocked"),
         "description": desc[:4000],
-        "fields": [{"name": "When", "value": relTime(), "inline": True}],
+        "timestamp": _nowIso(),
     }
 
 
@@ -253,20 +274,28 @@ def completeEmbed(state, pr_link: str, elapsed: str) -> dict:
     replans = sum(1 for n in notifs if n.get("kind") == "replan")
     advs = len(state.data.get("adversary_reviews", []))
     failed = sum(1 for s in state.subtasks if s["status"] == "failed")
+
+    subtasks_val = f"{done}/{total}" + (f"  ({failed} failed)" if failed else "")
+    pr = (pr_link or "").strip()
+    pr_val = f"[Open PR]({pr})" if pr.lower().startswith("http") else (pr or "—")
+
     desc = (
-        f"**Goal:** {state.meta['goal_raw'][:280]}\n{DIVIDER}\n"
-        f"**Subtasks:** {progressBar(done, total)}  ({done}/{total}"
-        + (f", {failed} failed" if failed else "") + ")\n"
-        f"{subtaskTracker(state.subtasks)}\n{DIVIDER}\n"
-        f"⏱ **Total time:** {elapsed}\n"
-        f"🔁 **Replans:** {replans}    ⚔️ **Adversary triggers:** {advs}\n"
-        f"{DIVIDER}\n"
-        f"🔗 **PR:** {pr_link}"
+        f"**{state.meta['goal_raw'][:280]}**\n"
+        f"{progressBar(done, total)}"
     )
     return {
         "title": "✅ 9TO5 — run complete",
         "color": statusColor(state.meta.get("status")),
         "description": desc[:4000],
+        "timestamp": _nowIso(),
+        "fields": [
+            {"name": "Subtasks", "value": subtasks_val, "inline": True},
+            {"name": "Time elapsed", "value": elapsed or "—", "inline": True},
+            {"name": "Replans", "value": str(replans), "inline": True},
+            {"name": "Adversary", "value": str(advs), "inline": True},
+            {"name": "Progress", "value": subtaskTracker(state.subtasks), "inline": False},
+            {"name": "Pull request", "value": pr_val, "inline": False},
+        ],
         "footer": {"text": f"task {state.task_id[:8]}"},
     }
 

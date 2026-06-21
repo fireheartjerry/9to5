@@ -49,14 +49,24 @@ def _runShell(cmd: str, work_dir: str) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, shell=True, **common)
 
 
-def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
-    """Drop an obviously-broken brain-authored verify so the subtask falls back to
-    'executor exited 0' instead of failing forever on a malformed check.
+_VERIFY_STDLIB_OK = {
+    "os", "sys", "json", "re", "pathlib", "subprocess", "math", "io", "time", "datetime",
+    "collections", "itertools", "functools", "typing", "string", "random", "statistics",
+    "textwrap", "shutil", "glob", "argparse", "csv", "hashlib", "base64", "unittest",
+    "decimal", "fractions", "ast",
+}
 
-    Catches the common failure: a `python -c "<code>"` one-liner with a SyntaxError
-    (e.g. a compound statement after ';'). Returns the verify unchanged if it looks OK,
-    or None to disable it.
+
+def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
+    """Drop a structurally-unreliable brain-authored verify so the subtask falls back to
+    'executor exited 0' instead of failing forever on a bad check.
+
+    Catches two failure modes: a malformed ``python -c`` one-liner (SyntaxError, e.g. a
+    compound statement after ';'), AND a ``python -c`` that imports a non-stdlib / project
+    module -- the 'guessed internal symbol' pattern (``from fibonacci import fib``) that
+    fails even when the code under test is perfectly correct.
     """
+    import ast
     if not isinstance(verify, dict):
         return None
     cmd = (verify.get("cmd") or "").strip()
@@ -64,11 +74,22 @@ def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
         return None
     m = re.match(r"""(?:py|python|python3)\s+-c\s+(['"])(.*)\1\s*$""", cmd, re.DOTALL)
     if m:
+        code = m.group(2)
         try:
-            compile(m.group(2), "<verify>", "exec")
+            tree = ast.parse(code, "<verify>", "exec")
         except SyntaxError:
             LOG.info("sanitizeVerify: dropping malformed python -c verify: %s", cmd)
             return None
+        for node in ast.walk(tree):
+            mods: list[str] = []
+            if isinstance(node, ast.Import):
+                mods = [a.name.split(".")[0] for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                mods = [node.module.split(".")[0]]
+            for mod in mods:
+                if mod not in _VERIFY_STDLIB_OK:
+                    LOG.info("sanitizeVerify: dropping verify importing non-stdlib '%s': %s", mod, cmd)
+                    return None
     return verify
 
 

@@ -7,12 +7,19 @@ the vault as ``.md`` files; the JSON merely points at them.
 from __future__ import annotations
 
 import json
+import os
+import threading
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
 import config
+
+# Serializes concurrent save() calls within this process so the temp-file
+# write + os.replace swap never interleave. os.replace itself is atomic at the
+# filesystem level, guarding cross-process readers against torn JSON.
+_SAVE_LOCK = threading.Lock()
 
 
 def nowIso() -> str:
@@ -47,6 +54,7 @@ class TaskState:
                 "control_mode": config.CONTROL_MODE_DEFAULT,
                 "is_self_referential": False,
                 "self_ref_branch": None,
+                "subtask_seq": 0,
             },
             "plan": {"architect_design_doc": None, "subtasks": []},
             "adversary_reviews": [],
@@ -79,8 +87,12 @@ class TaskState:
 
     def save(self) -> Path:
         p = self.path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(self.data, indent=2, ensure_ascii=False), encoding="utf-8")
+        payload = json.dumps(self.data, indent=2, ensure_ascii=False)
+        with _SAVE_LOCK:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            tmp = p.with_suffix(".json.tmp")
+            tmp.write_text(payload, encoding="utf-8")
+            os.replace(tmp, p)
         return p
 
     @classmethod
@@ -145,12 +157,32 @@ class TaskState:
     def recordVerify(self, subtask_id: str, result: dict) -> Optional[dict[str, Any]]:
         return self.updateSubtask(subtask_id, verify_result=result)
 
+    def _nextSubtaskSeq(self) -> int:
+        """Allocate a never-reused subtask number from a persisted counter.
+
+        Legacy tasks created before ``meta["subtask_seq"]`` existed fall back to
+        the max numeric id already present in the subtask list, so we never
+        re-issue an id that a removed-but-still-referenced subtask once held.
+        """
+        seq = self.meta.get("subtask_seq")
+        if seq is None:
+            seq = 0
+            for st in self.subtasks:
+                sid = st.get("subtask_id", "")
+                try:
+                    seq = max(seq, int(str(sid).split("-")[-1]))
+                except (ValueError, IndexError):
+                    continue
+        seq += 1
+        self.meta["subtask_seq"] = seq
+        return seq
+
     def addSubtask(self, title: str, description: str, assigned_to: str = "executor",
                    layer: int = 3, depends_on: Optional[list[str]] = None,
                    verify: Optional[dict] = None) -> dict[str, Any]:
-        idx = len(self.subtasks) + 1
+        seq = self._nextSubtaskSeq()
         st: dict[str, Any] = {
-            "subtask_id": f"st-{idx:03d}",
+            "subtask_id": f"st-{seq:03d}",
             "title": title,
             "description": description,
             "assigned_to": assigned_to,
