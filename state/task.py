@@ -88,8 +88,10 @@ class TaskState:
 
     def save(self) -> Path:
         p = self.path()
-        payload = json.dumps(self.data, indent=2, ensure_ascii=False)
         with _SAVE_LOCK:
+            # serialize INSIDE the lock: another thread appending to a list/dict in self.data
+            # while json.dumps walks it raises "changed size during iteration".
+            payload = json.dumps(self.data, indent=2, ensure_ascii=False)
             p.parent.mkdir(parents=True, exist_ok=True)
             tmp = p.with_suffix(".json.tmp")
             tmp.write_text(payload, encoding="utf-8")

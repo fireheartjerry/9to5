@@ -199,22 +199,31 @@ def selfModificationGuard(data):
         # Hard boundaries are read DYNAMICALLY from the task's universe (set at /goal time).
         universe = state.meta.get("universe") or {}
         boundaries = [str(b) for b in (universe.get("hard_boundaries") or []) if b]
-        # self-referential runs always protect the core files that run the loop (safety floor)
+        # ALWAYS enforce the baseline secret/VCS boundaries -- even if the universe is None/empty
+        # (legacy or resumed task) so .env/.git/venv/state are never left unprotected.
+        for d in (list(getattr(config, "UNIVERSE_DEFAULT_HARD_BOUNDARIES", ()) or ()) if config
+                  else [".env", ".git", "venv", "state/tasks"]):
+            if d not in boundaries:
+                boundaries.append(d)
+        # self-referential runs also protect the core files that run the loop.
         if state.meta.get("is_self_referential"):
-            core = list(getattr(config, "CORE_PROTECTED_FILES", ()) or ()) if config else \
-                ["orchestrator.py", "main.py", "agents/hooks.py", "config.py"]
-            for c in core:
+            for c in (list(getattr(config, "CORE_PROTECTED_FILES", ()) or ()) if config
+                      else ["orchestrator.py", "main.py", "agents/hooks.py", "config.py"]):
                 if c not in boundaries:
                     boundaries.append(c)
-        if not boundaries:
-            sys.exit(0)
         norm = file_path.replace("/", "\\").lower()
+        base = norm.rsplit("\\", 1)[-1]
         for b in boundaries:
             bn = b.replace("/", "\\").lower().strip("\\")
             if not bn:
                 continue
-            # match the exact file, a file under a boundary dir, or a path ending in the boundary
-            if norm == bn or norm.endswith("\\" + bn) or ("\\" + bn + "\\") in norm:
+            bbase = bn.rsplit("\\", 1)[-1]
+            # exact file, a file under a boundary dir, or a path ending in the boundary
+            hit = norm == bn or norm.endswith("\\" + bn) or ("\\" + bn + "\\") in norm
+            # secret-family: a ".env" boundary also blocks .env.local / .env.production / .env.example
+            if not hit and bbase.startswith(".") and base.startswith(bbase):
+                hit = True
+            if hit:
                 reason = (f"self_modification_guard: BLOCKED edit to {file_path} -- it is a HARD BOUNDARY "
                           f"of this task's universe. Stay inside the allowed scope.")
                 try:

@@ -78,6 +78,7 @@ h3{color:#9aa7b8;font-size:12px;text-transform:uppercase;letter-spacing:.6px;mar
 const COL={pending:'#6b7686',in_progress:'#3b82f6',done:'#2ecc71',failed:'#e74c3c',removed:'#4b5563',
 created:'#6b7686',planning:'#3b82f6',executing:'#3b82f6',complete:'#2ecc71',partial:'#e67e22',aborted:'#e74c3c'};
 function fmt(s){s=Math.max(0,s|0);let h=s/3600|0,m=(s%3600)/60|0,x=s%60;return h+'h'+String(m).padStart(2,'0')+'m'+String(x).padStart(2,'0')+'s'}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]});}
 async function ctl(action,arg){await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,arg})});setTimeout(load,200)}
 async function load(){
  let r; try{r=await (await fetch('/api/state')).json()}catch(e){return}
@@ -92,14 +93,14 @@ async function load(){
  document.getElementById('elapsed').textContent=fmt(r.elapsed_s);
  document.getElementById('eta').textContent=fmt(r.eta_s);
  const g=r.control.pending_gate;
- document.getElementById('gate').innerHTML = g ? '<div class="gate">⏳ Awaiting decision for gate <b>'+g+'</b> — Approve / Reject above (or <code>!approve</code>)</div>' : '';
+ document.getElementById('gate').innerHTML = g ? '<div class="gate">⏳ Awaiting decision for gate <b>'+esc(g)+'</b> — Approve / Reject above (or <code>!approve</code>)</div>' : '';
  document.getElementById('subs').innerHTML = r.subtasks.map(s=>{
    const c=COL[s.status]||'#6b7686';
    const v = s.verify==null?'—':(s.verify? '✅':'❌');
    const skip = (s.status==='pending')? '<button class="btn" style="padding:2px 8px" onclick="ctl(\\'skip\\',\\''+s.subtask_id+'\\')">skip</button>':'';
-   return '<tr><td>'+s.subtask_id+'</td><td>'+s.title+'</td><td><span class="s" style="background:'+c+'22;color:'+c+'">'+s.status+'</span></td><td>'+v+'</td><td>'+skip+'</td></tr>';
+   return '<tr><td>'+esc(s.subtask_id)+'</td><td>'+esc(s.title)+'</td><td><span class="s" style="background:'+c+'22;color:'+c+'">'+esc(s.status)+'</span></td><td>'+v+'</td><td>'+skip+'</td></tr>';
  }).join('');
- document.getElementById('log').innerHTML = (r.events||[]).slice().reverse().map(e=>'<div><span class="muted">'+e.at+'</span> · '+e.kind+': '+e.detail+'</div>').join('') || '<div class="muted">—</div>';
+ document.getElementById('log').innerHTML = (r.events||[]).slice().reverse().map(e=>'<div><span class="muted">'+esc(e.at)+'</span> · '+esc(e.kind)+': '+esc(e.detail)+'</div>').join('') || '<div class="muted">—</div>';
 }
 load();setInterval(load,1500);
 </script></body></html>"""

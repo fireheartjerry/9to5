@@ -61,9 +61,9 @@ def extractUniverse(goal_raw: str, goal_elaborated: str, work_dir: str) -> dict:
         u = {}
     if not isinstance(u, dict):
         u = {}
-    u.setdefault("description", goal_raw[:200])
-    u.setdefault("allowed_paths", [work_dir])
-    u.setdefault("allowed_to_expand_to", [])
+    u["description"] = str(u.get("description") or goal_raw[:200])
+    u["allowed_paths"] = [str(x) for x in (u.get("allowed_paths") or []) if x] or [work_dir]
+    u["allowed_to_expand_to"] = [str(x) for x in (u.get("allowed_to_expand_to") or []) if x]
     hb = [str(x) for x in (u.get("hard_boundaries") or []) if x]
     for d in config.UNIVERSE_DEFAULT_HARD_BOUNDARIES:   # always enforce the baseline boundaries
         if d not in hb:

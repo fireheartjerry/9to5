@@ -349,6 +349,7 @@ class Orchestrator:
             dashboard.update(state, f"awaiting {gate}", f"awaiting approval for gate: {gate}")
             while True:
                 self._translateDiscord(bus)
+                self._applyOps(state, bus, dashboard)   # apply queued !add/!skip live while parked
                 if bus.isAbort():
                     bus.setPendingGate(None)
                     raise AbortRun("aborted at gate")
@@ -519,6 +520,10 @@ class Orchestrator:
                     f"stderr:\n{vresult.get('stderr')}"
                 )
             self._translateDiscord(bus)
+            while bus.isPaused() and not bus.isAbort():   # honor !pause mid-subtask, not just between
+                dashboard.update(state, "paused", f"{sid} paused -- waiting for !resume")
+                time.sleep(config.DISCORD_POLL_SECONDS)
+                self._translateDiscord(bus)
             if bus.isAbort():
                 raise AbortRun("abort requested")
             if (state.getSubtask(sid) or {}).get("status") == "removed":
@@ -532,7 +537,9 @@ class Orchestrator:
         if (state.getSubtask(sid) or {}).get("status") == "removed":
             return "removed"
 
-        triggered, reason = adversary.shouldTrigger(combined, position, attempt)
+        # heartbeat off a STABLE terminal-subtask count, not the mutable loop/scheduler position
+        heartbeat_ordinal = sum(1 for s in state.subtasks if s["status"] in ("done", "failed", "removed")) + 1
+        triggered, reason = adversary.shouldTrigger(combined, heartbeat_ordinal, attempt)
         if triggered:
             discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason))
             rv = adversary.review(subtask["title"], reason, combined)
@@ -614,20 +621,24 @@ class Orchestrator:
                 ready = [state.nextActionable()]
             batch = ready[:parallelism]
             with ThreadPoolExecutor(max_workers=parallelism) as pool:
-                futures = []
+                futures = {}
                 for st in batch:
                     position += 1
                     ctx = os.path.join(work_dir, ".sc-ctx", st["subtask_id"])
-                    futures.append(pool.submit(self._executeSubtask, state, st, architect_doc,
-                                               work_dir, bus, dashboard, position, ctx))
+                    futures[pool.submit(self._executeSubtask, state, st, architect_doc,
+                                        work_dir, bus, dashboard, position, ctx)] = st
                 abort = None
                 for f in futures:
+                    st = futures[f]
                     try:
                         f.result()
                     except AbortRun as e:
                         abort = e
-                    except Exception as e:  # noqa: BLE001
-                        LOG.warning("parallel subtask error: %s", e)
+                    except Exception as e:  # noqa: BLE001 -- a crashed worker must not strand the subtask
+                        LOG.error("parallel subtask %s crashed: %s", st.get("subtask_id"), e, exc_info=True)
+                        with self._state_lock:
+                            state.updateSubtask(st["subtask_id"], status="failed", completed_at=nowIso())
+                            state.addNotification("subtask_crashed", f"{st.get('subtask_id')}: {e}")
                 if abort is not None:
                     raise abort
 
