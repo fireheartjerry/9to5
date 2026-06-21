@@ -101,7 +101,16 @@ def main() -> int:
     parser.add_argument("--resume", help="Resume an existing task by its task_id.")
     parser.add_argument("--web-port", type=int, default=config.WEB_DASHBOARD_PORT, help="Web dashboard port.")
     parser.add_argument("--no-web", action="store_true", help="Disable the local web dashboard.")
+    parser.add_argument("--task-id", help="Alias for --resume: restore + continue a task by id.")
+    parser.add_argument("--health", action="store_true", help="Run environment health checks and exit.")
     args = parser.parse_args()
+
+    if args.health:
+        import health
+        return 0 if health.runHealthChecks() else 1
+
+    if args.task_id and not args.resume:   # --task-id is an alias for --resume
+        args.resume = args.task_id
 
     config.WEB_DASHBOARD_PORT = args.web_port
     if args.no_web:
