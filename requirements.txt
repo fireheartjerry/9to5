@@ -1,0 +1,7 @@
+# 9TO5 -- Phase 1 (Layer 3: Terminal/CLI) dependencies.
+# Install into the project venv:  venv\Scripts\python -m pip install -r requirements.txt
+discord.py>=2.3
+ollama>=0.3
+python-dotenv>=1.0
+gitpython>=3.1
+requests>=2.31

@@ -1,0 +1,15 @@
+# 9to5 — never commit secrets or runtime data
+.env
+venv/
+logs/
+vault/
+state/tasks/
+state/control/
+__pycache__/
+*.pyc
+.pytest_cache/
+test-run/
+test-run2/
+test-run3/
+.sc-ctx/
+CLAUDE.md.bak

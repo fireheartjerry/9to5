@@ -1,0 +1,61 @@
+{
+  "model": "claude-opus-4-8",
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "Read",
+      "Glob",
+      "Grep"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(.env)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\supercritical\\venv\\Scripts\\python.exe C:\\supercritical\\agents\\hooks.py block_destructive"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\supercritical\\venv\\Scripts\\python.exe C:\\supercritical\\agents\\hooks.py write_obsidian"
+          }
+        ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\supercritical\\venv\\Scripts\\python.exe C:\\supercritical\\agents\\hooks.py log_all"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\supercritical\\venv\\Scripts\\python.exe C:\\supercritical\\agents\\hooks.py discord_notify"
+          }
+        ]
+      }
+    ]
+  }
+}

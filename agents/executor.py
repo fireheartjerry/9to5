@@ -1,0 +1,184 @@
+"""Executor (the hands) -- run Claude Code CLI from an Orchestrator invocation spec.
+
+The Orchestrator (Ollama) no longer hands us a plain prompt; it hands a JSON
+INVOCATION SPEC that weaponizes Claude Code's six native primitives:
+
+    {
+      "claude_md_inject": "<full per-subtask context -> written to CLAUDE.md>",
+      "skills_to_invoke": ["/architect-review"],
+      "effort_level": "default|high|xhigh|ultracode",
+      "subagent": null | "architect" | "security-reviewer",
+      "prompt": "<the instruction>",
+      "pre_tool_hooks": ["block_destructive","log_all"],
+      "post_tool_hooks": ["write_obsidian","discord_notify"]
+    }
+
+This module is the plumbing that ACTIVATES those primitives:
+  * CLAUDE.md   -- writes the living per-subtask context to the work dir
+  * skills      -- names them in the prompt (Claude invokes /skill natively)
+  * subagent    -- instructs delegation to the named read-only subagent
+  * hooks       -- loaded from .claude/settings.json via --settings (deterministic)
+  * effort      -- effort_level -> --effort {low|medium|high|xhigh|max}
+  * model       -- --fallback-model for automatic rate-limit failover
+
+Prompts are delivered over stdin to avoid Windows argv quoting limits; on Windows
+the ``claude`` launcher is a ``.cmd`` shim invoked via ``cmd /c``.
+"""
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Optional, Union
+
+import config
+from memory.obsidian import writeClaudioMd
+
+LOG = config.getLogger("executor")
+
+
+def _resolveClaudeLauncher() -> list[str]:
+    exe = shutil.which("claude")
+    if not exe:
+        raise FileNotFoundError("claude CLI not found on PATH")
+    if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
+        return ["cmd", "/c", exe]
+    return [exe]
+
+
+def normalizeSpec(spec_or_prompt: Union[dict, str, None]) -> dict:
+    """Accept a full invocation spec dict OR a bare prompt string; return a full spec."""
+    base = {
+        "prompt": "", "claude_md_inject": "", "skills_to_invoke": [],
+        "effort_level": "default", "subagent": None,
+        "pre_tool_hooks": [], "post_tool_hooks": [],
+    }
+    if isinstance(spec_or_prompt, str):
+        base["prompt"] = spec_or_prompt
+        return base
+    if isinstance(spec_or_prompt, dict):
+        for k, v in spec_or_prompt.items():
+            base[k] = v
+    return base
+
+
+def _composePrompt(spec: dict, system_prompt: Optional[str], extra: Optional[str]) -> str:
+    parts: list[str] = []
+    if system_prompt:
+        parts.append(system_prompt + "\n\n---\n")
+    skills = [s for s in (spec.get("skills_to_invoke") or []) if s]
+    if skills:
+        parts.append("Invoke these skills as appropriate: " + " ".join(skills))
+    subagent = spec.get("subagent")
+    if subagent:
+        parts.append(f"Use the '{subagent}' subagent for the analysis portion of this task.")
+    parts.append(spec.get("prompt") or "")
+    if extra:
+        parts.append("\n" + extra)
+    return "\n\n".join(p for p in parts if p).strip()
+
+
+def effortFlag(effort_level: str) -> Optional[str]:
+    return config.EFFORT_FLAG_MAP.get((effort_level or "default").lower())
+
+
+# Headless `claude --print --dangerously-skip-permissions` does NOT run .claude
+# hooks or permissions, so 9TO5 enforces the block_destructive guardrail
+# here, in plumbing we control (deterministic, always-on in autonomous mode).
+_DESTRUCTIVE_PATTERNS = (
+    "rm -rf", "rm -fr", "rmdir /s", "del /f", "del /s", "format ",
+    "drop table", "git push --force", "git push -f", "mkfs", ":(){", ">/dev/sda",
+)
+
+
+def scanDestructive(text: str) -> list[str]:
+    low = (text or "").lower()
+    return [p for p in _DESTRUCTIVE_PATTERNS if p in low]
+
+
+def _alertBlocked(reason: str) -> None:
+    try:
+        from notifications import discord_bot as discord
+        discord.sendBlocked(reason)
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("blocked-alert failed: %s", e)
+
+
+def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = None,
+              task_state=None, subtask: Optional[dict] = None,
+              system_prompt: Optional[str] = None, extra: Optional[str] = None,
+              timeout: Optional[int] = None) -> dict:
+    """Prepare the environment from the invocation spec, then fire one Claude run.
+
+    Returns ``{ok, returncode, stdout, stderr, effort, effort_flag, spec, claude_md_path}``.
+    """
+    spec = normalizeSpec(spec_or_prompt)
+    timeout = timeout or config.CLAUDE_CLI_TIMEOUT_SECONDS
+    work = str(work_dir) if work_dir else str(config.PROJECT_ROOT)
+    Path(work).mkdir(parents=True, exist_ok=True)
+
+    effort = (spec.get("effort_level") or "default").lower()
+    flag = effortFlag(effort)
+
+    # 1. living CLAUDE.md (only when we have task context)
+    claude_md_path = None
+    if task_state is not None:
+        try:
+            claude_md_path = str(writeClaudioMd(task_state, subtask, spec.get("claude_md_inject", ""), work))
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("writeClaudioMd failed: %s", e)
+
+    full_prompt = _composePrompt(spec, system_prompt, extra)
+
+    # deterministic block_destructive guardrail (headless mode bypasses Claude hooks)
+    if "block_destructive" in (spec.get("pre_tool_hooks") or []):
+        hits = scanDestructive(full_prompt)
+        if hits:
+            reason = f"block_destructive refused subtask -- prompt contains {hits}"
+            LOG.warning(reason)
+            _alertBlocked(reason)
+            return {"ok": False, "returncode": -1, "stdout": "", "stderr": reason, "blocked": True,
+                    "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+
+    try:
+        launcher = _resolveClaudeLauncher()
+    except FileNotFoundError as e:
+        LOG.error("%s", e)
+        return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
+                "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+
+    cmd = launcher + ["--print", "--dangerously-skip-permissions"]
+    # hooks + permissions (deterministic guardrails) load from our settings file
+    if config.CLAUDE_SETTINGS_PATH.exists():
+        cmd += ["--settings", str(config.CLAUDE_SETTINGS_PATH)]
+    # automatic model failover on rate-limit
+    cmd += ["--fallback-model", config.FALLBACK_MODEL]
+    # reasoning effort selected by the brain
+    if flag:
+        cmd += ["--effort", flag]
+    # make the project's .claude (skills/agents/settings) discoverable from a sub-work-dir
+    cmd += ["--add-dir", str(config.PROJECT_ROOT)]
+
+    LOG.info("Claude run (cwd=%s effort=%s skills=%s subagent=%s hooks=%s/%s prompt=%dch)",
+             work, flag or "default", spec.get("skills_to_invoke"), spec.get("subagent"),
+             spec.get("pre_tool_hooks"), spec.get("post_tool_hooks"), len(full_prompt))
+    try:
+        proc = subprocess.run(cmd, input=full_prompt, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", cwd=work, timeout=timeout)
+        out = proc.stdout or ""
+        if "block_destructive" in (spec.get("pre_tool_hooks") or []):
+            out_hits = scanDestructive(out)
+            if out_hits:
+                _alertBlocked(f"block_destructive: executor output shows destructive command(s) {out_hits}")
+        return {"ok": proc.returncode == 0, "returncode": proc.returncode,
+                "stdout": out, "stderr": proc.stderr or "",
+                "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+    except subprocess.TimeoutExpired:
+        LOG.error("Claude timed out after %ss", timeout)
+        return {"ok": False, "returncode": -1, "stdout": "", "stderr": f"TIMEOUT after {timeout}s",
+                "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+    except Exception as e:  # noqa: BLE001
+        LOG.error("Claude failed: %s", e)
+        return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
+                "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
