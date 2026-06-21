@@ -55,6 +55,7 @@ class TaskState:
                 "is_self_referential": False,
                 "self_ref_branch": None,
                 "subtask_seq": 0,
+                "universe": None,
             },
             "plan": {"architect_design_doc": None, "subtasks": []},
             "adversary_reviews": [],
@@ -152,6 +153,10 @@ class TaskState:
         self.meta["is_self_referential"] = True
         if branch:
             self.meta["self_ref_branch"] = branch
+        self.save()
+
+    def setUniverse(self, universe: dict) -> None:
+        self.meta["universe"] = universe
         self.save()
 
     def recordVerify(self, subtask_id: str, result: dict) -> Optional[dict[str, Any]]:

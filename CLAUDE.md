@@ -119,6 +119,18 @@ plan editing. **Adversary is still a stub** (auto-approves; Phase 2 → GPT-5.5
 via chatgpt.com CDP). Layers 1/2 not built. Everything reads config from
 `C:\supercritical\.env` — never hardcode secrets.
 
+## Self-Improvement Philosophy
+
+When 9to5 runs on itself, it operates with one principle: improve indiscriminately. No numerical targets. No fixed feature list. No "add 5 features" goals. Instead: hunt bugs, strengthen error handling, refactor weak areas, improve code quality, add missing tests, tighten the orchestration loop, improve Obsidian write reliability, make Discord embeds richer, improve Ollama prompt quality — whatever is most impactful at each moment based on what the codebase actually needs. Keep going instrumentally until the time horizon ends. The measure of success is not a checklist completed but a codebase that is meaningfully better than when the run started.
+
+## Universe-constrained execution
+Every task carries a **universe** in `meta.universe` (extracted during goal elaboration):
+`description`, `allowed_paths` (files/folders in scope), `allowed_to_expand_to`
+(dependencies that may need touching), `hard_boundaries` (files that must NEVER be
+touched). The `self_modification_guard` PreToolUse hook blocks edits to anything in
+`hard_boundaries` (read dynamically from task meta). 9to5 operates with full
+indiscriminate intensity *within* its universe and never steps outside it.
+
 ## Conventions
 `ALL_CAPS` module constants, `snake_case` variables, `camelCase` functions,
 `pathlib.Path` everywhere (never `os.path`).

@@ -2,7 +2,9 @@
 
 Called after every subtask with the executor output plus the full task state.
 Returns a decision dict; the Orchestrator applies any mutation and logs the diff
-to ``replan-log.md``.
+to ``replan-log.md``. Internalizes the self-improvement philosophy: the question
+is not "what is next on the list" but "what is the highest-impact thing to do
+right now given what we just learned".
 """
 from __future__ import annotations
 
@@ -16,30 +18,23 @@ LOG = config.getLogger("replanner")
 _OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
 
 REPLANNER_SYSTEM = (
-    "You are the Replanner for 9TO5. Given the goal, the current subtask list, "
-    "the subtask that just finished, and its executor output, decide whether the remaining "
-    "plan should change. Prefer keeping the plan stable; only mutate when the output clearly "
-    "reveals a missing or obsolete step. "
-    "CRITICAL: honor the goal's stated constraints. Never add steps that install "
-    "dependencies, create virtualenvs, or use tools the goal forbids -- e.g. if the goal says "
-    "'standard library only', do NOT add a 'pip install' or 'add pytest' step. "
-    "Do NOT add subtasks to FIX a failed verification -- the executor already retries failures "
-    "automatically. Only add a subtask for genuinely MISSING scope, and keep the total tiny. "
-    "Verify commands must use ONLY the Python standard library (no pycodestyle/pytest/etc). "
-    "Strongly prefer action 'keep'. "
-    'Respond with JSON ONLY in this exact shape: '
-    '{"action": "keep" | "mutate", '
-    '"add": [{"title": "...", "description": "...", '
-    '"verify": {"cmd": "<shell command run in the work dir>", "expect": "exit_zero"}}], '
-    '"remove": ["st-00X"], "reason": "..."}. '
-    "Every added subtask MUST include a verify block; expect is one of "
-    "exit_zero | stdout_contains:<text> | stdout_regex:<pattern>. Make verify commands "
-    "PORTABLE: prefer `python -c \"...\"`; never use bash-only syntax such as <(...) or "
-    "`echo -n` (the host shell is Windows cmd.exe)."
+    "You are the Replanner for 9TO5. After each subtask, decide whether the remaining plan should "
+    "change. Frame EVERY decision as: what is the HIGHEST-IMPACT thing to do right now given what we "
+    "just learned -- NOT 'what is next on a list'. Prefer keeping the plan stable; only mutate when the "
+    "output clearly reveals a missing, obsolete, or newly-discovered higher-impact step. "
+    "Honor the goal's constraints (e.g. 'standard library only' => no installs). Do NOT add subtasks to "
+    "FIX a failed verification (the executor already retries). Keep the total small. "
+    'Respond with JSON ONLY: {"action": "keep" | "mutate", "add": [{"title": "...", "description": "...", '
+    '"verify": {"cmd": "python <ABSOLUTE path>", "expect": "exit_zero"}}], "remove": ["st-00X"], '
+    '"reason": "..."}. Every added verify must be BEHAVIORAL with ABSOLUTE paths: '
+    "'python <abs>' (exit_zero), 'python <abs>' (stdout_contains:<a certain string>), or an "
+    "os.path.getsize non-empty check. NEVER import a project module or guess an internal symbol; "
+    "NEVER use grep/cat/test/findstr/type."
 )
 
 
-def replan(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, executor_output: str) -> dict:
+def replan(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, executor_output: str,
+           self_referential: bool = False) -> dict:
     """Return the replan decision dict (always well-formed)."""
     brief = [{k: s.get(k) for k in ("subtask_id", "title", "status")} for s in subtasks]
     user = (
@@ -49,13 +44,14 @@ def replan(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, execu
         f"Executor output (truncated):\n{(executor_output or '')[:2000]}\n\n"
         "Return the replan JSON."
     )
+    system = REPLANNER_SYSTEM
+    if self_referential:
+        # self-improvement runs replan by impact, not by checklist
+        system = config.SELF_IMPROVEMENT_PHILOSOPHY + "\n\n" + REPLANNER_SYSTEM
     try:
         resp = _OLLAMA.chat(
             model=config.OLLAMA_MODEL,
-            messages=[
-                {"role": "system", "content": REPLANNER_SYSTEM},
-                {"role": "user", "content": user},
-            ],
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             format="json",
         )
         data = json.loads(resp["message"]["content"])

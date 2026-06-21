@@ -194,16 +194,29 @@ def selfModificationGuard(data):
         file_path = (data.get("tool_input", {}) or {}).get("file_path", "") or ""
         from state.task import TaskState
         state = TaskState.loadLatest()
-        if state is None or not state.meta.get("is_self_referential"):
+        if state is None:
             sys.exit(0)
-        protected = (config.CORE_PROTECTED_FILES if config
-                     else ("orchestrator.py", "main.py", "agents/hooks.py", "config.py"))
+        # Hard boundaries are read DYNAMICALLY from the task's universe (set at /goal time).
+        universe = state.meta.get("universe") or {}
+        boundaries = [str(b) for b in (universe.get("hard_boundaries") or []) if b]
+        # self-referential runs always protect the core files that run the loop (safety floor)
+        if state.meta.get("is_self_referential"):
+            core = list(getattr(config, "CORE_PROTECTED_FILES", ()) or ()) if config else \
+                ["orchestrator.py", "main.py", "agents/hooks.py", "config.py"]
+            for c in core:
+                if c not in boundaries:
+                    boundaries.append(c)
+        if not boundaries:
+            sys.exit(0)
         norm = file_path.replace("/", "\\").lower()
-        for core in protected:
-            core_norm = core.replace("/", "\\").lower()
-            if norm == core_norm or norm.endswith("\\" + core_norm):
-                reason = (f"self_modification_guard: BLOCKED edit to core file {file_path} during a "
-                          f"self-referential run. Edit other files or describe the change for review.")
+        for b in boundaries:
+            bn = b.replace("/", "\\").lower().strip("\\")
+            if not bn:
+                continue
+            # match the exact file, a file under a boundary dir, or a path ending in the boundary
+            if norm == bn or norm.endswith("\\" + bn) or ("\\" + bn + "\\") in norm:
+                reason = (f"self_modification_guard: BLOCKED edit to {file_path} -- it is a HARD BOUNDARY "
+                          f"of this task's universe. Stay inside the allowed scope.")
                 try:
                     import notifications.discord_bot as discord
                     discord.sendBlocked(reason)

@@ -159,6 +159,11 @@ def main() -> int:
     state.setElaboratedGoal(elaborated)
     print("\n===== ELABORATED GOAL =====\n" + elaborated + "\n===========================\n")
 
+    universe = elaborator.extractUniverse(goal, elaborated, work_dir)
+    state.setUniverse(universe)
+    LOG.info("Universe: %d allowed_paths, hard_boundaries=%s",
+             len(universe.get("allowed_paths", [])), universe.get("hard_boundaries"))
+
     if not args.auto_approve:
         ans = input("Approve elaboration? [Y / edit / n] ").strip().lower()
         if ans in {"n", "no"}:

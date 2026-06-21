@@ -130,6 +130,18 @@ AVAILABLE_POST_HOOKS: tuple[str, ...] = ("write_obsidian", "discord_notify", "lo
 # architecture, and guard the core files that run the very loop executing it.
 CORE_PROTECTED_FILES: tuple[str, ...] = ("orchestrator.py", "main.py", "agents/hooks.py", "config.py")
 SELF_REF_BRANCH_PREFIX: str = "sc/"
+# Files/dirs a run must NEVER touch unless the goal's universe explicitly allows.
+UNIVERSE_DEFAULT_HARD_BOUNDARIES: tuple[str, ...] = (".env", ".git", "venv", "state/tasks")
+
+SELF_IMPROVEMENT_PHILOSOPHY: str = (
+    "When 9to5 runs on itself, it operates with one principle: improve indiscriminately. No numerical "
+    "targets. No fixed feature list. No \"add 5 features\" goals. Instead: hunt bugs, strengthen error "
+    "handling, refactor weak areas, improve code quality, add missing tests, tighten the orchestration "
+    "loop, improve Obsidian write reliability, make Discord embeds richer, improve Ollama prompt quality "
+    "-- whatever is most impactful at each moment based on what the codebase actually needs. Keep going "
+    "instrumentally until the time horizon ends. The measure of success is not a checklist completed but "
+    "a codebase that is meaningfully better than when the run started."
+)
 ARCHITECTURE_BRIEF: str = (
     "## 9to5 architecture (you are operating ON 9to5 itself)\n"
     "9to5 is an autonomous orchestrator: the BRAIN is local Ollama qwen2.5:7b (it authors JSON "
