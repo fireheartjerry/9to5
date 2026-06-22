@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import config
+from notifications import branding
 from notifications import commands
 from notifications import discord_bot as discord
 from state.task import TaskState
@@ -135,7 +136,7 @@ class DiscordDashboard:
         self.event(f"run started · mode `{state.meta.get('control_mode', 'watch')}`")
         embed = self._embed(state, phase)
         with self._send_lock:
-            self.message_id = discord.createMessage(embed)
+            self.message_id = discord.createMessage(embed, components=branding.controlPanelRow())
             if self.message_id:
                 discord.pinMessage(self.message_id)
                 LOG.info("Dashboard message %s created + pinned", self.message_id)
@@ -153,15 +154,16 @@ class DiscordDashboard:
             self.event(note)
         embed = self._embed(state, phase)
         with self._send_lock:
+            row = branding.controlPanelRow()
             if self.message_id:
-                ok = discord.editMessage(self.message_id, embed)
-                if not ok and not self._recreated:   # dashboard likely deleted -> recreate ONCE
+                ok = discord.editMessage(self.message_id, embed, components=row)
+                if not ok and not self._recreated:
                     self._recreated = True
-                    self.message_id = discord.createMessage(embed)
+                    self.message_id = discord.createMessage(embed, components=row)
                     if self.message_id:
                         discord.pinMessage(self.message_id)
             else:
-                self.message_id = discord.createMessage(embed)
+                self.message_id = discord.createMessage(embed, components=row)
                 if self.message_id:
                     discord.pinMessage(self.message_id)
 
