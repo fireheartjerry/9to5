@@ -91,7 +91,8 @@ def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
     import ast
     if not isinstance(verify, dict):
         return None
-    cmd = (verify.get("cmd") or "").strip()
+    cmd_raw = verify.get("cmd")
+    cmd = cmd_raw.strip() if isinstance(cmd_raw, str) else ""   # brain may emit a non-string cmd
     if not cmd:
         return None
     m = re.match(r"""(?:py|python|python3)\s+-c\s+(['"])(.*)\1\s*$""", cmd, re.DOTALL)
@@ -240,7 +241,8 @@ def isStrictVerify(verify: Optional[dict]) -> bool:
 
 
 def _evaluate(expect: str, returncode: int, stdout: str) -> bool:
-    expect = (expect or config.VERIFY_DEFAULT_EXPECT).strip()
+    # coerce a non-string/empty expect (brain may emit an int/None) to the safe default
+    expect = (expect if isinstance(expect, str) else "").strip() or config.VERIFY_DEFAULT_EXPECT
     if expect == "exit_zero":
         return returncode == 0
     if expect.startswith("stdout_contains:"):

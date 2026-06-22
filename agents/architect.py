@@ -53,4 +53,10 @@ def authorArchitectPrompt(goal_elaborated: str, chat=None) -> str:
                       {"role": "user", "content": user}],
             options={"num_ctx": config.OLLAMA_NUM_CTX},
         )
-    return ((resp["message"]["content"] or "").strip() if resp else "")
+    # Safe extraction: the brain may return None / a non-dict message / non-string content.
+    try:
+        msg = resp.get("message") if isinstance(resp, dict) else None
+        content = msg.get("content") if isinstance(msg, dict) else None
+        return content.strip() if isinstance(content, str) else ""
+    except Exception:  # noqa: BLE001
+        return ""

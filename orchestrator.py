@@ -258,6 +258,28 @@ def _elapsedSince(started_at_iso: str) -> float:
         return 0.0
 
 
+def _chatText(resp) -> str:
+    """Safely pull resp['message']['content'] as text. '' for ANY malformed shape
+    (None resp, non-dict message, non-string content) -- the 7B brain emits all of these."""
+    try:
+        msg = resp.get("message") if isinstance(resp, dict) else None
+        content = msg.get("content") if isinstance(msg, dict) else None
+        return content if isinstance(content, str) else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _chatJson(resp):
+    """Safely parse the JSON body of a chat response. None on ANY shape/parse problem."""
+    text = _chatText(resp).strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class Orchestrator:
     def __init__(self, *, brain=None, obs=None, run_claude=None, replan=None, review=None) -> None:
         # Dependency seams (defaults = the real Layer-3/Layer-4 wiring). Injecting fakes here lets
@@ -436,11 +458,11 @@ class Orchestrator:
         )
         user = f"Specification:\n{goal_elaborated}\n\nArchitecture:\n{architect_doc[:4000]}\n\nReturn the plan JSON."
         resp = self._ollamaChat(system, user, want_json=True)
-        try:
-            subs = ((json.loads(resp["message"]["content"]) or {}).get("subtasks") or []) if resp else []
-        except Exception as e:  # noqa: BLE001
-            LOG.warning("plan parse failed (%s); single fallback subtask", e)
-            subs = []
+        parsed = _chatJson(resp)
+        raw = parsed.get("subtasks") if isinstance(parsed, dict) else None
+        # GUARANTEE list[dict]: the brain emits {"subtasks": 5}, [...non-dicts...], etc. Anything
+        # that isn't a dict-with-content is dropped so every downstream consumer is safe.
+        subs = [s for s in raw if isinstance(s, dict)] if isinstance(raw, list) else []
         if not subs:
             subs = [{"title": "Implement the goal", "description": goal_elaborated, "layer": 3,
                      "verify": None, "effort_level": "high"}]
@@ -450,6 +472,7 @@ class Orchestrator:
         """Self-check the plan BEFORE committing it: (1) deterministically collapse an
         over-decomposed trivial goal to one subtask (zero token cost), then (2) a brain
         self-critique pass that rewrites every verify into a safe behavioral shape."""
+        subs = [s for s in subs if isinstance(s, dict)] if isinstance(subs, list) else []
         if not subs:
             return subs
         if self._singleDeliverable(goal_elaborated) and len(subs) > 1:
@@ -473,18 +496,24 @@ class Orchestrator:
         )
         user = f"Goal:\n{goal_elaborated}\n\nPlan to fix:\n{json.dumps({'subtasks': subs})}\n\nReturn corrected JSON."
         resp = self._ollamaChat(system, user, want_json=True)
-        try:
-            fixed = (json.loads(resp["message"]["content"]) or {}).get("subtasks") if resp else None
-            if fixed and isinstance(fixed, list) and all(isinstance(x, dict) and x.get("title") for x in fixed):
-                LOG.info("plan self-check: brain corrected plan -> %d subtasks", len(fixed))
-                return fixed
-        except Exception as e:  # noqa: BLE001
-            LOG.warning("plan self-check parse failed (%s); keeping pre-critique plan", e)
+        parsed = _chatJson(resp)
+        fixed = parsed.get("subtasks") if isinstance(parsed, dict) else None
+        if isinstance(fixed, list) and fixed and all(isinstance(x, dict) and x.get("title") for x in fixed):
+            LOG.info("plan self-check: brain corrected plan -> %d subtasks", len(fixed))
+            return fixed
         return subs
+
+    @staticmethod
+    def _asList(v) -> list:
+        return v if isinstance(v, list) else []
+
+    @staticmethod
+    def _asText(v) -> str:
+        return v if isinstance(v, str) else ""
 
     def _sanitizeSpec(self, spec: dict, subtask: dict) -> dict:
         spec = spec if isinstance(spec, dict) else {}
-        eff = (spec.get("effort_level") or "default").lower()
+        eff = (self._asText(spec.get("effort_level")) or "default").lower()
         eff = eff if eff in config.EFFORT_FLAG_MAP else "default"
         # Capability-aware effort FLOOR: a strict compound (multi-requirement) verify means partial
         # work fails, so it deserves real reasoning even if the 7B brain emitted 'default'. Floor to
@@ -496,21 +525,24 @@ class Orchestrator:
             LOG.info("spec nudge: strict compound verify -> effort floored 'high' (brain emitted %s)",
                      spec.get("effort_level"))
             eff = "high"
-        skills = spec.get("skills_to_invoke") or []
-        pre = spec.get("pre_tool_hooks") or []
-        post = spec.get("post_tool_hooks") or []
+        # Coerce list/str fields defensively: the brain emits ints, dicts, and nulls here, and a
+        # non-iterable or non-string would crash the spec build (fuzz-proven).
+        skills = self._asList(spec.get("skills_to_invoke"))
+        pre = self._asList(spec.get("pre_tool_hooks"))
+        post = self._asList(spec.get("post_tool_hooks"))
         sub = spec.get("subagent")
-        # Dynamic workflow: only honored when a well-formed definition with phases is present.
         wf_def = spec.get("workflow_definition")
         use_wf = bool(spec.get("use_workflow")) and isinstance(wf_def, dict) and bool(wf_def.get("phases"))
+        prompt = (self._asText(spec.get("prompt")) or self._asText(subtask.get("description"))
+                  or self._asText(subtask.get("title")))
         return {
-            "prompt": (spec.get("prompt") or subtask.get("description") or subtask.get("title") or "").strip(),
-            "claude_md_inject": (spec.get("claude_md_inject") or "").strip(),
+            "prompt": prompt.strip(),
+            "claude_md_inject": self._asText(spec.get("claude_md_inject")).strip(),
             "effort_level": eff,
-            "skills_to_invoke": [s for s in skills if s in config.AVAILABLE_SKILLS],
-            "subagent": sub if sub in config.AVAILABLE_SUBAGENTS else None,
-            "pre_tool_hooks": [h for h in pre if h in config.AVAILABLE_PRE_HOOKS],
-            "post_tool_hooks": [h for h in post if h in config.AVAILABLE_POST_HOOKS],
+            "skills_to_invoke": [s for s in skills if isinstance(s, str) and s in config.AVAILABLE_SKILLS],
+            "subagent": sub if (isinstance(sub, str) and sub in config.AVAILABLE_SUBAGENTS) else None,
+            "pre_tool_hooks": [h for h in pre if isinstance(h, str) and h in config.AVAILABLE_PRE_HOOKS],
+            "post_tool_hooks": [h for h in post if isinstance(h, str) and h in config.AVAILABLE_POST_HOOKS],
             "use_workflow": use_wf,
             "workflow_definition": wf_def if use_wf else None,
         }
@@ -557,12 +589,8 @@ class Orchestrator:
         system_prompt = self._selfRefSystemPrompt(state) if state.meta.get("is_self_referential") \
             else ORCHESTRATOR_CONSTITUTION
         resp = self._ollamaChat(system_prompt, user, want_json=True)
-        try:
-            spec = json.loads(resp["message"]["content"]) if resp else {}
-        except Exception as e:  # noqa: BLE001
-            LOG.warning("invocation-spec parse failed (%s); using minimal spec", e)
-            spec = {}
-        return self._sanitizeSpec(spec, subtask)
+        spec = _chatJson(resp)
+        return self._sanitizeSpec(spec if isinstance(spec, dict) else {}, subtask)
 
     # ===================================================================
     # Control plane (poll Discord + drain ControlBus between steps)
