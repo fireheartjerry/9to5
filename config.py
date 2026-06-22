@@ -68,6 +68,20 @@ DISCORD_EMBED_TOTAL_MAX: int = 6000
 DISCORD_REST_TIMEOUT: int = 15      # seconds per Discord REST call
 DISCORD_RETRY_MAX: int = 2          # 429 retries for milestone sends (NOT the control poll)
 
+# --- Bot identity / branding ---
+VERSION: str = "1.0.0"
+BRAND_COLOR: int = 0x5865F2                      # 9TO5 brand (Discord blurple)
+BRAND_ICON_URL: str = os.getenv("BRAND_ICON_URL", "")
+
+# --- Bot UX behaviour ---
+COOLDOWN_RATE: int = 3                            # max mutating-command uses ...
+COOLDOWN_PER: float = 10.0                        # ... per this many seconds, per user
+PRESENCE_INTERVAL: int = 30                       # seconds between bot presence refreshes
+
+# --- Audit log (who issued which control command) ---
+AUDIT_LOG_PATH: Path = PROJECT_ROOT / "state" / "audit.jsonl"
+AUDIT_MAX_BYTES: int = 1_000_000                  # rotate audit.jsonl past ~1 MB
+
 # --- Obsidian Local REST API ---------------------------------------------
 OBSIDIAN_API_KEY: str = os.getenv("OBSIDIAN_API_KEY", "")
 OBSIDIAN_PORT: int = int(os.getenv("OBSIDIAN_PORT", "27124"))
