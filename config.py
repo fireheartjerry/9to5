@@ -148,6 +148,30 @@ CLAUDE_CLI_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_CLI_TIMEOUT_SECONDS", "6
 STATE_DIR: Path = PROJECT_ROOT / "state" / "tasks"
 CONTROL_DIR: Path = PROJECT_ROOT / "state" / "control"
 
+# --- Self-Improvement Engine (SIE) ---------------------------------------
+# Layer 0: the Experience Ledger -- a best-effort SQLite store of every run+subtask so
+# the brain can learn from its own history. Sits beside the task store; writes never
+# block a run. See docs/superpowers/specs/2026-06-22-self-improvement-engine-design.md.
+EXPERIENCE_DB_PATH: Path = PROJECT_ROOT / "state" / "experience.db"
+EXPERIENCE_LEDGER_ENABLED: bool = _envBool("EXPERIENCE_LEDGER_ENABLED", True)
+# Layer 1 retrieval (wired in a later phase): local embedding model + injection budget.
+EMBED_MODEL: str = os.getenv("EMBED_MODEL", "nomic-embed-text")
+RETRIEVAL_K: int = int(os.getenv("RETRIEVAL_K", "5"))
+RETRIEVAL_MAX_TOKENS: int = int(os.getenv("RETRIEVAL_MAX_TOKENS", "350"))
+# Eval harness (the spine): golden suite + the single fitness scalar's weights.
+EVAL_SUITE_DIR: Path = PROJECT_ROOT / "learning" / "eval_suite"
+EVAL_FITNESS_WEIGHTS: dict[str, float] = {
+    "first_pass_rate": 0.5,
+    "attempts": 0.2,        # applied to (1 - norm_attempts)
+    "cost": 0.15,           # applied to (1 - norm_cost)
+    "plan_stability": 0.1,
+    "challenge_rate": 0.05,  # applied to (1 - challenge_rate)
+}
+# Global kill switch: revert the brain to the frozen base model + freeze all promotions.
+SIE_KILL_SWITCH: bool = _envBool("SIE_KILL_SWITCH", False)
+# The frozen base model tag; champion adapters are served under BRAIN_MODEL_TAG:vN.
+BRAIN_MODEL_TAG: str = os.getenv("BRAIN_MODEL_TAG", "9to5-brain")
+
 # --- Adversary trigger configuration -------------------------------------
 ADVERSARY_TRIGGER_PHRASES: tuple[str, ...] = (
     "i'm not sure",

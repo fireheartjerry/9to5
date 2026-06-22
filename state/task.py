@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import config
+from memory import experience
 
 # Serializes concurrent save() calls within this process so the temp-file
 # write + os.replace swap never interleave. os.replace itself is atomic at the
@@ -181,12 +182,30 @@ class TaskState:
     def replanLogRel(self) -> str:
         return f"{self.vaultTaskDir()}/replan-log.md"
 
+    # ---- Experience Ledger sinks (Layer 0; best-effort, never blocks) ----
+    def _ledgerRun(self) -> None:
+        """Mirror the run row into the SIE ledger. Swallows every error so a ledger
+        problem can never affect task execution."""
+        try:
+            experience.sync_run(self.data)
+        except Exception:  # noqa: BLE001 -- learning is best-effort
+            pass
+
+    def _ledgerSubtask(self, subtask_id: str) -> None:
+        try:
+            st = self.getSubtask(subtask_id)
+            if st is not None:
+                experience.sync_subtask(self.data, st)
+        except Exception:  # noqa: BLE001
+            pass
+
     # ---- mutation -------------------------------------------------------
     def setStatus(self, status: str, blocked_reason: Optional[str] = None) -> None:
         self.meta["status"] = status
         if blocked_reason is not None:
             self.meta["blocked_reason"] = blocked_reason
         self.save()
+        self._ledgerRun()
 
     def setElaboratedGoal(self, text: str) -> None:
         self.meta["goal_elaborated"] = text
@@ -221,7 +240,9 @@ class TaskState:
         self.save()
 
     def recordVerify(self, subtask_id: str, result: dict) -> Optional[dict[str, Any]]:
-        return self.updateSubtask(subtask_id, verify_result=result)
+        out = self.updateSubtask(subtask_id, verify_result=result)
+        self._ledgerSubtask(subtask_id)
+        return out
 
     def _nextSubtaskSeq(self) -> int:
         """Allocate a never-reused subtask number from a persisted counter.
@@ -287,6 +308,7 @@ class TaskState:
                "verdict": verdict, "note_ref": note_ref, "at": nowIso()}
         self.data["adversary_reviews"].append(rec)
         self.save()
+        self._ledgerSubtask(subtask_id)
         return rec
 
     def addNotification(self, kind: str, detail: str) -> dict[str, Any]:

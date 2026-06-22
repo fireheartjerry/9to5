@@ -1,0 +1,11 @@
+{
+  "id": "addtest-fitness",
+  "family": "add-test",
+  "goal": "Add a unit test asserting that learning.eval_harness.compute_fitness returns 1.0 for a perfect metric dict and 0.0 for a worst-case one.",
+  "verify": {
+    "cmd": "python -m unittest tests.test_eval_harness -v",
+    "expect": "exit_zero",
+    "held_out": true
+  },
+  "difficulty": "easy"
+}

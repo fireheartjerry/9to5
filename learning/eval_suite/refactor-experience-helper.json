@@ -1,0 +1,11 @@
+{
+  "id": "refactor-experience-helper",
+  "family": "refactor",
+  "goal": "Refactor memory.experience._j to reuse a single json.dumps call site without changing its observable behavior (None in -> None out; dict in -> JSON string).",
+  "verify": {
+    "cmd": "python -c \"from memory import experience as e; assert e._j(None) is None and e._j({'a':1})=='{\\\"a\\\": 1}'\"",
+    "expect": "exit_zero",
+    "held_out": true
+  },
+  "difficulty": "medium"
+}

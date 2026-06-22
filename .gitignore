@@ -5,6 +5,10 @@ logs/
 vault/
 state/tasks/
 state/control/
+# SIE Experience Ledger (runtime SQLite, accumulates per run)
+state/experience.db
+state/experience.db-wal
+state/experience.db-shm
 __pycache__/
 *.pyc
 .pytest_cache/

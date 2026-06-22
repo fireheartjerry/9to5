@@ -1,0 +1,12 @@
+{
+  "id": "bugfix-config-bool",
+  "family": "bugfix",
+  "goal": "Fix config._envBool so that the string ' TRUE ' (with surrounding whitespace and mixed case) is parsed as True.",
+  "verify": {
+    "cmd": "python -c \"import config; assert config._envBool.__module__=='config'\"",
+    "expect": "exit_zero",
+    "held_out": true,
+    "note": "Verify authored independently of the brain so the brain cannot game it."
+  },
+  "difficulty": "easy"
+}
