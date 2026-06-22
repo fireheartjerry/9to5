@@ -159,6 +159,11 @@ ADVERSARY_TRIGGER_PHRASES: tuple[str, ...] = (
     "ambiguous",
 )
 ADVERSARY_HEARTBEAT_EVERY: int = 3   # every 3rd subtask -> heartbeat review
+# Adversary "teeth": a 'challenged' verdict on a PASSED subtask triggers ONE bounded
+# remediation attempt (concerns injected; never downgrades the passing result), and a
+# 'challenged' pre-PR review HOLDS PR creation. Both default on; set False to keep advisory.
+ADVERSARY_REMEDIATION_ENABLED: bool = os.getenv("ADVERSARY_REMEDIATION", "1") != "0"
+ADVERSARY_PR_HOLD_ENABLED: bool = os.getenv("ADVERSARY_PR_HOLD", "1") != "0"
 MAX_SUBTASK_ATTEMPTS: int = 3        # max executor attempts per subtask (verify-retry)
 MAX_SUBTASKS: int = 8                # hard cap on plan size (anti-runaway / anti-livelock)
 

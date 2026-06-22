@@ -714,6 +714,58 @@ class Orchestrator:
         )
 
     # ===================================================================
+    # Adversary teeth -- bounded remediation + pre-PR hold
+    # ===================================================================
+    def _remediate(self, state: TaskState, subtask: dict, architect_doc: str, exec_cwd: str,
+                   concerns: list[str]) -> dict:
+        """ONE bounded extra executor attempt to address an adversary's concerns on a subtask that
+        ALREADY passed verification. Re-verifies; only keeps or improves -- a remediation that fails
+        to verify never downgrades the prior pass (the subtask stays done). Returns the verify_result."""
+        sid = subtask["subtask_id"]
+        feedback = ("The work PASSED its acceptance check, but an adversarial reviewer raised concerns. "
+                    "Address these WITHOUT breaking the passing verification:\n- " + "\n- ".join(concerns))
+        spec = self.authorInvocationSpec(state, subtask, architect_doc, feedback)
+        result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask)
+        vres = verifier.runVerification(subtask.get("verify"), exec_cwd, result)
+        with self._state_lock:
+            if vres.get("passed"):
+                state.recordVerify(sid, vres)   # adopt the still-passing post-remediation evidence
+            state.addNotification(
+                "adversary_remediation",
+                f"{sid}: remediation {'verified' if vres.get('passed') else 'did not verify (prior pass kept)'}")
+        LOG.info("Adversary remediation for %s -> %s", sid, "verified" if vres.get("passed") else "kept prior pass")
+        return vres
+
+    def _prePrAdversary(self, state: TaskState) -> dict:
+        """Pre-PR safety review: the adversary judges the whole run before a PR is opened. Best-effort
+        -- any failure approves (the reviewer must never block a run by erroring). Returns the verdict dict."""
+        try:
+            _t, reason = adversary.shouldTrigger("", 0, pre_pr=True)
+            summary = "\n".join(
+                f"- {s['subtask_id']} [{s['status']}] {s['title']}"
+                + (" (verify PASS)" if (s.get('verify_result') or {}).get('passed') else "")
+                for s in state.subtasks if s["status"] != "removed") or "(no subtasks)"
+            rv = self._review("Pre-PR safety review", reason, summary, ollama_chat=self._ollamaChat,
+                              goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
+            with self._state_lock:
+                state.addAdversaryReview("pre_pr", reason, rv["verdict"], None)
+            discord.sendEmbed(discord.adversaryTriggeredEmbed("Pre-PR review", reason, rv.get("verdict")))
+            return rv
+        except Exception as e:  # noqa: BLE001 -- never block a run on the reviewer itself
+            LOG.warning("pre-PR adversary review failed (%s); approving", e)
+            return {"verdict": "approved", "concerns": [], "stub": True}
+
+    @staticmethod
+    def _prGate(review: dict, auto_pr: bool) -> "tuple[bool, str]":
+        """Decide whether to create the PR. Returns (create, skip_reason)."""
+        if not auto_pr:
+            return False, "--no-pr"
+        if config.ADVERSARY_PR_HOLD_ENABLED and review.get("verdict") == "challenged":
+            concerns = "; ".join(review.get("concerns") or ["challenged"])
+            return False, f"adversary HOLD: {concerns}"[:300]
+        return True, ""
+
+    # ===================================================================
     # Phase 4 -- PR creation (best effort; skips gracefully)
     # ===================================================================
     def createPullRequest(self, state: TaskState, work_dir: str) -> dict:
@@ -865,6 +917,12 @@ class Orchestrator:
                     state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
                     self.obs.writeNote(state.subtaskReviewNoteRel(sid), self._reviewNote(subtask, reason, rv, combined))
                     state.addAdversaryReview(sid, reason, rv["verdict"], state.subtaskReviewNoteRel(sid))
+                # TEETH: a challenged verdict on a PASSED subtask earns ONE bounded remediation
+                # attempt with the concerns injected. Never downgrades the passing result.
+                if (config.ADVERSARY_REMEDIATION_ENABLED and final == "done"
+                        and rv.get("verdict") == "challenged" and rv.get("concerns")):
+                    dashboard.update(state, "executing", f"{sid} adversary remediation (1 attempt)")
+                    self._remediate(state, subtask, architect_doc, exec_cwd, rv["concerns"])
 
             # Replan ONLY after a subtask that PASSED. Replanning after failures is the
             # churn engine (fail -> add remediation -> fail -> add ...) that livelocks runs;
@@ -1178,7 +1236,15 @@ class Orchestrator:
 
             # --- Phase 4: PR + complete ---
             self._checkControl(state, bus, dashboard, gate="pre_pr")
-            pr = self.createPullRequest(state, work_dir) if auto_pr else {"skipped": True, "reason": "--no-pr"}
+            pr_review = self._prePrAdversary(state)
+            create_pr, skip_reason = self._prGate(pr_review, auto_pr)
+            if create_pr:
+                pr = self.createPullRequest(state, work_dir)
+            else:
+                pr = {"skipped": True, "reason": skip_reason}
+                if skip_reason.startswith("adversary HOLD"):
+                    dashboard.update(state, "executing", f"PR held by adversary: {skip_reason}")
+                    state.addNotification("pr_held", skip_reason)
             elapsed = _elapsedSince(state.meta["started_at"])
             done, total = state.progress()
             final_status = "done" if (total > 0 and done == total) else "partial"

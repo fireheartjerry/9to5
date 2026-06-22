@@ -124,6 +124,20 @@ class TestExecutionLoop(unittest.TestCase):
         orch.runExecutionLoop(st, "doc", str(self.dir), bus, mock.Mock(), parallelism=1)
         self.assertEqual(st.getSubtask("st-001")["status"], "done")
 
+    def test_challenged_verdict_triggers_one_bounded_remediation(self):
+        # a challenged verdict on a PASSED subtask earns exactly ONE extra executor attempt
+        st = self._state([_verify_pass()])
+        review = mock.Mock(return_value={"verdict": "challenged", "concerns": ["add error handling"],
+                                         "notes": "", "stub": False, "trigger_reason": "forced"})
+        orch = self._orch(review=review)
+        with mock.patch("orchestrator.adversary.shouldTrigger", return_value=(True, "forced")):
+            bus = ControlBus(st.task_id)
+            orch.runExecutionLoop(st, "doc", str(self.dir), bus, mock.Mock(), parallelism=1)
+        self.assertEqual(st.getSubtask("st-001")["status"], "done")
+        self.assertEqual(self.run_claude_calls, ["st-001", "st-001"])   # original + 1 remediation only
+        kinds = [n["kind"] for n in st.data["notifications"]]
+        self.assertIn("adversary_remediation", kinds)
+
     def test_adversary_trigger_does_not_fail_a_passed_subtask(self):
         # force the adversary to fire and CHALLENGE; the subtask still PASSED verification,
         # so its committed status must remain done (the verdict never corrupts the result).
