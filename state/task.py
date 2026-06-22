@@ -103,6 +103,15 @@ class TaskState:
         p = config.STATE_DIR / f"{task_id}.json"
         return cls(json.loads(p.read_text(encoding="utf-8")))
 
+    @classmethod
+    def loadSafe(cls, task_id: str) -> Optional["TaskState"]:
+        """Like ``load`` but returns None for a missing/corrupt file instead of raising,
+        so callers (e.g. the Discord /run command) can show a clean message."""
+        try:
+            return cls.load(task_id)
+        except Exception:  # noqa: BLE001 -- missing/corrupt => None
+            return None
+
     _TERMINAL = ("done", "complete", "aborted", "partial", "blocked", "failed")
 
     @classmethod

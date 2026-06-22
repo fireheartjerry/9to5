@@ -231,7 +231,10 @@ def registerSlashCommands(tree: "app_commands.CommandTree", client: "discord.Cli
         await interaction.response.defer(ephemeral=True)
         if not work_launcher.taskExists(task_id):
             return await interaction.followup.send(f"❌ No such task `{task_id}`.", ephemeral=True)
-        state = TaskState.load(task_id)
+        state = TaskState.loadSafe(task_id)
+        if state is None:
+            return await interaction.followup.send(f"❌ Task `{task_id}` exists but its state file is "
+                                                   "unreadable (corrupt JSON).", ephemeral=True)
         await interaction.followup.send(embed=_embed(branding.runEmbed(state)), ephemeral=True)
 
     @tree.command(name="resume", description="Resume a paused run, or resume a prior run by id")

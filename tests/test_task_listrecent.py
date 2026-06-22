@@ -24,6 +24,15 @@ class TestListRecent(unittest.TestCase):
             "meta": {"status": status, "goal_raw": "goal " + tid, "started_at": started},
             "plan": {"subtasks": subs}}), encoding="utf-8")
 
+    def test_load_safe_returns_none_on_corrupt_or_missing(self):
+        (self.dir / "good.json").write_text(
+            '{"task_id": "good", "meta": {}, "plan": {"subtasks": []}}', encoding="utf-8")
+        (self.dir / "bad.json").write_text("{broken", encoding="utf-8")
+        with mock.patch.object(config, "STATE_DIR", self.dir):
+            self.assertIsNotNone(TaskState.loadSafe("good"))
+            self.assertIsNone(TaskState.loadSafe("bad"))
+            self.assertIsNone(TaskState.loadSafe("missing"))
+
     def test_iter_stored_skips_corrupt(self):
         self._w("ok.json", "ok1", "done", "2026-06-22T08:00:00+00:00", [])
         (self.dir / "broken.json").write_text("{not json", encoding="utf-8")

@@ -5,11 +5,16 @@ Each subtask carries a ``verify`` block authored by the Orchestrator brain:
     {"cmd": "python -m taskcli --help", "expect": "exit_zero"}
 
 ``expect`` is one of:
-  * ``exit_zero``                -- the command returned exit code 0
-  * ``stdout_contains:<text>``   -- <text> appears in stdout
-  * ``stdout_regex:<pattern>``   -- <pattern> matches stdout (re.search)
+  * ``exit_zero``                       -- the command returned exit code 0
+  * ``stdout_contains:<text>``          -- <text> appears in stdout
+  * ``stdout_regex:<pattern>``          -- <pattern> matches stdout (re.search)
+  * ``stdout_contains_all:<a>||<b>``    -- EVERY ``||``-separated needle appears (compound)
+  * ``stdout_regex_all:<p1>||<p2>``     -- EVERY ``||``-separated pattern matches (compound)
 
-If ``cmd`` is null/empty the gate falls back to "the executor process exited 0".
+The compound forms let one verify assert all N deliverables of a multi-requirement
+goal, so a subtask that did 1 of N can't slip through. An unknown ``expect`` falls
+back to ``exit_zero``. If ``cmd`` is null/empty the gate falls back to "the executor
+process exited 0".
 The command is run deterministically in the subtask's working directory; this
 module never asks the model anything -- it only executes and compares.
 """
