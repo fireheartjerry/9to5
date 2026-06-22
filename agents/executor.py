@@ -163,9 +163,11 @@ def effortFlag(effort_level: str) -> Optional[str]:
 # here, in plumbing we control (deterministic, always-on in autonomous mode).
 # Match destructive commands at a COMMAND POSITION (start of line, or after a shell separator)
 # with word boundaries -- so benign prose like "format the output" or "run rm later" never blocks.
+# An optional sudo/doas privilege prefix is consumed so `sudo rm -rf /` is still caught at command
+# position (this only ADDS matches over already-destructive commands -- no new false positives).
 _DESTRUCTIVE_RE = re.compile(
-    r"(?:^|[\n;&|`]\s*)(rm\s+-[rf]{2}\b|rmdir\s+/s\b|del\s+/[fsq]\b|format\s+[a-z]:|drop\s+table\b|"
-    r"git\s+push\s+(?:--force\b|-f\b)|mkfs\b|:\(\)\s*\{|>\s*/dev/sd[a-z])",
+    r"(?:^|[\n;&|`]\s*)(?:sudo\s+|doas\s+)?(rm\s+-[rf]{2}\b|rmdir\s+/s\b|del\s+/[fsq]\b|format\s+[a-z]:|"
+    r"drop\s+table\b|git\s+push\s+(?:--force\b|-f\b)|mkfs\b|:\(\)\s*\{|>\s*/dev/sd[a-z])",
     re.IGNORECASE | re.MULTILINE,
 )
 
