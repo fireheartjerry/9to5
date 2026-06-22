@@ -23,6 +23,7 @@ import config
 from agents import adversary, architect, clarifier, executor, replanner, verifier
 from control import AbortRun, ControlBus
 from memory.obsidian import ObsidianClient
+from notifications import audit
 from notifications import commands
 from notifications import discord_bot as discord
 from notifications.dashboard import DiscordDashboard
@@ -328,6 +329,8 @@ class Orchestrator:
             cmd = commands.decide(int(author_id) if author_id else None,
                                   m.get("author_is_bot", False), m.get("content", ""))
             if cmd:
+                if commands.COMMAND_REGISTRY.get(cmd.name, {}).get("mutating"):
+                    audit.record(author_id, cmd.name, state.task_id, "discord-poll")
                 commands.applyCommand(bus, state, cmd)
 
     def _applyOps(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard) -> None:
