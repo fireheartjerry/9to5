@@ -38,11 +38,16 @@ def elaborate(goal_raw: str) -> str:
 
 
 UNIVERSE_SYSTEM = (
-    "You define the operating UNIVERSE (scope boundary) for an autonomous engineering run. "
-    'Respond with JSON ONLY: {"description": "<one line>", "allowed_paths": ["<files/folders in '
-    'scope>"], "allowed_to_expand_to": ["<dependencies that may need touching>"], "hard_boundaries": '
-    '["<files/dirs that must NEVER be touched>"]}. allowed_paths = exactly what this goal should '
-    "create/edit. hard_boundaries = secrets, VCS internals, and unrelated code (e.g. .env, .git, venv). "
+    "You define the operating UNIVERSE for an autonomous engineering run. The universe is about "
+    "PRECISION, not permission: the agent may freely create or modify whatever files the goal needs "
+    "-- the universe just keeps its edits surgical and on-scope so they don't sprawl into unrelated "
+    "code. "
+    'Respond with JSON ONLY: {"description": "<one line>", "allowed_paths": ["<files/folders the work '
+    'is EXPECTED to focus on>"], "allowed_to_expand_to": ["<related code/deps it may also touch if '
+    'needed>"], "hard_boundaries": ["<files/dirs that must NEVER be touched>"]}. '
+    "allowed_paths = the expected focus area (a precision hint, NOT a hard allowlist -- creating or "
+    "editing other in-scope files to achieve the goal is fine). hard_boundaries = the ONLY hard stop: "
+    "secrets, VCS internals, virtualenvs, task state (e.g. .env, .git, venv, state/tasks). "
     "Use concrete absolute paths where known. Output ONLY the JSON."
 )
 

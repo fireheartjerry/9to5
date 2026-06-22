@@ -124,12 +124,16 @@ via chatgpt.com CDP). Layers 1/2 not built. Everything reads config from
 When 9to5 runs on itself, it operates with one principle: improve indiscriminately. No numerical targets. No fixed feature list. No "add 5 features" goals. Instead: hunt bugs, strengthen error handling, refactor weak areas, improve code quality, add missing tests, tighten the orchestration loop, improve Obsidian write reliability, make Discord embeds richer, improve Ollama prompt quality — whatever is most impactful at each moment based on what the codebase actually needs. Keep going instrumentally until the time horizon ends. The measure of success is not a checklist completed but a codebase that is meaningfully better than when the run started.
 
 ## Universe-constrained execution
-Every task carries a **universe** in `meta.universe` (extracted during goal elaboration):
-`description`, `allowed_paths` (files/folders in scope), `allowed_to_expand_to`
-(dependencies that may need touching), `hard_boundaries` (files that must NEVER be
-touched). The `self_modification_guard` PreToolUse hook blocks edits to anything in
-`hard_boundaries` (read dynamically from task meta). 9to5 operates with full
-indiscriminate intensity *within* its universe and never steps outside it.
+The universe is about **surgical precision, not permission**. 9to5 may freely create or
+modify whatever files a goal needs — it is never restricted to an allowlist of operations.
+The universe simply keeps its edits **surgical and on-scope** so they don't sprawl goofily
+into unrelated code. Every task carries a **universe** in `meta.universe` (extracted during
+goal elaboration): `description`, `allowed_paths` (the area work is *expected* to focus on —
+a precision hint, **not** a hard allowlist), `allowed_to_expand_to` (related code/deps it may
+also touch), `hard_boundaries` (the **only** hard stop — files/dirs that must NEVER be touched:
+secrets, VCS internals, virtualenvs, task state). The `self_modification_guard` PreToolUse hook
+blocks edits **only** to `hard_boundaries` (read dynamically from task meta) — everything else is
+fair game. 9to5 operates with full indiscriminate intensity, precise rather than caged.
 
 ## Conventions
 `ALL_CAPS` module constants, `snake_case` variables, `camelCase` functions,
