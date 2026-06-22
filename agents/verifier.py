@@ -274,7 +274,8 @@ def _evaluate(expect: str, returncode: int, stdout: str) -> bool:
 
 def runVerification(verify: Optional[dict], work_dir: str, executor_result: dict) -> dict:
     """Return a verify_result dict: {passed, cmd, expect, returncode, stdout, stderr}."""
-    cmd = (verify or {}).get("cmd") if verify else None
+    executor_result = executor_result if isinstance(executor_result, dict) else {}
+    cmd = (verify or {}).get("cmd") if isinstance(verify, dict) else None
     expect = (verify or {}).get("expect") or config.VERIFY_DEFAULT_EXPECT
 
     # No command authored -> trust the executor's own exit status.

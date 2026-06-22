@@ -269,6 +269,13 @@ def _chatText(resp) -> str:
         return ""
 
 
+def _resultText(result, key: str = "stdout") -> str:
+    """Pull a text field from an executor result, '' if the hands layer returned a non-string
+    (the executor contract is str, but a fake/buggy/fuzzed one may not honor it)."""
+    v = result.get(key) if isinstance(result, dict) else None
+    return v if isinstance(v, str) else ""
+
+
 def _chatJson(resp):
     """Safely parse the JSON body of a chat response. None on ANY shape/parse problem."""
     text = _chatText(resp).strip()
@@ -855,14 +862,18 @@ class Orchestrator:
             attempt_started = time.time()
             result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
                                         resume_session=resume_session)
+            if not isinstance(result, dict):   # a hands layer that returns junk must fail cleanly, not crash
+                result = {"ok": False, "returncode": -1, "stdout": "",
+                          "stderr": f"executor returned non-dict result: {type(result).__name__}"}
             # Carry a HEALTHY session forward so the next retry continues it (fix the failing
             # assertion, don't re-explore). If Claude itself errored, start fresh -- never resume
             # into a broken session. (is_error absent => json envelope off => no resume.)
             resume_session = result.get("session_id") if (
                 result.get("session_id") and not result.get("is_error")) else None
-            combined = result.get("stdout") or ""
-            if result.get("stderr"):
-                combined += "\n[stderr]\n" + result["stderr"]
+            combined = _resultText(result, "stdout")
+            stderr_text = _resultText(result, "stderr")
+            if stderr_text:
+                combined += "\n[stderr]\n" + stderr_text
 
             vresult = verifier.runVerification(verify_spec, exec_cwd, result)
             passed = bool(vresult["passed"])
@@ -1222,12 +1233,13 @@ class Orchestrator:
                 arch_prompt = architect.authorArchitectPrompt(elaborated, chat=self._ollamaChat)
 
                 def _runArchitect(effort: str):
-                    return self._run_claude({"prompt": arch_prompt, "effort_level": effort},
-                                            work_dir=self._execCwd(state, "architect", work_dir),
-                                            system_prompt=architect.ARCHITECT_SYSTEM_PROMPT, task_state=state)
+                    res = self._run_claude({"prompt": arch_prompt, "effort_level": effort},
+                                           work_dir=self._execCwd(state, "architect", work_dir),
+                                           system_prompt=architect.ARCHITECT_SYSTEM_PROMPT, task_state=state)
+                    return res if isinstance(res, dict) else {}   # tolerate a junk hands result
 
                 arch_res = _runArchitect("default")
-                architect_doc = (arch_res.get("stdout") or "").strip()
+                architect_doc = _resultText(arch_res).strip()
                 # GATE: an empty/failed architect phase silently degrades EVERY downstream spec
                 # (plan + invocation specs feed architect_doc). Retry once harder before trusting it.
                 if arch_res.get("is_error") or len(architect_doc) < 200:
@@ -1235,7 +1247,7 @@ class Orchestrator:
                                 arch_res.get("is_error"), len(architect_doc))
                     dashboard.update(state, "architecting", "architect output weak -> retrying harder")
                     arch_res = _runArchitect("xhigh")
-                    architect_doc = (arch_res.get("stdout") or "").strip() or architect_doc
+                    architect_doc = _resultText(arch_res).strip() or architect_doc
                 if len(architect_doc) < 200:
                     try:
                         discord.sendEmbed(discord.blockedEmbed(
