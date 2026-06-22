@@ -98,5 +98,69 @@ class TestSpawn(unittest.TestCase):
         self.assertEqual(kwargs["cwd"], str(config.PROJECT_ROOT))
 
 
+class TestResume(unittest.TestCase):
+    def test_build_resume_argv(self):
+        argv = wl.buildResumeArgv("abc-123")
+        self.assertEqual(argv[0], str(config.VENV_PYTHON))
+        self.assertEqual(argv[1], str(config.PROJECT_ROOT / "main.py"))
+        self.assertIn("--resume", argv)
+        self.assertIn("abc-123", argv)
+
+    def test_task_exists(self):
+        import tempfile
+        from pathlib import Path
+        d = Path(tempfile.mkdtemp())
+        (d / "tid.json").write_text("{}", encoding="utf-8")
+        with mock.patch.object(config, "STATE_DIR", d):
+            self.assertTrue(wl.taskExists("tid"))
+            self.assertFalse(wl.taskExists("nope"))
+
+    def test_spawn_resume_uses_argv(self):
+        fake = mock.Mock(pid=99)
+        with mock.patch.object(subprocess, "Popen", return_value=fake) as p, \
+                mock.patch("builtins.open", mock.mock_open()):
+            pid = wl.spawnResume("abc-123")
+        self.assertEqual(pid, 99)
+        self.assertEqual(p.call_args.args[0], wl.buildResumeArgv("abc-123"))
+
+
+class TestLaunchGlue(unittest.TestCase):
+    def test_validate_errors(self):
+        self.assertIn("❌", wl.launchOrError(wl.WorkRequest(goal="")))
+
+    def test_blocks_when_active(self):
+        from state.task import TaskState
+        st = TaskState.create("g", 1.0)
+        st.meta["status"] = "executing"
+        with mock.patch.object(wl, "activeRun", return_value=st):
+            self.assertIn("already active", wl.launchOrError(wl.WorkRequest(goal="x")))
+
+    def test_launch_confirms(self):
+        with mock.patch.object(wl, "activeRun", return_value=None), \
+                mock.patch.object(wl, "spawn", return_value=123), \
+                mock.patch.object(wl, "newestTaskSince", return_value="abcdef12"):
+            out = wl.launchOrError(wl.WorkRequest(goal="x"))
+        self.assertIn("Launched", out)
+        self.assertIn("abcdef12", out)
+
+    def test_resume_no_task(self):
+        with mock.patch.object(wl, "taskExists", return_value=False):
+            self.assertIn("No such task", wl.resumeOrError("nope"))
+
+    def test_resume_blocks_when_active(self):
+        from state.task import TaskState
+        st = TaskState.create("g", 1.0)
+        st.meta["status"] = "executing"
+        with mock.patch.object(wl, "taskExists", return_value=True), \
+                mock.patch.object(wl, "activeRun", return_value=st):
+            self.assertIn("already active", wl.resumeOrError("abc"))
+
+    def test_resume_spawns(self):
+        with mock.patch.object(wl, "taskExists", return_value=True), \
+                mock.patch.object(wl, "activeRun", return_value=None), \
+                mock.patch.object(wl, "spawnResume", return_value=5):
+            self.assertIn("Resuming", wl.resumeOrError("abc"))
+
+
 if __name__ == "__main__":
     unittest.main()

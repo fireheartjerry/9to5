@@ -7,6 +7,7 @@ from __future__ import annotations
 import math
 import os
 import subprocess
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -104,19 +105,81 @@ def newestTaskSince(ts: float) -> Optional[str]:
     return best_id
 
 
-def spawn(req: WorkRequest) -> int:
-    """Spawn main.py as a DETACHED child (survives a bot restart). Returns the child PID."""
+def _spawnArgv(argv: list[str], tag: str) -> int:
+    """Spawn argv as a DETACHED child (survives a bot restart). Returns the child PID."""
     config.LOG_PATH.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
-    logfile = open(config.LOG_PATH / f"work-{stamp}.log", "a", encoding="utf-8", errors="replace")
+    logfile = open(config.LOG_PATH / f"{tag}-{stamp}.log", "a", encoding="utf-8", errors="replace")
     creationflags = 0
     if os.name == "nt":
         creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     proc = subprocess.Popen(
-        buildArgv(req), cwd=str(config.PROJECT_ROOT),
+        argv, cwd=str(config.PROJECT_ROOT),
         stdin=subprocess.DEVNULL, stdout=logfile, stderr=subprocess.STDOUT,
         close_fds=True, creationflags=creationflags,
     )
-    logfile.close()  # child keeps its own duplicated handle; release the parent's copy
-    LOG.info("Spawned /work run pid=%s mode=%s hours=%s", proc.pid, req.mode, req.hours)
+    logfile.close()   # child keeps its own duplicated handle; release the parent's copy
+    LOG.info("Spawned %s pid=%s", tag, proc.pid)
     return proc.pid
+
+
+def spawn(req: WorkRequest) -> int:
+    return _spawnArgv(buildArgv(req), "work")
+
+
+def buildResumeArgv(task_id: str) -> list[str]:
+    return [str(config.VENV_PYTHON), str(config.PROJECT_ROOT / "main.py"), "--resume", task_id]
+
+
+def taskExists(task_id: str) -> bool:
+    return (config.STATE_DIR / f"{task_id}.json").exists()
+
+
+def spawnResume(task_id: str) -> int:
+    return _spawnArgv(buildResumeArgv(task_id), "resume")
+
+
+def launchOrError(req: WorkRequest) -> str:
+    """Validate -> block-if-active -> spawn -> confirm. Returns the user-facing message.
+    BLOCKING (Popen + up to ~10s poll); async callers must run via asyncio.to_thread."""
+    errs = validate(req)
+    if errs:
+        return "❌ " + "  ".join(errs)
+    active = activeRun()
+    if active is not None:
+        return (f"⛔ A run is already active (`{active.task_id[:8]}` · "
+                f"`{active.meta.get('status')}`). Abort it first.")
+    t0 = time.time()
+    try:
+        pid = spawn(req)
+    except Exception as e:  # noqa: BLE001
+        LOG.exception("spawn failed")
+        return f"❌ Launch failed: {e}"
+    task_id = None
+    for _ in range(20):
+        task_id = newestTaskSince(t0)
+        if task_id:
+            break
+        time.sleep(0.5)
+    web = f"http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/"
+    if task_id:
+        return (f"✅ Launched run `{task_id[:8]}` (pid {pid}) · mode `{req.mode}` · "
+                f"{req.hours}h · parallel {req.parallel}\n{web}")
+    return (f"✅ Launch started (pid {pid}) · mode `{req.mode}` · {req.hours}h. "
+            f"If no dashboard appears shortly, check `logs\\work-*.log`.\n{web}")
+
+
+def resumeOrError(task_id: str) -> str:
+    """Resume an existing task by id (block if a run is active). Returns the user message."""
+    if not taskExists(task_id):
+        return f"❌ No such task `{task_id}`."
+    active = activeRun()
+    if active is not None:
+        return f"⛔ A run is already active (`{active.task_id[:8]}`). Abort it first."
+    try:
+        pid = spawnResume(task_id)
+    except Exception as e:  # noqa: BLE001
+        LOG.exception("resume spawn failed")
+        return f"❌ Resume failed: {e}"
+    web = f"http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/"
+    return f"♻️ Resuming `{task_id[:8]}` (pid {pid})\n{web}"
