@@ -15,6 +15,7 @@ module never asks the model anything -- it only executes and compares.
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -22,6 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 import config
+from agents.executor import _killProcessTree
 
 LOG = config.getLogger("verifier")
 
@@ -40,12 +42,28 @@ def _runShell(cmd: str, work_dir: str) -> subprocess.CompletedProcess:
     correct: cmd.exe handles Windows backslash paths AND nested quotes the way a
     human would type them. (bash would treat the backslashes in C:\\... as escapes
     and mangle the path.)
+
+    Uses Popen + CREATE_NEW_PROCESS_GROUP + tree-kill on timeout -- the SAME Windows
+    orphan bug the executor already fixes (f57855b): subprocess.run's timeout kills only
+    the cmd.exe launcher, leaking the python.exe grandchild, which keeps a file lock on the
+    very artifact the next retry must rewrite -> a phantom verify failure on attempt 2/3.
     """
     Path(work_dir).mkdir(parents=True, exist_ok=True)
+    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     # stdin=DEVNULL so a program that reads stdin gets EOF and exits instead of hanging to timeout.
-    return subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", cwd=work_dir, timeout=config.VERIFY_TIMEOUT_SECONDS,
-                          stdin=subprocess.DEVNULL)
+    proc = subprocess.Popen(cmd, shell=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+                            cwd=work_dir, creationflags=creationflags)
+    try:
+        out, err = proc.communicate(timeout=config.VERIFY_TIMEOUT_SECONDS)
+        return subprocess.CompletedProcess(cmd, proc.returncode, out or "", err or "")
+    except subprocess.TimeoutExpired:
+        _killProcessTree(proc.pid)   # walk + kill the whole tree so no orphan locks the artifact
+        try:
+            proc.communicate(timeout=10)
+        except Exception:  # noqa: BLE001
+            pass
+        raise   # runVerification's except TimeoutExpired turns this into a clean verify FAIL
 
 
 _VERIFY_STDLIB_OK = {

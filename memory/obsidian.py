@@ -26,13 +26,15 @@ _APPEND_LOCK = __import__("threading").Lock()  # serialize appendNote read-modif
 
 
 def writeClaudioMd(task_state, subtask: Optional[dict], additional_context: str = "",
-                   work_dir: Optional[str] = None) -> Path:
+                   work_dir: Optional[str] = None, executor_playbook: str = "") -> Path:
     """Write a fresh per-subtask CLAUDE.md to the working directory.
 
     Claude Code auto-reads CLAUDE.md at session start, so this is how the
     Orchestrator hands full, just-in-time context to the Executor instead of
     stuffing it all into the prompt string. ``additional_context`` is the
-    ``claude_md_inject`` field from the Ollama invocation spec.
+    ``claude_md_inject`` field from the Ollama invocation spec; ``executor_playbook``
+    is the deterministic role-scoped briefing (from ``agents/playbook.py``) -- it is
+    injected on EVERY attempt so the executor's expertise is never forgotten.
     """
     work_dir_path = Path(work_dir) if work_dir else config.PROJECT_ROOT
     work_dir_path.mkdir(parents=True, exist_ok=True)
@@ -61,6 +63,8 @@ def writeClaudioMd(task_state, subtask: Optional[dict], additional_context: str 
                 f"`{verify['cmd']}`  (expect: {verify.get('expect', 'exit_zero')})",
                 "",
             ]
+    if executor_playbook:
+        parts += [executor_playbook.strip(), ""]
     if additional_context:
         parts += ["## Orchestrator-injected context", additional_context.strip(), ""]
     parts += [
