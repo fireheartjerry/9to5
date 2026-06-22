@@ -1,0 +1,50 @@
+"""File-backed audit log: who issued which control command. JSON-lines at
+config.AUDIT_LOG_PATH, size-rotated. Best-effort -- never raises into a command."""
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from typing import Optional
+
+import config
+
+LOG = config.getLogger("audit")
+
+
+def record(user_id, action: str, task_id: Optional[str] = None, detail: str = "") -> None:
+    """Append one audit entry. Swallows all errors (audit must never break a command)."""
+    try:
+        path = config.AUDIT_LOG_PATH
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists() and path.stat().st_size > config.AUDIT_MAX_BYTES:
+            path.replace(path.with_name(path.name + ".1"))   # rotate (overwrites prior .1)
+        entry = {
+            "at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "user_id": str(user_id) if user_id is not None else None,
+            "action": action,
+            "task_id": task_id,
+            "detail": detail,
+        }
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("audit record failed: %s", e)
+
+
+def recent(n: int = 20) -> list[dict]:
+    """The last n audit entries (oldest-first within the window). [] on any error."""
+    try:
+        path = config.AUDIT_LOG_PATH
+        if not path.exists():
+            return []
+        lines = path.read_text(encoding="utf-8").splitlines()
+        out: list[dict] = []
+        for ln in lines[-n:]:
+            try:
+                out.append(json.loads(ln))
+            except Exception:  # noqa: BLE001
+                continue
+        return out
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("audit recent failed: %s", e)
+        return []
