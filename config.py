@@ -167,6 +167,12 @@ AVAILABLE_POST_HOOKS: tuple[str, ...] = ("write_obsidian", "discord_notify", "lo
 # so the executor's expertise never depends on what the 7B brain remembered to include.
 EXECUTOR_PLAYBOOK_ENABLED: bool = _envBool("EXECUTOR_PLAYBOOK_ENABLED", True)
 EXECUTOR_APPEND_SYSTEM_PROMPT: bool = _envBool("EXECUTOR_APPEND_SYSTEM_PROMPT", True)
+# Parse the structured --output-format json envelope (is_error/session_id/usage/cost) -- the
+# trustworthy success signal (headless claude exits nonzero for benign reasons) + unblocks resume.
+EXECUTOR_OUTPUT_JSON: bool = _envBool("EXECUTOR_OUTPUT_JSON", True)
+# Resume the SAME Claude session across a subtask's retries (--resume <session_id>) so attempt 2/3
+# fixes the failing assertion instead of re-exploring the repo from scratch.
+EXECUTOR_RESUME_RETRIES: bool = _envBool("EXECUTOR_RESUME_RETRIES", True)
 
 # --- Self-referential safety (9to5 modifying itself) ----------------------
 # When a task targets 9to5 itself: run on a dedicated git branch, inject the

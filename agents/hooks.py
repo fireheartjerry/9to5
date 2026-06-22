@@ -55,6 +55,26 @@ def _readEvent():
         return {}
 
 
+def _resolveState():
+    """Resolve the ACTIVE task for this hook: prefer the explicit id the executor exported
+    (NINE_TO_FIVE_TASK_ID) so under --parallel the guard reads the RIGHT task's boundaries;
+    fall back to loadLatest() only for a manual/standalone hook invocation. Never raises."""
+    try:
+        from state.task import TaskState
+    except Exception:
+        return None
+    tid = os.environ.get("NINE_TO_FIVE_TASK_ID")
+    if tid:
+        try:
+            return TaskState.load(tid)
+        except Exception:
+            pass
+    try:
+        return TaskState.loadLatest()
+    except Exception:
+        return None
+
+
 def blockDestructive(data):
     """PreToolUse: block destructive Bash commands by exiting 2.
 
@@ -115,10 +135,9 @@ def writeObsidian(data):
         file_path = tool_input.get("file_path", "")
 
         from datetime import datetime
-        from state.task import TaskState
         from memory.obsidian import ObsidianClient
 
-        state = TaskState.loadLatest()
+        state = _resolveState()
         if state is None:
             sys.exit(0)
 
@@ -127,14 +146,16 @@ def writeObsidian(data):
         except Exception:
             subtasks = []
 
-        sid = None
-        for st in subtasks:
-            try:
-                if st.get("status") == "in_progress":
-                    sid = st.get("subtask_id")
-                    break
-            except Exception:
-                continue
+        # Prefer the explicit subtask the executor exported; fall back to the first in-progress one.
+        sid = os.environ.get("NINE_TO_FIVE_SUBTASK_ID") or None
+        if not sid:
+            for st in subtasks:
+                try:
+                    if st.get("status") == "in_progress":
+                        sid = st.get("subtask_id")
+                        break
+                except Exception:
+                    continue
 
         if not sid:
             sys.exit(0)
@@ -204,8 +225,7 @@ def selfModificationGuard(data):
                 sys.exit(0)
         else:
             sys.exit(0)
-        from state.task import TaskState
-        state = TaskState.loadLatest()
+        state = _resolveState()
         if state is None:
             sys.exit(0)
         # Hard boundaries are read DYNAMICALLY from the task's universe (set at /goal time).

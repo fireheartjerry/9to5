@@ -699,10 +699,15 @@ class Orchestrator:
             f"### CLAUDE.md inject\n\n```\n{(spec.get('claude_md_inject') or '')[:1500]}\n```\n\n"
             f"### Prompt\n\n```\n{spec.get('prompt')}\n```\n\n"
         )
+        telem = ""
+        if result.get("session_id") or result.get("cost_usd") is not None:
+            telem = (f"- **Session:** `{result.get('session_id')}`  ·  **is_error:** {result.get('is_error')}"
+                     f"  ·  **cost:** ${result.get('cost_usd')}  ·  **turns:** {result.get('num_turns')}\n")
         return (
             f"# {subtask['subtask_id']} -- {subtask['title']}\n\n"
             f"- **Status:** {subtask['status']}\n"
-            f"- **Return code:** {result.get('returncode')}\n\n"
+            f"- **Return code:** {result.get('returncode')}\n"
+            f"{telem}\n"
             f"{verify_block}{spec_block}"
             f"## Executor (Claude Code CLI) output\n\n```\n{(result.get('stdout') or '').strip()}\n```\n\n"
             + (f"## stderr\n\n```\n{result['stderr'].strip()}\n```\n" if result.get("stderr") else "")
@@ -758,6 +763,7 @@ class Orchestrator:
         result = {"ok": False, "stdout": "", "stderr": "", "returncode": None}
         vresult: dict | None = None
         combined = ""
+        resume_session: str | None = None   # continue the SAME Claude session across retries
 
         while attempt < config.MAX_SUBTASK_ATTEMPTS and not passed:
             attempt += 1
@@ -775,7 +781,13 @@ class Orchestrator:
             dashboard.update(state, "executing", f"{sid} attempt {attempt} · effort {spec.get('effort_level')}",
                              effort=spec.get("effort_level"))
             attempt_started = time.time()
-            result = executor.runClaude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask)
+            result = executor.runClaude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
+                                        resume_session=resume_session)
+            # Carry a HEALTHY session forward so the next retry continues it (fix the failing
+            # assertion, don't re-explore). If Claude itself errored, start fresh -- never resume
+            # into a broken session. (is_error absent => json envelope off => no resume.)
+            resume_session = result.get("session_id") if (
+                result.get("session_id") and not result.get("is_error")) else None
             combined = result.get("stdout") or ""
             if result.get("stderr"):
                 combined += "\n[stderr]\n" + result["stderr"]
@@ -816,6 +828,7 @@ class Orchestrator:
                         "\n\n[ORCHESTRATOR ANSWERS YOUR QUESTIONS -- proceed now, do NOT ask again]\n"
                         + answer
                     )
+                    resume_session = None   # approach is changing -> start the next attempt fresh
             self._translateDiscord(bus)
             while bus.isPaused() and not bus.isAbort():   # honor !pause mid-subtask, not just between
                 dashboard.update(state, "paused", f"{sid} paused -- waiting for !resume")
@@ -1109,9 +1122,30 @@ class Orchestrator:
                 self._checkControl(state, bus, dashboard)
                 dashboard.update(state, "architecting", "authoring architecture")
                 arch_prompt = architect.authorArchitectPrompt(elaborated)
-                arch_res = executor.runClaude(arch_prompt, work_dir=self._execCwd(state, "architect", work_dir),
+
+                def _runArchitect(effort: str):
+                    return executor.runClaude({"prompt": arch_prompt, "effort_level": effort},
+                                              work_dir=self._execCwd(state, "architect", work_dir),
                                               system_prompt=architect.ARCHITECT_SYSTEM_PROMPT, task_state=state)
-                architect_doc = (arch_res.get("stdout") or "").strip() or "(architect produced no output)"
+
+                arch_res = _runArchitect("default")
+                architect_doc = (arch_res.get("stdout") or "").strip()
+                # GATE: an empty/failed architect phase silently degrades EVERY downstream spec
+                # (plan + invocation specs feed architect_doc). Retry once harder before trusting it.
+                if arch_res.get("is_error") or len(architect_doc) < 200:
+                    LOG.warning("architect output weak (is_error=%s, %d chars) -> retry at xhigh",
+                                arch_res.get("is_error"), len(architect_doc))
+                    dashboard.update(state, "architecting", "architect output weak -> retrying harder")
+                    arch_res = _runArchitect("xhigh")
+                    architect_doc = (arch_res.get("stdout") or "").strip() or architect_doc
+                if len(architect_doc) < 200:
+                    try:
+                        discord.sendEmbed(discord.blockedEmbed(
+                            f"Architect phase produced only {len(architect_doc)} chars — planning may be degraded"),
+                            content=discord.humanPing())
+                    except Exception:  # noqa: BLE001
+                        pass
+                    architect_doc = architect_doc or "(architect produced no usable output)"
                 self.obs.writeNote(state.architectNoteRel(), architect_doc)
                 state.setArchitectDoc(state.architectNoteRel())
                 discord.sendEmbed(discord.architectDoneEmbed(state.architectNoteRel()))

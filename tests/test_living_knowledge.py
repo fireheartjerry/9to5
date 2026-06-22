@@ -173,10 +173,61 @@ def test_spec_nudges_and_budget() -> None:
     check("replan accepts remaining_hours, returns well-formed", isinstance(d, dict) and "action" in d)
 
 
+def test_verifier_runs() -> None:
+    print("[verifier Popen rewrite still verifies]")
+    import tempfile
+    from agents import verifier
+    with tempfile.TemporaryDirectory() as td:
+        r = verifier.runVerification({"cmd": 'python -c "print(42)"', "expect": "stdout_contains:42"}, td, {})
+        check("stdout_contains passes via Popen path", r["passed"] is True)
+        r2 = verifier.runVerification({"cmd": "python -c \"import sys; sys.exit(3)\"", "expect": "exit_zero"}, td, {})
+        check("nonzero exit fails", r2["passed"] is False)
+
+
+def test_executor_io() -> None:
+    print("[executor JSON envelope + resume + env]")
+    import tempfile, subprocess, json as _json
+    from agents import executor
+    # _parseEnvelope: json -> (text, fields); plain/ malformed -> raw fallback
+    text, f = executor._parseEnvelope(_json.dumps(
+        {"type": "result", "result": "hello", "is_error": False, "session_id": "s1", "total_cost_usd": 0.02, "num_turns": 3}))
+    check("envelope text extracted", text == "hello")
+    check("envelope fields extracted", f["session_id"] == "s1" and f["is_error"] is False and f["cost_usd"] == 0.02)
+    t2, f2 = executor._parseEnvelope("just plain text")
+    check("non-json falls back to raw", t2 == "just plain text" and f2 == {})
+    # runClaude builds the right cmd + env (mock subprocess; save/restore the global Popen)
+    cap = {}
+    class _P:
+        def __init__(self, cmd, **kw): cap["cmd"] = cmd; cap["env"] = kw.get("env"); self.pid = 1; self.returncode = 0
+        def communicate(self, input=None, timeout=None):
+            return (_json.dumps({"type": "result", "result": "did it", "is_error": False, "session_id": "S9"}), "")
+    orig_popen, orig_launch = subprocess.Popen, executor._resolveClaudeLauncher
+    executor._resolveClaudeLauncher = lambda: ["claude"]
+    executor.subprocess.Popen = _P
+    try:
+        import types as _t
+        st = _t.SimpleNamespace(task_id="T1", meta={})
+        r = executor.runClaude({"prompt": "x", "effort_level": "high"}, work_dir=tempfile.gettempdir(),
+                               task_state=st, subtask={"subtask_id": "st-007", "title": "t", "description": "implement"},
+                               resume_session="SESS42")
+    finally:
+        executor.subprocess.Popen = orig_popen
+        executor._resolveClaudeLauncher = orig_launch
+    cmd = cap["cmd"]
+    check("cmd has --output-format json", "--output-format" in cmd and "json" in cmd)
+    check("cmd has --resume SESS42", "--resume" in cmd and "SESS42" in cmd)
+    check("env carries task id", (cap["env"] or {}).get("NINE_TO_FIVE_TASK_ID") == "T1")
+    check("env carries subtask id", (cap["env"] or {}).get("NINE_TO_FIVE_SUBTASK_ID") == "st-007")
+    check("result stdout = assistant text", r["stdout"] == "did it")
+    check("result carries session_id", r.get("session_id") == "S9")
+    check("ok derived from is_error", r["ok"] is True)
+
+
 def main() -> int:
     for t in (test_local_scan, test_unified_idempotent, test_compress_injection,
               test_injection_shared_cache, test_playbook, test_part_d_preserved,
-              test_dynamic_workflow_spec, test_spec_nudges_and_budget):
+              test_dynamic_workflow_spec, test_spec_nudges_and_budget,
+              test_verifier_runs, test_executor_io):
         t()
     print()
     if _FAILS:
