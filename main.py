@@ -150,11 +150,18 @@ def main() -> int:
     parser.add_argument("--health", action="store_true", help="Run environment health checks and exit.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Simulate a full run with no external services (offline; for testing).")
+    parser.add_argument("--e2e", action="store_true",
+                        help="Run the virtual-operator end-to-end test suite (a scripted 'human' "
+                             "drives full simulated runs through the real control surfaces) and exit.")
     args = parser.parse_args()
 
     if args.health:
         import health
         return 0 if health.runHealthChecks() else 1
+
+    if args.e2e:
+        from testing.e2e import main as e2eMain
+        return e2eMain()
 
     if args.dry_run:
         return _runDryRun(args)
