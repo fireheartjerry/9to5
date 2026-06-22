@@ -136,10 +136,10 @@ def runCommandBot() -> None:  # pragma: no cover -- long-lived gateway process
 
         @dpy.ui.button(label="Launch", style=dpy.ButtonStyle.success)
         async def _launch(self, interaction, button):  # noqa: ANN001
-            await interaction.response.defer(ephemeral=True)
-            reply = _launchOrError(self.req)
             for c in self.children:
                 c.disabled = True
+            await interaction.response.edit_message(content="🚀 Launching…", view=self)
+            reply = _launchOrError(self.req)
             await interaction.followup.send(reply[:MAX_REPLY_CHARS], ephemeral=True)
             self.stop()
 
@@ -211,14 +211,20 @@ def runCommandBot() -> None:  # pragma: no cover -- long-lived gateway process
 
     @client.event
     async def on_interaction(interaction: "dpy.Interaction") -> None:
+        # on_interaction fires for ALL interactions, in addition to the CommandTree (slash)
+        # and the View store (WorkSetupView). Only the raw blocked-embed buttons below have no
+        # View; everything else must be left to discord.py's own routing -- so gate BEFORE any await.
         if interaction.type != dpy.InteractionType.component:
             return
+        custom_id = (interaction.data or {}).get("custom_id", "")
+        if custom_id not in ("sc_abort", "sc_skip", "sc_answer"):
+            return  # View-owned (e.g. WorkSetupView) or unknown -> let discord.py route it
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=True, thinking=True)
             if not commands.isAuthorized(interaction.user.id):
                 await interaction.followup.send("Not authorized.", ephemeral=True)
                 return
-            reply = handleButton((interaction.data or {}).get("custom_id", ""))
+            reply = handleButton(custom_id)
             await interaction.followup.send(reply[:MAX_REPLY_CHARS], ephemeral=True)
         except Exception:  # noqa: BLE001
             LOG.exception("button interaction error")
