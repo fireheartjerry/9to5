@@ -20,6 +20,10 @@ learning/lessons.py(new)   L2 nightly consolidation → lessons rows + lessons.m
 learning/policy.py(new)    L4 contextual bandit over policy_arms
 learning/prompts.py(new)   versioned prompt registry (champion/challenger loader)
 prompts/*.md               externalized system prompts + metadata                      [new]
+learning/sie.py(new)       Self-Improvement Orchestrator: cadence ladder + budget governor
+                           + file-locked, resumable nightly/weekly/monthly tiers
+learning/safety.py(new)    enforce invariants I1-I6 (base immutability, no self-promotion,
+                           independent grading, monotone-or-rollback, boundaries, provenance)
 learning/promotion.py(new) champion/challenger gate (eval + proportion test + Thompson)
 learning/reflection.py(new) executor learning-summary: request build, parse, trust-check, route
 learning/reward.py(new)    composite reward + local logistic calibrator
@@ -245,6 +249,15 @@ cheap/high-leverage → research-grade; each ships independently behind a config
   (rank/prune/author `.claude` tools), `learning/meta_opt.py` (tune SIE knobs vs fitness),
   `learning/adapter_ops.py` (adapter souping + eval-suite rotation/anti-overfit). ✅ each lands behind its flag and must clear the harness + (for toolsmith) human approval.
 
+### Cross-cutting — Orchestrator + safety (land alongside the first phases)
+- **X1 — `learning/sie.py`:** cadence-ladder entry point (`--tier nightly|weekly|monthly`),
+  file-locked via the `ControlBus` pattern, idempotent/resumable, budget governor that
+  defers the deepest tier first. ✅ two concurrent invocations don't overlap; a killed job re-runs cleanly.
+- **X2 — `learning/safety.py`:** enforce invariants I1–I6 as hard assertions in the
+  promotion/training paths; wire the kill switch + `!stock`. ✅ `test_safety_invariants.py`
+  proves a brain-authored champion flip is rejected, a boundary write is blocked, and the
+  kill switch reverts to base.
+
 ## Testing strategy
 
 - **Offline-first:** every test runs without a live Ollama/GPU. Mock the Ollama client
@@ -260,6 +273,8 @@ cheap/high-leverage → research-grade; each ships independently behind a config
   (calibration + deferral threshold), `test_postmortem.py` (RCA → taxonomy),
   `test_knowledge_graph.py` (node/edge build + universe-scoped injection),
   `test_solution_cache.py` (warm-start hit + replay-verify gate),
+  `test_sie_scheduler.py` (lock + idempotent resume + budget deferral),
+  `test_safety_invariants.py` (I1–I6: no self-promotion, boundary block, kill switch),
   `test_dataset_gate.py` (dedup/decontam/scrub), `test_distill.py` (gold filter),
   `test_finetune.py` (Modelfile emission, trainer mocked).
 - **Regression guard:** Phase A/B must show **no** change to existing test outcomes

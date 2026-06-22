@@ -325,6 +325,29 @@ and can regress silently.
 9to5 schedules these itself during 9–5; `SELF_IMPROVEMENT_PHILOSOPHY` (`config.py:217`)
 already frames the intent — the ladder gives it a concrete, measurable agenda.
 
+### The Self-Improvement Orchestrator (the component that runs A→Z)
+One small coordinator (`learning/sie.py`) owns the cadence ladder so the rest of the
+system stays loosely coupled. It is **not** a new always-on daemon — it reuses the
+existing process model:
+- **Per-run tiers** (L0 capture, L1 retrieval, I reflection, J feedback) are *inline
+  hooks* fired from the existing orchestrator/executor/control paths — no scheduler needed.
+- **Nightly / weekly / monthly tiers** are *idempotent jobs* (`python -m learning.sie
+  --tier nightly|weekly|monthly`), each driven by 9to5 itself as a normal self-improvement
+  **goal** during a 9–5 window (the orchestrator already runs goals; the SIE just supplies
+  them) or by an OS scheduler if the host has one. Either way the entry point is the same.
+- **Concurrency & crash-safety:** each tier takes a file lock under `state/control/`
+  (reusing the `ControlBus` O_EXCL pattern) so two passes never overlap; every job is a
+  resumable transaction over the ledger (a half-finished consolidation or promotion can
+  re-run with no double-counting — writes are keyed and upsert).
+- **Budget governor:** the orchestrator enforces a per-day compute/time ceiling across
+  all tiers (so a LoRA cycle can't starve real work); when over budget it defers the
+  deepest tier first (months → weeks → days), never the cheap inline tiers.
+- **One status surface:** every tier reports into the same Discord/web dashboard and
+  Obsidian as a normal run, so the glass-box covers learning, not just task execution.
+
+This is the piece that makes "improve from A to Z, continuously" a single, observable,
+restartable loop rather than a pile of scripts.
+
 ## Governance / safety / alignment
 
 - **Champion/challenger + auto-rollback** for every prompt and adapter; all versioned in git.
@@ -343,6 +366,66 @@ already frames the intent — the ladder gives it a concrete, measurable agenda.
 - The existing `self_modification_guard` hook + `CORE_PROTECTED_FILES` (`config.py`)
   protect core files mid-run; in `gated` mode promotions require human `!approve`.
 - Every promotion/rollback/training run logged to Obsidian + a Discord embed, model card linked.
+
+## Alignment & safety — deep dive
+
+A system that rewrites its own prompts, policies, tools, and weights is exactly the kind
+that fails silently and confidently. This section is the spec's spine for *not* doing that.
+
+### Threat model (what actually goes wrong)
+1. **Verify gaming** — the brain authors trivially-passing verifies so anything "passes."
+2. **Reward gaming** — trajectories optimize the composite reward (cheap/fast/quiet)
+   rather than real quality.
+3. **Data poisoning via self-reports** — executor/teacher reflections (I/M) overstate
+   success and corrupt lessons/training.
+4. **Eval overfitting** — the system learns the static eval suite, so fitness rises while
+   real performance doesn't (the "all green numbers are a lie" failure).
+5. **Catastrophic forgetting** — a LoRA cycle improves new families but regresses old ones.
+6. **Scope creep / boundary violation** — self-improvement edits sprawl beyond the
+   task's `universe` or touch `hard_boundaries`.
+7. **Runaway training / cost** — deep tiers consume the day; adapters churn faster than
+   they can be validated.
+8. **Tool risk (P)** — self-authored skills/hooks expand the executor's powers unsafely.
+
+### Defense-in-depth (each threat → concrete guard already in the design)
+| Threat | Primary guard | Backstop |
+|---|---|---|
+| Verify gaming | Held-out, non-brain-authored verifies in the eval suite | Independent adversary + human spot-check |
+| Reward gaming | Reward calibrator anchored to eventual success | Eval harness uses outcomes the reward can't see |
+| Poisoned self-reports | Trust cross-check vs real verify + adversary (I) | Data-quality gate G; only `trusted=1` trains |
+| Eval overfitting | Suite rotation + meta-test split (R) | Drift detection on a *fresh* held-out slice |
+| Forgetting | Frozen base + replay set + KL anchor | Never-promote-on-regression gate |
+| Scope creep | `self_modification_guard` + `universe` boundaries | Surgical-diff review + Obsidian audit |
+| Runaway cost | Budget governor (defers deepest tier first) | Kill switch |
+| Tool risk (P) | `TOOLSMITH` default-off + human gate | Harness gate + new tools sandboxed first |
+
+### Invariants that must ALWAYS hold (testable assertions, enforced in code)
+- **I1 — Base immutability:** `qwen2.5-coder:7b` weights are never modified; only LoRA
+  adapters and external state change. (One command returns to stock.)
+- **I2 — No self-promotion:** the brain can *propose* a prompt/policy/adapter but can
+  **never** mark its own challenger `champion`; only a passing harness gate (and, in
+  `gated` mode, a human) can.
+- **I3 — Independent grading:** nothing the brain authored may be the sole judge of its
+  own success — the gate always includes a held-out, brain-blind signal.
+- **I4 — Monotone-or-rollback:** a promotion that later regresses the fitness series
+  auto-rolls back to the prior champion.
+- **I5 — Boundary inviolability:** SIE writes never touch `hard_boundaries` (secrets,
+  VCS internals, venvs, task state) regardless of goal.
+- **I6 — Provenance:** every lesson, training example, prompt, and adapter is traceable
+  to the runs that produced it (no orphan signal can enter training).
+
+### Human-in-the-loop checkpoints
+In `gated` mode, three boundaries require explicit `!approve`: promoting a prompt-set,
+promoting an adapter, and shipping a self-authored tool (P). In `watch` mode the first
+two auto-gate on the harness but a tool ship (P) **always** asks. The kill switch
+(`SIE_KILL_SWITCH`) and a Discord `!stock` command are the manual overrides.
+
+### Kill switch & rollback (formal)
+`SIE_KILL_SWITCH=1` (env or `!stock`) atomically: (a) repoints `BRAIN_MODEL_TAG` to the
+frozen base, (b) freezes all promotions and training jobs, (c) leaves capture (L0) and
+the audit trail running so the freeze itself is observable. Rollback of any single
+champion (prompt/policy/adapter) is a one-row state flip back to the prior champion —
+because every champion is versioned and the base never moved, rollback is O(1) and total.
 
 ## Risks & mitigations
 
