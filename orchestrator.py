@@ -475,6 +475,17 @@ class Orchestrator:
     def _sanitizeSpec(self, spec: dict, subtask: dict) -> dict:
         spec = spec if isinstance(spec, dict) else {}
         eff = (spec.get("effort_level") or "default").lower()
+        eff = eff if eff in config.EFFORT_FLAG_MAP else "default"
+        # Capability-aware effort FLOOR: a strict compound (multi-requirement) verify means partial
+        # work fails, so it deserves real reasoning even if the 7B brain emitted 'default'. Floor to
+        # 'high'. (We deliberately do NOT auto-add a subagent/skill here: 'security-reviewer' and
+        # '/architect-review' both route the executor to a READ-ONLY charter via playbook.classifyProfile,
+        # which would make a write-subtask refuse to edit -- the executor can still invoke a review
+        # sub-step itself when warranted.)
+        if eff in ("low", "default", "medium") and verifier.isStrictVerify(subtask.get("verify")):
+            LOG.info("spec nudge: strict compound verify -> effort floored 'high' (brain emitted %s)",
+                     spec.get("effort_level"))
+            eff = "high"
         skills = spec.get("skills_to_invoke") or []
         pre = spec.get("pre_tool_hooks") or []
         post = spec.get("post_tool_hooks") or []
@@ -485,7 +496,7 @@ class Orchestrator:
         return {
             "prompt": (spec.get("prompt") or subtask.get("description") or subtask.get("title") or "").strip(),
             "claude_md_inject": (spec.get("claude_md_inject") or "").strip(),
-            "effort_level": eff if eff in config.EFFORT_FLAG_MAP else "default",
+            "effort_level": eff,
             "skills_to_invoke": [s for s in skills if s in config.AVAILABLE_SKILLS],
             "subagent": sub if sub in config.AVAILABLE_SUBAGENTS else None,
             "pre_tool_hooks": [h for h in pre if h in config.AVAILABLE_PRE_HOOKS],
@@ -856,7 +867,8 @@ class Orchestrator:
         # the executor already retries failed subtasks up to MAX_SUBTASK_ATTEMPTS.
         if final == "done" and not self._singleDeliverable(state.meta.get("goal_elaborated", "")):
             decision = replanner.replan(state.meta["goal_elaborated"], state.subtasks, subtask, combined,
-                                        self_referential=bool(state.meta.get("is_self_referential")))
+                                        self_referential=bool(state.meta.get("is_self_referential")),
+                                        remaining_hours=self._remainingHours(state))
             if decision.get("action") == "mutate" and (decision.get("add") or decision.get("remove")):
                 dashboard.update(state, "replanning", f"replanning after {sid}")
                 with self._state_lock:
@@ -867,14 +879,18 @@ class Orchestrator:
 
     def _deadlinePassed(self, state: TaskState) -> bool:
         """True once the task's wall-clock deadline_at has passed (time-horizon enforcement)."""
+        return (self._remainingHours(state) or 1.0) <= 0.0
+
+    def _remainingHours(self, state: TaskState) -> "float | None":
+        """Hours until deadline_at (negative once passed); None if no/!parseable deadline."""
         deadline = state.meta.get("deadline_at")
         if not deadline:
-            return False
+            return None
         try:
             from datetime import datetime
-            return datetime.now().astimezone() >= datetime.fromisoformat(deadline)
+            return (datetime.fromisoformat(deadline) - datetime.now().astimezone()).total_seconds() / 3600.0
         except Exception:  # noqa: BLE001 -- a bad timestamp must never wedge the loop
-            return False
+            return None
 
     def runExecutionLoop(self, state: TaskState, architect_doc: str, work_dir: str,
                          bus: ControlBus, dashboard: DiscordDashboard, parallelism: int = 1) -> None:

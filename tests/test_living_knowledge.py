@@ -155,10 +155,28 @@ def test_dynamic_workflow_spec() -> None:
     check("flat prompt unaffected", flat == "just X")
 
 
+def test_spec_nudges_and_budget() -> None:
+    print("[effort floor + replanner budget]")
+    import orchestrator as orch
+    o = orch.Orchestrator()
+    strict = {"cmd": "python x.py", "expect": "stdout_contains_all:a||b||c"}
+    s1 = o._sanitizeSpec({"effort_level": "default"}, {"title": "t", "description": "d", "verify": strict})
+    check("strict verify floors default->high", s1["effort_level"] == "high")
+    s2 = o._sanitizeSpec({"effort_level": "xhigh"}, {"title": "t", "description": "d", "verify": strict})
+    check("strict verify does NOT lower xhigh", s2["effort_level"] == "xhigh")
+    loose = {"cmd": "python x.py", "expect": "exit_zero"}
+    s3 = o._sanitizeSpec({"effort_level": "default"}, {"title": "t", "description": "d", "verify": loose})
+    check("non-strict verify left at default", s3["effort_level"] == "default")
+    # replanner accepts the time budget and stays well-formed even under the ollama stub
+    from agents import replanner
+    d = replanner.replan("goal", [], {"subtask_id": "s", "title": "t"}, "out", remaining_hours=0.2)
+    check("replan accepts remaining_hours, returns well-formed", isinstance(d, dict) and "action" in d)
+
+
 def main() -> int:
     for t in (test_local_scan, test_unified_idempotent, test_compress_injection,
               test_injection_shared_cache, test_playbook, test_part_d_preserved,
-              test_dynamic_workflow_spec):
+              test_dynamic_workflow_spec, test_spec_nudges_and_budget):
         t()
     print()
     if _FAILS:

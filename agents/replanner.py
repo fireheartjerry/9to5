@@ -35,11 +35,19 @@ REPLANNER_SYSTEM = (
 
 
 def replan(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, executor_output: str,
-           self_referential: bool = False) -> dict:
+           self_referential: bool = False, remaining_hours: "float | None" = None) -> dict:
     """Return the replan decision dict (always well-formed)."""
     brief = [{k: s.get(k) for k in ("subtask_id", "title", "status")} for s in subtasks]
+    # Time-budget awareness: near the deadline, adding work just produces subtasks that never run
+    # (the execution loop stops at deadline_at). Tell the brain to wind down.
+    budget = ""
+    if remaining_hours is not None:
+        budget = (f"Time budget: ~{remaining_hours:.2f}h remain before the deadline. "
+                  + ("UNDER 30 MIN LEFT: prefer action='keep' and finalize; do NOT add subtasks.\n\n"
+                     if remaining_hours < 0.5 else "Only add a subtask if it clearly fits in the remaining time.\n\n"))
     user = (
         f"Goal:\n{goal_elaborated}\n\n"
+        f"{budget}"
         f"Current subtasks:\n{json.dumps(brief, indent=2)}\n\n"
         f"Just-finished: {last_subtask.get('subtask_id')} - {last_subtask.get('title')}\n"
         f"Executor output (truncated):\n{(executor_output or '')[:2000]}\n\n"
