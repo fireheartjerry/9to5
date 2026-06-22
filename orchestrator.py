@@ -831,27 +831,13 @@ class Orchestrator:
             if (state.getSubtask(sid) or {}).get("status") == "removed":
                 return "removed"
 
-        with self._state_lock:
-            note = self._subtaskNote(state, subtask, spec, result, vresult)
-            written = self.obs.writeNote(state.subtaskNoteRel(sid), note)
-            state.updateSubtask(sid, output_ref=written.get("rel_path"))
-
         if (state.getSubtask(sid) or {}).get("status") == "removed":
             return "removed"
 
-        # heartbeat off a STABLE terminal-subtask count, not the mutable loop/scheduler position
-        heartbeat_ordinal = sum(1 for s in state.subtasks if s["status"] in ("done", "failed", "removed")) + 1
-        triggered, reason = adversary.shouldTrigger(combined, heartbeat_ordinal, attempt)
-        if triggered:
-            rv = self._review(subtask["title"], reason, combined,
-                              ollama_chat=self._ollamaChat,
-                              goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
-            discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason, rv.get("verdict")))
-            with self._state_lock:
-                state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
-                self.obs.writeNote(state.subtaskReviewNoteRel(sid), self._reviewNote(subtask, reason, rv, combined))
-                state.addAdversaryReview(sid, reason, rv["verdict"], state.subtaskReviewNoteRel(sid))
-
+        # COMMIT the verified outcome FIRST -- it is the source of truth. Everything below
+        # (notes, adversary, replan, index) is best-effort enrichment that must never be able to
+        # change a verified result: it runs in a guard, because a crash here used to propagate to
+        # the caller's handler and flip a PASSED subtask to 'failed' (the poll/replan bug class).
         final = "done" if passed else "failed"
         with self._state_lock:
             state.updateSubtask(sid, status=final, completed_at=nowIso())
@@ -861,19 +847,43 @@ class Orchestrator:
             discord.sendEmbed(discord.subtaskFailedEmbed(sid, subtask["title"], vresult, attempt))
         dashboard.update(state, "executing", f"{sid} -> {final}")
 
-        # Replan ONLY after a subtask that PASSED. Replanning after failures is the
-        # churn engine (fail -> add remediation -> fail -> add ...) that livelocks runs;
-        # the executor already retries failed subtasks up to MAX_SUBTASK_ATTEMPTS.
-        if final == "done" and not self._singleDeliverable(state.meta.get("goal_elaborated", "")):
-            decision = self._replan(state.meta["goal_elaborated"], state.subtasks, subtask, combined,
-                                    self_referential=bool(state.meta.get("is_self_referential")),
-                                    remaining_hours=self._remainingHours(state))
-            if decision.get("action") == "mutate" and (decision.get("add") or decision.get("remove")):
-                dashboard.update(state, "replanning", f"replanning after {sid}")
+        try:
+            with self._state_lock:
+                note = self._subtaskNote(state, subtask, spec, result, vresult)
+                written = self.obs.writeNote(state.subtaskNoteRel(sid), note)
+                state.updateSubtask(sid, output_ref=written.get("rel_path"))
+
+            # heartbeat off the STABLE terminal-subtask count (this subtask is now committed terminal)
+            heartbeat_ordinal = sum(1 for s in state.subtasks if s["status"] in ("done", "failed", "removed"))
+            triggered, reason = adversary.shouldTrigger(combined, heartbeat_ordinal, attempt)
+            if triggered:
+                rv = self._review(subtask["title"], reason, combined,
+                                  ollama_chat=self._ollamaChat,
+                                  goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
+                discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason, rv.get("verdict")))
                 with self._state_lock:
-                    self._applyReplan(state, decision)
-        with self._state_lock:
-            self.writeIndex(state)
+                    state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
+                    self.obs.writeNote(state.subtaskReviewNoteRel(sid), self._reviewNote(subtask, reason, rv, combined))
+                    state.addAdversaryReview(sid, reason, rv["verdict"], state.subtaskReviewNoteRel(sid))
+
+            # Replan ONLY after a subtask that PASSED. Replanning after failures is the
+            # churn engine (fail -> add remediation -> fail -> add ...) that livelocks runs;
+            # the executor already retries failed subtasks up to MAX_SUBTASK_ATTEMPTS.
+            if final == "done" and not self._singleDeliverable(state.meta.get("goal_elaborated", "")):
+                decision = self._replan(state.meta["goal_elaborated"], state.subtasks, subtask, combined,
+                                        self_referential=bool(state.meta.get("is_self_referential")),
+                                        remaining_hours=self._remainingHours(state))
+                if decision.get("action") == "mutate" and (decision.get("add") or decision.get("remove")):
+                    dashboard.update(state, "replanning", f"replanning after {sid}")
+                    with self._state_lock:
+                        self._applyReplan(state, decision)
+            with self._state_lock:
+                self.writeIndex(state)
+        except AbortRun:
+            raise
+        except Exception as e:  # noqa: BLE001 -- enrichment is best-effort; committed status stands
+            LOG.warning("post-completion enrichment for %s failed (status %s preserved): %s",
+                        sid, final, e, exc_info=True)
         return final
 
     def _deadlinePassed(self, state: TaskState) -> bool:

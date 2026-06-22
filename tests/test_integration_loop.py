@@ -110,6 +110,20 @@ class TestExecutionLoop(unittest.TestCase):
         # aborted before doing any work
         self.assertEqual(self.run_claude_calls, [])
 
+    def test_enrichment_crash_preserves_committed_status(self):
+        # the structural guarantee: a crash in the post-completion tail (here, replan blows up)
+        # must NOT flip the subtask that already PASSED verification.
+        st = self._state([_verify_pass()])
+
+        def boom(*a, **k):
+            raise RuntimeError("replan exploded")
+
+        orch = Orchestrator(brain=FakeBrain(), obs=self._obs(),
+                            run_claude=self._fake_run_claude, replan=boom)
+        bus = ControlBus(st.task_id)
+        orch.runExecutionLoop(st, "doc", str(self.dir), bus, mock.Mock(), parallelism=1)
+        self.assertEqual(st.getSubtask("st-001")["status"], "done")
+
     def test_adversary_trigger_does_not_fail_a_passed_subtask(self):
         # force the adversary to fire and CHALLENGE; the subtask still PASSED verification,
         # so its committed status must remain done (the verdict never corrupts the result).
