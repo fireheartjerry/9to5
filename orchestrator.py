@@ -259,9 +259,17 @@ def _elapsedSince(started_at_iso: str) -> float:
 
 
 class Orchestrator:
-    def __init__(self) -> None:
-        self.ollama = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
-        self.obs = ObsidianClient()
+    def __init__(self, *, brain=None, obs=None, run_claude=None, replan=None, review=None) -> None:
+        # Dependency seams (defaults = the real Layer-3/Layer-4 wiring). Injecting fakes here lets
+        # the whole orchestration loop run with NO Ollama / Claude CLI / Obsidian -- which is what
+        # the integration tests and the --dry-run simulation mode use. replanner.replan MUST be
+        # seamed because it owns a separate module-level Ollama client of its own.
+        self.ollama = brain if brain is not None else ollama.Client(
+            host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
+        self.obs = obs if obs is not None else ObsidianClient()
+        self._run_claude = run_claude or executor.runClaude
+        self._replan = replan or replanner.replan
+        self._review = review or adversary.review
         self._state_lock = threading.Lock()
         self._selfref_prompt_cache: dict = {}   # task_id -> self-ref system-prompt prefix (built once)
 
@@ -765,7 +773,7 @@ class Orchestrator:
             dashboard.update(state, "executing", f"{sid} attempt {attempt} · effort {spec.get('effort_level')}",
                              effort=spec.get("effort_level"))
             attempt_started = time.time()
-            result = executor.runClaude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
+            result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
                                         resume_session=resume_session)
             # Carry a HEALTHY session forward so the next retry continues it (fix the failing
             # assertion, don't re-explore). If Claude itself errored, start fresh -- never resume
@@ -835,9 +843,9 @@ class Orchestrator:
         heartbeat_ordinal = sum(1 for s in state.subtasks if s["status"] in ("done", "failed", "removed")) + 1
         triggered, reason = adversary.shouldTrigger(combined, heartbeat_ordinal, attempt)
         if triggered:
-            rv = adversary.review(subtask["title"], reason, combined,
-                                  ollama_chat=self._ollamaChat,
-                                  goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
+            rv = self._review(subtask["title"], reason, combined,
+                              ollama_chat=self._ollamaChat,
+                              goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
             discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason, rv.get("verdict")))
             with self._state_lock:
                 state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
@@ -857,9 +865,9 @@ class Orchestrator:
         # churn engine (fail -> add remediation -> fail -> add ...) that livelocks runs;
         # the executor already retries failed subtasks up to MAX_SUBTASK_ATTEMPTS.
         if final == "done" and not self._singleDeliverable(state.meta.get("goal_elaborated", "")):
-            decision = replanner.replan(state.meta["goal_elaborated"], state.subtasks, subtask, combined,
-                                        self_referential=bool(state.meta.get("is_self_referential")),
-                                        remaining_hours=self._remainingHours(state))
+            decision = self._replan(state.meta["goal_elaborated"], state.subtasks, subtask, combined,
+                                    self_referential=bool(state.meta.get("is_self_referential")),
+                                    remaining_hours=self._remainingHours(state))
             if decision.get("action") == "mutate" and (decision.get("add") or decision.get("remove")):
                 dashboard.update(state, "replanning", f"replanning after {sid}")
                 with self._state_lock:
@@ -1112,9 +1120,9 @@ class Orchestrator:
                 arch_prompt = architect.authorArchitectPrompt(elaborated)
 
                 def _runArchitect(effort: str):
-                    return executor.runClaude({"prompt": arch_prompt, "effort_level": effort},
-                                              work_dir=self._execCwd(state, "architect", work_dir),
-                                              system_prompt=architect.ARCHITECT_SYSTEM_PROMPT, task_state=state)
+                    return self._run_claude({"prompt": arch_prompt, "effort_level": effort},
+                                            work_dir=self._execCwd(state, "architect", work_dir),
+                                            system_prompt=architect.ARCHITECT_SYSTEM_PROMPT, task_state=state)
 
                 arch_res = _runArchitect("default")
                 architect_doc = (arch_res.get("stdout") or "").strip()
