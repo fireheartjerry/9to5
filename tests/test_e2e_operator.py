@@ -55,6 +55,25 @@ class TestE2EOperator(unittest.TestCase):
                             e2e._pause_resume_then_finish, expect_status="done", surface="web")
         self.assertTrue(r.ok, r)
 
+    def test_skip_at_gate_removes_subtask(self):
+        r = e2e.runScenario("skip", "build (1) add (2) sub (3) mul", e2e._skip_at_gate,
+                            surface="web", n_subtasks=3)
+        self.assertTrue(r.ok, r)
+        self.assertTrue(any(s["status"] == "removed" for s in r.summary["subtasks"]), r.summary)
+
+    def test_add_at_gate_adds_subtask(self):
+        r = e2e.runScenario("add", "build (1) add (2) sub (3) mul", e2e._add_at_gate,
+                            surface="bus", n_subtasks=3)
+        self.assertTrue(r.ok, r)
+        self.assertGreaterEqual(len(r.summary["subtasks"]), 4)   # 3 planned + 1 the human added
+
+    def test_adversary_holds_the_pr(self):
+        r = e2e.runScenario("hold", "build a calculator app", e2e._happy, surface="web",
+                            review=e2e._challengedReview, auto_pr=True)
+        self.assertTrue(r.ok, r)
+        self.assertTrue(r.summary["pr"]["skipped"])
+        self.assertIn("HOLD", r.summary["pr"]["reason"])   # the challenged verdict actually held it
+
     def test_full_builtin_suite_passes(self):
         results = e2e.runSuite()
         failed = [r for r in results if not r.ok]

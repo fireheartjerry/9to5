@@ -34,6 +34,7 @@ class ScenarioResult:
     error: Optional[str] = None
     alive: bool = False
     elapsed: float = 0.0
+    summary: dict = field(default_factory=dict)
 
 
 # Config knobs that must be forced offline/fast for an E2E sim; saved + restored around a run.
@@ -43,7 +44,8 @@ _FORCED = {"WEB_DASHBOARD": False, "DISCORD_DASHBOARD": False,
 
 def runScenario(name: str, goal: str, script: Callable[[VirtualOperator], None], *,
                 expect_status: str = "done", mode: str = "gated", n_subtasks: int = 2,
-                surface: str = "web", timeout: float = 15.0) -> ScenarioResult:
+                surface: str = "web", timeout: float = 15.0, review=None,
+                auto_pr: bool = False) -> ScenarioResult:
     saved = {k: getattr(config, k) for k in _FORCED}
     for k, v in _FORCED.items():
         setattr(config, k, v)
@@ -54,11 +56,13 @@ def runScenario(name: str, goal: str, script: Callable[[VirtualOperator], None],
         state.setElaboratedGoal(goal)
         state.save()
         orch = simulation.buildOrchestrator(n_subtasks=n_subtasks)
+        if review is not None:
+            orch._review = review   # inject a custom adversary verdict (e.g. to test PR-hold)
         work = tempfile.mkdtemp(prefix="9to5-e2e-")
 
         def _run() -> None:
             try:
-                box["summary"] = orch.runFull(state, work_dir=work, auto_pr=False,
+                box["summary"] = orch.runFull(state, work_dir=work, auto_pr=auto_pr,
                                               control_mode=mode, parallelism=1)
             except Exception as e:  # noqa: BLE001
                 box["error"] = repr(e)
@@ -76,7 +80,8 @@ def runScenario(name: str, goal: str, script: Callable[[VirtualOperator], None],
         status = final.meta.get("status") if final else None
         ok = (status == expect_status) and err is None and not thread.is_alive()
         return ScenarioResult(name, ok, expect_status, status, surface, list(op.actions),
-                              err or box.get("error"), thread.is_alive(), round(time.time() - t0, 2))
+                              err or box.get("error"), thread.is_alive(), round(time.time() - t0, 2),
+                              box.get("summary") or {})
     finally:
         for k, v in saved.items():
             setattr(config, k, v)
@@ -107,6 +112,25 @@ def _pause_resume_then_finish(op: VirtualOperator) -> None:
     op.approve("pre_pr")
 
 
+def _skip_at_gate(op: VirtualOperator) -> None:
+    op.waitForGate("plan")
+    op.skip("st-002")         # human drops a subtask at the plan gate (applied live in the gate loop)
+    op.approve("plan")
+    op.approve("pre_pr")
+
+
+def _add_at_gate(op: VirtualOperator) -> None:
+    op.waitForGate("plan")
+    op.add("an extra subtask the human wants")
+    op.approve("plan")
+    op.approve("pre_pr")
+
+
+def _challengedReview(subtask_title, trigger_reason, executor_output, *, ollama_chat=None, goal=""):
+    return {"verdict": "challenged", "trigger_reason": trigger_reason,
+            "concerns": ["no rollback path"], "notes": "", "stub": False}
+
+
 def buildSuite() -> list:
     return [
         ("happy path (web surface)",
@@ -124,6 +148,16 @@ def buildSuite() -> list:
         ("pause + resume then finish",
          lambda: runScenario("pause + resume then finish", "build a calculator app",
                              _pause_resume_then_finish, expect_status="done", surface="web")),
+        ("skip a subtask at the gate",
+         lambda: runScenario("skip a subtask at the gate", "build (1) add (2) sub (3) mul",
+                             _skip_at_gate, expect_status="done", surface="web", n_subtasks=3)),
+        ("add a subtask at the gate",
+         lambda: runScenario("add a subtask at the gate", "build (1) add (2) sub (3) mul",
+                             _add_at_gate, expect_status="done", surface="bus", n_subtasks=3)),
+        ("adversary holds the PR",
+         lambda: runScenario("adversary holds the PR", "build a calculator app", _happy,
+                             expect_status="done", surface="web", review=_challengedReview,
+                             auto_pr=True)),
     ]
 
 
