@@ -986,7 +986,13 @@ class Orchestrator:
     def _applyReplan(self, state: TaskState, decision: dict) -> None:
         diff = [f"## Replan @ {nowIso()}", f"Reason: {decision.get('reason', '')}", ""]
         active = sum(1 for s in state.subtasks if s["status"] != "removed")
-        for add in decision.get("add", []) or []:
+        # The brain may return malformed add/remove (non-list, or items of the wrong type). A crash
+        # here would propagate to the caller's handler and flip the just-COMPLETED subtask to failed,
+        # so coerce defensively and skip any entry that isn't the expected shape.
+        adds = decision.get("add") or []
+        for add in (adds if isinstance(adds, list) else []):
+            if not isinstance(add, dict):
+                continue
             if active >= config.MAX_SUBTASKS:
                 LOG.info("replan add skipped: MAX_SUBTASKS (%d) reached", config.MAX_SUBTASKS)
                 diff.append(f"(skipped add '{add.get('title')}' -- MAX_SUBTASKS cap)")
@@ -995,7 +1001,10 @@ class Orchestrator:
                                   layer=add.get("layer", 3), verify=verifier.sanitizeVerify(add.get("verify")))
             active += 1
             diff.append(f"+ {st['subtask_id']} {st['title']}")
-        for rid in decision.get("remove", []) or []:
+        rems = decision.get("remove") or []
+        for rid in (rems if isinstance(rems, list) else []):
+            if not isinstance(rid, str):
+                continue
             st = state.getSubtask(rid)
             if st and st["status"] == "pending":
                 state.updateSubtask(rid, status="removed")
