@@ -103,6 +103,11 @@ SESSIONS_DIR_REL: str = "sessions"
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")  # code-specialized brain (fits 8GB VRAM)
 OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_TIMEOUT_SECONDS: int = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))  # prevent indefinite hangs
+# Explicit context window: the injected CLAUDE CODE CAPABILITIES block (~2.2k tokens) sits in
+# every system prompt; without this, ollama's small default num_ctx SILENTLY TRUNCATES the
+# trailing JSON-schema instructions that format="json" calls depend on. Sized for injection +
+# the largest user payload. Passed as options.num_ctx on every .chat() call.
+OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
 
 # --- Claude Code CLI (Executor hands) ------------------------------------
 # A `claude --print` call is a FULL agent session (explore repo -> reason -> write -> self-verify),

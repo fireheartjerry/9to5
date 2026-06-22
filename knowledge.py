@@ -15,6 +15,7 @@ and never raises out of :func:`fetchClaudeDocs` / :func:`scanLocalClaude`.
 from __future__ import annotations
 
 import re
+import threading
 from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
@@ -340,6 +341,22 @@ def _extractAuthoredBody(prior_doc: str) -> str:
                   "", prior_doc, flags=re.DOTALL).strip()
 
 
+def _extractPart(prior_doc: str, letter: str) -> str:
+    """Extract a whole '# Part <letter> — ...' block (header + body) from a prior unified doc,
+    up to the next '# Part <X>' divider or EOF. Returns '' if absent. Used to carry a prior
+    Part D (scraped live docs) forward when the current refresh fetched nothing -- so an offline
+    or failed scrape never ERASES previously-captured documentation."""
+    if not prior_doc:
+        return ""
+    m = re.search(rf"^# Part {letter} —", prior_doc, flags=re.M)
+    if not m:
+        return ""
+    rest = prior_doc[m.start():]
+    nxt = re.search(r"\n-{3,}\s*\n+# Part [A-Z]\b|\n# Part [A-Z]\b", rest[1:])
+    body = rest[: nxt.start() + 1] if nxt else rest
+    return body.strip()
+
+
 def buildUnifiedDoc(prior_doc: str, fetched: dict, local: dict, psk: dict, *,
                     refreshed_at: str, sources: list[str], recs: Optional[dict] = None) -> str:
     """Fold prior self-analysis + live docs + local capability surface +
@@ -425,16 +442,27 @@ def buildUnifiedDoc(prior_doc: str, fetched: dict, local: dict, psk: dict, *,
         lines.append("")
 
     # --- Part D: latest live documentation (scraped) ---
-    if fetched.get("pages"):
+    # A full scrape regenerates Part D. But an OFFLINE or badly-degraded scrape must NOT erase a
+    # good prior Part D (the overwrite is permanent): carry the prior block forward instead.
+    pages = fetched.get("pages") or {}
+    prior_d = _extractPart(prior_doc, "D")
+    prior_d_pages = prior_d.count("\n## http") if prior_d else 0
+    if pages and (len(pages) >= 5 or len(pages) >= prior_d_pages or not prior_d):
         lines.append("---")
         lines.append("")
         lines.append("# Part D — Latest Live Documentation (scraped this refresh)")
         lines.append("")
-        for url, text in fetched["pages"].items():
+        for url, text in pages.items():
             lines.append(f"## {url}")
             lines.append("")
             lines.append(text[:14_000].strip())
             lines.append("")
+    elif prior_d:
+        lines.append("---")
+        lines.append("")
+        lines.append(prior_d)   # preserved from a prior refresh (scrape empty/degraded this run)
+        lines.append("")
+        LOG.info("Part D preserved from prior doc (%d fresh pages vs %d prior)", len(pages), prior_d_pages)
 
     # --- Part E: expert recommendations (how 9to5 should wield Claude Code) ---
     if recs.get("found") and recs.get("text", "").strip():
@@ -571,6 +599,7 @@ def compressForInjection(unified_doc: str, local: dict, fetched: dict,
 #    block. Lives here (config-only deps) to avoid an orchestrator import cycle.
 # ============================================================================
 _CAPABILITIES: str = ""
+_CAP_LOCK = threading.Lock()   # collapses a parallel-subtask thundering-herd rebuild to one
 
 _CAPABILITIES_DIRECTIVE = (
     "Before generating ANY spec/plan/decision, consult CLAUDE CODE CAPABILITIES above and ask: "
@@ -597,16 +626,19 @@ def ensureCapabilities() -> str:
     global _CAPABILITIES
     if _CAPABILITIES:
         return _CAPABILITIES
-    try:
-        prior = ""
-        if config.CLAUDE_KNOWLEDGE_PATH.exists():
-            prior = _readText(config.CLAUDE_KNOWLEDGE_PATH, limit=2_000_000)
-        local = scanLocalClaude()
-        recs = readRecommendations()
-        _CAPABILITIES = compressForInjection(prior, local, {"pages": {}, "ok": [], "failed": []}, recs=recs)
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("ensureCapabilities offline build failed: %s", e)
-    return _CAPABILITIES
+    with _CAP_LOCK:                       # double-checked: one thread builds, the herd waits
+        if _CAPABILITIES:
+            return _CAPABILITIES
+        try:
+            prior = ""
+            if config.CLAUDE_KNOWLEDGE_PATH.exists():
+                prior = _readText(config.CLAUDE_KNOWLEDGE_PATH, limit=2_000_000)
+            local = scanLocalClaude()
+            recs = readRecommendations()
+            _CAPABILITIES = compressForInjection(prior, local, {"pages": {}, "ok": [], "failed": []}, recs=recs)
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("ensureCapabilities offline build failed: %s", e)
+        return _CAPABILITIES
 
 
 def injectCapabilities(system_prompt: str) -> str:

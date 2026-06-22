@@ -45,5 +45,6 @@ def authorArchitectPrompt(goal_elaborated: str) -> str:
             },
             {"role": "user", "content": f"Specification:\n{goal_elaborated}\n\nWrite the architecture-design prompt."},
         ],
+        options={"num_ctx": config.OLLAMA_NUM_CTX},
     )
     return resp["message"]["content"].strip()

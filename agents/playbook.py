@@ -19,6 +19,7 @@ are firsthand-authored constants (always available offline); the full expert set
 """
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 import config
@@ -170,24 +171,41 @@ PROFILES: dict[str, dict] = {
 # escalate to 'implementer' (which carries the full nitty-gritty) in classifyProfile.
 _DEFAULT_PROFILE = "generalist"
 
-_IMPLEMENT_KW = ("implement", "add ", "build", "create", "write", "fix", "refactor", "edit",
-                 "modify", "function", "class ", "module", "feature", "patch", "code", "script",
-                 "endpoint", "method", "bug", "wire", "integrate", "harden")
-_TEST_KW = ("test", "pytest", "unittest", "coverage", "assert", "regression", "spec ")
-_DOCS_KW = ("document", "docs", "readme", "docstring", "comment", "changelog", "guide")
-_REVIEW_KW = ("review", "audit", "security", "vulnerab", "analyze risk")
-_ARCH_KW = ("architect", "design doc", "architecture", "high-level design")
+# Word-boundary matched (no substring false positives like 'test' in 'latest' / 'review' in
+# 'preview'). Implement intent is VERB-based only -- bare nouns (module/class/function/endpoint)
+# describe WHAT, not the action, and falsely flagged read-only tasks ("review the auth module")
+# as write-intent. Verbs are the reliable write signal.
+_IMPLEMENT_KW = ("implement", "build", "create", "write", "fix", "refactor", "edit", "modify",
+                 "update", "remove", "rename", "patch", "wire", "integrate", "harden", "add")
+_TEST_KW = ("test", "tests", "pytest", "unittest", "coverage", "regression")
+# Strong documentation NOUNS only (a generic write verb must not route prose tasks here, and a
+# write verb must never demote a real docs task off this profile).
+_DOCS_KW = ("readme", "docstring", "docstrings", "documentation", "changelog", "javadoc", "user guide")
+_REVIEW_KW = ("review", "audit", "vulnerability", "vulnerabilities", "vulnerab", "penetration")
+_ARCH_KW = ("architecture", "design doc", "high-level design", "system design")
+
+
+def _hasWord(hay: str, words) -> bool:
+    """Word-boundary keyword match -- avoids substring false positives."""
+    return any(re.search(r"\b" + re.escape(w) + r"\b", hay) for w in words)
 
 
 def classifyProfile(spec: Optional[dict], subtask: Optional[dict],
                     task_state=None) -> str:
-    """Deterministically pick the executor profile from the spec + subtask. Strong signals
-    (subagent, skills) win; otherwise keyword-classify the subtask text. Coding intent
-    routes to 'implementer' so code writers always get the nitty-gritty briefing."""
+    """Deterministically pick the executor profile from the spec + subtask.
+
+    SAFETY INVARIANT: a subtask with implement intent is NEVER routed to a read-only profile
+    (architect/reviewer). Their charters forbid edits at the system level, so misrouting a
+    writer there makes the executor refuse to write and burns every retry. Read-only profiles
+    fire ONLY when there is no implement intent. test/docs are specializations of writing and
+    win even alongside an implement verb. Classification uses the SUBTASK title/description only
+    -- NOT spec['prompt'] (which echoes the architecture brief in self-ref runs and would
+    mis-route a writer to 'architect')."""
     spec = spec or {}
     subagent = (spec.get("subagent") or "").lower()
     skills = [s.lower() for s in (spec.get("skills_to_invoke") or [])]
 
+    # Authoritative explicit signals first.
     if subagent == "architect" or "/architect-review" in skills:
         return "architect"
     if subagent == "security-reviewer":
@@ -196,19 +214,21 @@ def classifyProfile(spec: Optional[dict], subtask: Optional[dict],
         return "pr"
 
     hay = " ".join(str(x) for x in (
-        (subtask or {}).get("title", ""), (subtask or {}).get("description", ""),
-        spec.get("prompt", ""))).lower()
+        (subtask or {}).get("title", ""), (subtask or {}).get("description", ""))).lower()
+    has_impl = _hasWord(hay, _IMPLEMENT_KW)
 
-    # ordered: most specific intent first
-    if any(k in hay for k in _ARCH_KW):
-        return "architect"
-    if any(k in hay for k in _REVIEW_KW):
-        return "reviewer"
-    if any(k in hay for k in _TEST_KW):
+    # test / docs are writing specializations -> win even when an implement verb is present.
+    if _hasWord(hay, _TEST_KW):
         return "tester"
-    if any(k in hay for k in _DOCS_KW) and not any(k in hay for k in _IMPLEMENT_KW):
+    if _hasWord(hay, _DOCS_KW):
         return "docs"
-    if any(k in hay for k in _IMPLEMENT_KW):
+    # read-only roles ONLY when there is no implement intent.
+    if not has_impl:
+        if _hasWord(hay, _REVIEW_KW):
+            return "reviewer"
+        if _hasWord(hay, _ARCH_KW):
+            return "architect"
+    if has_impl:
         return "implementer"
     # complex/structured work with no other signal -> treat as implementation
     if spec.get("use_workflow") or (spec.get("effort_level") or "").lower() in ("xhigh", "ultracode"):

@@ -34,6 +34,7 @@ def elaborate(goal_raw: str) -> str:
             {"role": "system", "content": knowledge.injectCapabilities(ELABORATOR_SYSTEM)},
             {"role": "user", "content": f"Raw goal:\n{goal_raw}\n\nProduce the elaborated specification."},
         ],
+        options={"num_ctx": config.OLLAMA_NUM_CTX},
     )
     return resp["message"]["content"].strip()
 
@@ -60,7 +61,8 @@ def extractUniverse(goal_raw: str, goal_elaborated: str, work_dir: str) -> dict:
     try:
         resp = _OLLAMA.chat(model=config.OLLAMA_MODEL,
                             messages=[{"role": "system", "content": knowledge.injectCapabilities(UNIVERSE_SYSTEM)},
-                                      {"role": "user", "content": user}], format="json")
+                                      {"role": "user", "content": user}], format="json",
+                            options={"num_ctx": config.OLLAMA_NUM_CTX})
         u = json.loads(resp["message"]["content"]) or {}
     except Exception as e:  # noqa: BLE001
         LOG.warning("extractUniverse failed (%s); using defaults", e)

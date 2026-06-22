@@ -125,7 +125,11 @@ def refreshClaudeKnowledge(obs: "ObsidianClient | None" = None, *, fetch_web: bo
         unified = knowledge.buildUnifiedDoc(prior_doc, fetched, local, psk,
                                             refreshed_at=refreshed_at, sources=sources, recs=recs)
         try:
-            kpath.write_text(unified, encoding="utf-8")
+            # atomic: write a temp then os.replace, so an interrupt (Ctrl-C / !abort / taskkill /T
+            # on timeout) can never leave a half-written ~1MB claude_code.md to be folded back in.
+            tmp = kpath.with_suffix(".md.tmp")
+            tmp.write_text(unified, encoding="utf-8")
+            os.replace(tmp, kpath)
             LOG.info("knowledge: wrote unified claude_code.md (%d chars) to %s", len(unified), kpath)
         except Exception as e:  # noqa: BLE001
             LOG.warning("knowledge write failed (%s); keeping in-memory only", e)
@@ -273,7 +277,11 @@ class Orchestrator:
         delay = 2.0
         for attempt in range(1, retries + 1):
             try:
-                kwargs = {"format": "json"} if want_json else {}
+                # num_ctx is REQUIRED: the ~2.2k-token capabilities block sits in the system
+                # prompt; ollama's small default would silently truncate the JSON-schema tail.
+                kwargs = {"options": {"num_ctx": config.OLLAMA_NUM_CTX}}
+                if want_json:
+                    kwargs["format"] = "json"
                 return self.ollama.chat(model=config.OLLAMA_MODEL, messages=messages, **kwargs)
             except Exception as e:  # noqa: BLE001
                 LOG.warning("Ollama call failed (attempt %d/%d): %s", attempt, retries, e)
@@ -857,6 +865,17 @@ class Orchestrator:
             self.writeIndex(state)
         return final
 
+    def _deadlinePassed(self, state: TaskState) -> bool:
+        """True once the task's wall-clock deadline_at has passed (time-horizon enforcement)."""
+        deadline = state.meta.get("deadline_at")
+        if not deadline:
+            return False
+        try:
+            from datetime import datetime
+            return datetime.now().astimezone() >= datetime.fromisoformat(deadline)
+        except Exception:  # noqa: BLE001 -- a bad timestamp must never wedge the loop
+            return False
+
     def runExecutionLoop(self, state: TaskState, architect_doc: str, work_dir: str,
                          bus: ControlBus, dashboard: DiscordDashboard, parallelism: int = 1) -> None:
         position = 0
@@ -865,6 +884,20 @@ class Orchestrator:
         prev_terminal = -1
         while True:
             iters += 1
+            # TIME HORIZON: stop scheduling new subtasks once the deadline passes (the run is
+            # 9am-5pm bounded). deadline_at was always computed but never enforced -- a fat plan
+            # would otherwise blow past the horizon unbounded. In-flight subtasks finish; the
+            # remaining pending ones stay pending so runFull finalizes the run as 'partial'.
+            if self._deadlinePassed(state):
+                LOG.warning("time horizon reached (deadline %s); ending execution loop",
+                            state.meta.get("deadline_at"))
+                try:
+                    discord.sendEmbed(discord.blockedEmbed(
+                        f"Time horizon reached ({state.meta.get('deadline_at')}) — finalizing as partial"))
+                except Exception:  # noqa: BLE001
+                    pass
+                dashboard.update(state, "executing", "time horizon reached — finalizing")
+                break
             # Guard on NO PROGRESS (subtasks reaching a terminal state), not raw iteration count,
             # so a legitimately long 8-hour run with many subtasks is never false-aborted; only a
             # true livelock (status churning with nothing completing) trips it.
