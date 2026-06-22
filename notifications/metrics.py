@@ -50,7 +50,8 @@ def compute() -> dict:
         by_status[status] = by_status.get(status, 0) + 1
         subs = (data.get("plan", {}) or {}).get("subtasks", []) or []
         subtasks_total += sum(1 for s in subs if s.get("status") != "removed")
-        subtasks_passed += sum(1 for s in subs if (s.get("verify_result") or {}).get("passed"))
+        subtasks_passed += sum(1 for s in subs
+                               if s.get("status") != "removed" and (s.get("verify_result") or {}).get("passed"))
         dur = _duration(meta, subs)
         if dur is not None:
             durations.append(dur)
