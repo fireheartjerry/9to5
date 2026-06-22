@@ -43,7 +43,8 @@ def registerSlashCommands(tree: "app_commands.CommandTree", client: "discord.Cli
         state = commands.resolveTargetTask()
         if state is None:
             return await interaction.followup.send(commands.NO_TASK, ephemeral=True)
-        audit.record(interaction.user.id, name, state.task_id, "slash")
+        if commands.COMMAND_REGISTRY.get(name, {}).get("mutating"):   # audit control actions only (not /log)
+            audit.record(interaction.user.id, name, state.task_id, "slash")
         msg = commands.applyCommand(ControlBus(state.task_id), state, commands.Command(name, arg))
         await interaction.followup.send(msg[:MAX_REPLY], ephemeral=True)
 
