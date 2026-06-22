@@ -45,6 +45,8 @@ class TestDryRun(unittest.TestCase):
         self.assertTrue(all(s["status"] == "done" for s in summary["subtasks"]))
         self.assertTrue(all(s["verified"] for s in summary["subtasks"]))
         self.assertTrue(summary["pr"]["skipped"])
+        # work_dir is persisted in meta so resume + every surface remember it (resume-bug guard)
+        self.assertEqual(st.meta["work_dir"], str(self.work.resolve()))
 
     def test_resume_completes_a_stranded_run(self):
         # simulate a crash mid-run: 1 done, 1 stranded in_progress, 1 pending

@@ -1180,6 +1180,7 @@ class Orchestrator:
             LOG.warning("refreshClaudeKnowledge failed (non-fatal): %s", e)
         if control_mode:
             state.setControlMode(control_mode)
+        state.setWorkDir(work_dir)   # persist the target dir so resume + every surface remember it
         bus = ControlBus(state.task_id)
         if not resume:
             bus.clear()

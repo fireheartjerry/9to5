@@ -52,6 +52,7 @@ class TaskState:
                 "status": "created",
                 "blocked_reason": None,
                 "control_mode": config.CONTROL_MODE_DEFAULT,
+                "work_dir": None,
                 "is_self_referential": False,
                 "self_ref_branch": None,
                 "subtask_seq": 0,
@@ -197,6 +198,16 @@ class TaskState:
 
     def setControlMode(self, mode: str) -> None:
         self.meta["control_mode"] = mode
+        self.save()
+
+    def setWorkDir(self, work_dir: str) -> None:
+        """Persist the working directory this run targets (resolved absolute), so resume and
+        every status surface know which project tree the run operates on."""
+        try:
+            resolved = str(Path(work_dir).resolve())
+        except Exception:  # noqa: BLE001
+            resolved = str(work_dir)
+        self.meta["work_dir"] = resolved
         self.save()
 
     def markSelfReferential(self, branch: Optional[str] = None) -> None:

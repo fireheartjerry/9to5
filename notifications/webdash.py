@@ -54,7 +54,8 @@ h3{color:#9aa7b8;font-size:12px;text-transform:uppercase;letter-spacing:.6px;mar
 .log div{padding:2px 0;border-bottom:1px solid #141a24}
 </style></head><body>
 <header><h1>🛰 9TO5</h1><span id="status" class="pill"></span><span id="mode" class="muted"></span>
-<span id="goal" class="muted" style="flex:1;min-width:200px"></span></header>
+<span id="goal" class="muted" style="flex:1;min-width:200px"></span>
+<span id="workdir" class="muted" title="working directory"></span></header>
 <div class="wrap">
 <div id="gate"></div>
 <div class="grid">
@@ -87,6 +88,7 @@ async function load(){
  const sp=document.getElementById('status'); sp.textContent=st; sp.style.background=(COL[st]||'#6b7686'); sp.style.color='#0b0e14';
  document.getElementById('mode').textContent='mode: '+(m.control_mode||'watch');
  document.getElementById('goal').textContent=m.goal_raw||'';
+ document.getElementById('workdir').textContent='📁 '+(r.work_dir||'—');
  document.getElementById('prog').textContent=r.progress.done+' / '+r.progress.total;
  document.getElementById('barfill').style.width=(r.progress.total? 100*r.progress.done/r.progress.total:0)+'%';
  document.getElementById('phase').textContent=st;
@@ -125,6 +127,7 @@ def _snapshot(task_id: str) -> dict:
     return {
         "empty": False,
         "meta": state.meta,
+        "work_dir": state.meta.get("work_dir") or "—",
         "progress": {"done": done, "total": total},
         "elapsed_s": elapsed_s,
         "eta_s": eta_s,

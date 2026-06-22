@@ -17,6 +17,7 @@ import argparse
 import json
 import sys
 import threading
+from pathlib import Path
 
 import config
 from agents import elaborator
@@ -182,6 +183,10 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         LOG.warning("startup knowledge refresh failed (non-fatal): %s", e)
 
+    # A user-chosen --work-dir must exist (9to5 operates on YOUR project tree, not its own root).
+    if args.work_dir and not Path(args.work_dir).is_dir():
+        print(f"--work-dir does not exist or is not a directory: {args.work_dir}")
+        return 2
     work_dir = args.work_dir or str(config.PROJECT_ROOT)
     if config.WEB_DASHBOARD:
         print(f"Live web dashboard -> http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/  "
@@ -194,9 +199,12 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001
             print(f"Cannot resume {args.resume}: {e}")
             return 2
-        LOG.info("Resuming task %s", state.task_id)
+        # remember the original working directory: explicit --work-dir overrides, else the one
+        # the task was launched with, else the project root.
+        resume_work_dir = args.work_dir or state.meta.get("work_dir") or str(config.PROJECT_ROOT)
+        LOG.info("Resuming task %s in %s", state.task_id, resume_work_dir)
         _startTerminalControl(state.task_id)
-        summary = Orchestrator().runFull(state, work_dir=work_dir, auto_pr=not args.no_pr,
+        summary = Orchestrator().runFull(state, work_dir=resume_work_dir, auto_pr=not args.no_pr,
                                          control_mode=args.mode, resume=True, parallelism=max(1, args.parallel))
         print("\n===== RUN SUMMARY =====")
         print(json.dumps(summary, indent=2, ensure_ascii=False))
