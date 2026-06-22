@@ -25,6 +25,9 @@ class TestRequest(unittest.TestCase):
     def setUp(self):
         d._DISABLED = False
 
+    def tearDown(self):
+        d._DISABLED = False   # the 401 test latches this global; reset so it can't leak to other modules
+
     def test_429_then_success_retries(self):
         calls = []
 

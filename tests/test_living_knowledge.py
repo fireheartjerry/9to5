@@ -322,5 +322,18 @@ def main() -> int:
     return 0
 
 
+import unittest  # noqa: E402
+
+
+class TestLivingKnowledge(unittest.TestCase):
+    """unittest wrapper so `python -m unittest discover` (and CI) actually run these
+    checks -- without it the whole file was a silent no-op (0 tests collected). The
+    standalone `python tests/test_living_knowledge.py` path still works via main()."""
+
+    def test_all_living_knowledge_checks_pass(self):
+        _FAILS.clear()
+        self.assertEqual(main(), 0, f"living-knowledge check failures: {_FAILS}")
+
+
 if __name__ == "__main__":
     sys.exit(main())
