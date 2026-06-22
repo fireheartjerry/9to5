@@ -1168,6 +1168,18 @@ class Orchestrator:
                           content=discord.humanPing())
         dashboard.event(f"self-referential · branch {branch}")
 
+    @staticmethod
+    def _cleanupScaffolding(work_dir: str) -> None:
+        """Remove 9to5's per-subtask scratch dir (.sc-ctx) from the user's project tree at the
+        end of a run -- never leave scaffolding behind. Best-effort; never raises."""
+        try:
+            import shutil
+            ctx = os.path.join(str(work_dir), ".sc-ctx")
+            if os.path.isdir(ctx):
+                shutil.rmtree(ctx, ignore_errors=True)
+        except Exception:  # noqa: BLE001
+            pass
+
     def _execCwd(self, state: TaskState, sid: str | None, work_dir: str) -> str:
         """For self-referential runs, give the executor an isolated cwd so the living
         CLAUDE.md never clobbers the project's own CLAUDE.md. The project root remains
@@ -1350,3 +1362,4 @@ class Orchestrator:
             except Exception:  # noqa: BLE001
                 LOG.warning("dashboard unpin failed", exc_info=True)
             stopWebDashboard()
+            self._cleanupScaffolding(work_dir)   # never leave 9to5 scratch dirs in the user's project
