@@ -187,6 +187,11 @@ SIE_AUTO_MAINTENANCE: bool = _envBool("SIE_AUTO_MAINTENANCE", True)
 SIE_KILL_SWITCH: bool = _envBool("SIE_KILL_SWITCH", False)
 # The frozen base model tag; champion adapters are served under BRAIN_MODEL_TAG:vN.
 BRAIN_MODEL_TAG: str = os.getenv("BRAIN_MODEL_TAG", "9to5-brain")
+# Layer 5 LoRA distillation: how many gold examples before a training cycle, and where
+# adapters/datasets land. Training itself is a local, queued job (host GPU).
+LORA_MIN_EXAMPLES: int = int(os.getenv("LORA_MIN_EXAMPLES", "50"))
+LORA_OUTPUT_DIR: Path = _envPath("LORA_OUTPUT_DIR", str(PROJECT_ROOT / "state" / "adapters")) \
+    or (PROJECT_ROOT / "state" / "adapters")
 
 # --- Adversary trigger configuration -------------------------------------
 ADVERSARY_TRIGGER_PHRASES: tuple[str, ...] = (

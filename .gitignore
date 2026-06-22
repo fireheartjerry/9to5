@@ -9,6 +9,9 @@ state/control/
 state/experience.db
 state/experience.db-wal
 state/experience.db-shm
+# SIE runtime artifacts (LoRA adapters, datasets, sie state)
+state/adapters/
+state/sie_state.json
 __pycache__/
 *.pyc
 .pytest_cache/

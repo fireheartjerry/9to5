@@ -183,7 +183,14 @@ def _weekly_steps(db_path: Optional[Path]):
         from learning import promotion
         return promotion.run_promotions(db_path=db_path)
 
-    return [("prompt_promotion", prompt_promotion)]
+    def lora_distillation():
+        # Automatic LoRA cycle; skips cleanly ("not_enough"/"no_trainer") until a host
+        # with enough gold examples + a GPU/backend is available. Never promotes here.
+        from learning import finetune
+        return finetune.run_finetune_cycle(db_path=db_path)
+
+    return [("prompt_promotion", prompt_promotion),
+            ("lora_distillation", lora_distillation)]
 
 
 def run_maintenance_async(**kwargs) -> None:

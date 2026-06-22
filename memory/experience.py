@@ -120,6 +120,18 @@ _SCHEMA: tuple[str, ...] = (
         state       TEXT,
         UNIQUE(role, body_hash)
     )""",
+    """CREATE TABLE IF NOT EXISTS adapters (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        base_model       TEXT,
+        tag              TEXT,
+        lora_path        TEXT,
+        modelfile_path   TEXT,
+        n_train_examples INTEGER,
+        trained_at       TEXT,
+        eval_run_id      INTEGER,
+        state            TEXT,
+        UNIQUE(tag)
+    )""",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_run ON subtasks(run_id)",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_passed ON subtasks(verify_passed)",
     "CREATE INDEX IF NOT EXISTS idx_arms_ctx ON policy_arms(context_key)",
@@ -554,6 +566,68 @@ def prompt_field_stats(prompt_set_id: str, db_path: Optional[Path] = None) -> di
                FROM subtasks s JOIN runs r ON s.run_id = r.run_id
                WHERE r.prompt_set_id = ?""", (str(prompt_set_id),)).fetchone()
     return {"n": int(row["n"] or 0), "first_pass": int(row["fp"] or 0)}
+
+
+# ---------------------------------------------------------------- adapters (L5)
+
+def register_adapter(*, base_model: str, tag: str, lora_path: str,
+                     modelfile_path: Optional[str] = None, n_train_examples: int = 0,
+                     state: str = "challenger", db_path: Optional[Path] = None) -> Optional[int]:
+    """Register a trained LoRA adapter (keyed by unique tag). Returns its id."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            cur = conn.execute(
+                """INSERT INTO adapters
+                   (base_model, tag, lora_path, modelfile_path, n_train_examples, trained_at, state)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(tag) DO UPDATE SET
+                     lora_path=excluded.lora_path, modelfile_path=excluded.modelfile_path,
+                     n_train_examples=excluded.n_train_examples, state=excluded.state""",
+                (base_model, tag, lora_path, modelfile_path, int(n_train_examples), _nowIso(), state))
+            return int(cur.lastrowid)
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("register_adapter failed (ignored): %s", e)
+        return None
+
+
+def get_champion_adapter(db_path: Optional[Path] = None) -> Optional[dict[str, Any]]:
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM adapters WHERE state='champion' ORDER BY id DESC LIMIT 1").fetchone()
+        return dict(row) if row else None
+
+
+def fetch_adapters(state: Optional[str] = None,
+                   db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    with _connect(db_path) as conn:
+        if state is None:
+            rows = conn.execute("SELECT * FROM adapters ORDER BY id")
+        else:
+            rows = conn.execute("SELECT * FROM adapters WHERE state=? ORDER BY id", (state,))
+        return [dict(r) for r in rows]
+
+
+def promote_adapter(adapter_id: int, db_path: Optional[Path] = None) -> bool:
+    """Make ``adapter_id`` the champion; retire the previous champion(s). Atomic."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            conn.execute("UPDATE adapters SET state='retired' WHERE state='champion'")
+            conn.execute("UPDATE adapters SET state='champion' WHERE id=?", (adapter_id,))
+        return True
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("promote_adapter failed (ignored): %s", e)
+        return False
+
+
+def retire_champion_adapter(db_path: Optional[Path] = None) -> bool:
+    """Roll back to base: retire the current champion adapter (active tag falls back to base)."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            conn.execute("UPDATE adapters SET state='retired' WHERE state='champion'")
+        return True
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("retire_champion_adapter failed (ignored): %s", e)
+        return False
 
 
 def fetch_runs(db_path: Optional[Path] = None) -> list[dict[str, Any]]:

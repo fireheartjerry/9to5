@@ -12,7 +12,7 @@ implemented with the external call seam mocked and offline-testable logic real.
 | **B — Retrieval** | local embeddings + cosine top-K (`memory/retrieval.py`), lessons rendering w/ token cap, orchestrator injection, negative cache | ✅ done |
 | **C — Consolidation + Policy** | ledger-rebuilt lessons (`learning/lessons.py`) + Thompson bandit (`learning/policy.py`), policy hint injection, fitness sparkline panel | ✅ done |
 | **D — Prompt Evolution** | versioned registry (`learning/prompts.py`, byte-identical) + champion/challenger gate (`learning/promotion.py`), auto-runs in weekly tier | ✅ done |
-| E — LoRA Distillation (SFT) | data-quality gate + gold dataset + local LoRA | ⬜ |
+| **E — LoRA Distillation (SFT)** | data-quality gate (`learning/dataset.py`) + gold builder (`learning/distill.py`) + local LoRA + adapter registry/rollback (`learning/finetune.py`), auto-runs in weekly tier | ✅ done |
 | F — Reward + DPO | composite reward + preference pairs | ⬜ |
 | G — Rollout + Counterfactual | offline replay + shadow/canary + per-role adapters | ⬜ |
 | H — Curriculum + Releases | self-play goals + model cards + attribution | ⬜ |
@@ -88,3 +88,18 @@ implemented with the external call seam mocked and offline-testable logic real.
   throttle) — promotion is hands-off; `gated` mode still needs `!approve` to apply.
 - `config.py`: `PROMPT_PROMOTE_MIN_USES` (20), `PROMPT_PROMOTE_Z` (1.64).
 - Tests: `tests/test_prompts.py` (5), `tests/test_promotion.py` (9). Suite 271/271 green.
+
+## Phase E — LoRA Distillation, SFT (auto, GPU-optional)
+- `memory/experience.py`: `adapters` table + helpers (`register_adapter`,
+  `get_champion_adapter`, `promote_adapter`, `retire_champion_adapter`).
+- `learning/dataset.py` (gate G): secret scrub/`has_secret`, eval-suite decontamination,
+  schema `validate`, `clean()` pipeline (validate→decontam→scrub→dedup) with stats.
+- `learning/distill.py`: gold→SFT `(prompt, completion)` pairs from `gold_examples()`,
+  cleaned through gate G, written as jsonl.
+- `learning/finetune.py`: Modelfile (`FROM base` + `ADAPTER`), `run_finetune_cycle`
+  (trainer + ollama_runner **seams**, skips `not_enough`/`no_trainer` without a GPU),
+  `active_brain_tag` (kill-switch & champion-aware), `consider_promotion` (I4: no
+  regression), `rollback_to_base`. Base never changes (I1).
+- `learning/sie.py`: weekly tier now also runs the LoRA cycle automatically.
+- `config.py`: `LORA_MIN_EXAMPLES` (50), `LORA_OUTPUT_DIR`; gitignored runtime artifacts.
+- Tests: `tests/test_dataset_gate.py` (8), `tests/test_finetune.py` (10). Suite 286/286.
