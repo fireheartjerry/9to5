@@ -579,9 +579,15 @@ class Orchestrator:
                 if kind == "skip":
                     sid = op.get("subtask_id")
                     st = state.getSubtask(sid)
-                    if st and st["status"] == "pending":
+                    if st is None:
+                        dashboard.event(f"skip ignored: {sid} not found")
+                    elif st["status"] == "pending":
                         state.updateSubtask(sid, status="removed")
                         dashboard.event(f"skipped {sid}")
+                    else:
+                        # in_progress/done/failed/removed can't be skipped between steps -- say so
+                        # instead of dropping the request silently (the user is waiting on feedback).
+                        dashboard.event(f"skip ignored: {sid} is {st['status']} (only pending can be skipped)")
                 elif kind == "add":
                     st = state.addSubtask(op.get("title", "untitled"), op.get("description", ""))
                     dashboard.event(f"added {st['subtask_id']}")

@@ -148,7 +148,9 @@ def registerSlashCommands(tree: "app_commands.CommandTree", client: "discord.Cli
             return []
         out = []
         for s in state.subtasks:
-            if s["status"] in ("pending", "in_progress") and current.lower() in s["subtask_id"].lower():
+            # Only pending subtasks can actually be skipped between steps (an in_progress one
+            # has already started and cannot be yanked mid-flight); don't offer the rest.
+            if s["status"] == "pending" and current.lower() in s["subtask_id"].lower():
                 out.append(app_commands.Choice(name=f"{s['subtask_id']} — {s['title'][:60]}",
                                                value=s["subtask_id"]))
         return out[:25]
