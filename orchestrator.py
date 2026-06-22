@@ -807,7 +807,7 @@ class Orchestrator:
                         + answer
                     )
                     resume_session = None   # approach is changing -> start the next attempt fresh
-            self._translateDiscord(bus)
+            self._translateDiscord(bus, state)
             while bus.isPaused() and not bus.isAbort():   # honor !pause mid-subtask, not just between
                 dashboard.update(state, "paused", f"{sid} paused -- waiting for !resume")
                 time.sleep(config.DISCORD_POLL_SECONDS)
