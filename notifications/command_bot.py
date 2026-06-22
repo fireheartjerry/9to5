@@ -31,7 +31,7 @@ def handleCommand(content: str) -> str:
 def runCommandBot() -> None:  # pragma: no cover -- long-lived gateway process
     import discord as dpy
     from discord import app_commands
-    from notifications import audit, slash, views
+    from notifications import slash, views
 
     if not config.DISCORD_BOT_TOKEN:
         LOG.error("DISCORD_BOT_TOKEN missing; cannot start command bot")
@@ -43,7 +43,7 @@ def runCommandBot() -> None:  # pragma: no cover -- long-lived gateway process
     client = dpy.Client(intents=intents)
     tree = app_commands.CommandTree(client)
     slash.registerSlashCommands(tree, client, started_at)
-    _state = {"synced": False, "presence": False}
+    _state = {"synced": False, "presence": False, "views": False}
 
     @tree.error
     async def _on_app_error(interaction, error):  # noqa: ANN001
@@ -90,8 +90,10 @@ def runCommandBot() -> None:  # pragma: no cover -- long-lived gateway process
                 LOG.info("Command bot online as %s; synced %d slash command(s)", client.user, len(synced))
             except Exception as e:  # noqa: BLE001
                 LOG.warning("slash sync failed: %s", e)
-        client.add_view(views.ControlPanelView())   # persistent: matches cp_* on any message
-        client.add_view(views.BlockedView())        # persistent: matches sc_*
+        if not _state["views"]:                      # register persistent views once (avoid reconnect churn)
+            _state["views"] = True
+            client.add_view(views.ControlPanelView())   # persistent: matches cp_* on any message
+            client.add_view(views.BlockedView())        # persistent: matches sc_*
         if not _state["presence"]:
             _state["presence"] = True
             client.loop.create_task(_presenceLoop())
