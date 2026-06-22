@@ -16,6 +16,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
+import time
+
 import requests
 
 import config
@@ -23,13 +25,6 @@ import config
 LOG = config.getLogger("discord")
 
 _API = "https://discord.com/api/v10"
-
-GREEN = 0x2ECC71
-BLUE = 0x3498DB
-ORANGE = 0xE67E22
-RED = 0xE74C3C
-PURPLE = 0x9B59B6
-YELLOW = 0xF1C40F
 
 # effort internal key -> human display label
 _EFFORT_LABELS = {
@@ -93,113 +88,211 @@ def relTime(value=None) -> str:
     return f"<t:{ts}:R>"
 
 
+_APPROVED = {"approved", "approve", "pass", "ok"}
+_CHALLENGED = {"challenged", "rejected", "reject", "blocked", "fail"}
+
+
 def formatVerdict(verdict: Optional[str]) -> str:
-    v = (verdict or "").lower()
-    return "⚔️ CHALLENGED" if v in ("challenged", "rejected", "reject", "blocked", "fail") else "✅ APPROVED"
+    v = (verdict or "").lower().strip()
+    if v in _APPROVED:
+        return "✅ APPROVED"
+    if v in _CHALLENGED:
+        return "⚔️ CHALLENGED"
+    return "❔ UNKNOWN"
 
 
 # =====================================================================
-# REST plumbing
+# REST plumbing -- one chokepoint
 # =====================================================================
+_DISABLED = False   # latched ON only by a hard 401 (bad token); never by 403/404
+
+
 def _authHeaders() -> dict:
     return {"Authorization": f"Bot {config.DISCORD_BOT_TOKEN}", "Content-Type": "application/json"}
 
 
-def _post(payload: dict) -> dict:
-    if not config.DISCORD_BOT_TOKEN or not config.DISCORD_CHANNEL_ID:
-        LOG.warning("Discord not configured; skipping send")
-        return {"ok": False, "reason": "not-configured"}
-    url = f"{_API}/channels/{config.DISCORD_CHANNEL_ID}/messages"
-    try:
-        r = requests.post(url, json=payload, headers=_authHeaders(), timeout=15)
-        ok = 200 <= r.status_code < 300
-        if not ok:
-            LOG.warning("Discord send -> %s: %s", r.status_code, r.text[:200])
-        return {"ok": ok, "status": r.status_code, "body": r.text[:300]}
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("Discord send failed: %s", e)
-        return {"ok": False, "reason": str(e)}
+def _ownerMentions() -> dict:
+    """allowed_mentions that can never expand past the configured owner."""
+    oid = (config.DISCORD_HUMAN_USER_ID or "").strip()
+    return {"parse": [], "users": [int(oid)] if oid.isdigit() else []}
+
+
+def _request(method: str, path: str, *, json: Optional[dict] = None,
+             params: Optional[dict] = None, retries: int = config.DISCORD_RETRY_MAX):
+    """Single REST chokepoint. 429 -> sleep(retry_after) up to `retries` (milestone sends);
+    pass retries=0 on the control-poll path so it never blocks the run loop. A hard 401 latches
+    the whole surface off; 403/404 are logged but NEVER disable (a deleted message is normal)."""
+    global _DISABLED
+    if _DISABLED or not config.DISCORD_BOT_TOKEN or not config.DISCORD_CHANNEL_ID:
+        return None
+    url = f"{_API}{path}"
+    attempt = 0
+    while True:
+        try:
+            r = requests.request(method, url, headers=_authHeaders(), json=json, params=params,
+                                 timeout=config.DISCORD_REST_TIMEOUT)
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("Discord %s %s failed: %s", method, path, e)
+            return None
+        if r.status_code == 429 and attempt < retries:
+            try:
+                retry_after = float((r.json() or {}).get("retry_after",
+                                    r.headers.get("Retry-After", 1)))
+            except Exception:  # noqa: BLE001
+                retry_after = 1.0
+            time.sleep(min(retry_after, 10.0))
+            attempt += 1
+            continue
+        if r.status_code == 401:
+            _DISABLED = True
+            LOG.error("Discord auth failed (401) -> disabling Discord for this process")
+        elif not (200 <= r.status_code < 300) and r.status_code != 404:
+            LOG.warning("Discord %s %s -> %s: %s", method, path, r.status_code, (r.text or "")[:200])
+        return r
+
+
+def truncate(text, n: int) -> str:
+    """Clamp to n chars, marking a clip with a trailing ellipsis."""
+    text = str(text if text is not None else "")
+    if n <= 1:
+        return text[:max(n, 0)]
+    return text if len(text) <= n else text[:n - 1].rstrip() + "…"
+
+
+def _embedLen(embed: dict) -> int:
+    total = len(str(embed.get("title", ""))) + len(str(embed.get("description", "")))
+    total += len(str((embed.get("footer") or {}).get("text", "")))
+    for f in embed.get("fields", []) or []:
+        total += len(str(f.get("name", ""))) + len(str(f.get("value", "")))
+    return total
+
+
+def _clampEmbed(embed: dict) -> dict:
+    """Guarantee a sendable embed: per-field clamp (no oversize field can 400 the whole message),
+    <=25 fields, and a 6000-total budget enforced by shrinking the LARGEST field value first so the
+    dashboard's dynamic tail rows are never silently dropped."""
+    if not isinstance(embed, dict):
+        return embed
+    e = dict(embed)
+    if isinstance(e.get("description"), str):
+        e["description"] = truncate(e["description"], config.DISCORD_MAX_EMBED_DESC)
+    fields = e.get("fields")
+    if isinstance(fields, list):
+        clamped = []
+        for f in fields[:25]:
+            if not isinstance(f, dict):
+                continue
+            nf = dict(f)
+            nf["name"] = truncate(nf.get("name", ""), config.DISCORD_MAX_FIELD_NAME)
+            nf["value"] = truncate(nf.get("value", ""), config.DISCORD_MAX_FIELD_VALUE) or "—"
+            clamped.append(nf)
+        e["fields"] = clamped
+        guard = 0
+        while _embedLen(e) > config.DISCORD_EMBED_TOTAL_MAX and guard < 50:
+            guard += 1
+            biggest = max(e["fields"], key=lambda f: len(str(f.get("value", ""))), default=None)
+            if biggest is None or len(str(biggest.get("value", ""))) <= 8:
+                break
+            biggest["value"] = truncate(biggest["value"], max(8, len(str(biggest["value"])) // 2))
+    return e
 
 
 def createMessage(embed: dict, content: Optional[str] = None, components: Optional[list] = None) -> Optional[str]:
-    if not config.DISCORD_BOT_TOKEN or not config.DISCORD_CHANNEL_ID:
-        return None
-    url = f"{_API}/channels/{config.DISCORD_CHANNEL_ID}/messages"
-    payload: dict = {"embeds": [embed]}
+    payload: dict = {"embeds": [_clampEmbed(embed)]}
     if content:
         payload["content"] = content
-        payload["allowed_mentions"] = {"parse": ["everyone", "users"]}
-    if components:
+        payload["allowed_mentions"] = _ownerMentions()
+    if components is not None:
         payload["components"] = components
-    try:
-        r = requests.post(url, json=payload, headers=_authHeaders(), timeout=15)
-        if 200 <= r.status_code < 300:
+    r = _request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", json=payload)
+    if r is not None and 200 <= r.status_code < 300:
+        try:
             return str(r.json().get("id"))
-        LOG.warning("createMessage -> %s: %s", r.status_code, r.text[:200])
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("createMessage failed: %s", e)
+        except Exception:  # noqa: BLE001
+            return None
     return None
 
 
 def editMessage(message_id: str, embed: dict, content: Optional[str] = None,
                 components: Optional[list] = None) -> bool:
-    if not message_id or not config.DISCORD_BOT_TOKEN or not config.DISCORD_CHANNEL_ID:
+    if not message_id:
         return False
-    url = f"{_API}/channels/{config.DISCORD_CHANNEL_ID}/messages/{message_id}"
-    payload: dict = {"embeds": [embed]}
+    payload: dict = {"embeds": [_clampEmbed(embed)]}
     if content is not None:
         payload["content"] = content
+        if content:
+            payload["allowed_mentions"] = _ownerMentions()
     if components is not None:
         payload["components"] = components
-    try:
-        r = requests.patch(url, json=payload, headers=_authHeaders(), timeout=15)
-        return 200 <= r.status_code < 300
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("editMessage failed: %s", e)
-        return False
+    r = _request("PATCH", f"/channels/{config.DISCORD_CHANNEL_ID}/messages/{message_id}", json=payload)
+    return r is not None and 200 <= r.status_code < 300
 
 
 def pinMessage(message_id: Optional[str]) -> bool:
-    if not message_id or not config.DISCORD_BOT_TOKEN or not config.DISCORD_CHANNEL_ID:
+    if not message_id:
         return False
-    url = f"{_API}/channels/{config.DISCORD_CHANNEL_ID}/pins/{message_id}"
-    try:
-        r = requests.put(url, headers=_authHeaders(), timeout=15)
-        return 200 <= r.status_code < 300
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("pinMessage failed: %s", e)
+    r = _request("PUT", f"/channels/{config.DISCORD_CHANNEL_ID}/pins/{message_id}")
+    if r is None:
         return False
+    if r.status_code == 400 and "pin" in (r.text or "").lower():
+        LOG.error("Discord pin cap likely reached; old dashboards not unpinned")
+    return 200 <= r.status_code < 300
+
+
+def unpinMessage(message_id: Optional[str]) -> bool:
+    """Idempotent: 404 (already unpinned / message gone) counts as success."""
+    if not message_id:
+        return False
+    r = _request("DELETE", f"/channels/{config.DISCORD_CHANNEL_ID}/pins/{message_id}")
+    if r is None:
+        return False
+    return (200 <= r.status_code < 300) or r.status_code == 404
 
 
 def fetchMessagesAfter(after_id: Optional[str], limit: int = 25) -> tuple[list[dict], Optional[str]]:
-    if not config.DISCORD_BOT_TOKEN or not config.DISCORD_CHANNEL_ID:
-        return [], after_id
-    url = f"{_API}/channels/{config.DISCORD_CHANNEL_ID}/messages"
+    """Control-poll path: retries=0 so a 429 returns immediately and never blocks the run loop.
+    Surfaces author_id so the poller can authorize. Single page (no burst paging)."""
     params: dict = {"limit": limit}
     if after_id:
         params["after"] = after_id
-    try:
-        r = requests.get(url, params=params, headers=_authHeaders(), timeout=15)
-        if not (200 <= r.status_code < 300):
-            return [], after_id
-        msgs = r.json()
-        out = [{"id": str(m.get("id")), "content": m.get("content") or "",
-                "author_is_bot": bool((m.get("author") or {}).get("bot"))} for m in reversed(msgs)]
-        latest = out[-1]["id"] if out else after_id
-        return out, latest
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("fetchMessagesAfter failed: %s", e)
+    r = _request("GET", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", params=params, retries=0)
+    if r is None or not (200 <= r.status_code < 300):
         return [], after_id
+    try:
+        msgs = r.json()
+    except Exception:  # noqa: BLE001
+        return [], after_id
+    out = [{"id": str(m.get("id")), "content": m.get("content") or "",
+            "author_is_bot": bool((m.get("author") or {}).get("bot")),
+            "author_id": str((m.get("author") or {}).get("id") or "")} for m in reversed(msgs)]
+    latest = out[-1]["id"] if out else after_id
+    return out, latest
+
+
+def baselineLatestId() -> Optional[str]:
+    """Newest message id (no messages returned) -- used to SEED the control cursor at run start
+    so a stale '!abort' from a prior run is never replayed. Best-effort/non-fatal."""
+    r = _request("GET", f"/channels/{config.DISCORD_CHANNEL_ID}/messages",
+                 params={"limit": 1}, retries=0)
+    if r is None or not (200 <= r.status_code < 300):
+        return None
+    try:
+        msgs = r.json()
+        return str(msgs[0]["id"]) if msgs else None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def sendEmbed(embed: dict, content: Optional[str] = None, components: Optional[list] = None) -> dict:
-    payload: dict = {"embeds": [embed]}
+    payload: dict = {"embeds": [_clampEmbed(embed)]}
     if content:
         payload["content"] = content
-        payload["allowed_mentions"] = {"parse": ["everyone", "users"]}
+        payload["allowed_mentions"] = _ownerMentions()
     if components:
         payload["components"] = components
-    return _post(payload)
+    r = _request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", json=payload)
+    return {"ok": r is not None and 200 <= r.status_code < 300,
+            "status": getattr(r, "status_code", None)}
 
 
 # =====================================================================
