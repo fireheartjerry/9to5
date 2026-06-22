@@ -148,7 +148,9 @@ def registerSlashCommands(tree: "app_commands.CommandTree", client: "discord.Cli
             return []
         out = []
         for s in state.subtasks:
-            if s["status"] in ("pending", "in_progress") and current.lower() in s["subtask_id"].lower():
+            # Only pending subtasks can actually be skipped between steps (an in_progress one
+            # has already started and cannot be yanked mid-flight); don't offer the rest.
+            if s["status"] == "pending" and current.lower() in s["subtask_id"].lower():
                 out.append(app_commands.Choice(name=f"{s['subtask_id']} — {s['title'][:60]}",
                                                value=s["subtask_id"]))
         return out[:25]
@@ -229,7 +231,10 @@ def registerSlashCommands(tree: "app_commands.CommandTree", client: "discord.Cli
         await interaction.response.defer(ephemeral=True)
         if not work_launcher.taskExists(task_id):
             return await interaction.followup.send(f"❌ No such task `{task_id}`.", ephemeral=True)
-        state = TaskState.load(task_id)
+        state = TaskState.loadSafe(task_id)
+        if state is None:
+            return await interaction.followup.send(f"❌ Task `{task_id}` exists but its state file is "
+                                                   "unreadable (corrupt JSON).", ephemeral=True)
         await interaction.followup.send(embed=_embed(branding.runEmbed(state)), ephemeral=True)
 
     @tree.command(name="resume", description="Resume a paused run, or resume a prior run by id")

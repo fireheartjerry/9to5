@@ -30,8 +30,10 @@ capture output → save to Obsidian → feed back to Ollama → repeat.
 - **Executor** — Claude Code CLI subprocess. (`agents/executor.py`)
 - **Architect** — Claude Code CLI with a locked system prompt prepended; output
   saved as `architect.md`. (`agents/architect.py`)
-- **Adversary** — **STUB in Phase 1**: logs the trigger reason, returns
-  `approved`. Phase 2 → GPT-5.5 via chatgpt.com CDP. (`agents/adversary.py`)
+- **Adversary** — Phase 1 runs a **real Ollama-backed critique**: given the
+  executor output + trigger reason it returns a verdict (`approved`/`challenged`)
+  with concrete concerns; degrades to a conservative auto-approve if no brain is
+  wired or the call fails. Phase 2 → GPT-5.5 via chatgpt.com CDP. (`agents/adversary.py`)
 - **Replanner** — Ollama, after every subtask; may mutate the subtask list.
   (`agents/replanner.py`)
 
@@ -115,9 +117,10 @@ vault/9to5/sessions/
 ## Current phase / what is stubbed
 Phase 1 (Layer 3 only). **LIVE:** verification gate + retry, live Discord
 dashboard, web dashboard, gateway command bot, watch/gated control modes,
-plan editing. **Adversary is still a stub** (auto-approves; Phase 2 → GPT-5.5
-via chatgpt.com CDP). Layers 1/2 not built. Everything reads config from
-`C:\supercritical\.env` — never hardcode secrets.
+plan editing, **Ollama-backed Adversary critique** (advisory verdict +
+concerns; conservative auto-approve fallback). Phase 2 swaps the Adversary's
+brain for GPT-5.5 via chatgpt.com CDP. Layers 1/2 not built. Everything reads
+config from `C:\supercritical\.env` — never hardcode secrets.
 
 ## Self-Improvement Philosophy
 

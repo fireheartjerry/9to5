@@ -118,7 +118,8 @@ def _statusText(bus: ControlBus, state: TaskState) -> str:
     gate_txt = f"\n⏳ awaiting gate **{gate}** — `!approve` / `!reject`" if gate else ""
     return (f"**`{state.meta['status']}`** · {discord.progressBar(done, total)} · "
             f"mode `{state.meta.get('control_mode', 'watch')}`\n"
-            f"Current: {cur_txt}\nElapsed {elapsed} · ETA {eta}{gate_txt}")
+            f"Current: {cur_txt}\n📁 `{state.meta.get('work_dir') or '—'}`\n"
+            f"Elapsed {elapsed} · ETA {eta}{gate_txt}")
 
 
 def _planText(state: TaskState) -> str:

@@ -258,10 +258,47 @@ def _elapsedSince(started_at_iso: str) -> float:
         return 0.0
 
 
+def _chatText(resp) -> str:
+    """Safely pull resp['message']['content'] as text. '' for ANY malformed shape
+    (None resp, non-dict message, non-string content) -- the 7B brain emits all of these."""
+    try:
+        msg = resp.get("message") if isinstance(resp, dict) else None
+        content = msg.get("content") if isinstance(msg, dict) else None
+        return content if isinstance(content, str) else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _resultText(result, key: str = "stdout") -> str:
+    """Pull a text field from an executor result, '' if the hands layer returned a non-string
+    (the executor contract is str, but a fake/buggy/fuzzed one may not honor it)."""
+    v = result.get(key) if isinstance(result, dict) else None
+    return v if isinstance(v, str) else ""
+
+
+def _chatJson(resp):
+    """Safely parse the JSON body of a chat response. None on ANY shape/parse problem."""
+    text = _chatText(resp).strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class Orchestrator:
-    def __init__(self) -> None:
-        self.ollama = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
-        self.obs = ObsidianClient()
+    def __init__(self, *, brain=None, obs=None, run_claude=None, replan=None, review=None) -> None:
+        # Dependency seams (defaults = the real Layer-3/Layer-4 wiring). Injecting fakes here lets
+        # the whole orchestration loop run with NO Ollama / Claude CLI / Obsidian -- which is what
+        # the integration tests and the --dry-run simulation mode use. replanner.replan MUST be
+        # seamed because it owns a separate module-level Ollama client of its own.
+        self.ollama = brain if brain is not None else ollama.Client(
+            host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
+        self.obs = obs if obs is not None else ObsidianClient()
+        self._run_claude = run_claude or executor.runClaude
+        self._replan = replan or replanner.replan
+        self._review = review or adversary.review
         self._state_lock = threading.Lock()
         self._selfref_prompt_cache: dict = {}   # task_id -> self-ref system-prompt prefix (built once)
 
@@ -428,11 +465,11 @@ class Orchestrator:
         )
         user = f"Specification:\n{goal_elaborated}\n\nArchitecture:\n{architect_doc[:4000]}\n\nReturn the plan JSON."
         resp = self._ollamaChat(system, user, want_json=True)
-        try:
-            subs = ((json.loads(resp["message"]["content"]) or {}).get("subtasks") or []) if resp else []
-        except Exception as e:  # noqa: BLE001
-            LOG.warning("plan parse failed (%s); single fallback subtask", e)
-            subs = []
+        parsed = _chatJson(resp)
+        raw = parsed.get("subtasks") if isinstance(parsed, dict) else None
+        # GUARANTEE list[dict]: the brain emits {"subtasks": 5}, [...non-dicts...], etc. Anything
+        # that isn't a dict-with-content is dropped so every downstream consumer is safe.
+        subs = [s for s in raw if isinstance(s, dict)] if isinstance(raw, list) else []
         if not subs:
             subs = [{"title": "Implement the goal", "description": goal_elaborated, "layer": 3,
                      "verify": None, "effort_level": "high"}]
@@ -442,6 +479,7 @@ class Orchestrator:
         """Self-check the plan BEFORE committing it: (1) deterministically collapse an
         over-decomposed trivial goal to one subtask (zero token cost), then (2) a brain
         self-critique pass that rewrites every verify into a safe behavioral shape."""
+        subs = [s for s in subs if isinstance(s, dict)] if isinstance(subs, list) else []
         if not subs:
             return subs
         if self._singleDeliverable(goal_elaborated) and len(subs) > 1:
@@ -465,18 +503,24 @@ class Orchestrator:
         )
         user = f"Goal:\n{goal_elaborated}\n\nPlan to fix:\n{json.dumps({'subtasks': subs})}\n\nReturn corrected JSON."
         resp = self._ollamaChat(system, user, want_json=True)
-        try:
-            fixed = (json.loads(resp["message"]["content"]) or {}).get("subtasks") if resp else None
-            if fixed and isinstance(fixed, list) and all(isinstance(x, dict) and x.get("title") for x in fixed):
-                LOG.info("plan self-check: brain corrected plan -> %d subtasks", len(fixed))
-                return fixed
-        except Exception as e:  # noqa: BLE001
-            LOG.warning("plan self-check parse failed (%s); keeping pre-critique plan", e)
+        parsed = _chatJson(resp)
+        fixed = parsed.get("subtasks") if isinstance(parsed, dict) else None
+        if isinstance(fixed, list) and fixed and all(isinstance(x, dict) and x.get("title") for x in fixed):
+            LOG.info("plan self-check: brain corrected plan -> %d subtasks", len(fixed))
+            return fixed
         return subs
+
+    @staticmethod
+    def _asList(v) -> list:
+        return v if isinstance(v, list) else []
+
+    @staticmethod
+    def _asText(v) -> str:
+        return v if isinstance(v, str) else ""
 
     def _sanitizeSpec(self, spec: dict, subtask: dict) -> dict:
         spec = spec if isinstance(spec, dict) else {}
-        eff = (spec.get("effort_level") or "default").lower()
+        eff = (self._asText(spec.get("effort_level")) or "default").lower()
         eff = eff if eff in config.EFFORT_FLAG_MAP else "default"
         # Capability-aware effort FLOOR: a strict compound (multi-requirement) verify means partial
         # work fails, so it deserves real reasoning even if the 7B brain emitted 'default'. Floor to
@@ -488,21 +532,24 @@ class Orchestrator:
             LOG.info("spec nudge: strict compound verify -> effort floored 'high' (brain emitted %s)",
                      spec.get("effort_level"))
             eff = "high"
-        skills = spec.get("skills_to_invoke") or []
-        pre = spec.get("pre_tool_hooks") or []
-        post = spec.get("post_tool_hooks") or []
+        # Coerce list/str fields defensively: the brain emits ints, dicts, and nulls here, and a
+        # non-iterable or non-string would crash the spec build (fuzz-proven).
+        skills = self._asList(spec.get("skills_to_invoke"))
+        pre = self._asList(spec.get("pre_tool_hooks"))
+        post = self._asList(spec.get("post_tool_hooks"))
         sub = spec.get("subagent")
-        # Dynamic workflow: only honored when a well-formed definition with phases is present.
         wf_def = spec.get("workflow_definition")
         use_wf = bool(spec.get("use_workflow")) and isinstance(wf_def, dict) and bool(wf_def.get("phases"))
+        prompt = (self._asText(spec.get("prompt")) or self._asText(subtask.get("description"))
+                  or self._asText(subtask.get("title")))
         return {
-            "prompt": (spec.get("prompt") or subtask.get("description") or subtask.get("title") or "").strip(),
-            "claude_md_inject": (spec.get("claude_md_inject") or "").strip(),
+            "prompt": prompt.strip(),
+            "claude_md_inject": self._asText(spec.get("claude_md_inject")).strip(),
             "effort_level": eff,
-            "skills_to_invoke": [s for s in skills if s in config.AVAILABLE_SKILLS],
-            "subagent": sub if sub in config.AVAILABLE_SUBAGENTS else None,
-            "pre_tool_hooks": [h for h in pre if h in config.AVAILABLE_PRE_HOOKS],
-            "post_tool_hooks": [h for h in post if h in config.AVAILABLE_POST_HOOKS],
+            "skills_to_invoke": [s for s in skills if isinstance(s, str) and s in config.AVAILABLE_SKILLS],
+            "subagent": sub if (isinstance(sub, str) and sub in config.AVAILABLE_SUBAGENTS) else None,
+            "pre_tool_hooks": [h for h in pre if isinstance(h, str) and h in config.AVAILABLE_PRE_HOOKS],
+            "post_tool_hooks": [h for h in post if isinstance(h, str) and h in config.AVAILABLE_POST_HOOKS],
             "use_workflow": use_wf,
             "workflow_definition": wf_def if use_wf else None,
         }
@@ -549,12 +596,8 @@ class Orchestrator:
         system_prompt = self._selfRefSystemPrompt(state) if state.meta.get("is_self_referential") \
             else ORCHESTRATOR_CONSTITUTION
         resp = self._ollamaChat(system_prompt, user, want_json=True)
-        try:
-            spec = json.loads(resp["message"]["content"]) if resp else {}
-        except Exception as e:  # noqa: BLE001
-            LOG.warning("invocation-spec parse failed (%s); using minimal spec", e)
-            spec = {}
-        return self._sanitizeSpec(spec, subtask)
+        spec = _chatJson(resp)
+        return self._sanitizeSpec(spec if isinstance(spec, dict) else {}, subtask)
 
     # ===================================================================
     # Control plane (poll Discord + drain ControlBus between steps)
@@ -579,9 +622,15 @@ class Orchestrator:
                 if kind == "skip":
                     sid = op.get("subtask_id")
                     st = state.getSubtask(sid)
-                    if st and st["status"] == "pending":
+                    if st is None:
+                        dashboard.event(f"skip ignored: {sid} not found")
+                    elif st["status"] == "pending":
                         state.updateSubtask(sid, status="removed")
                         dashboard.event(f"skipped {sid}")
+                    else:
+                        # in_progress/done/failed/removed can't be skipped between steps -- say so
+                        # instead of dropping the request silently (the user is waiting on feedback).
+                        dashboard.event(f"skip ignored: {sid} is {st['status']} (only pending can be skipped)")
                 elif kind == "add":
                     st = state.addSubtask(op.get("title", "untitled"), op.get("description", ""))
                     dashboard.event(f"added {st['subtask_id']}")
@@ -689,12 +738,67 @@ class Orchestrator:
         )
 
     def _reviewNote(self, subtask: dict, reason: str, review: dict, output: str) -> str:
+        concerns = review.get("concerns") or []
+        concerns_md = "\n".join(f"- {c}" for c in concerns) if concerns else "_none_"
         return (
             f"# Adversary review -- {subtask['subtask_id']}\n\n"
             f"- **Trigger:** {reason}\n- **Verdict:** {review['verdict']}\n"
-            f"- **Stub:** {review.get('stub', False)}\n\n## Notes\n{review.get('notes', '')}\n\n"
+            f"- **Stub:** {review.get('stub', False)}\n\n"
+            f"## Concerns\n{concerns_md}\n\n## Notes\n{review.get('notes', '')}\n\n"
             f"## Reviewed output (excerpt)\n\n```\n{(output or '')[:1500]}\n```\n"
         )
+
+    # ===================================================================
+    # Adversary teeth -- bounded remediation + pre-PR hold
+    # ===================================================================
+    def _remediate(self, state: TaskState, subtask: dict, architect_doc: str, exec_cwd: str,
+                   concerns: list[str]) -> dict:
+        """ONE bounded extra executor attempt to address an adversary's concerns on a subtask that
+        ALREADY passed verification. Re-verifies; only keeps or improves -- a remediation that fails
+        to verify never downgrades the prior pass (the subtask stays done). Returns the verify_result."""
+        sid = subtask["subtask_id"]
+        feedback = ("The work PASSED its acceptance check, but an adversarial reviewer raised concerns. "
+                    "Address these WITHOUT breaking the passing verification:\n- " + "\n- ".join(concerns))
+        spec = self.authorInvocationSpec(state, subtask, architect_doc, feedback)
+        result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask)
+        vres = verifier.runVerification(subtask.get("verify"), exec_cwd, result)
+        with self._state_lock:
+            if vres.get("passed"):
+                state.recordVerify(sid, vres)   # adopt the still-passing post-remediation evidence
+            state.addNotification(
+                "adversary_remediation",
+                f"{sid}: remediation {'verified' if vres.get('passed') else 'did not verify (prior pass kept)'}")
+        LOG.info("Adversary remediation for %s -> %s", sid, "verified" if vres.get("passed") else "kept prior pass")
+        return vres
+
+    def _prePrAdversary(self, state: TaskState) -> dict:
+        """Pre-PR safety review: the adversary judges the whole run before a PR is opened. Best-effort
+        -- any failure approves (the reviewer must never block a run by erroring). Returns the verdict dict."""
+        try:
+            _t, reason = adversary.shouldTrigger("", 0, pre_pr=True)
+            summary = "\n".join(
+                f"- {s['subtask_id']} [{s['status']}] {s['title']}"
+                + (" (verify PASS)" if (s.get('verify_result') or {}).get('passed') else "")
+                for s in state.subtasks if s["status"] != "removed") or "(no subtasks)"
+            rv = self._review("Pre-PR safety review", reason, summary, ollama_chat=self._ollamaChat,
+                              goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
+            with self._state_lock:
+                state.addAdversaryReview("pre_pr", reason, rv["verdict"], None)
+            discord.sendEmbed(discord.adversaryTriggeredEmbed("Pre-PR review", reason, rv.get("verdict")))
+            return rv
+        except Exception as e:  # noqa: BLE001 -- never block a run on the reviewer itself
+            LOG.warning("pre-PR adversary review failed (%s); approving", e)
+            return {"verdict": "approved", "concerns": [], "stub": True}
+
+    @staticmethod
+    def _prGate(review: dict, auto_pr: bool) -> "tuple[bool, str]":
+        """Decide whether to create the PR. Returns (create, skip_reason)."""
+        if not auto_pr:
+            return False, "--no-pr"
+        if config.ADVERSARY_PR_HOLD_ENABLED and review.get("verdict") == "challenged":
+            concerns = "; ".join(review.get("concerns") or ["challenged"])
+            return False, f"adversary HOLD: {concerns}"[:300]
+        return True, ""
 
     # ===================================================================
     # Phase 4 -- PR creation (best effort; skips gracefully)
@@ -756,16 +860,20 @@ class Orchestrator:
             dashboard.update(state, "executing", f"{sid} attempt {attempt} · effort {spec.get('effort_level')}",
                              effort=spec.get("effort_level"))
             attempt_started = time.time()
-            result = executor.runClaude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
+            result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
                                         resume_session=resume_session)
+            if not isinstance(result, dict):   # a hands layer that returns junk must fail cleanly, not crash
+                result = {"ok": False, "returncode": -1, "stdout": "",
+                          "stderr": f"executor returned non-dict result: {type(result).__name__}"}
             # Carry a HEALTHY session forward so the next retry continues it (fix the failing
             # assertion, don't re-explore). If Claude itself errored, start fresh -- never resume
             # into a broken session. (is_error absent => json envelope off => no resume.)
             resume_session = result.get("session_id") if (
                 result.get("session_id") and not result.get("is_error")) else None
-            combined = result.get("stdout") or ""
-            if result.get("stderr"):
-                combined += "\n[stderr]\n" + result["stderr"]
+            combined = _resultText(result, "stdout")
+            stderr_text = _resultText(result, "stderr")
+            if stderr_text:
+                combined += "\n[stderr]\n" + stderr_text
 
             vresult = verifier.runVerification(verify_spec, exec_cwd, result)
             passed = bool(vresult["passed"])
@@ -804,7 +912,7 @@ class Orchestrator:
                         + answer
                     )
                     resume_session = None   # approach is changing -> start the next attempt fresh
-            self._translateDiscord(bus)
+            self._translateDiscord(bus, state)
             while bus.isPaused() and not bus.isAbort():   # honor !pause mid-subtask, not just between
                 dashboard.update(state, "paused", f"{sid} paused -- waiting for !resume")
                 time.sleep(config.DISCORD_POLL_SECONDS)
@@ -814,25 +922,13 @@ class Orchestrator:
             if (state.getSubtask(sid) or {}).get("status") == "removed":
                 return "removed"
 
-        with self._state_lock:
-            note = self._subtaskNote(state, subtask, spec, result, vresult)
-            written = self.obs.writeNote(state.subtaskNoteRel(sid), note)
-            state.updateSubtask(sid, output_ref=written.get("rel_path"))
-
         if (state.getSubtask(sid) or {}).get("status") == "removed":
             return "removed"
 
-        # heartbeat off a STABLE terminal-subtask count, not the mutable loop/scheduler position
-        heartbeat_ordinal = sum(1 for s in state.subtasks if s["status"] in ("done", "failed", "removed")) + 1
-        triggered, reason = adversary.shouldTrigger(combined, heartbeat_ordinal, attempt)
-        if triggered:
-            discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason))
-            rv = adversary.review(subtask["title"], reason, combined)
-            with self._state_lock:
-                state.addNotification("adversary_triggered", f"{sid}: {reason}")
-                self.obs.writeNote(state.subtaskReviewNoteRel(sid), self._reviewNote(subtask, reason, rv, combined))
-                state.addAdversaryReview(sid, reason, rv["verdict"], state.subtaskReviewNoteRel(sid))
-
+        # COMMIT the verified outcome FIRST -- it is the source of truth. Everything below
+        # (notes, adversary, replan, index) is best-effort enrichment that must never be able to
+        # change a verified result: it runs in a guard, because a crash here used to propagate to
+        # the caller's handler and flip a PASSED subtask to 'failed' (the poll/replan bug class).
         final = "done" if passed else "failed"
         with self._state_lock:
             state.updateSubtask(sid, status=final, completed_at=nowIso())
@@ -842,19 +938,54 @@ class Orchestrator:
             discord.sendEmbed(discord.subtaskFailedEmbed(sid, subtask["title"], vresult, attempt))
         dashboard.update(state, "executing", f"{sid} -> {final}")
 
-        # Replan ONLY after a subtask that PASSED. Replanning after failures is the
-        # churn engine (fail -> add remediation -> fail -> add ...) that livelocks runs;
-        # the executor already retries failed subtasks up to MAX_SUBTASK_ATTEMPTS.
-        if final == "done" and not self._singleDeliverable(state.meta.get("goal_elaborated", "")):
-            decision = replanner.replan(state.meta["goal_elaborated"], state.subtasks, subtask, combined,
+        try:
+            with self._state_lock:
+                note = self._subtaskNote(state, subtask, spec, result, vresult)
+                written = self.obs.writeNote(state.subtaskNoteRel(sid), note)
+                state.updateSubtask(sid, output_ref=written.get("rel_path"))
+
+            # heartbeat off the STABLE terminal-subtask count (this subtask is now committed terminal).
+            # Snapshot under the lock: in parallel mode a peer worker may be appending via _applyReplan,
+            # and iterating the live list unlocked risks 'list changed size during iteration'.
+            with self._state_lock:
+                heartbeat_ordinal = sum(1 for s in state.subtasks if s["status"] in ("done", "failed", "removed"))
+            triggered, reason = adversary.shouldTrigger(combined, heartbeat_ordinal, attempt)
+            if triggered:
+                rv = self._review(subtask["title"], reason, combined,
+                                  ollama_chat=self._ollamaChat,
+                                  goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
+                discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason, rv.get("verdict")))
+                with self._state_lock:
+                    state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
+                    self.obs.writeNote(state.subtaskReviewNoteRel(sid), self._reviewNote(subtask, reason, rv, combined))
+                    state.addAdversaryReview(sid, reason, rv["verdict"], state.subtaskReviewNoteRel(sid))
+                # TEETH: a challenged verdict on a PASSED subtask earns ONE bounded remediation
+                # attempt with the concerns injected. Never downgrades the passing result.
+                if (config.ADVERSARY_REMEDIATION_ENABLED and final == "done"
+                        and rv.get("verdict") == "challenged" and rv.get("concerns")):
+                    dashboard.update(state, "executing", f"{sid} adversary remediation (1 attempt)")
+                    self._remediate(state, subtask, architect_doc, exec_cwd, rv["concerns"])
+
+            # Replan ONLY after a subtask that PASSED. Replanning after failures is the
+            # churn engine (fail -> add remediation -> fail -> add ...) that livelocks runs;
+            # the executor already retries failed subtasks up to MAX_SUBTASK_ATTEMPTS.
+            if final == "done" and not self._singleDeliverable(state.meta.get("goal_elaborated", "")):
+                with self._state_lock:                       # snapshot for the same parallel-safety reason
+                    subs_snapshot = list(state.subtasks)
+                decision = self._replan(state.meta["goal_elaborated"], subs_snapshot, subtask, combined,
                                         self_referential=bool(state.meta.get("is_self_referential")),
                                         remaining_hours=self._remainingHours(state))
-            if decision.get("action") == "mutate" and (decision.get("add") or decision.get("remove")):
-                dashboard.update(state, "replanning", f"replanning after {sid}")
-                with self._state_lock:
-                    self._applyReplan(state, decision)
-        with self._state_lock:
-            self.writeIndex(state)
+                if decision.get("action") == "mutate" and (decision.get("add") or decision.get("remove")):
+                    dashboard.update(state, "replanning", f"replanning after {sid}")
+                    with self._state_lock:
+                        self._applyReplan(state, decision)
+            with self._state_lock:
+                self.writeIndex(state)
+        except AbortRun:
+            raise
+        except Exception as e:  # noqa: BLE001 -- enrichment is best-effort; committed status stands
+            LOG.warning("post-completion enrichment for %s failed (status %s preserved): %s",
+                        sid, final, e, exc_info=True)
         return final
 
     def _deadlinePassed(self, state: TaskState) -> bool:
@@ -975,7 +1106,13 @@ class Orchestrator:
     def _applyReplan(self, state: TaskState, decision: dict) -> None:
         diff = [f"## Replan @ {nowIso()}", f"Reason: {decision.get('reason', '')}", ""]
         active = sum(1 for s in state.subtasks if s["status"] != "removed")
-        for add in decision.get("add", []) or []:
+        # The brain may return malformed add/remove (non-list, or items of the wrong type). A crash
+        # here would propagate to the caller's handler and flip the just-COMPLETED subtask to failed,
+        # so coerce defensively and skip any entry that isn't the expected shape.
+        adds = decision.get("add") or []
+        for add in (adds if isinstance(adds, list) else []):
+            if not isinstance(add, dict):
+                continue
             if active >= config.MAX_SUBTASKS:
                 LOG.info("replan add skipped: MAX_SUBTASKS (%d) reached", config.MAX_SUBTASKS)
                 diff.append(f"(skipped add '{add.get('title')}' -- MAX_SUBTASKS cap)")
@@ -984,7 +1121,10 @@ class Orchestrator:
                                   layer=add.get("layer", 3), verify=verifier.sanitizeVerify(add.get("verify")))
             active += 1
             diff.append(f"+ {st['subtask_id']} {st['title']}")
-        for rid in decision.get("remove", []) or []:
+        rems = decision.get("remove") or []
+        for rid in (rems if isinstance(rems, list) else []):
+            if not isinstance(rid, str):
+                continue
             st = state.getSubtask(rid)
             if st and st["status"] == "pending":
                 state.updateSubtask(rid, status="removed")
@@ -1028,6 +1168,18 @@ class Orchestrator:
                           content=discord.humanPing())
         dashboard.event(f"self-referential · branch {branch}")
 
+    @staticmethod
+    def _cleanupScaffolding(work_dir: str) -> None:
+        """Remove 9to5's per-subtask scratch dir (.sc-ctx) from the user's project tree at the
+        end of a run -- never leave scaffolding behind. Best-effort; never raises."""
+        try:
+            import shutil
+            ctx = os.path.join(str(work_dir), ".sc-ctx")
+            if os.path.isdir(ctx):
+                shutil.rmtree(ctx, ignore_errors=True)
+        except Exception:  # noqa: BLE001
+            pass
+
     def _execCwd(self, state: TaskState, sid: str | None, work_dir: str) -> str:
         """For self-referential runs, give the executor an isolated cwd so the living
         CLAUDE.md never clobbers the project's own CLAUDE.md. The project root remains
@@ -1051,6 +1203,7 @@ class Orchestrator:
             LOG.warning("refreshClaudeKnowledge failed (non-fatal): %s", e)
         if control_mode:
             state.setControlMode(control_mode)
+        state.setWorkDir(work_dir)   # persist the target dir so resume + every surface remember it
         bus = ControlBus(state.task_id)
         if not resume:
             bus.clear()
@@ -1089,15 +1242,16 @@ class Orchestrator:
                 state.setStatus("architecting")
                 self._checkControl(state, bus, dashboard)
                 dashboard.update(state, "architecting", "authoring architecture")
-                arch_prompt = architect.authorArchitectPrompt(elaborated)
+                arch_prompt = architect.authorArchitectPrompt(elaborated, chat=self._ollamaChat)
 
                 def _runArchitect(effort: str):
-                    return executor.runClaude({"prompt": arch_prompt, "effort_level": effort},
-                                              work_dir=self._execCwd(state, "architect", work_dir),
-                                              system_prompt=architect.ARCHITECT_SYSTEM_PROMPT, task_state=state)
+                    res = self._run_claude({"prompt": arch_prompt, "effort_level": effort},
+                                           work_dir=self._execCwd(state, "architect", work_dir),
+                                           system_prompt=architect.ARCHITECT_SYSTEM_PROMPT, task_state=state)
+                    return res if isinstance(res, dict) else {}   # tolerate a junk hands result
 
                 arch_res = _runArchitect("default")
-                architect_doc = (arch_res.get("stdout") or "").strip()
+                architect_doc = _resultText(arch_res).strip()
                 # GATE: an empty/failed architect phase silently degrades EVERY downstream spec
                 # (plan + invocation specs feed architect_doc). Retry once harder before trusting it.
                 if arch_res.get("is_error") or len(architect_doc) < 200:
@@ -1105,7 +1259,7 @@ class Orchestrator:
                                 arch_res.get("is_error"), len(architect_doc))
                     dashboard.update(state, "architecting", "architect output weak -> retrying harder")
                     arch_res = _runArchitect("xhigh")
-                    architect_doc = (arch_res.get("stdout") or "").strip() or architect_doc
+                    architect_doc = _resultText(arch_res).strip() or architect_doc
                 if len(architect_doc) < 200:
                     try:
                         discord.sendEmbed(discord.blockedEmbed(
@@ -1140,7 +1294,15 @@ class Orchestrator:
 
             # --- Phase 4: PR + complete ---
             self._checkControl(state, bus, dashboard, gate="pre_pr")
-            pr = self.createPullRequest(state, work_dir) if auto_pr else {"skipped": True, "reason": "--no-pr"}
+            pr_review = self._prePrAdversary(state)
+            create_pr, skip_reason = self._prGate(pr_review, auto_pr)
+            if create_pr:
+                pr = self.createPullRequest(state, work_dir)
+            else:
+                pr = {"skipped": True, "reason": skip_reason}
+                if skip_reason.startswith("adversary HOLD"):
+                    dashboard.update(state, "executing", f"PR held by adversary: {skip_reason}")
+                    state.addNotification("pr_held", skip_reason)
             elapsed = _elapsedSince(state.meta["started_at"])
             done, total = state.progress()
             final_status = "done" if (total > 0 and done == total) else "partial"
@@ -1200,3 +1362,4 @@ class Orchestrator:
             except Exception:  # noqa: BLE001
                 LOG.warning("dashboard unpin failed", exc_info=True)
             stopWebDashboard()
+            self._cleanupScaffolding(work_dir)   # never leave 9to5 scratch dirs in the user's project

@@ -17,6 +17,7 @@ import argparse
 import json
 import sys
 import threading
+from pathlib import Path
 
 import config
 from agents import elaborator
@@ -101,6 +102,32 @@ def _collectEditedSpec() -> str:
     return "\n".join(buf).strip()
 
 
+def _runDryRun(args) -> int:
+    """Simulate a FULL run (architect -> plan -> execute -> verify -> complete) with no
+    Ollama / Claude CLI / Discord / Obsidian. Proves the orchestration end-to-end."""
+    import simulation
+    import tempfile
+    config.WEB_DASHBOARD = False
+    config.CLAUDE_DOC_FETCH = False   # offline knowledge build only -- no web fetch in a dry-run
+    config.ensureDirs()
+    goal = (args.goal or "Simulated dry-run goal").strip()
+    state = TaskState.create(goal, args.hours)
+    state.setElaboratedGoal(goal)
+    state.setUniverse({"description": "dry-run", "allowed_paths": [],
+                       "allowed_to_expand_to": [], "hard_boundaries": []})
+    state.save()
+    # isolated temp work_dir: keeps the dry-run from tripping self-referential detection
+    # (which would create a git branch) or writing into the real project tree.
+    work_dir = tempfile.mkdtemp(prefix="9to5-dryrun-")
+    print(f"[DRY-RUN] simulating a full run for {goal!r} — no Ollama/Claude/Discord/Obsidian touched.")
+    orch = simulation.buildOrchestrator()
+    summary = orch.runFull(state, work_dir=work_dir, auto_pr=False,
+                           control_mode=args.mode, parallelism=max(1, args.parallel))
+    print("\n===== DRY-RUN SUMMARY =====")
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    return 0
+
+
 def main() -> int:
     # Standalone knowledge-refresh command (intercept before argparse, which would
     # reject the bare "/refresh" token): `python main.py /refresh`.
@@ -122,11 +149,23 @@ def main() -> int:
     parser.add_argument("--no-web", action="store_true", help="Disable the local web dashboard.")
     parser.add_argument("--task-id", help="Alias for --resume: restore + continue a task by id.")
     parser.add_argument("--health", action="store_true", help="Run environment health checks and exit.")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Simulate a full run with no external services (offline; for testing).")
+    parser.add_argument("--e2e", action="store_true",
+                        help="Run the virtual-operator end-to-end test suite (a scripted 'human' "
+                             "drives full simulated runs through the real control surfaces) and exit.")
     args = parser.parse_args()
 
     if args.health:
         import health
         return 0 if health.runHealthChecks() else 1
+
+    if args.e2e:
+        from testing.e2e import main as e2eMain
+        return e2eMain()
+
+    if args.dry_run:
+        return _runDryRun(args)
 
     if args.task_id and not args.resume:   # --task-id is an alias for --resume
         args.resume = args.task_id
@@ -144,6 +183,10 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         LOG.warning("startup knowledge refresh failed (non-fatal): %s", e)
 
+    # A user-chosen --work-dir must exist (9to5 operates on YOUR project tree, not its own root).
+    if args.work_dir and not Path(args.work_dir).is_dir():
+        print(f"--work-dir does not exist or is not a directory: {args.work_dir}")
+        return 2
     work_dir = args.work_dir or str(config.PROJECT_ROOT)
     if config.WEB_DASHBOARD:
         print(f"Live web dashboard -> http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/  "
@@ -156,9 +199,12 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001
             print(f"Cannot resume {args.resume}: {e}")
             return 2
-        LOG.info("Resuming task %s", state.task_id)
+        # remember the original working directory: explicit --work-dir overrides, else the one
+        # the task was launched with, else the project root.
+        resume_work_dir = args.work_dir or state.meta.get("work_dir") or str(config.PROJECT_ROOT)
+        LOG.info("Resuming task %s in %s", state.task_id, resume_work_dir)
         _startTerminalControl(state.task_id)
-        summary = Orchestrator().runFull(state, work_dir=work_dir, auto_pr=not args.no_pr,
+        summary = Orchestrator().runFull(state, work_dir=resume_work_dir, auto_pr=not args.no_pr,
                                          control_mode=args.mode, resume=True, parallelism=max(1, args.parallel))
         print("\n===== RUN SUMMARY =====")
         print(json.dumps(summary, indent=2, ensure_ascii=False))

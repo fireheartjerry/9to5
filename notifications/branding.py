@@ -96,6 +96,7 @@ def statusEmbed(state, bus, uptime: Optional[str] = None) -> dict:
         {"name": "Mode", "value": f"`{m.get('control_mode', 'watch')}`", "inline": True},
         {"name": "Progress", "value": f"{done}/{total}", "inline": True},
         {"name": "Current", "value": discord.truncate(cur_txt, 1024), "inline": False},
+        {"name": "Working dir", "value": f"`{discord.truncate(m.get('work_dir') or '—', 200)}`", "inline": False},
     ]
     if gate:
         fields.append({"name": "⏳ Gate", "value": f"`{gate}` — /approve or /reject", "inline": False})
@@ -143,6 +144,7 @@ def runEmbed(state) -> dict:
         {"name": "Progress", "value": f"{done}/{total}", "inline": True},
         {"name": "Started", "value": discord.relTime(m.get("started_at")), "inline": True},
         {"name": "Mode", "value": f"`{m.get('control_mode', 'watch')}`", "inline": True},
+        {"name": "Working dir", "value": f"`{discord.truncate(m.get('work_dir') or '—', 200)}`", "inline": False},
     ]
     return brandEmbed("🔎 Run detail",
                       description=f"**{discord.truncate(m.get('goal_raw', ''), 400)}**\n"

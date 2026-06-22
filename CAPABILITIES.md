@@ -31,8 +31,10 @@ feed back to Ollama → repeat.
 - **Executor** — Claude Code CLI subprocess. (`agents/executor.py`)
 - **Architect** — Claude Code CLI with a locked system prompt prepended; output
   saved as `architect.md`. (`agents/architect.py`)
-- **Adversary** — **STUB in Phase 1**: logs the trigger reason, returns
-  `approved`. Phase 2 → GPT-5.5 via chatgpt.com CDP. (`agents/adversary.py`)
+- **Adversary** — Phase 1 runs a **real Ollama-backed critique**: returns a
+  verdict (`approved`/`challenged`) with concrete concerns over the executor
+  output; conservative auto-approve fallback if no brain is wired or the call
+  fails. Phase 2 → GPT-5.5 via chatgpt.com CDP. (`agents/adversary.py`)
 - **Replanner** — Ollama, after every subtask; may mutate the subtask list.
   (`agents/replanner.py`)
 
@@ -98,9 +100,11 @@ and retried up to `MAX_SUBTASK_ATTEMPTS` (3).
 ## Current capabilities / what is stubbed
 Phase 1 (Layer 3 only).
 - **LIVE:** verification gate + retry, live Discord dashboard, web dashboard,
-  gateway command bot, watch/gated control modes, plan editing.
-- **STUBBED:** the **Adversary** auto-approves (Phase 2 → GPT-5.5 via
-  chatgpt.com CDP). Layers 1 (Browser) and 2 (Native) are not built.
+  gateway command bot, watch/gated control modes, plan editing, **Ollama-backed
+  Adversary critique** (advisory verdict + concerns, conservative auto-approve
+  fallback).
+- **STUBBED:** the **Adversary** brain is local Ollama in Phase 1; Phase 2 swaps
+  it for GPT-5.5 via chatgpt.com CDP. Layers 1 (Browser) and 2 (Native) are not built.
 - Everything reads config from `C:\supercritical\.env` — never hardcode secrets.
 
 ## Conventions

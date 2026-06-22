@@ -122,6 +122,7 @@ class DiscordDashboard:
                 {"name": "⚔️ Adversary", "value": str(advs), "inline": True},
                 {"name": "Effort", "value": discord.effortBar(self.effort), "inline": True},
                 {"name": "Current subtask", "value": cur_txt[:1000], "inline": False},
+                {"name": "Working dir", "value": f"`{(m.get('work_dir') or '—')[:200]}`", "inline": False},
                 {"name": "Last verify", "value": verify_txt, "inline": False},
                 {"name": "Recent events", "value": ("\n".join(self._eventsSnapshot()) or "—")[:1000], "inline": False},
             ],

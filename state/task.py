@@ -52,6 +52,7 @@ class TaskState:
                 "status": "created",
                 "blocked_reason": None,
                 "control_mode": config.CONTROL_MODE_DEFAULT,
+                "work_dir": None,
                 "is_self_referential": False,
                 "self_ref_branch": None,
                 "subtask_seq": 0,
@@ -103,7 +104,27 @@ class TaskState:
         p = config.STATE_DIR / f"{task_id}.json"
         return cls(json.loads(p.read_text(encoding="utf-8")))
 
+    @classmethod
+    def loadSafe(cls, task_id: str) -> Optional["TaskState"]:
+        """Like ``load`` but returns None for a missing/corrupt file instead of raising,
+        so callers (e.g. the Discord /run command) can show a clean message."""
+        try:
+            return cls.load(task_id)
+        except Exception:  # noqa: BLE001 -- missing/corrupt => None
+            return None
+
     _TERMINAL = ("done", "complete", "aborted", "partial", "blocked", "failed")
+
+    @classmethod
+    def iterStored(cls):
+        """Yield ``(path, data)`` for every readable task JSON in the store. The single
+        place that scans STATE_DIR -- corrupt/unreadable files are skipped silently so
+        every consumer (loadLatest/listRecent/metrics) gets the same robust behavior."""
+        for f in config.STATE_DIR.glob("*.json"):
+            try:
+                yield f, json.loads(f.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 -- missing/corrupt file => skip
+                continue
 
     @classmethod
     def loadLatest(cls) -> Optional["TaskState"]:
@@ -111,11 +132,7 @@ class TaskState:
         # bumps an old task's file mtime must not cause the wrong task to be resumed/inspected.
         best = None
         best_key = None
-        for f in config.STATE_DIR.glob("*.json"):
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-            except Exception:  # noqa: BLE001
-                continue
+        for f, data in cls.iterStored():
             meta = data.get("meta", {})
             key = (0 if meta.get("status") in cls._TERMINAL else 1, meta.get("started_at", ""))
             if best_key is None or key > best_key:
@@ -126,11 +143,7 @@ class TaskState:
     def listRecent(cls, n: int = 10) -> list[dict[str, Any]]:
         """Lightweight summaries of recent tasks, newest first. Reads the JSON store directly."""
         out: list[dict[str, Any]] = []
-        for f in config.STATE_DIR.glob("*.json"):
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-            except Exception:  # noqa: BLE001
-                continue
+        for f, data in cls.iterStored():
             meta = data.get("meta", {})
             subs = (data.get("plan", {}) or {}).get("subtasks", []) or []
             done = sum(1 for s in subs if s.get("status") == "done")
@@ -185,6 +198,16 @@ class TaskState:
 
     def setControlMode(self, mode: str) -> None:
         self.meta["control_mode"] = mode
+        self.save()
+
+    def setWorkDir(self, work_dir: str) -> None:
+        """Persist the working directory this run targets (resolved absolute), so resume and
+        every status surface know which project tree the run operates on."""
+        try:
+            resolved = str(Path(work_dir).resolve())
+        except Exception:  # noqa: BLE001
+            resolved = str(work_dir)
+        self.meta["work_dir"] = resolved
         self.save()
 
     def markSelfReferential(self, branch: Optional[str] = None) -> None:

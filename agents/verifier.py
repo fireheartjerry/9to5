@@ -5,11 +5,16 @@ Each subtask carries a ``verify`` block authored by the Orchestrator brain:
     {"cmd": "python -m taskcli --help", "expect": "exit_zero"}
 
 ``expect`` is one of:
-  * ``exit_zero``                -- the command returned exit code 0
-  * ``stdout_contains:<text>``   -- <text> appears in stdout
-  * ``stdout_regex:<pattern>``   -- <pattern> matches stdout (re.search)
+  * ``exit_zero``                       -- the command returned exit code 0
+  * ``stdout_contains:<text>``          -- <text> appears in stdout
+  * ``stdout_regex:<pattern>``          -- <pattern> matches stdout (re.search)
+  * ``stdout_contains_all:<a>||<b>``    -- EVERY ``||``-separated needle appears (compound)
+  * ``stdout_regex_all:<p1>||<p2>``     -- EVERY ``||``-separated pattern matches (compound)
 
-If ``cmd`` is null/empty the gate falls back to "the executor process exited 0".
+The compound forms let one verify assert all N deliverables of a multi-requirement
+goal, so a subtask that did 1 of N can't slip through. An unknown ``expect`` falls
+back to ``exit_zero``. If ``cmd`` is null/empty the gate falls back to "the executor
+process exited 0".
 The command is run deterministically in the subtask's working directory; this
 module never asks the model anything -- it only executes and compares.
 """
@@ -86,7 +91,8 @@ def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
     import ast
     if not isinstance(verify, dict):
         return None
-    cmd = (verify.get("cmd") or "").strip()
+    cmd_raw = verify.get("cmd")
+    cmd = cmd_raw.strip() if isinstance(cmd_raw, str) else ""   # brain may emit a non-string cmd
     if not cmd:
         return None
     m = re.match(r"""(?:py|python|python3)\s+-c\s+(['"])(.*)\1\s*$""", cmd, re.DOTALL)
@@ -235,7 +241,8 @@ def isStrictVerify(verify: Optional[dict]) -> bool:
 
 
 def _evaluate(expect: str, returncode: int, stdout: str) -> bool:
-    expect = (expect or config.VERIFY_DEFAULT_EXPECT).strip()
+    # coerce a non-string/empty expect (brain may emit an int/None) to the safe default
+    expect = (expect if isinstance(expect, str) else "").strip() or config.VERIFY_DEFAULT_EXPECT
     if expect == "exit_zero":
         return returncode == 0
     if expect.startswith("stdout_contains:"):
@@ -267,7 +274,8 @@ def _evaluate(expect: str, returncode: int, stdout: str) -> bool:
 
 def runVerification(verify: Optional[dict], work_dir: str, executor_result: dict) -> dict:
     """Return a verify_result dict: {passed, cmd, expect, returncode, stdout, stderr}."""
-    cmd = (verify or {}).get("cmd") if verify else None
+    executor_result = executor_result if isinstance(executor_result, dict) else {}
+    cmd = (verify or {}).get("cmd") if isinstance(verify, dict) else None
     expect = (verify or {}).get("expect") or config.VERIFY_DEFAULT_EXPECT
 
     # No command authored -> trust the executor's own exit status.

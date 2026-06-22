@@ -115,8 +115,12 @@ class ObsidianClient:
             LOG.warning("REST PUT %s -> %s; falling back to disk", rel_path, r.status_code)
         except Exception as e:  # noqa: BLE001 -- any transport error => disk
             LOG.warning("REST PUT %s failed (%s); falling back to disk", rel_path, e)
-        disk = self._writeDisk(rel_path, content)
-        return {"ok": True, "via": "disk", "rel_path": rel_path, "disk_path": str(disk)}
+        try:
+            disk = self._writeDisk(rel_path, content)
+            return {"ok": True, "via": "disk", "rel_path": rel_path, "disk_path": str(disk)}
+        except Exception as e:  # noqa: BLE001 -- never raise into the run (documented contract)
+            LOG.error("writeNote disk fallback failed for %s: %s", rel_path, e)
+            return {"ok": False, "via": "none", "rel_path": rel_path, "error": str(e)}
 
     def readNote(self, rel_path: str) -> Optional[str]:
         url = f"{self.base_url}/vault/{rel_path}"

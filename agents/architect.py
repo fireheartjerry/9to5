@@ -29,22 +29,34 @@ ARCHITECT_SYSTEM_PROMPT = (
 )
 
 
-def authorArchitectPrompt(goal_elaborated: str) -> str:
-    """Ollama authors the prompt that will be sent to Claude Code CLI."""
+_ARCHITECT_PROMPT_SYSTEM = (
+    "You author a single prompt instructing a coding agent to design the "
+    "architecture for the given specification. The prompt must ask only for a "
+    "design document, not code. Output ONLY the prompt text."
+)
+
+
+def authorArchitectPrompt(goal_elaborated: str, chat=None) -> str:
+    """Ollama authors the prompt that will be sent to Claude Code CLI.
+
+    ``chat`` is an optional ``(system, user, *, want_json=False) -> resp`` callable
+    (the orchestrator's seamed ``_ollamaChat``); when given it is used instead of this
+    module's own client, so a dry-run / test can drive the architect phase offline."""
     LOG.info("Authoring architecture prompt via %s", config.OLLAMA_MODEL)
-    resp = _OLLAMA.chat(
-        model=config.OLLAMA_MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": knowledge.injectCapabilities(
-                    "You author a single prompt instructing a coding agent to design the "
-                    "architecture for the given specification. The prompt must ask only for a "
-                    "design document, not code. Output ONLY the prompt text."
-                ),
-            },
-            {"role": "user", "content": f"Specification:\n{goal_elaborated}\n\nWrite the architecture-design prompt."},
-        ],
-        options={"num_ctx": config.OLLAMA_NUM_CTX},
-    )
-    return resp["message"]["content"].strip()
+    user = f"Specification:\n{goal_elaborated}\n\nWrite the architecture-design prompt."
+    if chat is not None:
+        resp = chat(_ARCHITECT_PROMPT_SYSTEM, user)   # _ollamaChat injects capabilities itself
+    else:
+        resp = _OLLAMA.chat(
+            model=config.OLLAMA_MODEL,
+            messages=[{"role": "system", "content": knowledge.injectCapabilities(_ARCHITECT_PROMPT_SYSTEM)},
+                      {"role": "user", "content": user}],
+            options={"num_ctx": config.OLLAMA_NUM_CTX},
+        )
+    # Safe extraction: the brain may return None / a non-dict message / non-string content.
+    try:
+        msg = resp.get("message") if isinstance(resp, dict) else None
+        content = msg.get("content") if isinstance(msg, dict) else None
+        return content.strip() if isinstance(content, str) else ""
+    except Exception:  # noqa: BLE001
+        return ""

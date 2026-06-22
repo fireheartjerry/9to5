@@ -13,3 +13,6 @@ test-run2/
 test-run3/
 .sc-ctx/
 CLAUDE.md.bak
+# stray dir created when run on non-Windows (config paths default to C:\supercritical);
+# the backslash is escaped so the literal directory name matches on Linux
+C:\\supercritical/
