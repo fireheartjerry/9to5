@@ -79,7 +79,10 @@ OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_TIMEOUT_SECONDS: int = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))  # prevent indefinite hangs
 
 # --- Claude Code CLI (Executor hands) ------------------------------------
-CLAUDE_CLI_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_CLI_TIMEOUT_SECONDS", "300"))
+# Real coding subtasks (writing a multi-KB module with reasoning, over a large --add-dir repo)
+# routinely need more than 5 min. 300s was killing Claude mid-write -> false "timeout" even though
+# the artifact landed. 900s lets a genuine coding call return cleanly; verify-repair still backstops.
+CLAUDE_CLI_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_CLI_TIMEOUT_SECONDS", "900"))
 
 # --- Local task-state JSON store -----------------------------------------
 STATE_DIR: Path = PROJECT_ROOT / "state" / "tasks"

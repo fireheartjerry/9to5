@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import ollama
 
 import config
-from agents import adversary, architect, executor, replanner, verifier
+from agents import adversary, architect, clarifier, executor, replanner, verifier
 from control import AbortRun, ControlBus
 from memory.obsidian import ObsidianClient
 from notifications import discord_bot as discord
@@ -115,6 +115,24 @@ class Orchestrator:
                 time.sleep(delay)
                 delay *= 2
         return None
+
+    def _resolveClarifications(self, state: TaskState, subtask: dict, claude_output: str,
+                              dashboard: "DiscordDashboard | None" = None) -> "str | None":
+        """If the executor punted a decision to a human, have the Ollama brain answer it so the
+        next attempt proceeds with NO human intervention. Returns the answer text, or None."""
+        questions = clarifier.detectClarificationNeeded(claude_output)
+        if not questions:
+            return None
+        answer = clarifier.answerClarifications(
+            self._ollamaChat, state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""),
+            subtask, claude_output, questions)
+        if answer:
+            LOG.info("%s: brain auto-answered %d executor question(s) -- no human needed",
+                     subtask.get("subtask_id"), len(questions))
+            if dashboard is not None:
+                dashboard.update(state, "executing",
+                                 f"{subtask.get('subtask_id')} brain answered executor ({len(questions)} q) autonomously")
+        return answer
 
     def _singleDeliverable(self, goal_elaborated: str) -> bool:
         """True when the goal targets at most one distinct file with no multi-deliverable phrasing.
@@ -551,6 +569,14 @@ class Orchestrator:
                     f"rc: {vresult.get('returncode')}\nstdout:\n{vresult.get('stdout')}\n"
                     f"stderr:\n{vresult.get('stderr')}"
                 )
+                # If the executor asked a human instead of acting, the Ollama brain answers it now
+                # so the NEXT attempt proceeds autonomously (no human intervention -- ever).
+                answer = self._resolveClarifications(state, subtask, combined, dashboard)
+                if answer:
+                    failure_feedback += (
+                        "\n\n[ORCHESTRATOR ANSWERS YOUR QUESTIONS -- proceed now, do NOT ask again]\n"
+                        + answer
+                    )
             self._translateDiscord(bus)
             while bus.isPaused() and not bus.isAbort():   # honor !pause mid-subtask, not just between
                 dashboard.update(state, "paused", f"{sid} paused -- waiting for !resume")
@@ -824,7 +850,7 @@ class Orchestrator:
                 for s in plan[:config.MAX_SUBTASKS]:
                     state.addSubtask(s.get("title", "untitled"), s.get("description", ""),
                                      layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))
-                discord.sendEmbed(discord.planningStartEmbed(state.meta["goal_raw"], len(state.subtasks)))
+                discord.sendEmbed(discord.planningStartEmbed(state.meta["goal_raw"], state.subtasks))
                 state.addNotification("planning_start", f"{len(state.subtasks)} subtasks")
                 self.writeIndex(state)
                 dashboard.update(state, "planning", f"planned {len(state.subtasks)} subtasks")

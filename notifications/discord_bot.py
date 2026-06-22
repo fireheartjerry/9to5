@@ -205,14 +205,47 @@ def sendEmbed(embed: dict, content: Optional[str] = None, components: Optional[l
 # =====================================================================
 # Embed builders
 # =====================================================================
-def planningStartEmbed(goal: str, subtask_count: int) -> dict:
+def _goalSummary(goal: str, limit: int = 320) -> str:
+    """First sentence(s) of the goal up to ~limit chars, so the embed leads with the gist
+    instead of dumping the whole multi-line paragraph."""
+    g = " ".join((goal or "").split())  # collapse whitespace/newlines
+    if len(g) <= limit:
+        return g or "—"
+    cut = g[:limit]
+    dot = cut.rfind(". ")
+    if dot >= limit * 0.5:            # prefer a clean sentence break if one is reasonably late
+        return cut[:dot + 1]
+    return cut.rsplit(" ", 1)[0] + "…"
+
+
+def planningStartEmbed(goal: str, subtasks) -> dict:
+    """Structured plan embed. ``subtasks`` may be a list of subtask dicts (preferred -- renders the
+    titles as a numbered checklist) or a bare int count (back-compat)."""
+    if isinstance(subtasks, int):
+        items, count = [], subtasks
+    else:
+        items = list(subtasks or [])
+        count = len(items)
+    lines = []
+    for i, st in enumerate(items[:12], 1):
+        title = str((st.get("title") if isinstance(st, dict) else st) or f"subtask {i}").strip()
+        lines.append(f"`{i:>2}.` {title[:140]}")
+    if len(items) > 12:
+        lines.append(f"…and {len(items) - 12} more")
+    plan_block = "\n".join(lines) if lines else "_authoring subtasks…_"
+    plural = "s" if count != 1 else ""
+    description = (
+        f"**🎯 Goal**\n{_goalSummary(goal)}\n\n"
+        f"**🗺️ Plan — {count} subtask{plural}**\n{plan_block}"
+    )
     return {
-        "title": "🔵 Planning started",
+        "title": "🗺️ Plan ready",
         "color": statusColor("planning"),
-        "description": (goal[:1500] or "-"),
+        "description": description[:4000],
         "timestamp": _nowIso(),
         "fields": [
-            {"name": "Subtasks", "value": str(subtask_count), "inline": True},
+            {"name": "Subtasks", "value": str(count), "inline": True},
+            {"name": "Next", "value": "execution starting", "inline": True},
         ],
     }
 
