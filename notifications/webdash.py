@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
 import config
-from control import ControlBus
+from control import GATES, ControlBus
 from state.task import TaskState
 
 LOG = config.getLogger("webdash")
@@ -150,18 +150,18 @@ def _applyControl(task_id: str, action: str, arg: Optional[str]) -> dict:
         bus.requestPause()
     elif action == "resume":
         bus.clearPause()
-    elif action == "approve":
+    elif action in ("approve", "reject"):
         gate = arg or bus.getPendingGate()
-        if gate:
-            bus.decide(gate, "approve")
-    elif action == "reject":
-        gate = arg or bus.getPendingGate()
-        if gate:
-            bus.decide(gate, "reject")
+        if gate not in GATES:   # ignore a missing/unknown gate, never write a stray decision key
+            return {"ok": False, "error": "no valid pending gate"}
+        bus.decide(gate, action)
+        return {"ok": True, "gate": gate}
     elif action == "skip" and arg:
         bus.pushOp({"op": "skip", "subtask_id": arg})
     elif action == "add" and arg:
         bus.pushOp({"op": "add", "title": arg, "description": arg})
+    else:
+        return {"ok": False, "error": f"unknown or incomplete action: {action!r}"}
     return {"ok": True}
 
 
@@ -187,9 +187,15 @@ def _makeHandler(task_id: str):
             if not self.path.startswith("/api/control"):
                 self._send(404, b"{}", "application/json")
                 return
-            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except (TypeError, ValueError):
+                length = 0
+            length = max(0, min(length, 64_000))   # cap the read; control payloads are tiny
             try:
                 payload = json.loads(self.rfile.read(length) or b"{}")
+                if not isinstance(payload, dict):
+                    payload = {}
             except Exception:  # noqa: BLE001
                 payload = {}
             result = _applyControl(task_id, payload.get("action", ""), payload.get("arg"))
