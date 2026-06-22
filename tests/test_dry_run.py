@@ -8,6 +8,7 @@ from unittest import mock
 
 import config
 import simulation
+from orchestrator import Orchestrator
 from state.task import TaskState
 
 
@@ -44,6 +45,54 @@ class TestDryRun(unittest.TestCase):
         self.assertTrue(all(s["status"] == "done" for s in summary["subtasks"]))
         self.assertTrue(all(s["verified"] for s in summary["subtasks"]))
         self.assertTrue(summary["pr"]["skipped"])
+
+    def test_resume_completes_a_stranded_run(self):
+        # simulate a crash mid-run: 1 done, 1 stranded in_progress, 1 pending
+        st = TaskState.create("build a calculator", 1.0)
+        st.setElaboratedGoal("build a calculator")
+        st.addSubtask("a", "da")
+        st.addSubtask("b", "db")
+        st.addSubtask("c", "dc")
+        st.updateSubtask("st-001", status="done")
+        st.updateSubtask("st-002", status="in_progress")
+        st.save()
+        summary = simulation.buildOrchestrator().runFull(
+            st, work_dir=str(self.work), auto_pr=False, control_mode="watch", resume=True)
+        self.assertEqual(summary["status"], "done")
+        self.assertEqual([s["status"] for s in st.subtasks], ["done", "done", "done"])
+
+    def test_failing_executor_degrades_to_partial_without_hanging(self):
+        # robustness: if the executor can NEVER succeed, the run must finish 'partial'
+        # (each subtask retried then failed) -- not hang and not crash.
+        st = TaskState.create("build a calculator", 1.0)
+        st.setElaboratedGoal("build a calculator")
+        st.save()
+        fail = lambda *a, **k: {"ok": False, "returncode": 1, "stdout": "could not do it",
+                                "is_error": True, "session_id": None}
+        orch = Orchestrator(brain=simulation.SimBrain(2), obs=simulation.SimObs(),
+                            run_claude=fail, replan=simulation.simReplan, review=simulation.simReview)
+        summary = orch.runFull(st, work_dir=str(self.work), auto_pr=False, control_mode="watch")
+        self.assertEqual(summary["status"], "partial")
+        self.assertTrue(all(s["status"] == "failed" for s in st.subtasks))
+
+    def test_garbage_brain_spec_does_not_crash_the_run(self):
+        # robustness: a brain returning junk (non-JSON) for the invocation spec must be
+        # sanitized into a usable minimal spec, and the run must still complete.
+        class JunkBrain:
+            def chat(self, *, model=None, messages=None, **kw):
+                import json as _j
+                u = next((m.get("content", "") for m in (messages or []) if m.get("role") == "user"), "")
+                if "invocation spec" in u.lower():
+                    return {"message": {"content": "this is not json at all {{{"}}
+                return {"message": {"content": _j.dumps(simulation.SimBrain(2)._plan())}}
+        st = TaskState.create("build a calculator", 1.0)
+        st.setElaboratedGoal("build a calculator")
+        st.save()
+        orch = Orchestrator(brain=JunkBrain(), obs=simulation.SimObs(),
+                            run_claude=simulation.simRunClaude, replan=simulation.simReplan,
+                            review=simulation.simReview)
+        summary = orch.runFull(st, work_dir=str(self.work), auto_pr=False, control_mode="watch")
+        self.assertEqual(summary["status"], "done")   # sanitizeSpec saved it
 
     def test_run_is_not_self_referential_in_temp_dir(self):
         # guards the dry-run side-effect fix: a temp work_dir must not trip self-ref detection
