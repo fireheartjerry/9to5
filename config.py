@@ -48,6 +48,24 @@ def _envBool(key: str, default: bool = False) -> bool:
 PROJECT_ROOT: Path = _envPath("PROJECT_ROOT", str(_THIS_DIR)) or _THIS_DIR
 LOG_PATH: Path = _envPath("LOG_PATH", str(PROJECT_ROOT / "logs")) or (PROJECT_ROOT / "logs")
 
+# Install root (the durable home of vault/logs/knowledge), independent of which
+# git worktree the code happens to run from. Defaults to C:\supercritical.
+SUPERCRITICAL_ROOT: Path = _envPath("SUPERCRITICAL_ROOT", r"C:\supercritical") or Path(r"C:\supercritical")
+
+# --- Living Claude Code knowledge base -----------------------------------
+# The maximalist self-analysis reference, refreshed each session and compressed
+# into the "CLAUDE CODE CAPABILITIES" section injected into every Ollama prompt.
+KNOWLEDGE_DIR: Path = _envPath("KNOWLEDGE_DIR", str(SUPERCRITICAL_ROOT / "knowledge")) or (SUPERCRITICAL_ROOT / "knowledge")
+CLAUDE_KNOWLEDGE_PATH: Path = KNOWLEDGE_DIR / "claude_code.md"
+# Roots scanned recursively for installed skills/agents/workflows/hooks/settings.
+# Both the install root's .claude AND the running project's .claude are merged.
+CLAUDE_SCAN_ROOTS: tuple[Path, ...] = (SUPERCRITICAL_ROOT / ".claude", PROJECT_ROOT / ".claude")
+# Best-effort live-docs fetch (Python has internet; Ollama does not -- exploit it).
+CLAUDE_DOC_FETCH: bool = _envBool("CLAUDE_DOC_FETCH", True)
+CLAUDE_DOC_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_DOC_TIMEOUT_SECONDS", "8"))
+# Hard cap on the compressed injection so a 7B brain's context never overflows.
+CLAUDE_CAPABILITIES_MAX_CHARS: int = int(os.getenv("CLAUDE_CAPABILITIES_MAX_CHARS", "9000"))
+
 # --- Discord -------------------------------------------------------------
 DISCORD_BOT_TOKEN: str = os.getenv("DISCORD_BOT_TOKEN", "")
 _RAW_CHANNEL = os.getenv("DISCORD_CHANNEL_ID", "0") or "0"

@@ -73,6 +73,7 @@ def normalizeSpec(spec_or_prompt: Union[dict, str, None]) -> dict:
         "prompt": "", "claude_md_inject": "", "skills_to_invoke": [],
         "effort_level": "default", "subagent": None,
         "pre_tool_hooks": [], "post_tool_hooks": [],
+        "use_workflow": False, "workflow_definition": None,
     }
     if isinstance(spec_or_prompt, str):
         base["prompt"] = spec_or_prompt
@@ -81,6 +82,55 @@ def normalizeSpec(spec_or_prompt: Union[dict, str, None]) -> dict:
         for k, v in spec_or_prompt.items():
             base[k] = v
     return base
+
+
+def _composeWorkflowPrompt(definition: dict, base_prompt: str) -> str:
+    """Render a brain-authored workflow_definition into an explicit, headless-executable
+    multi-phase orchestration instruction.
+
+    Headless ``claude --print`` cannot open the interactive ``/workflows`` UI, so the
+    faithful realization is to instruct Claude to EXECUTE the workflow: dispatch one
+    subagent (Task tool) per agent, run a phase's agents in PARALLEL when marked, carry
+    each phase's outputs into the next, and finally synthesize. A Claude build that
+    exposes the Workflow tool may run it natively; either way the structured plan drives
+    the same fan-out / verify / synthesize shape the brain intended."""
+    if not isinstance(definition, dict):
+        return base_prompt
+    name = definition.get("name") or "dynamic-workflow"
+    desc = definition.get("description") or ""
+    phases = definition.get("phases") or []
+    lines: list[str] = [
+        f"EXECUTE THIS DYNAMIC WORKFLOW — \"{name}\".",
+        "This subtask is structured as a multi-phase workflow. Run it as one: for each phase, dispatch the "
+        "listed agents (use the Task tool, one subagent per agent; if a Workflow/`/workflows` primitive is "
+        "available to you, you may run it natively instead). Run a phase's agents CONCURRENTLY when it is "
+        "marked parallel; otherwise run them in order. Feed each phase's results into the next. End with the "
+        "synthesis step, which produces the final deliverable for this subtask.",
+        "",
+    ]
+    if desc:
+        lines += [f"Goal of the workflow: {desc}", ""]
+    for i, ph in enumerate(phases, 1):
+        if not isinstance(ph, dict):
+            continue
+        title = ph.get("title") or f"Phase {i}"
+        par = "PARALLEL" if ph.get("parallel") else "sequential"
+        lines.append(f"## Phase {i}: {title}  [{par}]")
+        for j, ag in enumerate(ph.get("agents") or [], 1):
+            if isinstance(ag, dict):
+                label = ag.get("label") or f"agent-{j}"
+                aprompt = ag.get("prompt") or ""
+                eff = ag.get("effort")
+                lines.append(f"- Agent `{label}`" + (f" (effort {eff})" if eff else "") + f": {aprompt}")
+            elif isinstance(ag, str):
+                lines.append(f"- Agent {j}: {ag}")
+        lines.append("")
+    synth = definition.get("synthesis") or definition.get("synthesize")
+    if synth:
+        lines += ["## Synthesis", str(synth), ""]
+    if base_prompt:
+        lines += ["## Underlying subtask (the workflow must accomplish this)", base_prompt, ""]
+    return "\n".join(lines).strip()
 
 
 def _composePrompt(spec: dict, system_prompt: Optional[str], extra: Optional[str]) -> str:
@@ -93,7 +143,11 @@ def _composePrompt(spec: dict, system_prompt: Optional[str], extra: Optional[str
     subagent = spec.get("subagent")
     if subagent:
         parts.append(f"Use the '{subagent}' subagent for the analysis portion of this task.")
-    parts.append(spec.get("prompt") or "")
+    # Dynamic workflow: a brain-authored multi-phase plan replaces the flat prompt body.
+    if spec.get("use_workflow") and isinstance(spec.get("workflow_definition"), dict):
+        parts.append(_composeWorkflowPrompt(spec["workflow_definition"], spec.get("prompt") or ""))
+    else:
+        parts.append(spec.get("prompt") or "")
     if extra:
         parts.append("\n" + extra)
     return "\n\n".join(p for p in parts if p).strip()
@@ -187,9 +241,11 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
             core_abs = str(config.PROJECT_ROOT / core)
             cmd += ["--disallowedTools", f"Edit({core_abs})", f"Write({core_abs})"]
 
-    LOG.info("Claude run (cwd=%s effort=%s skills=%s subagent=%s hooks=%s/%s prompt=%dch)",
+    wf = spec.get("use_workflow") and isinstance(spec.get("workflow_definition"), dict)
+    LOG.info("Claude run (cwd=%s effort=%s skills=%s subagent=%s hooks=%s/%s workflow=%s prompt=%dch)",
              work, flag or "default", spec.get("skills_to_invoke"), spec.get("subagent"),
-             spec.get("pre_tool_hooks"), spec.get("post_tool_hooks"), len(full_prompt))
+             spec.get("pre_tool_hooks"), spec.get("post_tool_hooks"),
+             (spec["workflow_definition"].get("name") if wf else False), len(full_prompt))
     # New process group so the timeout path can kill the WHOLE tree (launcher + node grandchildren),
     # not just the direct child -- otherwise orphans leak and block the drain (the real root cause).
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0

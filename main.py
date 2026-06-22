@@ -22,10 +22,24 @@ import config
 from agents import elaborator
 from control import ControlBus
 from memory.obsidian import ObsidianClient
-from orchestrator import Orchestrator
+from orchestrator import Orchestrator, refreshClaudeKnowledge
 from state.task import TaskState
 
 LOG = config.getLogger("main")
+
+
+def _runRefreshCommand() -> int:
+    """`python main.py /refresh` -- manually rebuild the living Claude Code knowledge
+    base (scrape latest docs + scan installed .claude + product-self-knowledge), overwrite
+    claude_code.md, and recompute the injected CLAUDE CODE CAPABILITIES summary."""
+    config.ensureDirs()
+    print("Refreshing Claude Code knowledge base (fetching latest docs + scanning .claude)...")
+    summary = refreshClaudeKnowledge(force=True)
+    print(f"\nKnowledge written -> {config.CLAUDE_KNOWLEDGE_PATH}")
+    print(f"Injected CLAUDE CODE CAPABILITIES summary: {len(summary)} chars\n")
+    print("===== CLAUDE CODE CAPABILITIES (injected into every Ollama prompt) =====")
+    print(summary)
+    return 0
 
 _CTL_HELP = ("[terminal control] commands: abort | pause | resume | skip <st-00N> | "
              "add <text> | approve | reject | status | help")
@@ -88,6 +102,11 @@ def _collectEditedSpec() -> str:
 
 
 def main() -> int:
+    # Standalone knowledge-refresh command (intercept before argparse, which would
+    # reject the bare "/refresh" token): `python main.py /refresh`.
+    if any(a.lstrip("-/").lower() == "refresh" for a in sys.argv[1:]):
+        return _runRefreshCommand()
+
     parser = argparse.ArgumentParser(prog="9to5", description="Autonomous AI orchestrator.")
     parser.add_argument("--goal", help="Raw goal. If omitted you are prompted.")
     parser.add_argument("--hours", type=float, default=1.0, help="Time horizon in hours (default 1).")
@@ -116,6 +135,14 @@ def main() -> int:
     if args.no_web:
         config.WEB_DASHBOARD = False
     config.ensureDirs()
+
+    # Living knowledge refresh: the absolute first thing every session does, BEFORE any
+    # Ollama call (elaborator/architect/planner/spec), so the brain reasons from the
+    # current Claude Code feature set. Idempotent per process; never blocks the run.
+    try:
+        refreshClaudeKnowledge()
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("startup knowledge refresh failed (non-fatal): %s", e)
 
     work_dir = args.work_dir or str(config.PROJECT_ROOT)
     if config.WEB_DASHBOARD:

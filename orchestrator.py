@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import ollama
 
 import config
+import knowledge
 from agents import adversary, architect, clarifier, executor, replanner, verifier
 from control import AbortRun, ControlBus
 from memory.obsidian import ObsidianClient
@@ -29,6 +30,147 @@ from notifications.webdash import startWebDashboard, stopWebDashboard
 from state.task import TaskState, nowIso
 
 LOG = config.getLogger("orchestrator")
+
+# ============================================================================
+# Living Claude Code knowledge -- injected into EVERY Ollama system prompt.
+# Populated by refreshClaudeKnowledge() (runs at session start before any brain
+# call). Module-global so plan/critique/spec/clarifier calls all share one copy.
+# ============================================================================
+_CLAUDE_CODE_CAPABILITIES: str = ""   # the compressed CLAUDE CODE CAPABILITIES summary
+_KNOWLEDGE_REFRESHED: bool = False    # ensures the heavy (web) refresh runs once per process
+_KNOWLEDGE_LOCK = threading.Lock()
+
+_CAPABILITIES_DIRECTIVE = (
+    "Before generating ANY invocation spec, consult CLAUDE CODE CAPABILITIES above and ask: "
+    "is there a SKILL for this? a better SUBAGENT? should this be a WORKFLOW (use_workflow)? "
+    "what EFFORT level does it deserve? which HOOKS should fire? which MCP tools apply? "
+    "Generic flat-prompt generation is FORBIDDEN when a more powerful Claude Code primitive fits."
+)
+
+
+def refreshClaudeKnowledge(obs: "ObsidianClient | None" = None, *, fetch_web: bool | None = None,
+                           log_session: bool = True, force: bool = False) -> str:
+    """Living knowledge refresh -- the asymmetry exploit (Python has internet; Ollama
+    does not). Runs at the start of every 9to5 session before any Ollama call.
+
+    Steps (all best-effort; never raises out):
+      1. Fetch the latest Claude Code docs + changelog from docs.claude.com /
+         docs.anthropic.com (CLI, hooks, MCP, skills, subagents, memory, settings ...).
+      2. Recursively read every installed ``.claude`` surface off disk
+         (skills, subagents, workflows, commands, hooks, settings, MCP).
+      3. Read the product-self-knowledge skill if present.
+      4. Combine all of the above + the existing ``claude_code.md`` into ONE unified,
+         timestamped reference and OVERWRITE ``claude_code.md`` with it.
+      5. Compress it into the structured ``CLAUDE CODE CAPABILITIES`` summary and cache
+         it module-globally so it is injected into every Ollama system prompt.
+      6. Log the refresh to Obsidian under ``sessions/knowledge-refresh-<ts>.md``.
+
+    Returns the compressed capabilities summary (also stored in the module cache)."""
+    global _CLAUDE_CODE_CAPABILITIES, _KNOWLEDGE_REFRESHED
+    with _KNOWLEDGE_LOCK:
+        if _KNOWLEDGE_REFRESHED and not force and _CLAUDE_CODE_CAPABILITIES:
+            return _CLAUDE_CODE_CAPABILITIES
+        fetch_web = config.CLAUDE_DOC_FETCH if fetch_web is None else fetch_web
+        refreshed_at = nowIso()
+        kpath = config.CLAUDE_KNOWLEDGE_PATH
+        try:
+            kpath.parent.mkdir(parents=True, exist_ok=True)
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("knowledge dir create failed: %s", e)
+
+        prior_doc = ""
+        try:
+            if kpath.exists():
+                prior_doc = kpath.read_text(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            prior_doc = ""
+
+        fetched = knowledge.fetchClaudeDocs(enabled=fetch_web)
+        local = knowledge.scanLocalClaude()
+        psk = knowledge.readProductSelfKnowledge()
+
+        sources: list[str] = []
+        sources += fetched.get("ok", [])
+        sources += [f"local:{r}" for r in local.get("roots", [])]
+        if psk.get("found"):
+            sources.append(f"product-self-knowledge:{psk.get('path')}")
+        if prior_doc.strip():
+            sources.append(f"prior:{kpath}")
+
+        unified = knowledge.buildUnifiedDoc(prior_doc, fetched, local, psk,
+                                            refreshed_at=refreshed_at, sources=sources)
+        try:
+            kpath.write_text(unified, encoding="utf-8")
+            LOG.info("knowledge: wrote unified claude_code.md (%d chars) to %s", len(unified), kpath)
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("knowledge write failed (%s); keeping in-memory only", e)
+
+        summary = knowledge.compressForInjection(unified, local, fetched)
+        _CLAUDE_CODE_CAPABILITIES = summary
+        _KNOWLEDGE_REFRESHED = True
+
+        delta = knowledge.diffHeadings(prior_doc, unified)
+        if log_session:
+            try:
+                _logKnowledgeRefresh(obs or ObsidianClient(), refreshed_at, fetched, local, psk, delta, summary)
+            except Exception as e:  # noqa: BLE001
+                LOG.warning("knowledge-refresh session log failed: %s", e)
+        LOG.info("knowledge refresh complete: %d skills, %d agents, %d doc pages, +%d/-%d headings, injection=%dch",
+                 len(local.get("skills", [])), len(local.get("agents", [])), len(fetched.get("ok", [])),
+                 len(delta.get("added", [])), len(delta.get("removed", [])), len(summary))
+        return summary
+
+
+def _logKnowledgeRefresh(obs: "ObsidianClient", at: str, fetched: dict, local: dict,
+                         psk: dict, delta: dict, summary: str) -> None:
+    """Persist a refresh record to Obsidian sessions/knowledge-refresh-<ts>.md."""
+    slug = at.replace(":", "").replace("-", "").replace("+", "p")
+    rel = f"{config.SESSIONS_DIR_REL}/knowledge-refresh-{slug}.md"
+    lines = [
+        f"# Claude Code knowledge refresh @ {at}", "",
+        "## Sources fetched",
+        f"- Live doc pages OK: {len(fetched.get('ok', []))}",
+        f"- Live doc pages failed: {len(fetched.get('failed', []))}",
+        "",
+        "### OK URLs",
+    ]
+    lines += [f"- {u}" for u in fetched.get("ok", [])] or ["- (none -- offline or fetch disabled)"]
+    lines += ["", "## Local .claude surface",
+              f"- roots: {', '.join(local.get('roots', [])) or '(none)'}",
+              f"- skills: {len(local.get('skills', []))}",
+              f"- subagents: {len(local.get('agents', []))}",
+              f"- workflows: {len(local.get('workflows', []))}",
+              f"- commands: {len(local.get('commands', []))}",
+              f"- hooks: {len(local.get('hooks', []))}",
+              f"- mcp servers: {', '.join(local.get('mcp_servers', [])) or '(none)'}",
+              f"- product-self-knowledge: {'found at ' + str(psk.get('path')) if psk.get('found') else 'not found'}",
+              "", "## What changed since last refresh (top-level headings)",
+              f"- added: {', '.join(delta.get('added', [])) or '(none)'}",
+              f"- removed: {', '.join(delta.get('removed', [])) or '(none)'}",
+              "", "## New capabilities discovered (installed skills this refresh)"]
+    lines += [f"- {s['name']}: {s['description'][:120]}" for s in local.get("skills", [])[:40]] or ["- (none)"]
+    lines += ["", "## Injected CLAUDE CODE CAPABILITIES summary", "", "```", summary, "```", ""]
+    obs.writeNote(rel, "\n".join(lines))
+
+
+def injectCapabilities(system_prompt: str) -> str:
+    """Prepend the cached CLAUDE CODE CAPABILITIES block to a brain system prompt.
+    Lazy-loads from disk (no web fetch) if a refresh has not run yet this process,
+    so a stray Ollama call is never sent capability-blind."""
+    global _CLAUDE_CODE_CAPABILITIES
+    if not _CLAUDE_CODE_CAPABILITIES:
+        try:
+            refreshClaudeKnowledge(fetch_web=False, log_session=False)
+        except Exception:  # noqa: BLE001
+            pass
+    if not _CLAUDE_CODE_CAPABILITIES:
+        return system_prompt
+    return (
+        "## CLAUDE CODE CAPABILITIES\n"
+        + _CLAUDE_CODE_CAPABILITIES
+        + "\n\n" + _CAPABILITIES_DIRECTIVE
+        + "\n\n---\n\n" + system_prompt
+    )
 
 _YELLOW = 0xF1C40F
 _ORANGE = 0xE67E22
@@ -49,9 +191,12 @@ ORCHESTRATOR_CONSTITUTION = (
     '  "subagent": string|null,      // one of: architect, security-reviewer, or null\n'
     '  "prompt": string,             // the precise, self-contained instruction to execute this subtask\n'
     '  "pre_tool_hooks": string[],   // subset of: block_destructive, log_all\n'
-    '  "post_tool_hooks": string[]   // subset of: write_obsidian, discord_notify, log_all\n'
+    '  "post_tool_hooks": string[],  // subset of: write_obsidian, discord_notify, log_all\n'
+    '  "use_workflow": boolean,      // true => run a DYNAMIC WORKFLOW instead of a flat prompt (see rule 7)\n'
+    '  "workflow_definition": object|null // when use_workflow=true: {"name","description",'
+    '"phases":[{"title","parallel":bool,"agents":[{"label","prompt","effort"}]}],"synthesis"} else null\n'
     "}\n\n"
-    "THE SIX PRIMITIVES -- when to use each:\n"
+    "THE SEVEN PRIMITIVES -- when to use each:\n"
     "1. CLAUDE.md (claude_md_inject): ALWAYS fill richly -- this is how the hands get context. "
     "Include exact absolute file paths, the acceptance/verify command, conventions, forbidden files.\n"
     "2. SKILLS: reusable playbooks. /architect-review for design-heavy subtasks; /write-obsidian-note "
@@ -63,9 +208,19 @@ ORCHESTRATOR_CONSTITUTION = (
     "are persisted. Add 'discord_notify' for long or important subtasks.\n"
     "5. EFFORT: pick by complexity. Simple file ops => default. Everyday coding => high. Complex "
     "algorithmic/architectural work => xhigh. The hardest, deepest-reasoning subtasks => ultracode.\n"
-    "6. MODEL/FALLBACK is handled by the plumbing -- do not set it.\n\n"
+    "6. MODEL/FALLBACK is handled by the plumbing -- do not set it.\n"
+    "7. DYNAMIC WORKFLOW (use_workflow + workflow_definition): when a subtask has MORE THAN 3 internal "
+    "steps, touches multiple tools, benefits from PARALLEL reasoning, or needs structured multi-phase "
+    "orchestration, DO NOT cram it into one flat prompt. Set use_workflow=true and author a full "
+    "workflow_definition: a name, a description, and an ordered list of phases; each phase has a title, a "
+    "'parallel' flag, and a list of agents ({label, prompt, effort}); add a final 'synthesis' instruction "
+    "that merges the phase outputs. The plumbing runs this as a real Claude Code workflow (fan-out "
+    "subagents, parallel where marked, then synthesize). For a simple single-step subtask keep "
+    "use_workflow=false and workflow_definition=null.\n\n"
     "RULES: Honor the goal's constraints (e.g. 'standard library only' => never instruct installs). "
-    "Keep prompt self-contained and imperative. Output ONLY the JSON object, no prose."
+    "Consult the injected CLAUDE CODE CAPABILITIES before choosing primitives -- prefer a real installed "
+    "skill/subagent/workflow over a generic prompt whenever one fits. Keep prompt self-contained and "
+    "imperative. Output ONLY the JSON object, no prose."
 )
 
 
@@ -97,7 +252,11 @@ class Orchestrator:
     # ===================================================================
     def _ollamaChat(self, system: str, user: str, *, want_json: bool = False, retries: int = 3):
         """Resilient Ollama call: exponential backoff on timeout/connection failure,
-        Discord blocked alert on final failure. Returns the response dict or None."""
+        Discord blocked alert on final failure. Returns the response dict or None.
+
+        Every system prompt is augmented with the live CLAUDE CODE CAPABILITIES block so
+        Qwen reasons from the current Claude Code feature set on every single brain call."""
+        system = injectCapabilities(system)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         delay = 2.0
         for attempt in range(1, retries + 1):
@@ -300,6 +459,9 @@ class Orchestrator:
         pre = spec.get("pre_tool_hooks") or []
         post = spec.get("post_tool_hooks") or []
         sub = spec.get("subagent")
+        # Dynamic workflow: only honored when a well-formed definition with phases is present.
+        wf_def = spec.get("workflow_definition")
+        use_wf = bool(spec.get("use_workflow")) and isinstance(wf_def, dict) and bool(wf_def.get("phases"))
         return {
             "prompt": (spec.get("prompt") or subtask.get("description") or subtask.get("title") or "").strip(),
             "claude_md_inject": (spec.get("claude_md_inject") or "").strip(),
@@ -308,6 +470,8 @@ class Orchestrator:
             "subagent": sub if sub in config.AVAILABLE_SUBAGENTS else None,
             "pre_tool_hooks": [h for h in pre if h in config.AVAILABLE_PRE_HOOKS],
             "post_tool_hooks": [h for h in post if h in config.AVAILABLE_POST_HOOKS],
+            "use_workflow": use_wf,
+            "workflow_definition": wf_def if use_wf else None,
         }
 
     def _selfRefSystemPrompt(self, state: TaskState) -> str:
@@ -493,11 +657,13 @@ class Orchestrator:
                 f"- **Return code:** {vresult.get('returncode')}\n\n"
                 f"```\n{(vresult.get('stdout') or '').strip()}\n{(vresult.get('stderr') or '').strip()}\n```\n\n"
             )
+        wf = spec.get("workflow_definition") if spec.get("use_workflow") else None
         spec_block = (
             f"## Invocation spec\n\n"
             f"- **Effort:** {spec.get('effort_level')}\n"
             f"- **Skills:** {spec.get('skills_to_invoke')}\n"
             f"- **Subagent:** {spec.get('subagent')}\n"
+            f"- **Dynamic workflow:** {('yes — ' + str(wf.get('name'))) if wf else 'no'}\n"
             f"- **Pre hooks:** {spec.get('pre_tool_hooks')}  ·  **Post hooks:** {spec.get('post_tool_hooks')}\n\n"
             f"### CLAUDE.md inject\n\n```\n{(spec.get('claude_md_inject') or '')[:1500]}\n```\n\n"
             f"### Prompt\n\n```\n{spec.get('prompt')}\n```\n\n"
@@ -571,7 +737,7 @@ class Orchestrator:
                 sess = dict(subtask.get("session") or {})
                 sess.update({"effort": spec.get("effort_level"), "model": config.PRIMARY_MODEL,
                              "skills": spec.get("skills_to_invoke"), "subagent": spec.get("subagent"),
-                             "attempts": attempt})
+                             "use_workflow": bool(spec.get("use_workflow")), "attempts": attempt})
                 state.updateSubtask(sid, session=sess)
             LOG.info("Subtask %s attempt %d/%d effort=%s", sid, attempt, config.MAX_SUBTASK_ATTEMPTS,
                      spec.get("effort_level"))
@@ -840,6 +1006,12 @@ class Orchestrator:
     # ===================================================================
     def runFull(self, state: TaskState, work_dir: str, auto_pr: bool = True,
                 control_mode: str | None = None, resume: bool = False, parallelism: int = 1) -> dict:
+        # ABSOLUTE FIRST: refresh the living Claude Code knowledge so every Ollama call
+        # in this run reasons from the current feature set (idempotent per process).
+        try:
+            refreshClaudeKnowledge(self.obs)
+        except Exception as e:  # noqa: BLE001 -- knowledge refresh must never block a run
+            LOG.warning("refreshClaudeKnowledge failed (non-fatal): %s", e)
         if control_mode:
             state.setControlMode(control_mode)
         bus = ControlBus(state.task_id)
