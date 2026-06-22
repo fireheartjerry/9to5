@@ -57,6 +57,9 @@ SUPERCRITICAL_ROOT: Path = _envPath("SUPERCRITICAL_ROOT", r"C:\supercritical") o
 # into the "CLAUDE CODE CAPABILITIES" section injected into every Ollama prompt.
 KNOWLEDGE_DIR: Path = _envPath("KNOWLEDGE_DIR", str(SUPERCRITICAL_ROOT / "knowledge")) or (SUPERCRITICAL_ROOT / "knowledge")
 CLAUDE_KNOWLEDGE_PATH: Path = KNOWLEDGE_DIR / "claude_code.md"
+# Expert, opinionated recommendations (how 9to5 should wield every Claude Code primitive).
+# Folded into the unified reference as "Part E" and surfaced (executive slice) in the injection.
+CLAUDE_RECOMMENDATIONS_PATH: Path = KNOWLEDGE_DIR / "recommendations.md"
 # Roots scanned recursively for installed skills/agents/workflows/hooks/settings.
 # Both the install root's .claude AND the running project's .claude are merged.
 CLAUDE_SCAN_ROOTS: tuple[Path, ...] = (SUPERCRITICAL_ROOT / ".claude", PROJECT_ROOT / ".claude")
@@ -147,6 +150,13 @@ AVAILABLE_SKILLS: tuple[str, ...] = ("/architect-review", "/write-obsidian-note"
 AVAILABLE_SUBAGENTS: tuple[str, ...] = ("architect", "security-reviewer")
 AVAILABLE_PRE_HOOKS: tuple[str, ...] = ("block_destructive", "log_all")
 AVAILABLE_POST_HOOKS: tuple[str, ...] = ("write_obsidian", "discord_notify", "log_all")
+
+# --- Executor playbook (role-scoped expertise handed to the HANDS) --------
+# Deterministically inject a role-scoped briefing into every subtask-execution run via the
+# living CLAUDE.md (always-read) and --append-system-prompt (system-level, unforgettable),
+# so the executor's expertise never depends on what the 7B brain remembered to include.
+EXECUTOR_PLAYBOOK_ENABLED: bool = _envBool("EXECUTOR_PLAYBOOK_ENABLED", True)
+EXECUTOR_APPEND_SYSTEM_PROMPT: bool = _envBool("EXECUTOR_APPEND_SYSTEM_PROMPT", True)
 
 # --- Self-referential safety (9to5 modifying itself) ----------------------
 # When a task targets 9to5 itself: run on a dedicated git branch, inject the

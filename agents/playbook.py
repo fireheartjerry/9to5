@@ -1,0 +1,235 @@
+"""Executor playbook -- deterministic, role-scoped expertise for the HANDS.
+
+Problem: the ``CLAUDE CODE CAPABILITIES`` block reaches the *brain* (Ollama), but the
+*executor* (Claude Code CLI) only gets whatever the brain remembered to put in the prompt.
+That is brain-dependent and forgettable. This module fixes that: the Python plumbing
+ALWAYS injects a role-scoped briefing into every subtask-execution run, through two
+always-on channels the executor cannot ignore:
+
+  1. ``--append-system-prompt`` -- a compact CHARTER pinned at the system level.
+  2. the living ``CLAUDE.md`` -- a richer PLAYBOOK section Claude Code auto-reads.
+
+Efficiency + no-forget: each run gets ONLY the slice its role needs (a read-only reviewer
+does not need the implementer's nitty-gritty), but it gets it on EVERY attempt and retry,
+deterministically, regardless of what the 7B brain emitted.
+
+``classifyProfile`` maps an invocation spec + subtask to one of :data:`PROFILES`. The bundles
+are firsthand-authored constants (always available offline); the full expert set lives in
+``claude_code.md`` Part E, pointed to from each playbook.
+"""
+from __future__ import annotations
+
+from typing import Optional
+
+import config
+
+LOG = config.getLogger("playbook")
+
+# ---------------------------------------------------------------------------
+# Common core -- the non-negotiables every executor role carries (no-forget floor)
+# ---------------------------------------------------------------------------
+_COMMON_CHARTER = (
+    "You are the 9TO5 EXECUTOR (the hands). Complete the subtask FULLY and autonomously in this one "
+    "session -- decide and act; never hand back partial work or ask a human a question (a brain answer "
+    "will be folded into the next attempt, so any question just wastes an attempt). "
+    "Conventions: ALL_CAPS constants, snake_case variables, camelCase functions, pathlib.Path (never os.path). "
+    "Stay surgical and on-scope: change only what the subtask needs; never break unrelated code. "
+    "NEVER touch hard boundaries (.env, .git, venv, state/) -- and in a self-referential run, never edit the "
+    "core loop files (orchestrator.py, main.py, agents/hooks.py, config.py). "
+    "The subtask is DONE only when its acceptance command (in CLAUDE.md) actually passes -- run it, read the "
+    "output, and report truthfully. Evidence before claims."
+)
+
+_COMMON_PLAYBOOK = (
+    "- **Finish fully, autonomously.** One session = one completed subtask. Decide; do not ask. If genuinely "
+    "blocked, state the decision you made and proceed with the most reasonable interpretation.\n"
+    "- **Conventions:** `ALL_CAPS` constants, `snake_case` variables, `camelCase` functions, `pathlib.Path` "
+    "everywhere (never `os.path`). Match the surrounding file's existing style, comment density, and idiom.\n"
+    "- **Surgical + on-scope.** Change only what the subtask requires; do not refactor unrelated code or sprawl.\n"
+    "- **Boundaries are hard.** Never create/modify `.env`, `.git/`, `venv/`, `state/` (or core loop files in a "
+    "self-referential run). A PreToolUse guard will hard-block these anyway.\n"
+    "- **Verify before you claim done.** Run the acceptance command yourself; if it fails, fix and re-run. "
+    "Report the real result -- if a check failed, say so with the output.\n"
+    "- **No new dependencies** unless the goal explicitly allows them (e.g. 'standard library only' => none)."
+)
+
+# ---------------------------------------------------------------------------
+# Role bundles. Each: short charter lines (system) + richer playbook (CLAUDE.md).
+# 'implementer' is intentionally the deepest -- code writers need the nitty-gritty.
+# ---------------------------------------------------------------------------
+PROFILES: dict[str, dict] = {
+    "implementer": {
+        "title": "Code implementer",
+        "charter": (
+            "Edit discipline: Read a file BEFORE editing it; match exact, unique text; prefer the smallest "
+            "correct diff. Keep functions cohesive and named per convention. After writing, RUN the artifact / "
+            "acceptance command and fix any failure before finishing. Do not leave TODOs in place of the work."
+        ),
+        "playbook": (
+            "### Implementation discipline (nitty-gritty)\n"
+            "- **Read before Edit.** Always Read the target file first; Edit requires an EXACT, UNIQUE match of "
+            "existing text (strip line-number prefixes). Use `replace_all` only for a deliberate rename.\n"
+            "- **Smallest correct diff.** Prefer Edit over rewriting a file with Write; never reformat untouched "
+            "regions; preserve imports/exports and public signatures unless the subtask changes them.\n"
+            "- **Self-contained correctness.** The code must run cleanly via its own entrypoint. After editing, "
+            "execute the acceptance command (or `python <file>`) and iterate until it passes -- do not stop at "
+            "'should work'.\n"
+            "- **Conventions are enforced, not optional:** `ALL_CAPS` module constants, `snake_case` locals, "
+            "`camelCase` functions, `pathlib.Path` (never `os.path`), f-strings, type hints where the file uses them.\n"
+            "- **Error handling:** wrap fallible I/O/network in try/except with a real fallback or a clear message; "
+            "never silently swallow an exception that hides a bug. Match the file's existing logging.\n"
+            "- **No stray artifacts:** no scratch files, no commented-out dead code, no debug prints left behind.\n"
+            "- **Idempotent + re-runnable:** a retry of this subtask must not double-apply or corrupt prior work.\n"
+            "- **Tool chain:** Grep/Glob to locate -> Read to understand -> Edit/Write to change -> Bash to run the "
+            "verify. Don't guess file locations; find them."
+        ),
+    },
+    "architect": {
+        "title": "Read-only architect",
+        "charter": (
+            "This is a READ-ONLY design task: do NOT modify any file. Produce structured design decisions with "
+            "exact file paths, the chosen approach, rejected alternatives, and explicit tradeoffs/risks."
+        ),
+        "playbook": (
+            "### Design analysis (read-only)\n"
+            "- **Do not edit anything.** Output a design document only.\n"
+            "- Cite exact `path:line` references; ground every recommendation in code you actually read.\n"
+            "- State the decision, the alternatives considered, and the tradeoff -- not just a recommendation.\n"
+            "- Call out anti-patterns, coupling, and failure modes the implementer must avoid."
+        ),
+    },
+    "reviewer": {
+        "title": "Read-only reviewer (security/code)",
+        "charter": (
+            "This is a READ-ONLY review: do NOT modify any file. Report only REAL issues with `file:line` "
+            "evidence, ranked by severity; distinguish confirmed bugs from speculation; suggest the fix, don't apply it."
+        ),
+        "playbook": (
+            "### Review discipline (read-only)\n"
+            "- **No edits.** Findings only.\n"
+            "- Each finding: severity, `file:line`, why it is a real problem, and the concrete fix.\n"
+            "- Prioritize correctness/security over style; do not pad with nitpicks.\n"
+            "- If you cannot reproduce/confirm an issue, label it speculative."
+        ),
+    },
+    "tester": {
+        "title": "Test author",
+        "charter": (
+            "Write/extend tests that check OBSERVABLE BEHAVIOR (inputs->outputs), never implementation details. "
+            "Assertions must be robust (no guessed internal symbols). RUN the tests and ensure they pass before finishing."
+        ),
+        "playbook": (
+            "### Testing discipline\n"
+            "- Test behavior, not internals: never assert on a private function/constant name you guessed.\n"
+            "- Cover the happy path AND the edge/error cases the subtask implies.\n"
+            "- Make assertions deterministic; avoid timing/order flakiness.\n"
+            "- Actually run the suite (e.g. `python -m pytest -q` or `python <test>.py`) and confirm green output."
+        ),
+    },
+    "docs": {
+        "title": "Documentation writer",
+        "charter": (
+            "Write accurate, concise documentation that matches the repo's voice. UPDATE existing docs in place "
+            "rather than duplicating; keep code examples runnable; do not touch source logic."
+        ),
+        "playbook": (
+            "### Documentation discipline\n"
+            "- Match the existing doc structure/voice; update, don't duplicate.\n"
+            "- Every command/path/example must be correct and copy-pasteable.\n"
+            "- Keep it concise and skimmable (headers, lists, short paragraphs)."
+        ),
+    },
+    "pr": {
+        "title": "PR author",
+        "charter": (
+            "Create a clean pull request: a clear title, a body summarizing what changed and why, and the verify "
+            "evidence. Do NOT force-push or rewrite shared history; use the project's gh/git conventions."
+        ),
+        "playbook": (
+            "### PR discipline\n"
+            "- Title = imperative summary; body = what/why + how it was verified.\n"
+            "- Never force-push or rewrite shared branches; never push secrets.\n"
+            "- Reference the subtask(s) the PR closes."
+        ),
+    },
+    "generalist": {
+        "title": "General executor",
+        "charter": (
+            "Complete the subtask directly and verify the result. If it involves writing code, apply the "
+            "implementation conventions; if it is read-only, do not modify files."
+        ),
+        "playbook": (
+            "### General execution\n"
+            "- Pick the simplest reliable approach that fully satisfies the acceptance check.\n"
+            "- If the work writes code, follow the implementation conventions above; if it is analysis, stay read-only."
+        ),
+    },
+}
+
+# Default when no signal is found. 'generalist' keeps lean runs lean; coding keywords
+# escalate to 'implementer' (which carries the full nitty-gritty) in classifyProfile.
+_DEFAULT_PROFILE = "generalist"
+
+_IMPLEMENT_KW = ("implement", "add ", "build", "create", "write", "fix", "refactor", "edit",
+                 "modify", "function", "class ", "module", "feature", "patch", "code", "script",
+                 "endpoint", "method", "bug", "wire", "integrate", "harden")
+_TEST_KW = ("test", "pytest", "unittest", "coverage", "assert", "regression", "spec ")
+_DOCS_KW = ("document", "docs", "readme", "docstring", "comment", "changelog", "guide")
+_REVIEW_KW = ("review", "audit", "security", "vulnerab", "analyze risk")
+_ARCH_KW = ("architect", "design doc", "architecture", "high-level design")
+
+
+def classifyProfile(spec: Optional[dict], subtask: Optional[dict],
+                    task_state=None) -> str:
+    """Deterministically pick the executor profile from the spec + subtask. Strong signals
+    (subagent, skills) win; otherwise keyword-classify the subtask text. Coding intent
+    routes to 'implementer' so code writers always get the nitty-gritty briefing."""
+    spec = spec or {}
+    subagent = (spec.get("subagent") or "").lower()
+    skills = [s.lower() for s in (spec.get("skills_to_invoke") or [])]
+
+    if subagent == "architect" or "/architect-review" in skills:
+        return "architect"
+    if subagent == "security-reviewer":
+        return "reviewer"
+    if "/create-pr" in skills:
+        return "pr"
+
+    hay = " ".join(str(x) for x in (
+        (subtask or {}).get("title", ""), (subtask or {}).get("description", ""),
+        spec.get("prompt", ""))).lower()
+
+    # ordered: most specific intent first
+    if any(k in hay for k in _ARCH_KW):
+        return "architect"
+    if any(k in hay for k in _REVIEW_KW):
+        return "reviewer"
+    if any(k in hay for k in _TEST_KW):
+        return "tester"
+    if any(k in hay for k in _DOCS_KW) and not any(k in hay for k in _IMPLEMENT_KW):
+        return "docs"
+    if any(k in hay for k in _IMPLEMENT_KW):
+        return "implementer"
+    # complex/structured work with no other signal -> treat as implementation
+    if spec.get("use_workflow") or (spec.get("effort_level") or "").lower() in ("xhigh", "ultracode"):
+        return "implementer"
+    return _DEFAULT_PROFILE
+
+
+def buildCharter(profile: str) -> str:
+    """Compact system-level charter for ``--append-system-prompt`` (always injected)."""
+    p = PROFILES.get(profile) or PROFILES[_DEFAULT_PROFILE]
+    return f"[9TO5 EXECUTOR CHARTER -- role: {p['title']}]\n{_COMMON_CHARTER}\n{p['charter']}"
+
+
+def buildPlaybook(profile: str) -> str:
+    """Richer role playbook rendered as a CLAUDE.md section (auto-read by Claude Code)."""
+    p = PROFILES.get(profile) or PROFILES[_DEFAULT_PROFILE]
+    return (
+        f"## Executor playbook — role: {p['title']}\n\n"
+        f"(Injected deterministically by 9to5 for every attempt — not optional.)\n\n"
+        f"### Non-negotiables (all roles)\n{_COMMON_PLAYBOOK}\n\n"
+        f"{p['playbook']}\n\n"
+        f"> Full expert recommendations: see *Part E — Expert Recommendations* in "
+        f"`{config.CLAUDE_KNOWLEDGE_PATH}` (claude_code.md)."
+    )

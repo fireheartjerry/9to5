@@ -88,31 +88,34 @@ def refreshClaudeKnowledge(obs: "ObsidianClient | None" = None, *, fetch_web: bo
         fetched = knowledge.fetchClaudeDocs(enabled=fetch_web)
         local = knowledge.scanLocalClaude()
         psk = knowledge.readProductSelfKnowledge()
+        recs = knowledge.readRecommendations()
 
         sources: list[str] = []
         sources += fetched.get("ok", [])
         sources += [f"local:{r}" for r in local.get("roots", [])]
         if psk.get("found"):
             sources.append(f"product-self-knowledge:{psk.get('path')}")
+        if recs.get("found"):
+            sources.append(f"recommendations:{recs.get('path')}")
         if prior_doc.strip():
             sources.append(f"prior:{kpath}")
 
         unified = knowledge.buildUnifiedDoc(prior_doc, fetched, local, psk,
-                                            refreshed_at=refreshed_at, sources=sources)
+                                            refreshed_at=refreshed_at, sources=sources, recs=recs)
         try:
             kpath.write_text(unified, encoding="utf-8")
             LOG.info("knowledge: wrote unified claude_code.md (%d chars) to %s", len(unified), kpath)
         except Exception as e:  # noqa: BLE001
             LOG.warning("knowledge write failed (%s); keeping in-memory only", e)
 
-        summary = knowledge.compressForInjection(unified, local, fetched)
+        summary = knowledge.compressForInjection(unified, local, fetched, recs=recs)
         _CLAUDE_CODE_CAPABILITIES = summary
         _KNOWLEDGE_REFRESHED = True
 
         delta = knowledge.diffHeadings(prior_doc, unified)
         if log_session:
             try:
-                _logKnowledgeRefresh(obs or ObsidianClient(), refreshed_at, fetched, local, psk, delta, summary)
+                _logKnowledgeRefresh(obs or ObsidianClient(), refreshed_at, fetched, local, psk, delta, summary, recs)
             except Exception as e:  # noqa: BLE001
                 LOG.warning("knowledge-refresh session log failed: %s", e)
         LOG.info("knowledge refresh complete: %d skills, %d agents, %d doc pages, +%d/-%d headings, injection=%dch",
@@ -122,8 +125,9 @@ def refreshClaudeKnowledge(obs: "ObsidianClient | None" = None, *, fetch_web: bo
 
 
 def _logKnowledgeRefresh(obs: "ObsidianClient", at: str, fetched: dict, local: dict,
-                         psk: dict, delta: dict, summary: str) -> None:
+                         psk: dict, delta: dict, summary: str, recs: "dict | None" = None) -> None:
     """Persist a refresh record to Obsidian sessions/knowledge-refresh-<ts>.md."""
+    recs = recs or {"found": False, "path": None}
     slug = at.replace(":", "").replace("-", "").replace("+", "p")
     rel = f"{config.SESSIONS_DIR_REL}/knowledge-refresh-{slug}.md"
     lines = [
@@ -144,6 +148,7 @@ def _logKnowledgeRefresh(obs: "ObsidianClient", at: str, fetched: dict, local: d
               f"- hooks: {len(local.get('hooks', []))}",
               f"- mcp servers: {', '.join(local.get('mcp_servers', [])) or '(none)'}",
               f"- product-self-knowledge: {'found at ' + str(psk.get('path')) if psk.get('found') else 'not found'}",
+              f"- expert recommendations: {'folded in (Part E) from ' + str(recs.get('path')) if recs.get('found') else 'not present'}",
               "", "## What changed since last refresh (top-level headings)",
               f"- added: {', '.join(delta.get('added', [])) or '(none)'}",
               f"- removed: {', '.join(delta.get('removed', [])) or '(none)'}",

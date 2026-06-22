@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 import config
+from agents import playbook
 from memory.obsidian import writeClaudioMd
 
 LOG = config.getLogger("executor")
@@ -197,11 +198,27 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
     effort = (spec.get("effort_level") or "default").lower()
     flag = effortFlag(effort)
 
+    # 0. role-scoped executor playbook -- DETERMINISTIC, no-forget expertise for the hands.
+    # Only for real subtask execution (skip internal calls that pass their own system_prompt,
+    # e.g. the architect phase). Injected via BOTH the living CLAUDE.md and --append-system-prompt.
+    profile = None
+    playbook_md = ""
+    charter = ""
+    if config.EXECUTOR_PLAYBOOK_ENABLED and subtask is not None and system_prompt is None:
+        try:
+            profile = playbook.classifyProfile(spec, subtask, task_state)
+            playbook_md = playbook.buildPlaybook(profile)
+            if config.EXECUTOR_APPEND_SYSTEM_PROMPT:
+                charter = playbook.buildCharter(profile)
+        except Exception as e:  # noqa: BLE001 -- briefing must never break a run
+            LOG.warning("executor playbook build failed: %s", e)
+
     # 1. living CLAUDE.md (only when we have task context)
     claude_md_path = None
     if task_state is not None:
         try:
-            claude_md_path = str(writeClaudioMd(task_state, subtask, spec.get("claude_md_inject", ""), work))
+            claude_md_path = str(writeClaudioMd(task_state, subtask, spec.get("claude_md_inject", ""),
+                                                work, executor_playbook=playbook_md))
         except Exception as e:  # noqa: BLE001
             LOG.warning("writeClaudioMd failed: %s", e)
 
@@ -228,6 +245,9 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
     # hooks + permissions (deterministic guardrails) load from our settings file
     if config.CLAUDE_SETTINGS_PATH.exists():
         cmd += ["--settings", str(config.CLAUDE_SETTINGS_PATH)]
+    # role-scoped executor charter pinned at the system level (unforgettable, no-brain-dependency)
+    if charter:
+        cmd += ["--append-system-prompt", charter]
     # automatic model failover on rate-limit
     cmd += ["--fallback-model", config.FALLBACK_MODEL]
     # reasoning effort selected by the brain
@@ -242,8 +262,8 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
             cmd += ["--disallowedTools", f"Edit({core_abs})", f"Write({core_abs})"]
 
     wf = spec.get("use_workflow") and isinstance(spec.get("workflow_definition"), dict)
-    LOG.info("Claude run (cwd=%s effort=%s skills=%s subagent=%s hooks=%s/%s workflow=%s prompt=%dch)",
-             work, flag or "default", spec.get("skills_to_invoke"), spec.get("subagent"),
+    LOG.info("Claude run (cwd=%s effort=%s role=%s skills=%s subagent=%s hooks=%s/%s workflow=%s prompt=%dch)",
+             work, flag or "default", profile or "-", spec.get("skills_to_invoke"), spec.get("subagent"),
              spec.get("pre_tool_hooks"), spec.get("post_tool_hooks"),
              (spec["workflow_definition"].get("name") if wf else False), len(full_prompt))
     # New process group so the timeout path can kill the WHOLE tree (launcher + node grandchildren),
@@ -265,7 +285,7 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
             if out_hits:
                 _alertBlocked(f"block_destructive: executor output shows destructive command(s) {out_hits}")
         return {"ok": proc.returncode == 0, "returncode": proc.returncode,
-                "stdout": out, "stderr": err or "",
+                "stdout": out, "stderr": err or "", "profile": profile,
                 "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
     except subprocess.TimeoutExpired:
         # Kill the entire tree so the work actually stops, procs don't leak, and the drain below
