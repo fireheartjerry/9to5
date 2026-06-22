@@ -31,6 +31,15 @@ learning/counterfactual.py(new) offline replay of challengers on logged subtasks
 learning/rollout.py(new)   shadow→canary→champion staging behind the bandit
 learning/curriculum.py(new) self-play goal generation on weakest families
 learning/release.py(new)   model cards, versioning, per-layer attribution report
+# --- next wave (J–R) ---
+learning/human_feedback.py(new) capture ControlBus approve/reject/skip/edit as labels   (J)
+learning/confidence.py(new) success-probability head + calibrated deferral              (K)
+learning/postmortem.py(new) failure RCA -> growing failure_modes taxonomy               (L)
+memory/knowledge_graph.py(new) codebase KG (nodes/edges + gotchas), universe-scoped     (N)
+learning/solution_cache.py(new) signature -> prior spec+diff warm-start/short-circuit    (O)
+learning/toolsmith.py(new) rank/prune/author .claude skills+subagents+hooks             (P)
+learning/meta_opt.py(new)  tune SIE hyperparameters against the fitness series           (Q)
+learning/adapter_ops.py(new) adapter souping + eval-suite rotation/anti-overfit          (R)
 config.py                  + SIE config block (all env-driven)                         [edit]
 orchestrator.py            + retrieval injection (:441/:581); + adapter/role router     [edit]
 agents/executor.py         + append learning-summary request; capture the JSON debrief   [edit]
@@ -74,8 +83,19 @@ read from `config.py`, which reads `C:\supercritical\.env`. Tests are stdlib
   trained_at, eval_run_id FK, state(champion|challenger|retired)`.
 - **`reflections`** (subsystem I, executor self-reports): `id PK, subtask_id FK,
   approach, key_decisions_json, pitfalls_json, reusable_recipe, spec_feedback,
-  verify_critique, confidence, tags_json, trusted BOOL, deep BOOL`. `trusted` is set
-  only after cross-check vs the real verify + adversary verdict.
+  verify_critique, confidence, tags_json, role, teacher, trusted BOOL, deep BOOL`.
+  `trusted` is set only after cross-check vs the real verify + adversary verdict;
+  `role`/`teacher` carry M (multi-role/multi-teacher).
+- **`human_feedback`** (J): `id PK, run_id FK, subtask_id, kind(approve|reject|skip|
+  abort|edit|add|retry), target(plan|subtask|spec), before_json, after_json, at`.
+- **`failure_modes`** (L): `id PK, signature_tags, root_cause, taxonomy_class,
+  occurrences, mitigation, first_seen, last_seen, embedding BLOB`.
+- **`kg_nodes`** (N): `id PK, kind(file|module|invariant|gotcha), key, summary,
+  embedding BLOB`; **`kg_edges`**: `src FK, dst FK, relation`.
+- **`solution_cache`** (O): `id PK, signature, spec_json, diff_ref, last_verify_passed,
+  reuse_count, last_used_at`.
+- Plus a `predicted_success REAL` column on `subtasks` (K) and a `meta_params` keyed
+  table (Q) for tunable hyperparameters + their fitness deltas.
 
 Public helpers: `record_run`, `record_subtask`, `top_k_similar(embedding, k, filter)`,
 `arms_for(context_key)`, `gold_examples()`, `fitness_series()`.
@@ -126,6 +146,10 @@ set → promote or retire. Rollback = repoint the Ollama tag to the prior champi
 `EXECUTOR_REFLECTION_ENABLED` (bool, default on), `REFLECTION_MAX_TOKENS` (350),
 `REFLECTION_DEEP_PASS` (bool, default off), `DEEP_REFLECTION_TRIGGERS`
 (gold|failed|novel-family).
+Next wave: `HUMAN_FEEDBACK_ENABLED` (bool, default on), `CONFIDENCE_DEFER_THRESHOLD`,
+`POSTMORTEM_TRIGGERS` (aborted|blocked|partial|repeat-fail), `TEACHERS` (claude[,gpt]),
+`KG_ENABLED`, `SOLUTION_CACHE_ENABLED`, `TOOLSMITH_ENABLED` (default off, human-gated),
+`META_OPT_CRON`, `ADAPTER_SOUP_EVERY`.
 
 ## Hook points in existing code (surgical)
 
@@ -141,6 +165,9 @@ set → promote or retire. Rollback = repoint the Ollama tag to the prior champi
   behavior is unchanged until a challenger is promoted.
 - **Adapter/role router:** at brain-call sites, select the Ollama model tag from the
   champion adapter (per-role in Phase G) instead of the static `OLLAMA_MODEL`.
+- **Human feedback (J):** the `ControlBus` decision sites in `control.py` /
+  `commands.py` (`decide`/`applyCommand`) gain a best-effort `human_feedback.record`
+  call — approve/reject/skip/edit/add/retry become labels. No control-flow change.
 - **Executor learning summary (subsystem I):** in `agents/executor.py`, append the
   learning-summary request to the executor system prompt (reuses
   `EXECUTOR_APPEND_SYSTEM_PROMPT` + `EXECUTOR_OUTPUT_JSON`, so no new invocation) and
@@ -197,6 +224,27 @@ set → promote or retire. Rollback = repoint the Ollama tag to the prior champi
 **Continuous:** fitness dashboard, drift detection, governance, rollback, kill switch,
 cadence-ladder scheduling.
 
+### Next wave — Phase NW (months 4–7+); letters map to spec subsystems J–R
+Kept separate from A–H to avoid letter collision with the layer phases. Ordered
+cheap/high-leverage → research-grade; each ships independently behind a config flag.
+
+- **NW1 — Implicit human feedback (J), cheap+early:** `learning/human_feedback.py`
+  taps `ControlBus`/`commands.py` decisions into the `human_feedback` table; edits
+  become correction pairs for L3/F. ✅ a `reject`/`edit` in a run lands as a labeled row.
+- **NW2 — Introspective confidence (K):** `learning/confidence.py` success-probability
+  head + `predicted_success`; low confidence escalates effort or inserts a gate. ✅ calibration error drops on held-out; deferral fires below threshold.
+- **NW3 — Post-mortems (L):** `learning/postmortem.py` RCA on failure → `failure_modes`;
+  injected as pre-emptive context. ✅ an aborted run produces a taxonomy entry reused next time.
+- **NW4 — Multi-role / multi-teacher (M):** extend `reflection.py` to architect/elaborator
+  roles + a `teacher` abstraction (Claude now, GPT-5.5 in Phase 2); learn from disagreement. ✅ reflections carry `role`/`teacher`; a disagreement case is flagged.
+- **NW5 — Knowledge graph (N):** `memory/knowledge_graph.py` builds nodes/edges from
+  diffs+reflections+failures; universe-scoped injection. ✅ touching a known file injects its gotchas.
+- **NW6 — Solution memoization (O):** `learning/solution_cache.py` warm-start on
+  near-duplicate signatures, gated by replay-verify. ✅ a repeat subtask reuses the cached spec and still verifies.
+- **NW7 — Research track (P/Q/R), heavy + human-gated:** `learning/toolsmith.py`
+  (rank/prune/author `.claude` tools), `learning/meta_opt.py` (tune SIE knobs vs fitness),
+  `learning/adapter_ops.py` (adapter souping + eval-suite rotation/anti-overfit). ✅ each lands behind its flag and must clear the harness + (for toolsmith) human approval.
+
 ## Testing strategy
 
 - **Offline-first:** every test runs without a live Ollama/GPU. Mock the Ollama client
@@ -208,6 +256,10 @@ cadence-ladder scheduling.
   (champion byte-identity), `test_promotion.py` (proportion test + rollback),
   `test_eval_harness.py` (fitness formula + held-out verify integrity),
   `test_reflection.py` (summary parse + trust cross-check rejects contradicted debriefs),
+  `test_human_feedback.py` (ControlBus decisions → labels), `test_confidence.py`
+  (calibration + deferral threshold), `test_postmortem.py` (RCA → taxonomy),
+  `test_knowledge_graph.py` (node/edge build + universe-scoped injection),
+  `test_solution_cache.py` (warm-start hit + replay-verify gate),
   `test_dataset_gate.py` (dedup/decontam/scrub), `test_distill.py` (gold filter),
   `test_finetune.py` (Modelfile emission, trainer mocked).
 - **Regression guard:** Phase A/B must show **no** change to existing test outcomes

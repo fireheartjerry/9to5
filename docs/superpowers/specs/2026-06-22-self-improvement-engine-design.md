@@ -224,6 +224,80 @@ it is trusted; a debrief claiming success on a failed verify is discarded and fl
 Only trusted summaries enter lessons or any training set — this rides the existing
 data-quality gate (G) and reward-hacking defenses.
 
+## Further subsystems — the next wave (J–R)
+
+Once A–I are in place, these extend the SIE's reach and depth. Each is distinct,
+tied to a real 9to5 seam, and still zero-API. Ordered cheap/high-leverage → research-grade.
+
+### J. Implicit human feedback (RLHF-lite, nearly free) ★
+The control layer (Discord/web `ControlBus`, `control.py` + `commands.py`) already emits
+the highest-quality signal in the whole system — a *human* judgment — and the SIE
+currently ignores it. Every `approve`/`reject`/`skip`/`abort` and every plan **edit** or
+subtask **add** is a label: a reject is a negative; an edit is a correction *pair*
+(before → human-preferred after); a `!retry` flags a bad attempt. Capture each into the
+ledger as preference/correction data feeding L3 (prompts), L4 (policy), and F (DPO).
+Cheapest possible source of gold preferences — it reuses infrastructure that already exists.
+
+### K. Introspective confidence + calibrated deferral
+Train the brain to predict its **own** success probability for a subtask before running
+it (a zero-dep logistic head over the signature + retrieved-neighbor outcomes), and act
+on it: low confidence → escalate effort/model or auto-insert a gate / ask the human;
+high confidence → take the cheap path. Calibrated uncertainty turns the `gated`/`watch`
+modes and the effort ladder into a *learned* decision instead of a static one — fewer
+wasted attempts, less cost, fewer silent bad merges.
+
+### L. Blameless post-mortems → a living failure-mode taxonomy
+Per-subtask reflection (I) is success-biased; failures need their own loop. On
+`aborted`/`blocked`/`partial` or repeated subtask failure, run a structured **root-cause
+analysis** (gated; optionally a Claude pass over the transcript) that accretes into a
+growing **taxonomy of failure modes** (`failure_modes`). The brain consults it to
+pattern-match and pre-empt known traps ("this family historically fails when the verify
+is content-scan only"). Run-level and failure-focused, complementary to I.
+
+### M. Multi-role, multi-teacher distillation
+Subsystem I distills the executor; but the **Architect and Elaborator are also Claude
+Code** — premium reasoning currently kept only as prose. Extend learning-summaries to
+every Claude-backed role. And when Phase 2 lands GPT-5.5 (chatgpt.com CDP, already the
+planned Adversary brain), treat it as a **second teacher**: ensemble the two teachers'
+debriefs and learn especially from where they **disagree** (cross-model distillation),
+which localizes the hardest, highest-information cases.
+
+### N. Project knowledge graph (the brain learns *this* codebase)
+A new memory tier beyond episodic/semantic: a structured, growing map of the codebase
+and domain — files, modules, their invariants and gotchas, which edits historically
+broke which verifies — built from reflections, diffs, and failures. Because 9to5
+**runs on itself**, the brain should *know this codebase better every month*; when a
+subtask touches `orchestrator.py`, inject the accumulated gotchas for that node. Scoped
+to the task's `universe.allowed_paths`, so injection stays surgical.
+
+### O. Solution memoization / warm-start
+Lessons are *advice*; this reuses *work*. On a near-duplicate subtask signature,
+retrieve the prior **solution** (its invocation spec + resulting diff) and warm-start or
+short-circuit instead of re-deriving it. A solution cache keyed by signature, gated by
+"did it still verify on replay" — a latency and cost win that compounds as the ledger grows.
+
+### P. Self-authored tooling (the agent grows its own toolbox)
+Empirically rank which skills/subagents/hooks actually correlate with verify-pass
+(`AVAILABLE_SKILLS`/`AVAILABLE_SUBAGENTS` in `config.py`), prune dead weight, and when a
+recurring unmet need is detected, **propose and author a new `.claude/` skill/subagent/
+hook** — then gate it through the eval harness like any other change. The agent improves
+its own *capabilities*, not just its prompts and weights. Highest ceiling, most caution
+(new tools touch the executor's powers — strictly behind the harness + human gate).
+
+### Q. Meta-optimization (tuning the learner's own knobs)
+Treat the SIE's own hyperparameters as a search space: `MAX_SUBTASK_ATTEMPTS`,
+`ADVERSARY_HEARTBEAT_EVERY`, `RETRIEVAL_K`, the fitness weights, the promotion
+thresholds. Periodically tune them against the long fitness time-series (coordinate
+descent / simple Bayesian search, all local). Learning *how to learn* — guarded by a
+slow cadence and the harness so the meta-loop can't destabilize the base loop.
+
+### R. Continual-learning hygiene (adapter souping + eval anti-overfit)
+Two long-horizon health mechanisms. **Adapter souping:** periodically merge winning
+per-role adapters (model soup / weight averaging) to consolidate gains and bound adapter
+sprawl. **Eval hygiene:** rotate and grow the held-out suite from real runs and reserve a
+meta-test split, so we can *detect overfitting to the eval suite itself* — the one failure
+mode that would make all the green numbers a lie.
+
 ## The spine — Evaluation Harness (most important single piece)
 
 A fixed benchmark of ~15 golden 9to5 goals across families (bugfix, add-test, refactor,
