@@ -140,6 +140,27 @@ def run_suite(runner: Optional[Callable[[dict[str, Any]], dict[str, Any]]] = Non
     return payload
 
 
+_SPARK = "▁▂▃▄▅▆▇█"
+
+
+def fitness_panel(limit: int = 30, db_path: Optional[Path] = None) -> str:
+    """Render the recent fitness series as a compact sparkline + delta for a dashboard
+    (Layer-C visibility). Pure-text so Discord/web can drop it straight into an embed."""
+    series = [p for p in experience.fitness_series(limit, db_path=db_path)
+              if isinstance(p.get("score"), dict) and "fitness" in p["score"]]
+    if not series:
+        return "Fitness: no eval points yet."
+    vals = [float(p["score"]["fitness"]) for p in series]
+    lo, hi = min(vals), max(vals)
+    spread = (hi - lo) or 1.0
+    spark = "".join(_SPARK[min(len(_SPARK) - 1, int((v - lo) / spread * (len(_SPARK) - 1)))]
+                    for v in vals)
+    delta = vals[-1] - vals[0]
+    arrow = "▲" if delta > 0 else "▼" if delta < 0 else "▬"
+    return (f"Fitness {spark}  now={vals[-1]:.3f} {arrow}{abs(delta):.3f} "
+            f"over {len(vals)} evals (min={lo:.3f}, max={hi:.3f})")
+
+
 if __name__ == "__main__":  # pragma: no cover -- CLI: load suite + record a marker row
     experience.init()
     out = run_suite(runner=None)

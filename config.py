@@ -167,6 +167,14 @@ EVAL_FITNESS_WEIGHTS: dict[str, float] = {
     "plan_stability": 0.1,
     "challenge_rate": 0.05,  # applied to (1 - challenge_rate)
 }
+# Layer 2 consolidation: a lesson needs this many samples, and arms must separate by
+# this win-rate gap, before it is emitted (keeps the digest high-signal, not noise).
+LESSONS_MIN_SUPPORT: int = int(os.getenv("LESSONS_MIN_SUPPORT", "3"))
+LESSONS_WIN_GAP: float = float(os.getenv("LESSONS_WIN_GAP", "0.2"))
+# Layer 4 policy bandit reward weights (first-pass success minus cost/attempt penalties).
+POLICY_REWARD_WEIGHTS: dict[str, float] = {
+    "first_pass": 1.0, "attempts": 0.3, "cost": 0.2, "wallclock": 0.1,
+}
 # Global kill switch: revert the brain to the frozen base model + freeze all promotions.
 SIE_KILL_SWITCH: bool = _envBool("SIE_KILL_SWITCH", False)
 # The frozen base model tag; champion adapters are served under BRAIN_MODEL_TAG:vN.

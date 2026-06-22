@@ -88,8 +88,29 @@ _SCHEMA: tuple[str, ...] = (
         score_json     TEXT,
         passed_gate    INTEGER
     )""",
+    """CREATE TABLE IF NOT EXISTS lessons (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        scope          TEXT,
+        signature_tags TEXT,
+        text           TEXT,
+        support_count  INTEGER,
+        win_rate       REAL,
+        last_seen_at   TEXT,
+        embedding      BLOB,
+        UNIQUE(scope, signature_tags, text)
+    )""",
+    """CREATE TABLE IF NOT EXISTS policy_arms (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        context_key   TEXT,
+        action_json   TEXT,
+        pulls         INTEGER,
+        reward_sum    REAL,
+        reward_sq_sum REAL,
+        UNIQUE(context_key, action_json)
+    )""",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_run ON subtasks(run_id)",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_passed ON subtasks(verify_passed)",
+    "CREATE INDEX IF NOT EXISTS idx_arms_ctx ON policy_arms(context_key)",
 )
 
 
@@ -354,6 +375,76 @@ _TERMINAL = ("done", "complete", "aborted", "partial", "blocked", "failed")
 
 
 # --------------------------------------------------------------------------- reads
+
+# ---------------------------------------------------------------- lessons (L2) + policy (L4)
+
+def upsert_lesson(scope: str, signature_tags: str, text: str, *, support_count: int,
+                  win_rate: float, db_path: Optional[Path] = None) -> bool:
+    """Insert/refresh a consolidated lesson (keyed by scope+tags+text). Best-effort."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            conn.execute(
+                """INSERT INTO lessons (scope, signature_tags, text, support_count, win_rate, last_seen_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(scope, signature_tags, text) DO UPDATE SET
+                     support_count=excluded.support_count, win_rate=excluded.win_rate,
+                     last_seen_at=excluded.last_seen_at""",
+                (scope, signature_tags, text, int(support_count), float(win_rate), _nowIso()))
+        return True
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("upsert_lesson failed (ignored): %s", e)
+        return False
+
+
+def fetch_lessons(scope: Optional[str] = None,
+                  db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    with _connect(db_path) as conn:
+        if scope is None:
+            rows = conn.execute("SELECT * FROM lessons ORDER BY support_count DESC")
+        else:
+            rows = conn.execute(
+                "SELECT * FROM lessons WHERE scope=? ORDER BY support_count DESC", (scope,))
+        return [dict(r) for r in rows]
+
+
+def clear_lessons(db_path: Optional[Path] = None) -> None:
+    with _WRITE_LOCK, _connect(db_path) as conn:
+        conn.execute("DELETE FROM lessons")
+
+
+def set_arm(context_key: str, action_json: str, *, pulls: int, reward_sum: float,
+            reward_sq_sum: float, db_path: Optional[Path] = None) -> bool:
+    """Write a policy arm's accumulated stats (keyed by context+action). Best-effort."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            conn.execute(
+                """INSERT INTO policy_arms (context_key, action_json, pulls, reward_sum, reward_sq_sum)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(context_key, action_json) DO UPDATE SET
+                     pulls=excluded.pulls, reward_sum=excluded.reward_sum,
+                     reward_sq_sum=excluded.reward_sq_sum""",
+                (context_key, action_json, int(pulls), float(reward_sum), float(reward_sq_sum)))
+        return True
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("set_arm failed (ignored): %s", e)
+        return False
+
+
+def fetch_arms(context_key: Optional[str] = None,
+               db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    with _connect(db_path) as conn:
+        if context_key is None:
+            rows = conn.execute("SELECT * FROM policy_arms")
+        else:
+            rows = conn.execute(
+                "SELECT * FROM policy_arms WHERE context_key=?", (context_key,))
+        return [dict(r) for r in rows]
+
+
+def clear_arms(db_path: Optional[Path] = None) -> None:
+    with _WRITE_LOCK, _connect(db_path) as conn:
+        conn.execute("DELETE FROM policy_arms")
+
 
 def fetch_runs(db_path: Optional[Path] = None) -> list[dict[str, Any]]:
     with _connect(db_path) as conn:

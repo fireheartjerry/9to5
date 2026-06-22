@@ -79,6 +79,19 @@ class TestSuiteAndRun(unittest.TestCase):
         out = eh.run_suite(runner=None, suite_dir=self.dir, db_path=db)
         self.assertEqual(out["status"], "no_runner")
 
+    def test_fitness_panel_renders_series(self):
+        db = self.dir / "p.db"
+        from memory import experience
+        experience.record_eval({"fitness": 0.4}, db_path=db)
+        experience.record_eval({"fitness": 0.6}, db_path=db)
+        panel = eh.fitness_panel(db_path=db)
+        self.assertIn("now=0.600", panel)
+        self.assertIn("▲", panel)              # improved over the window
+
+    def test_fitness_panel_empty(self):
+        db = self.dir / "empty.db"
+        self.assertIn("no eval points", eh.fitness_panel(db_path=db))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,6 +23,7 @@ import config
 import knowledge
 from agents import adversary, architect, clarifier, executor, replanner, verifier
 from control import AbortRun, ControlBus
+from learning import policy
 from memory import retrieval
 from memory.obsidian import ObsidianClient
 from notifications import audit
@@ -595,8 +596,11 @@ class Orchestrator:
         if failure_feedback:
             user += f"PREVIOUS ATTEMPT FAILED THE VERIFICATION:\n{failure_feedback[:1200]}\n\n"
         user += "Output ONLY the JSON invocation spec for THIS subtask."
-        # SIE Layer 1: prepend lessons from similar past successes (best-effort, no-op if empty).
-        user = retrieval.lessons_block(state.meta.get("goal_elaborated", ""), subtask.get("title", "")) + user
+        # SIE Layer 1 + 4: prepend lessons from similar past successes and the learned
+        # effort prior (both best-effort, no-op when empty).
+        goal_text = state.meta.get("goal_elaborated", "")
+        user = (policy.hint(goal_text, subtask.get("title", ""))
+                + retrieval.lessons_block(goal_text, subtask.get("title", "")) + user)
         system_prompt = self._selfRefSystemPrompt(state) if state.meta.get("is_self_referential") \
             else ORCHESTRATOR_CONSTITUTION
         resp = self._ollamaChat(system_prompt, user, want_json=True)

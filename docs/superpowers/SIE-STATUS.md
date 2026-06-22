@@ -10,7 +10,7 @@ implemented with the external call seam mocked and offline-testable logic real.
 |---|---|---|
 | **A — Capture + Measure** | Experience Ledger (`memory/experience.py`), best-effort TaskState sinks, backfill, eval-harness skeleton (`learning/eval_harness.py`) + golden suite + fitness math, config block | ✅ done |
 | **B — Retrieval** | local embeddings + cosine top-K (`memory/retrieval.py`), lessons rendering w/ token cap, orchestrator injection, negative cache | ✅ done |
-| C — Consolidation + Policy | nightly lessons mining + contextual bandit | ⬜ |
+| **C — Consolidation + Policy** | ledger-rebuilt lessons (`learning/lessons.py`) + Thompson bandit (`learning/policy.py`), policy hint injection, fitness sparkline panel | ✅ done |
 | D — Prompt Evolution | versioned registry + champion/challenger | ⬜ |
 | E — LoRA Distillation (SFT) | data-quality gate + gold dataset + local LoRA | ⬜ |
 | F — Reward + DPO | composite reward + preference pairs | ⬜ |
@@ -41,3 +41,15 @@ implemented with the external call seam mocked and offline-testable logic real.
 - `orchestrator.py`: prepend `retrieval.lessons_block(...)` in `authorSubtaskPlan` and
   `authorInvocationSpec` (no-op when empty). New `from memory import retrieval`.
 - Tests: `tests/test_retrieval.py` (10; embeddings mocked). Full suite 235/235 green.
+
+## Phase C — what landed
+- `memory/experience.py`: `lessons` + `policy_arms` tables and helpers
+  (`upsert_lesson`/`fetch_lessons`/`clear_lessons`, `set_arm`/`fetch_arms`/`clear_arms`).
+- `learning/lessons.py` (L2): `family_of` clustering, `consolidate()` rebuilds effort
+  lessons from the ledger (idempotent; min-support + win-gap gated) + writes `lessons.md`.
+- `learning/policy.py` (L4): `compute_reward`, `rebuild_from_ledger` (deterministic, no
+  hot-path writes), Gaussian-Thompson `select`, and best-effort `hint()`.
+- `orchestrator.py`: `authorInvocationSpec` now prepends `policy.hint(...)` + lessons.
+- `learning/eval_harness.py`: `fitness_panel()` sparkline (C3, dashboard-ready).
+- Tests: `tests/test_lessons.py` (8), `tests/test_policy.py` (9), +2 eval-harness.
+  Full suite 252/252 green.
