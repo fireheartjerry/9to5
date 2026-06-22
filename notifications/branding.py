@@ -53,9 +53,9 @@ def brandEmbed(title: str, *, description: Optional[str] = None, color: Optional
 
 
 _CATEGORIES = {
-    "Control": ["abort", "pause", "resume", "approve", "reject", "skip", "add", "retry"],
+    "Control": ["abort", "pause", "approve", "reject", "skip", "add", "retry"],
     "Info": ["status", "plan", "log", "help"],
-    "Run": ["work", "runs", "run", "resume"],
+    "Run": ["work", "runs", "run", "resume"],   # /resume is unified: unpause, or resume a prior run by id
 }
 _EXTRA_HELP = {
     "work": "launch a new run (blank = guided setup)",

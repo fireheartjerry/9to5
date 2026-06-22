@@ -1379,12 +1379,6 @@ def registerSlashCommands(tree: "app_commands.CommandTree", client: "discord.Cli
         if await _guard(interaction):
             await _runControl(interaction, "pause")
 
-    @tree.command(name="resume", description="Resume the run")
-    @cooldown
-    async def resume(interaction):  # noqa: ANN001
-        if await _guard(interaction):
-            await _runControl(interaction, "resume")
-
     @tree.command(name="approve", description="Approve the pending gate")
     @cooldown
     async def approve(interaction):  # noqa: ANN001
@@ -1500,13 +1494,17 @@ def registerSlashCommands(tree: "app_commands.CommandTree", client: "discord.Cli
         state = TaskState.load(task_id)
         await interaction.followup.send(embed=_embed(branding.runEmbed(state)), ephemeral=True)
 
-    @tree.command(name="resume", description="Resume a run by id")
-    @app_commands.describe(task_id="Task id to resume")
+    @tree.command(name="resume", description="Resume a paused run, or resume a prior run by id")
+    @app_commands.describe(task_id="(optional) prior task id to resume; omit to unpause the current run")
     @app_commands.autocomplete(task_id=_taskAutocomplete)
     @cooldown
-    async def resume_run(interaction, task_id: str):  # noqa: ANN001
+    async def resume(interaction, task_id: "str | None" = None):  # noqa: ANN001
+        # UNIFIED /resume: no id -> unpause the current run (spine 'resume'); id -> resume that run.
+        # (A single command name avoids a duplicate-registration collision with the control resume.)
         if not _ownerOk(interaction):
             return await interaction.response.send_message("⛔ Not authorized.", ephemeral=True)
+        if not task_id:
+            return await _runControl(interaction, "resume")
         await interaction.response.defer(ephemeral=True)
         audit.record(interaction.user.id, "resume", task_id, "slash")
         reply = await asyncio.to_thread(work_launcher.resumeOrError, task_id)
@@ -1519,7 +1517,7 @@ def registerSlashCommands(tree: "app_commands.CommandTree", client: "discord.Cli
   ```
   venv\Scripts\python -c "import discord; from discord import app_commands; from notifications import slash; c=discord.Client(intents=discord.Intents.none()); t=app_commands.CommandTree(c); slash.registerSlashCommands(t,c,0.0); print(sorted(cmd.name for cmd in t.get_commands()))"
   ```
-  Expected (19): `['abort', 'add', 'approve', 'audit', 'diagnostics', 'help', 'log', 'metrics', 'pause', 'ping', 'plan', 'reject', 'resume', 'retry', 'run', 'runs', 'skip', 'status', 'work']` — note `help`/`metrics`/`resume` come from `help_`/`metrics_`/`resume_run` (the `name=` overrides the function name). Confirm `work`, `runs`, `run`, `resume` are present.
+  Expected (19): `['abort', 'add', 'approve', 'audit', 'diagnostics', 'help', 'log', 'metrics', 'pause', 'ping', 'plan', 'reject', 'resume', 'retry', 'run', 'runs', 'skip', 'status', 'work']` — note `help`/`metrics` come from `help_`/`metrics_` (the `name=` overrides the function name). `/resume` is UNIFIED (one command: omit `task_id` to unpause, pass it to resume a prior run) — there must be exactly ONE `resume` (a duplicate name would crash registration). Confirm `work`, `runs`, `run`, `resume` are present.
 
 - [ ] **Step 3: Suite still green** — `venv\Scripts\python -m unittest discover -s tests`.
 
