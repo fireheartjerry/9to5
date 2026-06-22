@@ -101,6 +101,32 @@ def _collectEditedSpec() -> str:
     return "\n".join(buf).strip()
 
 
+def _runDryRun(args) -> int:
+    """Simulate a FULL run (architect -> plan -> execute -> verify -> complete) with no
+    Ollama / Claude CLI / Discord / Obsidian. Proves the orchestration end-to-end."""
+    import simulation
+    import tempfile
+    config.WEB_DASHBOARD = False
+    config.CLAUDE_DOC_FETCH = False   # offline knowledge build only -- no web fetch in a dry-run
+    config.ensureDirs()
+    goal = (args.goal or "Simulated dry-run goal").strip()
+    state = TaskState.create(goal, args.hours)
+    state.setElaboratedGoal(goal)
+    state.setUniverse({"description": "dry-run", "allowed_paths": [],
+                       "allowed_to_expand_to": [], "hard_boundaries": []})
+    state.save()
+    # isolated temp work_dir: keeps the dry-run from tripping self-referential detection
+    # (which would create a git branch) or writing into the real project tree.
+    work_dir = tempfile.mkdtemp(prefix="9to5-dryrun-")
+    print(f"[DRY-RUN] simulating a full run for {goal!r} — no Ollama/Claude/Discord/Obsidian touched.")
+    orch = simulation.buildOrchestrator()
+    summary = orch.runFull(state, work_dir=work_dir, auto_pr=False,
+                           control_mode=args.mode, parallelism=max(1, args.parallel))
+    print("\n===== DRY-RUN SUMMARY =====")
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    return 0
+
+
 def main() -> int:
     # Standalone knowledge-refresh command (intercept before argparse, which would
     # reject the bare "/refresh" token): `python main.py /refresh`.
@@ -122,11 +148,16 @@ def main() -> int:
     parser.add_argument("--no-web", action="store_true", help="Disable the local web dashboard.")
     parser.add_argument("--task-id", help="Alias for --resume: restore + continue a task by id.")
     parser.add_argument("--health", action="store_true", help="Run environment health checks and exit.")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Simulate a full run with no external services (offline; for testing).")
     args = parser.parse_args()
 
     if args.health:
         import health
         return 0 if health.runHealthChecks() else 1
+
+    if args.dry_run:
+        return _runDryRun(args)
 
     if args.task_id and not args.resume:   # --task-id is an alias for --resume
         args.resume = args.task_id

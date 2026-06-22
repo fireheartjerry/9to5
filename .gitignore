@@ -13,3 +13,5 @@ test-run2/
 test-run3/
 .sc-ctx/
 CLAUDE.md.bak
+# stray dir created when run on non-Windows (config paths default to C:\supercritical)
+C:\supercritical/

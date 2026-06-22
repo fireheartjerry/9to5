@@ -46,6 +46,7 @@ venv\Scripts\python main.py --goal "..." --hours 1 --auto-approve
 #   --work-dir C:\path   working dir for Claude Code CLI (default PROJECT_ROOT)
 #   --web-port 8787      local web dashboard port    --no-web  disable it
 #   --no-pr              skip the GitHub PR step
+#   --dry-run            simulate a FULL run offline (no Ollama/Claude/Discord/Obsidian)
 
 # While a run is live you get a glass box:
 #   - Discord: one self-updating dashboard embed + milestone embeds

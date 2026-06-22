@@ -1185,7 +1185,7 @@ class Orchestrator:
                 state.setStatus("architecting")
                 self._checkControl(state, bus, dashboard)
                 dashboard.update(state, "architecting", "authoring architecture")
-                arch_prompt = architect.authorArchitectPrompt(elaborated)
+                arch_prompt = architect.authorArchitectPrompt(elaborated, chat=self._ollamaChat)
 
                 def _runArchitect(effort: str):
                     return self._run_claude({"prompt": arch_prompt, "effort_level": effort},
