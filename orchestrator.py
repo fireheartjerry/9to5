@@ -32,20 +32,25 @@ from state.task import TaskState, nowIso
 LOG = config.getLogger("orchestrator")
 
 # ============================================================================
-# Living Claude Code knowledge -- injected into EVERY Ollama system prompt.
-# Populated by refreshClaudeKnowledge() (runs at session start before any brain
-# call). Module-global so plan/critique/spec/clarifier calls all share one copy.
+# Living Claude Code knowledge -- injected into EVERY Ollama system prompt. The
+# compressed summary is cached in knowledge.py (shared by the orchestrator brain
+# AND elaborator/replanner/architect). These guards just keep the heavy web
+# refresh to once per process.
 # ============================================================================
-_CLAUDE_CODE_CAPABILITIES: str = ""   # the compressed CLAUDE CODE CAPABILITIES summary
 _KNOWLEDGE_REFRESHED: bool = False    # ensures the heavy (web) refresh runs once per process
 _KNOWLEDGE_LOCK = threading.Lock()
 
-_CAPABILITIES_DIRECTIVE = (
-    "Before generating ANY invocation spec, consult CLAUDE CODE CAPABILITIES above and ask: "
-    "is there a SKILL for this? a better SUBAGENT? should this be a WORKFLOW (use_workflow)? "
-    "what EFFORT level does it deserve? which HOOKS should fire? which MCP tools apply? "
-    "Generic flat-prompt generation is FORBIDDEN when a more powerful Claude Code primitive fits."
-)
+
+def _knowledgeFresh(kpath, max_age_hours: float) -> bool:
+    """True when the on-disk knowledge doc is younger than max_age_hours."""
+    try:
+        if not kpath.exists():
+            return False
+        from datetime import datetime
+        age_h = (datetime.now().timestamp() - kpath.stat().st_mtime) / 3600.0
+        return age_h < max_age_hours
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def refreshClaudeKnowledge(obs: "ObsidianClient | None" = None, *, fetch_web: bool | None = None,
@@ -66,10 +71,10 @@ def refreshClaudeKnowledge(obs: "ObsidianClient | None" = None, *, fetch_web: bo
       6. Log the refresh to Obsidian under ``sessions/knowledge-refresh-<ts>.md``.
 
     Returns the compressed capabilities summary (also stored in the module cache)."""
-    global _CLAUDE_CODE_CAPABILITIES, _KNOWLEDGE_REFRESHED
+    global _KNOWLEDGE_REFRESHED
     with _KNOWLEDGE_LOCK:
-        if _KNOWLEDGE_REFRESHED and not force and _CLAUDE_CODE_CAPABILITIES:
-            return _CLAUDE_CODE_CAPABILITIES
+        if _KNOWLEDGE_REFRESHED and not force and knowledge.getCapabilities():
+            return knowledge.getCapabilities()
         fetch_web = config.CLAUDE_DOC_FETCH if fetch_web is None else fetch_web
         refreshed_at = nowIso()
         kpath = config.CLAUDE_KNOWLEDGE_PATH
@@ -77,6 +82,23 @@ def refreshClaudeKnowledge(obs: "ObsidianClient | None" = None, *, fetch_web: bo
             kpath.parent.mkdir(parents=True, exist_ok=True)
         except Exception as e:  # noqa: BLE001
             LOG.warning("knowledge dir create failed: %s", e)
+
+        # FRESHNESS FAST-PATH: a recent doc skips the web re-scrape entirely -- just recompress
+        # the cached reference + a live local scan and prime the injection (instant restarts).
+        if not force and fetch_web and _knowledgeFresh(kpath, config.CLAUDE_KNOWLEDGE_MAX_AGE_HOURS):
+            try:
+                prior = kpath.read_text(encoding="utf-8", errors="replace")
+                local = knowledge.scanLocalClaude()
+                recs = knowledge.readRecommendations()
+                summary = knowledge.compressForInjection(
+                    prior, local, {"pages": {}, "ok": [], "failed": []}, recs=recs)
+                knowledge.setCapabilities(summary)
+                _KNOWLEDGE_REFRESHED = True
+                LOG.info("knowledge fast-path: doc fresh (<%.1fh); skipped web scrape, injection=%dch",
+                         config.CLAUDE_KNOWLEDGE_MAX_AGE_HOURS, len(summary))
+                return summary
+            except Exception as e:  # noqa: BLE001
+                LOG.warning("knowledge fast-path failed (%s); doing full refresh", e)
 
         prior_doc = ""
         try:
@@ -109,7 +131,7 @@ def refreshClaudeKnowledge(obs: "ObsidianClient | None" = None, *, fetch_web: bo
             LOG.warning("knowledge write failed (%s); keeping in-memory only", e)
 
         summary = knowledge.compressForInjection(unified, local, fetched, recs=recs)
-        _CLAUDE_CODE_CAPABILITIES = summary
+        knowledge.setCapabilities(summary)
         _KNOWLEDGE_REFRESHED = True
 
         delta = knowledge.diffHeadings(prior_doc, unified)
@@ -158,24 +180,9 @@ def _logKnowledgeRefresh(obs: "ObsidianClient", at: str, fetched: dict, local: d
     obs.writeNote(rel, "\n".join(lines))
 
 
-def injectCapabilities(system_prompt: str) -> str:
-    """Prepend the cached CLAUDE CODE CAPABILITIES block to a brain system prompt.
-    Lazy-loads from disk (no web fetch) if a refresh has not run yet this process,
-    so a stray Ollama call is never sent capability-blind."""
-    global _CLAUDE_CODE_CAPABILITIES
-    if not _CLAUDE_CODE_CAPABILITIES:
-        try:
-            refreshClaudeKnowledge(fetch_web=False, log_session=False)
-        except Exception:  # noqa: BLE001
-            pass
-    if not _CLAUDE_CODE_CAPABILITIES:
-        return system_prompt
-    return (
-        "## CLAUDE CODE CAPABILITIES\n"
-        + _CLAUDE_CODE_CAPABILITIES
-        + "\n\n" + _CAPABILITIES_DIRECTIVE
-        + "\n\n---\n\n" + system_prompt
-    )
+# Back-compat alias: the shared implementation lives in knowledge.py so every brain
+# caller (orchestrator + elaborator/replanner/architect) shares one cache.
+injectCapabilities = knowledge.injectCapabilities
 
 _YELLOW = 0xF1C40F
 _ORANGE = 0xE67E22

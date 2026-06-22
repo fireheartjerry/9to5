@@ -14,6 +14,7 @@ from __future__ import annotations
 import ollama
 
 import config
+import knowledge
 
 LOG = config.getLogger("architect")
 _OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
@@ -36,7 +37,7 @@ def authorArchitectPrompt(goal_elaborated: str) -> str:
         messages=[
             {
                 "role": "system",
-                "content": (
+                "content": knowledge.injectCapabilities(
                     "You author a single prompt instructing a coding agent to design the "
                     "architecture for the given specification. The prompt must ask only for a "
                     "design document, not code. Output ONLY the prompt text."

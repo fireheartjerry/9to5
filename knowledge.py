@@ -100,57 +100,59 @@ def _htmlToText(html: str) -> str:
 # ============================================================================
 # 1) Fetch the latest docs (Python has internet; Ollama does not)
 # ============================================================================
+def _fetchOne(url: str, timeout: int) -> "tuple[str, str | None]":
+    """Fetch one URL -> (url, body or None). Never raises."""
+    try:
+        import requests
+        r = requests.get(url, timeout=timeout, headers={"User-Agent": "9to5-knowledge-refresh"})
+        if 200 <= r.status_code < 300 and r.text:
+            body = r.text if url.endswith(".md") else _htmlToText(r.text)
+            if body and len(body) > 200:
+                return url, body
+    except Exception as e:  # noqa: BLE001
+        LOG.debug("doc fetch failed %s (%s)", url, e)
+    return url, None
+
+
 def fetchClaudeDocs(enabled: bool = True, timeout: Optional[int] = None) -> dict:
-    """Scrape current Claude Code docs + changelog. Returns
+    """Scrape current Claude Code docs + changelog IN PARALLEL. Returns
     ``{pages: {url: text}, ok: [url...], failed: [url...], fetched_at: iso}``.
     Never raises -- a fully offline run yields empty pages and the disk knowledge
-    still drives the injection."""
+    still drives the injection. Parallel fetch cuts the 27-page scrape from ~10s to ~2s."""
     timeout = timeout or config.CLAUDE_DOC_TIMEOUT_SECONDS
-    result = {"pages": {}, "ok": [], "failed": [], "fetched_at": datetime.now().astimezone().isoformat(timespec="seconds")}
+    result = {"pages": {}, "ok": [], "failed": [],
+              "fetched_at": datetime.now().astimezone().isoformat(timespec="seconds")}
     if not enabled:
         LOG.info("doc fetch disabled (CLAUDE_DOC_FETCH=false)")
         return result
     try:
-        import requests  # local import: offline installs still load this module
+        import requests  # noqa: F401 -- presence check; offline installs still load this module
     except Exception as e:  # noqa: BLE001
         LOG.warning("requests unavailable; skipping doc fetch (%s)", e)
         return result
 
-    urls: list[str] = list(_CHANGELOG_URLS)
-    # Prefer the current domain; fall back to legacy only for pages that 404.
-    for page in _DOC_PAGES:
-        urls.append(_DOC_BASES[0] + page)
+    from concurrent.futures import ThreadPoolExecutor
+
+    workers = max(1, int(getattr(config, "CLAUDE_DOC_FETCH_WORKERS", 10)))
+    urls = list(_CHANGELOG_URLS) + [_DOC_BASES[0] + p for p in _DOC_PAGES]
     seen_pages: set[str] = set()
-    for url in urls:
-        try:
-            r = requests.get(url, timeout=timeout, headers={"User-Agent": "9to5-knowledge-refresh"})
-            if 200 <= r.status_code < 300 and r.text:
-                body = r.text if url.endswith(".md") else _htmlToText(r.text)
-                if body and len(body) > 200:
-                    result["pages"][url] = body
-                    result["ok"].append(url)
-                    seen_pages.add(url.rsplit("/", 1)[-1])
-                    continue
-            result["failed"].append(url)
-        except Exception as e:  # noqa: BLE001
-            LOG.debug("doc fetch failed %s (%s)", url, e)
-            result["failed"].append(url)
-    # legacy-domain retry only for pages that failed on the current domain
-    for page in _DOC_PAGES:
-        if page in seen_pages:
-            continue
-        url = _DOC_BASES[1] + page
-        try:
-            import requests
-            r = requests.get(url, timeout=timeout, headers={"User-Agent": "9to5-knowledge-refresh"})
-            if 200 <= r.status_code < 300 and r.text:
-                body = _htmlToText(r.text)
-                if body and len(body) > 200:
-                    result["pages"][url] = body
-                    result["ok"].append(url)
-        except Exception:  # noqa: BLE001
-            result["failed"].append(url)
-    LOG.info("doc fetch: %d ok, %d failed", len(result["ok"]), len(result["failed"]))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for url, body in pool.map(lambda u: _fetchOne(u, timeout), urls):
+            if body:
+                result["pages"][url] = body
+                result["ok"].append(url)
+                seen_pages.add(url.rsplit("/", 1)[-1])
+            else:
+                result["failed"].append(url)
+        # legacy-domain retry (parallel) only for pages that failed on the current domain
+        retry = [_DOC_BASES[1] + p for p in _DOC_PAGES if p not in seen_pages]
+        for url, body in pool.map(lambda u: _fetchOne(u, timeout), retry):
+            if body:
+                result["pages"][url] = body
+                result["ok"].append(url)
+            else:
+                result["failed"].append(url)
+    LOG.info("doc fetch (%d workers): %d ok, %d failed", workers, len(result["ok"]), len(result["failed"]))
     return result
 
 
@@ -561,3 +563,58 @@ def compressForInjection(unified_doc: str, local: dict, fetched: dict,
     if len(out) > max_chars:
         out = out[:max_chars].rsplit("\n", 1)[0] + "\n... (truncated; full detail in claude_code.md)"
     return out
+
+
+# ============================================================================
+# 5) Shared injection cache -- so EVERY Ollama caller (orchestrator brain,
+#    elaborator, replanner, architect) injects the same CLAUDE CODE CAPABILITIES
+#    block. Lives here (config-only deps) to avoid an orchestrator import cycle.
+# ============================================================================
+_CAPABILITIES: str = ""
+
+_CAPABILITIES_DIRECTIVE = (
+    "Before generating ANY spec/plan/decision, consult CLAUDE CODE CAPABILITIES above and ask: "
+    "is there a SKILL for this? a better SUBAGENT? should this be a WORKFLOW (use_workflow)? "
+    "what EFFORT level does it deserve? which HOOKS should fire? which MCP tools apply? "
+    "Generic flat-prompt generation is FORBIDDEN when a more powerful Claude Code primitive fits."
+)
+
+
+def setCapabilities(summary: str) -> None:
+    """Cache the compressed CLAUDE CODE CAPABILITIES summary (called by the full refresh)."""
+    global _CAPABILITIES
+    _CAPABILITIES = summary or ""
+
+
+def getCapabilities() -> str:
+    return _CAPABILITIES
+
+
+def ensureCapabilities() -> str:
+    """Lazily build the capabilities summary OFFLINE (no web fetch) from the on-disk
+    claude_code.md + live local scan, if a full refresh has not populated the cache yet.
+    Guarantees no Ollama call is ever sent capability-blind. Never raises."""
+    global _CAPABILITIES
+    if _CAPABILITIES:
+        return _CAPABILITIES
+    try:
+        prior = ""
+        if config.CLAUDE_KNOWLEDGE_PATH.exists():
+            prior = _readText(config.CLAUDE_KNOWLEDGE_PATH, limit=2_000_000)
+        local = scanLocalClaude()
+        recs = readRecommendations()
+        _CAPABILITIES = compressForInjection(prior, local, {"pages": {}, "ok": [], "failed": []}, recs=recs)
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("ensureCapabilities offline build failed: %s", e)
+    return _CAPABILITIES
+
+
+def injectCapabilities(system_prompt: str) -> str:
+    """Prepend the cached CLAUDE CODE CAPABILITIES block to ANY brain system prompt.
+    Used by the orchestrator AND elaborator/replanner/architect so every single Ollama
+    system prompt carries the live capability set. Lazy-loads offline if needed."""
+    caps = _CAPABILITIES or ensureCapabilities()
+    if not caps:
+        return system_prompt
+    return ("## CLAUDE CODE CAPABILITIES\n" + caps + "\n\n" + _CAPABILITIES_DIRECTIVE
+            + "\n\n---\n\n" + system_prompt)

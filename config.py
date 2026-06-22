@@ -66,6 +66,11 @@ CLAUDE_SCAN_ROOTS: tuple[Path, ...] = (SUPERCRITICAL_ROOT / ".claude", PROJECT_R
 # Best-effort live-docs fetch (Python has internet; Ollama does not -- exploit it).
 CLAUDE_DOC_FETCH: bool = _envBool("CLAUDE_DOC_FETCH", True)
 CLAUDE_DOC_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_DOC_TIMEOUT_SECONDS", "8"))
+# Parallel doc fetch (the 27-page scrape goes from ~10s sequential to ~2s).
+CLAUDE_DOC_FETCH_WORKERS: int = int(os.getenv("CLAUDE_DOC_FETCH_WORKERS", "10"))
+# Freshness guard: if claude_code.md is younger than this, a (non-forced) refresh skips the
+# web re-scrape and just recompresses the cached doc -- so frequent restarts stay instant.
+CLAUDE_KNOWLEDGE_MAX_AGE_HOURS: float = float(os.getenv("CLAUDE_KNOWLEDGE_MAX_AGE_HOURS", "6"))
 # Hard cap on the compressed injection so a 7B brain's context never overflows.
 CLAUDE_CAPABILITIES_MAX_CHARS: int = int(os.getenv("CLAUDE_CAPABILITIES_MAX_CHARS", "9000"))
 

@@ -13,6 +13,7 @@ import json
 import ollama
 
 import config
+import knowledge
 
 LOG = config.getLogger("replanner")
 _OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
@@ -51,7 +52,8 @@ def replan(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, execu
     try:
         resp = _OLLAMA.chat(
             model=config.OLLAMA_MODEL,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            messages=[{"role": "system", "content": knowledge.injectCapabilities(system)},
+                      {"role": "user", "content": user}],
             format="json",
         )
         data = json.loads(resp["message"]["content"])
