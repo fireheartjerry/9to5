@@ -185,6 +185,45 @@ an auto-generated **model card** (training-data summary, eval deltas, known
 regressions) committed to git, plus a **per-layer attribution report** estimating how
 much of the month's fitness gain came from L1 vs L3 vs L5.
 
+### I. Teacher → student distillation (the executor teaches the brain) ★
+The biggest single upgrade to the whole system. The executor is **Claude Code** — a
+far stronger model than the local Ollama brain — yet today the system keeps only its
+*outcome* (verify pass/fail + telemetry) and discards its *reasoning*. The fix: at the
+end of each subtask, ask Claude to emit a small, structured **learning summary** (it is
+already invoked with `--output-format json` and an appended system prompt, so this is
+~free marginal tokens on a call we're already making). This flips the SIE from passively
+mining its own statistics to a **strong teacher actively teaching the weak student**.
+
+The learning summary is a capped JSON debrief:
+- `approach` — the winning strategy in 1–2 lines;
+- `key_decisions[]` / `pitfalls[]` — what mattered, what nearly went wrong;
+- `reusable_recipe` — the distilled how-to a future agent should follow;
+- `spec_feedback` — **was the orchestrator's invocation spec good?** what was ambiguous
+  or missing? (direct signal to improve the brain's *own core skill* — authoring specs);
+- `verify_critique` — was the acceptance check meaningful or **gameable**? (anti-reward-hacking);
+- `confidence`, `tags`, `would_tell_future_agent[]`.
+
+This single signal supercharges three layers at once:
+- **L1/L2 (memory):** Claude-authored lessons are higher-signal than mined stats and
+  drop straight into the semantic store, retrievable next run.
+- **L3 (prompts):** `spec_feedback` is a closed loop on the brain's hardest job — the
+  brain learns to write specs Claude finds *unambiguous*, scored on the harness.
+- **L5/F (weights):** Claude's `reusable_recipe` and reasoning become **SFT/DPO
+  targets** — the local brain is trained to approximate Claude's judgment, so over
+  months an expensive teacher is distilled into a free local student. This is the
+  "ultra-advanced" payoff: the orchestrator brain inherits Claude's taste cheaply.
+
+**Cost discipline:** the inline summary is default-on and nearly free. An optional
+**deep-reflection second pass** (a richer critique over the full transcript) is *gated*
+to notable trajectories only — gold, hard failures, or novel task families — so extra
+executor invocations stay bounded.
+
+**Trust but verify (critical):** Claude's self-report can be wrong or self-serving. A
+summary is **cross-checked against the actual verify result + adversary verdict** before
+it is trusted; a debrief claiming success on a failed verify is discarded and flagged.
+Only trusted summaries enter lessons or any training set — this rides the existing
+data-quality gate (G) and reward-hacking defenses.
+
 ## The spine — Evaluation Harness (most important single piece)
 
 A fixed benchmark of ~15 golden 9to5 goals across families (bugfix, add-test, refactor,
@@ -218,6 +257,9 @@ already frames the intent — the ladder gives it a concrete, measurable agenda.
 - **Reward-hacking defense (multi-layer):** independent adversary + held-out
   (non-brain-authored) verifies + the data-quality gate (G) + periodic human spot-check.
   Catches the brain authoring trivially-passing verifies or gaming the composite reward.
+- **Untrusted self-reports:** executor learning summaries (subsystem I) are
+  cross-checked against the real verify + adversary verdict before they are trusted;
+  unverified or contradicted debriefs never enter lessons or any training set.
 - **Catastrophic-forgetting defense:** frozen base + replay set in the eval suite +
   KL/anchor regularization in DPO + never-promote-on-regression.
 - **Drift detection:** watch the fitness time-series for sustained decline across any
@@ -243,6 +285,8 @@ already frames the intent — the ladder gives it a concrete, measurable agenda.
 
 A rising, **provable** fitness time-series on the eval harness over weeks→months; the
 brain demonstrably stops repeating known failure patterns (L1/L2); champion
-prompts/policies that beat the original hardcoded constants on the gate (L3/L4); and at
-least one LoRA adapter that beats prompt-only on the harness (L5) — all at zero
-marginal API cost, with one-command rollback intact throughout.
+prompts/policies that beat the original hardcoded constants on the gate (L3/L4);
+measurable uplift from teacher distillation — the brain authors specs Claude rates as
+less ambiguous over time, and a reflection-trained adapter beats a trajectory-only one
+(subsystem I + L5); and at least one LoRA adapter that beats prompt-only on the harness
+— all at zero marginal API cost, with one-command rollback intact throughout.

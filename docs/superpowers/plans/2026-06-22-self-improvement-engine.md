@@ -21,6 +21,7 @@ learning/policy.py(new)    L4 contextual bandit over policy_arms
 learning/prompts.py(new)   versioned prompt registry (champion/challenger loader)
 prompts/*.md               externalized system prompts + metadata                      [new]
 learning/promotion.py(new) champion/challenger gate (eval + proportion test + Thompson)
+learning/reflection.py(new) executor learning-summary: request build, parse, trust-check, route
 learning/reward.py(new)    composite reward + local logistic calibrator
 learning/preferences.py(new) DPO/ORPO pair builder (gold vs failed same-subtask)
 learning/dataset.py(new)   data-quality gate G: dedup/decontam/scrub/validate
@@ -32,6 +33,7 @@ learning/curriculum.py(new) self-play goal generation on weakest families
 learning/release.py(new)   model cards, versioning, per-layer attribution report
 config.py                  + SIE config block (all env-driven)                         [edit]
 orchestrator.py            + retrieval injection (:441/:581); + adapter/role router     [edit]
+agents/executor.py         + append learning-summary request; capture the JSON debrief   [edit]
 state/task.py              sink shim: existing record* methods also write the ledger    [edit]
 notifications/             + fitness time-series panel/embed                            [edit]
 ```
@@ -70,6 +72,10 @@ read from `config.py`, which reads `C:\supercritical\.env`. Tests are stdlib
   score_json, passed_gate BOOL`.
 - **`adapters`**: `id PK, base_model, lora_path, modelfile_path, n_train_examples,
   trained_at, eval_run_id FK, state(champion|challenger|retired)`.
+- **`reflections`** (subsystem I, executor self-reports): `id PK, subtask_id FK,
+  approach, key_decisions_json, pitfalls_json, reusable_recipe, spec_feedback,
+  verify_critique, confidence, tags_json, trusted BOOL, deep BOOL`. `trusted` is set
+  only after cross-check vs the real verify + adversary verdict.
 
 Public helpers: `record_run`, `record_subtask`, `top_k_similar(embedding, k, filter)`,
 `arms_for(context_key)`, `gold_examples()`, `fitness_series()`.
@@ -116,7 +122,10 @@ set → promote or retire. Rollback = repoint the Ollama tag to the prior champi
 `PROMPT_PROMOTE_Z` (1.64), `EVAL_SUITE_DIR`, `EVAL_FITNESS_WEIGHTS`, `REWARD_WEIGHTS`,
 `LORA_MIN_EXAMPLES`, `LORA_OUTPUT_DIR`, `BRAIN_MODEL_TAG` (`9to5-brain`),
 `PER_ROLE_ADAPTERS` (bool), `DPO_KL_BETA`, `CONSOLIDATION_CRON`, `PROMOTION_CRON`,
-`SIE_KILL_SWITCH` (bool — revert to base + freeze promotions).
+`SIE_KILL_SWITCH` (bool — revert to base + freeze promotions),
+`EXECUTOR_REFLECTION_ENABLED` (bool, default on), `REFLECTION_MAX_TOKENS` (350),
+`REFLECTION_DEEP_PASS` (bool, default off), `DEEP_REFLECTION_TRIGGERS`
+(gold|failed|novel-family).
 
 ## Hook points in existing code (surgical)
 
@@ -132,6 +141,14 @@ set → promote or retire. Rollback = repoint the Ollama tag to the prior champi
   behavior is unchanged until a challenger is promoted.
 - **Adapter/role router:** at brain-call sites, select the Ollama model tag from the
   champion adapter (per-role in Phase G) instead of the static `OLLAMA_MODEL`.
+- **Executor learning summary (subsystem I):** in `agents/executor.py`, append the
+  learning-summary request to the executor system prompt (reuses
+  `EXECUTOR_APPEND_SYSTEM_PROMPT` + `EXECUTOR_OUTPUT_JSON`, so no new invocation) and
+  parse the JSON debrief from the result. The optional deep-reflection second pass is a
+  separate, gated Claude call routed through the same executor seam. Capture lands in
+  the new `reflections` table via the best-effort sink; `learning/reflection.py` does
+  the trust cross-check and routes trusted summaries to lessons (L1/L2), spec_feedback
+  to the prompt-evolution loop (L3), and reusable_recipe to the training set (E/F).
 
 ## Phasing — granular tickets (each with an acceptance check)
 
@@ -145,6 +162,7 @@ set → promote or retire. Rollback = repoint the Ollama tag to the prior champi
 - **B1** `memory/retrieval.py`: local embeddings + `top_k_similar`. ✅ returns ranked neighbors on seeded data (Ollama mocked in tests).
 - **B2** Lessons-block render + compression ≤ `RETRIEVAL_MAX_TOKENS`. ✅ unit test asserts the token cap.
 - **B3** Inject at `authorSubtaskPlan`/`authorInvocationSpec`. ✅ harness fitness ≥ pre-B baseline.
+- **B4** Subsystem I — `learning/reflection.py` + executor learning-summary request/parse + `reflections` table + trust cross-check; trusted summaries feed lessons. ✅ a run captures a debrief; a summary contradicting its verify is marked `trusted=0` and excluded.
 
 ### Phase C — Consolidation + Policy (month 2) — *days/weeks*
 - **C1** `learning/lessons.py` nightly mining → `lessons` rows + `lessons.md`. ✅ digest regenerates from the ledger.
@@ -158,7 +176,7 @@ set → promote or retire. Rollback = repoint the Ollama tag to the prior champi
 
 ### Phase E — LoRA Distillation, SFT (month 3+) — *months*
 - **E0** `learning/dataset.py` quality gate G (dedup/decontam/scrub/validate). ✅ rejects eval-suite rows and secret-bearing rows.
-- **E1** `learning/distill.py` gold dataset builder. ✅ emits deduped SFT jsonl from `gold_examples()`.
+- **E1** `learning/distill.py` gold dataset builder, incl. trusted-reflection `reusable_recipe` as teacher targets (subsystem I). ✅ emits deduped SFT jsonl from `gold_examples()` + trusted reflections.
 - **E2** `learning/finetune.py` queued local LoRA + Modelfile + `ollama create`. ✅ produces tag `9to5-brain:vN` (GPU job mockable in CI).
 - **E3** Adapter promotion through harness incl. replay set; rollback + kill switch. ✅ a regressing adapter auto-retires; kill switch reverts to base.
 
@@ -189,6 +207,7 @@ cadence-ladder scheduling.
   + decay), `test_policy_bandit.py` (reward update + Thompson), `test_prompt_registry.py`
   (champion byte-identity), `test_promotion.py` (proportion test + rollback),
   `test_eval_harness.py` (fitness formula + held-out verify integrity),
+  `test_reflection.py` (summary parse + trust cross-check rejects contradicted debriefs),
   `test_dataset_gate.py` (dedup/decontam/scrub), `test_distill.py` (gold filter),
   `test_finetune.py` (Modelfile emission, trainer mocked).
 - **Regression guard:** Phase A/B must show **no** change to existing test outcomes
