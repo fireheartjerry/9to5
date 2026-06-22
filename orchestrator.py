@@ -136,8 +136,14 @@ class Orchestrator:
 
     def _singleDeliverable(self, goal_elaborated: str) -> bool:
         """True when the goal targets at most one distinct file with no multi-deliverable phrasing.
-        Used to collapse over-decomposed plans AND to forbid replan-adds that re-pad a trivial goal."""
+        Used to collapse over-decomposed plans AND to forbid replan-adds that re-pad a trivial goal.
+
+        A goal that ENUMERATES >=2 requirements (``(1).. (2).. (3)..``) is never single -- even when
+        all of them live in ONE file. Treating 'N features in one file' as single is what collapsed
+        the webdash goal to 1 subtask and let 1-of-3-done pass as done."""
         import re
+        if len(verifier.extractRequirements(goal_elaborated)) >= 2:
+            return False
         g = (goal_elaborated or "").lower()
         files = set(re.findall(
             r"([A-Za-z0-9_.-]+\.(?:py|md|txt|json|js|ts|tsx|jsx|html|css|csv|ya?ml|cfg|ini|sh|bat|"
@@ -145,6 +151,31 @@ class Orchestrator:
         multi_phrase = any(w in g for w in ("multiple files", "several files", "multiple deliverables",
                                             "as well as", "separate "))
         return len(files) <= 1 and not multi_phrase
+
+    def _strengthenPlanVerifies(self, goal_elaborated: str, subtasks: list[dict]) -> list[dict]:
+        """Defense against 'partial work passes': for an enumerated multi-deliverable goal, replace
+        the verify of any subtask that COVERS >=2 of those requirements with a strict compound
+        content-scan that asserts every covered requirement is present in the target file. A subtask
+        covering one deliverable keeps its (per-deliverable) brain verify. No-op for non-enumerated
+        goals or when no single target file is named -- so a normal single-deliverable run is
+        unaffected and correct work is never failed by a guessed multi-assertion."""
+        reqs = verifier.extractRequirements(goal_elaborated)
+        if len(reqs) < 2:
+            return subtasks
+        target_rel = verifier.primaryTargetFile(goal_elaborated)
+        if not target_rel:
+            return subtasks
+        target_abs = str((config.PROJECT_ROOT / target_rel).resolve())
+        req_markers = [(r, verifier.requirementMarkers(r)) for r in reqs]
+        for st in subtasks:
+            hay = f"{st.get('title', '')} {st.get('description', '')}".lower()
+            covered = [markers for _r, markers in req_markers
+                       if markers and any(k in hay for k in markers)]
+            if len(covered) >= 2:
+                st["verify"] = verifier.buildContentScanVerify(covered, target_abs)
+                LOG.info("plan strengthen: subtask '%s' -> strict compound verify over %d requirements",
+                         st.get("title"), len(covered))
+        return subtasks
 
     def _repairVerify(self, subtask: dict, exec_cwd: str, t0: float = 0.0):
         """SOUND behavioral fallback: find an artifact THIS attempt produced (modified at/after t0) and
@@ -194,6 +225,9 @@ class Orchestrator:
             "You are the Planner for 9TO5. Break the specification into the MINIMAL ordered list of "
             "concrete subtasks. For a trivial single-artifact goal (one script/file/function), use EXACTLY "
             "ONE subtask -- never pad to a quota. Use more ONLY for genuinely independent deliverables. "
+            "When the goal ENUMERATES several requirements (e.g. '(1)... (2)... (3)...'), EITHER give each "
+            "its own subtask (preferred when they are separable) OR keep one subtask but author a COMPOUND "
+            "verify that asserts EVERY requirement -- never a verify that checks just one of them.\n"
             "Honor the goal's constraints (e.g. 'standard library only' => no dependency installs).\n"
             'Respond with JSON ONLY: {"subtasks": [{"title": "...", "description": "...", "layer": 3, '
             '"effort_level": "default|high|xhigh|ultracode", "verify": {"cmd": "...", "expect": "..."}}]}. '
@@ -205,6 +239,9 @@ class Orchestrator:
             "  (a) cmd = python <ABSOLUTE path> ; expect = exit_zero            (the program runs cleanly)\n"
             "  (b) cmd = python <ABSOLUTE path> ; expect = stdout_contains:<a short string you are CERTAIN it prints>\n"
             '  (c) cmd = python -c "import os; assert os.path.getsize(r\'<ABSOLUTE path>\')>0" ; expect = exit_zero   (file exists, non-empty)\n'
+            "  (d) FOR A MULTI-REQUIREMENT SUBTASK: expect = stdout_contains_all:<tok1>||<tok2>||<tok3>  (every "
+            "token must appear) -- pair with a cmd that prints the artifact, e.g. "
+            "python -c \"import io;print(io.open(r'<ABSOLUTE path>',encoding='utf-8').read())\".\n"
             "- NEVER import a project module or reference an internal function/class/constant name -- a "
             "guessed symbol WILL fail. NEVER use grep/cat/test/ls/findstr/type."
         )
@@ -237,10 +274,13 @@ class Orchestrator:
             "You are a strict reviewer of a 9TO5 subtask plan. Return a CORRECTED plan, JSON only, same "
             'schema {"subtasks":[...]}. Make every verify RELIABLE: each verify.cmd must use ABSOLUTE paths '
             "under " + str(config.PROJECT_ROOT) + " and be ONE of: 'python <abs>' (expect exit_zero); "
-            "'python <abs>' (expect stdout_contains:<a certain string>); or "
-            "'python -c \"import os; assert os.path.getsize(r'<abs>')>0\"' (expect exit_zero). "
-            "NEVER import a project module or guess an internal symbol; NEVER use grep/cat/test/findstr. "
-            "Collapse any over-decomposition into the fewest subtasks. Preserve titles/descriptions."
+            "'python <abs>' (expect stdout_contains:<a certain string>); "
+            "'python -c \"import os; assert os.path.getsize(r'<abs>')>0\"' (expect exit_zero); or, for a "
+            "multi-requirement subtask, expect stdout_contains_all:<t1>||<t2>||<t3> asserting EVERY "
+            "requirement. PRESERVE any compound (stdout_contains_all) verify -- never reduce it to a "
+            "single-fact check. NEVER import a project module or guess an internal symbol; NEVER use "
+            "grep/cat/test/findstr. Collapse any over-decomposition into the fewest subtasks. "
+            "Preserve titles/descriptions."
         )
         user = f"Goal:\n{goal_elaborated}\n\nPlan to fix:\n{json.dumps({'subtasks': subs})}\n\nReturn corrected JSON."
         resp = self._ollamaChat(system, user, want_json=True)
@@ -550,7 +590,9 @@ class Orchestrator:
             # headless claude exits nonzero for benign reasons (fallback-model switch, a non-fatal tool
             # call); the artifact running cleanly is the real correctness signal. Only a genuinely broken
             # program (its own `python <file>` fails) stays failed.
-            if not passed:
+            # A STRICT verify (compound multi-requirement check) must NEVER be rescued: its whole
+            # purpose is that partial work fails. Repair only ever rescues a brittle single-fact verify.
+            if not passed and not verifier.isStrictVerify(verify_spec):
                 repaired = self._repairVerify(subtask, exec_cwd, attempt_started)
                 same = bool(repaired) and (repaired.get("cmd"), repaired.get("expect")) == \
                     ((verify_spec or {}).get("cmd"), (verify_spec or {}).get("expect"))
@@ -847,6 +889,7 @@ class Orchestrator:
                 state.setStatus("planning")
                 dashboard.update(state, "planning", "authoring subtask plan")
                 plan = self.critiqueSubtaskPlan(elaborated, self.authorSubtaskPlan(elaborated, architect_doc))
+                plan = self._strengthenPlanVerifies(elaborated, plan)
                 for s in plan[:config.MAX_SUBTASKS]:
                     state.addSubtask(s.get("title", "untitled"), s.get("description", ""),
                                      layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))
