@@ -136,7 +136,7 @@ def blockDestructive(data):
         f"Blocked destructive command (matched {matched!r}): {command}"
     )
 
-    # (a) best-effort Discord alert (severe: @everyone + human ping + buttons).
+    # (a) best-effort Discord alert (severe: owner ping + Answer/Skip/Abort buttons).
     try:
         import notifications.discord_bot as discord
         discord.sendBlocked(reason)

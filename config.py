@@ -81,6 +81,33 @@ DISCORD_CHANNEL_ID: int = int(_RAW_CHANNEL) if _RAW_CHANNEL.isdigit() else 0
 # Human to @-ping for severe events only (blocked / critical decision / deadlock abort).
 DISCORD_HUMAN_USER_ID: str = os.getenv("DISCORD_HUMAN_USER_ID", "")
 
+# Guild for instant slash-command registration; 0 => global (can take ~1h to propagate).
+_RAW_GUILD = os.getenv("DISCORD_GUILD_ID", "0") or "0"
+DISCORD_GUILD_ID: int = int(_RAW_GUILD) if _RAW_GUILD.isdigit() else 0
+
+# Discord hard limits (single source of truth for all truncation/clamping).
+DISCORD_MAX_CONTENT: int = 2000
+DISCORD_MAX_EMBED_DESC: int = 4096
+DISCORD_MAX_FIELD_NAME: int = 256
+DISCORD_MAX_FIELD_VALUE: int = 1024
+DISCORD_EMBED_TOTAL_MAX: int = 6000
+DISCORD_REST_TIMEOUT: int = 15      # seconds per Discord REST call
+DISCORD_RETRY_MAX: int = 2          # 429 retries for milestone sends (NOT the control poll)
+
+# --- Bot identity / branding ---
+VERSION: str = "1.0.0"
+BRAND_COLOR: int = 0x5865F2                      # 9TO5 brand (Discord blurple)
+BRAND_ICON_URL: str = os.getenv("BRAND_ICON_URL", "")
+
+# --- Bot UX behaviour ---
+COOLDOWN_RATE: int = 3                            # max mutating-command uses ...
+COOLDOWN_PER: float = 10.0                        # ... per this many seconds, per user
+PRESENCE_INTERVAL: int = 30                       # seconds between bot presence refreshes
+
+# --- Audit log (who issued which control command) ---
+AUDIT_LOG_PATH: Path = PROJECT_ROOT / "state" / "audit.jsonl"
+AUDIT_MAX_BYTES: int = 1_000_000                  # rotate audit.jsonl past ~1 MB
+
 # --- Obsidian Local REST API ---------------------------------------------
 OBSIDIAN_API_KEY: str = os.getenv("OBSIDIAN_API_KEY", "")
 OBSIDIAN_PORT: int = int(os.getenv("OBSIDIAN_PORT", "27124"))
@@ -220,6 +247,11 @@ EFFORT_FLAG_MAP: dict[str, str] = {
 EFFORT_BARS: dict[str, str] = {
     "low": "▰▱▱▱▱", "default": "▰▰▱▱▱", "medium": "▰▰▱▱▱",
     "high": "▰▰▰▱▱", "xhigh": "▰▰▰▰▱", "ultracode": "▰▰▰▰▰",
+}
+# Human display labels (single home; discord_bot.effortBar reads these — no private copy).
+EFFORT_LABELS: dict[str, str] = {
+    "low": "Low", "default": "Standard", "medium": "Standard",
+    "high": "High", "xhigh": "Very High", "ultracode": "Max",
 }
 
 # --- Discord status palette (embed sidebar color by phase/status) ----------

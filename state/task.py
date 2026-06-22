@@ -122,6 +122,30 @@ class TaskState:
                 best_key, best = key, data
         return cls(best) if best is not None else None
 
+    @classmethod
+    def listRecent(cls, n: int = 10) -> list[dict[str, Any]]:
+        """Lightweight summaries of recent tasks, newest first. Reads the JSON store directly."""
+        out: list[dict[str, Any]] = []
+        for f in config.STATE_DIR.glob("*.json"):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            meta = data.get("meta", {})
+            subs = (data.get("plan", {}) or {}).get("subtasks", []) or []
+            done = sum(1 for s in subs if s.get("status") == "done")
+            total = sum(1 for s in subs if s.get("status") != "removed")
+            out.append({
+                "task_id": data.get("task_id", f.stem),
+                "status": meta.get("status", "unknown"),
+                "goal": meta.get("goal_raw", ""),
+                "done": done,
+                "total": total,
+                "started_at": meta.get("started_at", ""),
+            })
+        out.sort(key=lambda d: d["started_at"], reverse=True)
+        return out[:n]
+
     # ---- vault-relative note paths -------------------------------------
     def vaultTaskDir(self) -> str:
         return self.data["obsidian"]["vault_task_dir"]
