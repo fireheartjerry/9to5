@@ -689,10 +689,13 @@ class Orchestrator:
         )
 
     def _reviewNote(self, subtask: dict, reason: str, review: dict, output: str) -> str:
+        concerns = review.get("concerns") or []
+        concerns_md = "\n".join(f"- {c}" for c in concerns) if concerns else "_none_"
         return (
             f"# Adversary review -- {subtask['subtask_id']}\n\n"
             f"- **Trigger:** {reason}\n- **Verdict:** {review['verdict']}\n"
-            f"- **Stub:** {review.get('stub', False)}\n\n## Notes\n{review.get('notes', '')}\n\n"
+            f"- **Stub:** {review.get('stub', False)}\n\n"
+            f"## Concerns\n{concerns_md}\n\n## Notes\n{review.get('notes', '')}\n\n"
             f"## Reviewed output (excerpt)\n\n```\n{(output or '')[:1500]}\n```\n"
         )
 
@@ -826,10 +829,12 @@ class Orchestrator:
         heartbeat_ordinal = sum(1 for s in state.subtasks if s["status"] in ("done", "failed", "removed")) + 1
         triggered, reason = adversary.shouldTrigger(combined, heartbeat_ordinal, attempt)
         if triggered:
-            discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason))
-            rv = adversary.review(subtask["title"], reason, combined)
+            rv = adversary.review(subtask["title"], reason, combined,
+                                  ollama_chat=self._ollamaChat,
+                                  goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
+            discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason, rv.get("verdict")))
             with self._state_lock:
-                state.addNotification("adversary_triggered", f"{sid}: {reason}")
+                state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
                 self.obs.writeNote(state.subtaskReviewNoteRel(sid), self._reviewNote(subtask, reason, rv, combined))
                 state.addAdversaryReview(sid, reason, rv["verdict"], state.subtaskReviewNoteRel(sid))
 
