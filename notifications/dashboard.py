@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import config
+from notifications import commands
 from notifications import discord_bot as discord
 from state.task import TaskState
 
@@ -34,10 +35,13 @@ class DiscordDashboard:
         self.effort: str = "default"
         self.model: str = config.PRIMARY_MODEL
         self._lock = threading.Lock()   # guards mutable state under parallel workers
+        self._send_lock = threading.Lock()    # serialize network PATCH/POST across workers
+        self._state_lock = None                # set by start(); used to snapshot TaskState safely
+        self._recreated = False                # at most one 404 recovery (no pin spam)
 
     def event(self, text: str) -> None:
         with self._lock:
-            self.events.append(f"`{datetime.now().strftime('%H:%M:%S')}` {text}")
+            self.events.append(f"`{datetime.now().astimezone().strftime('%H:%M:%S')}` {text}")
 
     def _eventsSnapshot(self) -> list:
         with self._lock:
@@ -66,17 +70,28 @@ class DiscordDashboard:
 
     # ---- embed construction --------------------------------------------
     def _embed(self, state: TaskState, phase: str) -> dict:
-        m = state.meta
-        done, total = state.progress()
-        notifs = state.data.get("notifications", [])
+        lock = self._state_lock
+        if lock:
+            lock.acquire()
+        try:
+            m = dict(state.meta)
+            subtasks = [dict(s) for s in state.subtasks]
+            notifs = list(state.data.get("notifications", []))
+            advs = len(state.data.get("adversary_reviews", []))
+        finally:
+            if lock:
+                lock.release()
+        done = sum(1 for s in subtasks if s["status"] == "done")
+        total = sum(1 for s in subtasks if s["status"] != "removed") or 1
         replans = sum(1 for n in notifs if n.get("kind") == "replan")
-        advs = len(state.data.get("adversary_reviews", []))
 
-        current = next((s for s in state.subtasks if s["status"] == "in_progress"), None) or state.nextActionable()
+        current = next((s for s in subtasks if s["status"] == "in_progress"), None)
+        if current is None:
+            current = next((s for s in subtasks if s["status"] == "pending"), None)
         cur_txt = f"`{current['subtask_id']}` {current['title']}" if current else "—"
 
         last_v = None
-        for s in state.subtasks:
+        for s in subtasks:
             if s.get("verify_result"):
                 last_v = (s["subtask_id"], s["verify_result"])
         if last_v:
@@ -87,6 +102,8 @@ class DiscordDashboard:
             verify_txt = "—"
 
         emoji = _PHASE_EMOJI.get(phase, "🛰")
+        paused = m.get("status") == "paused"
+        hint = "!resume" if paused else commands.footerHelp()
         return {
             "title": f"{emoji} 9TO5 · {phase}",
             "color": discord.statusColor(m["status"]),
@@ -94,35 +111,34 @@ class DiscordDashboard:
             "description": (
                 f"**{m['goal_raw'][:240]}**\n"
                 f"{discord.progressBar(done, total)}\n"
-                f"{discord.subtaskTracker(state.subtasks)}"
+                f"{discord.subtaskTracker(subtasks)}"
             ),
             "fields": [
-                # Row A — fixed order, 3 inline so the row never reflows ragged
-                {"name": "Status", "value": f"`{m['status']}`", "inline": True},
                 {"name": "Model", "value": f"`{self.model}`", "inline": True},
-                {"name": "Mode / Layer", "value": f"{m.get('control_mode', 'watch')} · L3", "inline": True},
-                # Row B — fixed order, 3 inline
+                {"name": "Mode", "value": f"`{m.get('control_mode', 'watch')}`", "inline": True},
+                {"name": "Elapsed", "value": self._elapsed(m.get("started_at")), "inline": True},
                 {"name": "🔁 Replans", "value": str(replans), "inline": True},
                 {"name": "⚔️ Adversary", "value": str(advs), "inline": True},
-                {"name": "Elapsed", "value": self._elapsed(m.get("started_at")), "inline": True},
-                # full-width detail rows
-                {"name": "Effort", "value": discord.effortBar(self.effort), "inline": False},
+                {"name": "Effort", "value": discord.effortBar(self.effort), "inline": True},
                 {"name": "Current subtask", "value": cur_txt[:1000], "inline": False},
                 {"name": "Last verify", "value": verify_txt, "inline": False},
                 {"name": "Recent events", "value": ("\n".join(self._eventsSnapshot()) or "—")[:1000], "inline": False},
             ],
-            "footer": {"text": f"task {state.task_id[:8]} · web :{config.WEB_DASHBOARD_PORT} · !status !abort !pause"},
+            "footer": {"text": f"task {state.task_id[:8]} · web :{config.WEB_DASHBOARD_PORT} · {hint}"},
         }
 
     # ---- lifecycle ------------------------------------------------------
-    def start(self, state: TaskState, phase: str = "starting") -> None:
+    def start(self, state: TaskState, phase: str = "starting", state_lock=None) -> None:
         if not config.DISCORD_DASHBOARD:
             return
+        self._state_lock = state_lock
         self.event(f"run started · mode `{state.meta.get('control_mode', 'watch')}`")
-        self.message_id = discord.createMessage(self._embed(state, phase))
-        if self.message_id:
-            discord.pinMessage(self.message_id)
-            LOG.info("Dashboard message %s created + pinned", self.message_id)
+        embed = self._embed(state, phase)
+        with self._send_lock:
+            self.message_id = discord.createMessage(embed)
+            if self.message_id:
+                discord.pinMessage(self.message_id)
+                LOG.info("Dashboard message %s created + pinned", self.message_id)
 
     def update(self, state: TaskState, phase: str, note: Optional[str] = None,
                effort: Optional[str] = None, model: Optional[str] = None) -> None:
@@ -136,9 +152,25 @@ class DiscordDashboard:
         if note:
             self.event(note)
         embed = self._embed(state, phase)
-        if self.message_id:
-            discord.editMessage(self.message_id, embed)
-        else:
-            self.message_id = discord.createMessage(embed)
+        with self._send_lock:
             if self.message_id:
-                discord.pinMessage(self.message_id)
+                ok = discord.editMessage(self.message_id, embed)
+                if not ok and not self._recreated:   # dashboard likely deleted -> recreate ONCE
+                    self._recreated = True
+                    self.message_id = discord.createMessage(embed)
+                    if self.message_id:
+                        discord.pinMessage(self.message_id)
+            else:
+                self.message_id = discord.createMessage(embed)
+                if self.message_id:
+                    discord.pinMessage(self.message_id)
+
+    def unpin(self) -> None:
+        """Remove the pinned dashboard when the run ends (idempotent; never raises)."""
+        if not config.DISCORD_DASHBOARD or not self.message_id:
+            return
+        try:
+            discord.unpinMessage(self.message_id)
+            LOG.info("Dashboard message %s unpinned", self.message_id)
+        except Exception:  # noqa: BLE001
+            LOG.warning("dashboard unpin failed", exc_info=True)
