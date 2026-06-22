@@ -198,18 +198,36 @@ def _makeHandler(task_id: str):
     return Handler
 
 
+_SERVER = None  # the live dashboard server, so it can be shut down between runs in one process
+
+
 def startWebDashboard(task_id: str, port: Optional[int] = None) -> Optional[str]:
     """Start the dashboard in a daemon thread; return its URL (or None if disabled/failed)."""
+    global _SERVER
     if not config.WEB_DASHBOARD:
         return None
+    stopWebDashboard()  # never leak a prior run's server/port
     port = port or config.WEB_DASHBOARD_PORT
     try:
         server = ThreadingHTTPServer(("127.0.0.1", port), _makeHandler(task_id))
     except OSError as e:
         LOG.warning("web dashboard could not bind :%s (%s)", port, e)
         return None
+    _SERVER = server
     thread = threading.Thread(target=server.serve_forever, name="webdash", daemon=True)
     thread.start()
     url = f"http://127.0.0.1:{port}/"
     LOG.info("Web dashboard at %s", url)
     return url
+
+
+def stopWebDashboard() -> None:
+    """Shut down the running dashboard server (frees the port). Safe to call repeatedly."""
+    global _SERVER
+    if _SERVER is not None:
+        try:
+            _SERVER.shutdown()
+            _SERVER.server_close()
+        except Exception:  # noqa: BLE001
+            pass
+        _SERVER = None

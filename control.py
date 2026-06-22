@@ -12,11 +12,46 @@ half-written file.
 from __future__ import annotations
 
 import json
+import contextlib
 import os
+import time
 from pathlib import Path
 from typing import Any, Optional
 
 import config
+
+
+@contextlib.contextmanager
+def _fileLock(target: Path, timeout: float = 5.0):
+    """Cross-process advisory lock via an atomic O_EXCL sidecar file, so the orchestrator,
+    gateway bot, and web dashboard never drop each other's control writes in the
+    load->mutate->write window. Steals a stale lock after `timeout` so a crashed holder
+    can't deadlock the bus."""
+    lock = Path(str(target) + ".lock")
+    start = time.time()
+    fd = None
+    while fd is None:
+        try:
+            fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            if time.time() - start > timeout:
+                try:
+                    os.remove(str(lock))
+                except OSError:
+                    pass
+                start = time.time()
+            time.sleep(0.02)
+        except OSError:
+            break  # never block control on a lock-fs error
+    try:
+        yield
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+                os.remove(str(lock))
+            except OSError:
+                pass
 
 
 class AbortRun(Exception):
@@ -64,9 +99,10 @@ class ControlBus:
         os.replace(tmp, self.path)
 
     def _mutate(self, fn) -> dict[str, Any]:
-        data = self.load()
-        fn(data)
-        self._write(data)
+        with _fileLock(self.path):   # serialize the load->mutate->write across processes
+            data = self.load()
+            fn(data)
+            self._write(data)
         return data
 
     # ---- abort / pause --------------------------------------------------
@@ -110,11 +146,12 @@ class ControlBus:
         self._mutate(lambda d: d["plan_ops"].append(op))
 
     def drainOps(self) -> list[dict[str, Any]]:
-        data = self.load()
-        ops = list(data.get("plan_ops") or [])
-        if ops:
-            data["plan_ops"] = []
-            self._write(data)
+        with _fileLock(self.path):   # don't lose ops a bot/web pushed between our load and write
+            data = self.load()
+            ops = list(data.get("plan_ops") or [])
+            if ops:
+                data["plan_ops"] = []
+                self._write(data)
         return ops
 
     # ---- Discord poll cursor -------------------------------------------

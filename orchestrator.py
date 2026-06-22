@@ -25,7 +25,7 @@ from control import AbortRun, ControlBus
 from memory.obsidian import ObsidianClient
 from notifications import discord_bot as discord
 from notifications.dashboard import DiscordDashboard
-from notifications.webdash import startWebDashboard
+from notifications.webdash import startWebDashboard, stopWebDashboard
 from state.task import TaskState, nowIso
 
 LOG = config.getLogger("orchestrator")
@@ -870,3 +870,4 @@ class Orchestrator:
                     "subtasks": [{"subtask_id": s["subtask_id"], "status": s["status"]} for s in state.subtasks]}
         finally:
             bus.setPendingGate(None)
+            stopWebDashboard()

@@ -103,12 +103,24 @@ class TaskState:
         p = config.STATE_DIR / f"{task_id}.json"
         return cls(json.loads(p.read_text(encoding="utf-8")))
 
+    _TERMINAL = ("done", "complete", "aborted", "partial", "blocked", "failed")
+
     @classmethod
     def loadLatest(cls) -> Optional["TaskState"]:
-        files = sorted(config.STATE_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime)
-        if not files:
-            return None
-        return cls(json.loads(files[-1].read_text(encoding="utf-8")))
+        # Prefer the most-recently-STARTED *active* (non-terminal) task; an unrelated save() that
+        # bumps an old task's file mtime must not cause the wrong task to be resumed/inspected.
+        best = None
+        best_key = None
+        for f in config.STATE_DIR.glob("*.json"):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            meta = data.get("meta", {})
+            key = (0 if meta.get("status") in cls._TERMINAL else 1, meta.get("started_at", ""))
+            if best_key is None or key > best_key:
+                best_key, best = key, data
+        return cls(best) if best is not None else None
 
     # ---- vault-relative note paths -------------------------------------
     def vaultTaskDir(self) -> str:
