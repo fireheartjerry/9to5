@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import ollama
 
 import config
+import knowledge
 from agents import adversary, architect, clarifier, executor, replanner, verifier
 from control import AbortRun, ControlBus
 from memory.obsidian import ObsidianClient
@@ -31,6 +32,167 @@ from notifications.webdash import startWebDashboard, stopWebDashboard
 from state.task import TaskState, nowIso
 
 LOG = config.getLogger("orchestrator")
+
+# ============================================================================
+# Living Claude Code knowledge -- injected into EVERY Ollama system prompt. The
+# compressed summary is cached in knowledge.py (shared by the orchestrator brain
+# AND elaborator/replanner/architect). These guards just keep the heavy web
+# refresh to once per process.
+# ============================================================================
+_KNOWLEDGE_REFRESHED: bool = False    # ensures the heavy (web) refresh runs once per process
+_KNOWLEDGE_LOCK = threading.Lock()
+
+
+def _knowledgeFresh(kpath, max_age_hours: float) -> bool:
+    """True when the on-disk knowledge doc is younger than max_age_hours."""
+    try:
+        if not kpath.exists():
+            return False
+        from datetime import datetime
+        age_h = (datetime.now().timestamp() - kpath.stat().st_mtime) / 3600.0
+        return age_h < max_age_hours
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def refreshClaudeKnowledge(obs: "ObsidianClient | None" = None, *, fetch_web: bool | None = None,
+                           log_session: bool = True, force: bool = False) -> str:
+    """Living knowledge refresh -- the asymmetry exploit (Python has internet; Ollama
+    does not). Runs at the start of every 9to5 session before any Ollama call.
+
+    Steps (all best-effort; never raises out):
+      1. Fetch the latest Claude Code docs + changelog from docs.claude.com /
+         docs.anthropic.com (CLI, hooks, MCP, skills, subagents, memory, settings ...).
+      2. Recursively read every installed ``.claude`` surface off disk
+         (skills, subagents, workflows, commands, hooks, settings, MCP).
+      3. Read the product-self-knowledge skill if present.
+      4. Combine all of the above + the existing ``claude_code.md`` into ONE unified,
+         timestamped reference and OVERWRITE ``claude_code.md`` with it.
+      5. Compress it into the structured ``CLAUDE CODE CAPABILITIES`` summary and cache
+         it module-globally so it is injected into every Ollama system prompt.
+      6. Log the refresh to Obsidian under ``sessions/knowledge-refresh-<ts>.md``.
+
+    Returns the compressed capabilities summary (also stored in the module cache)."""
+    global _KNOWLEDGE_REFRESHED
+    with _KNOWLEDGE_LOCK:
+        if _KNOWLEDGE_REFRESHED and not force and knowledge.getCapabilities():
+            return knowledge.getCapabilities()
+        fetch_web = config.CLAUDE_DOC_FETCH if fetch_web is None else fetch_web
+        refreshed_at = nowIso()
+        kpath = config.CLAUDE_KNOWLEDGE_PATH
+        try:
+            kpath.parent.mkdir(parents=True, exist_ok=True)
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("knowledge dir create failed: %s", e)
+
+        # FRESHNESS FAST-PATH: a recent doc skips the web re-scrape entirely -- just recompress
+        # the cached reference + a live local scan and prime the injection (instant restarts).
+        if not force and fetch_web and _knowledgeFresh(kpath, config.CLAUDE_KNOWLEDGE_MAX_AGE_HOURS):
+            try:
+                prior = kpath.read_text(encoding="utf-8", errors="replace")
+                local = knowledge.scanLocalClaude()
+                recs = knowledge.readRecommendations()
+                summary = knowledge.compressForInjection(
+                    prior, local, {"pages": {}, "ok": [], "failed": []}, recs=recs)
+                knowledge.setCapabilities(summary)
+                _KNOWLEDGE_REFRESHED = True
+                LOG.info("knowledge fast-path: doc fresh (<%.1fh); skipped web scrape, injection=%dch",
+                         config.CLAUDE_KNOWLEDGE_MAX_AGE_HOURS, len(summary))
+                return summary
+            except Exception as e:  # noqa: BLE001
+                LOG.warning("knowledge fast-path failed (%s); doing full refresh", e)
+
+        prior_doc = ""
+        try:
+            if kpath.exists():
+                prior_doc = kpath.read_text(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            prior_doc = ""
+
+        fetched = knowledge.fetchClaudeDocs(enabled=fetch_web)
+        local = knowledge.scanLocalClaude()
+        psk = knowledge.readProductSelfKnowledge()
+        recs = knowledge.readRecommendations()
+
+        sources: list[str] = []
+        sources += fetched.get("ok", [])
+        sources += [f"local:{r}" for r in local.get("roots", [])]
+        if psk.get("found"):
+            sources.append(f"product-self-knowledge:{psk.get('path')}")
+        if recs.get("found"):
+            sources.append(f"recommendations:{recs.get('path')}")
+        if prior_doc.strip():
+            sources.append(f"prior:{kpath}")
+
+        unified = knowledge.buildUnifiedDoc(prior_doc, fetched, local, psk,
+                                            refreshed_at=refreshed_at, sources=sources, recs=recs)
+        try:
+            # atomic: write a temp then os.replace, so an interrupt (Ctrl-C / !abort / taskkill /T
+            # on timeout) can never leave a half-written ~1MB claude_code.md to be folded back in.
+            tmp = kpath.with_suffix(".md.tmp")
+            tmp.write_text(unified, encoding="utf-8")
+            os.replace(tmp, kpath)
+            LOG.info("knowledge: wrote unified claude_code.md (%d chars) to %s", len(unified), kpath)
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("knowledge write failed (%s); keeping in-memory only", e)
+
+        summary = knowledge.compressForInjection(unified, local, fetched, recs=recs)
+        knowledge.setCapabilities(summary)
+        _KNOWLEDGE_REFRESHED = True
+
+        delta = knowledge.diffHeadings(prior_doc, unified)
+        if log_session:
+            try:
+                _logKnowledgeRefresh(obs or ObsidianClient(), refreshed_at, fetched, local, psk, delta, summary, recs)
+            except Exception as e:  # noqa: BLE001
+                LOG.warning("knowledge-refresh session log failed: %s", e)
+        LOG.info("knowledge refresh complete: %d skills, %d agents, %d doc pages, +%d/-%d headings, injection=%dch",
+                 len(local.get("skills", [])), len(local.get("agents", [])), len(fetched.get("ok", [])),
+                 len(delta.get("added", [])), len(delta.get("removed", [])), len(summary))
+        return summary
+
+
+def _logKnowledgeRefresh(obs: "ObsidianClient", at: str, fetched: dict, local: dict,
+                         psk: dict, delta: dict, summary: str, recs: "dict | None" = None) -> None:
+    """Persist a refresh record to Obsidian sessions/knowledge-refresh-<ts>.md."""
+    recs = recs or {"found": False, "path": None}
+    slug = at.replace(":", "").replace("-", "").replace("+", "p")
+    rel = f"{config.SESSIONS_DIR_REL}/knowledge-refresh-{slug}.md"
+    lines = [
+        f"# Claude Code knowledge refresh @ {at}", "",
+        "## Sources fetched",
+        f"- Live doc pages OK: {len(fetched.get('ok', []))}",
+        f"- Live doc pages failed: {len(fetched.get('failed', []))}",
+        "",
+        "### OK URLs",
+    ]
+    lines += [f"- {u}" for u in fetched.get("ok", [])] or ["- (none -- offline or fetch disabled)"]
+    lines += ["", "## Local .claude surface",
+              f"- roots: {', '.join(local.get('roots', [])) or '(none)'}",
+              f"- skills: {len(local.get('skills', []))}",
+              f"- subagents: {len(local.get('agents', []))}",
+              f"- workflows: {len(local.get('workflows', []))}",
+              f"- commands: {len(local.get('commands', []))}",
+              f"- hooks: {len(local.get('hooks', []))}",
+              f"- mcp servers: {', '.join(local.get('mcp_servers', [])) or '(none)'}",
+              f"- product-self-knowledge: {'found at ' + str(psk.get('path')) if psk.get('found') else 'not found'}",
+              f"- expert recommendations: {'folded in (Part E) from ' + str(recs.get('path')) if recs.get('found') else 'not present'}",
+              "", "## What changed since last refresh (top-level headings)",
+              f"- added: {', '.join(delta.get('added', [])) or '(none)'}",
+              f"- removed: {', '.join(delta.get('removed', [])) or '(none)'}",
+              "", "## New capabilities discovered (installed skills this refresh)"]
+    lines += [f"- {s['name']}: {s['description'][:120]}" for s in local.get("skills", [])[:40]] or ["- (none)"]
+    lines += ["", "## Injected CLAUDE CODE CAPABILITIES summary", "", "```", summary, "```", ""]
+    obs.writeNote(rel, "\n".join(lines))
+
+
+# Back-compat alias: the shared implementation lives in knowledge.py so every brain
+# caller (orchestrator + elaborator/replanner/architect) shares one cache.
+injectCapabilities = knowledge.injectCapabilities
+
+_YELLOW = 0xF1C40F
+_ORANGE = 0xE67E22
+_RED = 0xE74C3C
 
 
 ORCHESTRATOR_CONSTITUTION = (
@@ -47,9 +209,12 @@ ORCHESTRATOR_CONSTITUTION = (
     '  "subagent": string|null,      // one of: architect, security-reviewer, or null\n'
     '  "prompt": string,             // the precise, self-contained instruction to execute this subtask\n'
     '  "pre_tool_hooks": string[],   // subset of: block_destructive, log_all\n'
-    '  "post_tool_hooks": string[]   // subset of: write_obsidian, discord_notify, log_all\n'
+    '  "post_tool_hooks": string[],  // subset of: write_obsidian, discord_notify, log_all\n'
+    '  "use_workflow": boolean,      // true => run a DYNAMIC WORKFLOW instead of a flat prompt (see rule 7)\n'
+    '  "workflow_definition": object|null // when use_workflow=true: {"name","description",'
+    '"phases":[{"title","parallel":bool,"agents":[{"label","prompt","effort"}]}],"synthesis"} else null\n'
     "}\n\n"
-    "THE SIX PRIMITIVES -- when to use each:\n"
+    "THE SEVEN PRIMITIVES -- when to use each:\n"
     "1. CLAUDE.md (claude_md_inject): ALWAYS fill richly -- this is how the hands get context. "
     "Include exact absolute file paths, the acceptance/verify command, conventions, forbidden files.\n"
     "2. SKILLS: reusable playbooks. /architect-review for design-heavy subtasks; /write-obsidian-note "
@@ -61,9 +226,19 @@ ORCHESTRATOR_CONSTITUTION = (
     "are persisted. Add 'discord_notify' for long or important subtasks.\n"
     "5. EFFORT: pick by complexity. Simple file ops => default. Everyday coding => high. Complex "
     "algorithmic/architectural work => xhigh. The hardest, deepest-reasoning subtasks => ultracode.\n"
-    "6. MODEL/FALLBACK is handled by the plumbing -- do not set it.\n\n"
+    "6. MODEL/FALLBACK is handled by the plumbing -- do not set it.\n"
+    "7. DYNAMIC WORKFLOW (use_workflow + workflow_definition): when a subtask has MORE THAN 3 internal "
+    "steps, touches multiple tools, benefits from PARALLEL reasoning, or needs structured multi-phase "
+    "orchestration, DO NOT cram it into one flat prompt. Set use_workflow=true and author a full "
+    "workflow_definition: a name, a description, and an ordered list of phases; each phase has a title, a "
+    "'parallel' flag, and a list of agents ({label, prompt, effort}); add a final 'synthesis' instruction "
+    "that merges the phase outputs. The plumbing runs this as a real Claude Code workflow (fan-out "
+    "subagents, parallel where marked, then synthesize). For a simple single-step subtask keep "
+    "use_workflow=false and workflow_definition=null.\n\n"
     "RULES: Honor the goal's constraints (e.g. 'standard library only' => never instruct installs). "
-    "Keep prompt self-contained and imperative. Output ONLY the JSON object, no prose."
+    "Consult the injected CLAUDE CODE CAPABILITIES before choosing primitives -- prefer a real installed "
+    "skill/subagent/workflow over a generic prompt whenever one fits. Keep prompt self-contained and "
+    "imperative. Output ONLY the JSON object, no prose."
 )
 
 
@@ -95,12 +270,20 @@ class Orchestrator:
     # ===================================================================
     def _ollamaChat(self, system: str, user: str, *, want_json: bool = False, retries: int = 3):
         """Resilient Ollama call: exponential backoff on timeout/connection failure,
-        Discord blocked alert on final failure. Returns the response dict or None."""
+        Discord blocked alert on final failure. Returns the response dict or None.
+
+        Every system prompt is augmented with the live CLAUDE CODE CAPABILITIES block so
+        Qwen reasons from the current Claude Code feature set on every single brain call."""
+        system = injectCapabilities(system)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         delay = 2.0
         for attempt in range(1, retries + 1):
             try:
-                kwargs = {"format": "json"} if want_json else {}
+                # num_ctx is REQUIRED: the ~2.2k-token capabilities block sits in the system
+                # prompt; ollama's small default would silently truncate the JSON-schema tail.
+                kwargs = {"options": {"num_ctx": config.OLLAMA_NUM_CTX}}
+                if want_json:
+                    kwargs["format"] = "json"
                 return self.ollama.chat(model=config.OLLAMA_MODEL, messages=messages, **kwargs)
             except Exception as e:  # noqa: BLE001
                 LOG.warning("Ollama call failed (attempt %d/%d): %s", attempt, retries, e)
@@ -134,8 +317,14 @@ class Orchestrator:
 
     def _singleDeliverable(self, goal_elaborated: str) -> bool:
         """True when the goal targets at most one distinct file with no multi-deliverable phrasing.
-        Used to collapse over-decomposed plans AND to forbid replan-adds that re-pad a trivial goal."""
+        Used to collapse over-decomposed plans AND to forbid replan-adds that re-pad a trivial goal.
+
+        A goal that ENUMERATES >=2 requirements (``(1).. (2).. (3)..``) is never single -- even when
+        all of them live in ONE file. Treating 'N features in one file' as single is what collapsed
+        the webdash goal to 1 subtask and let 1-of-3-done pass as done."""
         import re
+        if len(verifier.extractRequirements(goal_elaborated)) >= 2:
+            return False
         g = (goal_elaborated or "").lower()
         files = set(re.findall(
             r"([A-Za-z0-9_.-]+\.(?:py|md|txt|json|js|ts|tsx|jsx|html|css|csv|ya?ml|cfg|ini|sh|bat|"
@@ -143,6 +332,31 @@ class Orchestrator:
         multi_phrase = any(w in g for w in ("multiple files", "several files", "multiple deliverables",
                                             "as well as", "separate "))
         return len(files) <= 1 and not multi_phrase
+
+    def _strengthenPlanVerifies(self, goal_elaborated: str, subtasks: list[dict]) -> list[dict]:
+        """Defense against 'partial work passes': for an enumerated multi-deliverable goal, replace
+        the verify of any subtask that COVERS >=2 of those requirements with a strict compound
+        content-scan that asserts every covered requirement is present in the target file. A subtask
+        covering one deliverable keeps its (per-deliverable) brain verify. No-op for non-enumerated
+        goals or when no single target file is named -- so a normal single-deliverable run is
+        unaffected and correct work is never failed by a guessed multi-assertion."""
+        reqs = verifier.extractRequirements(goal_elaborated)
+        if len(reqs) < 2:
+            return subtasks
+        target_rel = verifier.primaryTargetFile(goal_elaborated)
+        if not target_rel:
+            return subtasks
+        target_abs = str((config.PROJECT_ROOT / target_rel).resolve())
+        req_markers = [(r, verifier.requirementMarkers(r)) for r in reqs]
+        for st in subtasks:
+            hay = f"{st.get('title', '')} {st.get('description', '')}".lower()
+            covered = [markers for _r, markers in req_markers
+                       if markers and any(k in hay for k in markers)]
+            if len(covered) >= 2:
+                st["verify"] = verifier.buildContentScanVerify(covered, target_abs)
+                LOG.info("plan strengthen: subtask '%s' -> strict compound verify over %d requirements",
+                         st.get("title"), len(covered))
+        return subtasks
 
     def _repairVerify(self, subtask: dict, exec_cwd: str, t0: float = 0.0):
         """SOUND behavioral fallback: find an artifact THIS attempt produced (modified at/after t0) and
@@ -192,6 +406,9 @@ class Orchestrator:
             "You are the Planner for 9TO5. Break the specification into the MINIMAL ordered list of "
             "concrete subtasks. For a trivial single-artifact goal (one script/file/function), use EXACTLY "
             "ONE subtask -- never pad to a quota. Use more ONLY for genuinely independent deliverables. "
+            "When the goal ENUMERATES several requirements (e.g. '(1)... (2)... (3)...'), EITHER give each "
+            "its own subtask (preferred when they are separable) OR keep one subtask but author a COMPOUND "
+            "verify that asserts EVERY requirement -- never a verify that checks just one of them.\n"
             "Honor the goal's constraints (e.g. 'standard library only' => no dependency installs).\n"
             'Respond with JSON ONLY: {"subtasks": [{"title": "...", "description": "...", "layer": 3, '
             '"effort_level": "default|high|xhigh|ultracode", "verify": {"cmd": "...", "expect": "..."}}]}. '
@@ -203,6 +420,9 @@ class Orchestrator:
             "  (a) cmd = python <ABSOLUTE path> ; expect = exit_zero            (the program runs cleanly)\n"
             "  (b) cmd = python <ABSOLUTE path> ; expect = stdout_contains:<a short string you are CERTAIN it prints>\n"
             '  (c) cmd = python -c "import os; assert os.path.getsize(r\'<ABSOLUTE path>\')>0" ; expect = exit_zero   (file exists, non-empty)\n'
+            "  (d) FOR A MULTI-REQUIREMENT SUBTASK: expect = stdout_contains_all:<tok1>||<tok2>||<tok3>  (every "
+            "token must appear) -- pair with a cmd that prints the artifact, e.g. "
+            "python -c \"import io;print(io.open(r'<ABSOLUTE path>',encoding='utf-8').read())\".\n"
             "- NEVER import a project module or reference an internal function/class/constant name -- a "
             "guessed symbol WILL fail. NEVER use grep/cat/test/ls/findstr/type."
         )
@@ -235,10 +455,13 @@ class Orchestrator:
             "You are a strict reviewer of a 9TO5 subtask plan. Return a CORRECTED plan, JSON only, same "
             'schema {"subtasks":[...]}. Make every verify RELIABLE: each verify.cmd must use ABSOLUTE paths '
             "under " + str(config.PROJECT_ROOT) + " and be ONE of: 'python <abs>' (expect exit_zero); "
-            "'python <abs>' (expect stdout_contains:<a certain string>); or "
-            "'python -c \"import os; assert os.path.getsize(r'<abs>')>0\"' (expect exit_zero). "
-            "NEVER import a project module or guess an internal symbol; NEVER use grep/cat/test/findstr. "
-            "Collapse any over-decomposition into the fewest subtasks. Preserve titles/descriptions."
+            "'python <abs>' (expect stdout_contains:<a certain string>); "
+            "'python -c \"import os; assert os.path.getsize(r'<abs>')>0\"' (expect exit_zero); or, for a "
+            "multi-requirement subtask, expect stdout_contains_all:<t1>||<t2>||<t3> asserting EVERY "
+            "requirement. PRESERVE any compound (stdout_contains_all) verify -- never reduce it to a "
+            "single-fact check. NEVER import a project module or guess an internal symbol; NEVER use "
+            "grep/cat/test/findstr. Collapse any over-decomposition into the fewest subtasks. "
+            "Preserve titles/descriptions."
         )
         user = f"Goal:\n{goal_elaborated}\n\nPlan to fix:\n{json.dumps({'subtasks': subs})}\n\nReturn corrected JSON."
         resp = self._ollamaChat(system, user, want_json=True)
@@ -254,18 +477,34 @@ class Orchestrator:
     def _sanitizeSpec(self, spec: dict, subtask: dict) -> dict:
         spec = spec if isinstance(spec, dict) else {}
         eff = (spec.get("effort_level") or "default").lower()
+        eff = eff if eff in config.EFFORT_FLAG_MAP else "default"
+        # Capability-aware effort FLOOR: a strict compound (multi-requirement) verify means partial
+        # work fails, so it deserves real reasoning even if the 7B brain emitted 'default'. Floor to
+        # 'high'. (We deliberately do NOT auto-add a subagent/skill here: 'security-reviewer' and
+        # '/architect-review' both route the executor to a READ-ONLY charter via playbook.classifyProfile,
+        # which would make a write-subtask refuse to edit -- the executor can still invoke a review
+        # sub-step itself when warranted.)
+        if eff in ("low", "default", "medium") and verifier.isStrictVerify(subtask.get("verify")):
+            LOG.info("spec nudge: strict compound verify -> effort floored 'high' (brain emitted %s)",
+                     spec.get("effort_level"))
+            eff = "high"
         skills = spec.get("skills_to_invoke") or []
         pre = spec.get("pre_tool_hooks") or []
         post = spec.get("post_tool_hooks") or []
         sub = spec.get("subagent")
+        # Dynamic workflow: only honored when a well-formed definition with phases is present.
+        wf_def = spec.get("workflow_definition")
+        use_wf = bool(spec.get("use_workflow")) and isinstance(wf_def, dict) and bool(wf_def.get("phases"))
         return {
             "prompt": (spec.get("prompt") or subtask.get("description") or subtask.get("title") or "").strip(),
             "claude_md_inject": (spec.get("claude_md_inject") or "").strip(),
-            "effort_level": eff if eff in config.EFFORT_FLAG_MAP else "default",
+            "effort_level": eff,
             "skills_to_invoke": [s for s in skills if s in config.AVAILABLE_SKILLS],
             "subagent": sub if sub in config.AVAILABLE_SUBAGENTS else None,
             "pre_tool_hooks": [h for h in pre if h in config.AVAILABLE_PRE_HOOKS],
             "post_tool_hooks": [h for h in post if h in config.AVAILABLE_POST_HOOKS],
+            "use_workflow": use_wf,
+            "workflow_definition": wf_def if use_wf else None,
         }
 
     def _selfRefSystemPrompt(self, state: TaskState) -> str:
@@ -424,19 +663,26 @@ class Orchestrator:
                 f"- **Return code:** {vresult.get('returncode')}\n\n"
                 f"```\n{(vresult.get('stdout') or '').strip()}\n{(vresult.get('stderr') or '').strip()}\n```\n\n"
             )
+        wf = spec.get("workflow_definition") if spec.get("use_workflow") else None
         spec_block = (
             f"## Invocation spec\n\n"
             f"- **Effort:** {spec.get('effort_level')}\n"
             f"- **Skills:** {spec.get('skills_to_invoke')}\n"
             f"- **Subagent:** {spec.get('subagent')}\n"
+            f"- **Dynamic workflow:** {('yes — ' + str(wf.get('name'))) if wf else 'no'}\n"
             f"- **Pre hooks:** {spec.get('pre_tool_hooks')}  ·  **Post hooks:** {spec.get('post_tool_hooks')}\n\n"
             f"### CLAUDE.md inject\n\n```\n{(spec.get('claude_md_inject') or '')[:1500]}\n```\n\n"
             f"### Prompt\n\n```\n{spec.get('prompt')}\n```\n\n"
         )
+        telem = ""
+        if result.get("session_id") or result.get("cost_usd") is not None:
+            telem = (f"- **Session:** `{result.get('session_id')}`  ·  **is_error:** {result.get('is_error')}"
+                     f"  ·  **cost:** ${result.get('cost_usd')}  ·  **turns:** {result.get('num_turns')}\n")
         return (
             f"# {subtask['subtask_id']} -- {subtask['title']}\n\n"
             f"- **Status:** {subtask['status']}\n"
-            f"- **Return code:** {result.get('returncode')}\n\n"
+            f"- **Return code:** {result.get('returncode')}\n"
+            f"{telem}\n"
             f"{verify_block}{spec_block}"
             f"## Executor (Claude Code CLI) output\n\n```\n{(result.get('stdout') or '').strip()}\n```\n\n"
             + (f"## stderr\n\n```\n{result['stderr'].strip()}\n```\n" if result.get("stderr") else "")
@@ -492,6 +738,7 @@ class Orchestrator:
         result = {"ok": False, "stdout": "", "stderr": "", "returncode": None}
         vresult: dict | None = None
         combined = ""
+        resume_session: str | None = None   # continue the SAME Claude session across retries
 
         while attempt < config.MAX_SUBTASK_ATTEMPTS and not passed:
             attempt += 1
@@ -502,14 +749,20 @@ class Orchestrator:
                 sess = dict(subtask.get("session") or {})
                 sess.update({"effort": spec.get("effort_level"), "model": config.PRIMARY_MODEL,
                              "skills": spec.get("skills_to_invoke"), "subagent": spec.get("subagent"),
-                             "attempts": attempt})
+                             "use_workflow": bool(spec.get("use_workflow")), "attempts": attempt})
                 state.updateSubtask(sid, session=sess)
             LOG.info("Subtask %s attempt %d/%d effort=%s", sid, attempt, config.MAX_SUBTASK_ATTEMPTS,
                      spec.get("effort_level"))
             dashboard.update(state, "executing", f"{sid} attempt {attempt} · effort {spec.get('effort_level')}",
                              effort=spec.get("effort_level"))
             attempt_started = time.time()
-            result = executor.runClaude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask)
+            result = executor.runClaude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
+                                        resume_session=resume_session)
+            # Carry a HEALTHY session forward so the next retry continues it (fix the failing
+            # assertion, don't re-explore). If Claude itself errored, start fresh -- never resume
+            # into a broken session. (is_error absent => json envelope off => no resume.)
+            resume_session = result.get("session_id") if (
+                result.get("session_id") and not result.get("is_error")) else None
             combined = result.get("stdout") or ""
             if result.get("stderr"):
                 combined += "\n[stderr]\n" + result["stderr"]
@@ -521,7 +774,9 @@ class Orchestrator:
             # headless claude exits nonzero for benign reasons (fallback-model switch, a non-fatal tool
             # call); the artifact running cleanly is the real correctness signal. Only a genuinely broken
             # program (its own `python <file>` fails) stays failed.
-            if not passed:
+            # A STRICT verify (compound multi-requirement check) must NEVER be rescued: its whole
+            # purpose is that partial work fails. Repair only ever rescues a brittle single-fact verify.
+            if not passed and not verifier.isStrictVerify(verify_spec):
                 repaired = self._repairVerify(subtask, exec_cwd, attempt_started)
                 same = bool(repaired) and (repaired.get("cmd"), repaired.get("expect")) == \
                     ((verify_spec or {}).get("cmd"), (verify_spec or {}).get("expect"))
@@ -548,7 +803,8 @@ class Orchestrator:
                         "\n\n[ORCHESTRATOR ANSWERS YOUR QUESTIONS -- proceed now, do NOT ask again]\n"
                         + answer
                     )
-            self._translateDiscord(bus, state)
+                    resume_session = None   # approach is changing -> start the next attempt fresh
+            self._translateDiscord(bus)
             while bus.isPaused() and not bus.isAbort():   # honor !pause mid-subtask, not just between
                 dashboard.update(state, "paused", f"{sid} paused -- waiting for !resume")
                 time.sleep(config.DISCORD_POLL_SECONDS)
@@ -591,7 +847,8 @@ class Orchestrator:
         # the executor already retries failed subtasks up to MAX_SUBTASK_ATTEMPTS.
         if final == "done" and not self._singleDeliverable(state.meta.get("goal_elaborated", "")):
             decision = replanner.replan(state.meta["goal_elaborated"], state.subtasks, subtask, combined,
-                                        self_referential=bool(state.meta.get("is_self_referential")))
+                                        self_referential=bool(state.meta.get("is_self_referential")),
+                                        remaining_hours=self._remainingHours(state))
             if decision.get("action") == "mutate" and (decision.get("add") or decision.get("remove")):
                 dashboard.update(state, "replanning", f"replanning after {sid}")
                 with self._state_lock:
@@ -599,6 +856,23 @@ class Orchestrator:
         with self._state_lock:
             self.writeIndex(state)
         return final
+
+    def _deadlinePassed(self, state: TaskState) -> bool:
+        """True once the task's wall-clock deadline_at has passed (time-horizon enforcement).
+        None (no/unparseable deadline) => never passes; exactly 0.0 => passed."""
+        rem = self._remainingHours(state)
+        return rem is not None and rem <= 0.0
+
+    def _remainingHours(self, state: TaskState) -> "float | None":
+        """Hours until deadline_at (negative once passed); None if no/!parseable deadline."""
+        deadline = state.meta.get("deadline_at")
+        if not deadline:
+            return None
+        try:
+            from datetime import datetime
+            return (datetime.fromisoformat(deadline) - datetime.now().astimezone()).total_seconds() / 3600.0
+        except Exception:  # noqa: BLE001 -- a bad timestamp must never wedge the loop
+            return None
 
     def runExecutionLoop(self, state: TaskState, architect_doc: str, work_dir: str,
                          bus: ControlBus, dashboard: DiscordDashboard, parallelism: int = 1) -> None:
@@ -608,6 +882,20 @@ class Orchestrator:
         prev_terminal = -1
         while True:
             iters += 1
+            # TIME HORIZON: stop scheduling new subtasks once the deadline passes (the run is
+            # 9am-5pm bounded). deadline_at was always computed but never enforced -- a fat plan
+            # would otherwise blow past the horizon unbounded. In-flight subtasks finish; the
+            # remaining pending ones stay pending so runFull finalizes the run as 'partial'.
+            if self._deadlinePassed(state):
+                LOG.warning("time horizon reached (deadline %s); ending execution loop",
+                            state.meta.get("deadline_at"))
+                try:
+                    discord.sendEmbed(discord.blockedEmbed(
+                        f"Time horizon reached ({state.meta.get('deadline_at')}) — finalizing as partial"))
+                except Exception:  # noqa: BLE001
+                    pass
+                dashboard.update(state, "executing", "time horizon reached — finalizing")
+                break
             # Guard on NO PROGRESS (subtasks reaching a terminal state), not raw iteration count,
             # so a legitimately long 8-hour run with many subtasks is never false-aborted; only a
             # true livelock (status churning with nothing completing) trips it.
@@ -755,6 +1043,12 @@ class Orchestrator:
     # ===================================================================
     def runFull(self, state: TaskState, work_dir: str, auto_pr: bool = True,
                 control_mode: str | None = None, resume: bool = False, parallelism: int = 1) -> dict:
+        # ABSOLUTE FIRST: refresh the living Claude Code knowledge so every Ollama call
+        # in this run reasons from the current feature set (idempotent per process).
+        try:
+            refreshClaudeKnowledge(self.obs)
+        except Exception as e:  # noqa: BLE001 -- knowledge refresh must never block a run
+            LOG.warning("refreshClaudeKnowledge failed (non-fatal): %s", e)
         if control_mode:
             state.setControlMode(control_mode)
         bus = ControlBus(state.task_id)
@@ -796,9 +1090,30 @@ class Orchestrator:
                 self._checkControl(state, bus, dashboard)
                 dashboard.update(state, "architecting", "authoring architecture")
                 arch_prompt = architect.authorArchitectPrompt(elaborated)
-                arch_res = executor.runClaude(arch_prompt, work_dir=self._execCwd(state, "architect", work_dir),
+
+                def _runArchitect(effort: str):
+                    return executor.runClaude({"prompt": arch_prompt, "effort_level": effort},
+                                              work_dir=self._execCwd(state, "architect", work_dir),
                                               system_prompt=architect.ARCHITECT_SYSTEM_PROMPT, task_state=state)
-                architect_doc = (arch_res.get("stdout") or "").strip() or "(architect produced no output)"
+
+                arch_res = _runArchitect("default")
+                architect_doc = (arch_res.get("stdout") or "").strip()
+                # GATE: an empty/failed architect phase silently degrades EVERY downstream spec
+                # (plan + invocation specs feed architect_doc). Retry once harder before trusting it.
+                if arch_res.get("is_error") or len(architect_doc) < 200:
+                    LOG.warning("architect output weak (is_error=%s, %d chars) -> retry at xhigh",
+                                arch_res.get("is_error"), len(architect_doc))
+                    dashboard.update(state, "architecting", "architect output weak -> retrying harder")
+                    arch_res = _runArchitect("xhigh")
+                    architect_doc = (arch_res.get("stdout") or "").strip() or architect_doc
+                if len(architect_doc) < 200:
+                    try:
+                        discord.sendEmbed(discord.blockedEmbed(
+                            f"Architect phase produced only {len(architect_doc)} chars — planning may be degraded"),
+                            content=discord.humanPing())
+                    except Exception:  # noqa: BLE001
+                        pass
+                    architect_doc = architect_doc or "(architect produced no usable output)"
                 self.obs.writeNote(state.architectNoteRel(), architect_doc)
                 state.setArchitectDoc(state.architectNoteRel())
                 discord.sendEmbed(discord.architectDoneEmbed(state.architectNoteRel()))
@@ -809,6 +1124,7 @@ class Orchestrator:
                 state.setStatus("planning")
                 dashboard.update(state, "planning", "authoring subtask plan")
                 plan = self.critiqueSubtaskPlan(elaborated, self.authorSubtaskPlan(elaborated, architect_doc))
+                plan = self._strengthenPlanVerifies(elaborated, plan)
                 for s in plan[:config.MAX_SUBTASKS]:
                     state.addSubtask(s.get("title", "untitled"), s.get("description", ""),
                                      layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))

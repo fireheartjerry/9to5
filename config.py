@@ -48,6 +48,32 @@ def _envBool(key: str, default: bool = False) -> bool:
 PROJECT_ROOT: Path = _envPath("PROJECT_ROOT", str(_THIS_DIR)) or _THIS_DIR
 LOG_PATH: Path = _envPath("LOG_PATH", str(PROJECT_ROOT / "logs")) or (PROJECT_ROOT / "logs")
 
+# Install root (the durable home of vault/logs/knowledge), independent of which
+# git worktree the code happens to run from. Defaults to C:\supercritical.
+SUPERCRITICAL_ROOT: Path = _envPath("SUPERCRITICAL_ROOT", r"C:\supercritical") or Path(r"C:\supercritical")
+
+# --- Living Claude Code knowledge base -----------------------------------
+# The maximalist self-analysis reference, refreshed each session and compressed
+# into the "CLAUDE CODE CAPABILITIES" section injected into every Ollama prompt.
+KNOWLEDGE_DIR: Path = _envPath("KNOWLEDGE_DIR", str(SUPERCRITICAL_ROOT / "knowledge")) or (SUPERCRITICAL_ROOT / "knowledge")
+CLAUDE_KNOWLEDGE_PATH: Path = KNOWLEDGE_DIR / "claude_code.md"
+# Expert, opinionated recommendations (how 9to5 should wield every Claude Code primitive).
+# Folded into the unified reference as "Part E" and surfaced (executive slice) in the injection.
+CLAUDE_RECOMMENDATIONS_PATH: Path = KNOWLEDGE_DIR / "recommendations.md"
+# Roots scanned recursively for installed skills/agents/workflows/hooks/settings.
+# Both the install root's .claude AND the running project's .claude are merged.
+CLAUDE_SCAN_ROOTS: tuple[Path, ...] = (SUPERCRITICAL_ROOT / ".claude", PROJECT_ROOT / ".claude")
+# Best-effort live-docs fetch (Python has internet; Ollama does not -- exploit it).
+CLAUDE_DOC_FETCH: bool = _envBool("CLAUDE_DOC_FETCH", True)
+CLAUDE_DOC_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_DOC_TIMEOUT_SECONDS", "8"))
+# Parallel doc fetch (the 27-page scrape goes from ~10s sequential to ~2s).
+CLAUDE_DOC_FETCH_WORKERS: int = int(os.getenv("CLAUDE_DOC_FETCH_WORKERS", "10"))
+# Freshness guard: if claude_code.md is younger than this, a (non-forced) refresh skips the
+# web re-scrape and just recompresses the cached doc -- so frequent restarts stay instant.
+CLAUDE_KNOWLEDGE_MAX_AGE_HOURS: float = float(os.getenv("CLAUDE_KNOWLEDGE_MAX_AGE_HOURS", "6"))
+# Hard cap on the compressed injection so a 7B brain's context never overflows.
+CLAUDE_CAPABILITIES_MAX_CHARS: int = int(os.getenv("CLAUDE_CAPABILITIES_MAX_CHARS", "9000"))
+
 # --- Discord -------------------------------------------------------------
 DISCORD_BOT_TOKEN: str = os.getenv("DISCORD_BOT_TOKEN", "")
 _RAW_CHANNEL = os.getenv("DISCORD_CHANNEL_ID", "0") or "0"
@@ -104,6 +130,11 @@ SESSIONS_DIR_REL: str = "sessions"
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")  # code-specialized brain (fits 8GB VRAM)
 OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_TIMEOUT_SECONDS: int = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))  # prevent indefinite hangs
+# Explicit context window: the injected CLAUDE CODE CAPABILITIES block (~2.2k tokens) sits in
+# every system prompt; without this, ollama's small default num_ctx SILENTLY TRUNCATES the
+# trailing JSON-schema instructions that format="json" calls depend on. Sized for injection +
+# the largest user payload. Passed as options.num_ctx on every .chat() call.
+OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
 
 # --- Claude Code CLI (Executor hands) ------------------------------------
 # A `claude --print` call is a FULL agent session (explore repo -> reason -> write -> self-verify),
@@ -156,6 +187,19 @@ AVAILABLE_SKILLS: tuple[str, ...] = ("/architect-review", "/write-obsidian-note"
 AVAILABLE_SUBAGENTS: tuple[str, ...] = ("architect", "security-reviewer")
 AVAILABLE_PRE_HOOKS: tuple[str, ...] = ("block_destructive", "log_all")
 AVAILABLE_POST_HOOKS: tuple[str, ...] = ("write_obsidian", "discord_notify", "log_all")
+
+# --- Executor playbook (role-scoped expertise handed to the HANDS) --------
+# Deterministically inject a role-scoped briefing into every subtask-execution run via the
+# living CLAUDE.md (always-read) and --append-system-prompt (system-level, unforgettable),
+# so the executor's expertise never depends on what the 7B brain remembered to include.
+EXECUTOR_PLAYBOOK_ENABLED: bool = _envBool("EXECUTOR_PLAYBOOK_ENABLED", True)
+EXECUTOR_APPEND_SYSTEM_PROMPT: bool = _envBool("EXECUTOR_APPEND_SYSTEM_PROMPT", True)
+# Parse the structured --output-format json envelope (is_error/session_id/usage/cost) -- the
+# trustworthy success signal (headless claude exits nonzero for benign reasons) + unblocks resume.
+EXECUTOR_OUTPUT_JSON: bool = _envBool("EXECUTOR_OUTPUT_JSON", True)
+# Resume the SAME Claude session across a subtask's retries (--resume <session_id>) so attempt 2/3
+# fixes the failing assertion instead of re-exploring the repo from scratch.
+EXECUTOR_RESUME_RETRIES: bool = _envBool("EXECUTOR_RESUME_RETRIES", True)
 
 # --- Self-referential safety (9to5 modifying itself) ----------------------
 # When a task targets 9to5 itself: run on a dedicated git branch, inject the

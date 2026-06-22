@@ -10,6 +10,7 @@ import json
 import ollama
 
 import config
+import knowledge
 
 LOG = config.getLogger("elaborator")
 _OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
@@ -30,9 +31,10 @@ def elaborate(goal_raw: str) -> str:
     resp = _OLLAMA.chat(
         model=config.OLLAMA_MODEL,
         messages=[
-            {"role": "system", "content": ELABORATOR_SYSTEM},
+            {"role": "system", "content": knowledge.injectCapabilities(ELABORATOR_SYSTEM)},
             {"role": "user", "content": f"Raw goal:\n{goal_raw}\n\nProduce the elaborated specification."},
         ],
+        options={"num_ctx": config.OLLAMA_NUM_CTX},
     )
     return resp["message"]["content"].strip()
 
@@ -58,8 +60,9 @@ def extractUniverse(goal_raw: str, goal_elaborated: str, work_dir: str) -> dict:
             f"Working directory: {work_dir}\n\nReturn the universe JSON.")
     try:
         resp = _OLLAMA.chat(model=config.OLLAMA_MODEL,
-                            messages=[{"role": "system", "content": UNIVERSE_SYSTEM},
-                                      {"role": "user", "content": user}], format="json")
+                            messages=[{"role": "system", "content": knowledge.injectCapabilities(UNIVERSE_SYSTEM)},
+                                      {"role": "user", "content": user}], format="json",
+                            options={"num_ctx": config.OLLAMA_NUM_CTX})
         u = json.loads(resp["message"]["content"]) or {}
     except Exception as e:  # noqa: BLE001
         LOG.warning("extractUniverse failed (%s); using defaults", e)
