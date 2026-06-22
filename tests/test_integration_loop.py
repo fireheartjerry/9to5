@@ -90,6 +90,44 @@ class TestExecutionLoop(unittest.TestCase):
         self.assertEqual(statuses, ["done", "done"])
         self.assertEqual(self.run_claude_calls, ["st-001", "st-002"])  # both actually executed
 
+    def test_parallel_executes_every_subtask_exactly_once(self):
+        st = self._state([_verify_pass() for _ in range(5)])
+        orch = self._orch()
+        bus = ControlBus(st.task_id)
+        orch.runExecutionLoop(st, "doc", str(self.dir), bus, mock.Mock(), parallelism=3)
+        self.assertEqual([s["status"] for s in st.subtasks], ["done"] * 5)
+        self.assertEqual(len(self.run_claude_calls), 5)
+        self.assertEqual(sorted(self.run_claude_calls), sorted(set(self.run_claude_calls)))  # no double-exec
+
+    def test_parallel_with_replan_adds_stays_consistent(self):
+        # a peer worker appending subtasks (replan) mid-batch must not corrupt the run
+        st = self._state([_verify_pass() for _ in range(4)])
+        adds = {"n": 0}
+
+        def replan(*a, **k):
+            adds["n"] += 1
+            if adds["n"] <= 2:
+                return {"action": "mutate", "add": [{"title": f"x{adds['n']}", "description": "x"}], "remove": []}
+            return {"action": "keep"}
+
+        orch = Orchestrator(brain=FakeBrain(), obs=self._obs(),
+                            run_claude=self._fake_run_claude, replan=replan)
+        bus = ControlBus(st.task_id)
+        orch.runExecutionLoop(st, "doc", str(self.dir), bus, mock.Mock(), parallelism=4)
+        self.assertTrue(all(s["status"] in ("done", "removed") for s in st.subtasks))
+
+    def test_parallel_respects_dependencies(self):
+        st = TaskState.create("Build (1) base (2) dependent", 1.0)
+        st.meta["goal_elaborated"] = st.meta["goal_raw"]
+        st.addSubtask("base", "d", verify=_verify_pass())                       # st-001
+        st.addSubtask("dependent", "d", depends_on=["st-001"], verify=_verify_pass())  # st-002
+        orch = self._orch()
+        bus = ControlBus(st.task_id)
+        orch.runExecutionLoop(st, "doc", str(self.dir), bus, mock.Mock(), parallelism=3)
+        self.assertEqual([s["status"] for s in st.subtasks], ["done", "done"])
+        self.assertLess(self.run_claude_calls.index("st-001"),
+                        self.run_claude_calls.index("st-002"))   # dependency order honored
+
     def test_failing_verify_ends_failed_without_hanging(self):
         st = self._state([_verify_fail()])
         orch = self._orch()

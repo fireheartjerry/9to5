@@ -905,8 +905,11 @@ class Orchestrator:
                 written = self.obs.writeNote(state.subtaskNoteRel(sid), note)
                 state.updateSubtask(sid, output_ref=written.get("rel_path"))
 
-            # heartbeat off the STABLE terminal-subtask count (this subtask is now committed terminal)
-            heartbeat_ordinal = sum(1 for s in state.subtasks if s["status"] in ("done", "failed", "removed"))
+            # heartbeat off the STABLE terminal-subtask count (this subtask is now committed terminal).
+            # Snapshot under the lock: in parallel mode a peer worker may be appending via _applyReplan,
+            # and iterating the live list unlocked risks 'list changed size during iteration'.
+            with self._state_lock:
+                heartbeat_ordinal = sum(1 for s in state.subtasks if s["status"] in ("done", "failed", "removed"))
             triggered, reason = adversary.shouldTrigger(combined, heartbeat_ordinal, attempt)
             if triggered:
                 rv = self._review(subtask["title"], reason, combined,
@@ -928,7 +931,9 @@ class Orchestrator:
             # churn engine (fail -> add remediation -> fail -> add ...) that livelocks runs;
             # the executor already retries failed subtasks up to MAX_SUBTASK_ATTEMPTS.
             if final == "done" and not self._singleDeliverable(state.meta.get("goal_elaborated", "")):
-                decision = self._replan(state.meta["goal_elaborated"], state.subtasks, subtask, combined,
+                with self._state_lock:                       # snapshot for the same parallel-safety reason
+                    subs_snapshot = list(state.subtasks)
+                decision = self._replan(state.meta["goal_elaborated"], subs_snapshot, subtask, combined,
                                         self_referential=bool(state.meta.get("is_self_referential")),
                                         remaining_hours=self._remainingHours(state))
                 if decision.get("action") == "mutate" and (decision.get("add") or decision.get("remove")):
