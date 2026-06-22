@@ -92,7 +92,7 @@ def activeRun() -> Optional[TaskState]:
 
 
 def newestTaskSince(ts: float) -> Optional[str]:
-    """task_id of the newest state file created at/after `ts` (used to confirm a launch)."""
+    """task_id of the newest state file created at/after `ts` (with ~2s mtime fuzz for filesystem coarseness) (used to confirm a launch)."""
     best_id, best_m = None, ts - 1
     try:
         for f in config.STATE_DIR.glob("*.json"):
@@ -117,5 +117,6 @@ def spawn(req: WorkRequest) -> int:
         stdin=subprocess.DEVNULL, stdout=logfile, stderr=subprocess.STDOUT,
         close_fds=True, creationflags=creationflags,
     )
+    logfile.close()  # child keeps its own duplicated handle; release the parent's copy
     LOG.info("Spawned /work run pid=%s mode=%s hours=%s", proc.pid, req.mode, req.hours)
     return proc.pid
