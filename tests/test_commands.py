@@ -103,6 +103,10 @@ class TestApplyCommand(unittest.TestCase):
         commands.applyCommand(bus, st, commands.Command("abort", ""))
         bus.requestAbort.assert_called_once()
 
+    def test_none_state_returns_no_task(self):
+        out = commands.applyCommand(mock.Mock(), None, commands.Command("status", ""))
+        self.assertEqual(out, commands.NO_TASK)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -134,6 +134,8 @@ def _helpText() -> str:
 
 def applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str:
     """Perform the bus mutation and return human markdown text ('' for silent control ops)."""
+    if state is None:
+        return NO_TASK
     n = cmd.name
     if n == "status":
         return _statusText(bus, state)
