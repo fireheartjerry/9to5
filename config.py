@@ -175,6 +175,10 @@ LESSONS_WIN_GAP: float = float(os.getenv("LESSONS_WIN_GAP", "0.2"))
 POLICY_REWARD_WEIGHTS: dict[str, float] = {
     "first_pass": 1.0, "attempts": 0.3, "cost": 0.2, "wallclock": 0.1,
 }
+# Auto-maintenance: fire the throttled learning passes automatically after every run, so
+# the user only ever starts/aborts/checks. (The test package disables this to stay fast;
+# the runner itself is still exercised directly.)
+SIE_AUTO_MAINTENANCE: bool = _envBool("SIE_AUTO_MAINTENANCE", True)
 # Global kill switch: revert the brain to the frozen base model + freeze all promotions.
 SIE_KILL_SWITCH: bool = _envBool("SIE_KILL_SWITCH", False)
 # The frozen base model tag; champion adapters are served under BRAIN_MODEL_TAG:vN.

@@ -17,7 +17,13 @@ implemented with the external call seam mocked and offline-testable logic real.
 | G — Rollout + Counterfactual | offline replay + shadow/canary + per-role adapters | ⬜ |
 | H — Curriculum + Releases | self-play goals + model cards + attribution | ⬜ |
 | NW1–NW7 — Next wave (J–R) | human feedback, confidence, post-mortems, multi-teacher, KG, solution cache, research track | ⬜ |
-| X1/X2 — Orchestrator + Safety | `learning/sie.py` cadence ladder + `learning/safety.py` invariants | ⬜ |
+| **X1 — Auto-runner** | `learning/sie.py` cadence ladder, auto-fires after every run (hands-off), file-locked + throttled | ✅ done |
+| X2 — Safety | `learning/safety.py` invariants I1–I6 + kill switch enforcement | ⬜ |
+
+> **Automation (core philosophy):** the user only starts / aborts / checks. As of X1, all
+> learning (embeddings, consolidation, policy rebuild, eval — and later promotion/LoRA)
+> runs **automatically** in the orchestrator's `finally` block after every task, off-thread,
+> throttled (~daily) and file-locked. Nothing here is ever run by hand.
 
 ## Phase A — what landed
 - `memory/experience.py`: SQLite (WAL) ledger — `runs`/`subtasks`/`eval_runs` schema,
@@ -53,3 +59,16 @@ implemented with the external call seam mocked and offline-testable logic real.
 - `learning/eval_harness.py`: `fitness_panel()` sparkline (C3, dashboard-ready).
 - Tests: `tests/test_lessons.py` (8), `tests/test_policy.py` (9), +2 eval-harness.
   Full suite 252/252 green.
+
+## Phase X1 — Automation backbone (brought forward — core philosophy)
+- `learning/sie.py`: `run_maintenance()` runs the throttled cadence ladder once —
+  embeddings backfill → consolidation (L2) → policy rebuild (L4) → eval — each step
+  best-effort/independent. File-locked (O_EXCL, stale-reclaim), throttled via
+  `state/control/sie_state.json` (~daily without any cron), kill-switch aware.
+  `run_maintenance_async()` fires it off a daemon thread.
+- `orchestrator.py`: the `runFull` `finally` block dispatches it after **every** run
+  (success/abort/fail), gated by `SIE_AUTO_MAINTENANCE`. The user never triggers learning.
+- `config.py`: `SIE_AUTO_MAINTENANCE` (default on).
+- Test hygiene: `tests/__init__.py` disables auto-dispatch + isolates the ledger to a
+  temp DB so the suite stays fast and never pollutes `state/experience.db`.
+- Tests: `tests/test_sie.py` (6: force/throttle/lock/kill-switch/idempotent). Suite 258/258.

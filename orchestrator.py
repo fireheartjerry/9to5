@@ -1371,3 +1371,11 @@ class Orchestrator:
                 LOG.warning("dashboard unpin failed", exc_info=True)
             stopWebDashboard()
             self._cleanupScaffolding(work_dir)   # never leave 9to5 scratch dirs in the user's project
+            # Self-improvement runs itself: the user only starts/aborts/checks. Fire the
+            # throttled learning passes off-thread so they never slow teardown.
+            if config.SIE_AUTO_MAINTENANCE:
+                try:
+                    from learning import sie
+                    sie.run_maintenance_async(reason="post-run")
+                except Exception:  # noqa: BLE001 -- learning is best-effort, never blocks
+                    LOG.debug("sie maintenance dispatch failed (ignored)", exc_info=True)
