@@ -138,7 +138,8 @@ class Orchestrator:
 
         def _fresh(p: str) -> bool:
             try:
-                return os.path.exists(p) and os.path.getmtime(p) >= t0
+                # 2s epsilon absorbs coarse filesystem mtime granularity (FAT/network mounts)
+                return os.path.exists(p) and os.path.getmtime(p) >= t0 - 2.0
             except Exception:  # noqa: BLE001
                 return False
 

@@ -128,11 +128,19 @@ class ObsidianClient:
         return None
 
     def appendNote(self, rel_path: str, content: str) -> dict:
-        # serialize read-modify-write so concurrent appends (e.g. replan-log from parallel workers,
-        # or the write_obsidian hook process) don't lose each other's updates.
+        # O(1) disk append (the common path -- REST 401s when another vault is open, and Obsidian
+        # indexes the on-disk change anyway). Avoids the read+overwrite O(n^2) cost and lost-update race.
         with _APPEND_LOCK:
-            existing = self.readNote(rel_path) or ""
-            return self.writeNote(rel_path, existing + content)
+            p = self._diskPath(rel_path)
+            try:
+                p.parent.mkdir(parents=True, exist_ok=True)
+                with p.open("a", encoding="utf-8") as fh:
+                    fh.write(content)
+                return {"ok": True, "via": "disk-append", "rel_path": rel_path, "disk_path": str(p)}
+            except Exception as e:  # noqa: BLE001
+                LOG.warning("appendNote disk-append failed (%s); read+rewrite fallback", e)
+                existing = self.readNote(rel_path) or ""
+                return self.writeNote(rel_path, existing + content)
 
     def health(self) -> dict:
         """Probe REST reachability and whether our key authenticates."""

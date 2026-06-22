@@ -22,6 +22,10 @@
           {
             "type": "command",
             "command": "C:\\supercritical\\venv\\Scripts\\python.exe C:\\supercritical\\agents\\hooks.py block_destructive"
+          },
+          {
+            "type": "command",
+            "command": "C:\\supercritical\\venv\\Scripts\\python.exe C:\\supercritical\\agents\\hooks.py self_modification_guard"
           }
         ]
       },

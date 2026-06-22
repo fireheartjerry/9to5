@@ -189,9 +189,21 @@ def selfModificationGuard(data):
     that run the orchestrator loop (orchestrator.py, main.py, agents/hooks.py, config.py).
     Exits 2 to block; exits 0 otherwise."""
     try:
-        if data.get("tool_name", "") not in ("Edit", "Write", "MultiEdit"):
+        tool_name = data.get("tool_name", "")
+        tool_input = data.get("tool_input", {}) or {}
+        bash_cmd = ""
+        file_path = ""
+        if tool_name in ("Edit", "Write", "MultiEdit"):
+            file_path = tool_input.get("file_path", "") or ""
+        elif tool_name == "Bash":
+            # close the Bash write-hole: only inspect commands that WRITE (redirect/sed/mv/cp/tee/git)
+            bash_cmd = tool_input.get("command", "") or ""
+            low = bash_cmd.lower()
+            if not any(w in low for w in (">", "sed -i", "tee ", " mv ", "move ", " cp ", "copy ",
+                                          "git checkout", "git reset", "git restore", "rm ")):
+                sys.exit(0)
+        else:
             sys.exit(0)
-        file_path = (data.get("tool_input", {}) or {}).get("file_path", "") or ""
         from state.task import TaskState
         state = TaskState.loadLatest()
         if state is None:
@@ -213,6 +225,7 @@ def selfModificationGuard(data):
                     boundaries.append(c)
         norm = file_path.replace("/", "\\").lower()
         base = norm.rsplit("\\", 1)[-1]
+        cmd_low = bash_cmd.lower()
         for b in boundaries:
             bn = b.replace("/", "\\").lower().strip("\\")
             if not bn:
@@ -222,6 +235,9 @@ def selfModificationGuard(data):
             hit = norm == bn or norm.endswith("\\" + bn) or ("\\" + bn + "\\") in norm
             # secret-family: a ".env" boundary also blocks .env.local / .env.production (NOT .envrc)
             if not hit and bbase.startswith(".") and (base == bbase or base.startswith(bbase + ".")):
+                hit = True
+            # writing Bash command whose target mentions a boundary file (basename token)
+            if not hit and bash_cmd and bbase and bbase in cmd_low:
                 hit = True
             if hit:
                 reason = (f"self_modification_guard: BLOCKED edit to {file_path} -- it is a HARD BOUNDARY "

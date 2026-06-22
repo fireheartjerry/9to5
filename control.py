@@ -34,12 +34,16 @@ def _fileLock(target: Path, timeout: float = 5.0):
         try:
             fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
-            if time.time() - start > timeout:
-                try:
+            try:
+                # remove an obviously-stale lock (crashed holder) then retry a clean acquire;
+                # if a racer wins the re-acquire, our os.open just fails and we loop again -- no steal race.
+                if time.time() - os.path.getmtime(str(lock)) > 30:
                     os.remove(str(lock))
-                except OSError:
-                    pass
-                start = time.time()
+                    continue
+            except OSError:
+                pass
+            if time.time() - start > timeout:
+                break  # proceed best-effort WITHOUT the lock (os.replace keeps each write atomic)
             time.sleep(0.02)
         except OSError:
             break  # never block control on a lock-fs error
