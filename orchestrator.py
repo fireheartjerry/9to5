@@ -891,8 +891,10 @@ class Orchestrator:
         return final
 
     def _deadlinePassed(self, state: TaskState) -> bool:
-        """True once the task's wall-clock deadline_at has passed (time-horizon enforcement)."""
-        return (self._remainingHours(state) or 1.0) <= 0.0
+        """True once the task's wall-clock deadline_at has passed (time-horizon enforcement).
+        None (no/unparseable deadline) => never passes; exactly 0.0 => passed."""
+        rem = self._remainingHours(state)
+        return rem is not None and rem <= 0.0
 
     def _remainingHours(self, state: TaskState) -> "float | None":
         """Hours until deadline_at (negative once passed); None if no/!parseable deadline."""

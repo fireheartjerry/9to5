@@ -223,11 +223,66 @@ def test_executor_io() -> None:
     check("ok derived from is_error", r["ok"] is True)
 
 
+def test_parse_robustness() -> None:
+    print("[envelope parse robustness]")
+    import json as J
+    from agents import executor
+    t, f = executor._parseEnvelope("Switching to fallback model\n" +
+                                   J.dumps({"type": "result", "result": "42", "is_error": False, "session_id": "x"}))
+    check("preamble tolerated", t == "42" and f.get("session_id") == "x")
+    t2, f2 = executor._parseEnvelope(J.dumps({"type": "result", "is_error": True, "result": None, "subtype": "error_max_turns"}))
+    check("error envelope -> clean marker (not raw json)", t2.startswith("[claude") and "{" not in t2 and f2["is_error"] is True)
+
+
+def test_executor_resume() -> None:
+    print("[resume: fold inject, drop charter, retry-fresh on stale session]")
+    import tempfile, subprocess, json as J, types as T
+    from agents import executor
+    calls = []
+    class _SP:
+        def __init__(self, cmd, **kw): calls.append({"cmd": cmd, "input": None}); self.pid = 1
+        def communicate(self, input=None, timeout=None):
+            calls[-1]["input"] = input
+            if "--resume" in calls[-1]["cmd"]:        # stale session -> nonzero rc, NO envelope
+                self.returncode = 1
+                return ("error: session not found", "")
+            self.returncode = 0                        # fresh retry succeeds
+            return (J.dumps({"type": "result", "result": "fixed it", "is_error": False, "session_id": "NEW"}), "")
+    op, ol = subprocess.Popen, executor._resolveClaudeLauncher
+    executor._resolveClaudeLauncher = lambda: ["claude"]; executor.subprocess.Popen = _SP
+    try:
+        st = T.SimpleNamespace(task_id="T", meta={})
+        r = executor.runClaude({"prompt": "fix the bug", "claude_md_inject": "IMPORTANT CONTEXT", "effort_level": "high"},
+                               work_dir=tempfile.gettempdir(), task_state=st,
+                               subtask={"subtask_id": "st-1", "title": "t", "description": "implement"},
+                               resume_session="OLD")
+    finally:
+        executor.subprocess.Popen = op; executor._resolveClaudeLauncher = ol
+    check("stale resume triggers a fresh retry (2 launches)", len(calls) == 2)
+    check("1st launch used --resume", "--resume" in calls[0]["cmd"])
+    check("2nd launch dropped --resume", "--resume" not in calls[1]["cmd"])
+    check("resume folded inject into prompt", "Updated context for this retry" in (calls[0]["input"] or "") and "IMPORTANT CONTEXT" in calls[0]["input"])
+    check("resume dropped charter flag", "--append-system-prompt" not in calls[0]["cmd"])
+    check("fresh retry re-added charter flag", "--append-system-prompt" in calls[1]["cmd"])
+    check("final result is the fresh success", r["stdout"] == "fixed it" and r["ok"] is True)
+
+
+def test_deadline_idiom() -> None:
+    print("[deadline zero/None idiom]")
+    import orchestrator as orch, types as T, datetime as D
+    o = orch.Orchestrator()
+    now = D.datetime.now().astimezone()
+    check("past/zero -> passed", o._deadlinePassed(T.SimpleNamespace(meta={"deadline_at": now.isoformat()})) is True)
+    check("future -> not passed", o._deadlinePassed(T.SimpleNamespace(meta={"deadline_at": (now + D.timedelta(hours=1)).isoformat()})) is False)
+    check("no deadline -> not passed", o._deadlinePassed(T.SimpleNamespace(meta={})) is False)
+
+
 def main() -> int:
     for t in (test_local_scan, test_unified_idempotent, test_compress_injection,
               test_injection_shared_cache, test_playbook, test_part_d_preserved,
               test_dynamic_workflow_spec, test_spec_nudges_and_budget,
-              test_verifier_runs, test_executor_io):
+              test_verifier_runs, test_executor_io, test_parse_robustness,
+              test_executor_resume, test_deadline_idiom):
         t()
     print()
     if _FAILS:

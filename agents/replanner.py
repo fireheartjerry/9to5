@@ -42,9 +42,14 @@ def replan(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, execu
     # (the execution loop stops at deadline_at). Tell the brain to wind down.
     budget = ""
     if remaining_hours is not None:
-        budget = (f"Time budget: ~{remaining_hours:.2f}h remain before the deadline. "
-                  + ("UNDER 30 MIN LEFT: prefer action='keep' and finalize; do NOT add subtasks.\n\n"
-                     if remaining_hours < 0.5 else "Only add a subtask if it clearly fits in the remaining time.\n\n"))
+        if remaining_hours <= 0:
+            budget = "The DEADLINE HAS PASSED. action='keep' and finalize; add NOTHING.\n\n"
+        elif remaining_hours < 0.5:
+            budget = (f"Time budget: ~{remaining_hours:.2f}h remain. UNDER 30 MIN LEFT: prefer "
+                      "action='keep' and finalize; do NOT add subtasks.\n\n")
+        else:
+            budget = (f"Time budget: ~{remaining_hours:.2f}h remain. Only add a subtask if it clearly "
+                      "fits in the remaining time.\n\n")
     user = (
         f"Goal:\n{goal_elaborated}\n\n"
         f"{budget}"

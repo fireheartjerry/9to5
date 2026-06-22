@@ -186,30 +186,41 @@ def _parseEnvelope(out: str) -> "tuple[str, dict]":
     """Parse the `claude --print --output-format json` result envelope.
 
     Returns ``(assistant_text, fields)`` where fields carries is_error / session_id / cost /
-    usage / num_turns. Falls back to ``(out, {})`` when the payload is not the expected single
-    JSON object (e.g. plain text or a streamed/partial write) -- so consumers that read stdout
-    as the assistant text keep working regardless."""
+    usage / num_turns. Robust to a leading preamble line (e.g. a fallback-model notice) by
+    scanning for the JSON object too, not only requiring the WHOLE stdout to be one object.
+    Returns ``(out, {})`` only when no result envelope is found (caller logs the degrade). For an
+    error/empty envelope whose ``result`` is missing/non-string, the TEXT channel gets a short
+    clean marker -- NEVER the raw JSON blob (which would garble adversary/clarifier/notes)."""
     import json
     s = (out or "").strip()
-    if not (s.startswith("{") and s.endswith("}")):
-        return out, {}
-    try:
-        obj = json.loads(s)
-    except Exception:  # noqa: BLE001
-        return out, {}
-    if not isinstance(obj, dict) or "result" not in obj and "type" not in obj:
-        return out, {}
-    text = obj.get("result")
-    if not isinstance(text, str):
-        text = out  # unexpected shape -> keep raw so nothing downstream loses the output
-    fields = {
-        "is_error": bool(obj.get("is_error")),
-        "session_id": obj.get("session_id"),
-        "cost_usd": obj.get("total_cost_usd") if obj.get("total_cost_usd") is not None else obj.get("cost_usd"),
-        "usage": obj.get("usage"),
-        "num_turns": obj.get("num_turns"),
-    }
-    return text, fields
+    if not s:
+        return "", {}
+    candidates: list[str] = []
+    if s.startswith("{") and s.endswith("}"):
+        candidates.append(s)
+    for line in reversed(s.splitlines()):   # tolerate a preamble: last JSON-object line
+        ls = line.strip()
+        if ls.startswith("{") and ls.endswith("}") and ls not in candidates:
+            candidates.append(ls)
+            break
+    for cand in candidates:
+        try:
+            obj = json.loads(cand)
+        except Exception:  # noqa: BLE001
+            continue
+        if not isinstance(obj, dict) or ("result" not in obj and obj.get("type") != "result"):
+            continue
+        text = obj.get("result")
+        if not isinstance(text, str):
+            text = f"[claude {obj.get('subtype') or ('error' if obj.get('is_error') else 'no-output')}]"
+        return text, {
+            "is_error": bool(obj.get("is_error")),
+            "session_id": obj.get("session_id"),
+            "cost_usd": obj.get("total_cost_usd") if obj.get("total_cost_usd") is not None else obj.get("cost_usd"),
+            "usage": obj.get("usage"),
+            "num_turns": obj.get("num_turns"),
+        }
+    return out, {}
 
 
 def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = None,
@@ -273,92 +284,117 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
         return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
                 "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
 
-    cmd = launcher + ["--print", "--dangerously-skip-permissions"]
+    # --- base command (shared by the fresh + resume launches) ---
+    base_cmd = launcher + ["--print", "--dangerously-skip-permissions"]
     # structured envelope: is_error (the trustworthy success signal) + session_id (resume) + cost
     if config.EXECUTOR_OUTPUT_JSON:
-        cmd += ["--output-format", "json"]
-    # resume the same session across retries so attempt 2/3 fixes the failure, not re-explores
-    if resume_session and config.EXECUTOR_RESUME_RETRIES:
-        cmd += ["--resume", resume_session]
-    # hooks + permissions (deterministic guardrails) load from our settings file
+        base_cmd += ["--output-format", "json"]
     if config.CLAUDE_SETTINGS_PATH.exists():
-        cmd += ["--settings", str(config.CLAUDE_SETTINGS_PATH)]
-    # role-scoped executor charter pinned at the system level (unforgettable, no-brain-dependency)
-    if charter:
-        cmd += ["--append-system-prompt", charter]
-    # automatic model failover on rate-limit
-    cmd += ["--fallback-model", config.FALLBACK_MODEL]
-    # reasoning effort selected by the brain
+        base_cmd += ["--settings", str(config.CLAUDE_SETTINGS_PATH)]
+    base_cmd += ["--fallback-model", config.FALLBACK_MODEL]   # auto model failover on rate-limit
     if flag:
-        cmd += ["--effort", flag]
-    # make the project's .claude (skills/agents/settings) discoverable from a sub-work-dir
-    cmd += ["--add-dir", str(config.PROJECT_ROOT)]
-    # self-referential safety: forbid edits to the core files that run the loop
+        base_cmd += ["--effort", flag]
+    base_cmd += ["--add-dir", str(config.PROJECT_ROOT)]       # make .claude discoverable from a sub-cwd
     if task_state is not None and getattr(task_state, "meta", {}).get("is_self_referential"):
         for core in config.CORE_PROTECTED_FILES:
             core_abs = str(config.PROJECT_ROOT / core)
-            cmd += ["--disallowedTools", f"Edit({core_abs})", f"Write({core_abs})"]
+            base_cmd += ["--disallowedTools", f"Edit({core_abs})", f"Write({core_abs})"]
+    charter_args = ["--append-system-prompt", charter] if charter else []
 
-    wf = spec.get("use_workflow") and isinstance(spec.get("workflow_definition"), dict)
-    LOG.info("Claude run (cwd=%s effort=%s role=%s skills=%s subagent=%s hooks=%s/%s workflow=%s prompt=%dch)",
-             work, flag or "default", profile or "-", spec.get("skills_to_invoke"), spec.get("subagent"),
-             spec.get("pre_tool_hooks"), spec.get("post_tool_hooks"),
-             (spec["workflow_definition"].get("name") if wf else False), len(full_prompt))
-    # New process group so the timeout path can kill the WHOLE tree (launcher + node grandchildren),
-    # not just the direct child -- otherwise orphans leak and block the drain (the real root cause).
+    is_resume = bool(resume_session and config.EXECUTOR_RESUME_RETRIES)
+    # On --resume Claude continues the session: it does NOT re-read CLAUDE.md and the charter is
+    # already pinned, so fold the (re-authored) claude_md_inject into the prompt and DROP the
+    # charter flag. On a fresh launch CLAUDE.md + the charter carry that context.
+    fresh_cmd = base_cmd + charter_args
+    resume_cmd = (base_cmd + ["--resume", resume_session]) if is_resume else None
+    inject = (spec.get("claude_md_inject") or "").strip()
+    resume_prompt = full_prompt
+    if is_resume and inject:
+        resume_prompt = ("## Updated context for this retry (CLAUDE.md is not re-read on resume)\n"
+                         + inject + "\n\n---\n\n" + full_prompt)
+
+    # New process group so the timeout path can kill the WHOLE tree (launcher + node grandchildren).
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-    # Identify the active task/subtask to the hooks via env -- so PreToolUse guards resolve THIS
-    # task's hard_boundaries deterministically instead of TaskState.loadLatest() guessing (which is
-    # ambiguous and can fail-open under --parallel).
+    # Identify the active task to the hooks via env -- so PreToolUse guards resolve THIS task's
+    # hard_boundaries deterministically instead of TaskState.loadLatest() guessing. The absolute
+    # state-FILE path is exported too, so the hook (whose hardcoded config.STATE_DIR may point at a
+    # different root in a worktree run) loads the right task without a STATE_DIR mismatch.
     env = os.environ.copy()
     if task_state is not None and getattr(task_state, "task_id", None):
         env["NINE_TO_FIVE_TASK_ID"] = str(task_state.task_id)
-    if subtask is not None and subtask.get("subtask_id"):
-        env["NINE_TO_FIVE_SUBTASK_ID"] = str(subtask.get("subtask_id"))
-    try:
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True, encoding="utf-8",
-                                errors="replace", cwd=work, creationflags=creationflags, env=env)
-    except Exception as e:  # noqa: BLE001
-        LOG.error("Claude launch failed: %s", e)
-        return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
-                "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
-    try:
-        out, err = proc.communicate(input=full_prompt, timeout=timeout)
-        out = out or ""
-        # parse the structured envelope (stdout stays the assistant TEXT for all consumers)
-        text, fields = _parseEnvelope(out) if config.EXECUTOR_OUTPUT_JSON else (out, {})
-        if "block_destructive" in (spec.get("pre_tool_hooks") or []):
-            out_hits = scanDestructive(text)
-            if out_hits:
-                _alertBlocked(f"block_destructive: executor output shows destructive command(s) {out_hits}")
-        # success signal: is_error from the envelope when present (the exit code is unreliable --
-        # headless claude exits nonzero for benign reasons like a fallback-model switch).
-        ok = (not fields["is_error"]) if "is_error" in fields else (proc.returncode == 0)
-        return {"ok": ok, "returncode": proc.returncode,
-                "stdout": text, "stderr": err or "", "profile": profile,
-                "session_id": fields.get("session_id"), "is_error": fields.get("is_error"),
-                "cost_usd": fields.get("cost_usd"), "usage": fields.get("usage"),
-                "num_turns": fields.get("num_turns"),
-                "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
-    except subprocess.TimeoutExpired:
-        # Kill the entire tree so the work actually stops, procs don't leak, and the drain below
-        # returns immediately instead of blocking ~200s on the orphans' inherited stdout pipe.
-        _killProcessTree(proc.pid)
+        env["NINE_TO_FIVE_PROJECT_ROOT"] = str(config.PROJECT_ROOT)
         try:
-            out, err = proc.communicate(timeout=15)
-        except Exception:  # noqa: BLE001
-            out, err = "", ""
-        LOG.error("Claude timed out after %ss -- process tree killed (captured %d stdout chars)",
-                  timeout, len(out or ""))
-        return {"ok": False, "returncode": -1, "stdout": out or "",
-                "stderr": (err or "") + f"\nTIMEOUT after {timeout}s",
-                "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
-    except Exception as e:  # noqa: BLE001
-        try:
-            _killProcessTree(proc.pid)
+            env["NINE_TO_FIVE_TASK_FILE"] = str(task_state.path())
         except Exception:  # noqa: BLE001
             pass
-        LOG.error("Claude failed: %s", e)
-        return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
-                "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+    if subtask is not None and subtask.get("subtask_id"):
+        env["NINE_TO_FIVE_SUBTASK_ID"] = str(subtask.get("subtask_id"))
+
+    def _run(run_cmd, run_prompt) -> dict:
+        wf = spec.get("use_workflow") and isinstance(spec.get("workflow_definition"), dict)
+        LOG.info("Claude run (cwd=%s effort=%s role=%s resume=%s skills=%s subagent=%s hooks=%s/%s workflow=%s prompt=%dch)",
+                 work, flag or "default", profile or "-", "--resume" in run_cmd,
+                 spec.get("skills_to_invoke"), spec.get("subagent"),
+                 spec.get("pre_tool_hooks"), spec.get("post_tool_hooks"),
+                 (spec["workflow_definition"].get("name") if wf else False), len(run_prompt))
+        try:
+            proc = subprocess.Popen(run_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                                    errors="replace", cwd=work, creationflags=creationflags, env=env)
+        except Exception as e:  # noqa: BLE001
+            LOG.error("Claude launch failed: %s", e)
+            return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
+                    "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+        try:
+            out, err = proc.communicate(input=run_prompt, timeout=timeout)
+            out = out or ""
+            if config.EXECUTOR_OUTPUT_JSON:
+                text, fields = _parseEnvelope(out)
+                if not fields:   # the contract degraded silently otherwise
+                    LOG.warning("EXECUTOR_OUTPUT_JSON on but no result envelope parsed (rc=%s, %dch)",
+                                proc.returncode, len(out))
+            else:
+                text, fields = out, {}
+            if "block_destructive" in (spec.get("pre_tool_hooks") or []):
+                out_hits = scanDestructive(text)
+                if out_hits:
+                    _alertBlocked(f"block_destructive: executor output shows destructive command(s) {out_hits}")
+            # success signal: is_error from the envelope when present (the exit code is unreliable --
+            # headless claude exits nonzero for benign reasons like a fallback-model switch).
+            ok = (not fields["is_error"]) if "is_error" in fields else (proc.returncode == 0)
+            return {"ok": ok, "returncode": proc.returncode, "stdout": text, "stderr": err or "",
+                    "profile": profile, "session_id": fields.get("session_id"), "is_error": fields.get("is_error"),
+                    "cost_usd": fields.get("cost_usd"), "usage": fields.get("usage"), "num_turns": fields.get("num_turns"),
+                    "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+        except subprocess.TimeoutExpired:
+            _killProcessTree(proc.pid)   # stop the work, no orphan leak, drain returns immediately
+            try:
+                out, err = proc.communicate(timeout=15)
+            except Exception:  # noqa: BLE001
+                out, err = "", ""
+            LOG.error("Claude timed out after %ss -- process tree killed (captured %d stdout chars)",
+                      timeout, len(out or ""))
+            return {"ok": False, "returncode": -1, "stdout": out or "",
+                    "stderr": (err or "") + f"\nTIMEOUT after {timeout}s",
+                    "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+        except Exception as e:  # noqa: BLE001
+            try:
+                _killProcessTree(proc.pid)
+            except Exception:  # noqa: BLE001
+                pass
+            LOG.error("Claude failed: %s", e)
+            return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
+                    "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+
+    if not is_resume:
+        return _run(fresh_cmd, full_prompt)
+    result = _run(resume_cmd, resume_prompt)
+    # If the resume LAUNCH failed (claude exited with a real positive code and emitted no result
+    # envelope), the session was unresumable -- retry ONCE on a fresh session so a stale session id
+    # never silently burns one of the caller's MAX_SUBTASK_ATTEMPTS. (rc>0 excludes a genuine
+    # timeout (-1) which should not be re-run here.)
+    rc = result.get("returncode")
+    if config.EXECUTOR_OUTPUT_JSON and result.get("is_error") is None and isinstance(rc, int) and rc > 0:
+        LOG.warning("resume launch yielded no envelope (rc=%s) -- retrying once on a fresh session", rc)
+        result = _run(fresh_cmd, full_prompt)
+    return result

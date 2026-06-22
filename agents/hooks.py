@@ -55,24 +55,43 @@ def _readEvent():
         return {}
 
 
+def _envTaskRequested():
+    """True when the executor pinned a task for this hook (so a run is active)."""
+    return bool(os.environ.get("NINE_TO_FIVE_TASK_FILE") or os.environ.get("NINE_TO_FIVE_TASK_ID"))
+
+
 def _resolveState():
-    """Resolve the ACTIVE task for this hook: prefer the explicit id the executor exported
-    (NINE_TO_FIVE_TASK_ID) so under --parallel the guard reads the RIGHT task's boundaries;
-    fall back to loadLatest() only for a manual/standalone hook invocation. Never raises."""
+    """Resolve ``(state, explicit)`` for this hook.
+
+    ``explicit`` is True ONLY when an executor-pinned task resolved -- the guard fails CLOSED on
+    core files when a run is active but its task could not be trusted. Resolution order:
+      1. NINE_TO_FIVE_TASK_FILE -- the ABSOLUTE state-file path the executor exported. This is
+         worktree/install-root safe: the hook's hardcoded ``config.STATE_DIR`` may point at a
+         DIFFERENT root than the orchestrator's, so loading by path avoids that divergence.
+      2. NINE_TO_FIVE_TASK_ID via the configured STATE_DIR.
+      3. loadLatest() -- manual/standalone fallback (not explicit).
+    Never raises; logs to stderr on a degrade so a silent fail-open is visible."""
     try:
         from state.task import TaskState
     except Exception:
-        return None
+        return None, False
+    tfile = os.environ.get("NINE_TO_FIVE_TASK_FILE")
+    if tfile:
+        try:
+            with open(tfile, encoding="utf-8") as fh:
+                return TaskState(json.load(fh)), True
+        except Exception as e:
+            sys.stderr.write(f"hooks._resolveState: TASK_FILE load failed ({e}); falling back\n")
     tid = os.environ.get("NINE_TO_FIVE_TASK_ID")
     if tid:
         try:
-            return TaskState.load(tid)
-        except Exception:
-            pass
+            return TaskState.load(tid), True
+        except Exception as e:
+            sys.stderr.write(f"hooks._resolveState: load({tid}) failed ({e}); falling back to loadLatest\n")
     try:
-        return TaskState.loadLatest()
+        return TaskState.loadLatest(), False
     except Exception:
-        return None
+        return None, False
 
 
 def blockDestructive(data):
@@ -137,7 +156,7 @@ def writeObsidian(data):
         from datetime import datetime
         from memory.obsidian import ObsidianClient
 
-        state = _resolveState()
+        state, _explicit = _resolveState()
         if state is None:
             sys.exit(0)
 
@@ -146,8 +165,15 @@ def writeObsidian(data):
         except Exception:
             subtasks = []
 
-        # Prefer the explicit subtask the executor exported; fall back to the first in-progress one.
+        # Prefer the executor-exported subtask -- but only if it actually belongs to the resolved
+        # state (under a fallback resolution it may name a subtask of a different task). Else scan.
         sid = os.environ.get("NINE_TO_FIVE_SUBTASK_ID") or None
+        if sid:
+            try:
+                if state.getSubtask(sid) is None:
+                    sid = None
+            except Exception:
+                sid = None
         if not sid:
             for st in subtasks:
                 try:
@@ -225,11 +251,14 @@ def selfModificationGuard(data):
                 sys.exit(0)
         else:
             sys.exit(0)
-        state = _resolveState()
-        if state is None:
+        state, explicit = _resolveState()
+        env_requested = _envTaskRequested()
+        # No run context at all -> nothing to guard. But if a run IS active (env-pinned) we proceed
+        # even with state=None, enforcing the baseline + core-file boundaries (fail CLOSED).
+        if state is None and not env_requested:
             sys.exit(0)
         # Hard boundaries are read DYNAMICALLY from the task's universe (set at /goal time).
-        universe = state.meta.get("universe") or {}
+        universe = (state.meta.get("universe") if state else None) or {}
         boundaries = [str(b) for b in (universe.get("hard_boundaries") or []) if b]
         # ALWAYS enforce the baseline secret/VCS boundaries -- even if the universe is None/empty
         # (legacy or resumed task) so .env/.git/venv/state are never left unprotected.
@@ -237,8 +266,10 @@ def selfModificationGuard(data):
                   else [".env", ".git", "venv", "state/tasks"]):
             if d not in boundaries:
                 boundaries.append(d)
-        # self-referential runs also protect the core files that run the loop.
-        if state.meta.get("is_self_referential"):
+        # Protect the core loop files when this is a self-ref run OR when a run is active but its
+        # task could NOT be trusted (env pinned a task, yet resolution fell back) -- fail CLOSED
+        # rather than leave orchestrator.py/main.py/hooks.py/config.py editable on an unknown task.
+        if (state and state.meta.get("is_self_referential")) or (env_requested and not explicit):
             for c in (list(getattr(config, "CORE_PROTECTED_FILES", ()) or ()) if config
                       else ["orchestrator.py", "main.py", "agents/hooks.py", "config.py"]):
                 if c not in boundaries:
