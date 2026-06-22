@@ -14,8 +14,9 @@ Python is plumbing: Ollama → prompt → Claude Code CLI → output → Obsidia
 Ollama → repeat.
 
 ## Phase 1 scope
-Layer 3 (Terminal/CLI) only. The **Adversary is stubbed** (auto-approves).
-Browser (Layer 1) and Native (Layer 2) come later.
+Layer 3 (Terminal/CLI) only. The **Adversary** runs a real Ollama-backed critique
+(verdict + concerns, conservative auto-approve fallback). Browser (Layer 1) and
+Native (Layer 2) come later.
 
 ## Setup
 ```powershell
@@ -57,9 +58,18 @@ venv\Scripts\python -m notifications.command_bot
 ```
 
 **Verification gate:** the brain authors a `verify` `{cmd, expect}` per subtask;
-a subtask is only `done` when its command passes (`exit_zero` /
-`stdout_contains:` / `stdout_regex:`), otherwise the executor is re-prompted with
-the failure and retried up to 3×.
+a subtask is only `done` when its command passes (`exit_zero` / `stdout_contains:` /
+`stdout_regex:`, plus the compound `stdout_contains_all:` / `stdout_regex_all:` that
+assert every deliverable of a multi-requirement goal), otherwise the executor is
+re-prompted with the failure and retried up to 3×.
+
+## Tests
+```powershell
+# stdlib unittest only; no extra test deps
+venv\Scripts\python -m unittest discover -s tests
+```
+GitHub Actions runs the same suite on every push/PR (`.github/workflows/tests.yml`,
+Python 3.11 + 3.12).
 
 ## Layout
 | Path | Role |
@@ -68,7 +78,7 @@ the failure and retried up to 3×.
 | `orchestrator.py` | brain (Ollama) + core loop (architect→plan→verify→exec→PR) |
 | `config.py` | env/config + logging + UTF-8 stdio |
 | `control.py` | `ControlBus` — file-backed cross-process control (abort/pause/gates/ops) |
-| `agents/` | elaborator, architect, executor, adversary (stub), replanner, **verifier** |
+| `agents/` | elaborator, architect, executor, adversary, replanner, **verifier**, clarifier, playbook |
 | `state/task.py` | lean task-state model + JSON persistence |
 | `memory/obsidian.py` | REST-first, disk-fallback note writer/reader |
 | `notifications/discord_bot.py` | REST embeds + message create/edit/poll helpers |
