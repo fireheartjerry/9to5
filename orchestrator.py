@@ -120,7 +120,9 @@ class Orchestrator:
         Used to collapse over-decomposed plans AND to forbid replan-adds that re-pad a trivial goal."""
         import re
         g = (goal_elaborated or "").lower()
-        files = set(re.findall(r"([A-Za-z0-9_.-]+\.(?:py|md|txt|json|js|ts|html|css|csv|ya?ml|cfg|ini|sh|bat))\b", g))
+        files = set(re.findall(
+            r"([A-Za-z0-9_.-]+\.(?:py|md|txt|json|js|ts|tsx|jsx|html|css|csv|ya?ml|cfg|ini|sh|bat|"
+            r"go|rs|java|c|cc|cpp|h|hpp|rb|php|swift|kt|sql|toml))\b", g))
         multi_phrase = any(w in g for w in ("multiple files", "several files", "multiple deliverables",
                                             "as well as", "separate "))
         return len(files) <= 1 and not multi_phrase
