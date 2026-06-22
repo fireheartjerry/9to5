@@ -106,16 +106,23 @@ class TaskState:
     _TERMINAL = ("done", "complete", "aborted", "partial", "blocked", "failed")
 
     @classmethod
+    def iterStored(cls):
+        """Yield ``(path, data)`` for every readable task JSON in the store. The single
+        place that scans STATE_DIR -- corrupt/unreadable files are skipped silently so
+        every consumer (loadLatest/listRecent/metrics) gets the same robust behavior."""
+        for f in config.STATE_DIR.glob("*.json"):
+            try:
+                yield f, json.loads(f.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 -- missing/corrupt file => skip
+                continue
+
+    @classmethod
     def loadLatest(cls) -> Optional["TaskState"]:
         # Prefer the most-recently-STARTED *active* (non-terminal) task; an unrelated save() that
         # bumps an old task's file mtime must not cause the wrong task to be resumed/inspected.
         best = None
         best_key = None
-        for f in config.STATE_DIR.glob("*.json"):
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-            except Exception:  # noqa: BLE001
-                continue
+        for f, data in cls.iterStored():
             meta = data.get("meta", {})
             key = (0 if meta.get("status") in cls._TERMINAL else 1, meta.get("started_at", ""))
             if best_key is None or key > best_key:
@@ -126,11 +133,7 @@ class TaskState:
     def listRecent(cls, n: int = 10) -> list[dict[str, Any]]:
         """Lightweight summaries of recent tasks, newest first. Reads the JSON store directly."""
         out: list[dict[str, Any]] = []
-        for f in config.STATE_DIR.glob("*.json"):
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-            except Exception:  # noqa: BLE001
-                continue
+        for f, data in cls.iterStored():
             meta = data.get("meta", {})
             subs = (data.get("plan", {}) or {}).get("subtasks", []) or []
             done = sum(1 for s in subs if s.get("status") == "done")

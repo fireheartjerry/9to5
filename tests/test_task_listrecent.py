@@ -24,6 +24,13 @@ class TestListRecent(unittest.TestCase):
             "meta": {"status": status, "goal_raw": "goal " + tid, "started_at": started},
             "plan": {"subtasks": subs}}), encoding="utf-8")
 
+    def test_iter_stored_skips_corrupt(self):
+        self._w("ok.json", "ok1", "done", "2026-06-22T08:00:00+00:00", [])
+        (self.dir / "broken.json").write_text("{not json", encoding="utf-8")
+        with mock.patch.object(config, "STATE_DIR", self.dir):
+            ids = sorted(d.get("task_id") for _f, d in TaskState.iterStored())
+        self.assertEqual(ids, ["ok1"])   # the corrupt file is silently skipped
+
     def test_sorted_desc_with_progress(self):
         self._w("a.json", "aaa", "done", "2026-06-22T08:00:00+00:00", [{"status": "done"}])
         self._w("b.json", "bbb", "executing", "2026-06-22T10:00:00+00:00",

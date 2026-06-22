@@ -1,7 +1,6 @@
 """Aggregate run metrics from the task-state JSON store. Pure (reads files only)."""
 from __future__ import annotations
 
-import json
 from datetime import datetime
 
 import config
@@ -35,15 +34,7 @@ def compute() -> dict:
     by_status: dict[str, int] = {}
     durations: list[float] = []
     subtasks_total = subtasks_passed = 0
-    try:
-        files = list(config.STATE_DIR.glob("*.json"))
-    except Exception:  # noqa: BLE001
-        files = []
-    for f in files:
-        try:
-            data = json.loads(f.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001
-            continue
+    for _f, data in TaskState.iterStored():
         meta = data.get("meta", {})
         status = meta.get("status", "unknown")
         total += 1
