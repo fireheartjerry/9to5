@@ -26,13 +26,6 @@ LOG = config.getLogger("discord")
 
 _API = "https://discord.com/api/v10"
 
-# effort internal key -> human display label
-_EFFORT_LABELS = {
-    "low": "Low", "default": "Standard", "medium": "Standard",
-    "high": "High", "xhigh": "Very High", "ultracode": "Max",
-}
-
-
 def _nowIso() -> str:
     """Native embed timestamp (RFC3339, UTC)."""
     return datetime.now(timezone.utc).isoformat()
@@ -66,7 +59,7 @@ def subtaskTracker(subtasks: list[dict], limit: int = 12) -> str:
 def effortBar(effort: Optional[str]) -> str:
     key = (effort or "default").lower()
     bar = config.EFFORT_BARS.get(key, config.EFFORT_BARS["default"])
-    label = _EFFORT_LABELS.get(key, "Standard")
+    label = config.EFFORT_LABELS.get(key, "Standard")
     return f"{bar}  {label}"
 
 
@@ -353,11 +346,15 @@ def architectDoneEmbed(doc_path: str) -> dict:
 
 
 def adversaryTriggeredEmbed(subtask_title: str, reason: str, verdict: Optional[str] = None) -> dict:
-    v = (verdict or "").lower()
-    challenged = v in ("challenged", "rejected", "reject", "blocked", "fail")
-    color = statusColor("blocked") if challenged else statusColor("done")
+    v = (verdict or "").lower().strip()
     if verdict is None:
         color = statusColor("adversary")
+    elif v in _CHALLENGED:
+        color = statusColor("blocked")
+    elif v in _APPROVED:
+        color = statusColor("done")
+    else:
+        color = 0x95A5A6  # UNKNOWN -> neutral grey, never false-green
     fields = [
         {"name": "Subtask", "value": subtask_title[:1000]},
         {"name": "Trigger", "value": reason[:1000]},
@@ -427,6 +424,55 @@ def completeEmbed(state, pr_link: str, elapsed: str) -> dict:
 
 
 def sendBlocked(reason: str, question: Optional[str] = None) -> dict:
-    """Severe: new message, @everyone + human ping, with Answer/Skip/Abort buttons."""
-    content = ("@everyone " + humanPing()).strip()
-    return sendEmbed(blockedEmbed(reason, question), content=content, components=blockedComponents())
+    """Severe: new message, owner ping only (allowed_mentions can't expand past owner), with
+    Answer/Skip/Abort buttons."""
+    return sendEmbed(blockedEmbed(reason, question), content=humanPing(), components=blockedComponents())
+
+
+def gateNeededEmbed(gate: str) -> dict:
+    return {
+        "title": f"⏳ Approval needed — {gate}",
+        "color": statusColor("paused"),
+        "description": "Reply `!approve` / `!reject`, or use the web dashboard.",
+        "timestamp": _nowIso(),
+        "fields": [{"name": "Gate", "value": f"`{gate}`", "inline": True}],
+    }
+
+
+def subtaskFailedEmbed(subtask_id: str, title: str, verify_result: Optional[dict], attempts: int) -> dict:
+    vr = verify_result or {}
+    return {
+        "title": "⚠️ Subtask failed verification",
+        "color": statusColor("failed"),
+        "timestamp": _nowIso(),
+        "fields": [
+            {"name": "Subtask", "value": truncate(f"`{subtask_id}` {title}", 256), "inline": False},
+            {"name": "Attempts", "value": str(attempts), "inline": True},
+            {"name": "Verify", "value": truncate(str(vr.get("cmd") or "exit"), 512), "inline": False},
+        ],
+        "footer": {"text": "task continues with remaining subtasks"},
+    }
+
+
+def abortedEmbed(reason: str, elapsed: str) -> dict:
+    return {
+        "title": "🛑 Run aborted",
+        "color": statusColor("aborted"),
+        "timestamp": _nowIso(),
+        "fields": [
+            {"name": "Reason", "value": truncate(reason, 512), "inline": False},
+            {"name": "Elapsed", "value": elapsed or "—", "inline": True},
+        ],
+    }
+
+
+def selfRefEmbed(branch: str, protected: tuple) -> dict:
+    return {
+        "title": "🧬 Self-referential run (9to5 editing 9to5)",
+        "color": statusColor("replanning"),
+        "timestamp": _nowIso(),
+        "fields": [
+            {"name": "Isolation branch", "value": f"`{branch}`", "inline": True},
+            {"name": "Protected core files", "value": truncate(", ".join(protected), 1024), "inline": False},
+        ],
+    }

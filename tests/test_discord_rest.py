@@ -74,6 +74,12 @@ class TestClampAndTruncate(unittest.TestCase):
         out = d._clampEmbed(e)
         self.assertEqual(len(out["fields"]), 25)
 
+    def test_clamp_total_budget_shrinks(self):
+        e = {"title": "t", "fields": [{"name": "n", "value": "y" * 2000} for _ in range(10)]}
+        out = d._clampEmbed(e)
+        self.assertLessEqual(d._embedLen(out), config.DISCORD_EMBED_TOTAL_MAX)
+        self.assertEqual(len(out["fields"]), 10)  # rows preserved, values shrunk
+
 
 class TestUnpinAndVerdict(unittest.TestCase):
     def test_unpin_404_is_success(self):
