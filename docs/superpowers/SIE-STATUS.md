@@ -11,7 +11,7 @@ implemented with the external call seam mocked and offline-testable logic real.
 | **A — Capture + Measure** | Experience Ledger (`memory/experience.py`), best-effort TaskState sinks, backfill, eval-harness skeleton (`learning/eval_harness.py`) + golden suite + fitness math, config block | ✅ done |
 | **B — Retrieval** | local embeddings + cosine top-K (`memory/retrieval.py`), lessons rendering w/ token cap, orchestrator injection, negative cache | ✅ done |
 | **C — Consolidation + Policy** | ledger-rebuilt lessons (`learning/lessons.py`) + Thompson bandit (`learning/policy.py`), policy hint injection, fitness sparkline panel | ✅ done |
-| D — Prompt Evolution | versioned registry + champion/challenger | ⬜ |
+| **D — Prompt Evolution** | versioned registry (`learning/prompts.py`, byte-identical) + champion/challenger gate (`learning/promotion.py`), auto-runs in weekly tier | ✅ done |
 | E — LoRA Distillation (SFT) | data-quality gate + gold dataset + local LoRA | ⬜ |
 | F — Reward + DPO | composite reward + preference pairs | ⬜ |
 | G — Rollout + Counterfactual | offline replay + shadow/canary + per-role adapters | ⬜ |
@@ -72,3 +72,19 @@ implemented with the external call seam mocked and offline-testable logic real.
 - Test hygiene: `tests/__init__.py` disables auto-dispatch + isolates the ledger to a
   temp DB so the suite stays fast and never pollutes `state/experience.db`.
 - Tests: `tests/test_sie.py` (6: force/throttle/lock/kill-switch/idempotent). Suite 258/258.
+
+## Phase D — Prompt Evolution (auto-promoted, hands-off)
+- `memory/experience.py`: `prompt_variants` table + helpers (`register_variant`,
+  `get_champion`/`get_champion_body`, `promote_variant`, `tag_run_prompt`,
+  `prompt_field_stats`).
+- `learning/prompts.py` (L3): `get(role, default)` returns the in-code constant
+  **byte-identical** until a challenger is promoted; `propose`/`promote`/`champion_id`.
+- `learning/promotion.py`: `proportion_z`, `decide` (min-uses + z gate), Thompson
+  `pick_challenger`, `run_promotions` (auto-evaluates + promotes per role). Enforces
+  invariant I2: the brain only proposes; the independent gate decides.
+- `orchestrator.py`: `authorInvocationSpec` sources the constitution via `prompts.get`
+  and tags the run's prompt id for field metrics (best-effort, byte-identical today).
+- `learning/sie.py`: new **weekly tier** runs `run_promotions` automatically (7-day
+  throttle) — promotion is hands-off; `gated` mode still needs `!approve` to apply.
+- `config.py`: `PROMPT_PROMOTE_MIN_USES` (20), `PROMPT_PROMOTE_Z` (1.64).
+- Tests: `tests/test_prompts.py` (5), `tests/test_promotion.py` (9). Suite 271/271 green.

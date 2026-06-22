@@ -30,6 +30,8 @@ LOG = config.getLogger("sie.orchestrator")
 
 # Heavy passes run at most once per this window (seconds). "Daily" without a scheduler.
 DEFAULT_THROTTLE_SECONDS = 12 * 3600
+# Prompt/policy promotion is a slower tier -- it needs many field uses to accumulate.
+WEEKLY_THROTTLE_SECONDS = 7 * 24 * 3600
 
 
 def _state_path() -> Path:
@@ -107,14 +109,22 @@ def run_maintenance(*, reason: str = "post-run", force: bool = False,
     try:
         experience.init(db_path)
         summary["steps"] = {}
+        steps = list(_maintenance_steps(db_path))
+        # The weekly tier (prompt/policy promotion) rides on the same pass but only when
+        # its slower window is due -- so promotion is automatic yet never premature.
+        weekly_due = force or _weekly_due(state)
+        if weekly_due:
+            steps += list(_weekly_steps(db_path))
         # Each step is independent + best-effort: one failing never blocks the others.
-        for name, fn in _maintenance_steps(db_path):
+        for name, fn in steps:
             try:
                 summary["steps"][name] = fn()
             except Exception as e:  # noqa: BLE001
                 LOG.warning("sie step %s failed (ignored): %s", name, e)
                 summary["steps"][name] = {"error": str(e)}
         state["last_full_at"] = summary["ran_at"]
+        if weekly_due:
+            state["last_weekly_at"] = summary["ran_at"]
         state["runs"] = int(state.get("runs", 0)) + 1
         _write_state(state)
         LOG.info("sie maintenance done (%s): %s", reason, summary["steps"])
@@ -153,6 +163,27 @@ def _maintenance_steps(db_path: Optional[Path]):
         ("policy_rebuild", policy_rebuild),
         ("evaluate", evaluate),
     ]
+
+
+def _weekly_due(state: dict[str, Any]) -> bool:
+    last = state.get("last_weekly_at")
+    if not last:
+        return True
+    try:
+        elapsed = (datetime.now().astimezone() - datetime.fromisoformat(last)).total_seconds()
+    except Exception:  # noqa: BLE001
+        return True
+    return elapsed >= WEEKLY_THROTTLE_SECONDS
+
+
+def _weekly_steps(db_path: Optional[Path]):
+    """Slower tier: prompt (and later adapter) promotion -- gated by the eval harness +
+    field metrics, never premature. Runs automatically; the human only start/abort/checks."""
+    def prompt_promotion():
+        from learning import promotion
+        return promotion.run_promotions(db_path=db_path)
+
+    return [("prompt_promotion", prompt_promotion)]
 
 
 def run_maintenance_async(**kwargs) -> None:

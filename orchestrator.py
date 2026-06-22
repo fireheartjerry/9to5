@@ -23,8 +23,8 @@ import config
 import knowledge
 from agents import adversary, architect, clarifier, executor, replanner, verifier
 from control import AbortRun, ControlBus
-from learning import policy
-from memory import retrieval
+from learning import policy, prompts
+from memory import experience, retrieval
 from memory.obsidian import ObsidianClient
 from notifications import audit
 from notifications import commands
@@ -601,8 +601,19 @@ class Orchestrator:
         goal_text = state.meta.get("goal_elaborated", "")
         user = (policy.hint(goal_text, subtask.get("title", ""))
                 + retrieval.lessons_block(goal_text, subtask.get("title", "")) + user)
-        system_prompt = self._selfRefSystemPrompt(state) if state.meta.get("is_self_referential") \
-            else ORCHESTRATOR_CONSTITUTION
+        if state.meta.get("is_self_referential"):
+            system_prompt = self._selfRefSystemPrompt(state)
+        else:
+            # SIE Layer 3: source the constitution from the prompt registry. Byte-identical
+            # to ORCHESTRATOR_CONSTITUTION until a challenger is promoted; tag the run so
+            # the promotion gate has per-variant field metrics. Best-effort.
+            system_prompt = prompts.get("orchestrator", ORCHESTRATOR_CONSTITUTION)
+            try:
+                cid = prompts.champion_id("orchestrator", ORCHESTRATOR_CONSTITUTION)
+                if cid is not None:
+                    experience.tag_run_prompt(state.task_id, str(cid))
+            except Exception:  # noqa: BLE001 -- tagging is best-effort
+                pass
         resp = self._ollamaChat(system_prompt, user, want_json=True)
         spec = _chatJson(resp)
         return self._sanitizeSpec(spec if isinstance(spec, dict) else {}, subtask)

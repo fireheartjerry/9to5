@@ -175,6 +175,10 @@ LESSONS_WIN_GAP: float = float(os.getenv("LESSONS_WIN_GAP", "0.2"))
 POLICY_REWARD_WEIGHTS: dict[str, float] = {
     "first_pass": 1.0, "attempts": 0.3, "cost": 0.2, "wallclock": 0.1,
 }
+# Layer 3 prompt promotion gate: a challenger needs this many field uses and this z-score
+# (one-sided proportion test, 1.64 ~ 95%) on first-pass rate before it can become champion.
+PROMPT_PROMOTE_MIN_USES: int = int(os.getenv("PROMPT_PROMOTE_MIN_USES", "20"))
+PROMPT_PROMOTE_Z: float = float(os.getenv("PROMPT_PROMOTE_Z", "1.64"))
 # Auto-maintenance: fire the throttled learning passes automatically after every run, so
 # the user only ever starts/aborts/checks. (The test package disables this to stay fast;
 # the runner itself is still exercised directly.)

@@ -108,6 +108,18 @@ _SCHEMA: tuple[str, ...] = (
         reward_sq_sum REAL,
         UNIQUE(context_key, action_json)
     )""",
+    """CREATE TABLE IF NOT EXISTS prompt_variants (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        role        TEXT,
+        version     INTEGER,
+        parent_id   INTEGER,
+        body_hash   TEXT,
+        body        TEXT,
+        file_path   TEXT,
+        created_at  TEXT,
+        state       TEXT,
+        UNIQUE(role, body_hash)
+    )""",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_run ON subtasks(run_id)",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_passed ON subtasks(verify_passed)",
     "CREATE INDEX IF NOT EXISTS idx_arms_ctx ON policy_arms(context_key)",
@@ -444,6 +456,104 @@ def fetch_arms(context_key: Optional[str] = None,
 def clear_arms(db_path: Optional[Path] = None) -> None:
     with _WRITE_LOCK, _connect(db_path) as conn:
         conn.execute("DELETE FROM policy_arms")
+
+
+# ---------------------------------------------------------------- prompt variants (L3)
+
+def register_variant(role: str, body: str, *, state: str = "challenger",
+                     parent_id: Optional[int] = None, file_path: Optional[str] = None,
+                     db_path: Optional[Path] = None) -> Optional[int]:
+    """Register a prompt variant (deduped by role+body hash). Returns its id. If the body
+    already exists for the role, returns the existing id without changing its state."""
+    import hashlib
+    h = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT id FROM prompt_variants WHERE role=? AND body_hash=?", (role, h)).fetchone()
+            if row:
+                return int(row["id"])
+            ver = conn.execute(
+                "SELECT COALESCE(MAX(version),0)+1 AS v FROM prompt_variants WHERE role=?",
+                (role,)).fetchone()["v"]
+            cur = conn.execute(
+                """INSERT INTO prompt_variants
+                   (role, version, parent_id, body_hash, body, file_path, created_at, state)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (role, ver, parent_id, h, body, file_path, _nowIso(), state))
+            return int(cur.lastrowid)
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("register_variant failed (ignored): %s", e)
+        return None
+
+
+def get_champion(role: str, db_path: Optional[Path] = None) -> Optional[dict[str, Any]]:
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM prompt_variants WHERE role=? AND state='champion' "
+            "ORDER BY version DESC LIMIT 1", (role,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_champion_body(role: str, db_path: Optional[Path] = None) -> Optional[str]:
+    champ = get_champion(role, db_path=db_path)
+    return champ["body"] if champ else None
+
+
+def fetch_variants(role: str, state: Optional[str] = None,
+                   db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    with _connect(db_path) as conn:
+        if state is None:
+            rows = conn.execute(
+                "SELECT * FROM prompt_variants WHERE role=? ORDER BY version", (role,))
+        else:
+            rows = conn.execute(
+                "SELECT * FROM prompt_variants WHERE role=? AND state=? ORDER BY version",
+                (role, state))
+        return [dict(r) for r in rows]
+
+
+def promote_variant(role: str, variant_id: int, db_path: Optional[Path] = None) -> bool:
+    """Make ``variant_id`` the champion for ``role``; retire the previous champion(s).
+    Atomic: a single transaction so there is never two champions or none."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            conn.execute(
+                "UPDATE prompt_variants SET state='retired' WHERE role=? AND state='champion'",
+                (role,))
+            conn.execute(
+                "UPDATE prompt_variants SET state='champion' WHERE id=? AND role=?",
+                (variant_id, role))
+        return True
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("promote_variant failed (ignored): %s", e)
+        return False
+
+
+def tag_run_prompt(run_id: str, prompt_set_id: str, db_path: Optional[Path] = None) -> bool:
+    """Record which prompt champion authored a run (so per-variant field metrics exist)."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            conn.execute("UPDATE runs SET prompt_set_id=? WHERE run_id=?",
+                         (str(prompt_set_id), run_id))
+        return True
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("tag_run_prompt failed (ignored): %s", e)
+        return False
+
+
+def prompt_field_stats(prompt_set_id: str, db_path: Optional[Path] = None) -> dict[str, int]:
+    """First-pass field outcomes for subtasks of runs authored by ``prompt_set_id``:
+    {n, first_pass}. The raw signal the promotion proportion test consumes."""
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            """SELECT COUNT(*) AS n,
+                      SUM(CASE WHEN s.verify_passed=1
+                                AND (s.attempt_count IS NULL OR s.attempt_count<=1)
+                               THEN 1 ELSE 0 END) AS fp
+               FROM subtasks s JOIN runs r ON s.run_id = r.run_id
+               WHERE r.prompt_set_id = ?""", (str(prompt_set_id),)).fetchone()
+    return {"n": int(row["n"] or 0), "first_pass": int(row["fp"] or 0)}
 
 
 def fetch_runs(db_path: Optional[Path] = None) -> list[dict[str, Any]]:
