@@ -23,16 +23,13 @@ import config
 from agents import adversary, architect, clarifier, executor, replanner, verifier
 from control import AbortRun, ControlBus
 from memory.obsidian import ObsidianClient
+from notifications import commands
 from notifications import discord_bot as discord
 from notifications.dashboard import DiscordDashboard
 from notifications.webdash import startWebDashboard, stopWebDashboard
 from state.task import TaskState, nowIso
 
 LOG = config.getLogger("orchestrator")
-
-_YELLOW = 0xF1C40F
-_ORANGE = 0xE67E22
-_RED = 0xE74C3C
 
 
 ORCHESTRATOR_CONSTITUTION = (
@@ -322,41 +319,16 @@ class Orchestrator:
     # ===================================================================
     # Control plane (poll Discord + drain ControlBus between steps)
     # ===================================================================
-    def _translateDiscord(self, bus: ControlBus) -> None:
+    def _translateDiscord(self, bus: ControlBus, state: TaskState) -> None:
         msgs, latest = discord.fetchMessagesAfter(bus.getSeen())
         if latest != bus.getSeen():
             bus.setSeen(latest)
         for m in msgs:
-            if m["author_is_bot"]:
-                continue
-            raw = m["content"].strip()
-            c = raw.lower()
-            if not c.startswith("!"):
-                continue
-            if c.startswith("!abort"):
-                bus.requestAbort()
-            elif c.startswith("!pause"):
-                bus.requestPause()
-            elif c.startswith("!resume"):
-                bus.clearPause()
-            elif c.startswith("!approve"):
-                gate = bus.getPendingGate()
-                if gate:
-                    bus.decide(gate, "approve")
-            elif c.startswith("!reject"):
-                gate = bus.getPendingGate()
-                if gate:
-                    bus.decide(gate, "reject")
-            elif c.startswith("!skip"):
-                parts = raw.split()
-                if len(parts) > 1:
-                    bus.pushOp({"op": "skip", "subtask_id": parts[1]})
-            elif c.startswith("!add"):
-                title = raw[4:].strip()
-                if title:
-                    bus.pushOp({"op": "add", "title": title, "description": title})
-            elif c.startswith("!retry"):
-                bus.pushOp({"op": "retry"})
+            author_id = m.get("author_id") or None
+            cmd = commands.decide(int(author_id) if author_id else None,
+                                  m.get("author_is_bot", False), m.get("content", ""))
+            if cmd:
+                commands.applyCommand(bus, state, cmd)
 
     def _applyOps(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard) -> None:
         for op in bus.drainOps():
@@ -379,25 +351,21 @@ class Orchestrator:
 
     def _checkControl(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard,
                       gate: str | None = None) -> None:
-        self._translateDiscord(bus)
+        self._translateDiscord(bus, state)
         self._applyOps(state, bus, dashboard)
         while bus.isPaused() and not bus.isAbort():
             dashboard.update(state, "paused", "paused -- waiting for !resume")
             time.sleep(config.DISCORD_POLL_SECONDS)
-            self._translateDiscord(bus)
+            self._translateDiscord(bus, state)
         if bus.isAbort():
             raise AbortRun("abort requested")
         if gate and state.meta.get("control_mode") == "gated":
             bus.clearDecision(gate)
             bus.setPendingGate(gate)
-            discord.sendEmbed({
-                "title": f"Approval needed: {gate}",
-                "color": _YELLOW,
-                "fields": [{"name": "Action", "value": "reply `!approve` / `!reject` or use the web dashboard"}],
-            }, content=discord.humanPing())
+            discord.sendEmbed(discord.gateNeededEmbed(gate), content=discord.humanPing())
             dashboard.update(state, f"awaiting {gate}", f"awaiting approval for gate: {gate}")
             while True:
-                self._translateDiscord(bus)
+                self._translateDiscord(bus, state)
                 self._applyOps(state, bus, dashboard)   # apply queued !add/!skip live while parked
                 if bus.isAbort():
                     bus.setPendingGate(None)
@@ -577,11 +545,11 @@ class Orchestrator:
                         "\n\n[ORCHESTRATOR ANSWERS YOUR QUESTIONS -- proceed now, do NOT ask again]\n"
                         + answer
                     )
-            self._translateDiscord(bus)
+            self._translateDiscord(bus, state)
             while bus.isPaused() and not bus.isAbort():   # honor !pause mid-subtask, not just between
                 dashboard.update(state, "paused", f"{sid} paused -- waiting for !resume")
                 time.sleep(config.DISCORD_POLL_SECONDS)
-                self._translateDiscord(bus)
+                self._translateDiscord(bus, state)
             if bus.isAbort():
                 raise AbortRun("abort requested")
             if (state.getSubtask(sid) or {}).get("status") == "removed":
@@ -612,15 +580,7 @@ class Orchestrator:
             if not passed:
                 state.addNotification("subtask_failed", f"{sid} failed verification after {attempt} attempts")
         if not passed:
-            discord.sendEmbed({
-                "title": "Subtask failed verification",
-                "color": _ORANGE,
-                "fields": [
-                    {"name": "Subtask", "value": f"{sid} {subtask['title']}"[:200]},
-                    {"name": "Attempts", "value": str(attempt)},
-                    {"name": "Verify", "value": (str(vresult.get("cmd")) if vresult else "-")[:200]},
-                ],
-            })
+            discord.sendEmbed(discord.subtaskFailedEmbed(sid, subtask["title"], vresult, attempt))
         dashboard.update(state, "executing", f"{sid} -> {final}")
 
         # Replan ONLY after a subtask that PASSED. Replanning after failures is the
@@ -773,14 +733,8 @@ class Orchestrator:
                 LOG.warning("Self-ref task but %s is not a git repo; no isolation branch", work_dir)
         except Exception as e:  # noqa: BLE001
             LOG.warning("self-ref branch creation failed: %s", e)
-        discord.sendEmbed({
-            "title": "🧬 Self-referential run (9to5 editing 9to5)",
-            "color": 0x9B59B6,
-            "fields": [
-                {"name": "Isolation branch", "value": f"`{branch}`"},
-                {"name": "Protected core files", "value": ", ".join(config.CORE_PROTECTED_FILES)},
-            ],
-        }, content=discord.humanPing())
+        discord.sendEmbed(discord.selfRefEmbed(branch, config.CORE_PROTECTED_FILES),
+                          content=discord.humanPing())
         dashboard.event(f"self-referential · branch {branch}")
 
     def _execCwd(self, state: TaskState, sid: str | None, work_dir: str) -> str:
@@ -803,9 +757,14 @@ class Orchestrator:
         bus = ControlBus(state.task_id)
         if not resume:
             bus.clear()
+        if bus.getSeen() is None:   # seed so a stale '!abort' from a prior run is never replayed
+            try:
+                bus.setSeen(discord.baselineLatestId())
+            except Exception:  # noqa: BLE001
+                pass
         dashboard = DiscordDashboard()
         web_url = startWebDashboard(state.task_id)
-        dashboard.start(state, "resuming" if resume else "starting")
+        dashboard.start(state, "resuming" if resume else "starting", state_lock=self._state_lock)
         started = time.time()
         elaborated = state.meta["goal_elaborated"] or state.meta["goal_raw"]
         self.writeIndex(state)
@@ -891,9 +850,7 @@ class Orchestrator:
             elapsed = _elapsedSince(state.meta["started_at"])
             state.setStatus("aborted", blocked_reason=reason)
             self.writeIndex(state)
-            discord.sendEmbed({"title": "Run aborted", "color": _RED,
-                               "fields": [{"name": "Reason", "value": reason[:500]},
-                                          {"name": "Elapsed", "value": _fmtElapsed(elapsed)}]},
+            discord.sendEmbed(discord.abortedEmbed(reason, _fmtElapsed(elapsed)),
                               content=discord.humanPing())
             state.addNotification("aborted", reason)
             dashboard.update(state, "aborted", f"aborted: {reason}")
@@ -919,4 +876,8 @@ class Orchestrator:
                     "subtasks": [{"subtask_id": s["subtask_id"], "status": s["status"]} for s in state.subtasks]}
         finally:
             bus.setPendingGate(None)
+            try:
+                dashboard.unpin()
+            except Exception:  # noqa: BLE001
+                LOG.warning("dashboard unpin failed", exc_info=True)
             stopWebDashboard()
