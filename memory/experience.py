@@ -230,6 +230,29 @@ def record_subtask(run_id: str, st: dict[str, Any], db_path: Optional[Path] = No
         return False
 
 
+def set_subtask_embedding(run_id: str, st_id: str, blob: bytes,
+                          db_path: Optional[Path] = None) -> bool:
+    """Attach an embedding BLOB to an existing subtask row (Layer 1 retrieval). Best-effort."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            conn.execute("UPDATE subtasks SET embedding=? WHERE run_id=? AND st_id=?",
+                         (blob, run_id, st_id))
+        return True
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("set_subtask_embedding failed (ignored): %s", e)
+        return False
+
+
+def embedded_subtasks(only_passed: bool = True,
+                      db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    """Subtask rows that carry an embedding -- the candidate pool for top-K retrieval."""
+    with _connect(db_path) as conn:
+        sql = "SELECT * FROM subtasks WHERE embedding IS NOT NULL"
+        if only_passed:
+            sql += " AND verify_passed=1"
+        return [dict(r) for r in conn.execute(sql)]
+
+
 def record_eval(score: dict[str, Any], *, suite_version: str = "v1",
                 prompt_set_id: Optional[str] = None, adapter_id: Optional[str] = None,
                 passed_gate: Optional[bool] = None, db_path: Optional[Path] = None) -> Optional[int]:

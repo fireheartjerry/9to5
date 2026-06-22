@@ -9,7 +9,7 @@ implemented with the external call seam mocked and offline-testable logic real.
 | Stage | Scope | State |
 |---|---|---|
 | **A — Capture + Measure** | Experience Ledger (`memory/experience.py`), best-effort TaskState sinks, backfill, eval-harness skeleton (`learning/eval_harness.py`) + golden suite + fitness math, config block | ✅ done |
-| B — Retrieval | local embeddings + top-K + lesson injection | ⬜ next |
+| **B — Retrieval** | local embeddings + cosine top-K (`memory/retrieval.py`), lessons rendering w/ token cap, orchestrator injection, negative cache | ✅ done |
 | C — Consolidation + Policy | nightly lessons mining + contextual bandit | ⬜ |
 | D — Prompt Evolution | versioned registry + champion/challenger | ⬜ |
 | E — LoRA Distillation (SFT) | data-quality gate + gold dataset + local LoRA | ⬜ |
@@ -30,3 +30,14 @@ implemented with the external call seam mocked and offline-testable logic real.
 - `learning/eval_suite/`: 3 golden goals (bugfix / add-test / refactor) with held-out verifies.
 - `config.py`: SIE block (ledger path, retrieval knobs, fitness weights, kill switch, brain tag).
 - Tests: `tests/test_experience_ledger.py`, `tests/test_eval_harness.py`.
+
+## Phase B — what landed
+- `memory/retrieval.py`: local-Ollama embedding seam (`_embed_call`, mockable), float32
+  `pack`/`unpack`, `cosine`, `top_k_similar` (verify-passing pool), `retrieve`,
+  `render_lessons` (≤`RETRIEVAL_MAX_TOKENS`), `lessons_block` (best-effort one-call API),
+  `backfill_embeddings` (off-hot-path), and a 60s negative cache so a dead embedder never
+  adds latency to brain calls.
+- `memory/experience.py`: `set_subtask_embedding` + `embedded_subtasks` (retrieval pool).
+- `orchestrator.py`: prepend `retrieval.lessons_block(...)` in `authorSubtaskPlan` and
+  `authorInvocationSpec` (no-op when empty). New `from memory import retrieval`.
+- Tests: `tests/test_retrieval.py` (10; embeddings mocked). Full suite 235/235 green.

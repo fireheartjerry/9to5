@@ -1,0 +1,216 @@
+"""Retrieval-Augmented Brain -- Layer 1 of the Self-Improvement Engine.
+
+At plan/spec-authoring time, find the most-similar *successful* past subtasks in the
+Experience Ledger and render a tiny, compressed "lessons" block that gets prepended to
+the Ollama prompt -- so the brain stops repeating mistakes within days.
+
+Embeddings come from a **local** Ollama model (``config.EMBED_MODEL``, e.g.
+``nomic-embed-text``) -- zero API cost. The embedding call is isolated in ``_embed_call``
+so it is trivially mockable in tests and so an unavailable Ollama degrades to "no
+lessons" rather than an error. Everything here is best-effort: retrieval never raises
+into the orchestrator.
+
+See docs/superpowers/specs/2026-06-22-self-improvement-engine-design.md (Layer 1).
+"""
+from __future__ import annotations
+
+import array
+import math
+import time
+from pathlib import Path
+from typing import Any, Optional
+
+import config
+from memory import experience
+
+LOG = config.getLogger("sie.retrieval")
+
+# Negative cache: once the local embedder looks down, stop hammering it on every brain
+# call (it's invoked many times per run). Retry at most once per cooldown window.
+_FAIL_COOLDOWN_SECONDS = 60.0
+_last_embed_fail_at: float = 0.0
+
+
+# --------------------------------------------------------------------- embeddings
+
+def _embed_call(text: str) -> Optional[list[float]]:
+    """Raw local-Ollama embedding call. Isolated so tests patch exactly this seam.
+
+    Returns the vector, or None if the model/server is unavailable (the common case in
+    a container with no Ollama running -- callers treat None as "no retrieval today")."""
+    try:
+        import ollama  # imported lazily: absent/slow import must not taint module load
+        client = ollama.Client(host=config.OLLAMA_HOST)
+        resp = client.embeddings(model=config.EMBED_MODEL, prompt=text)
+        vec = resp.get("embedding") if isinstance(resp, dict) else getattr(resp, "embedding", None)
+        return list(vec) if vec else None
+    except Exception as e:  # noqa: BLE001 -- no server / model / package -> degrade
+        LOG.debug("embedding unavailable (ignored): %s", e)
+        return None
+
+
+def embed(text: str) -> Optional[list[float]]:
+    """Best-effort embedding of ``text`` (returns None when unavailable).
+
+    Honors a negative cache: after a failure we skip the call for ``_FAIL_COOLDOWN_SECONDS``
+    so a dead embedder doesn't add latency to every subsequent brain call."""
+    global _last_embed_fail_at
+    if not text or not text.strip():
+        return None
+    if time.monotonic() - _last_embed_fail_at < _FAIL_COOLDOWN_SECONDS:
+        return None
+    vec = _embed_call(text.strip())
+    if vec is None:
+        _last_embed_fail_at = time.monotonic()
+    else:
+        _last_embed_fail_at = 0.0
+    return vec
+
+
+def reset_embed_cache() -> None:
+    """Clear the negative cache (used by tests, and after a known embedder restart)."""
+    global _last_embed_fail_at
+    _last_embed_fail_at = 0.0
+
+
+def pack(vec: list[float]) -> bytes:
+    """Pack a float vector into compact float32 bytes for the BLOB column."""
+    return array.array("f", vec).tobytes()
+
+
+def unpack(blob: bytes) -> list[float]:
+    """Inverse of ``pack``."""
+    a = array.array("f")
+    a.frombytes(blob)
+    return list(a)
+
+
+def cosine(a: list[float], b: list[float]) -> float:
+    """Cosine similarity in [-1, 1]; 0.0 for a degenerate/zero vector."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return dot / (na * nb)
+
+
+# ------------------------------------------------------------------- signatures
+
+def signature_text(goal: str, title: str = "") -> str:
+    """The text we embed for a subtask/goal -- goal gives domain, title gives the act."""
+    return f"{(goal or '').strip()}\n{(title or '').strip()}".strip()
+
+
+def embed_and_store(run_id: str, st_id: str, goal: str, title: str = "",
+                    db_path: Optional[Path] = None) -> bool:
+    """Compute + persist a subtask's embedding (called once the subtask has a signature).
+    Best-effort: a missing embedder simply means this subtask isn't retrievable yet."""
+    vec = embed(signature_text(goal, title))
+    if not vec:
+        return False
+    return experience.set_subtask_embedding(run_id, st_id, pack(vec), db_path=db_path)
+
+
+# --------------------------------------------------------------------- top-K
+
+def top_k_similar(query_vec: list[float], k: int = 5, *, only_passed: bool = True,
+                  db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    """The ``k`` most-similar embedded subtasks to ``query_vec``, each annotated with a
+    ``score``. Pulls only verify-passing rows by default (we learn from wins)."""
+    out: list[dict[str, Any]] = []
+    for row in experience.embedded_subtasks(only_passed=only_passed, db_path=db_path):
+        blob = row.get("embedding")
+        if not blob:
+            continue
+        try:
+            score = cosine(query_vec, unpack(blob))
+        except Exception:  # noqa: BLE001 -- a corrupt blob just doesn't compete
+            continue
+        out.append({**row, "score": score})
+    out.sort(key=lambda r: r["score"], reverse=True)
+    return out[:k]
+
+
+def retrieve(goal: str, title: str = "", *, k: Optional[int] = None,
+             db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    """Embed the (goal, title) query and return the top-K similar past successes."""
+    qvec = embed(signature_text(goal, title))
+    if not qvec:
+        return []
+    return top_k_similar(qvec, k or config.RETRIEVAL_K, db_path=db_path)
+
+
+# --------------------------------------------------------------------- rendering
+
+def _approx_tokens(text: str) -> int:
+    """Cheap token estimate (~4 chars/token) -- good enough to honor the ctx budget."""
+    return max(1, len(text) // 4)
+
+
+def render_lessons(neighbors: list[dict[str, Any]],
+                   max_tokens: Optional[int] = None) -> str:
+    """Render neighbors into a compact lessons block, truncated to the token budget.
+
+    One line per neighbor: the effort that worked, any skills, and (if it needed >1
+    attempt) a 'took N tries' nudge -- the high-signal residue, not the full history."""
+    budget = max_tokens or config.RETRIEVAL_MAX_TOKENS
+    if not neighbors:
+        return ""
+    header = "## RELEVANT PAST LESSONS (from similar subtasks that PASSED)\n"
+    lines: list[str] = []
+    for n in neighbors:
+        title = (n.get("title") or "untitled").strip()
+        effort = n.get("effort") or "default"
+        attempts = n.get("attempt_count")
+        bits = [f"- \"{title}\": effort={effort}"]
+        if n.get("model"):
+            bits.append(f"model={n['model']}")
+        if attempts and int(attempts) > 1:
+            bits.append(f"needed {attempts} tries -- be careful")
+        line = ", ".join(bits)
+        candidate = header + "\n".join(lines + [line])
+        if _approx_tokens(candidate) > budget:
+            break
+        lines.append(line)
+    if not lines:
+        return ""
+    return header + "\n".join(lines) + "\n"
+
+
+def backfill_embeddings(db_path: Optional[Path] = None) -> dict[str, int]:
+    """Embed every verify-passing subtask that lacks an embedding (run off the hot path,
+    e.g. by the nightly SIE job). Returns {embedded, skipped}. Stops early if the embedder
+    is unavailable so it doesn't spin on a dead server."""
+    embedded = skipped = 0
+    for row in experience.fetch_subtasks(db_path=db_path):
+        if row.get("embedding") or row.get("verify_passed") != 1:
+            skipped += 1
+            continue
+        # The goal text isn't on the subtask row; title is the strongest available signal.
+        vec = embed(signature_text(row.get("title") or "", ""))
+        if not vec:
+            skipped += 1
+            if embedded == 0:          # embedder dead on first try -> bail, don't spin
+                break
+            continue
+        experience.set_subtask_embedding(row["run_id"], row["st_id"], pack(vec), db_path=db_path)
+        embedded += 1
+    LOG.info("embedding backfill: %d embedded, %d skipped", embedded, skipped)
+    return {"embedded": embedded, "skipped": skipped}
+
+
+def lessons_block(goal: str, title: str = "", *, db_path: Optional[Path] = None) -> str:
+    """Orchestrator-facing one-call helper: retrieve + render, fully best-effort.
+
+    Returns "" when retrieval is unavailable or finds nothing, so a caller can
+    unconditionally ``user = retrieval.lessons_block(...) + user``."""
+    try:
+        neighbors = retrieve(goal, title, db_path=db_path)
+        block = render_lessons(neighbors)
+        return (block + "\n") if block else ""
+    except Exception as e:  # noqa: BLE001 -- learning must never break authoring
+        LOG.debug("lessons_block failed (ignored): %s", e)
+        return ""

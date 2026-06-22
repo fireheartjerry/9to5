@@ -23,6 +23,7 @@ import config
 import knowledge
 from agents import adversary, architect, clarifier, executor, replanner, verifier
 from control import AbortRun, ControlBus
+from memory import retrieval
 from memory.obsidian import ObsidianClient
 from notifications import audit
 from notifications import commands
@@ -464,6 +465,7 @@ class Orchestrator:
             "guessed symbol WILL fail. NEVER use grep/cat/test/ls/findstr/type."
         )
         user = f"Specification:\n{goal_elaborated}\n\nArchitecture:\n{architect_doc[:4000]}\n\nReturn the plan JSON."
+        user = retrieval.lessons_block(goal_elaborated) + user  # SIE Layer 1 (best-effort, no-op if empty)
         resp = self._ollamaChat(system, user, want_json=True)
         parsed = _chatJson(resp)
         raw = parsed.get("subtasks") if isinstance(parsed, dict) else None
@@ -593,6 +595,8 @@ class Orchestrator:
         if failure_feedback:
             user += f"PREVIOUS ATTEMPT FAILED THE VERIFICATION:\n{failure_feedback[:1200]}\n\n"
         user += "Output ONLY the JSON invocation spec for THIS subtask."
+        # SIE Layer 1: prepend lessons from similar past successes (best-effort, no-op if empty).
+        user = retrieval.lessons_block(state.meta.get("goal_elaborated", ""), subtask.get("title", "")) + user
         system_prompt = self._selfRefSystemPrompt(state) if state.meta.get("is_self_referential") \
             else ORCHESTRATOR_CONSTITUTION
         resp = self._ollamaChat(system_prompt, user, want_json=True)
