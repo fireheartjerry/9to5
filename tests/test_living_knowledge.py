@@ -267,6 +267,35 @@ def test_executor_resume() -> None:
     check("final result is the fresh success", r["stdout"] == "fixed it" and r["ok"] is True)
 
 
+def test_block_destructive_scans_resume_inject() -> None:
+    print("[block_destructive scans the resume-folded inject]")
+    import tempfile, types as T
+    from agents import executor
+    st = T.SimpleNamespace(task_id="T", meta={})
+    # destructive command lives ONLY in claude_md_inject; on resume it is folded into the prompt
+    r = executor.runClaude(
+        {"prompt": "do the thing", "claude_md_inject": "rm -rf /tmp/data", "pre_tool_hooks": ["block_destructive"]},
+        work_dir=tempfile.gettempdir(), task_state=st,
+        subtask={"subtask_id": "st-1", "title": "t", "description": "implement"}, resume_session="OLD")
+    check("resume-folded inject is scanned + blocked", r.get("blocked") is True and r["ok"] is False)
+    # sanity: same destructive inject is ALSO blocked on a fresh (non-resume) run via full_prompt path
+    r2 = executor.runClaude(
+        {"prompt": "rm -rf /tmp/data", "pre_tool_hooks": ["block_destructive"]},
+        work_dir=tempfile.gettempdir(), task_state=st,
+        subtask={"subtask_id": "st-1", "title": "t", "description": "implement"})
+    check("fresh run still blocks destructive prompt", r2.get("blocked") is True)
+
+
+def test_bash_boundary_token_match() -> None:
+    print("[hooks boundary path-token match (no substring over-block)]")
+    from agents import hooks
+    check("rm -rf state/tasks hits 'tasks'", hooks._bashHitsBoundary("rm -rf state/tasks", "tasks") is True)
+    check("> config.py hits 'config.py'", hooks._bashHitsBoundary("echo x > config.py", "config.py") is True)
+    check("tasks.json does NOT hit 'tasks'", hooks._bashHitsBoundary("echo x > tasks.json", "tasks") is False)
+    check("my_config.py does NOT hit 'config.py'", hooks._bashHitsBoundary("printf y > my_config.py", "config.py") is False)
+    check(".env hit at token", hooks._bashHitsBoundary("cat foo > .env", ".env") is True)
+
+
 def test_deadline_idiom() -> None:
     print("[deadline zero/None idiom]")
     import orchestrator as orch, types as T, datetime as D
@@ -282,7 +311,8 @@ def main() -> int:
               test_injection_shared_cache, test_playbook, test_part_d_preserved,
               test_dynamic_workflow_spec, test_spec_nudges_and_budget,
               test_verifier_runs, test_executor_io, test_parse_robustness,
-              test_executor_resume, test_deadline_idiom):
+              test_executor_resume, test_block_destructive_scans_resume_inject,
+              test_bash_boundary_token_match, test_deadline_idiom):
         t()
     print()
     if _FAILS:

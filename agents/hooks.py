@@ -11,6 +11,7 @@ in try/except and exits 0 -- EXCEPT block_destructive, which intentionally exits
 import sys
 import json
 import os
+import re
 
 # Make "import config" (and other project modules) work regardless of cwd.
 sys.path.insert(0, r"C:\supercritical")
@@ -58,6 +59,15 @@ def _readEvent():
 def _envTaskRequested():
     """True when the executor pinned a task for this hook (so a run is active)."""
     return bool(os.environ.get("NINE_TO_FIVE_TASK_FILE") or os.environ.get("NINE_TO_FIVE_TASK_ID"))
+
+
+def _bashHitsBoundary(cmd_low, bbase):
+    """True when a writing Bash command's text contains the boundary basename as a real PATH TOKEN
+    (bounded by start/end or a shell/path separator) -- not a bare substring. So `rm -rf state/tasks`
+    or `> config.py` hit, but `echo x > tasks.json` / `printf ... > my_config.py` do not."""
+    if not (cmd_low and bbase):
+        return False
+    return bool(re.search(r"(^|[\s\"'=:;,()&|<>/\\])" + re.escape(bbase) + r"($|[\s\"'=:;,()&|<>])", cmd_low))
 
 
 def _resolveState():
@@ -287,8 +297,9 @@ def selfModificationGuard(data):
             # secret-family: a ".env" boundary also blocks .env.local / .env.production (NOT .envrc)
             if not hit and bbase.startswith(".") and (base == bbase or base.startswith(bbase + ".")):
                 hit = True
-            # writing Bash command whose target mentions a boundary file (basename token)
-            if not hit and bash_cmd and bbase and bbase in cmd_low:
+            # writing Bash command whose target IS a boundary file (real path-token match, not a
+            # bare substring -- so `echo x > tasks.json` / `> my_config.py` are not false-blocked).
+            if not hit and bash_cmd and _bashHitsBoundary(cmd_low, bbase):
                 hit = True
             if hit:
                 reason = (f"self_modification_guard: BLOCKED edit to {file_path} -- it is a HARD BOUNDARY "

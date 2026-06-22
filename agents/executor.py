@@ -267,9 +267,22 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
 
     full_prompt = _composePrompt(spec, system_prompt, extra)
 
-    # deterministic block_destructive guardrail (headless mode bypasses Claude hooks)
+    # Resume context, computed BEFORE the guard so block_destructive scans the EXACT prompt sent.
+    # On --resume Claude continues the session: it does NOT re-read CLAUDE.md and the charter is
+    # already pinned, so fold the (re-authored) claude_md_inject into the prompt and DROP the
+    # charter flag. On a fresh launch CLAUDE.md + the charter carry that context.
+    is_resume = bool(resume_session and config.EXECUTOR_RESUME_RETRIES)
+    inject = (spec.get("claude_md_inject") or "").strip()
+    resume_prompt = full_prompt
+    if is_resume and inject:
+        resume_prompt = ("## Updated context for this retry (CLAUDE.md is not re-read on resume)\n"
+                         + inject + "\n\n---\n\n" + full_prompt)
+    prompt_to_send = resume_prompt if is_resume else full_prompt
+
+    # deterministic block_destructive guardrail (headless mode bypasses Claude hooks) -- scan the
+    # ACTUAL prompt that will be sent, including any folded claude_md_inject on a resume retry.
     if "block_destructive" in (spec.get("pre_tool_hooks") or []):
-        hits = scanDestructive(full_prompt)
+        hits = scanDestructive(prompt_to_send)
         if hits:
             reason = f"block_destructive refused subtask -- prompt contains {hits}"
             LOG.warning(reason)
@@ -300,18 +313,8 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
             core_abs = str(config.PROJECT_ROOT / core)
             base_cmd += ["--disallowedTools", f"Edit({core_abs})", f"Write({core_abs})"]
     charter_args = ["--append-system-prompt", charter] if charter else []
-
-    is_resume = bool(resume_session and config.EXECUTOR_RESUME_RETRIES)
-    # On --resume Claude continues the session: it does NOT re-read CLAUDE.md and the charter is
-    # already pinned, so fold the (re-authored) claude_md_inject into the prompt and DROP the
-    # charter flag. On a fresh launch CLAUDE.md + the charter carry that context.
     fresh_cmd = base_cmd + charter_args
     resume_cmd = (base_cmd + ["--resume", resume_session]) if is_resume else None
-    inject = (spec.get("claude_md_inject") or "").strip()
-    resume_prompt = full_prompt
-    if is_resume and inject:
-        resume_prompt = ("## Updated context for this retry (CLAUDE.md is not re-read on resume)\n"
-                         + inject + "\n\n---\n\n" + full_prompt)
 
     # New process group so the timeout path can kill the WHOLE tree (launcher + node grandchildren).
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
