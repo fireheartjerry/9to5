@@ -79,10 +79,12 @@ OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_TIMEOUT_SECONDS: int = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))  # prevent indefinite hangs
 
 # --- Claude Code CLI (Executor hands) ------------------------------------
-# Real coding subtasks (writing a multi-KB module with reasoning, over a large --add-dir repo)
-# routinely need more than 5 min. 300s was killing Claude mid-write -> false "timeout" even though
-# the artifact landed. 900s lets a genuine coding call return cleanly; verify-repair still backstops.
-CLAUDE_CLI_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_CLI_TIMEOUT_SECONDS", "900"))
+# A `claude --print` call is a FULL agent session (explore repo -> reason -> write -> self-verify),
+# not a single completion. Measured: trivial call ~9s, a contained edit ~97s, an exploration-heavy
+# task ~500s true runtime. 300s clipped the heavy tail. 600s covers it with margin. NOTE: the real
+# bug was never this number -- it was that subprocess timeout on Windows left node grandchildren
+# orphaned (work continued + drain blocked ~200s); executor._killProcessTree now kills the tree.
+CLAUDE_CLI_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_CLI_TIMEOUT_SECONDS", "600"))
 
 # --- Local task-state JSON store -----------------------------------------
 STATE_DIR: Path = PROJECT_ROOT / "state" / "tasks"

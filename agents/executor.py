@@ -39,6 +39,25 @@ from memory.obsidian import writeClaudioMd
 LOG = config.getLogger("executor")
 
 
+def _killProcessTree(pid: int) -> None:
+    """Kill a process AND all its descendants.
+
+    The real Windows defect: ``subprocess`` timeout kills only the direct child (the
+    ``cmd.exe`` / ``claude.cmd`` launcher). The ``node.exe`` grandchildren that do the
+    actual agent work survive as orphans -- they leak, keep running (which is why the
+    artifact still lands "after" a timeout), and hold the inherited stdout pipe open so
+    the parent's drain blocks ~200s. ``taskkill /T`` walks the whole tree."""
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)],
+                           capture_output=True, timeout=20)
+        else:  # posix: kill the process group
+            import signal
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("process-tree kill of pid %s failed: %s", pid, e)
+
+
 def _resolveClaudeLauncher() -> list[str]:
     exe = shutil.which("claude")
     if not exe:
@@ -171,22 +190,45 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
     LOG.info("Claude run (cwd=%s effort=%s skills=%s subagent=%s hooks=%s/%s prompt=%dch)",
              work, flag or "default", spec.get("skills_to_invoke"), spec.get("subagent"),
              spec.get("pre_tool_hooks"), spec.get("post_tool_hooks"), len(full_prompt))
+    # New process group so the timeout path can kill the WHOLE tree (launcher + node grandchildren),
+    # not just the direct child -- otherwise orphans leak and block the drain (the real root cause).
+    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     try:
-        proc = subprocess.run(cmd, input=full_prompt, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", cwd=work, timeout=timeout)
-        out = proc.stdout or ""
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                                errors="replace", cwd=work, creationflags=creationflags)
+    except Exception as e:  # noqa: BLE001
+        LOG.error("Claude launch failed: %s", e)
+        return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
+                "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+    try:
+        out, err = proc.communicate(input=full_prompt, timeout=timeout)
+        out = out or ""
         if "block_destructive" in (spec.get("pre_tool_hooks") or []):
             out_hits = scanDestructive(out)
             if out_hits:
                 _alertBlocked(f"block_destructive: executor output shows destructive command(s) {out_hits}")
         return {"ok": proc.returncode == 0, "returncode": proc.returncode,
-                "stdout": out, "stderr": proc.stderr or "",
+                "stdout": out, "stderr": err or "",
                 "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
     except subprocess.TimeoutExpired:
-        LOG.error("Claude timed out after %ss", timeout)
-        return {"ok": False, "returncode": -1, "stdout": "", "stderr": f"TIMEOUT after {timeout}s",
+        # Kill the entire tree so the work actually stops, procs don't leak, and the drain below
+        # returns immediately instead of blocking ~200s on the orphans' inherited stdout pipe.
+        _killProcessTree(proc.pid)
+        try:
+            out, err = proc.communicate(timeout=15)
+        except Exception:  # noqa: BLE001
+            out, err = "", ""
+        LOG.error("Claude timed out after %ss -- process tree killed (captured %d stdout chars)",
+                  timeout, len(out or ""))
+        return {"ok": False, "returncode": -1, "stdout": out or "",
+                "stderr": (err or "") + f"\nTIMEOUT after {timeout}s",
                 "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
     except Exception as e:  # noqa: BLE001
+        try:
+            _killProcessTree(proc.pid)
+        except Exception:  # noqa: BLE001
+            pass
         LOG.error("Claude failed: %s", e)
         return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
                 "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
