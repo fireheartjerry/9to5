@@ -153,20 +153,29 @@ CHECKS = [
 ]
 
 
-def runHealthChecks() -> bool:
+def collectHealth() -> list[dict]:
+    """Run every check and return structured results (used by the bot's /diagnostics)."""
     config.ensureDirs()
-    print(f"\n  9to5 /health  —  {len(CHECKS)} checks\n  " + "=" * 52)
-    all_ok = True
+    results: list[dict] = []
     for name, fn in CHECKS:
         try:
             ok, detail, fix = fn()
         except Exception as e:  # noqa: BLE001
             ok, detail, fix = False, f"check errored: {e}", "see traceback"
-        all_ok = all_ok and ok
-        tag = f"{GREEN}PASS{RST}" if ok else f"{RED}FAIL{RST}"
-        print(f"  [{tag}] {name:30s} {detail}")
-        if not ok and fix:
-            print(f"         {YEL}fix:{RST} {fix}")
+        results.append({"name": name, "ok": bool(ok), "detail": detail, "fix": fix})
+    return results
+
+
+def runHealthChecks() -> bool:
+    checks = collectHealth()
+    print(f"\n  9to5 /health  —  {len(checks)} checks\n  " + "=" * 52)
+    all_ok = True
+    for c in checks:
+        all_ok = all_ok and c["ok"]
+        tag = f"{GREEN}PASS{RST}" if c["ok"] else f"{RED}FAIL{RST}"
+        print(f"  [{tag}] {c['name']:30s} {c['detail']}")
+        if not c["ok"] and c["fix"]:
+            print(f"         {YEL}fix:{RST} {c['fix']}")
     print("  " + "=" * 52)
     print(f"  {'ALL SYSTEMS GO' if all_ok else 'NOT READY — see fixes above'}\n")
     return all_ok
