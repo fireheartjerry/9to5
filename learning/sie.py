@@ -189,8 +189,14 @@ def _weekly_steps(db_path: Optional[Path]):
         from learning import finetune
         return finetune.run_finetune_cycle(db_path=db_path)
 
+    def dpo_distillation():
+        # Preference-optimization cycle (learn what NOT to do); same skip-clean contract.
+        from learning import finetune
+        return finetune.run_dpo_cycle(db_path=db_path)
+
     return [("prompt_promotion", prompt_promotion),
-            ("lora_distillation", lora_distillation)]
+            ("lora_distillation", lora_distillation),
+            ("dpo_distillation", dpo_distillation)]
 
 
 def run_maintenance_async(**kwargs) -> None:

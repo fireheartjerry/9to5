@@ -96,6 +96,42 @@ def run_finetune_cycle(*, trainer: Optional[Trainer] = None,
         return {"skipped": "error", "error": str(e)}
 
 
+def run_dpo_cycle(*, trainer: Optional[Callable[[str, str, float], str]] = None,
+                  ollama_runner: Optional[OllamaRunner] = None,
+                  out_dir: Optional[Path] = None, min_pairs: Optional[int] = None,
+                  suite: Optional[list[dict[str, Any]]] = None,
+                  db_path: Optional[Path] = None) -> dict[str, Any]:
+    """One automatic DPO cycle: build preference pairs -> (if enough) train a DPO LoRA with
+    a KL anchor -> build the Ollama model -> register a CHALLENGER. The DPO trainer seam
+    takes ``(pairs_path, out_dir, kl_beta)``. Best-effort; never promotes here."""
+    if config.SIE_KILL_SWITCH:
+        return {"skipped": "kill_switch"}
+    from learning import preferences
+    out_dir = Path(out_dir or config.LORA_OUTPUT_DIR)
+    ds = preferences.build(db_path=db_path, out_path=out_dir / "preferences.jsonl", suite=suite)
+    n = ds["pairs"]
+    need = config.DPO_MIN_PAIRS if min_pairs is None else min_pairs
+    if n < need:
+        return {"skipped": "not_enough", "pairs": n, "need": need}
+    if trainer is None:
+        return {"skipped": "no_trainer", "pairs": n}
+    try:
+        lora_path = trainer(ds["path"], str(out_dir), config.DPO_KL_BETA)
+        ver = _next_version(db_path)
+        tag = f"{config.BRAIN_MODEL_TAG}:dpo-v{ver}"
+        mf = write_modelfile(out_dir / f"Modelfile.dpo-v{ver}", config.OLLAMA_MODEL, lora_path)
+        if ollama_runner is not None:
+            ollama_runner(tag, str(mf))
+        aid = experience.register_adapter(
+            base_model=config.OLLAMA_MODEL, tag=tag, lora_path=lora_path,
+            modelfile_path=str(mf), n_train_examples=n, state="challenger", db_path=db_path)
+        LOG.info("trained DPO adapter %s (%d pairs, beta=%.3f)", tag, n, config.DPO_KL_BETA)
+        return {"status": "trained", "tag": tag, "adapter_id": aid, "pairs": n}
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("dpo cycle failed (ignored): %s", e)
+        return {"skipped": "error", "error": str(e)}
+
+
 def consider_promotion(adapter_id: int, *, challenger_fitness: float, champion_fitness: float,
                        replay_ok: bool = True, db_path: Optional[Path] = None) -> dict[str, Any]:
     """Gate an adapter through the harness result + replay set (invariant I4: never promote

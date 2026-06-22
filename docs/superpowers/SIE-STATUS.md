@@ -13,7 +13,7 @@ implemented with the external call seam mocked and offline-testable logic real.
 | **C — Consolidation + Policy** | ledger-rebuilt lessons (`learning/lessons.py`) + Thompson bandit (`learning/policy.py`), policy hint injection, fitness sparkline panel | ✅ done |
 | **D — Prompt Evolution** | versioned registry (`learning/prompts.py`, byte-identical) + champion/challenger gate (`learning/promotion.py`), auto-runs in weekly tier | ✅ done |
 | **E — LoRA Distillation (SFT)** | data-quality gate (`learning/dataset.py`) + gold builder (`learning/distill.py`) + local LoRA + adapter registry/rollback (`learning/finetune.py`), auto-runs in weekly tier | ✅ done |
-| F — Reward + DPO | composite reward + preference pairs | ⬜ |
+| **F — Reward + DPO** | composite reward + logistic calibrator (`learning/reward.py`) + preference pairs (`learning/preferences.py`) + DPO LoRA cycle, auto-runs in weekly tier | ✅ done |
 | G — Rollout + Counterfactual | offline replay + shadow/canary + per-role adapters | ⬜ |
 | H — Curriculum + Releases | self-play goals + model cards + attribution | ⬜ |
 | NW1–NW7 — Next wave (J–R) | human feedback, confidence, post-mortems, multi-teacher, KG, solution cache, research track | ⬜ |
@@ -103,3 +103,15 @@ implemented with the external call seam mocked and offline-testable logic real.
 - `learning/sie.py`: weekly tier now also runs the LoRA cycle automatically.
 - `config.py`: `LORA_MIN_EXAMPLES` (50), `LORA_OUTPUT_DIR`; gitignored runtime artifacts.
 - Tests: `tests/test_dataset_gate.py` (8), `tests/test_finetune.py` (10). Suite 286/286.
+
+## Phase F — Reward modeling + preference optimization (DPO)
+- `learning/reward.py`: `signals` feature vector, `composite_reward` (weights gold by
+  cleanliness of the win), and a pure-stdlib logistic `Calibrator` (gradient descent)
+  anchoring reward to eventual success — the guard against reward hacking.
+- `learning/preferences.py`: `build_pairs` from passing-vs-failing specs matched by
+  family (chosen/rejected), scrubbed + decontaminated + deduped, per-family capped.
+- `learning/finetune.py`: `run_dpo_cycle` (DPO trainer seam `(pairs, out, kl_beta)`,
+  KL anchor; registers a `dpo-vN` challenger; skips clean without data/GPU).
+- `learning/sie.py`: weekly tier now also runs the DPO cycle automatically.
+- `config.py`: `DPO_KL_BETA` (0.1), `DPO_MIN_PAIRS` (30).
+- Tests: `tests/test_reward.py` (6), `tests/test_preferences.py` (5). Suite 297/297 green.

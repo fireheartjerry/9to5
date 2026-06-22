@@ -192,6 +192,9 @@ BRAIN_MODEL_TAG: str = os.getenv("BRAIN_MODEL_TAG", "9to5-brain")
 LORA_MIN_EXAMPLES: int = int(os.getenv("LORA_MIN_EXAMPLES", "50"))
 LORA_OUTPUT_DIR: Path = _envPath("LORA_OUTPUT_DIR", str(PROJECT_ROOT / "state" / "adapters")) \
     or (PROJECT_ROOT / "state" / "adapters")
+# DPO/ORPO preference training: KL anchor strength + minimum preference pairs to train.
+DPO_KL_BETA: float = float(os.getenv("DPO_KL_BETA", "0.1"))
+DPO_MIN_PAIRS: int = int(os.getenv("DPO_MIN_PAIRS", "30"))
 
 # --- Adversary trigger configuration -------------------------------------
 ADVERSARY_TRIGGER_PHRASES: tuple[str, ...] = (
