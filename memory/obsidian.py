@@ -22,6 +22,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 LOG = config.getLogger("obsidian")
 
+_APPEND_LOCK = __import__("threading").Lock()  # serialize appendNote read-modify-write
+
 
 def writeClaudioMd(task_state, subtask: Optional[dict], additional_context: str = "",
                    work_dir: Optional[str] = None) -> Path:
@@ -126,8 +128,11 @@ class ObsidianClient:
         return None
 
     def appendNote(self, rel_path: str, content: str) -> dict:
-        existing = self.readNote(rel_path) or ""
-        return self.writeNote(rel_path, existing + content)
+        # serialize read-modify-write so concurrent appends (e.g. replan-log from parallel workers,
+        # or the write_obsidian hook process) don't lose each other's updates.
+        with _APPEND_LOCK:
+            existing = self.readNote(rel_path) or ""
+            return self.writeNote(rel_path, existing + content)
 
     def health(self) -> dict:
         """Probe REST reachability and whether our key authenticates."""

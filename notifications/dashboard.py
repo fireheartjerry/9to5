@@ -8,6 +8,7 @@ Degrades to a silent no-op when Discord is unconfigured.
 """
 from __future__ import annotations
 
+import threading
 from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
@@ -32,9 +33,15 @@ class DiscordDashboard:
         self.events: deque[str] = deque(maxlen=8)
         self.effort: str = "default"
         self.model: str = config.PRIMARY_MODEL
+        self._lock = threading.Lock()   # guards mutable state under parallel workers
 
     def event(self, text: str) -> None:
-        self.events.append(f"`{datetime.now().strftime('%H:%M:%S')}` {text}")
+        with self._lock:
+            self.events.append(f"`{datetime.now().strftime('%H:%M:%S')}` {text}")
+
+    def _eventsSnapshot(self) -> list:
+        with self._lock:
+            return list(self.events)
 
     @staticmethod
     def _elapsed(started_at) -> str:
@@ -102,7 +109,7 @@ class DiscordDashboard:
                 {"name": "Effort", "value": discord.effortBar(self.effort), "inline": False},
                 {"name": "Current subtask", "value": cur_txt[:1000], "inline": False},
                 {"name": "Last verify", "value": verify_txt, "inline": False},
-                {"name": "Recent events", "value": ("\n".join(self.events) or "—")[:1000], "inline": False},
+                {"name": "Recent events", "value": ("\n".join(self._eventsSnapshot()) or "—")[:1000], "inline": False},
             ],
             "footer": {"text": f"task {state.task_id[:8]} · web :{config.WEB_DASHBOARD_PORT} · !status !abort !pause"},
         }
@@ -121,10 +128,11 @@ class DiscordDashboard:
                effort: Optional[str] = None, model: Optional[str] = None) -> None:
         if not config.DISCORD_DASHBOARD:
             return
-        if effort:
-            self.effort = effort
-        if model:
-            self.model = model
+        with self._lock:
+            if effort:
+                self.effort = effort
+            if model:
+                self.model = model
         if note:
             self.event(note)
         embed = self._embed(state, phase)

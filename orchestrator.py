@@ -15,7 +15,7 @@ import os
 import subprocess
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import ollama
 
@@ -90,6 +90,7 @@ class Orchestrator:
         self.ollama = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
         self.obs = ObsidianClient()
         self._state_lock = threading.Lock()
+        self._selfref_prompt_cache: dict = {}   # task_id -> self-ref system-prompt prefix (built once)
 
     # ===================================================================
     # Brain steps (Ollama authors plan + per-subtask invocation specs)
@@ -250,6 +251,30 @@ class Orchestrator:
             "post_tool_hooks": [h for h in post if h in config.AVAILABLE_POST_HOOKS],
         }
 
+    def _selfRefSystemPrompt(self, state: TaskState) -> str:
+        """Cached self-ref system prompt (philosophy + TRIMMED universe + constitution), built once
+        per task instead of rebuilt + str()-dumped on every subtask/retry (7B context pressure)."""
+        cached = self._selfref_prompt_cache.get(state.task_id)
+        if cached:
+            return cached
+        uni = state.meta.get("universe") or {}
+
+        def _trim(lst, n=10):
+            items = [str(x) for x in (lst or [])]
+            shown = ", ".join(items[:n]) + (f" (+{len(items) - n} more)" if len(items) > n else "")
+            return shown or "(none)"
+
+        prompt = (
+            config.SELF_IMPROVEMENT_PHILOSOPHY
+            + "\n\nOPERATING UNIVERSE -- allowed: " + _trim(uni.get("allowed_paths"))
+            + "; may expand to: " + _trim(uni.get("allowed_to_expand_to"))
+            + "; NEVER touch (hard boundaries): " + _trim(uni.get("hard_boundaries"))
+            + ". Operate with full intensity INSIDE this universe; never step outside it.\n\n"
+            + ORCHESTRATOR_CONSTITUTION
+        )
+        self._selfref_prompt_cache[state.task_id] = prompt
+        return prompt
+
     def authorInvocationSpec(self, state: TaskState, subtask: dict, architect_doc: str,
                              failure_feedback: str | None = None) -> dict:
         """Ollama authors the JSON invocation spec for ONE subtask (the brain's core act)."""
@@ -265,16 +290,8 @@ class Orchestrator:
         if failure_feedback:
             user += f"PREVIOUS ATTEMPT FAILED THE VERIFICATION:\n{failure_feedback[:1200]}\n\n"
         user += "Output ONLY the JSON invocation spec for THIS subtask."
-        system_prompt = ORCHESTRATOR_CONSTITUTION
-        if state.meta.get("is_self_referential"):
-            uni = state.meta.get("universe") or {}
-            system_prompt = (
-                config.SELF_IMPROVEMENT_PHILOSOPHY + "\n\nOPERATING UNIVERSE -- allowed: "
-                + str(uni.get("allowed_paths")) + "; may expand to: " + str(uni.get("allowed_to_expand_to"))
-                + "; NEVER touch (hard boundaries): " + str(uni.get("hard_boundaries"))
-                + ". Operate with full intensity INSIDE this universe; never step outside it.\n\n"
-                + ORCHESTRATOR_CONSTITUTION
-            )
+        system_prompt = self._selfRefSystemPrompt(state) if state.meta.get("is_self_referential") \
+            else ORCHESTRATOR_CONSTITUTION
         resp = self._ollamaChat(system_prompt, user, want_json=True)
         try:
             spec = json.loads(resp["message"]["content"]) if resp else {}
@@ -650,12 +667,15 @@ class Orchestrator:
                     futures[pool.submit(self._executeSubtask, state, st, architect_doc,
                                         work_dir, bus, dashboard, position, ctx)] = st
                 abort = None
-                for f in futures:
+                for f in as_completed(futures):
                     st = futures[f]
                     try:
                         f.result()
                     except AbortRun as e:
                         abort = e
+                        for pending in futures:   # stop scheduling the rest of the batch promptly
+                            pending.cancel()
+                        break
                     except Exception as e:  # noqa: BLE001 -- a crashed worker must not strand the subtask
                         LOG.error("parallel subtask %s crashed: %s", st.get("subtask_id"), e, exc_info=True)
                         with self._state_lock:
