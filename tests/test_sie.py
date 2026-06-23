@@ -21,6 +21,9 @@ class TestSieMaintenance(unittest.TestCase):
         # the verify runner doesn't spawn real subprocesses during the unit test.
         mock.patch.object(retrieval, "_embed_call", return_value=None).start()
         mock.patch.object(config, "EVAL_SUITE_DIR", self.dir / "nosuite").start()
+        # Never let the auto-runner spawn real self-play runs or shell out during unit tests.
+        mock.patch.object(config, "SELFPLAY_ENABLED", False).start()
+        mock.patch.object(config, "SIE_BOOTSTRAP", False).start()
         retrieval.reset_embed_cache()
 
     def tearDown(self):
@@ -44,7 +47,8 @@ class TestSieMaintenance(unittest.TestCase):
         self.assertEqual(set(out["steps"]),
                          {"embeddings", "consolidate", "policy_rebuild", "mine", "evaluate",
                           "prompt_promotion", "lora_distillation", "dpo_distillation",
-                          "adapter_promotion", "curriculum_and_report"})
+                          "adapter_promotion", "meta_optimize", "self_play",
+                          "curriculum_and_report"})
         self.assertTrue(sie._state_path().exists())
         self.assertEqual(out["steps"]["evaluate"]["status"], "scored")  # real fitness, not a marker
 

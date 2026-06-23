@@ -10,6 +10,9 @@ from memory import experience
 
 
 class TestEvalRunner(unittest.TestCase):
+    def setUp(self):
+        eval_runner.clear()   # an Orchestrator built by another test may have registered one
+
     def tearDown(self):
         eval_runner.clear()
         mock.patch.stopall()
@@ -54,6 +57,7 @@ class TestAdapterPromotion(unittest.TestCase):
     def setUp(self):
         self.dir = Path(tempfile.mkdtemp())
         self.db = self.dir / "experience.db"
+        eval_runner.clear()   # isolate from any orchestrator-registered evaluator
         mock.patch.object(config, "SIE_KILL_SWITCH", False).start()
         mock.patch.object(config, "OLLAMA_MODEL", "qwen2.5-coder:7b").start()
 

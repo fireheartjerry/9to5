@@ -177,3 +177,22 @@ Closed every "built but not wired" gap so the engine self-integrates end-to-end:
 
 **The engine is now fully autonomous and self-integrating: the user only starts / aborts /
 checks; on a GPU host it also trains and promotes model adapters by itself.**
+
+## Theoretical-maximum automation (only start / abort / status)
+Closed the last human touchpoints so no other action is ever needed:
+- **Zero-touch setup** (`learning/bootstrap.py`): auto-installs the training stack on a GPU
+  host and `ollama pull`s the embedder + base model — no manual `pip`/`ollama` ever.
+- **Autonomous self-play** (`learning/selfplay.py`): the system *executes* its own
+  curriculum goals (not just suggests them) when idle + in the work window, bounded by a
+  daily cap. Launches via the existing work launcher.
+- **Auto adapter promotion is live**: the orchestrator registers a per-tag fitness
+  evaluator (`_fitnessUnderTag`/`_evalGoal` + a brain-tag override in `_ollamaChat`), so
+  trained adapters are A/B'd and promoted automatically.
+- **Meta-optimization auto-applies** (`meta_opt.apply`): tunes its own knobs within safe
+  bounds, persisted across restarts via `config.set_override` + `_load_overrides`.
+- Config: `SELFPLAY_*`, `SIE_BOOTSTRAP`, `SIE_META_AUTOAPPLY`, `SIE_TUNABLE_KNOBS`.
+- Tests: `tests/test_full_autonomy.py` (10), `tests/test_compute.py`, `tests/test_eval_runner.py`.
+
+**Single deliberate exception (safety):** `toolsmith` *analyzes* which skills to add/prune
+but does not auto-author new `.claude` executor tools (that would expand the hands' powers);
+it stays advisory behind the eval gate. Everything else runs itself.

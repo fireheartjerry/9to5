@@ -204,6 +204,54 @@ SIE_COMPUTE: str = os.getenv("SIE_COMPUTE", "auto")
 # LoRA hyperparameters (used by the real local trainer on a GPU host).
 LORA_RANK: int = int(os.getenv("LORA_RANK", "16"))
 LORA_EPOCHS: int = int(os.getenv("LORA_EPOCHS", "2"))
+# Autonomous self-play: practice self-generated goals during the work window (hands-off).
+SELFPLAY_ENABLED: bool = _envBool("SELFPLAY_ENABLED", True)
+SELFPLAY_MAX_PER_DAY: int = int(os.getenv("SELFPLAY_MAX_PER_DAY", "3"))
+SELFPLAY_HOURS: float = float(os.getenv("SELFPLAY_HOURS", "1"))
+SELFPLAY_START_HOUR: int = int(os.getenv("SELFPLAY_START_HOUR", "9"))
+SELFPLAY_END_HOUR: int = int(os.getenv("SELFPLAY_END_HOUR", "17"))
+# Auto-bootstrap the training stack + Ollama models (so the user only presses start).
+SIE_BOOTSTRAP: bool = _envBool("SIE_BOOTSTRAP", True)
+# Meta-optimization may auto-apply tuning to these knobs (persisted across restarts).
+SIE_META_AUTOAPPLY: bool = _envBool("SIE_META_AUTOAPPLY", True)
+SIE_TUNABLE_KNOBS: tuple[str, ...] = (
+    "MAX_SUBTASK_ATTEMPTS", "RETRIEVAL_K", "ADVERSARY_HEARTBEAT_EVERY",
+    "PROMPT_PROMOTE_MIN_USES", "CONFIDENCE_DEFER_THRESHOLD",
+)
+SIE_OVERRIDES_PATH: Path = PROJECT_ROOT / "state" / "sie_overrides.json"
+
+
+def set_override(knob: str, value) -> bool:
+    """Persist + live-apply a meta-optimizer knob change (whitelisted knobs only)."""
+    if knob not in SIE_TUNABLE_KNOBS:
+        return False
+    import json as _json
+    globals()[knob] = value
+    try:
+        data = {}
+        if SIE_OVERRIDES_PATH.exists():
+            data = _json.loads(SIE_OVERRIDES_PATH.read_text(encoding="utf-8"))
+        data[knob] = value
+        SIE_OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SIE_OVERRIDES_PATH.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _load_overrides() -> None:
+    """Apply persisted meta-optimizer knob overrides at import (survives restarts)."""
+    try:
+        import json as _json
+        data = _json.loads(SIE_OVERRIDES_PATH.read_text(encoding="utf-8"))
+        for k, v in data.items():
+            if k in SIE_TUNABLE_KNOBS:
+                globals()[k] = v
+    except Exception:  # noqa: BLE001 -- absent/corrupt -> stock defaults
+        pass
+
+
+_load_overrides()
 
 # --- Adversary trigger configuration -------------------------------------
 ADVERSARY_TRIGGER_PHRASES: tuple[str, ...] = (

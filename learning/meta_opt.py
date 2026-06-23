@@ -38,3 +38,25 @@ def suggest(*, db_path: Optional[Path] = None) -> list[dict[str, Any]]:
             "knob": "RETRIEVAL_K", "current": config.RETRIEVAL_K, "suggested": config.RETRIEVAL_K + 2,
             "reason": f"{n_emb} embedded successes available — retrieve more context"})
     return suggestions
+
+
+# Safe bounds so auto-apply can never push a knob somewhere harmful.
+_BOUNDS = {"MAX_SUBTASK_ATTEMPTS": (1, 5), "RETRIEVAL_K": (1, 12),
+           "ADVERSARY_HEARTBEAT_EVERY": (1, 10), "PROMPT_PROMOTE_MIN_USES": (5, 100),
+           "CONFIDENCE_DEFER_THRESHOLD": (0.1, 0.8)}
+
+
+def apply(*, db_path: Optional[Path] = None) -> dict[str, Any]:
+    """Auto-apply suggestions within safe bounds (hands-off). Persisted across restarts."""
+    if not config.SIE_META_AUTOAPPLY:
+        return {"skipped": "disabled"}
+    applied = []
+    for s in suggest(db_path=db_path):
+        knob, val = s["knob"], s["suggested"]
+        lo, hi = _BOUNDS.get(knob, (None, None))
+        if lo is not None and not (lo <= val <= hi):
+            continue
+        if config.set_override(knob, val):
+            applied.append({"knob": knob, "value": val, "reason": s["reason"]})
+            LOG.info("meta-opt auto-applied %s=%s (%s)", knob, val, s["reason"])
+    return {"applied": applied}

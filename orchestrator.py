@@ -304,6 +304,47 @@ class Orchestrator:
         self._review = review or adversary.review
         self._state_lock = threading.Lock()
         self._selfref_prompt_cache: dict = {}   # task_id -> self-ref system-prompt prefix (built once)
+        self._brain_tag_override: str | None = None   # force a model tag (adapter A/B eval)
+        # SIE: register a per-adapter fitness evaluator so adapter promotion is autonomous.
+        # The brain authors a spec for each golden goal under the candidate tag; the held-out
+        # verify scores it. Best-effort registration; skips cleanly if the brain is offline.
+        try:
+            from learning import eval_runner
+            eval_runner.register(fitness_under_tag=self._fitnessUnderTag)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _fitnessUnderTag(self, tag: str) -> float:
+        """Run the golden eval suite with the brain forced to ``tag`` and return fitness.
+        Used by automatic adapter promotion to A/B a challenger vs the champion."""
+        from learning import eval_harness
+        prev = self._brain_tag_override
+        self._brain_tag_override = None if tag == config.OLLAMA_MODEL else tag
+        try:
+            out = eval_harness.run_suite(runner=self._evalGoal, record=False)
+            return float(out.get("fitness", 0.0))
+        finally:
+            self._brain_tag_override = prev
+
+    def _evalGoal(self, goal: dict) -> dict:
+        """Execute ONE golden goal as a bounded single subtask (brain authors under the
+        current tag -> Claude runs -> held-out verify scores it). Used by the live eval
+        runner and per-adapter fitness."""
+        verify = goal.get("verify") or {}
+        subtask = {"subtask_id": "eval", "title": goal.get("goal", "")[:80],
+                   "description": goal.get("goal", ""), "verify": verify,
+                   "effort_level": goal.get("effort_level", "default")}
+        try:
+            state = TaskState.create(goal.get("goal", ""), 1.0)
+            state.meta["goal_elaborated"] = goal.get("goal", "")
+            spec = self.authorInvocationSpec(state, subtask, "")
+            result = self._run_claude(spec, work_dir=str(config.PROJECT_ROOT))
+            vres = verifier.runVerification(
+                verify, str(config.PROJECT_ROOT), result if isinstance(result, dict) else {})
+            return {"passed": bool(vres.get("passed")), "attempts": 1,
+                    "challenged": not bool(vres.get("passed"))}
+        except Exception:  # noqa: BLE001
+            return {"passed": False, "attempts": 1, "challenged": True}
 
     # ===================================================================
     # Brain steps (Ollama authors plan + per-subtask invocation specs)
@@ -316,11 +357,11 @@ class Orchestrator:
         Qwen reasons from the current Claude Code feature set on every single brain call."""
         system = injectCapabilities(system)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        # SIE Layer 5/G: route to the champion adapter tag if one is promoted, else the
-        # frozen base. Best-effort -- any error falls back to OLLAMA_MODEL.
+        # SIE Layer 5/G: route to a forced tag (adapter A/B eval), else the champion
+        # adapter, else the frozen base. Best-effort -- any error falls back to OLLAMA_MODEL.
         try:
             from learning import finetune
-            model = finetune.active_brain_tag()
+            model = getattr(self, "_brain_tag_override", None) or finetune.active_brain_tag()
         except Exception:  # noqa: BLE001
             model = config.OLLAMA_MODEL
         delay = 2.0

@@ -108,6 +108,14 @@ def run_maintenance(*, reason: str = "post-run", force: bool = False,
     summary: dict[str, Any] = {"reason": reason, "ran_at": datetime.now().astimezone().isoformat(timespec="seconds")}
     try:
         experience.init(db_path)
+        # Zero-touch setup so the user only ever presses start: provision the training
+        # stack + Ollama models once (best-effort, gated, no-op when already present).
+        if config.SIE_BOOTSTRAP:
+            try:
+                from learning import bootstrap
+                summary["bootstrap"] = bootstrap.ensure_all()
+            except Exception as e:  # noqa: BLE001
+                LOG.debug("bootstrap failed (ignored): %s", e)
         summary["steps"] = {}
         steps = list(_maintenance_steps(db_path))
         # The weekly tier (prompt/policy promotion) rides on the same pass but only when
@@ -210,6 +218,24 @@ def _weekly_steps(db_path: Optional[Path]):
         from learning import adapter_promotion as ap
         return ap.run(db_path=db_path)
 
+    def meta_optimize():
+        # Auto-tune the engine's own knobs within safe bounds (persisted across restarts).
+        from learning import meta_opt
+        return meta_opt.apply(db_path=db_path)
+
+    def self_play():
+        # Actually PRACTICE the weakest families: launch a self-generated goal as a normal
+        # run when idle + in the work window + under the daily cap. Fully hands-off.
+        from learning import selfplay
+        from notifications import work_launcher
+
+        def launch(goal: str, hours: float):
+            return work_launcher.spawn(work_launcher.WorkRequest(goal=goal, hours=hours))
+
+        return selfplay.run(launch_fn=launch,
+                            is_busy=lambda: work_launcher.activeRun() is not None,
+                            db_path=db_path)
+
     def curriculum_and_report():
         # Author practice goals for the weakest families + write the "what did I learn"
         # report. Both best-effort and human-facing -- the system narrates its own progress.
@@ -223,6 +249,8 @@ def _weekly_steps(db_path: Optional[Path]):
             ("lora_distillation", lora_distillation),
             ("dpo_distillation", dpo_distillation),
             ("adapter_promotion", adapter_promotion),
+            ("meta_optimize", meta_optimize),
+            ("self_play", self_play),
             ("curriculum_and_report", curriculum_and_report)]
 
 
