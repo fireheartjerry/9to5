@@ -312,6 +312,10 @@ VERIFY_TIMEOUT_SECONDS: int = 120
 
 # --- Run control + live dashboards ---------------------------------------
 CONTROL_MODE_DEFAULT: str = "watch"   # "watch" (autonomous + abort) | "gated" (approval gates)
+# Plans AUTO-APPROVE through Ollama -- a human never approves plans. In gated mode the plan gate
+# waits this many seconds for an optional human !abort/!reject/!skip/!add, then the brain approves
+# and the run proceeds autonomously. (watch mode has no plan gate at all.)
+PLAN_GATE_AUTO_APPROVE_SECONDS: float = float(os.getenv("PLAN_GATE_AUTO_APPROVE_SECONDS", "8"))
 DISCORD_POLL_SECONDS: int = 4         # poll the channel for control commands between steps
 DISCORD_DASHBOARD: bool = True        # one self-updating embed per run
 WEB_DASHBOARD: bool = True
