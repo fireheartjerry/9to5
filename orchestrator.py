@@ -37,6 +37,11 @@ from state.task import TaskState, nowIso
 
 LOG = config.getLogger("orchestrator")
 
+# A CONCRETE example verify path handed to the brain so it never copies a literal "<ABSOLUTE
+# path>" placeholder (which cmd.exe parses as redirection -> spurious verify failures). See
+# verifier.sanitizeVerify, which now rejects any cmd containing angle brackets.
+_VERIFY_EXAMPLE_PATH: str = str(config.PROJECT_ROOT / "tests" / "test_example.py")
+
 # ============================================================================
 # Living Claude Code knowledge -- injected into EVERY Ollama system prompt. The
 # compressed summary is cached in knowledge.py (shared by the orchestrator brain
@@ -284,14 +289,29 @@ def _resultText(result, key: str = "stdout") -> str:
 
 
 def _chatJson(resp):
-    """Safely parse the JSON body of a chat response. None on ANY shape/parse problem."""
+    """Safely parse the JSON body of a chat response. None on ANY shape/parse problem.
+
+    Salvages the two ways a 7B model commonly breaks strict JSON: wrapping it in a ```json
+    fence, and emitting prose around the object. We strip a fence, then fall back to extracting
+    the first balanced {...} -- so a recoverable response no longer collapses to the degenerate
+    single-subtask plan fallback."""
+    import re as _re
     text = _chatText(resp).strip()
     if not text:
         return None
+    if text.startswith("```"):
+        text = _re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=_re.IGNORECASE).strip()
     try:
         return json.loads(text)
     except Exception:  # noqa: BLE001
-        return None
+        pass
+    m = _re.search(r"\{.*\}", text, _re.DOTALL)   # salvage: first balanced-looking JSON object
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
 
 
 class Orchestrator:
@@ -519,14 +539,17 @@ class Orchestrator:
             "1-4 subtasks total. Every subtask MUST include a verify block.\n"
             "VERIFY RULES (a bad verify fails correct work -- follow EXACTLY):\n"
             "- Check OBSERVABLE BEHAVIOR only, never implementation details.\n"
-            "- Use EXACTLY ONE of these shapes, always with ABSOLUTE file paths under "
-            + str(config.PROJECT_ROOT) + ":\n"
-            "  (a) cmd = python <ABSOLUTE path> ; expect = exit_zero            (the program runs cleanly)\n"
-            "  (b) cmd = python <ABSOLUTE path> ; expect = stdout_contains:<a short string you are CERTAIN it prints>\n"
-            '  (c) cmd = python -c "import os; assert os.path.getsize(r\'<ABSOLUTE path>\')>0" ; expect = exit_zero   (file exists, non-empty)\n'
-            "  (d) FOR A MULTI-REQUIREMENT SUBTASK: expect = stdout_contains_all:<tok1>||<tok2>||<tok3>  (every "
+            "- Use EXACTLY ONE of these shapes. Substitute a REAL, EXISTING absolute path (resolve it "
+            "yourself under " + str(config.PROJECT_ROOT) + "); e.g. " + _VERIFY_EXAMPLE_PATH + ".\n"
+            "  CRITICAL: NEVER emit angle brackets or the words 'ABSOLUTE path'. A cmd containing '<' or "
+            "'>' is REJECTED (it breaks the shell) and your verify is discarded. On Windows never use a "
+            ".sh/bash verify.\n"
+            "  (a) cmd = python " + _VERIFY_EXAMPLE_PATH + " ; expect = exit_zero            (the program runs cleanly)\n"
+            "  (b) cmd = python " + _VERIFY_EXAMPLE_PATH + " ; expect = stdout_contains:<a short string you are CERTAIN it prints>\n"
+            '  (c) cmd = python -c "import os; assert os.path.getsize(r\'' + _VERIFY_EXAMPLE_PATH + '\')>0" ; expect = exit_zero   (file exists, non-empty)\n'
+            "  (d) FOR A MULTI-REQUIREMENT SUBTASK: expect = stdout_contains_all:tok1||tok2||tok3  (every "
             "token must appear) -- pair with a cmd that prints the artifact, e.g. "
-            "python -c \"import io;print(io.open(r'<ABSOLUTE path>',encoding='utf-8').read())\".\n"
+            "python -c \"import io;print(io.open(r'" + _VERIFY_EXAMPLE_PATH + "',encoding='utf-8').read())\".\n"
             "- NEVER import a project module or reference an internal function/class/constant name -- a "
             "guessed symbol WILL fail. NEVER use grep/cat/test/ls/findstr/type."
         )
@@ -539,8 +562,32 @@ class Orchestrator:
         # that isn't a dict-with-content is dropped so every downstream consumer is safe.
         subs = [s for s in raw if isinstance(s, dict)] if isinstance(raw, list) else []
         if not subs:
-            subs = [{"title": "Implement the goal", "description": goal_elaborated, "layer": 3,
-                     "verify": None, "effort_level": "high"}]
+            # The planner JSON was unparseable/empty. This is NOT a normal 1-subtask plan -- alert
+            # (it silently degraded every downstream spec before) and, for an enumerated
+            # multi-deliverable goal, DECOMPOSE per requirement instead of collapsing the whole
+            # 8-hour goal into one unverified "Implement the goal" mega-subtask.
+            LOG.error("planner produced no usable subtasks (JSON unparseable/empty) -> fallback plan")
+            try:
+                discord.sendEmbed(discord.blockedEmbed(
+                    "Planner JSON unparseable/empty — using a decomposed fallback plan"))
+            except Exception:  # noqa: BLE001
+                pass
+            reqs = verifier.extractRequirements(goal_elaborated)
+            if len(reqs) >= 2:
+                target_rel = verifier.primaryTargetFile(goal_elaborated)
+                target_abs = str((config.PROJECT_ROOT / target_rel).resolve()) if target_rel else None
+                subs = []
+                for i, req in enumerate(reqs, 1):
+                    v = None
+                    markers = verifier.requirementMarkers(req)
+                    if target_abs and markers:
+                        v = verifier.buildContentScanVerify([markers], target_abs)
+                    subs.append({"title": f"Deliverable {i}: {req[:60]}", "description": req,
+                                 "layer": 3, "verify": v, "effort_level": "high"})
+                LOG.info("fallback plan: decomposed goal into %d per-requirement subtasks", len(subs))
+            else:
+                subs = [{"title": "Implement the goal", "description": goal_elaborated, "layer": 3,
+                         "verify": None, "effort_level": "high"}]
         return subs
 
     def critiqueSubtaskPlan(self, goal_elaborated: str, subs: list[dict]) -> list[dict]:
@@ -929,14 +976,28 @@ class Orchestrator:
             LOG.warning("pre-PR adversary review failed (%s); approving", e)
             return {"verdict": "approved", "concerns": [], "stub": True}
 
-    @staticmethod
-    def _prGate(review: dict, auto_pr: bool) -> "tuple[bool, str]":
+    def _runIsDegraded(self, state: TaskState) -> bool:
+        """A run is degraded if its self-mod gate reverted core changes, or fewer than half its
+        subtasks passed. Such a run must never auto-ship -- not even in night mode."""
+        notes = state.data.get("notifications", []) if isinstance(state.data, dict) else []
+        if any(isinstance(n, dict) and n.get("kind") == "selfmod_gate"
+               and "REVERTED" in str(n.get("detail", "")) for n in notes):
+            return True
+        done, total = state.progress()
+        return total > 0 and done * 2 < total
+
+    def _prGate(self, review: dict, auto_pr: bool, state: TaskState) -> "tuple[bool, str]":
         """Decide whether to create the PR. Returns (create, skip_reason)."""
         if not auto_pr:
             return False, "--no-pr"
-        if config.ADVERSARY_PR_HOLD_ENABLED and not config.NIGHT_MODE and review.get("verdict") == "challenged":
-            concerns = "; ".join(review.get("concerns") or ["challenged"])
-            return False, f"adversary HOLD: {concerns}"[:300]
+        if config.ADVERSARY_PR_HOLD_ENABLED and review.get("verdict") == "challenged":
+            # Night mode normally suppresses the hold (hands-off operation), but a DEGRADED run
+            # (core changes reverted, or most subtasks failed) must still be held -- night mode
+            # should silence pings, not ship a broken branch unreviewed.
+            if not config.NIGHT_MODE or self._runIsDegraded(state):
+                concerns = "; ".join(review.get("concerns") or ["challenged"])
+                tag = "adversary HOLD" + (" (degraded run)" if config.NIGHT_MODE else "")
+                return False, f"{tag}: {concerns}"[:300]
         return True, ""
 
     # ===================================================================
@@ -1123,10 +1184,15 @@ class Orchestrator:
             except Exception:  # noqa: BLE001 -- learning never affects the run
                 pass
 
-            # Replan ONLY after a subtask that PASSED. Replanning after failures is the
-            # churn engine (fail -> add remediation -> fail -> add ...) that livelocks runs;
-            # the executor already retries failed subtasks up to MAX_SUBTASK_ATTEMPTS.
-            if final == "done" and not self._singleDeliverable(state.meta.get("goal_elaborated", "")):
+            # Replan after a PASSED subtask always; after a FAILED one ONLY on a self-improvement
+            # run, where the pump must keep finding the next highest-impact work instead of dying on
+            # the first failed wave. The churn risk (fail -> re-add -> fail) is contained by: the
+            # replanner is told NOT to re-add the same failed work, the pending-only cap bounds the
+            # live queue, and the no-progress livelock guard still trips. A normal bounded goal keeps
+            # the conservative done-only gate, so a never-succeeding executor still degrades to partial.
+            self_ref = bool(state.meta.get("is_self_referential"))
+            replan_ok = final == "done" or (self_ref and final == "failed")
+            if replan_ok and not self._singleDeliverable(state.meta.get("goal_elaborated", "")):
                 with self._state_lock:                       # snapshot for the same parallel-safety reason
                     subs_snapshot = list(state.subtasks)
                 decision = self._replan(state.meta["goal_elaborated"], subs_snapshot, subtask, combined,
@@ -1162,12 +1228,101 @@ class Orchestrator:
         except Exception:  # noqa: BLE001 -- a bad timestamp must never wedge the loop
             return None
 
+    def _pendingCount(self, state: TaskState) -> int:
+        """Subtasks still in the live queue (pending or running). The replan/backfill cap counts
+        THIS, not the all-time total, so a long self-improvement run can churn through many
+        subtasks over the horizon while never letting the in-flight queue explode."""
+        return sum(1 for s in state.subtasks if s["status"] in ("pending", "in_progress"))
+
+    def authorBackfillBatch(self, goal_elaborated: str, architect_doc: str, done_titles: list[str],
+                            failed_titles: list[str], remaining_hours: float, room: int) -> list[dict]:
+        """Ollama authors the NEXT batch of highest-impact improvement subtasks for a self-improvement
+        run whose queue has drained with time still on the clock. Returns list[dict] (maybe empty)."""
+        system = (
+            config.SELF_IMPROVEMENT_PHILOSOPHY + "\n\n"
+            "You are the HORIZON-FILL planner for 9TO5 running ON ITSELF. The subtask queue is now EMPTY "
+            "but time remains in the work window. Author the NEXT small batch of the HIGHEST-IMPACT "
+            "improvement subtasks the codebase needs right now (bug hunts, error handling, missing tests, "
+            "refactors of weak areas, reliability). Do NOT repeat work already done and do NOT re-attempt "
+            "the same FAILED work -- choose NEW, different, valuable work. "
+            f"Return AT MOST {room} subtasks that realistically fit ~{remaining_hours:.1f}h.\n"
+            '_RESPOND WITH JSON ONLY_: {"subtasks":[{"title":"...","description":"...","layer":3,'
+            '"effort_level":"default|high","verify":{"cmd":"python ' + _VERIFY_EXAMPLE_PATH +
+            '","expect":"exit_zero"}}]}.\n'
+            "Every verify must use a REAL existing absolute path -- NEVER angle brackets or the words "
+            "'ABSOLUTE path' (a cmd containing '<' or '>' is rejected); on Windows never a .sh/bash verify."
+        )
+        user = (
+            f"Goal / standing mandate:\n{goal_elaborated}\n\n"
+            f"Already DONE: {done_titles or '(none)'}\n"
+            f"Already FAILED (do NOT retry these): {failed_titles or '(none)'}\n"
+            f"Time remaining: ~{remaining_hours:.1f}h. Author up to {room} NEW subtasks.\n"
+            f"Architecture:\n{(architect_doc or '')[:2000]}\n\nReturn the plan JSON."
+        )
+        resp = self._ollamaChat(system, user, want_json=True)
+        parsed = _chatJson(resp)
+        raw = parsed.get("subtasks") if isinstance(parsed, dict) else None
+        return [s for s in raw if isinstance(s, dict)] if isinstance(raw, list) else []
+
+    def _backfill(self, state: TaskState, architect_doc: str, dashboard: DiscordDashboard) -> int:
+        """Horizon-fill: when a self-improvement run's queue drains with time left, author + enqueue
+        the next batch of improvement subtasks. Returns the number added (0 => nothing more to do)."""
+        remaining = self._remainingHours(state)
+        if remaining is None or remaining <= 0:
+            return 0
+        room = config.MAX_SUBTASKS - self._pendingCount(state)
+        if room <= 0:
+            return 0
+        goal = state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "")
+        done = [s.get("title", "") for s in state.subtasks if s["status"] == "done"]
+        failed = [s.get("title", "") for s in state.subtasks if s["status"] == "failed"]
+        try:
+            batch = self.authorBackfillBatch(goal, architect_doc, done, failed, remaining, room)
+        except Exception as e:  # noqa: BLE001 -- backfill must never crash the run
+            LOG.warning("backfill authoring failed (%s); none added", e)
+            return 0
+        batch = self._strengthenPlanVerifies(goal, [s for s in batch if isinstance(s, dict)])
+        added = 0
+        with self._state_lock:
+            for s in batch[:room]:
+                state.addSubtask(s.get("title", "improvement"), s.get("description", ""),
+                                 layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))
+                added += 1
+            if added:
+                state.addNotification("backfill", f"+{added} improvement subtasks ({remaining:.1f}h left)")
+                self.writeIndex(state)
+        if added:
+            LOG.info("horizon-fill: +%d improvement subtasks (%.1fh remaining)", added, remaining)
+            dashboard.update(state, "planning", f"horizon-fill: +{added} subtasks ({remaining:.1f}h left)")
+        return added
+
+    def _continueAfterDrain(self, state: TaskState, architect_doc: str,
+                            dashboard: DiscordDashboard, dry: int) -> "tuple[bool, int]":
+        """The subtask queue is empty. Decide whether to keep the run alive (returns (continue, dry)).
+
+        A NORMAL bounded goal is DONE when its queue drains -- break. A SELF-IMPROVEMENT run with time
+        left should keep going (CLAUDE.md: 'keep going instrumentally until the time horizon ends'):
+        author a fresh batch via _backfill. Break only when the deadline is reached, <15 min remain, or
+        backfill comes up empty twice in a row (nothing left worth doing)."""
+        if not state.meta.get("is_self_referential"):
+            return False, dry
+        if self._deadlinePassed(state):
+            return False, dry
+        remaining = self._remainingHours(state)
+        if remaining is None or remaining <= 0.25:   # don't start new work in the last 15 minutes
+            return False, dry
+        added = self._backfill(state, architect_doc, dashboard)
+        if added > 0:
+            return True, 0
+        return (dry + 1 < 2), dry + 1                 # one empty retry, then finalize
+
     def runExecutionLoop(self, state: TaskState, architect_doc: str, work_dir: str,
                          bus: ControlBus, dashboard: DiscordDashboard, parallelism: int = 1) -> None:
         position = 0
         iters = 0
         no_progress = 0
         prev_terminal = -1
+        dry_backfills = 0     # consecutive empty horizon-fill attempts (self-improvement runs)
         while True:
             iters += 1
             # TIME HORIZON: stop scheduling new subtasks once the deadline passes (the run is
@@ -1202,6 +1357,9 @@ class Orchestrator:
             if parallelism <= 1:
                 subtask = state.nextActionable()
                 if subtask is None:
+                    cont, dry_backfills = self._continueAfterDrain(state, architect_doc, dashboard, dry_backfills)
+                    if cont:
+                        continue
                     break
                 position += 1
                 try:
@@ -1222,6 +1380,9 @@ class Orchestrator:
             ready = self._readySet(state)
             if not ready:
                 if state.nextActionable() is None:
+                    cont, dry_backfills = self._continueAfterDrain(state, architect_doc, dashboard, dry_backfills)
+                    if cont:
+                        continue
                     break
                 ready = [state.nextActionable()]
             batch = ready[:parallelism]
@@ -1262,7 +1423,10 @@ class Orchestrator:
 
     def _applyReplan(self, state: TaskState, decision: dict) -> None:
         diff = [f"## Replan @ {nowIso()}", f"Reason: {decision.get('reason', '')}", ""]
-        active = sum(1 for s in state.subtasks if s["status"] != "removed")
+        # Cap the LIVE queue (pending + in-progress), not the all-time total: a long self-improvement
+        # run churns through many subtasks over the horizon, so counting terminal ones would freeze
+        # the plan after MAX_SUBTASKS and kill horizon-fill (RC-2).
+        active = self._pendingCount(state)
         # The brain may return malformed add/remove (non-list, or items of the wrong type). A crash
         # here would propagate to the caller's handler and flip the just-COMPLETED subtask to failed,
         # so coerce defensively and skip any entry that isn't the expected shape.
@@ -1466,7 +1630,7 @@ class Orchestrator:
             # --- Phase 4: PR + complete ---
             self._checkControl(state, bus, dashboard, gate="pre_pr")
             pr_review = self._prePrAdversary(state)
-            create_pr, skip_reason = self._prGate(pr_review, auto_pr)
+            create_pr, skip_reason = self._prGate(pr_review, auto_pr, state)
             if create_pr:
                 pr = self.createPullRequest(state, work_dir)
             else:

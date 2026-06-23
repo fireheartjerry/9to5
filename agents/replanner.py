@@ -23,14 +23,17 @@ REPLANNER_SYSTEM = (
     "change. Frame EVERY decision as: what is the HIGHEST-IMPACT thing to do right now given what we "
     "just learned -- NOT 'what is next on a list'. Prefer keeping the plan stable; only mutate when the "
     "output clearly reveals a missing, obsolete, or newly-discovered higher-impact step. "
-    "Honor the goal's constraints (e.g. 'standard library only' => no installs). Do NOT add subtasks to "
-    "FIX a failed verification (the executor already retries). Keep the total small. "
+    "Honor the goal's constraints (e.g. 'standard library only' => no installs). Do NOT RE-ADD a "
+    "subtask to retry the SAME failed verification (the executor already retries it); you MAY add a "
+    "DIFFERENT, higher-impact subtask. Keep the total small. "
     'Respond with JSON ONLY: {"action": "keep" | "mutate", "add": [{"title": "...", "description": "...", '
-    '"verify": {"cmd": "python <ABSOLUTE path>", "expect": "exit_zero"}}], "remove": ["st-00X"], '
-    '"reason": "..."}. Every added verify must be BEHAVIORAL with ABSOLUTE paths: '
-    "'python <abs>' (exit_zero), 'python <abs>' (stdout_contains:<a certain string>), or an "
-    "os.path.getsize non-empty check. NEVER import a project module or guess an internal symbol; "
-    "NEVER use grep/cat/test/findstr/type."
+    '"verify": {"cmd": "python ' + str(config.PROJECT_ROOT / "tests" / "test_x.py") + '", "expect": "exit_zero"}}], '
+    '"remove": ["st-00X"], "reason": "..."}. Every added verify must be BEHAVIORAL and use a REAL, '
+    "EXISTING absolute path (substitute the actual file) -- NEVER emit angle brackets or the words "
+    "'ABSOLUTE path'; a cmd containing '<' or '>' is REJECTED. On Windows never use a .sh/bash verify. "
+    "Shapes: 'python <real-abs-path>' (exit_zero), 'python <real-abs-path>' (stdout_contains:<a certain "
+    "string>), or an os.path.getsize non-empty check. NEVER import a project module or guess an internal "
+    "symbol; NEVER use grep/cat/test/findstr/type."
 )
 
 

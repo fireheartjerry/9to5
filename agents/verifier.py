@@ -95,6 +95,18 @@ def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
     cmd = cmd_raw.strip() if isinstance(cmd_raw, str) else ""   # brain may emit a non-string cmd
     if not cmd:
         return None
+    # Reject an UNRUNNABLE command shape regardless of any python -c body. The 7B brain copies the
+    # prompt's "<ABSOLUTE path>" placeholder verbatim, yielding e.g. `python <ABSOLUTE path to test.py>`
+    # -- which cmd.exe parses as redirection ("The syntax of the command is incorrect") and fails the
+    # subtask 3x for a reason that has nothing to do with the work. Dropping it makes the verify fall
+    # back to "executor exited 0" (sanitizeVerify's whole purpose) instead of a spurious 3x failure.
+    if "<" in cmd or ">" in cmd or "absolute path" in cmd.lower():
+        LOG.info("sanitizeVerify: dropping verify with unresolved placeholder / redirection: %s", cmd)
+        return None
+    # A .sh / bash verify cannot run under cmd.exe on Windows (also "syntax ... incorrect").
+    if os.name == "nt" and (re.search(r"\.sh\b", cmd.lower()) or re.match(r"(?:bash|sh)\s", cmd.lower())):
+        LOG.info("sanitizeVerify: dropping non-Windows shell verify: %s", cmd)
+        return None
     m = re.match(r"""(?:py|python|python3)\s+-c\s+(['"])(.*)\1\s*$""", cmd, re.DOTALL)
     if m:
         code = m.group(2)

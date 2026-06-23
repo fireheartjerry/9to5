@@ -67,12 +67,24 @@ class TestSelfMod(unittest.TestCase):
         self.assertEqual((self.dir / "orchestrator.py").read_text(), "IMPROVED\n")  # kept
 
     def test_gate_fails_reverts_core(self):
+        # Suite fails WITH the change but PASSES on the clean baseline => the change broke it => revert.
         (self.dir / "orchestrator.py").write_text("BROKEN\n", encoding="utf-8")
-        out = selfmod.safety_gate(str(self.dir), is_self_referential=True,
-                                  test_runner=lambda d: (False, "FAILED (errors=3)"))
+        runner = mock.Mock(side_effect=[(False, "FAILED (errors=3)"), (True, "baseline OK")])
+        out = selfmod.safety_gate(str(self.dir), is_self_referential=True, test_runner=runner)
         self.assertFalse(out["passed"])
         self.assertTrue(out["reverted"])
         self.assertEqual((self.dir / "orchestrator.py").read_text(), "ORIGINAL\n")  # reverted!
+
+    def test_gate_keeps_change_when_baseline_also_fails(self):
+        # Suite fails WITH the change AND on the clean baseline => failure is pre-existing/flaky,
+        # NOT caused by the change => KEEP the improvement (don't throw away good work).
+        (self.dir / "orchestrator.py").write_text("IMPROVED\n", encoding="utf-8")
+        runner = mock.Mock(side_effect=[(False, "flaky fail"), (False, "baseline also red")])
+        out = selfmod.safety_gate(str(self.dir), is_self_referential=True, test_runner=runner)
+        self.assertFalse(out["passed"])
+        self.assertFalse(out["reverted"])
+        self.assertTrue(out.get("kept_despite_failure"))
+        self.assertEqual((self.dir / "orchestrator.py").read_text(), "IMPROVED\n")  # kept!
 
     def test_gate_disabled_when_flag_off(self):
         with mock.patch.object(config, "SELFMOD_ALLOW_CORE", False):
