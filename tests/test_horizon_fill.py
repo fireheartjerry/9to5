@@ -157,6 +157,26 @@ class TestPrGateDegraded(unittest.TestCase):
         self.assertFalse(create)
         self.assertIn("HOLD", reason)
 
+    def test_suite_gate_skips_non_self_ref(self):
+        ok, _ = self.orch._prePrSuiteGate(self.state, ".")   # not self-referential
+        self.assertTrue(ok)
+
+    def test_suite_gate_holds_pr_on_red_suite(self):
+        # A self-improvement run must NOT open a PR whose own suite is red (the PR #10 bug).
+        self.state.meta["is_self_referential"] = True
+        import selfmod
+        with mock.patch.object(selfmod, "_default_test_runner", return_value=(False, "FAILED (errors=128)")):
+            ok, detail = self.orch._prePrSuiteGate(self.state, ".")
+        self.assertFalse(ok)
+        self.assertIn("128", detail)
+
+    def test_suite_gate_allows_pr_on_green_suite(self):
+        self.state.meta["is_self_referential"] = True
+        import selfmod
+        with mock.patch.object(selfmod, "_default_test_runner", return_value=(True, "OK")):
+            ok, _ = self.orch._prePrSuiteGate(self.state, ".")
+        self.assertTrue(ok)
+
     def test_night_mode_ships_healthy_challenged_run(self):
         self.state.addSubtask("a", "d"); self.state.updateSubtask("st-001", status="done")
         review = {"verdict": "challenged", "concerns": ["minor"]}

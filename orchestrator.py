@@ -410,18 +410,15 @@ class Orchestrator:
                 if want_json:
                     kwargs["format"] = "json"
                 resp = self.ollama.chat(model=model, messages=messages, **kwargs)
-                # An EMPTY completion is a TRANSIENT model failure (qwen2.5 can dead-end to "" under
-                # format=json on markdown-heavy prompts). Treat it as retryable rather than returning
-                # empty -- otherwise EVERY brain call (plan/replan/backfill/adversary) silently falls
-                # back. The last attempt drops format=json as a salvage (free-form JSON is then
-                # recovered by _chatJson's fence/object extraction).
+                # qwen2.5 can dead-end to an EMPTY completion under format=json on markdown-heavy
+                # prompts. Do ONE fast salvage WITHOUT the json grammar (free-form JSON is recovered by
+                # _chatJson's fence/object extraction) -- but NO backoff loop: an empty here is usually
+                # deterministic for this prompt, and looping would burn minutes per brain call for no
+                # gain (the caller has a fallback). If still empty, return it and let the caller fall back.
                 if want_json and not _chatText(resp).strip():
-                    if attempt == retries - 1:
-                        kwargs.pop("format", None)
-                        resp = self.ollama.chat(model=model, messages=messages, **kwargs)
-                        if _chatText(resp).strip():
-                            return resp
-                    raise ValueError("empty completion")
+                    kwargs.pop("format", None)
+                    salvage = self.ollama.chat(model=model, messages=messages, **kwargs)
+                    return salvage if _chatText(salvage).strip() else resp
                 return resp
             except Exception as e:  # noqa: BLE001
                 LOG.warning("Ollama call failed/empty (attempt %d/%d): %s", attempt, retries, e)
@@ -1099,6 +1096,22 @@ class Orchestrator:
                 tag = "adversary HOLD" + (" (degraded run)" if config.NIGHT_MODE else "")
                 return False, f"{tag}: {concerns}"[:300]
         return True, ""
+
+    def _prePrSuiteGate(self, state: TaskState, work_dir: str) -> "tuple[bool, str]":
+        """For a self-improvement run, run the FULL test suite before opening a PR so 9to5 NEVER ships
+        a PR whose own tests are broken. The selfmod gate only runs the suite when CORE files change;
+        a run that edits non-core files or adds tests (e.g. test dirs that shadow a real package) could
+        otherwise open a red PR. Returns (ok, detail). Best-effort: a gate-internal error does NOT
+        block the PR (we don't want the gate itself to wedge the run)."""
+        if not state.meta.get("is_self_referential"):
+            return True, ""
+        try:
+            import selfmod
+            passed, tail = selfmod._default_test_runner(work_dir)
+            return bool(passed), (tail or "")[-400:]
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("pre-PR suite gate errored (%s); not blocking PR", e)
+            return True, f"gate-error: {e}"
 
     # ===================================================================
     # Phase 4 -- PR creation (best effort; skips gracefully)
@@ -1790,6 +1803,22 @@ class Orchestrator:
             self._checkControl(state, bus, dashboard, gate="pre_pr")
             pr_review = self._prePrAdversary(state)
             create_pr, skip_reason = self._prGate(pr_review, auto_pr, state)
+            if create_pr:
+                # Final gate: never open a PR whose own test suite is red (a self-improvement run can
+                # otherwise ship structurally-broken work the weak per-subtask verify missed, e.g. a
+                # tests/<pkg>/ dir that shadows a real package). The work stays on the branch for review.
+                suite_ok, suite_detail = self._prePrSuiteGate(state, work_dir)
+                if not suite_ok:
+                    create_pr = False
+                    skip_reason = "test suite failing — PR held for review"
+                    dashboard.update(state, "executing", "PR held: test suite failing")
+                    state.addNotification("pr_held", f"test suite failing: {suite_detail[:160]}")
+                    try:
+                        discord.sendEmbed(discord.noticeEmbed(
+                            "PR held: the run's own test suite is failing — work left on the branch for review.",
+                            title="🛡️ 9TO5 — PR held (red suite)"))
+                    except Exception:  # noqa: BLE001
+                        pass
             if create_pr:
                 pr = self.createPullRequest(state, work_dir)
             else:
