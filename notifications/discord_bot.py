@@ -35,8 +35,10 @@ def _nowIso() -> str:
 # UI kit
 # =====================================================================
 def humanPing() -> str:
-    """`<@id>` mention for the human, ONLY used on severe events. '' if unset."""
-    return f"<@{config.DISCORD_HUMAN_USER_ID}>" if config.DISCORD_HUMAN_USER_ID else ""
+    """`<@id>` mention for the human, ONLY used on severe events. '' if unset or night mode."""
+    if config.NIGHT_MODE or not config.DISCORD_HUMAN_USER_ID:
+        return ""
+    return f"<@{config.DISCORD_HUMAN_USER_ID}>"
 
 
 def progressBar(done: int, total: int, width: int = 12) -> str:

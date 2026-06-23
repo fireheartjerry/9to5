@@ -1,6 +1,7 @@
 """Unit tests for the Adversary reviewer (trigger logic + Ollama-backed critique)."""
 import json
 import unittest
+from unittest import mock
 
 import config
 from agents import adversary
@@ -80,6 +81,77 @@ class TestReview(unittest.TestCase):
         rv = adversary.review("do x", "heartbeat", "output", ollama_chat=chat)
         self.assertLessEqual(len(rv["concerns"]), 10)
         self.assertTrue(all(c.strip() for c in rv["concerns"]))
+
+
+class TestReviewViaBrowser(unittest.TestCase):
+    """Phase-2 routing: Adversary -> GPT-5.5 on chatgpt.com via the browser (CDP) layer."""
+
+    def _ask(self, payload):
+        """A browser_ask stand-in returning ``payload`` JSON as the chatgpt.com reply."""
+        return lambda message: json.dumps(payload)
+
+    def test_approved_via_browser(self):
+        ask = self._ask({"verdict": "approved", "concerns": [], "notes": "complete"})
+        rv = adversary.reviewViaBrowser("do x", "pre-PR safety review", "output",
+                                        browser_ask=ask, goal="g")
+        self.assertEqual(rv["verdict"], "approved")
+        self.assertFalse(rv["stub"])
+        self.assertEqual(rv["surface"], "browser")
+        self.assertEqual(rv["trigger_reason"], "pre-PR safety review")
+
+    def test_challenged_via_browser_normalizes(self):
+        ask = self._ask({"verdict": "reject", "concerns": ["faked verify", "left TODO"]})
+        rv = adversary.reviewViaBrowser("do x", "heartbeat", "output", browser_ask=ask)
+        self.assertEqual(rv["verdict"], "challenged")     # normalized from "reject"
+        self.assertEqual(len(rv["concerns"]), 2)
+        self.assertFalse(rv["stub"])
+
+    def test_concerns_clamped_via_browser(self):
+        ask = self._ask({"verdict": "challenged",
+                         "concerns": [f"c{i}" for i in range(20)] + ["", "   "]})
+        rv = adversary.reviewViaBrowser("do x", "heartbeat", "output", browser_ask=ask)
+        self.assertLessEqual(len(rv["concerns"]), 10)
+        self.assertTrue(all(c.strip() for c in rv["concerns"]))
+
+    def test_stub_when_browser_unavailable(self):
+        rv = adversary.reviewViaBrowser("do x", "heartbeat", "output",
+                                        browser_ask=lambda message: None)
+        self.assertEqual(rv["verdict"], "approved")
+        self.assertTrue(rv["stub"])
+
+    def test_stub_on_garbled_reply(self):
+        rv = adversary.reviewViaBrowser("do x", "heartbeat", "output",
+                                        browser_ask=lambda message: "not json at all")
+        self.assertEqual(rv["verdict"], "approved")
+        self.assertTrue(rv["stub"])
+
+    def test_stub_when_browser_ask_raises(self):
+        def boom(message):
+            raise RuntimeError("CDP socket closed")
+        rv = adversary.reviewViaBrowser("do x", "heartbeat", "output", browser_ask=boom)
+        self.assertTrue(rv["stub"])
+
+    def test_prompt_carries_system_and_output(self):
+        seen = {}
+
+        def ask(message):
+            seen["message"] = message
+            return json.dumps({"verdict": "approved", "concerns": []})
+        adversary.reviewViaBrowser("build parser", "heartbeat", "UNIQUE_EXECUTOR_MARKER",
+                                   browser_ask=ask, goal="ship it")
+        self.assertIn("9TO5 Adversary", seen["message"])       # system prompt is included
+        self.assertIn("UNIQUE_EXECUTOR_MARKER", seen["message"])
+        self.assertIn("build parser", seen["message"])
+
+    def test_default_browser_ask_is_browser_executor(self):
+        """With no injected callable it must route through the real CDP helper (patched)."""
+        from agents import browser_executor
+        with mock.patch.object(browser_executor, "askChatGPT",
+                               return_value=json.dumps({"verdict": "approved", "concerns": []})) as m:
+            rv = adversary.reviewViaBrowser("do x", "heartbeat", "output")
+        m.assert_called_once()
+        self.assertEqual(rv["verdict"], "approved")
+        self.assertFalse(rv["stub"])
 
 
 if __name__ == "__main__":

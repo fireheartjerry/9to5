@@ -189,6 +189,8 @@ def main() -> int:
     parser.add_argument("--web-port", type=int, default=config.WEB_DASHBOARD_PORT, help="Web dashboard port.")
     parser.add_argument("--no-web", action="store_true", help="Disable the local web dashboard.")
     parser.add_argument("--task-id", help="Alias for --resume: restore + continue a task by id.")
+    parser.add_argument("--night-mode", action="store_true",
+                        help="Zero human interaction: watch mode, no adversary PR hold, auto-resume pauses.")
     parser.add_argument("--health", action="store_true", help="Run environment health checks and exit.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Simulate a full run with no external services (offline; for testing).")
@@ -214,6 +216,10 @@ def main() -> int:
     config.WEB_DASHBOARD_PORT = args.web_port
     if args.no_web:
         config.WEB_DASHBOARD = False
+    if args.night_mode:
+        config.NIGHT_MODE = True
+        args.mode = "watch"          # night mode is always watch — no human gates
+        args.auto_approve = True     # suppress elaboration approval prompt
     config.ensureDirs()
 
     # Living knowledge refresh: the absolute first thing every session does, BEFORE any
@@ -268,6 +274,8 @@ def main() -> int:
     state.save()
     LOG.info("Created task %s (horizon %sh, mode %s, parallel %s)",
              state.task_id, args.hours, args.mode, args.parallel)
+    # Start control thread BEFORE elaboration so abort/pause work even if Ollama hangs.
+    _startTerminalControl(state.task_id)
     # Best-effort preflight: surface any hard blocker up front (don't abort -- degraded
     # mode + the elaboration fallback keep a run going; the user just sees what's missing).
     try:
@@ -300,7 +308,6 @@ def main() -> int:
                 state.setElaboratedGoal(edited)
                 print("Elaboration replaced.")
 
-    _startTerminalControl(state.task_id)
     # Supervised run: send one sentence at 9am, return at 5pm to a finished job. If the
     # run crashes, the supervisor auto-resumes the SAME task (committed progress is the
     # source of truth) until it is terminal or the deadline passes -- no human needed.

@@ -82,6 +82,67 @@ def _stubReview(trigger_reason: str, *, note: Optional[str] = None) -> dict:
     }
 
 
+def _buildReviewUser(subtask_title: str, trigger_reason: str, executor_output: str,
+                     goal: str) -> str:
+    """The user-turn prompt handed to whichever brain reviews -- Ollama (Phase 1) or
+    GPT-5.5 via chatgpt.com CDP (Phase 2). Single source so the two paths can't drift."""
+    return (
+        f"Subtask under review: {subtask_title}\n"
+        f"Why this review fired: {trigger_reason}\n"
+        f"Overall goal: {goal[:1000]}\n\n"
+        f"Executor output to judge:\n{(executor_output or '')[:ADVERSARY_MAX_OUTPUT_CHARS]}\n\n"
+        "Return the review JSON."
+    )
+
+
+def _parseVerdict(raw_content: object, trigger_reason: str, *, surface: str) -> dict:
+    """Turn a brain's raw JSON reply into the verdict contract. Raises on junk so the
+    caller can degrade to a conservative stub."""
+    data = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
+    if not isinstance(data, dict):
+        raise ValueError("non-object review payload")
+    verdict = _normalizeVerdict(data.get("verdict"))
+    concerns = [str(c) for c in (data.get("concerns") or []) if str(c).strip()][:10]
+    notes = str(data.get("notes") or "").strip()
+    return {
+        "verdict": verdict,
+        "trigger_reason": trigger_reason,
+        "concerns": concerns,
+        "notes": notes,
+        "stub": False,
+        "surface": surface,
+    }
+
+
+def reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: str, *,
+                     browser_ask: Optional[Callable] = None, goal: str = "") -> dict:
+    """Phase-2 critique: route the review to GPT-5.5 on chatgpt.com over CDP.
+
+    ``browser_ask`` is a ``(message) -> reply_text | None`` callable; it defaults to
+    :func:`agents.browser_executor.askChatGPT`, which drives chatgpt.com through the L1
+    browser hands. The verdict contract is identical to :func:`review`, so the call site
+    never changes between phases. Any failure (browser unavailable, empty/garbled reply)
+    degrades to a conservative auto-approve -- the reviewer never blocks a run by itself.
+    """
+    if browser_ask is None:
+        from agents import browser_executor
+        browser_ask = browser_executor.askChatGPT
+
+    user = _buildReviewUser(subtask_title, trigger_reason, executor_output, goal)
+    try:
+        reply = browser_ask(f"{_SYSTEM}\n\n{user}")
+        if not reply:
+            raise ValueError("empty reply from chatgpt.com")
+        rv = _parseVerdict(reply, trigger_reason, surface="browser")
+        LOG.info("Adversary (browser/GPT) verdict for '%s' (%s) -> %s (%d concern(s))",
+                 subtask_title, trigger_reason, rv["verdict"], len(rv["concerns"]))
+        return rv
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("Adversary browser critique failed (%s); conservative auto-approve", e)
+        return _stubReview(trigger_reason,
+                           note=f"Adversary chatgpt.com critique errored ({e}); auto-approved conservatively.")
+
+
 def review(subtask_title: str, trigger_reason: str, executor_output: str, *,
            ollama_chat: Optional[Callable] = None, goal: str = "") -> dict:
     """Critique the executor output and return a verdict dict.
@@ -95,13 +156,7 @@ def review(subtask_title: str, trigger_reason: str, executor_output: str, *,
         LOG.info("Adversary (no brain) for '%s' (%s) -> approved [stub]", subtask_title, trigger_reason)
         return _stubReview(trigger_reason)
 
-    user = (
-        f"Subtask under review: {subtask_title}\n"
-        f"Why this review fired: {trigger_reason}\n"
-        f"Overall goal: {goal[:1000]}\n\n"
-        f"Executor output to judge:\n{(executor_output or '')[:ADVERSARY_MAX_OUTPUT_CHARS]}\n\n"
-        "Return the review JSON."
-    )
+    user = _buildReviewUser(subtask_title, trigger_reason, executor_output, goal)
     try:
         resp = ollama_chat(_SYSTEM, user, want_json=True)
         data = json.loads(resp["message"]["content"]) if resp else None

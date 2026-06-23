@@ -776,7 +776,14 @@ class Orchestrator:
                       gate: str | None = None) -> None:
         self._translateDiscord(bus, state)
         self._applyOps(state, bus, dashboard)
+        pause_start = time.time() if bus.isPaused() else None
         while bus.isPaused() and not bus.isAbort():
+            # Night mode: auto-resume after timeout so a stray !pause never blocks overnight.
+            if config.NIGHT_MODE and pause_start and (time.time() - pause_start) > config.NIGHT_MODE_PAUSE_TIMEOUT:
+                bus.clearPause()
+                dashboard.event(f"night mode: auto-resumed after {config.NIGHT_MODE_PAUSE_TIMEOUT}s pause timeout")
+                LOG.info("night mode: auto-resumed after pause timeout")
+                break
             dashboard.update(state, "paused", "paused -- waiting for !resume")
             time.sleep(config.DISCORD_POLL_SECONDS)
             self._translateDiscord(bus, state)
@@ -927,7 +934,7 @@ class Orchestrator:
         """Decide whether to create the PR. Returns (create, skip_reason)."""
         if not auto_pr:
             return False, "--no-pr"
-        if config.ADVERSARY_PR_HOLD_ENABLED and review.get("verdict") == "challenged":
+        if config.ADVERSARY_PR_HOLD_ENABLED and not config.NIGHT_MODE and review.get("verdict") == "challenged":
             concerns = "; ".join(review.get("concerns") or ["challenged"])
             return False, f"adversary HOLD: {concerns}"[:300]
         return True, ""

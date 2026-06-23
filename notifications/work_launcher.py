@@ -34,6 +34,7 @@ class WorkRequest:
     parallel: int = 1
     work_dir: Optional[str] = None
     no_pr: bool = False
+    night_mode: bool = False
 
 
 def parseHours(raw) -> float:
@@ -81,15 +82,48 @@ def buildArgv(req: WorkRequest) -> list[str]:
     ]
     if req.no_pr:
         argv.append("--no-pr")
+    if req.night_mode:
+        argv.append("--night-mode")
     if req.work_dir:
         argv += ["--work-dir", str(Path(req.work_dir).resolve())]
     return argv
 
 
 def activeRun() -> Optional[TaskState]:
-    """The latest task iff it's still active (delegates to commands.isRunActive -- one policy)."""
+    """The latest task iff it's still active. Auto-aborts stale tasks whose process died
+    without updating state (e.g. killed mid-elaboration, left in 'created'/'planning')."""
     state = commands.resolveTargetTask()
-    return state if commands.isRunActive(state) else None
+    if not commands.isRunActive(state):
+        return None
+    if _isStale(state):
+        try:
+            state.setStatus("aborted")
+            LOG.warning("auto-aborted stale task %s (no heartbeat for >%ds)",
+                        state.task_id[:8], _STALE_SECONDS)
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+    return state
+
+
+# A task is stale if its state file hasn't been touched in this many seconds.
+# 'created' tasks (died in elaboration) stale out faster; executing tasks use RUN_STALL_SECONDS.
+_STALE_CREATED_SECONDS: int = 300    # 5 min — elaboration should never take this long
+_STALE_SECONDS: int = int(getattr(config, "RUN_STALL_SECONDS", 1800))
+
+
+def _isStale(state: Optional[TaskState]) -> bool:
+    """True when a task's state file mtime implies the orchestrator process is dead."""
+    if state is None:
+        return False
+    try:
+        mtime = (config.STATE_DIR / f"{state.task_id}.json").stat().st_mtime
+        age = time.time() - mtime
+        cutoff = (_STALE_CREATED_SECONDS if state.meta.get("status") in ("created", "planning")
+                  else _STALE_SECONDS)
+        return age > cutoff
+    except OSError:
+        return False
 
 
 def newestTaskSince(ts: float) -> Optional[str]:

@@ -190,13 +190,16 @@ def registerSlashCommands(tree: "app_commands.CommandTree", client: "discord.Cli
     @tree.command(name="work", description="Start a 9TO5 run (blank = guided setup)")
     @app_commands.describe(goal="What to work on (blank opens guided setup)",
                            hours="Time horizon in hours", mode="watch or gated",
-                           parallel="Concurrent subtasks", no_pr="Skip the PR", work_dir="Working directory")
+                           parallel="Concurrent subtasks", no_pr="Skip the PR",
+                           work_dir="Working directory",
+                           night_mode="Zero human interaction — no pings, no holds, auto-resume pauses")
     @app_commands.choices(mode=[app_commands.Choice(name="watch", value="watch"),
                                 app_commands.Choice(name="gated", value="gated")])
     @cooldown
     async def work(interaction, goal: "str | None" = None, hours: "float | None" = None,
                    mode: "app_commands.Choice[str] | None" = None, parallel: "int | None" = None,
-                   no_pr: "bool | None" = None, work_dir: "str | None" = None):  # noqa: ANN001
+                   no_pr: "bool | None" = None, work_dir: "str | None" = None,
+                   night_mode: "bool | None" = None):  # noqa: ANN001
         if not _ownerOk(interaction):
             return await interaction.response.send_message("⛔ Not authorized to launch runs.", ephemeral=True)
         if not goal:
@@ -206,7 +209,8 @@ def registerSlashCommands(tree: "app_commands.CommandTree", client: "discord.Cli
         req = work_launcher.WorkRequest(
             goal=goal, hours=work_launcher.parseHours(hours),
             mode=(mode.value if mode else "watch"), parallel=parallel or 1,
-            no_pr=bool(no_pr), work_dir=work_dir or None)
+            no_pr=bool(no_pr), work_dir=work_dir or None,
+            night_mode=bool(night_mode))
         audit.record(interaction.user.id, "work", None, "slash")
         reply = await asyncio.to_thread(work_launcher.launchOrError, req)
         await interaction.followup.send(reply[:MAX_REPLY], ephemeral=True)
