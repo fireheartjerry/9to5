@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -21,6 +22,28 @@ from memory import experience
 # write + os.replace swap never interleave. os.replace itself is atomic at the
 # filesystem level, guarding cross-process readers against torn JSON.
 _SAVE_LOCK = threading.Lock()
+
+# Windows-only flakiness: os.replace raises PermissionError (WinError 5) when the
+# destination is momentarily held by another handle -- a concurrent reader, the
+# Obsidian sync, Windows Defender, or the search indexer. The lock is transient
+# (sub-millisecond), so a short bounded retry makes the atomic swap reliable
+# instead of crashing the whole run. POSIX has no such contention; the first try wins.
+_REPLACE_RETRIES: int = 8
+_REPLACE_BACKOFF_BASE: float = 0.02   # 20ms, 40ms, 80ms, ... (capped) -> ~1.3s total worst case
+
+
+def _atomicReplace(tmp: Path, dest: Path) -> None:
+    """os.replace(tmp, dest) with a bounded backoff retry on a transient Windows lock."""
+    delay = _REPLACE_BACKOFF_BASE
+    for attempt in range(1, _REPLACE_RETRIES + 1):
+        try:
+            os.replace(tmp, dest)
+            return
+        except PermissionError:
+            if attempt >= _REPLACE_RETRIES:
+                raise
+            time.sleep(min(delay, 0.4))
+            delay *= 2
 
 
 def nowIso() -> str:
@@ -97,7 +120,7 @@ class TaskState:
             p.parent.mkdir(parents=True, exist_ok=True)
             tmp = p.with_suffix(".json.tmp")
             tmp.write_text(payload, encoding="utf-8")
-            os.replace(tmp, p)
+            _atomicReplace(tmp, p)
         return p
 
     @classmethod

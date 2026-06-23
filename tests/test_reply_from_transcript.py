@@ -34,18 +34,15 @@ class TestReplyFromTranscript(unittest.TestCase):
     def test_none_input_returns_empty(self):
         self.assertEqual(_replyFromTranscript(None), "")
 
-    def test_no_newline_after_selector_returns_selector(self):
-        # edge case: transcript truncated immediately after selector line
+    def test_no_newline_after_selector_returns_empty(self):
+        # edge case: transcript truncated immediately after the selector line means there
+        # is NO reply body -- return "" (a CSS selector is not GPT's reply).
         transcript = f"extract {SELECTOR}:"
-        result = _replyFromTranscript(transcript)
-        self.assertNotEqual(result, "", "should return selector, not empty string")
-        self.assertIn("assistant", result)
+        self.assertEqual(_replyFromTranscript(transcript), "")
 
     def test_no_newline_selector_without_trailing_colon(self):
         transcript = f"extract {SELECTOR}"
-        result = _replyFromTranscript(transcript)
-        self.assertNotEqual(result, "")
-        self.assertIn("assistant", result)
+        self.assertEqual(_replyFromTranscript(transcript), "")
 
     def test_empty_string_returns_empty(self):
         self.assertEqual(_replyFromTranscript(""), "")

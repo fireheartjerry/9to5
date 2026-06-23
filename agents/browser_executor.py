@@ -172,11 +172,12 @@ def _replyFromTranscript(transcript: str) -> str:
         return ""
     block = text[idx:]                  # "extract <selector>:\n<reply text...>"
     nl = block.find("\n")
-    if nl >= 0:
-        return block[nl + 1:].strip()
-    # no newline: transcript was truncated after the selector line — return the
-    # selector itself so callers get a non-empty, identifiable fallback
-    return block[len("extract "):].rstrip(":").strip()
+    if nl < 0:
+        # no newline: the transcript was truncated after the selector line, so there is
+        # NO reply body. Return "" (not the selector) -- a CSS selector is not GPT's reply,
+        # and feeding it downstream would masquerade as a real critique.
+        return ""
+    return block[nl + 1:].strip()
 
 
 def askChatGPT(message: str, *, runner=None, work_dir: Optional[str] = None) -> Optional[str]:
