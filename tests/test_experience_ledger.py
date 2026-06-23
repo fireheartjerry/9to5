@@ -47,6 +47,44 @@ class TestExperienceLedger(unittest.TestCase):
         self.assertEqual(len(runs), 1)
         self.assertEqual(runs[0]["goal_raw"], "g")
 
+    def test_pool_reuses_one_connection_per_thread(self):
+        experience.close_pool()
+        with experience._connect(self.db) as c1:
+            pass
+        with experience._connect(self.db) as c2:
+            pass
+        self.assertIs(c1, c2)                       # same connection object reused
+
+    def test_reset_schema_cache_drops_pooled_connection(self):
+        with experience._connect(self.db) as c1:
+            pass
+        experience._reset_schema_cache()            # simulates a delete+recreate test boundary
+        with experience._connect(self.db) as c2:
+            pass
+        self.assertIsNot(c1, c2)                     # fresh connection after reset
+
+    def test_pool_disabled_opens_per_call(self):
+        with mock.patch.object(config, "EXPERIENCE_POOL", False):
+            with experience._connect(self.db) as c1:
+                pass
+            with experience._connect(self.db) as c2:
+                pass
+        self.assertIsNot(c1, c2)                     # no reuse when pooling is off
+
+    def test_failed_txn_evicts_connection(self):
+        experience.close_pool()
+        with experience._connect(self.db) as c1:
+            pass
+        try:
+            with experience._connect(self.db) as c2:
+                self.assertIs(c1, c2)
+                raise RuntimeError("boom")           # rollback + evict
+        except RuntimeError:
+            pass
+        with experience._connect(self.db) as c3:
+            pass
+        self.assertIsNot(c1, c3)                     # poisoned conn was replaced
+
     def test_run_upsert_is_idempotent(self):
         for status in ("executing", "executing", "done"):
             experience.record_run({"run_id": "r1", "task_id": "r1", "status": status},

@@ -128,6 +128,8 @@ SESSIONS_DIR_REL: str = "sessions"
 # Write notes to disk synchronously (durable + readable) and sync to Obsidian via REST in
 # the background, so a slow/absent vault never blocks the run loop (~5-10s/run saved).
 OBSIDIAN_ASYNC: bool = _envBool("OBSIDIAN_ASYNC", True)
+# Reuse one SQLite connection per (thread, ledger path) instead of opening one per call.
+EXPERIENCE_POOL: bool = _envBool("EXPERIENCE_POOL", True)
 
 # --- Ollama (Orchestrator brain) -----------------------------------------
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")  # code-specialized brain (fits 8GB VRAM)

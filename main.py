@@ -128,14 +128,48 @@ def _runDryRun(args) -> int:
     return 0
 
 
+def _applyMentionShorthand(raw_args: list[str]) -> list[str]:
+    """`python main.py @9to5 <free-text goal> [--flags]` -> fire-and-forget launch.
+
+    Lowers the barrier from `--goal "..." --auto-approve` to a single chat-style line: the
+    leading ``@9to5`` mention (optionally ``@9to5: goal`` with the goal on the same token)
+    signals shorthand; every token up to the first ``-`` flag is the goal, real flags pass
+    through untouched, and ``--auto-approve`` is implied so it truly fires and forgets.
+    Returns the argv to feed argparse (unchanged when no @9to5 mention leads)."""
+    token = raw_args[0].lstrip("/") if raw_args else ""
+    if not token.lower().startswith("@9to5"):
+        return raw_args
+    lead = token[len("@9to5"):].lstrip(": ").strip()              # "@9to5:do x" -> "do x"
+    goal_words: list[str] = [lead] if lead else []
+    passthrough: list[str] = []
+    rest = list(raw_args[1:])
+    for i, tok in enumerate(rest):
+        if tok.startswith("-"):
+            goal_words += rest[:i]
+            passthrough = rest[i:]
+            break
+    else:
+        goal_words += rest
+    new: list[str] = []
+    goal = " ".join(goal_words).strip()
+    if goal:
+        new += ["--goal", goal]
+    if "--auto-approve" not in passthrough:
+        new.append("--auto-approve")
+    return new + passthrough
+
+
 def main() -> int:
+    # `@9to5 <goal>` chat-style shorthand -> rewrite to `--goal "..." --auto-approve`.
+    argv = _applyMentionShorthand(sys.argv[1:])
+
     # Standalone knowledge-refresh command (intercept before argparse, which would
     # reject the bare "/refresh" token): `python main.py /refresh`.
-    if any(a.lstrip("-/").lower() == "refresh" for a in sys.argv[1:]):
+    if any(a.lstrip("-/").lower() == "refresh" for a in argv):
         return _runRefreshCommand()
 
     # Preflight doctor: `python main.py --doctor` -> report exactly what 'start' needs.
-    if any(a.lstrip("-/").lower() == "doctor" for a in sys.argv[1:]):
+    if any(a.lstrip("-/").lower() == "doctor" for a in argv):
         import doctor
         report = doctor.run()
         print(doctor.render(report))
@@ -161,7 +195,7 @@ def main() -> int:
     parser.add_argument("--e2e", action="store_true",
                         help="Run the virtual-operator end-to-end test suite (a scripted 'human' "
                              "drives full simulated runs through the real control surfaces) and exit.")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.health:
         import health

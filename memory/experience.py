@@ -203,28 +203,99 @@ def _db_path(db_path: Optional[Path] = None) -> Path:
 # DDL statements on EVERY write cost 50-100ms/subtask; we do it once per path instead.
 _schema_ready: set[str] = set()
 
+# Thread-local connection pool: opening a fresh sqlite3 connection per call costs a syscall
+# + page-cache warmup every time. We keep ONE connection per (thread, db path) and reuse it.
+# Thread-local because sqlite3 connections are bound to their creating thread (check_same_thread);
+# _WRITE_LOCK still serializes the actual writes across threads. Disable via EXPERIENCE_POOL=false.
+_pool = threading.local()
+_pool_lock = threading.Lock()          # guards _all_conns (cross-thread close on reset/exit)
+_all_conns: list[sqlite3.Connection] = []
+
+
+def _new_conn(key: str, first: bool) -> sqlite3.Connection:
+    conn = sqlite3.connect(key, timeout=30.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA synchronous=NORMAL")    # per-connection, cheap
+    if first:
+        conn.execute("PRAGMA journal_mode=WAL")  # persists in the db file -> set once
+        for stmt in _SCHEMA:
+            conn.execute(stmt)
+        _schema_ready.add(key)
+    with _pool_lock:
+        _all_conns.append(conn)
+    return conn
+
 
 @contextmanager
 def _connect(db_path: Optional[Path] = None) -> Iterator[sqlite3.Connection]:
-    """Open a connection (schema ensured once per path). Caller commits on success."""
+    """Yield a connection (schema ensured once per path), reusing a pooled per-thread
+    connection so repeated reads/writes don't pay connection-open cost. Caller's work is
+    committed on clean exit; on error the txn is rolled back and the (possibly poisoned)
+    connection is evicted so the next call reopens cleanly."""
     p = _db_path(db_path)
     key = str(p)
     first = key not in _schema_ready
     if first:
         p.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(key, timeout=30.0)
+
+    pooled = getattr(config, "EXPERIENCE_POOL", True)
+    cache: dict = _pool.__dict__.setdefault("conns", {}) if pooled else {}
+    conn = cache.get(key) if pooled else None
+    if conn is None:
+        conn = _new_conn(key, first)
+        if pooled:
+            cache[key] = conn
+    elif first:
+        # path was reset/recreated under us -> ensure schema on the reused connection
+        conn.execute("PRAGMA journal_mode=WAL")
+        for stmt in _SCHEMA:
+            conn.execute(stmt)
+        _schema_ready.add(key)
+
     try:
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA synchronous=NORMAL")   # per-connection, cheap
-        if first:
-            conn.execute("PRAGMA journal_mode=WAL")  # persists in the db file -> set once
-            for stmt in _SCHEMA:
-                conn.execute(stmt)
-            _schema_ready.add(key)
         yield conn
         conn.commit()
+    except BaseException:
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        _evict(key, conn)   # a failed conn may be poisoned -> drop it from the pool
+        raise
     finally:
+        if not pooled:
+            _evict(key, conn)
+
+
+def _evict(key: str, conn: sqlite3.Connection) -> None:
+    """Close ``conn`` and remove it from the thread-local cache + global registry."""
+    cache = getattr(_pool, "conns", None)
+    if cache is not None and cache.get(key) is conn:
+        cache.pop(key, None)
+    with _pool_lock:
+        if conn in _all_conns:
+            _all_conns.remove(conn)
+    try:
         conn.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def close_pool() -> None:
+    """Close every pooled connection across all threads (shutdown / test teardown)."""
+    with _pool_lock:
+        conns, _all_conns[:] = list(_all_conns), []
+    for c in conns:
+        try:
+            c.close()
+        except Exception:  # noqa: BLE001
+            pass
+    if hasattr(_pool, "conns"):
+        _pool.conns.clear()
+
+
+import atexit as _atexit
+_atexit.register(close_pool)
 
 
 def init(db_path: Optional[Path] = None) -> None:
@@ -235,8 +306,10 @@ def init(db_path: Optional[Path] = None) -> None:
 
 
 def _reset_schema_cache() -> None:
-    """Forget which paths are initialized (tests that delete+recreate a db file)."""
+    """Forget which paths are initialized + drop pooled connections (tests that
+    delete+recreate a db file must not reuse a connection to the old inode)."""
     _schema_ready.clear()
+    close_pool()
 
 
 def _nowIso() -> str:

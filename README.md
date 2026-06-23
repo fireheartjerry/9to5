@@ -41,6 +41,9 @@ venv\Scripts\python main.py --goal "Build X at C:\path\to\file.py" --hours 1
 # Fully non-interactive (walk away — watch + control from Discord/web):
 venv\Scripts\python main.py --goal "..." --hours 1 --auto-approve
 
+# Chat-style one-liner (implies --auto-approve; flags still pass through):
+venv\Scripts\python main.py @9to5 make the test suite green --hours 2
+
 # Useful flags:
 #   --mode watch|gated   watch = autonomous + abort (default); gated = approval gates
 #   --work-dir C:\path   working dir for Claude Code CLI (default PROJECT_ROOT)
