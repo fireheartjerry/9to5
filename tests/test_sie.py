@@ -41,7 +41,8 @@ class TestSieMaintenance(unittest.TestCase):
         out = sie.run_maintenance(force=True, db_path=self.db)
         self.assertEqual(set(out["steps"]),
                          {"embeddings", "consolidate", "policy_rebuild", "evaluate",
-                          "prompt_promotion", "lora_distillation", "dpo_distillation"})
+                          "prompt_promotion", "lora_distillation", "dpo_distillation",
+                          "curriculum_and_report"})
         self.assertTrue(sie._state_path().exists())
         self.assertEqual(out["steps"]["evaluate"]["status"], "no_runner")
 

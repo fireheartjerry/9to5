@@ -194,9 +194,19 @@ def _weekly_steps(db_path: Optional[Path]):
         from learning import finetune
         return finetune.run_dpo_cycle(db_path=db_path)
 
+    def curriculum_and_report():
+        # Author practice goals for the weakest families + write the "what did I learn"
+        # report. Both best-effort and human-facing -- the system narrates its own progress.
+        from learning import curriculum, release
+        goals = curriculum.generate_goals(db_path=db_path)
+        curriculum.write_suggestions(goals)
+        release.write_report(db_path=db_path)
+        return {"curriculum_goals": len(goals)}
+
     return [("prompt_promotion", prompt_promotion),
             ("lora_distillation", lora_distillation),
-            ("dpo_distillation", dpo_distillation)]
+            ("dpo_distillation", dpo_distillation),
+            ("curriculum_and_report", curriculum_and_report)]
 
 
 def run_maintenance_async(**kwargs) -> None:

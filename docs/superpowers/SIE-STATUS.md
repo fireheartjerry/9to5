@@ -15,7 +15,7 @@ implemented with the external call seam mocked and offline-testable logic real.
 | **E — LoRA Distillation (SFT)** | data-quality gate (`learning/dataset.py`) + gold builder (`learning/distill.py`) + local LoRA + adapter registry/rollback (`learning/finetune.py`), auto-runs in weekly tier | ✅ done |
 | **F — Reward + DPO** | composite reward + logistic calibrator (`learning/reward.py`) + preference pairs (`learning/preferences.py`) + DPO LoRA cycle, auto-runs in weekly tier | ✅ done |
 | **G — Rollout + Counterfactual** | offline replay (`learning/counterfactual.py`) + shadow/canary state machine (`learning/rollout.py`) + per-role adapters & brain router | ✅ done |
-| H — Curriculum + Releases | self-play goals + model cards + attribution | ⬜ |
+| **H — Curriculum + Releases** | self-play goal generation (`learning/curriculum.py`) + model cards & attribution report (`learning/release.py`), auto in weekly tier | ✅ done |
 | NW1–NW7 — Next wave (J–R) | human feedback, confidence, post-mortems, multi-teacher, KG, solution cache, research track | ⬜ |
 | **X1 — Auto-runner** | `learning/sie.py` cadence ladder, auto-fires after every run (hands-off), file-locked + throttled | ✅ done |
 | X2 — Safety | `learning/safety.py` invariants I1–I6 + kill switch enforcement | ⬜ |
@@ -129,3 +129,12 @@ implemented with the external call seam mocked and offline-testable logic real.
 - `orchestrator.py`: `_ollamaChat` routes to `active_brain_tag()` (no-op until an
   adapter is promoted; falls back to base on any error).
 - Tests: `tests/test_rollout.py` (9). Suite 306/306 green.
+
+## Phase H — Curriculum + releases (auto, human-facing)
+- `learning/curriculum.py`: `family_stats` (weakest-first, support-gated), `generate_goals`
+  (practice goals targeting low first-pass families), `write_suggestions` digest.
+- `learning/release.py`: `model_card` (prompt/adapter), `attribution` (lessons, arms,
+  champion prompts, adapters, fitness Δ), `render_report`/`write_report`.
+- `learning/sie.py`: weekly tier now also authors curriculum + writes the report.
+- Tests: `tests/test_curriculum_release.py` (8). Suite 313/313 green.
+- **Lettered phases A–H complete.** Remaining: NW1–NW7 (next wave), X2 (safety enforcement).
