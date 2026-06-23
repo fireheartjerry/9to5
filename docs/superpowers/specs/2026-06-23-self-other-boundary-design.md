@@ -336,3 +336,18 @@ self-produced content ingested as trusted self) and the **epoch pin** (kills the
 autoimmunity axis — the running self diverging from the on-disk self). Comprehensive
 on severity: every catastrophic and high instance closes here. Editing stays
 unrestricted; only *role* and *execution coherence* are governed.
+
+## Spike result (Task 0.1)
+
+**Hook fired: NO.**
+
+Evidence: `python scripts/spike_headless_hook.py` printed `HOOK_FIRED: False`
+— the sentinel file was never written, confirming that `claude --print
+--dangerously-skip-permissions --settings <path>` does **not** execute
+`PreToolUse` hooks even when a matching `settings.json` is supplied via
+`--settings`. Claude version resolved via `shutil.which("claude")` →
+`C:\Users\fireh\AppData\Roaming\npm\claude.cmd`.
+
+Task 5.1's epoch read must ALSO live in `agents/executor.py`'s in-process
+guard (where `block_destructive` already lives); the hook change still lands
+but is not sole enforcement.
