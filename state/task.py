@@ -126,7 +126,10 @@ class TaskState:
     @classmethod
     def load(cls, task_id: str) -> "TaskState":
         p = config.STATE_DIR / f"{task_id}.json"
-        return cls(json.loads(p.read_text(encoding="utf-8")))
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError(f"task JSON for {task_id!r} is not a dict: {type(data).__name__}")
+        return cls(data)
 
     @classmethod
     def loadSafe(cls, task_id: str) -> Optional["TaskState"]:

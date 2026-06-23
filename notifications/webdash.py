@@ -201,7 +201,13 @@ def _makeHandler(task_id: str):
                     payload = {}
             except Exception:  # noqa: BLE001
                 payload = {}
-            result = _applyControl(task_id, payload.get("action", ""), payload.get("arg"))
+            action = payload.get("action") or ""
+            if not isinstance(action, str):
+                action = ""
+            arg = payload.get("arg")
+            if arg is not None and not isinstance(arg, str):
+                arg = str(arg)
+            result = _applyControl(task_id, action, arg)
             self._send(200, json.dumps(result).encode("utf-8"), "application/json")
 
     return Handler

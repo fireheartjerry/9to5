@@ -25,14 +25,20 @@ RST = "\033[0m"
 def _ollama() -> tuple[bool, str, str]:
     try:
         r = requests.get(f"{config.OLLAMA_HOST}/api/tags", timeout=5)
-        models = [m.get("name") for m in (r.json().get("models") or [])]
+        r.raise_for_status()
+        body = r.json()
+        if not isinstance(body, dict):
+            return False, f"Ollama /api/tags returned unexpected shape ({type(body).__name__})", \
+                "check Ollama version / ensure it listens on 11434"
+        models = [m.get("name") for m in (body.get("models") or []) if isinstance(m, dict)]
         if config.OLLAMA_MODEL not in models:
             return False, f"server up but {config.OLLAMA_MODEL} not pulled (have {models})", \
                 f"run: ollama pull {config.OLLAMA_MODEL}"
         # GPU: check loaded models for VRAM usage
         gpu = "GPU unknown (model not currently loaded)"
         try:
-            ps = requests.get(f"{config.OLLAMA_HOST}/api/ps", timeout=5).json().get("models") or []
+            ps_body = requests.get(f"{config.OLLAMA_HOST}/api/ps", timeout=5).json()
+            ps = (ps_body.get("models") if isinstance(ps_body, dict) else None) or []
             for m in ps:
                 if m.get("name") == config.OLLAMA_MODEL or m.get("model") == config.OLLAMA_MODEL:
                     vram = m.get("size_vram", 0)
@@ -92,7 +98,11 @@ def _discord() -> tuple[bool, str, str]:
         r = requests.get("https://discord.com/api/v10/users/@me",
                          headers={"Authorization": f"Bot {config.DISCORD_BOT_TOKEN}"}, timeout=10)
         if r.status_code == 200:
-            return True, f"bot online as {r.json().get('username')}", ""
+            try:
+                username = r.json().get("username") or "(unknown)"
+            except Exception:  # noqa: BLE001
+                username = "(unknown)"
+            return True, f"bot online as {username}", ""
         return False, f"token rejected ({r.status_code})", "check DISCORD_BOT_TOKEN in .env"
     except Exception as e:  # noqa: BLE001
         return False, str(e), "check network / DISCORD_BOT_TOKEN"
