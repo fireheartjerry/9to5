@@ -130,6 +130,10 @@ def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
 
 _COMPOUND_PREFIXES = ("stdout_contains_all:", "stdout_regex_all:")
 
+# Cap distinctive markers per requirement so a verbose elaborated goal can't bloat a compound verify
+# into trivially passing on boilerplate (LIVE BUG #2b). Clean short requirements have fewer anyway.
+_MAX_MARKERS_PER_REQ: int = 6
+
 # Filler / structural / HTML-ambient words that are NOT distinctive of a deliverable. Dropping them
 # keeps a synthesized requirement marker from being satisfied by boilerplate that is ALWAYS present
 # (e.g. a goal asking for an "auto-refresh meta tag" must key on 'refresh', not the ambient 'meta'
@@ -204,7 +208,13 @@ def requirementMarkers(phrase: str) -> list[str]:
         for part in w.split("-"):
             if len(part) >= 3 and part not in _MARKER_STOPWORDS and part not in out:
                 out.append(part)
-    return out
+    # Keep only the most DISTINCTIVE markers. A verbose elaborated goal (markdown acceptance criteria)
+    # yields dozens of common-ish content words, and since the compound verify passes when ANY ONE
+    # marker is present, a bloated group is satisfied trivially by boilerplate -- defeating the
+    # anti-partial-work check (LIVE BUG #2b). Longer words are rarer/more specific, so cap to the
+    # longest few; a clean short requirement (<=cap markers) is unchanged.
+    out.sort(key=lambda m: (len(m), m), reverse=True)
+    return out[:_MAX_MARKERS_PER_REQ]
 
 
 def buildContentScanVerify(marker_groups: list[list[str]], target_path: str) -> dict:

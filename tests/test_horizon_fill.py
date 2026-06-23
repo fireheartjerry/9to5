@@ -61,6 +61,9 @@ class TestHorizonFill(unittest.TestCase):
         self.assertEqual(added, 1)
         self.assertEqual(self.orch._pendingCount(self.state), 1)
         self.assertIn("improvement", self.state.subtasks[0]["title"].lower())
+        # LIVE BUG #2a: the open-ended fallback must NOT get a strict compound verify -> verify None
+        # (executor-exit-zero), so it isn't spuriously failed/trivially passed against the goal's reqs.
+        self.assertIsNone(self.state.subtasks[0].get("verify"))
 
     def test_backfill_fallback_on_authoring_exception(self):
         with mock.patch.object(self.orch, "authorBackfillBatch", side_effect=RuntimeError("brain down")):

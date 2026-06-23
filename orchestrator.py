@@ -1402,13 +1402,21 @@ class Orchestrator:
             LOG.warning("backfill authoring failed (%s); using open-ended fallback", e)
             batch = []
         batch = [s for s in (batch or []) if isinstance(s, dict)]
-        if not batch:
+        if batch:
+            # A brain-authored batch IS tied to the goal's requirements, so requirement-aware
+            # strengthening is correct here.
+            batch = self._strengthenPlanVerifies(goal, batch)
+        else:
             # CONTINUITY FIX (found in the live test): the local 7B brain's JSON is unreliable, so
             # authorBackfillBatch frequently returns empty -- horizon-fill would then silently no-op
             # and a self-improvement run would finalize at ~30% of its horizon (18/60 min observed).
             # Fall back to ONE open-ended improvement subtask and let the capable executor (Claude)
             # choose the work, so the run keeps producing value until the deadline. Bounded by the
             # deadline and the pending-queue cap; each subtask is a real multi-minute run (no spin).
+            # IMPORTANT (LIVE BUG #2a): do NOT run _strengthenPlanVerifies on this OPEN-ENDED subtask
+            # -- it isn't tied to the goal's enumerated requirements, so a strict compound verify over
+            # all of them is wrong (it would spuriously fail, or pass trivially on bloated markers).
+            # Leave verify=None so it gates on the executor exiting cleanly.
             LOG.info("backfill: brain authored no batch -> enqueuing 1 open-ended improvement subtask")
             recent = "\n- ".join(done[-8:]) if done else "(none yet)"
             batch = [{
@@ -1421,7 +1429,6 @@ class Orchestrator:
                     f"and do NOT repeat recently-completed work:\n- {recent}"),
                 "layer": 3, "effort_level": "high", "verify": None,
             }]
-        batch = self._strengthenPlanVerifies(goal, batch)
         added = 0
         with self._state_lock:
             for s in batch[:room]:
