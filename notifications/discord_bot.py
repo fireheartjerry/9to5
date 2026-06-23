@@ -377,6 +377,19 @@ def adversaryTriggeredEmbed(subtask_title: str, reason: str, verdict: Optional[s
     }
 
 
+def noticeEmbed(reason: str, title: str = "ℹ️ 9TO5 — notice") -> dict:
+    """An AUTONOMOUS, informational event the system already handled itself (a fallback was taken, a
+    pause auto-resumed, the horizon was reached, a transient failure recovered, the run aborted/crashed
+    and the supervisor will recover). 9to5 runs hands-off, so this INFORMS without ever claiming a
+    'human decision is required' and without @-pinging anyone."""
+    return {
+        "title": title[:240],
+        "color": statusColor("running"),
+        "description": f"{reason[:4000]}",
+        "timestamp": _nowIso(),
+    }
+
+
 def blockedEmbed(reason: str, question: Optional[str] = None) -> dict:
     desc = f"**{reason[:1500]}**"
     if question:

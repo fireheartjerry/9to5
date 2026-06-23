@@ -409,12 +409,25 @@ class Orchestrator:
                 kwargs = {"options": {"num_ctx": config.OLLAMA_NUM_CTX}}
                 if want_json:
                     kwargs["format"] = "json"
-                return self.ollama.chat(model=model, messages=messages, **kwargs)
+                resp = self.ollama.chat(model=model, messages=messages, **kwargs)
+                # An EMPTY completion is a TRANSIENT model failure (qwen2.5 can dead-end to "" under
+                # format=json on markdown-heavy prompts). Treat it as retryable rather than returning
+                # empty -- otherwise EVERY brain call (plan/replan/backfill/adversary) silently falls
+                # back. The last attempt drops format=json as a salvage (free-form JSON is then
+                # recovered by _chatJson's fence/object extraction).
+                if want_json and not _chatText(resp).strip():
+                    if attempt == retries - 1:
+                        kwargs.pop("format", None)
+                        resp = self.ollama.chat(model=model, messages=messages, **kwargs)
+                        if _chatText(resp).strip():
+                            return resp
+                    raise ValueError("empty completion")
+                return resp
             except Exception as e:  # noqa: BLE001
-                LOG.warning("Ollama call failed (attempt %d/%d): %s", attempt, retries, e)
+                LOG.warning("Ollama call failed/empty (attempt %d/%d): %s", attempt, retries, e)
                 if attempt >= retries:
                     try:
-                        discord.sendEmbed(discord.blockedEmbed(f"Ollama failed after {retries} attempts: {e}"))
+                        discord.sendEmbed(discord.noticeEmbed(f"Brain (Ollama) unavailable after {retries} attempts; falling back: {e}"))
                     except Exception:  # noqa: BLE001
                         pass
                     return None
@@ -569,8 +582,8 @@ class Orchestrator:
             # 8-hour goal into one unverified "Implement the goal" mega-subtask.
             LOG.error("planner produced no usable subtasks (JSON unparseable/empty) -> fallback plan")
             try:
-                discord.sendEmbed(discord.blockedEmbed(
-                    "Planner JSON unparseable/empty — using a decomposed fallback plan"))
+                discord.sendEmbed(discord.noticeEmbed(
+                    "Planner returned no usable JSON — auto-using a decomposed fallback plan (no action needed)"))
             except Exception:  # noqa: BLE001
                 pass
             reqs = verifier.extractRequirements(goal_elaborated)
@@ -1468,7 +1481,7 @@ class Orchestrator:
                 LOG.warning("time horizon reached (deadline %s); ending execution loop",
                             state.meta.get("deadline_at"))
                 try:
-                    discord.sendEmbed(discord.blockedEmbed(
+                    discord.sendEmbed(discord.noticeEmbed(
                         f"Time horizon reached ({state.meta.get('deadline_at')}) — finalizing as partial"))
                 except Exception:  # noqa: BLE001
                     pass
@@ -1483,8 +1496,7 @@ class Orchestrator:
             if no_progress > 40 or iters > 2000:
                 LOG.error("execution loop livelock (no progress in %d iters); aborting", no_progress)
                 try:
-                    discord.sendEmbed(discord.blockedEmbed("Execution loop guard tripped (possible livelock) — aborting"),
-                                      content=discord.humanPing())
+                    discord.sendEmbed(discord.noticeEmbed("Execution loop guard tripped (possible livelock) — auto-aborting"))
                 except Exception:  # noqa: BLE001
                     pass
                 raise AbortRun("execution loop guard tripped (livelock)")
@@ -1504,7 +1516,7 @@ class Orchestrator:
                 except Exception as e:  # noqa: BLE001 -- one bad subtask must not kill the run
                     LOG.error("Subtask %s crashed: %s", subtask.get("subtask_id"), e, exc_info=True)
                     try:
-                        discord.sendEmbed(discord.blockedEmbed(f"Subtask {subtask.get('subtask_id')} crashed: {e}"))
+                        discord.sendEmbed(discord.noticeEmbed(f"Subtask {subtask.get('subtask_id')} crashed (marked failed, run continues): {e}"))
                     except Exception:  # noqa: BLE001
                         pass
                     with self._state_lock:
@@ -1627,8 +1639,7 @@ class Orchestrator:
                 LOG.warning("Self-ref task but %s is not a git repo; no isolation branch", work_dir)
         except Exception as e:  # noqa: BLE001
             LOG.warning("self-ref branch creation failed: %s", e)
-        discord.sendEmbed(discord.selfRefEmbed(branch, config.CORE_PROTECTED_FILES),
-                          content=discord.humanPing())
+        discord.sendEmbed(discord.selfRefEmbed(branch, config.CORE_PROTECTED_FILES))
         dashboard.event(f"self-referential · branch {branch}")
 
     @staticmethod
@@ -1725,9 +1736,8 @@ class Orchestrator:
                     architect_doc = _resultText(arch_res).strip() or architect_doc
                 if len(architect_doc) < 200:
                     try:
-                        discord.sendEmbed(discord.blockedEmbed(
-                            f"Architect phase produced only {len(architect_doc)} chars — planning may be degraded"),
-                            content=discord.humanPing())
+                        discord.sendEmbed(discord.noticeEmbed(
+                            f"Architect phase produced only {len(architect_doc)} chars — proceeding (planning may be degraded)"))
                     except Exception:  # noqa: BLE001
                         pass
                     architect_doc = architect_doc or "(architect produced no usable output)"
@@ -1808,8 +1818,7 @@ class Orchestrator:
             elapsed = _elapsedSince(state.meta["started_at"])
             state.setStatus("aborted", blocked_reason=reason)
             self.writeIndex(state)
-            discord.sendEmbed(discord.abortedEmbed(reason, _fmtElapsed(elapsed)),
-                              content=discord.humanPing())
+            discord.sendEmbed(discord.abortedEmbed(reason, _fmtElapsed(elapsed)))
             state.addNotification("aborted", reason)
             dashboard.update(state, "aborted", f"aborted: {reason}")
             LOG.warning("Run aborted: %s", reason)
@@ -1825,7 +1834,7 @@ class Orchestrator:
             except Exception:  # noqa: BLE001
                 pass
             try:
-                discord.sendEmbed(discord.blockedEmbed(f"9to5 run crashed: {e}"), content=discord.humanPing())
+                discord.sendEmbed(discord.noticeEmbed(f"9to5 run crashed: {e} — supervisor will auto-recover if time remains"))
                 dashboard.update(state, "blocked", f"crashed: {e}")
             except Exception:  # noqa: BLE001
                 pass
