@@ -268,7 +268,7 @@ def readProductSelfKnowledge(roots: Optional[tuple] = None) -> dict:
     """Locate + read the product-self-knowledge skill (Claude Code's own current
     state). Returns ``{found: bool, path: str|None, text: str}``. Never raises."""
     search_roots = list(roots or config.CLAUDE_SCAN_ROOTS) + [
-        Path.home() / ".claude", config.SUPERCRITICAL_ROOT]
+        Path.home() / ".claude", config.INSTALL_ROOT]
     for root in search_roots:
         root = Path(root)
         if not root.exists():

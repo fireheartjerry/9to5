@@ -214,7 +214,7 @@ WorkRequest(goal="add retries to X", hours=2.0, mode="gated",
 - The bot's invite must include the `applications.commands` OAuth scope for slash
   commands to register.
 - For instant slash availability during dev, set `DISCORD_GUILD_ID` in
-  `C:\supercritical\.env`; otherwise global registration may take up to ~1h.
+  `C:\9to5\.env`; otherwise global registration may take up to ~1h.
 - `/work` always passes `--auto-approve`; use `--mode gated` (a `/work` option) to keep
   the plan/PR approval gates, answered with `!approve` / `!reject` or the web buttons.
 

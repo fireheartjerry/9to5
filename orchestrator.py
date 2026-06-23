@@ -1291,7 +1291,7 @@ class Orchestrator:
         text = f"{state.meta.get('goal_raw', '')} {state.meta.get('goal_elaborated', '')}".lower()
         root = str(config.PROJECT_ROOT).lower()
         # Explicit self-targeting keywords only -- NOT the bare install path, which
-        # appears in any goal that writes a file under C:\supercritical\... .
+        # appears in any goal that writes a file under C:\9to5\... .
         markers = ["9to5", "itself", "self-referential", "self-modify", "self modify",
                    "self-improve", "its own code"]
         same_dir = os.path.abspath(work_dir).lower() == root

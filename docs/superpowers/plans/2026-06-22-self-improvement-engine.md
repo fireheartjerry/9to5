@@ -60,7 +60,7 @@ and `learning/{prompts,policy}` at its existing brain-call sites.
 
 `ALL_CAPS` module constants, `snake_case` variables, `camelCase` functions,
 `pathlib.Path` everywhere (never `os.path`). No hardcoded secrets — all paths/thresholds
-read from `config.py`, which reads `C:\supercritical\.env`. Tests are stdlib
+read from `config.py`, which reads `C:\9to5\.env`. Tests are stdlib
 `unittest` under `tests/`, runnable offline (mock Ollama/GPU). Ledger writes are
 **best-effort** and must never block or fail a run.
 

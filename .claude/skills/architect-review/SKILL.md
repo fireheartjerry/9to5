@@ -41,7 +41,7 @@ Write your findings as a single markdown note into the 9TO5 Obsidian
 vault at:
 
 ```
-C:\supercritical\vault\9to5\tasks\<task_id>_<date>\subtasks\<sid>-rv.md
+C:\9to5\vault\9to5\tasks\<task_id>_<date>\subtasks\<sid>-rv.md
 ```
 
 Substitute the real `<task_id>`, `<date>`, and subtask id `<sid>` from the task

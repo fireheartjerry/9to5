@@ -21,11 +21,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\supercritical\\venv\\Scripts\\python.exe C:\\supercritical\\agents\\hooks.py block_destructive"
+            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py block_destructive"
           },
           {
             "type": "command",
-            "command": "C:\\supercritical\\venv\\Scripts\\python.exe C:\\supercritical\\agents\\hooks.py self_modification_guard"
+            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py self_modification_guard"
           }
         ]
       },
@@ -34,7 +34,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\supercritical\\venv\\Scripts\\python.exe C:\\supercritical\\agents\\hooks.py self_modification_guard"
+            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py self_modification_guard"
           }
         ]
       }
@@ -45,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\supercritical\\venv\\Scripts\\python.exe C:\\supercritical\\agents\\hooks.py write_obsidian"
+            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py write_obsidian"
           }
         ]
       },
@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\supercritical\\venv\\Scripts\\python.exe C:\\supercritical\\agents\\hooks.py log_all"
+            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py log_all"
           }
         ]
       }
@@ -65,7 +65,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\supercritical\\venv\\Scripts\\python.exe C:\\supercritical\\agents\\hooks.py discord_notify"
+            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py discord_notify"
           }
         ]
       }

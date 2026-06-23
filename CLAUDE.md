@@ -75,7 +75,7 @@ output_ref, github_pr, session}.
 ## Obsidian vault structure
 Notes written via Local REST API (`https://127.0.0.1:27124`, self-signed cert,
 `verify=False`, `Authorization: Bearer <OBSIDIAN_API_KEY>`), **with automatic
-disk-write fallback** under `C:\supercritical\vault\9to5\`.
+disk-write fallback** under `C:\9to5\vault\9to5\`.
 ```
 vault/9to5/tasks/<task_id>_<date>/
   index.md  architect.md  replan-log.md
@@ -120,7 +120,7 @@ dashboard, web dashboard, gateway command bot, watch/gated control modes,
 plan editing, **Ollama-backed Adversary critique** (advisory verdict +
 concerns; conservative auto-approve fallback). Phase 2 swaps the Adversary's
 brain for GPT-5.5 via chatgpt.com CDP. Layers 1/2 not built. Everything reads
-config from `C:\supercritical\.env` — never hardcode secrets.
+config from `C:\9to5\.env` — never hardcode secrets.
 
 ## Self-Improvement Philosophy
 

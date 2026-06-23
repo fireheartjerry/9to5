@@ -105,7 +105,7 @@ Phase 1 (Layer 3 only).
   fallback).
 - **STUBBED:** the **Adversary** brain is local Ollama in Phase 1; Phase 2 swaps
   it for GPT-5.5 via chatgpt.com CDP. Layers 1 (Browser) and 2 (Native) are not built.
-- Everything reads config from `C:\supercritical\.env` — never hardcode secrets.
+- Everything reads config from `C:\9to5\.env` — never hardcode secrets.
 
 ## Conventions
 `ALL_CAPS` module constants, `snake_case` variables, `camelCase` functions,

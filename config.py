@@ -1,6 +1,6 @@
 """9TO5 -- central configuration.
 
-Loads environment from ``C:\\supercritical\\.env`` and exposes typed, ALL_CAPS
+Loads environment from ``C:\\9to5\\.env`` and exposes typed, ALL_CAPS
 constants plus a few helper functions (camelCase). Nothing here hardcodes a
 secret or path; every value originates from the ``.env`` file.
 
@@ -49,20 +49,20 @@ PROJECT_ROOT: Path = _envPath("PROJECT_ROOT", str(_THIS_DIR)) or _THIS_DIR
 LOG_PATH: Path = _envPath("LOG_PATH", str(PROJECT_ROOT / "logs")) or (PROJECT_ROOT / "logs")
 
 # Install root (the durable home of vault/logs/knowledge), independent of which
-# git worktree the code happens to run from. Defaults to C:\supercritical.
-SUPERCRITICAL_ROOT: Path = _envPath("SUPERCRITICAL_ROOT", r"C:\supercritical") or Path(r"C:\supercritical")
+# git worktree the code happens to run from. Defaults to C:\9to5.
+INSTALL_ROOT: Path = _envPath("INSTALL_ROOT", r"C:\9to5") or Path(r"C:\9to5")
 
 # --- Living Claude Code knowledge base -----------------------------------
 # The maximalist self-analysis reference, refreshed each session and compressed
 # into the "CLAUDE CODE CAPABILITIES" section injected into every Ollama prompt.
-KNOWLEDGE_DIR: Path = _envPath("KNOWLEDGE_DIR", str(SUPERCRITICAL_ROOT / "knowledge")) or (SUPERCRITICAL_ROOT / "knowledge")
+KNOWLEDGE_DIR: Path = _envPath("KNOWLEDGE_DIR", str(INSTALL_ROOT / "knowledge")) or (INSTALL_ROOT / "knowledge")
 CLAUDE_KNOWLEDGE_PATH: Path = KNOWLEDGE_DIR / "claude_code.md"
 # Expert, opinionated recommendations (how 9to5 should wield every Claude Code primitive).
 # Folded into the unified reference as "Part E" and surfaced (executive slice) in the injection.
 CLAUDE_RECOMMENDATIONS_PATH: Path = KNOWLEDGE_DIR / "recommendations.md"
 # Roots scanned recursively for installed skills/agents/workflows/hooks/settings.
 # Both the install root's .claude AND the running project's .claude are merged.
-CLAUDE_SCAN_ROOTS: tuple[Path, ...] = (SUPERCRITICAL_ROOT / ".claude", PROJECT_ROOT / ".claude")
+CLAUDE_SCAN_ROOTS: tuple[Path, ...] = (INSTALL_ROOT / ".claude", PROJECT_ROOT / ".claude")
 # Best-effort live-docs fetch (Python has internet; Ollama does not -- exploit it).
 CLAUDE_DOC_FETCH: bool = _envBool("CLAUDE_DOC_FETCH", True)
 CLAUDE_DOC_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_DOC_TIMEOUT_SECONDS", "8"))
@@ -365,7 +365,7 @@ ARCHITECTURE_BRIEF: str = (
     "`health.py` (/health checks).\n"
     "Invocation-spec keys: claude_md_inject, skills_to_invoke, effort_level, subagent, prompt, "
     "pre_tool_hooks, post_tool_hooks. Conventions: ALL_CAPS constants, snake_case vars, camelCase "
-    "functions, pathlib.Path everywhere. Install root is C:\\supercritical (never move it).\n"
+    "functions, pathlib.Path everywhere. Install root is C:\\9to5 (never move it).\n"
     "SELF-MODIFICATION RULES: you are on a dedicated git branch. Do NOT edit the CORE files "
     "(orchestrator.py, main.py, agents/hooks.py, config.py) -- they run the very loop executing you, "
     "and editing them mid-run can corrupt the orchestrator. Make changes to OTHER files, add new "

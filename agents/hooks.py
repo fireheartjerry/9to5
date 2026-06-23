@@ -14,7 +14,7 @@ import os
 import re
 
 # Make "import config" (and other project modules) work regardless of cwd.
-sys.path.insert(0, r"C:\supercritical")
+sys.path.insert(0, r"C:\9to5")
 
 # config is safe to import at module load; project sub-modules are imported
 # lazily inside handlers so a broken import can never crash the dispatcher.
@@ -41,7 +41,7 @@ DESTRUCTIVE_PATTERNS = (
     ">/dev/sda",
 )
 
-LOG_PATH = r"C:\supercritical\logs\hooks.log"
+LOG_PATH = r"C:\9to5\logs\hooks.log"
 
 
 def _readEvent():

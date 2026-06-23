@@ -14,7 +14,7 @@ that must survive past the session.
 All notes live under the disk-fallback vault root:
 
 ```
-C:\supercritical\vault\9to5\tasks\<task_id>_<date>\
+C:\9to5\vault\9to5\tasks\<task_id>_<date>\
   index.md                  task overview + status
   architect.md              architecture design doc
   replan-log.md             append-only record of replans
