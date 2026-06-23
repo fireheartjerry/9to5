@@ -46,13 +46,28 @@ def default_trainer() -> Optional[Trainer]:
     return None
 
 
-def active_brain_tag(db_path: Optional[Path] = None) -> str:
-    """The model tag the orchestrator should call NOW. Always one step from stock:
-    the frozen base under the kill switch or when no adapter is promoted."""
-    if config.SIE_KILL_SWITCH:
-        return config.OLLAMA_MODEL
-    champ = experience.get_champion_adapter(db_path=db_path)
-    return champ["tag"] if champ else config.OLLAMA_MODEL
+def active_brain_tag(role: str = "all", db_path: Optional[Path] = None) -> str:
+    """The model tag the orchestrator should call NOW for a brain ``role`` (per-role MoE).
+    Always one step from stock: the frozen base under the kill switch, when no adapter is
+    promoted for the role, or on any error."""
+    try:
+        if config.SIE_KILL_SWITCH:
+            return config.OLLAMA_MODEL
+        champ = experience.get_champion_adapter(role, db_path=db_path)
+        if champ:
+            return champ["tag"]
+        if role != "all":   # fall back to a general adapter if no role-specific one
+            champ = experience.get_champion_adapter("all", db_path=db_path)
+            if champ:
+                return champ["tag"]
+    except Exception as e:  # noqa: BLE001 -- routing must never break a brain call
+        LOG.debug("active_brain_tag fell back to base: %s", e)
+    return config.OLLAMA_MODEL
+
+
+def rollback_to_base(role: Optional[str] = None, db_path: Optional[Path] = None) -> bool:
+    """Retire the champion adapter (of ``role``, or all) -> active tag falls back to base."""
+    return experience.retire_champion_adapter(role, db_path=db_path)
 
 
 def _next_version(db_path: Optional[Path]) -> int:
@@ -141,8 +156,3 @@ def consider_promotion(adapter_id: int, *, challenger_fitness: float, champion_f
         return {"decision": "promote", "challenger": challenger_fitness, "champion": champion_fitness}
     return {"decision": "reject", "challenger": challenger_fitness, "champion": champion_fitness,
             "replay_ok": replay_ok}
-
-
-def rollback_to_base(db_path: Optional[Path] = None) -> bool:
-    """Retire the champion adapter -> the active tag falls back to the frozen base."""
-    return experience.retire_champion_adapter(db_path=db_path)

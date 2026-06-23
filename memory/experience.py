@@ -124,6 +124,7 @@ _SCHEMA: tuple[str, ...] = (
         id               INTEGER PRIMARY KEY AUTOINCREMENT,
         base_model       TEXT,
         tag              TEXT,
+        role             TEXT DEFAULT 'all',
         lora_path        TEXT,
         modelfile_path   TEXT,
         n_train_examples INTEGER,
@@ -570,30 +571,35 @@ def prompt_field_stats(prompt_set_id: str, db_path: Optional[Path] = None) -> di
 
 # ---------------------------------------------------------------- adapters (L5)
 
-def register_adapter(*, base_model: str, tag: str, lora_path: str,
+def register_adapter(*, base_model: str, tag: str, lora_path: str, role: str = "all",
                      modelfile_path: Optional[str] = None, n_train_examples: int = 0,
                      state: str = "challenger", db_path: Optional[Path] = None) -> Optional[int]:
-    """Register a trained LoRA adapter (keyed by unique tag). Returns its id."""
+    """Register a trained LoRA adapter (keyed by unique tag, scoped to a brain ``role``)."""
     try:
         with _WRITE_LOCK, _connect(db_path) as conn:
             cur = conn.execute(
                 """INSERT INTO adapters
-                   (base_model, tag, lora_path, modelfile_path, n_train_examples, trained_at, state)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   (base_model, tag, role, lora_path, modelfile_path, n_train_examples, trained_at, state)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(tag) DO UPDATE SET
-                     lora_path=excluded.lora_path, modelfile_path=excluded.modelfile_path,
+                     role=excluded.role, lora_path=excluded.lora_path,
+                     modelfile_path=excluded.modelfile_path,
                      n_train_examples=excluded.n_train_examples, state=excluded.state""",
-                (base_model, tag, lora_path, modelfile_path, int(n_train_examples), _nowIso(), state))
+                (base_model, tag, role, lora_path, modelfile_path, int(n_train_examples),
+                 _nowIso(), state))
             return int(cur.lastrowid)
     except Exception as e:  # noqa: BLE001
         LOG.warning("register_adapter failed (ignored): %s", e)
         return None
 
 
-def get_champion_adapter(db_path: Optional[Path] = None) -> Optional[dict[str, Any]]:
+def get_champion_adapter(role: str = "all",
+                         db_path: Optional[Path] = None) -> Optional[dict[str, Any]]:
+    """Champion adapter for ``role`` (per-role MoE). Falls back to None if none promoted."""
     with _connect(db_path) as conn:
         row = conn.execute(
-            "SELECT * FROM adapters WHERE state='champion' ORDER BY id DESC LIMIT 1").fetchone()
+            "SELECT * FROM adapters WHERE state='champion' AND role=? ORDER BY id DESC LIMIT 1",
+            (role,)).fetchone()
         return dict(row) if row else None
 
 
@@ -608,10 +614,13 @@ def fetch_adapters(state: Optional[str] = None,
 
 
 def promote_adapter(adapter_id: int, db_path: Optional[Path] = None) -> bool:
-    """Make ``adapter_id`` the champion; retire the previous champion(s). Atomic."""
+    """Make ``adapter_id`` the champion for ITS role; retire that role's prior champion."""
     try:
         with _WRITE_LOCK, _connect(db_path) as conn:
-            conn.execute("UPDATE adapters SET state='retired' WHERE state='champion'")
+            row = conn.execute("SELECT role FROM adapters WHERE id=?", (adapter_id,)).fetchone()
+            role = row["role"] if row else "all"
+            conn.execute(
+                "UPDATE adapters SET state='retired' WHERE state='champion' AND role=?", (role,))
             conn.execute("UPDATE adapters SET state='champion' WHERE id=?", (adapter_id,))
         return True
     except Exception as e:  # noqa: BLE001
@@ -619,11 +628,16 @@ def promote_adapter(adapter_id: int, db_path: Optional[Path] = None) -> bool:
         return False
 
 
-def retire_champion_adapter(db_path: Optional[Path] = None) -> bool:
-    """Roll back to base: retire the current champion adapter (active tag falls back to base)."""
+def retire_champion_adapter(role: Optional[str] = None,
+                            db_path: Optional[Path] = None) -> bool:
+    """Roll back: retire the champion adapter (of ``role``, or all roles if None)."""
     try:
         with _WRITE_LOCK, _connect(db_path) as conn:
-            conn.execute("UPDATE adapters SET state='retired' WHERE state='champion'")
+            if role is None:
+                conn.execute("UPDATE adapters SET state='retired' WHERE state='champion'")
+            else:
+                conn.execute(
+                    "UPDATE adapters SET state='retired' WHERE state='champion' AND role=?", (role,))
         return True
     except Exception as e:  # noqa: BLE001
         LOG.warning("retire_champion_adapter failed (ignored): %s", e)

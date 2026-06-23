@@ -14,7 +14,7 @@ implemented with the external call seam mocked and offline-testable logic real.
 | **D — Prompt Evolution** | versioned registry (`learning/prompts.py`, byte-identical) + champion/challenger gate (`learning/promotion.py`), auto-runs in weekly tier | ✅ done |
 | **E — LoRA Distillation (SFT)** | data-quality gate (`learning/dataset.py`) + gold builder (`learning/distill.py`) + local LoRA + adapter registry/rollback (`learning/finetune.py`), auto-runs in weekly tier | ✅ done |
 | **F — Reward + DPO** | composite reward + logistic calibrator (`learning/reward.py`) + preference pairs (`learning/preferences.py`) + DPO LoRA cycle, auto-runs in weekly tier | ✅ done |
-| G — Rollout + Counterfactual | offline replay + shadow/canary + per-role adapters | ⬜ |
+| **G — Rollout + Counterfactual** | offline replay (`learning/counterfactual.py`) + shadow/canary state machine (`learning/rollout.py`) + per-role adapters & brain router | ✅ done |
 | H — Curriculum + Releases | self-play goals + model cards + attribution | ⬜ |
 | NW1–NW7 — Next wave (J–R) | human feedback, confidence, post-mortems, multi-teacher, KG, solution cache, research track | ⬜ |
 | **X1 — Auto-runner** | `learning/sie.py` cadence ladder, auto-fires after every run (hands-off), file-locked + throttled | ✅ done |
@@ -115,3 +115,17 @@ implemented with the external call seam mocked and offline-testable logic real.
 - `learning/sie.py`: weekly tier now also runs the DPO cycle automatically.
 - `config.py`: `DPO_KL_BETA` (0.1), `DPO_MIN_PAIRS` (30).
 - Tests: `tests/test_reward.py` (6), `tests/test_preferences.py` (5). Suite 297/297 green.
+
+## Phase G — Advanced rollout + counterfactual + per-role adapters
+- `learning/counterfactual.py`: `estimate_uplift` / `replay_over_ledger` — re-score a
+  challenger against logged subtasks via a `replay_fn` seam (deterministic verifies),
+  pre-live uplift estimate.
+- `learning/rollout.py`: pure `next_stage` (shadow→canary→champion, auto-rollback on
+  regression — I4) + `should_use_candidate` (fractional canary behind the bandit).
+- `memory/experience.py`: adapters gain a `role` column; `register_adapter`/
+  `get_champion_adapter`/`promote_adapter`/`retire_champion_adapter` are role-scoped.
+- `learning/finetune.py`: `active_brain_tag(role)` per-role MoE routing (kill-switch +
+  base fallback); `rollback_to_base(role)`.
+- `orchestrator.py`: `_ollamaChat` routes to `active_brain_tag()` (no-op until an
+  adapter is promoted; falls back to base on any error).
+- Tests: `tests/test_rollout.py` (9). Suite 306/306 green.

@@ -315,6 +315,13 @@ class Orchestrator:
         Qwen reasons from the current Claude Code feature set on every single brain call."""
         system = injectCapabilities(system)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        # SIE Layer 5/G: route to the champion adapter tag if one is promoted, else the
+        # frozen base. Best-effort -- any error falls back to OLLAMA_MODEL.
+        try:
+            from learning import finetune
+            model = finetune.active_brain_tag()
+        except Exception:  # noqa: BLE001
+            model = config.OLLAMA_MODEL
         delay = 2.0
         for attempt in range(1, retries + 1):
             try:
@@ -323,7 +330,7 @@ class Orchestrator:
                 kwargs = {"options": {"num_ctx": config.OLLAMA_NUM_CTX}}
                 if want_json:
                     kwargs["format"] = "json"
-                return self.ollama.chat(model=config.OLLAMA_MODEL, messages=messages, **kwargs)
+                return self.ollama.chat(model=model, messages=messages, **kwargs)
             except Exception as e:  # noqa: BLE001
                 LOG.warning("Ollama call failed (attempt %d/%d): %s", attempt, retries, e)
                 if attempt >= retries:
