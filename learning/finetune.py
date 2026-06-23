@@ -39,11 +39,79 @@ def write_modelfile(path: Path, base_model: str, lora_path: str) -> Path:
 
 
 def default_trainer() -> Optional[Trainer]:
-    """Resolve a local LoRA trainer if one is installed; else None (skip training).
+    """A real local LoRA (SFT) trainer, routed through the compute router. Returns None
+    -- so the cycle skips cleanly -- when training is disabled, no GPU is available under
+    policy, or the training stack (transformers/peft/trl/torch) isn't installed.
 
-    Kept as a stub seam here: a host with a GPU + PEFT/unsloth provides a real trainer
-    (passed into ``run_finetune_cycle``); without one we degrade to L0-L4 cleanly."""
-    return None
+    On the user's GPU host with the deps installed, this trains for real."""
+    from learning import compute
+    if not compute.training_enabled() or not compute.should_use_gpu():
+        return None
+
+    def _train(dataset_path: str, out_dir: str) -> str:
+        return _train_lora(dataset_path, out_dir, mode="sft", kl_beta=0.0)
+    return _train
+
+
+def default_dpo_trainer() -> Optional[Callable[[str, str, float], str]]:
+    """A real local DPO trainer (chosen/rejected pairs), routed through compute."""
+    from learning import compute
+    if not compute.training_enabled() or not compute.should_use_gpu():
+        return None
+
+    def _train(pairs_path: str, out_dir: str, kl_beta: float) -> str:
+        return _train_lora(pairs_path, out_dir, mode="dpo", kl_beta=kl_beta)
+    return _train
+
+
+def _train_lora(data_path: str, out_dir: str, *, mode: str, kl_beta: float) -> str:
+    """Run a local LoRA/DPO fine-tune on the host GPU and return the adapter dir.
+
+    All heavy imports are local so this module loads without an ML stack. Raises on any
+    failure -- the cycle wraps it and degrades to "error" (never crashes maintenance)."""
+    from pathlib import Path as _P
+
+    import torch  # type: ignore
+    from datasets import load_dataset  # type: ignore
+    from peft import LoraConfig  # type: ignore
+    from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore
+
+    from learning import compute
+    LOG.info("LoRA %s training on %s (%s)", mode, compute.device(), compute.detect_gpu().get("name"))
+    adapter_dir = str(_P(out_dir) / f"adapter-{mode}")
+    base = config.OLLAMA_MODEL.split(":")[0]  # HF repo id is configured separately in practice
+    tok = AutoTokenizer.from_pretrained(base)
+    model = AutoModelForCausalLM.from_pretrained(base, torch_dtype=torch.bfloat16, device_map="auto")
+    peft_cfg = LoraConfig(r=config.LORA_RANK, lora_alpha=config.LORA_RANK * 2,
+                          task_type="CAUSAL_LM")
+    if mode == "dpo":
+        from trl import DPOConfig, DPOTrainer  # type: ignore
+        ds = load_dataset("json", data_files=data_path, split="train")
+        args = DPOConfig(output_dir=adapter_dir, num_train_epochs=config.LORA_EPOCHS,
+                         beta=kl_beta or config.DPO_KL_BETA)
+        DPOTrainer(model=model, args=args, processing_class=tok,
+                   train_dataset=ds, peft_config=peft_cfg).train()
+    else:
+        from trl import SFTConfig, SFTTrainer  # type: ignore
+        ds = load_dataset("json", data_files=data_path, split="train")
+        args = SFTConfig(output_dir=adapter_dir, num_train_epochs=config.LORA_EPOCHS)
+        SFTTrainer(model=model, args=args, processing_class=tok,
+                   train_dataset=ds, peft_config=peft_cfg).train()
+    model.save_pretrained(adapter_dir)
+    return adapter_dir
+
+
+def default_ollama_runner() -> Optional[OllamaRunner]:
+    """Build the new Ollama model from a Modelfile via the `ollama` CLI, if present."""
+    import shutil
+    if not shutil.which("ollama"):
+        return None
+
+    def _create(tag: str, modelfile_path: str):
+        import subprocess
+        return subprocess.run(["ollama", "create", tag, "-f", modelfile_path],
+                              capture_output=True, text=True, timeout=600)
+    return _create
 
 
 def active_brain_tag(role: str = "all", db_path: Optional[Path] = None) -> str:
@@ -93,6 +161,7 @@ def run_finetune_cycle(*, trainer: Optional[Trainer] = None,
     trainer = trainer or default_trainer()
     if trainer is None:
         return {"skipped": "no_trainer", "examples": n}   # no GPU/backend on this host
+    ollama_runner = ollama_runner or default_ollama_runner()
 
     try:
         lora_path = trainer(ds["path"], str(out_dir))
@@ -128,8 +197,10 @@ def run_dpo_cycle(*, trainer: Optional[Callable[[str, str, float], str]] = None,
     need = config.DPO_MIN_PAIRS if min_pairs is None else min_pairs
     if n < need:
         return {"skipped": "not_enough", "pairs": n, "need": need}
+    trainer = trainer or default_dpo_trainer()
     if trainer is None:
         return {"skipped": "no_trainer", "pairs": n}
+    ollama_runner = ollama_runner or default_ollama_runner()
     try:
         lora_path = trainer(ds["path"], str(out_dir), config.DPO_KL_BETA)
         ver = _next_version(db_path)

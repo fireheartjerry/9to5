@@ -46,12 +46,18 @@ def attribution(*, db_path: Optional[Path] = None) -> dict[str, Any]:
         c = experience.get_champion(role, db_path=db_path)
         if c:
             champ_prompts[role] = c["version"]
+    try:
+        from learning import compute
+        compute_summary = compute.summary()
+    except Exception:  # noqa: BLE001
+        compute_summary = {}
     return {
         "lessons": len(experience.fetch_lessons(db_path=db_path)),
         "policy_arms": len(experience.fetch_arms(db_path=db_path)),
         "prompt_champions": champ_prompts,
         "adapters_total": len(experience.fetch_adapters(db_path=db_path)),
         "adapters_champion": len(experience.fetch_adapters("champion", db_path=db_path)),
+        "compute": compute_summary,
         "fitness": {"first": vals[0] if vals else None,
                     "last": vals[-1] if vals else None,
                     "delta": (vals[-1] - vals[0]) if len(vals) >= 2 else 0.0,
@@ -64,7 +70,11 @@ def render_report(attr: dict[str, Any]) -> str:
     trend = (f"{f['first']:.3f} → {f['last']:.3f} (Δ{f['delta']:+.3f}) over {f['points']} evals"
              if f["first"] is not None else "no eval points yet")
     champs = ", ".join(f"{r}=v{v}" for r, v in attr["prompt_champions"].items()) or "none"
+    c = attr.get("compute", {})
+    compute_line = (f"{c.get('policy')} · GPU={'yes (' + str(c.get('gpu_name')) + ')' if c.get('gpu_available') else 'no'}"
+                    f" · trains on {c.get('will_train_on')}") if c else "n/a"
     return ("# 9TO5 Self-Improvement Report\n\n"
+            f"- **Compute:** {compute_line}\n"
             f"- **Fitness:** {trend}\n"
             f"- **Lessons:** {attr['lessons']}\n"
             f"- **Policy arms:** {attr['policy_arms']}\n"
