@@ -1168,10 +1168,18 @@ class Orchestrator:
             if chk.returncode != 0 or "true" not in (chk.stdout or "").lower():
                 LOG.info("PR skipped: %s is not a git repository", work_dir)
                 return {"skipped": True, "reason": "not a git repository"}
-            branch = f"9to5/{state.task_id[:8]}"
+            # FX-23: a self-ref run already works on `sc/<id>`; reuse it as the PR head so the announced
+            # branch IS the PR branch (no divergent `9to5/<id>` the user can't find).
+            branch = state.meta.get("self_ref_branch") or f"9to5/{state.task_id[:8]}"
             git("checkout", "-B", branch)
             git("add", "-A")
-            git("commit", "-m", f"9TO5: {state.meta['goal_raw'][:60]}")
+            commit = git("commit", "-m", f"9TO5: {state.meta['goal_raw'][:60]}")
+            # FX-16: if nothing was staged, the work never reached the tracked tree (e.g. the executor
+            # wrote only into the gitignored .sc-ctx scratch). Do NOT open an empty/misleading PR --
+            # report it honestly so the run finalizes 'partial', not a green "PR created".
+            if commit.returncode != 0 and "nothing to commit" in ((commit.stdout or "") + (commit.stderr or "")).lower():
+                LOG.warning("PR skipped: no tracked changes to commit (work may have landed in .sc-ctx)")
+                return {"skipped": True, "reason": "no tracked changes produced"}
             push = git("push", "-u", "origin", branch)
             if push.returncode != 0:
                 return {"skipped": True, "reason": f"git push failed: {(push.stderr or '')[:200]}"}
@@ -1602,7 +1610,10 @@ class Orchestrator:
                 futures = {}
                 for st in batch:
                     position += 1
-                    ctx = os.path.join(work_dir, ".sc-ctx", st["subtask_id"])
+                    # FX-8: derive the cwd via the SAME helper as the sequential path so parallel and
+                    # sequential behave identically (the old hardcoded .sc-ctx broke non-self-ref
+                    # parallel runs -- wrong cwd, work lost, or FileNotFoundError on a missing dir).
+                    ctx = self._execCwd(state, st["subtask_id"], work_dir)
                     futures[pool.submit(self._executeSubtask, state, st, architect_doc,
                                         work_dir, bus, dashboard, position, ctx)] = st
                 abort = None
@@ -1720,14 +1731,14 @@ class Orchestrator:
             pass
 
     def _execCwd(self, state: TaskState, sid: str | None, work_dir: str) -> str:
-        """For self-referential runs, give the executor an isolated cwd so the living
-        CLAUDE.md never clobbers the project's own CLAUDE.md. The project root remains
-        an ancestor (auto-read for architecture); edits/verify use absolute paths."""
-        if state.meta.get("is_self_referential") and os.path.abspath(work_dir) == os.path.abspath(str(config.PROJECT_ROOT)):
-            ctx = os.path.join(str(config.PROJECT_ROOT), ".sc-ctx", sid or "architect")
-            os.makedirs(ctx, exist_ok=True)
-            return ctx
-        return work_dir
+        """ALWAYS give the executor an isolated `.sc-ctx/<sid>` cwd (FX-7). The living CLAUDE.md is
+        written into the cwd, so without isolation a run targeting an EXTERNAL repo (`--work-dir`)
+        would clobber/leak that repo's own CLAUDE.md into the PR. work_dir stays an ancestor (auto-read
+        for context); the executor edits the target via ABSOLUTE paths (per its charter/playbook).
+        The scratch dir is removed by _cleanupScaffolding at the end of the run."""
+        ctx = os.path.join(str(work_dir), ".sc-ctx", sid or "architect")
+        os.makedirs(ctx, exist_ok=True)
+        return ctx
 
     # ===================================================================
     # Full pipeline (with resume + parallelism)
@@ -1878,7 +1889,8 @@ class Orchestrator:
             # complete embed can't claim success on broken work. An advisory adversary-challenge hold
             # on otherwise all-done work stays "done" (the work completed; the PR is flagged for review).
             reason = str(pr.get("reason", ""))
-            held_broken = bool(pr.get("skipped")) and ("test suite failing" in reason or "degraded run" in reason)
+            held_broken = bool(pr.get("skipped")) and any(
+                s in reason for s in ("test suite failing", "degraded run", "no tracked changes"))
             all_done = total > 0 and done == total
             final_status = "done" if (all_done and not held_broken) else "partial"
             state.setStatus(final_status)
