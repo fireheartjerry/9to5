@@ -154,8 +154,16 @@ class TestPrGateDegraded(unittest.TestCase):
         with mock.patch.object(config, "NIGHT_MODE", True), \
                 mock.patch.object(config, "ADVERSARY_PR_HOLD_ENABLED", True):
             create, reason = self.orch._prGate(review, auto_pr=True, state=self.state)
+        self.assertFalse(create)                 # degraded run held regardless of night mode (FX-18)
+        self.assertIn("degraded", reason.lower())
+
+    def test_degraded_holds_pr_even_when_adversary_approved(self):
+        # FX-18: degraded check is unconditional -- a stub/approved verdict can't green-light a broken run
+        self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['config.py']")
+        with mock.patch.object(config, "ADVERSARY_PR_HOLD_ENABLED", True):
+            create, reason = self.orch._prGate({"verdict": "approved"}, auto_pr=True, state=self.state)
         self.assertFalse(create)
-        self.assertIn("HOLD", reason)
+        self.assertIn("degraded", reason.lower())
 
     def test_suite_gate_skips_non_self_ref(self):
         ok, _ = self.orch._prePrSuiteGate(self.state, ".")   # not self-referential

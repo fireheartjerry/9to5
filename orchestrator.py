@@ -508,27 +508,29 @@ class Orchestrator:
             except Exception:  # noqa: BLE001
                 return False
 
-        text = ((subtask.get("verify") or {}).get("cmd") or "") + "  " + (subtask.get("description") or "")
+        orig = subtask.get("verify") or {}
+        orig_expect = orig.get("expect")
+        # FX-4: PRESERVE the original behavioral assertion (stdout_contains/regex) so repair re-checks
+        # the REAL needle on the fresh artifact instead of degrading to "it exits 0" -- which would
+        # flip genuinely-broken work to PASS. Only fall back to exit_zero when there was no output check.
+        keep_expect = orig_expect if (isinstance(orig_expect, str) and orig_expect.startswith(
+            ("stdout_contains:", "stdout_regex:"))) else "exit_zero"
+        text = (orig.get("cmd") or "") + "  " + (subtask.get("description") or "")
         # 1) absolute .py referenced by the verify/description that THIS attempt wrote
         for m in re.findall(r"([A-Za-z]:\\[^\s\"'`]+\.py|/[^\s\"'`]+\.py)", text):
             if _fresh(m):
-                return {"cmd": f'python "{m}"', "expect": "exit_zero"}
+                return {"cmd": f'python "{m}"', "expect": keep_expect}
         # 2) relative .py token resolved against exec_cwd (preserve any subpath), written this attempt
         for cand in re.findall(r"([\w./\\-]+\.py)\b", text):
             if os.path.isabs(cand):
                 continue
             p = os.path.normpath(os.path.join(exec_cwd, cand))
             if _fresh(p):
-                return {"cmd": f'python "{p}"', "expect": "exit_zero"}
-        # 3) newest .py written into the work dir DURING this attempt
-        try:
-            fresh = [os.path.join(exec_cwd, f) for f in os.listdir(exec_cwd)
-                     if f.endswith(".py") and _fresh(os.path.join(exec_cwd, f))]
-            if fresh:
-                return {"cmd": f'python "{max(fresh, key=os.path.getmtime)}"', "expect": "exit_zero"}
-        except Exception:  # noqa: BLE001
-            pass
-        # 4) a NON-.py artifact written this attempt -> non-empty check (never mask a broken .py)
+                return {"cmd": f'python "{p}"', "expect": keep_expect}
+        # FX-4/17: do NOT rescue with an ARBITRARY newest .py in cwd -- it is often an unrelated scratch
+        # /helper file (especially under .sc-ctx) and would false-PASS partial/broken work. Only files
+        # the verify or description ACTUALLY reference (steps 1-2) qualify for a behavioral repair.
+        # 4) a NON-.py artifact REFERENCED by the verify/description -> non-empty check (never mask a broken .py)
         for m in re.findall(r"([A-Za-z]:\\[^\s\"'`]+\.[A-Za-z0-9]{1,5}|/[^\s\"'`]+\.[A-Za-z0-9]{1,5})", text):
             if m.lower().endswith(".py") or not _fresh(m):
                 continue
@@ -1042,17 +1044,44 @@ class Orchestrator:
         sid = subtask["subtask_id"]
         feedback = ("The work PASSED its acceptance check, but an adversarial reviewer raised concerns. "
                     "Address these WITHOUT breaking the passing verification:\n- " + "\n- ".join(concerns))
+        # FX-10: snapshot the work tree BEFORE remediation. A remediation edit that breaks the artifact
+        # (fails re-verify) must be REVERTED -- otherwise the broken files stay on disk and get committed
+        # while the subtask still reports the prior pass (verify_result no longer matches disk).
+        snap = self._gitSnapshot(exec_cwd)
         spec = self.authorInvocationSpec(state, subtask, architect_doc, feedback)
         result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask)
         vres = verifier.runVerification(subtask.get("verify"), exec_cwd, result)
         with self._state_lock:
             if vres.get("passed"):
                 state.recordVerify(sid, vres)   # adopt the still-passing post-remediation evidence
+            else:
+                self._gitRestore(exec_cwd, snap)   # revert broken remediation edits so disk == kept pass
             state.addNotification(
                 "adversary_remediation",
-                f"{sid}: remediation {'verified' if vres.get('passed') else 'did not verify (prior pass kept)'}")
-        LOG.info("Adversary remediation for %s -> %s", sid, "verified" if vres.get("passed") else "kept prior pass")
+                f"{sid}: remediation {'verified' if vres.get('passed') else 'did not verify (reverted, prior pass kept)'}")
+        LOG.info("Adversary remediation for %s -> %s", sid,
+                 "verified" if vres.get("passed") else "reverted (kept prior pass)")
         return vres
+
+    @staticmethod
+    def _gitSnapshot(cwd: str) -> "str | None":
+        """Capture the current (dirty) tree as a throwaway stash commit WITHOUT touching the tree;
+        returns its SHA, or None if cwd isn't a git repo / nothing to snapshot. (FX-10)"""
+        try:
+            r = subprocess.run(["git", "stash", "create"], cwd=cwd, capture_output=True, text=True, timeout=30)
+            return (r.stdout or "").strip() or None
+        except Exception:  # noqa: BLE001
+            return None
+
+    @staticmethod
+    def _gitRestore(cwd: str, sha: "str | None") -> None:
+        """Restore tracked files in cwd to a snapshot SHA from _gitSnapshot (revert edits since)."""
+        if not sha:
+            return
+        try:
+            subprocess.run(["git", "checkout", sha, "--", "."], cwd=cwd, capture_output=True, text=True, timeout=30)
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("remediation revert failed: %s", e)
 
     def _prePrAdversary(self, state: TaskState) -> dict:
         """Pre-PR safety review: the adversary judges the whole run before a PR is opened. Best-effort
@@ -1087,14 +1116,17 @@ class Orchestrator:
         """Decide whether to create the PR. Returns (create, skip_reason)."""
         if not auto_pr:
             return False, "--no-pr"
+        # FX-18: a DEGRADED run (most subtasks failed, or core changes reverted) must NEVER open a PR,
+        # INDEPENDENT of the adversary verdict. The brain frequently auto-approves/stubs (empty
+        # completions), so gating the degraded check behind a 'challenged' verdict made it dead code.
+        if self._runIsDegraded(state):
+            return False, "degraded run (majority failed / core reverted) — PR held for review"
         if config.ADVERSARY_PR_HOLD_ENABLED and review.get("verdict") == "challenged":
-            # Night mode normally suppresses the hold (hands-off operation), but a DEGRADED run
-            # (core changes reverted, or most subtasks failed) must still be held -- night mode
-            # should silence pings, not ship a broken branch unreviewed.
-            if not config.NIGHT_MODE or self._runIsDegraded(state):
+            # Night mode normally suppresses an advisory challenge hold (hands-off); the degraded
+            # check above already covers the must-never-ship cases regardless of night mode.
+            if not config.NIGHT_MODE:
                 concerns = "; ".join(review.get("concerns") or ["challenged"])
-                tag = "adversary HOLD" + (" (degraded run)" if config.NIGHT_MODE else "")
-                return False, f"{tag}: {concerns}"[:300]
+                return False, f"adversary HOLD: {concerns}"[:300]
         return True, ""
 
     def _prePrSuiteGate(self, state: TaskState, work_dir: str) -> "tuple[bool, str]":
@@ -1210,8 +1242,21 @@ class Orchestrator:
             if stderr_text:
                 combined += "\n[stderr]\n" + stderr_text
 
-            vresult = verifier.runVerification(verify_spec, exec_cwd, result)
+            # FX-1: an ABSENT verify must not be a blind "the CLI didn't crash = PASS". If the subtask
+            # references a fresh artifact this attempt produced, synthesize a behavioral check (run it)
+            # so broken/partial work can actually FAIL. Only when nothing is referenceable do we fall
+            # back to the executor-exit-zero signal -- and we then mark the result `unverified` so
+            # status/embeds (and the pre-PR gate) don't treat it as a real verification.
+            effective_verify = verify_spec
+            if not (verify_spec or {}).get("cmd"):
+                synth = self._repairVerify(subtask, exec_cwd, attempt_started)
+                if synth:
+                    effective_verify = synth
+                    LOG.info("%s: no verify authored -> synthesized behavioral check %s", sid, synth["cmd"])
+            vresult = verifier.runVerification(effective_verify, exec_cwd, result)
             passed = bool(vresult["passed"])
+            if not (effective_verify or {}).get("cmd"):
+                vresult["unverified"] = True   # exit-zero fallback only; no behavioral assertion ran
             # VERIFY REPAIR: a brittle brain-authored verify must NEVER fail correct work. Re-verify with a
             # robust behavioral fallback (run the actual artifact). NOT gated on the executor exit code --
             # headless claude exits nonzero for benign reasons (fallback-model switch, a non-fatal tool
@@ -1828,7 +1873,14 @@ class Orchestrator:
                     state.addNotification("pr_held", skip_reason)
             elapsed = _elapsedSince(state.meta["started_at"])
             done, total = state.progress()
-            final_status = "done" if (total > 0 and done == total) else "partial"
+            # FX-9: status must reflect REALITY. A PR HELD because the work is BROKEN (red suite) or
+            # DEGRADED (majority failed / core reverted) is NOT "done" -- report 'partial' so the
+            # complete embed can't claim success on broken work. An advisory adversary-challenge hold
+            # on otherwise all-done work stays "done" (the work completed; the PR is flagged for review).
+            reason = str(pr.get("reason", ""))
+            held_broken = bool(pr.get("skipped")) and ("test suite failing" in reason or "degraded run" in reason)
+            all_done = total > 0 and done == total
+            final_status = "done" if (all_done and not held_broken) else "partial"
             state.setStatus(final_status)
             self.writeIndex(state)
             pr_link = pr.get("url") or f"skipped: {pr.get('reason', '')}"

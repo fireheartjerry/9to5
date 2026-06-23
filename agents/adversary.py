@@ -18,12 +18,40 @@ Trigger signals (per the 9TO5 spec):
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Callable, Optional
 
 import config
 
 LOG = config.getLogger("adversary")
+
+
+def _loadJsonLoose(content: object):
+    """Parse a brain JSON reply the way the orchestrator's _chatJson does -- tolerating a ```json
+    fence or prose around the object. Critical for the Adversary (FX-5): a real 'challenged' verdict
+    wrapped in a fence/prose must NOT silently fail json.loads and degrade to a conservative
+    'approved', which would neuter the PR-hold and remediation. Returns a dict or None."""
+    if isinstance(content, dict):
+        return content
+    if not isinstance(content, str):
+        return None
+    text = content.strip()
+    if not text:
+        return None
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE).strip()
+    try:
+        return json.loads(text)
+    except Exception:  # noqa: BLE001
+        pass
+    m = re.search(r"\{.*\}", text, re.DOTALL)   # salvage the first balanced-looking object
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
 
 # Vocabulary aligned with notifications.discord_bot._APPROVED / _CHALLENGED.
 _APPROVED = "approved"
@@ -116,7 +144,7 @@ def _buildReviewUser(subtask_title: str, trigger_reason: str, executor_output: s
 def _parseVerdict(raw_content: object, trigger_reason: str, *, surface: str) -> dict:
     """Turn a brain's raw JSON reply into the verdict contract. Raises on junk so the
     caller can degrade to a conservative stub."""
-    data = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
+    data = _loadJsonLoose(raw_content)
     if not isinstance(data, dict):
         raise ValueError("non-object review payload")
     verdict = _normalizeVerdict(data.get("verdict"))
@@ -205,7 +233,8 @@ def review(subtask_title: str, trigger_reason: str, executor_output: str, *,
     user = _buildReviewUser(subtask_title, trigger_reason, executor_output, goal)
     try:
         resp = ollama_chat(_SYSTEM, user, want_json=True)
-        data = json.loads(resp["message"]["content"]) if resp else None
+        content = (resp.get("message") or {}).get("content") if isinstance(resp, dict) else None
+        data = _loadJsonLoose(content)
         if not isinstance(data, dict):
             raise ValueError("non-object review payload")
         verdict = _normalizeVerdict(data.get("verdict"))
