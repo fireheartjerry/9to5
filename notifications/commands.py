@@ -138,6 +138,15 @@ def applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str:
     if state is None:
         return NO_TASK
     n = cmd.name
+    # SIE subsystem J: capture the human's decision as an implicit-feedback label
+    # (best-effort, never affects control flow).
+    if n in ("approve", "reject", "skip", "abort", "retry", "add"):
+        try:
+            from learning import human_feedback
+            human_feedback.record(n, run_id=state.task_id,
+                                  subtask_id=getattr(cmd, "arg", None) or None)
+        except Exception:  # noqa: BLE001
+            pass
     if n == "status":
         return _statusText(bus, state)
     if n == "plan":

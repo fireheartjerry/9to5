@@ -195,6 +195,8 @@ LORA_OUTPUT_DIR: Path = _envPath("LORA_OUTPUT_DIR", str(PROJECT_ROOT / "state" /
 # DPO/ORPO preference training: KL anchor strength + minimum preference pairs to train.
 DPO_KL_BETA: float = float(os.getenv("DPO_KL_BETA", "0.1"))
 DPO_MIN_PAIRS: int = int(os.getenv("DPO_MIN_PAIRS", "30"))
+# Next-wave knobs: confidence deferral threshold (escalate below this P(success)).
+CONFIDENCE_DEFER_THRESHOLD: float = float(os.getenv("CONFIDENCE_DEFER_THRESHOLD", "0.4"))
 
 # --- Adversary trigger configuration -------------------------------------
 ADVERSARY_TRIGGER_PHRASES: tuple[str, ...] = (

@@ -133,6 +133,58 @@ _SCHEMA: tuple[str, ...] = (
         state            TEXT,
         UNIQUE(tag)
     )""",
+    """CREATE TABLE IF NOT EXISTS human_feedback (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id     TEXT,
+        subtask_id TEXT,
+        kind       TEXT,
+        target     TEXT,
+        before_json TEXT,
+        after_json  TEXT,
+        at         TEXT
+    )""",
+    """CREATE TABLE IF NOT EXISTS failure_modes (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        signature_tags TEXT,
+        root_cause     TEXT,
+        taxonomy_class TEXT,
+        occurrences    INTEGER,
+        mitigation     TEXT,
+        first_seen     TEXT,
+        last_seen      TEXT,
+        UNIQUE(signature_tags, taxonomy_class)
+    )""",
+    """CREATE TABLE IF NOT EXISTS solution_cache (
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+        signature          TEXT,
+        spec_json          TEXT,
+        last_verify_passed INTEGER,
+        reuse_count        INTEGER,
+        last_used_at       TEXT,
+        UNIQUE(signature)
+    )""",
+    """CREATE TABLE IF NOT EXISTS kg_nodes (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind      TEXT,
+        key       TEXT,
+        summary   TEXT,
+        UNIQUE(kind, key)
+    )""",
+    """CREATE TABLE IF NOT EXISTS reflections (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id        TEXT,
+        subtask_id    TEXT,
+        role          TEXT,
+        teacher       TEXT,
+        approach      TEXT,
+        reusable_recipe TEXT,
+        spec_feedback TEXT,
+        verify_critique TEXT,
+        confidence    REAL,
+        trusted       INTEGER,
+        at            TEXT,
+        UNIQUE(run_id, subtask_id, teacher)
+    )""",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_run ON subtasks(run_id)",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_passed ON subtasks(verify_passed)",
     "CREATE INDEX IF NOT EXISTS idx_arms_ctx ON policy_arms(context_key)",
@@ -642,6 +694,156 @@ def retire_champion_adapter(role: Optional[str] = None,
     except Exception as e:  # noqa: BLE001
         LOG.warning("retire_champion_adapter failed (ignored): %s", e)
         return False
+
+
+# ----------------------------------------------- next-wave stores (J/L/N/O/I) helpers
+
+def record_feedback(*, kind: str, run_id: Optional[str] = None, subtask_id: Optional[str] = None,
+                    target: Optional[str] = None, before: Any = None, after: Any = None,
+                    db_path: Optional[Path] = None) -> bool:
+    """Capture a human control decision (approve/reject/skip/edit/...) as a label (J)."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            conn.execute(
+                """INSERT INTO human_feedback
+                   (run_id, subtask_id, kind, target, before_json, after_json, at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (run_id, subtask_id, kind, target, _j(before), _j(after), _nowIso()))
+        return True
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("record_feedback failed (ignored): %s", e)
+        return False
+
+
+def fetch_feedback(kind: Optional[str] = None,
+                   db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    with _connect(db_path) as conn:
+        if kind is None:
+            rows = conn.execute("SELECT * FROM human_feedback ORDER BY id")
+        else:
+            rows = conn.execute("SELECT * FROM human_feedback WHERE kind=? ORDER BY id", (kind,))
+        return [dict(r) for r in rows]
+
+
+def upsert_failure_mode(signature_tags: str, taxonomy_class: str, *, root_cause: str,
+                        mitigation: str = "", db_path: Optional[Path] = None) -> bool:
+    """Accrete a failure into the taxonomy (occurrence-counted, keyed by family+class) (L)."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            now = _nowIso()
+            conn.execute(
+                """INSERT INTO failure_modes
+                   (signature_tags, taxonomy_class, root_cause, mitigation, occurrences, first_seen, last_seen)
+                   VALUES (?, ?, ?, ?, 1, ?, ?)
+                   ON CONFLICT(signature_tags, taxonomy_class) DO UPDATE SET
+                     occurrences=failure_modes.occurrences+1, last_seen=excluded.last_seen,
+                     root_cause=excluded.root_cause,
+                     mitigation=CASE WHEN excluded.mitigation<>'' THEN excluded.mitigation
+                                     ELSE failure_modes.mitigation END""",
+                (signature_tags, taxonomy_class, root_cause, mitigation, now, now))
+        return True
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("upsert_failure_mode failed (ignored): %s", e)
+        return False
+
+
+def fetch_failure_modes(signature_tags: Optional[str] = None,
+                        db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    with _connect(db_path) as conn:
+        if signature_tags is None:
+            rows = conn.execute("SELECT * FROM failure_modes ORDER BY occurrences DESC")
+        else:
+            rows = conn.execute(
+                "SELECT * FROM failure_modes WHERE signature_tags=? ORDER BY occurrences DESC",
+                (signature_tags,))
+        return [dict(r) for r in rows]
+
+
+def upsert_solution(signature: str, spec_json: str, *, verify_passed: bool,
+                    db_path: Optional[Path] = None) -> bool:
+    """Cache a working solution keyed by signature (O)."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            conn.execute(
+                """INSERT INTO solution_cache
+                   (signature, spec_json, last_verify_passed, reuse_count, last_used_at)
+                   VALUES (?, ?, ?, 0, ?)
+                   ON CONFLICT(signature) DO UPDATE SET
+                     spec_json=excluded.spec_json, last_verify_passed=excluded.last_verify_passed,
+                     last_used_at=excluded.last_used_at""",
+                (signature, spec_json, 1 if verify_passed else 0, _nowIso()))
+        return True
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("upsert_solution failed (ignored): %s", e)
+        return False
+
+
+def get_solution(signature: str, db_path: Optional[Path] = None) -> Optional[dict[str, Any]]:
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM solution_cache WHERE signature=? AND last_verify_passed=1",
+            (signature,)).fetchone()
+        if row:
+            conn.execute("UPDATE solution_cache SET reuse_count=reuse_count+1, last_used_at=? "
+                         "WHERE signature=?", (_nowIso(), signature))
+        return dict(row) if row else None
+
+
+def upsert_kg_node(kind: str, key: str, summary: str, db_path: Optional[Path] = None) -> bool:
+    """Add/refresh a codebase knowledge-graph node (file/module/gotcha) (N)."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            conn.execute(
+                """INSERT INTO kg_nodes (kind, key, summary) VALUES (?, ?, ?)
+                   ON CONFLICT(kind, key) DO UPDATE SET summary=excluded.summary""",
+                (kind, key, summary))
+        return True
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("upsert_kg_node failed (ignored): %s", e)
+        return False
+
+
+def fetch_kg_nodes(kind: Optional[str] = None,
+                   db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    with _connect(db_path) as conn:
+        if kind is None:
+            rows = conn.execute("SELECT * FROM kg_nodes ORDER BY kind, key")
+        else:
+            rows = conn.execute("SELECT * FROM kg_nodes WHERE kind=? ORDER BY key", (kind,))
+        return [dict(r) for r in rows]
+
+
+def record_reflection(*, run_id: str, subtask_id: str, role: str = "executor",
+                      teacher: str = "claude", trusted: bool = False,
+                      db_path: Optional[Path] = None, **fields: Any) -> bool:
+    """Store an executor/teacher learning summary (I/M). Keyed to dedupe re-syncs."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            conn.execute(
+                """INSERT INTO reflections
+                   (run_id, subtask_id, role, teacher, approach, reusable_recipe,
+                    spec_feedback, verify_critique, confidence, trusted, at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(run_id, subtask_id, teacher) DO UPDATE SET
+                     trusted=excluded.trusted, approach=excluded.approach,
+                     reusable_recipe=excluded.reusable_recipe""",
+                (run_id, subtask_id, role, teacher, fields.get("approach"),
+                 fields.get("reusable_recipe"), fields.get("spec_feedback"),
+                 fields.get("verify_critique"), fields.get("confidence"),
+                 1 if trusted else 0, _nowIso()))
+        return True
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("record_reflection failed (ignored): %s", e)
+        return False
+
+
+def fetch_reflections(trusted_only: bool = False,
+                      db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    with _connect(db_path) as conn:
+        sql = "SELECT * FROM reflections"
+        if trusted_only:
+            sql += " WHERE trusted=1"
+        return [dict(r) for r in conn.execute(sql + " ORDER BY id")]
 
 
 def fetch_runs(db_path: Optional[Path] = None) -> list[dict[str, Any]]:
