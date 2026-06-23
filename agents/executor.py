@@ -75,6 +75,9 @@ def normalizeSpec(spec_or_prompt: Union[dict, str, None]) -> dict:
         "effort_level": "default", "subagent": None,
         "pre_tool_hooks": [], "post_tool_hooks": [],
         "use_workflow": False, "workflow_definition": None,
+        # Surface routing (rich cross-surface automation): which "hands" execute this spec.
+        "surface": "terminal",          # terminal (Claude CLI, L3) | browser (CDP, L1)
+        "browser_actions": [],          # structured CDP steps when surface == browser
     }
     if isinstance(spec_or_prompt, str):
         base["prompt"] = spec_or_prompt

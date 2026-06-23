@@ -199,6 +199,8 @@ DPO_MIN_PAIRS: int = int(os.getenv("DPO_MIN_PAIRS", "30"))
 CONFIDENCE_DEFER_THRESHOLD: float = float(os.getenv("CONFIDENCE_DEFER_THRESHOLD", "0.4"))
 # Subsystem I: ask the executor for a learning summary (teacher->student distillation).
 SIE_REFLECTION_ENABLED: bool = _envBool("SIE_REFLECTION_ENABLED", True)
+# Inject the learned authoring context (lessons/policy/guidance/surfaces/...) into specs.
+SIE_AUTHORING_CONTEXT: bool = _envBool("SIE_AUTHORING_CONTEXT", True)
 # Compute router for LoRA/DPO training: auto (GPU if present) | gpu (force) | cpu | off.
 SIE_COMPUTE: str = os.getenv("SIE_COMPUTE", "auto")
 # LoRA hyperparameters (used by the real local trainer on a GPU host).

@@ -215,8 +215,11 @@ ORCHESTRATOR_CONSTITUTION = (
     '  "pre_tool_hooks": string[],   // subset of: block_destructive, log_all\n'
     '  "post_tool_hooks": string[],  // subset of: write_obsidian, discord_notify, log_all\n'
     '  "use_workflow": boolean,      // true => run a DYNAMIC WORKFLOW instead of a flat prompt (see rule 7)\n'
-    '  "workflow_definition": object|null // when use_workflow=true: {"name","description",'
+    '  "workflow_definition": object|null, // when use_workflow=true: {"name","description",'
     '"phases":[{"title","parallel":bool,"agents":[{"label","prompt","effort"}]}],"synthesis"} else null\n'
+    '  "surface": string,            // "terminal" (default) or "browser" -- pick the RIGHT surface\n'
+    '  "browser_actions": object[]   // when surface="browser": steps like {"action":"goto","url":...},'
+    '{"action":"click","selector":...},{"action":"type","selector":...,"text":...},{"action":"extract","selector":...}\n'
     "}\n\n"
     "THE SEVEN PRIMITIVES -- when to use each:\n"
     "1. CLAUDE.md (claude_md_inject): ALWAYS fill richly -- this is how the hands get context. "
@@ -326,6 +329,18 @@ class Orchestrator:
             return float(out.get("fitness", 0.0))
         finally:
             self._brain_tag_override = prev
+
+    def _selectExecutor(self, spec: dict):
+        """Pick the hands layer for a spec's requested surface. Default: Claude CLI (L3).
+        Routes to the browser backend (L1) when the brain asks for it AND it's enabled;
+        falls back to Claude on any import problem so a run is never blocked by routing."""
+        if spec.get("surface") == "browser" and config.BROWSER_LAYER_ENABLED:
+            try:
+                from agents import browser_executor
+                return browser_executor.runBrowser
+            except Exception:  # noqa: BLE001
+                LOG.warning("browser surface requested but backend unavailable; using terminal")
+        return self._run_claude
 
     def _evalGoal(self, goal: dict) -> dict:
         """Execute ONE golden goal as a bounded single subtask (brain authors under the
@@ -679,6 +694,8 @@ class Orchestrator:
         """Everything the Self-Improvement Engine has learned for this subtask, folded into
         one best-effort prompt prefix. Each piece independently degrades to "" so a cold
         ledger (or any error) changes nothing."""
+        if not config.SIE_AUTHORING_CONTEXT:
+            return ""
         goal = state.meta.get("goal_elaborated", "") or state.meta.get("goal_raw", "")
         title = subtask.get("title", "")
         parts: list[str] = []
@@ -976,8 +993,9 @@ class Orchestrator:
             dashboard.update(state, "executing", f"{sid} attempt {attempt} · effort {spec.get('effort_level')}",
                              effort=spec.get("effort_level"))
             attempt_started = time.time()
-            result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
-                                        resume_session=resume_session)
+            hands = self._selectExecutor(spec)   # route to the right surface (terminal | browser)
+            result = hands(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
+                           resume_session=resume_session)
             if not isinstance(result, dict):   # a hands layer that returns junk must fail cleanly, not crash
                 result = {"ok": False, "returncode": -1, "stdout": "",
                           "stderr": f"executor returned non-dict result: {type(result).__name__}"}
