@@ -309,6 +309,12 @@ WEB_DASHBOARD: bool = True
 WEB_DASHBOARD_PORT: int = 8787
 DEFAULT_PARALLELISM: int = 1          # >1 runs independent ready subtasks concurrently
 
+# --- Night mode (zero human interaction) ---------------------------------
+# Forces watch mode, disables adversary PR hold, auto-resumes any pause after a timeout,
+# and suppresses @-pings. Set via --night-mode CLI flag or NIGHT_MODE=true in .env.
+NIGHT_MODE: bool = _envBool("NIGHT_MODE", False)
+NIGHT_MODE_PAUSE_TIMEOUT: int = int(os.getenv("NIGHT_MODE_PAUSE_TIMEOUT", "600"))  # 10 min
+
 # --- Claude Code primitives (CLAUDE.md / skills / subagents / hooks / settings) ---
 CLAUDE_DIR: Path = PROJECT_ROOT / ".claude"
 CLAUDE_SETTINGS_PATH: Path = CLAUDE_DIR / "settings.json"

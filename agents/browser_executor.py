@@ -26,6 +26,18 @@ LOG = config.getLogger("browser_executor")
 
 _URL_RE = re.compile(r"https?://[^\s\"'<>)]+")
 
+# --- chatgpt.com CDP routing (Phase 2 Adversary brain) --------------------------------
+# The Adversary's Phase-2 brain is GPT-5.5 reached by driving chatgpt.com over CDP. We
+# express "ask ChatGPT one message and read its reply" as the same structured action list
+# runBrowser already executes, so no new transport is needed -- only a small, configurable
+# action recipe + a transcript parser. Selectors are module constants so a UI change is a
+# one-line fix and tests never depend on the live DOM.
+CHATGPT_URL = "https://chatgpt.com/"
+CHATGPT_INPUT_SELECTOR = "#prompt-textarea"
+CHATGPT_SEND_KEY = "Enter"
+CHATGPT_REPLY_SELECTOR = "[data-message-author-role='assistant']"
+CHATGPT_REPLY_TIMEOUT_MS = 120000
+
 
 class BrowserUnavailable(RuntimeError):
     """Raised when no browser backend (Playwright/Chromium) is installed."""
@@ -135,3 +147,48 @@ def runBrowser(spec_or_prompt, *, work_dir: Optional[str] = None, task_state=Non
     except Exception as e:  # noqa: BLE001 -- a browser failure is a failed subtask, not a crash
         LOG.warning("browser run failed (ignored): %s", e)
         return _result(spec, ok=False, is_error=True, stderr=f"browser run failed: {e}")
+
+
+def chatgptActions(message: str) -> list[dict[str, Any]]:
+    """Build the CDP action recipe that asks chatgpt.com one ``message`` and reads the reply:
+    open the chat, type into the composer, submit, wait for the assistant turn, extract it."""
+    return [
+        {"action": "goto", "url": CHATGPT_URL},
+        {"action": "wait", "selector": CHATGPT_INPUT_SELECTOR},
+        {"action": "type", "selector": CHATGPT_INPUT_SELECTOR, "text": message},
+        {"action": "press", "selector": CHATGPT_INPUT_SELECTOR, "key": CHATGPT_SEND_KEY},
+        {"action": "wait", "selector": CHATGPT_REPLY_SELECTOR},
+        {"action": "extract", "selector": CHATGPT_REPLY_SELECTOR},
+    ]
+
+
+def _replyFromTranscript(transcript: str) -> str:
+    """Pull the assistant text out of a runBrowser transcript. Each ``extract`` step is
+    written as ``extract <selector>:\\n<text>`` (see _run_actions); return the body of the
+    LAST extract block -- that is GPT's reply to our message."""
+    marker = "\nextract "
+    text = transcript or ""
+    idx = text.rfind(marker if marker in text else "extract ")
+    if idx < 0:
+        return ""
+    block = text[idx:]
+    nl = block.find("\n")
+    return block[nl + 1:].strip() if nl >= 0 else ""
+
+
+def askChatGPT(message: str, *, runner=None, work_dir: Optional[str] = None) -> Optional[str]:
+    """Send one ``message`` to chatgpt.com over CDP and return GPT's reply text.
+
+    Routes through :func:`runBrowser` (the L1 hands) using :func:`chatgptActions`, so the
+    transport, Playwright degradation, and result contract are shared with every other
+    browser subtask. Returns ``None`` when the browser layer is unavailable or the run
+    fails, so callers (e.g. the Adversary) can degrade conservatively instead of crashing.
+    """
+    run = runner or runBrowser
+    res = run({"surface": "browser", "browser_actions": chatgptActions(message)},
+              work_dir=work_dir)
+    if not res or not res.get("ok"):
+        LOG.warning("askChatGPT failed: %s", (res or {}).get("stderr", "no result"))
+        return None
+    reply = _replyFromTranscript(res.get("stdout", ""))
+    return reply or None
