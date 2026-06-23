@@ -18,6 +18,7 @@ Trigger signals (per the 9TO5 spec):
 from __future__ import annotations
 
 import json
+import time
 from typing import Callable, Optional
 
 import config
@@ -32,6 +33,17 @@ _CHALLENGE_WORDS = {"challenged", "rejected", "reject", "blocked", "fail", "conc
 # Cap how much executor output we hand the brain; the rest is noise for review.
 ADVERSARY_MAX_OUTPUT_CHARS = 6000
 
+# CDP retry knobs: up to CDP_MAX_RETRIES extra attempts on transient network errors,
+# with exponential backoff starting at CDP_RETRY_BACKOFF_BASE seconds.
+CDP_MAX_RETRIES: int = 2
+CDP_RETRY_BACKOFF_BASE: float = 1.0
+
+# Error substrings that identify transient CDP/network failures worth retrying.
+_CDP_TRANSIENT_SIGNALS: tuple[str, ...] = (
+    "timeout", "timed out", "net::", "connection", "socket", "reset", "disconnect",
+    "econnrefused", "unreachable", "navigation", "target closed",
+)
+
 _SYSTEM = (
     "You are the 9TO5 Adversary: a strict, independent reviewer of work just produced by an "
     "executor agent. You did NOT do the work and have no stake in approving it. Judge ONLY what "
@@ -43,6 +55,12 @@ _SYSTEM = (
     'Use "challenged" when there is real evidence of incomplete, incorrect, unsafe, or off-scope '
     'work; otherwise "approved" with an empty concerns list.'
 )
+
+
+def isCdpTransient(exc: BaseException) -> bool:
+    """True when ``exc`` looks like a transient CDP/network hiccup worth retrying."""
+    msg = str(exc).lower()
+    return any(s in msg for s in _CDP_TRANSIENT_SIGNALS)
 
 
 def shouldTrigger(executor_output: str, subtask_position: int,
@@ -121,26 +139,54 @@ def reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: s
     ``browser_ask`` is a ``(message) -> reply_text | None`` callable; it defaults to
     :func:`agents.browser_executor.askChatGPT`, which drives chatgpt.com through the L1
     browser hands. The verdict contract is identical to :func:`review`, so the call site
-    never changes between phases. Any failure (browser unavailable, empty/garbled reply)
-    degrades to a conservative auto-approve -- the reviewer never blocks a run by itself.
+    never changes between phases.
+
+    Transient CDP/network errors (timeout, connection reset, etc.) are retried up to
+    ``CDP_MAX_RETRIES`` times with exponential backoff before falling back to a
+    conservative auto-approve. Non-transient errors (bad JSON, empty reply) skip retries
+    and degrade immediately. The reviewer never blocks a run by itself.
     """
     if browser_ask is None:
         from agents import browser_executor
         browser_ask = browser_executor.askChatGPT
 
     user = _buildReviewUser(subtask_title, trigger_reason, executor_output, goal)
-    try:
-        reply = browser_ask(f"{_SYSTEM}\n\n{user}")
-        if not reply:
-            raise ValueError("empty reply from chatgpt.com")
-        rv = _parseVerdict(reply, trigger_reason, surface="browser")
-        LOG.info("Adversary (browser/GPT) verdict for '%s' (%s) -> %s (%d concern(s))",
-                 subtask_title, trigger_reason, rv["verdict"], len(rv["concerns"]))
-        return rv
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("Adversary browser critique failed (%s); conservative auto-approve", e)
-        return _stubReview(trigger_reason,
-                           note=f"Adversary chatgpt.com critique errored ({e}); auto-approved conservatively.")
+    message = f"{_SYSTEM}\n\n{user}"
+    last_exc: Optional[Exception] = None
+
+    for attempt in range(CDP_MAX_RETRIES + 1):
+        try:
+            reply = browser_ask(message)
+            if not reply:
+                raise ValueError("empty reply from chatgpt.com")
+            rv = _parseVerdict(reply, trigger_reason, surface="browser")
+            LOG.info(
+                "Adversary (browser/GPT) verdict for '%s' (%s) -> %s (%d concern(s))",
+                subtask_title, trigger_reason, rv["verdict"], len(rv["concerns"]),
+            )
+            return rv
+        except Exception as e:  # noqa: BLE001
+            last_exc = e
+            if attempt < CDP_MAX_RETRIES and isCdpTransient(e):
+                wait = CDP_RETRY_BACKOFF_BASE * (2 ** attempt)
+                LOG.warning(
+                    "Adversary CDP transient error (attempt %d/%d, retry in %.1fs): %s",
+                    attempt + 1, CDP_MAX_RETRIES + 1, wait, e,
+                )
+                time.sleep(wait)
+                continue
+            # Non-transient or retries exhausted -- log and fall through.
+            LOG.warning(
+                "Adversary browser critique failed after %d attempt(s) (%s); "
+                "conservative auto-approve",
+                attempt + 1, e,
+            )
+            break
+
+    return _stubReview(
+        trigger_reason,
+        note=f"Adversary chatgpt.com critique errored ({last_exc}); auto-approved conservatively.",
+    )
 
 
 def review(subtask_title: str, trigger_reason: str, executor_output: str, *,

@@ -21,6 +21,28 @@ from typing import Any, Optional
 
 import config
 
+# Windows: os.replace raises PermissionError (WinError 5) when the destination is
+# momentarily held by another handle -- and the control bus is written from THREE
+# processes (run, Discord bot, web dashboard), so contention is routine. The lock is
+# transient, so a short bounded backoff retry makes the atomic swap reliable instead
+# of dropping a control command (abort/pause/decision). POSIX never contends here.
+_REPLACE_RETRIES: int = 8
+_REPLACE_BACKOFF_BASE: float = 0.02
+
+
+def _atomicReplace(tmp: Path, dest: Path) -> None:
+    """os.replace(tmp, dest) with a bounded backoff retry on a transient Windows lock."""
+    delay = _REPLACE_BACKOFF_BASE
+    for attempt in range(1, _REPLACE_RETRIES + 1):
+        try:
+            os.replace(tmp, dest)
+            return
+        except PermissionError:
+            if attempt >= _REPLACE_RETRIES:
+                raise
+            time.sleep(min(delay, 0.4))
+            delay *= 2
+
 
 @contextlib.contextmanager
 def _fileLock(target: Path, timeout: float = 5.0):
@@ -106,7 +128,7 @@ class ControlBus:
         tmp = self.path.with_suffix(f".{os.getpid()}-{threading.get_ident()}-{os.urandom(4).hex()}.tmp")
         try:
             tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-            os.replace(tmp, self.path)
+            _atomicReplace(tmp, self.path)
         except Exception:
             try:
                 tmp.unlink()

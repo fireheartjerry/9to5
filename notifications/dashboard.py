@@ -137,10 +137,24 @@ class DiscordDashboard:
         self.event(f"run started · mode `{state.meta.get('control_mode', 'watch')}`")
         embed = self._embed(state, phase)
         with self._send_lock:
+            # Reuse existing dashboard message when resilience restarts the same task — avoids
+            # creating a new pinned embed (and firing all its button components) on every restart.
+            existing_id = state.meta.get("dashboard_message_id")
+            if existing_id:
+                ok = discord.editMessage(existing_id, embed, components=branding.controlPanelRow())
+                if ok:
+                    self.message_id = existing_id
+                    self._recreated = True  # suppress further recreation attempts
+                    LOG.info("Dashboard message %s resumed (resilience restart)", self.message_id)
+                    return
             self.message_id = discord.createMessage(embed, components=branding.controlPanelRow())
             if self.message_id:
                 discord.pinMessage(self.message_id)
                 LOG.info("Dashboard message %s created + pinned", self.message_id)
+                try:
+                    state.setDashboardMessageId(self.message_id)
+                except Exception:  # noqa: BLE001 -- never fail a run over dashboard persistence
+                    pass
 
     def update(self, state: TaskState, phase: str, note: Optional[str] = None,
                effort: Optional[str] = None, model: Optional[str] = None) -> None:

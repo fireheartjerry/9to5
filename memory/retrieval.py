@@ -27,8 +27,11 @@ LOG = config.getLogger("sie.retrieval")
 
 # Negative cache: once the local embedder looks down, stop hammering it on every brain
 # call (it's invoked many times per run). Retry at most once per cooldown window.
+# Sentinel is -inf, NOT 0.0: time.monotonic()'s origin is arbitrary (system boot on Linux),
+# so on a freshly-booted host monotonic() can be < the cooldown, and `monotonic() - 0.0 <
+# cooldown` would wrongly suppress the very first embedding. -inf makes the gap always huge.
 _FAIL_COOLDOWN_SECONDS = 60.0
-_last_embed_fail_at: float = 0.0
+_last_embed_fail_at: float = float("-inf")
 
 
 # --------------------------------------------------------------------- embeddings
@@ -70,7 +73,7 @@ def embed(text: str) -> Optional[list[float]]:
 def reset_embed_cache() -> None:
     """Clear the negative cache (used by tests, and after a known embedder restart)."""
     global _last_embed_fail_at
-    _last_embed_fail_at = 0.0
+    _last_embed_fail_at = float("-inf")
 
 
 def pack(vec: list[float]) -> bytes:
