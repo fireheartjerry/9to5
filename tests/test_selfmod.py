@@ -1,4 +1,7 @@
 """Tests for the safe self-modification gate (improve own core, never ship a broken build)."""
+import os
+import shutil
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -11,6 +14,19 @@ import selfmod
 
 def _git(d, *a):
     return subprocess.run(["git", *a], cwd=d, capture_output=True, text=True)
+
+
+def _forceRmtree(path) -> None:
+    """Delete a temp dir robustly on Windows: git marks .git/objects/* read-only, so a plain
+    unlink raises PermissionError (WinError 5). Clear the read-only bit and retry; tolerate a
+    still-locked file (best-effort temp cleanup -- the OS reclaims %TEMP% regardless)."""
+    def _onerror(func, p, _exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception:  # noqa: BLE001 -- cleanup must never fail a passing test
+            pass
+    shutil.rmtree(path, onerror=_onerror)
 
 
 class TestSelfMod(unittest.TestCase):
@@ -30,12 +46,7 @@ class TestSelfMod(unittest.TestCase):
 
     def tearDown(self):
         mock.patch.stopall()
-        for p in sorted(self.dir.rglob("*"), reverse=True):
-            if p.is_file():
-                p.unlink()
-            elif p.is_dir():
-                p.rmdir()
-        self.dir.rmdir()
+        _forceRmtree(self.dir)
 
     def test_detects_core_change(self):
         (self.dir / "orchestrator.py").write_text("CHANGED\n", encoding="utf-8")

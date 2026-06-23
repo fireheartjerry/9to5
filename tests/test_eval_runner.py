@@ -48,6 +48,8 @@ class TestEvalRunner(unittest.TestCase):
             self.assertEqual(out["status"], "scored")
             self.assertGreater(out["fitness"], 0.0)   # real, not a no_runner marker
         finally:
+            # release pooled SQLite connection(s) before unlinking the temp db (Windows WinError 32)
+            experience._reset_schema_cache()
             for p in d.glob("*"):
                 p.unlink()
             d.rmdir()
@@ -64,6 +66,8 @@ class TestAdapterPromotion(unittest.TestCase):
     def tearDown(self):
         eval_runner.clear()
         mock.patch.stopall()
+        # release pooled SQLite connection(s) before unlinking the temp db (Windows WinError 32)
+        experience._reset_schema_cache()
         for p in self.dir.rglob("*"):
             if p.is_file():
                 p.unlink()

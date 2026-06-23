@@ -48,6 +48,8 @@ class TestSelfPlay(unittest.TestCase):
 
     def tearDown(self):
         mock.patch.stopall()
+        # Release pooled SQLite connections before unlinking the temp db (Windows WinError 32).
+        experience._reset_schema_cache()
         for p in self.dir.rglob("*"):
             if p.is_file():
                 p.unlink()
@@ -108,6 +110,8 @@ class TestMetaApply(unittest.TestCase):
 
     def tearDown(self):
         mock.patch.stopall()
+        # Release pooled SQLite connections before unlinking the temp db (Windows WinError 32).
+        experience._reset_schema_cache()
         for p in self.dir.rglob("*"):
             if p.is_file():
                 p.unlink()

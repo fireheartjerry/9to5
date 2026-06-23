@@ -52,6 +52,10 @@ class TestSuiteAndRun(unittest.TestCase):
         self.dir = Path(tempfile.mkdtemp())
 
     def tearDown(self):
+        # Release the pooled SQLite connection before unlinking the temp db, or Windows
+        # raises PermissionError (WinError 32: file in use) on the open inode.
+        from memory import experience
+        experience._reset_schema_cache()
         for p in self.dir.glob("*"):
             p.unlink()
         self.dir.rmdir()

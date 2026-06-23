@@ -7,6 +7,7 @@ from __future__ import annotations
 import math
 import os
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -18,6 +19,28 @@ from notifications import commands
 from state.task import TaskState
 
 LOG = config.getLogger("work_launcher")
+
+# Test-mode guard for the ONLY place that launches real detached `main.py` runs.
+# Without this, any test that reaches the spawn path (directly, or transitively via the
+# SIE self-play step -> work_launcher.spawn) starts a REAL orchestrator process that
+# survives the test, edits the repo, and -- because the child runs its own post-run SIE
+# maintenance in-window -- recursively spawns MORE runs. The guard makes _spawnArgv a
+# no-op returning a sentinel pid whenever a test runner is active or NINE_TO_FIVE_TEST_MODE
+# is set. Production never imports unittest/pytest and never sets the var, so real runs are
+# unaffected. Set NINE_TO_FIVE_TEST_MODE=0 to force the real path (the spawn argv tests do).
+_SPAWN_BLOCKED_PID: int = -1
+
+
+def _spawnBlocked() -> bool:
+    """True when a real detached run must NOT be launched (unit/CI context)."""
+    env = os.getenv("NINE_TO_FIVE_TEST_MODE", "").strip().lower()
+    if env in {"0", "false", "no", "off"}:
+        return False                       # explicit opt-out: tests that assert the real Popen path
+    if env in {"1", "true", "yes", "on"}:
+        return True
+    # env unset -> auto-detect a live test runner so a forgotten guard never spawns a real run.
+    # Safe: no production module imports unittest/pytest (only test modules do).
+    return "unittest" in sys.modules or "pytest" in sys.modules
 
 HOURS_MIN: float = 0.1
 HOURS_MAX: float = 24.0
@@ -140,7 +163,14 @@ def newestTaskSince(ts: float) -> Optional[str]:
 
 
 def _spawnArgv(argv: list[str], tag: str) -> int:
-    """Spawn argv as a DETACHED child (survives a bot restart). Returns the child PID."""
+    """Spawn argv as a DETACHED child (survives a bot restart). Returns the child PID.
+
+    In a test context this is a hard no-op (returns ``_SPAWN_BLOCKED_PID``) so a unit test
+    can never start a real ``main.py`` run -- see ``_spawnBlocked``."""
+    if _spawnBlocked():
+        LOG.warning("spawn '%s' suppressed (test mode) -- not launching a real run: %s",
+                    tag, " ".join(argv[:3]))
+        return _SPAWN_BLOCKED_PID
     config.LOG_PATH.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
     logfile = open(config.LOG_PATH / f"{tag}-{stamp}.log", "a", encoding="utf-8", errors="replace")

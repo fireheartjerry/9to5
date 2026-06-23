@@ -18,6 +18,8 @@ class TestDistillBuilder(unittest.TestCase):
 
     def tearDown(self):
         mock.patch.stopall()
+        # release pooled SQLite connection(s) before unlinking the temp db (Windows WinError 32)
+        experience._reset_schema_cache()
         for p in self.dir.rglob("*"):
             if p.is_file():
                 p.unlink()
@@ -65,6 +67,8 @@ class TestModelfileAndCycle(unittest.TestCase):
 
     def tearDown(self):
         mock.patch.stopall()
+        # release pooled SQLite connection(s) before unlinking the temp db (Windows WinError 32)
+        experience._reset_schema_cache()
         for p in self.dir.rglob("*"):
             if p.is_file():
                 p.unlink()
