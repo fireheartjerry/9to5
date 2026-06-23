@@ -313,7 +313,8 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
     if flag:
         base_cmd += ["--effort", flag]
     base_cmd += ["--add-dir", str(config.PROJECT_ROOT)]       # make .claude discoverable from a sub-cwd
-    if task_state is not None and getattr(task_state, "meta", {}).get("is_self_referential"):
+    if (task_state is not None and getattr(task_state, "meta", {}).get("is_self_referential")
+            and not getattr(config, "SELFMOD_ALLOW_CORE", False)):
         for core in config.CORE_PROTECTED_FILES:
             core_abs = str(config.PROJECT_ROOT / core)
             base_cmd += ["--disallowedTools", f"Edit({core_abs})", f"Write({core_abs})"]

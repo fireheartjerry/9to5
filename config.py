@@ -201,6 +201,11 @@ CONFIDENCE_DEFER_THRESHOLD: float = float(os.getenv("CONFIDENCE_DEFER_THRESHOLD"
 SIE_REFLECTION_ENABLED: bool = _envBool("SIE_REFLECTION_ENABLED", True)
 # Inject the learned authoring context (lessons/policy/guidance/surfaces/...) into specs.
 SIE_AUTHORING_CONTEXT: bool = _envBool("SIE_AUTHORING_CONTEXT", True)
+# Let 9to5 improve its OWN core loop files (orchestrator.py/main.py/config.py/hooks.py)
+# during self-referential runs. Safe because: edits land on the isolated branch, the running
+# process keeps its old bytecode, and a post-run test-suite gate reverts any breaking change
+# before a PR. Default off (opt-in) -- the most powerful + most safety-sensitive capability.
+SELFMOD_ALLOW_CORE: bool = _envBool("SELFMOD_ALLOW_CORE", False)
 # Compute router for LoRA/DPO training: auto (GPU if present) | gpu (force) | cpu | off.
 SIE_COMPUTE: str = os.getenv("SIE_COMPUTE", "auto")
 # LoRA hyperparameters (used by the real local trainer on a GPU host).

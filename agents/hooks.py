@@ -279,7 +279,12 @@ def selfModificationGuard(data):
         # Protect the core loop files when this is a self-ref run OR when a run is active but its
         # task could NOT be trusted (env pinned a task, yet resolution fell back) -- fail CLOSED
         # rather than leave orchestrator.py/main.py/hooks.py/config.py editable on an unknown task.
-        if (state and state.meta.get("is_self_referential")) or (env_requested and not explicit):
+        # SELFMOD_ALLOW_CORE lets 9to5 improve its OWN core loop: edits are permitted on the
+        # isolated branch (the running process keeps its old bytecode, so it's unaffected), and a
+        # post-run test-suite safety gate reverts any core change that breaks the build before a PR.
+        allow_core = bool(getattr(config, "SELFMOD_ALLOW_CORE", False)) if config else False
+        if not allow_core and (
+                (state and state.meta.get("is_self_referential")) or (env_requested and not explicit)):
             for c in (list(getattr(config, "CORE_PROTECTED_FILES", ()) or ()) if config
                       else ["orchestrator.py", "main.py", "agents/hooks.py", "config.py"]):
                 if c not in boundaries:

@@ -1442,6 +1442,20 @@ class Orchestrator:
             state.setStatus("executing")
             self.runExecutionLoop(state, architect_doc, work_dir, bus, dashboard, parallelism=parallelism)
 
+            # --- Phase 3.5: self-modification safety gate ---
+            # If this self-ref run changed its OWN core loop files, run the test suite in a
+            # fresh interpreter and REVERT any change that breaks the build before we PR it.
+            if state.meta.get("is_self_referential"):
+                try:
+                    import selfmod
+                    gate = selfmod.safety_gate(work_dir, is_self_referential=True)
+                    if gate.get("ran"):
+                        verdict = "PASSED" if gate.get("passed") else "REVERTED (tests failed)"
+                        dashboard.update(state, "executing", f"core self-mod gate: {verdict}")
+                        state.addNotification("selfmod_gate", f"{verdict}: {gate.get('changed')}")
+                except Exception:  # noqa: BLE001 -- safety gate is best-effort, never blocks
+                    LOG.warning("selfmod safety gate failed (ignored)", exc_info=True)
+
             # --- Phase 4: PR + complete ---
             self._checkControl(state, bus, dashboard, gate="pre_pr")
             pr_review = self._prePrAdversary(state)
