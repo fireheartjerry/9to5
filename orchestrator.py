@@ -1183,6 +1183,15 @@ class Orchestrator:
             branch = state.meta.get("self_ref_branch") or f"9to5/{state.task_id[:8]}"
             git("checkout", "-B", branch)
             git("add", "-A")
+            # FX-7: a non-self-ref run wrote the living CLAUDE.md into the TARGET repo's root (the
+            # executor's cwd). Don't leak it into the PR: restore the repo's own tracked CLAUDE.md if
+            # it had one, else unstage the 9to5-created file so it isn't committed.
+            if not state.meta.get("is_self_referential"):
+                tracked = git("ls-files", "--error-unmatch", "CLAUDE.md").returncode == 0
+                if tracked:
+                    git("checkout", "--", "CLAUDE.md")        # restore the user's version
+                else:
+                    git("rm", "--cached", "--ignore-unmatch", "CLAUDE.md")   # drop 9to5's new file from the commit
             commit = git("commit", "-m", f"9TO5: {state.meta['goal_raw'][:60]}")
             # FX-16: if nothing was staged, the work never reached the tracked tree (e.g. the executor
             # wrote only into the gitignored .sc-ctx scratch). Do NOT open an empty/misleading PR --
@@ -1760,14 +1769,15 @@ class Orchestrator:
             pass
 
     def _execCwd(self, state: TaskState, sid: str | None, work_dir: str) -> str:
-        """ALWAYS give the executor an isolated `.sc-ctx/<sid>` cwd (FX-7). The living CLAUDE.md is
-        written into the cwd, so without isolation a run targeting an EXTERNAL repo (`--work-dir`)
-        would clobber/leak that repo's own CLAUDE.md into the PR. work_dir stays an ancestor (auto-read
-        for context); the executor edits the target via ABSOLUTE paths (per its charter/playbook).
-        The scratch dir is removed by _cleanupScaffolding at the end of the run."""
-        ctx = os.path.join(str(work_dir), ".sc-ctx", sid or "architect")
-        os.makedirs(ctx, exist_ok=True)
-        return ctx
+        """For self-referential runs, give the executor an isolated cwd so the living CLAUDE.md never
+        clobbers the project's own CLAUDE.md (the project root stays an ancestor, auto-read). For a
+        non-self-ref run the cwd IS work_dir so relative-path writes land in the target tree -- the
+        living CLAUDE.md leak there is instead handled at PR-commit time (FX-7, see createPullRequest)."""
+        if state.meta.get("is_self_referential") and os.path.abspath(work_dir) == os.path.abspath(str(config.PROJECT_ROOT)):
+            ctx = os.path.join(str(config.PROJECT_ROOT), ".sc-ctx", sid or "architect")
+            os.makedirs(ctx, exist_ok=True)
+            return ctx
+        return work_dir
 
     # ===================================================================
     # Full pipeline (with resume + parallelism)
