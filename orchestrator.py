@@ -1386,9 +1386,29 @@ class Orchestrator:
         try:
             batch = self.authorBackfillBatch(goal, architect_doc, done, failed, remaining, room)
         except Exception as e:  # noqa: BLE001 -- backfill must never crash the run
-            LOG.warning("backfill authoring failed (%s); none added", e)
-            return 0
-        batch = self._strengthenPlanVerifies(goal, [s for s in batch if isinstance(s, dict)])
+            LOG.warning("backfill authoring failed (%s); using open-ended fallback", e)
+            batch = []
+        batch = [s for s in (batch or []) if isinstance(s, dict)]
+        if not batch:
+            # CONTINUITY FIX (found in the live test): the local 7B brain's JSON is unreliable, so
+            # authorBackfillBatch frequently returns empty -- horizon-fill would then silently no-op
+            # and a self-improvement run would finalize at ~30% of its horizon (18/60 min observed).
+            # Fall back to ONE open-ended improvement subtask and let the capable executor (Claude)
+            # choose the work, so the run keeps producing value until the deadline. Bounded by the
+            # deadline and the pending-queue cap; each subtask is a real multi-minute run (no spin).
+            LOG.info("backfill: brain authored no batch -> enqueuing 1 open-ended improvement subtask")
+            recent = "\n- ".join(done[-8:]) if done else "(none yet)"
+            batch = [{
+                "title": "Autonomous improvement (horizon-fill)",
+                "description": (
+                    "The planned work is complete but time remains in the work window. Per the 9to5 "
+                    "self-improvement mandate, make ONE surgical, high-impact, VERIFIED improvement now: "
+                    "fix a robustness/continuity bug, add missing test coverage for an under-tested "
+                    "module, or strengthen error handling in a weak NON-CORE module. Keep it on-scope "
+                    f"and do NOT repeat recently-completed work:\n- {recent}"),
+                "layer": 3, "effort_level": "high", "verify": None,
+            }]
+        batch = self._strengthenPlanVerifies(goal, batch)
         added = 0
         with self._state_lock:
             for s in batch[:room]:
@@ -1412,16 +1432,24 @@ class Orchestrator:
         author a fresh batch via _backfill. Break only when the deadline is reached, <15 min remain, or
         backfill comes up empty twice in a row (nothing left worth doing)."""
         if not state.meta.get("is_self_referential"):
+            LOG.info("queue drained on a bounded run -> finalizing")
             return False, dry
         if self._deadlinePassed(state):
+            LOG.info("queue drained, deadline passed -> finalizing")
             return False, dry
         remaining = self._remainingHours(state)
         if remaining is None or remaining <= 0.25:   # don't start new work in the last 15 minutes
+            LOG.info("queue drained, <15 min left (%.2fh) -> finalizing", remaining or 0.0)
             return False, dry
+        LOG.info("queue drained with %.2fh left -> horizon-fill backfill (dry=%d)", remaining, dry)
         added = self._backfill(state, architect_doc, dashboard)
         if added > 0:
             return True, 0
-        return (dry + 1 < 2), dry + 1                 # one empty retry, then finalize
+        # With the open-ended fallback in _backfill, this is reached only when the pending cap is
+        # full; allow one retry then finalize so we never spin.
+        LOG.warning("horizon-fill backfill added nothing (dry=%d) -> %s", dry + 1,
+                    "retry" if dry + 1 < 2 else "finalize")
+        return (dry + 1 < 2), dry + 1
 
     def runExecutionLoop(self, state: TaskState, architect_doc: str, work_dir: str,
                          bus: ControlBus, dashboard: DiscordDashboard, parallelism: int = 1) -> None:

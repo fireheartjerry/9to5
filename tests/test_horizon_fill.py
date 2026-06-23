@@ -52,6 +52,28 @@ class TestHorizonFill(unittest.TestCase):
         self.assertEqual(added, 0)
         a.assert_not_called()             # cap reached -> don't even author
 
+    def test_backfill_falls_back_to_open_ended_when_brain_empty(self):
+        # CONTINUITY (live-test bug): the 7B brain often authors no batch; horizon-fill must NOT
+        # silently no-op (which finalized a self-improvement run at ~30% of its horizon). It must
+        # enqueue an open-ended improvement subtask so the run keeps working until the deadline.
+        with mock.patch.object(self.orch, "authorBackfillBatch", return_value=[]):
+            added = self.orch._backfill(self.state, "arch", self.dash)
+        self.assertEqual(added, 1)
+        self.assertEqual(self.orch._pendingCount(self.state), 1)
+        self.assertIn("improvement", self.state.subtasks[0]["title"].lower())
+
+    def test_backfill_fallback_on_authoring_exception(self):
+        with mock.patch.object(self.orch, "authorBackfillBatch", side_effect=RuntimeError("brain down")):
+            added = self.orch._backfill(self.state, "arch", self.dash)
+        self.assertEqual(added, 1)   # exception -> still enqueues the open-ended fallback, never 0
+
+    def test_drain_keeps_self_ref_run_alive_via_fallback(self):
+        # End-to-end of the fix: a self-ref run with time left + an empty brain must CONTINUE.
+        with mock.patch.object(self.orch, "authorBackfillBatch", return_value=[]):
+            cont, dry = self.orch._continueAfterDrain(self.state, "arch", self.dash, 0)
+        self.assertTrue(cont)
+        self.assertEqual(dry, 0)
+
     def test_backfill_drops_placeholder_verify(self):
         batch = [{"title": "t", "description": "d", "layer": 3,
                   "verify": {"cmd": "python <ABSOLUTE path to x.py>", "expect": "exit_zero"}}]
