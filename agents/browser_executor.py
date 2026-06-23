@@ -166,12 +166,11 @@ def _replyFromTranscript(transcript: str) -> str:
     """Pull the assistant text out of a runBrowser transcript. Each ``extract`` step is
     written as ``extract <selector>:\\n<text>`` (see _run_actions); return the body of the
     LAST extract block -- that is GPT's reply to our message."""
-    marker = "\nextract "
     text = transcript or ""
-    idx = text.rfind(marker if marker in text else "extract ")
+    idx = text.rfind("extract ")
     if idx < 0:
         return ""
-    block = text[idx:]
+    block = text[idx:]                  # "extract <selector>:\n<reply text...>"
     nl = block.find("\n")
     return block[nl + 1:].strip() if nl >= 0 else ""
 
