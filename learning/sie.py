@@ -152,10 +152,10 @@ def _maintenance_steps(db_path: Optional[Path]):
         return policy.rebuild_from_ledger(db_path=db_path)
 
     def evaluate():
-        from learning import eval_harness
-        # No live brain in every environment -> records a transparent marker; a wired
-        # runner (later phases) produces a real fitness point automatically.
-        return eval_harness.run_suite(runner=None, db_path=db_path)
+        from learning import eval_harness, eval_runner
+        # Always produces a REAL fitness point: the deterministic verify runner runs in any
+        # environment; a registered brain-in-the-loop runner upgrades it automatically.
+        return eval_harness.run_suite(runner=eval_runner.active_runner(), db_path=db_path)
 
     def mine():
         # Failure taxonomy (L) -> solution cache (O) -> knowledge graph (N). Order matters:
@@ -204,6 +204,12 @@ def _weekly_steps(db_path: Optional[Path]):
         from learning import finetune
         return finetune.run_dpo_cycle(db_path=db_path)
 
+    def adapter_promotion():
+        # Evaluate challenger adapters vs champion and promote winners (I4 no-regression).
+        # Skips ("no_evaluator") until a brain can serve per-tag fitness.
+        from learning import adapter_promotion as ap
+        return ap.run(db_path=db_path)
+
     def curriculum_and_report():
         # Author practice goals for the weakest families + write the "what did I learn"
         # report. Both best-effort and human-facing -- the system narrates its own progress.
@@ -216,6 +222,7 @@ def _weekly_steps(db_path: Optional[Path]):
     return [("prompt_promotion", prompt_promotion),
             ("lora_distillation", lora_distillation),
             ("dpo_distillation", dpo_distillation),
+            ("adapter_promotion", adapter_promotion),
             ("curriculum_and_report", curriculum_and_report)]
 
 

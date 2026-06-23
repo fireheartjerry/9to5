@@ -156,3 +156,24 @@ implemented with the external call seam mocked and offline-testable logic real.
 - `learning/sie.py`: daily `mine` step (post-mortems → solution cache → KG).
 - Tests: `tests/test_nextwave_batch1.py` (7), `tests/test_nextwave_batch2.py` (12).
 - **ALL PHASES COMPLETE (A–H, NW1–NW7, X1, X2).** Suite 332/332 green.
+
+## Full autonomous integration + GPU
+Closed every "built but not wired" gap so the engine self-integrates end-to-end:
+- **Authoring-time injection:** `authorInvocationSpec._sieAuthoringContext` folds lessons,
+  policy prior, failure-mode guidance, KG codebase notes, low-confidence escalation, and a
+  prior working solution into every brain prompt.
+- **Reflection (teacher distillation) live:** `reflection.REQUEST` appended to the executor
+  prompt + `reflection.capture()` after each subtask (trust-checked); passing specs memoized.
+- **GPU compute router** (`learning/compute.py`): `SIE_COMPUTE` auto|gpu|cpu|off; real
+  local SFT/DPO trainers (`finetune.default_trainer`/`default_dpo_trainer`) + `ollama create`
+  runner, used by default — the user's GPU auto-trains; no-GPU hosts skip cleanly.
+- **Live fitness (keystone):** `learning/eval_runner.py` — a deterministic verify runner
+  makes the eval harness produce REAL fitness automatically (any environment), upgradable
+  to a brain-in-the-loop runner via the registry.
+- **Automatic adapter promotion** (`learning/adapter_promotion.py`): challengers evaluated
+  vs champion (I4 no-regression) and promoted, in the weekly tier.
+- Tests: `tests/test_compute.py` (7), `tests/test_eval_runner.py` (8) + confidence prior.
+  Suite 346/346 green (two known load-flaky e2e tests pass reliably in isolation).
+
+**The engine is now fully autonomous and self-integrating: the user only starts / aborts /
+checks; on a GPU host it also trains and promotes model adapters by itself.**

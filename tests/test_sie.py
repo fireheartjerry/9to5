@@ -17,8 +17,10 @@ class TestSieMaintenance(unittest.TestCase):
         mock.patch.object(config, "VAULT_DISK_ROOT", self.dir / "vault").start()
         mock.patch.object(config, "EXPERIENCE_LEDGER_ENABLED", True).start()
         mock.patch.object(config, "SIE_KILL_SWITCH", False).start()
-        # Keep maintenance fully offline + fast: no embedder.
+        # Keep maintenance fully offline + fast: no embedder, and an empty eval suite so
+        # the verify runner doesn't spawn real subprocesses during the unit test.
         mock.patch.object(retrieval, "_embed_call", return_value=None).start()
+        mock.patch.object(config, "EVAL_SUITE_DIR", self.dir / "nosuite").start()
         retrieval.reset_embed_cache()
 
     def tearDown(self):
@@ -42,9 +44,9 @@ class TestSieMaintenance(unittest.TestCase):
         self.assertEqual(set(out["steps"]),
                          {"embeddings", "consolidate", "policy_rebuild", "mine", "evaluate",
                           "prompt_promotion", "lora_distillation", "dpo_distillation",
-                          "curriculum_and_report"})
+                          "adapter_promotion", "curriculum_and_report"})
         self.assertTrue(sie._state_path().exists())
-        self.assertEqual(out["steps"]["evaluate"]["status"], "no_runner")
+        self.assertEqual(out["steps"]["evaluate"]["status"], "scored")  # real fitness, not a marker
 
     def test_throttled_second_call_skips(self):
         sie.run_maintenance(force=True, db_path=self.db)
