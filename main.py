@@ -250,8 +250,16 @@ def main() -> int:
                 print("Elaboration replaced.")
 
     _startTerminalControl(state.task_id)
-    summary = Orchestrator().runFull(state, work_dir=work_dir, auto_pr=not args.no_pr,
-                                     control_mode=args.mode, parallelism=max(1, args.parallel))
+    # Supervised run: send one sentence at 9am, return at 5pm to a finished job. If the
+    # run crashes, the supervisor auto-resumes the SAME task (committed progress is the
+    # source of truth) until it is terminal or the deadline passes -- no human needed.
+    import resilience
+
+    def _run(st):
+        return Orchestrator().runFull(st, work_dir=work_dir, auto_pr=not args.no_pr,
+                                      control_mode=args.mode, parallelism=max(1, args.parallel))
+
+    summary = resilience.run_with_recovery(_run, state)
     print("\n===== RUN SUMMARY =====")
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     return 0

@@ -212,6 +212,11 @@ SELFPLAY_START_HOUR: int = int(os.getenv("SELFPLAY_START_HOUR", "9"))
 SELFPLAY_END_HOUR: int = int(os.getenv("SELFPLAY_END_HOUR", "17"))
 # Auto-bootstrap the training stack + Ollama models (so the user only presses start).
 SIE_BOOTSTRAP: bool = _envBool("SIE_BOOTSTRAP", True)
+# Run supervision (the 9->5 promise): auto-resume a crashed run this many times before
+# giving up, with exponential backoff capped here. Keeps a long run alive unattended.
+RUN_MAX_RESTARTS: int = int(os.getenv("RUN_MAX_RESTARTS", "5"))
+RUN_RESTART_MAX_BACKOFF: float = float(os.getenv("RUN_RESTART_MAX_BACKOFF", "60"))
+RUN_STALL_SECONDS: float = float(os.getenv("RUN_STALL_SECONDS", "1800"))  # 30m no-progress
 # Meta-optimization may auto-apply tuning to these knobs (persisted across restarts).
 SIE_META_AUTOAPPLY: bool = _envBool("SIE_META_AUTOAPPLY", True)
 SIE_TUNABLE_KNOBS: tuple[str, ...] = (
