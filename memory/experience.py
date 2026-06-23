@@ -851,14 +851,18 @@ def fetch_runs(db_path: Optional[Path] = None) -> list[dict[str, Any]]:
         return [dict(r) for r in conn.execute("SELECT * FROM runs ORDER BY started_at")]
 
 
-def fetch_subtasks(run_id: Optional[str] = None,
+def fetch_subtasks(run_id: Optional[str] = None, *, limit: Optional[int] = None,
                    db_path: Optional[Path] = None) -> list[dict[str, Any]]:
     with _connect(db_path) as conn:
-        if run_id is None:
-            rows = conn.execute("SELECT * FROM subtasks ORDER BY run_id, position")
-        else:
+        if run_id is not None:
             rows = conn.execute(
                 "SELECT * FROM subtasks WHERE run_id=? ORDER BY position", (run_id,))
+        elif limit is not None:
+            # Bounded recent window -- keeps hot-path aggregates O(limit), not O(ledger).
+            rows = conn.execute(
+                "SELECT * FROM subtasks ORDER BY id DESC LIMIT ?", (int(limit),))
+        else:
+            rows = conn.execute("SELECT * FROM subtasks ORDER BY run_id, position")
         return [dict(r) for r in rows]
 
 

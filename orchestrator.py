@@ -21,6 +21,7 @@ import ollama
 
 import config
 import knowledge
+import surfaces
 from agents import adversary, architect, clarifier, executor, replanner, verifier
 from control import AbortRun, ControlBus
 from learning import (confidence, knowledge_graph, policy, postmortem, prompts,
@@ -682,6 +683,7 @@ class Orchestrator:
         title = subtask.get("title", "")
         parts: list[str] = []
         for fn in (
+            surfaces.catalog_block,                       # rich cross-surface routing
             lambda: policy.hint(goal, title),
             lambda: retrieval.lessons_block(goal, title),
             lambda: postmortem.guidance_for(title),
@@ -966,6 +968,7 @@ class Orchestrator:
                 sess = dict(subtask.get("session") or {})
                 sess.update({"effort": spec.get("effort_level"), "model": config.PRIMARY_MODEL,
                              "skills": spec.get("skills_to_invoke"), "subagent": spec.get("subagent"),
+                             "surfaces": surfaces.surfaces_used(spec),   # SIE surface learning
                              "use_workflow": bool(spec.get("use_workflow")), "attempts": attempt})
                 state.updateSubtask(sid, session=sess)
             LOG.info("Subtask %s attempt %d/%d effort=%s", sid, attempt, config.MAX_SUBTASK_ATTEMPTS,

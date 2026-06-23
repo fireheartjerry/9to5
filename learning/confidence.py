@@ -58,7 +58,9 @@ def prior_success(title: str, *, min_support: int = 3,
         from learning.lessons import family_of
         fam = family_of(title or "", None)
         total = first = 0
-        for r in experience.fetch_subtasks(db_path=db_path):
+        # Bounded recent window: this runs per-subtask authoring, so it must stay cheap
+        # regardless of how large the ledger grows over months.
+        for r in experience.fetch_subtasks(limit=2000, db_path=db_path):
             if family_of(r.get("title") or "", r.get("signature_tags")) != fam:
                 continue
             total += 1

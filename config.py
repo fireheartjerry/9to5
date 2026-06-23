@@ -217,6 +217,14 @@ SIE_BOOTSTRAP: bool = _envBool("SIE_BOOTSTRAP", True)
 RUN_MAX_RESTARTS: int = int(os.getenv("RUN_MAX_RESTARTS", "5"))
 RUN_RESTART_MAX_BACKOFF: float = float(os.getenv("RUN_RESTART_MAX_BACKOFF", "60"))
 RUN_STALL_SECONDS: float = float(os.getenv("RUN_STALL_SECONDS", "1800"))  # 30m no-progress
+
+# Rich cross-surface automation: which non-terminal surfaces the executor can reach.
+# MCP servers it should compose across (comma-separated env), plus browser/native layers.
+MCP_SERVERS: tuple[str, ...] = tuple(
+    s.strip() for s in os.getenv(
+        "MCP_SERVERS", "github,gmail,google_calendar,google_drive,canva").split(",") if s.strip())
+BROWSER_LAYER_ENABLED: bool = _envBool("BROWSER_LAYER_ENABLED", False)   # L1 (CDP)
+NATIVE_LAYER_ENABLED: bool = _envBool("NATIVE_LAYER_ENABLED", False)     # L2 (UIA)
 # Meta-optimization may auto-apply tuning to these knobs (persisted across restarts).
 SIE_META_AUTOAPPLY: bool = _envBool("SIE_META_AUTOAPPLY", True)
 SIE_TUNABLE_KNOBS: tuple[str, ...] = (
