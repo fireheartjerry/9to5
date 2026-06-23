@@ -136,10 +136,11 @@ def blockDestructive(data):
         f"Blocked destructive command (matched {matched!r}): {command}"
     )
 
-    # (a) best-effort Discord alert (severe: owner ping + Answer/Skip/Abort buttons).
+    # (a) best-effort Discord alert: an AUTO-REFUSED safety event, not a human decision -- inform
+    # without "human decision required" or an @-ping (9to5 runs hands-off).
     try:
         import notifications.discord_bot as discord
-        discord.sendBlocked(reason)
+        discord.sendEmbed(discord.noticeEmbed(reason, title="🛡️ 9TO5 — auto-refused (safety)"))
     except Exception:
         pass
 
@@ -311,7 +312,7 @@ def selfModificationGuard(data):
                           f"of this task's universe. Stay inside the allowed scope.")
                 try:
                     import notifications.discord_bot as discord
-                    discord.sendBlocked(reason)
+                    discord.sendEmbed(discord.noticeEmbed(reason, title="🛡️ 9TO5 — auto-refused (safety)"))
                 except Exception:
                     pass
                 sys.stderr.write(reason + "\n")

@@ -90,9 +90,9 @@ def _waitForSessionReset(cancel_check=None) -> bool:
                 remaining / 60, reset_fmt)
     try:
         from notifications import discord_bot as discord
-        discord.sendEmbed(discord.blockedEmbed(
-            f"⏳ Session token limit hit. Pausing up to {remaining / 3600:.1f}h until reset at {reset_fmt} "
-            "(will resume early on abort or deadline)."))
+        discord.sendEmbed(discord.noticeEmbed(
+            f"⏳ Session token limit hit. Auto-pausing up to {remaining / 3600:.1f}h until reset at {reset_fmt} "
+            "(resumes automatically; no action needed).", title="ℹ️ 9TO5 — auto-pause"))
     except Exception:  # noqa: BLE001
         pass
 
@@ -115,7 +115,7 @@ def _waitForSessionReset(cancel_check=None) -> bool:
     LOG.info("Session token limit reset -- resuming")
     try:
         from notifications import discord_bot as discord
-        discord.sendEmbed(discord.blockedEmbed("✅ Session token limit reset -- resuming work."))
+        discord.sendEmbed(discord.noticeEmbed("✅ Session token limit reset — resuming work.", title="ℹ️ 9TO5 — resumed"))
     except Exception:  # noqa: BLE001
         pass
     return True
@@ -261,9 +261,11 @@ def scanDestructive(text: str) -> list[str]:
 
 
 def _alertBlocked(reason: str) -> None:
+    # An AUTO-REFUSED safety event (a destructive command was blocked): inform, don't summon. No
+    # "human decision required" framing and no @-ping -- 9to5 already handled it autonomously.
     try:
         from notifications import discord_bot as discord
-        discord.sendBlocked(reason)
+        discord.sendEmbed(discord.noticeEmbed(reason, title="🛡️ 9TO5 — auto-refused (safety)"))
     except Exception as e:  # noqa: BLE001
         LOG.warning("blocked-alert failed: %s", e)
 
