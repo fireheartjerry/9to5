@@ -210,6 +210,14 @@ class WorkSetupView(discord.ui.View):
         self.req.no_pr = (select.values[0] == "nopr")
         await interaction.response.defer()
 
+    @discord.ui.select(placeholder="Night mode", options=[
+        discord.SelectOption(label="Night mode: off (default)", value="off", default=True),
+        discord.SelectOption(label="Night mode: on (zero interaction)", value="on"),
+    ])
+    async def _night_mode(self, interaction, select):  # noqa: ANN001
+        self.req.night_mode = (select.values[0] == "on")
+        await interaction.response.defer()
+
     @discord.ui.button(label="Launch", style=discord.ButtonStyle.success)
     async def _launch(self, interaction, button):  # noqa: ANN001
         import asyncio
