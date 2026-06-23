@@ -197,6 +197,8 @@ DPO_KL_BETA: float = float(os.getenv("DPO_KL_BETA", "0.1"))
 DPO_MIN_PAIRS: int = int(os.getenv("DPO_MIN_PAIRS", "30"))
 # Next-wave knobs: confidence deferral threshold (escalate below this P(success)).
 CONFIDENCE_DEFER_THRESHOLD: float = float(os.getenv("CONFIDENCE_DEFER_THRESHOLD", "0.4"))
+# Subsystem I: ask the executor for a learning summary (teacher->student distillation).
+SIE_REFLECTION_ENABLED: bool = _envBool("SIE_REFLECTION_ENABLED", True)
 
 # --- Adversary trigger configuration -------------------------------------
 ADVERSARY_TRIGGER_PHRASES: tuple[str, ...] = (

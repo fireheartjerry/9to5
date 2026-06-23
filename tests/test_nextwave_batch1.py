@@ -63,6 +63,15 @@ class TestConfidence(_Base):
         out = confidence.should_escalate(cal, {"verify_passed": 0}, threshold=0.9)
         self.assertTrue(out)
 
+    def test_prior_success_is_family_first_pass_rate(self):
+        for i in range(4):
+            experience.record_subtask("r1", {
+                "subtask_id": f"st-{i}", "title": "flaky api task", "status": "done",
+                "verify_result": {"passed": False}, "session": {"attempts": 2}}, db_path=self.db)
+        prior = confidence.prior_success("flaky api work", db_path=self.db)
+        self.assertEqual(prior, 0.0)               # weak family -> low prior -> escalate
+        self.assertIsNone(confidence.prior_success("brand new", db_path=self.db))  # no evidence
+
 
 class TestSafety(_Base):
     def test_guard_blocks_brain_self_promotion(self):

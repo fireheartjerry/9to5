@@ -23,7 +23,8 @@ import config
 import knowledge
 from agents import adversary, architect, clarifier, executor, replanner, verifier
 from control import AbortRun, ControlBus
-from learning import policy, prompts
+from learning import (confidence, knowledge_graph, policy, postmortem, prompts,
+                      reflection, solution_cache)
 from memory import experience, retrieval
 from memory.obsidian import ObsidianClient
 from notifications import audit
@@ -603,11 +604,10 @@ class Orchestrator:
         if failure_feedback:
             user += f"PREVIOUS ATTEMPT FAILED THE VERIFICATION:\n{failure_feedback[:1200]}\n\n"
         user += "Output ONLY the JSON invocation spec for THIS subtask."
-        # SIE Layer 1 + 4: prepend lessons from similar past successes and the learned
-        # effort prior (both best-effort, no-op when empty).
-        goal_text = state.meta.get("goal_elaborated", "")
-        user = (policy.hint(goal_text, subtask.get("title", ""))
-                + retrieval.lessons_block(goal_text, subtask.get("title", "")) + user)
+        # SIE: prepend everything the engine has learned for this kind of subtask
+        # (lessons, policy prior, failure modes, codebase notes, a prior solution, and a
+        # low-confidence escalation nudge). All best-effort + no-op when empty.
+        user = self._sieAuthoringContext(state, subtask) + user
         if state.meta.get("is_self_referential"):
             system_prompt = self._selfRefSystemPrompt(state)
         else:
@@ -623,7 +623,53 @@ class Orchestrator:
                 pass
         resp = self._ollamaChat(system_prompt, user, want_json=True)
         spec = _chatJson(resp)
-        return self._sanitizeSpec(spec if isinstance(spec, dict) else {}, subtask)
+        spec = self._sanitizeSpec(spec if isinstance(spec, dict) else {}, subtask)
+        # SIE subsystem I: ask the executor (the strong teacher) for a learning summary so
+        # we can distill its reasoning. Best-effort + only if it produced a prompt.
+        try:
+            if config.SIE_REFLECTION_ENABLED and spec.get("prompt"):
+                spec["prompt"] = f"{spec['prompt']}\n\n{reflection.REQUEST}"
+        except Exception:  # noqa: BLE001
+            pass
+        return spec
+
+    def _sieAuthoringContext(self, state: TaskState, subtask: dict) -> str:
+        """Everything the Self-Improvement Engine has learned for this subtask, folded into
+        one best-effort prompt prefix. Each piece independently degrades to "" so a cold
+        ledger (or any error) changes nothing."""
+        goal = state.meta.get("goal_elaborated", "") or state.meta.get("goal_raw", "")
+        title = subtask.get("title", "")
+        parts: list[str] = []
+        for fn in (
+            lambda: policy.hint(goal, title),
+            lambda: retrieval.lessons_block(goal, title),
+            lambda: postmortem.guidance_for(title),
+            lambda: knowledge_graph.context_for(title),
+            lambda: self._confidenceNudge(title),
+            lambda: self._warmStartHint(title),
+        ):
+            try:
+                parts.append(fn() or "")
+            except Exception:  # noqa: BLE001 -- learning never blocks authoring
+                pass
+        return "".join(parts)
+
+    def _confidenceNudge(self, title: str) -> str:
+        """SIE subsystem K: if this family historically struggles, tell the brain to
+        escalate effort and slow down."""
+        prior = confidence.prior_success(title)
+        if prior is not None and prior < config.CONFIDENCE_DEFER_THRESHOLD:
+            return (f"## LOW-CONFIDENCE ({prior:.0%} historical first-pass): use HIGHER effort "
+                    "(high/xhigh), be extra careful, and verify thoroughly.\n\n")
+        return ""
+
+    def _warmStartHint(self, title: str) -> str:
+        """SIE subsystem O: surface a prior PASSING spec for a near-duplicate subtask."""
+        prior = solution_cache.warm_start(title)
+        if prior:
+            return ("## PRIOR WORKING SOLUTION for a near-identical subtask (adapt, don't "
+                    f"blindly copy):\n{prior[:600]}\n\n")
+        return ""
 
     # ===================================================================
     # Control plane (poll Discord + drain ControlBus between steps)
@@ -975,11 +1021,13 @@ class Orchestrator:
             # and iterating the live list unlocked risks 'list changed size during iteration'.
             with self._state_lock:
                 heartbeat_ordinal = sum(1 for s in state.subtasks if s["status"] in ("done", "failed", "removed"))
+            _adv_verdict = None
             triggered, reason = adversary.shouldTrigger(combined, heartbeat_ordinal, attempt)
             if triggered:
                 rv = self._review(subtask["title"], reason, combined,
                                   ollama_chat=self._ollamaChat,
                                   goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
+                _adv_verdict = rv.get("verdict")
                 discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason, rv.get("verdict")))
                 with self._state_lock:
                     state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
@@ -991,6 +1039,20 @@ class Orchestrator:
                         and rv.get("verdict") == "challenged" and rv.get("concerns")):
                     dashboard.update(state, "executing", f"{sid} adversary remediation (1 attempt)")
                     self._remediate(state, subtask, architect_doc, exec_cwd, rv["concerns"])
+
+            # SIE subsystem I: capture the executor's learning summary (trust-checked against
+            # the real verify + adversary verdict) and memoize a passing spec. Best-effort.
+            try:
+                reflection.capture(run_id=state.task_id, subtask_id=sid, executor_output=combined,
+                                   verify_passed=passed, adversary_verdict=_adv_verdict)
+                if passed and spec.get("prompt"):
+                    import json as _json
+                    solution_cache_spec = _json.dumps({k: spec.get(k) for k in
+                        ("prompt", "effort_level", "skills_to_invoke", "subagent") if spec.get(k)})
+                    experience.upsert_solution(solution_cache.signature_of(subtask.get("title", "")),
+                                               solution_cache_spec, verify_passed=True)
+            except Exception:  # noqa: BLE001 -- learning never affects the run
+                pass
 
             # Replan ONLY after a subtask that PASSED. Replanning after failures is the
             # churn engine (fail -> add remediation -> fail -> add ...) that livelocks runs;

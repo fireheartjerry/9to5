@@ -48,3 +48,24 @@ def recommend(prob: float, *, threshold: Optional[float] = None) -> str:
 def should_escalate(cal: reward.Calibrator, row: dict[str, Any], *,
                     threshold: Optional[float] = None) -> bool:
     return recommend(predict(cal, row), threshold=threshold) == "escalate"
+
+
+def prior_success(title: str, *, min_support: int = 3,
+                  db_path: Optional[Path] = None) -> Optional[float]:
+    """PRE-run confidence: this task family's historical first-pass rate (or None when
+    there isn't enough evidence). Used to escalate effort before a subtask runs."""
+    try:
+        from learning.lessons import family_of
+        fam = family_of(title or "", None)
+        total = first = 0
+        for r in experience.fetch_subtasks(db_path=db_path):
+            if family_of(r.get("title") or "", r.get("signature_tags")) != fam:
+                continue
+            total += 1
+            if r.get("verify_passed") == 1 and (r.get("attempt_count") or 1) <= 1:
+                first += 1
+        if total < min_support:
+            return None
+        return first / total
+    except Exception:  # noqa: BLE001
+        return None
