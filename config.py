@@ -125,6 +125,9 @@ VAULT_DISK_ROOT: Path = OBSIDIAN_VAULT_PATH / "9to5"
 # Vault-relative folders (used for both REST paths and on-disk paths).
 TASKS_DIR_REL: str = "tasks"
 SESSIONS_DIR_REL: str = "sessions"
+# Write notes to disk synchronously (durable + readable) and sync to Obsidian via REST in
+# the background, so a slow/absent vault never blocks the run loop (~5-10s/run saved).
+OBSIDIAN_ASYNC: bool = _envBool("OBSIDIAN_ASYNC", True)
 
 # --- Ollama (Orchestrator brain) -----------------------------------------
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")  # code-specialized brain (fits 8GB VRAM)
