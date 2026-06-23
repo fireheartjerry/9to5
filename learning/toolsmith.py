@@ -1,0 +1,51 @@
+"""Self-authored tooling analysis -- subsystem P of the SIE (human-gated).
+
+Empirically ranks which skills/subagents actually correlate with verify-pass, and flags
+dead weight to prune. Authoring brand-new .claude tools is gated behind human approval, so
+this module is analysis-only: it produces the evidence, a human (or a gated run) acts on it.
+
+See the spec (subsystem P).
+"""
+from __future__ import annotations
+
+import json
+from collections import defaultdict
+from pathlib import Path
+from typing import Any, Optional
+
+import config
+from memory import experience
+
+LOG = config.getLogger("sie.toolsmith")
+
+
+def _iter_skills(row: dict[str, Any]):
+    raw = row.get("skills_json")
+    if not raw:
+        return
+    try:
+        skills = json.loads(raw)
+    except Exception:  # noqa: BLE001
+        return
+    if isinstance(skills, list):
+        yield from (str(s) for s in skills)
+
+
+def rank_tools(*, db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    """Per-skill {skill, support, pass_rate}, best first."""
+    agg: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for r in experience.fetch_subtasks(db_path=db_path):
+        passed = 1 if r.get("verify_passed") == 1 else 0
+        for s in _iter_skills(r):
+            agg[s][0] += 1
+            agg[s][1] += passed
+    out = [{"skill": s, "support": t, "pass_rate": p / t} for s, (t, p) in agg.items() if t]
+    out.sort(key=lambda d: d["pass_rate"], reverse=True)
+    return out
+
+
+def prune_candidates(*, min_support: int = 3, max_rate: float = 0.3,
+                     db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    """Skills with enough support but a poor pass rate -- candidates to retire."""
+    return [t for t in rank_tools(db_path=db_path)
+            if t["support"] >= min_support and t["pass_rate"] <= max_rate]

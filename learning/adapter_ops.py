@@ -1,0 +1,55 @@
+"""Continual-learning hygiene -- subsystem R of the SIE.
+
+Two long-horizon health mechanisms: **adapter souping** (periodically merge winning
+per-role adapters to consolidate gains and bound sprawl) and **eval anti-overfit** (flag
+when the held-out suite is being learned). The weight-merge itself is an injectable seam
+(``merger``); planning + detection are pure and offline-testable.
+
+See the spec (subsystem R).
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Callable, Optional
+
+import config
+from memory import experience
+
+LOG = config.getLogger("sie.adapter_ops")
+
+Merger = Callable[[list[str], str], str]   # (lora_paths, out_dir) -> merged_lora_path
+
+
+def merge_plan(*, db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    """The champion adapters (one per role) that a soup would average."""
+    return experience.fetch_adapters("champion", db_path=db_path)
+
+
+def soup(*, merger: Optional[Merger] = None, out_dir: Optional[Path] = None,
+         db_path: Optional[Path] = None) -> dict[str, Any]:
+    """Average the champion adapters into one (via the merger seam). Skips cleanly when
+    there is nothing to merge or no merger backend is provided."""
+    champs = merge_plan(db_path=db_path)
+    if len(champs) < 2:
+        return {"skipped": "nothing_to_merge", "count": len(champs)}
+    if merger is None:
+        return {"skipped": "no_merger", "count": len(champs)}
+    out_dir = Path(out_dir or config.LORA_OUTPUT_DIR)
+    merged = merger([c["lora_path"] for c in champs], str(out_dir))
+    return {"merged": merged, "count": len(champs)}
+
+
+def overfit_signal(*, recent: int = 5, db_path: Optional[Path] = None) -> dict[str, Any]:
+    """Flag possible eval-suite overfitting: fitness rising while it should be held-out.
+
+    Heuristic — a sustained, monotone climb across the most recent evals with no
+    plateau is suspicious and warrants suite rotation. Returns {suspect, slope, n}.
+    """
+    series = [p for p in experience.fitness_series(recent, db_path=db_path)
+              if isinstance(p.get("score"), dict) and "fitness" in p["score"]]
+    vals = [float(p["score"]["fitness"]) for p in series]
+    if len(vals) < recent:
+        return {"suspect": False, "slope": 0.0, "n": len(vals)}
+    monotone = all(vals[i] <= vals[i + 1] for i in range(len(vals) - 1))
+    slope = vals[-1] - vals[0]
+    return {"suspect": bool(monotone and slope > 0.2), "slope": slope, "n": len(vals)}

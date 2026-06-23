@@ -157,10 +157,20 @@ def _maintenance_steps(db_path: Optional[Path]):
         # runner (later phases) produces a real fitness point automatically.
         return eval_harness.run_suite(runner=None, db_path=db_path)
 
+    def mine():
+        # Failure taxonomy (L) -> solution cache (O) -> knowledge graph (N). Order matters:
+        # the KG reads the failure modes the post-mortem just wrote.
+        from learning import knowledge_graph, postmortem, solution_cache
+        pm = postmortem.run_postmortems(db_path=db_path)
+        sc = solution_cache.build_from_ledger(db_path=db_path)
+        kg = knowledge_graph.build_from_ledger(db_path=db_path)
+        return {"postmortem": pm, "solution_cache": sc, "kg": kg}
+
     return [
         ("embeddings", embeddings),
         ("consolidate", consolidate),
         ("policy_rebuild", policy_rebuild),
+        ("mine", mine),
         ("evaluate", evaluate),
     ]
 

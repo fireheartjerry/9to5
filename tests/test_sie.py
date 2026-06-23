@@ -40,7 +40,7 @@ class TestSieMaintenance(unittest.TestCase):
     def test_force_runs_all_steps_and_records_state(self):
         out = sie.run_maintenance(force=True, db_path=self.db)
         self.assertEqual(set(out["steps"]),
-                         {"embeddings", "consolidate", "policy_rebuild", "evaluate",
+                         {"embeddings", "consolidate", "policy_rebuild", "mine", "evaluate",
                           "prompt_promotion", "lora_distillation", "dpo_distillation",
                           "curriculum_and_report"})
         self.assertTrue(sie._state_path().exists())

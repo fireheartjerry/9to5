@@ -16,9 +16,9 @@ implemented with the external call seam mocked and offline-testable logic real.
 | **F — Reward + DPO** | composite reward + logistic calibrator (`learning/reward.py`) + preference pairs (`learning/preferences.py`) + DPO LoRA cycle, auto-runs in weekly tier | ✅ done |
 | **G — Rollout + Counterfactual** | offline replay (`learning/counterfactual.py`) + shadow/canary state machine (`learning/rollout.py`) + per-role adapters & brain router | ✅ done |
 | **H — Curriculum + Releases** | self-play goal generation (`learning/curriculum.py`) + model cards & attribution report (`learning/release.py`), auto in weekly tier | ✅ done |
-| NW1–NW7 — Next wave (J–R) | human feedback, confidence, post-mortems, multi-teacher, KG, solution cache, research track | ⬜ |
+| **NW1–NW7 — Next wave (J–R)** | human feedback, confidence, post-mortems, reflection/multi-teacher, KG, solution cache, research track | ✅ done |
 | **X1 — Auto-runner** | `learning/sie.py` cadence ladder, auto-fires after every run (hands-off), file-locked + throttled | ✅ done |
-| X2 — Safety | `learning/safety.py` invariants I1–I6 + kill switch enforcement | ⬜ |
+| **X2 — Safety** | `learning/safety.py` invariants I1/I2/I4 + guard + panic-to-stock + kill switch | ✅ done |
 
 > **Automation (core philosophy):** the user only starts / aborts / checks. As of X1, all
 > learning (embeddings, consolidation, policy rebuild, eval — and later promotion/LoRA)
@@ -137,4 +137,22 @@ implemented with the external call seam mocked and offline-testable logic real.
   champion prompts, adapters, fitness Δ), `render_report`/`write_report`.
 - `learning/sie.py`: weekly tier now also authors curriculum + writes the report.
 - Tests: `tests/test_curriculum_release.py` (8). Suite 313/313 green.
-- **Lettered phases A–H complete.** Remaining: NW1–NW7 (next wave), X2 (safety enforcement).
+
+## Next wave (NW1–NW7) + X2 — all shipped
+- **NW1 (J)** `human_feedback.py`: capture approve/reject/skip/edit (wired live into
+  `commands.applyCommand`) + DPO correction pairs from edits.
+- **NW2 (K)** `confidence.py`: success-probability head + calibrated deferral/escalation.
+- **NW3 (L)** `postmortem.py`: failure classification → growing `failure_modes` taxonomy
+  + pre-emptive `guidance_for`. Auto-runs in the daily `mine` step.
+- **NW4 (I/M)** `reflection.py`: parse executor learning-summary, **trust-but-verify**
+  against the real verify/adversary, store trusted recipes (multi-teacher field).
+- **NW5 (N)** `knowledge_graph.py`: family + gotcha nodes from the ledger; `context_for`
+  injection. Auto in `mine`.
+- **NW6 (O)** `solution_cache.py`: memoize passing specs; `warm_start` near-duplicates. Auto in `mine`.
+- **NW7 (P/Q/R)** `toolsmith.py` (rank/prune skills), `meta_opt.py` (knob suggestions),
+  `adapter_ops.py` (soup plan + overfit signal) — analysis, human-gated.
+- **X2** `safety.py`: `verify_invariants` (I1/I2/I4), `guard_promotion` (brain may
+  propose, never crown), `panic_to_stock` hard rollback, kill-switch helpers.
+- `learning/sie.py`: daily `mine` step (post-mortems → solution cache → KG).
+- Tests: `tests/test_nextwave_batch1.py` (7), `tests/test_nextwave_batch2.py` (12).
+- **ALL PHASES COMPLETE (A–H, NW1–NW7, X1, X2).** Suite 332/332 green.
