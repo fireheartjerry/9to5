@@ -30,6 +30,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional, Union
 
@@ -38,6 +39,66 @@ from agents import playbook
 from memory.obsidian import writeClaudioMd
 
 LOG = config.getLogger("executor")
+
+# --- session token limit tracker (module-level, shared across concurrent calls) ---
+# When Claude Pro's 5-hour token budget is exhausted, all calls fail with rate_limit.
+# We record the first hit, then pause every caller until 5h have elapsed.
+_SESSION_LIMIT_STATE: dict = {"first_hit_at": None}
+
+
+def _isRateLimitError(result: dict) -> bool:
+    """Return True when the result envelope signals a session token limit hit."""
+    if not result.get("is_error"):
+        return False
+    if result.get("subtype") == "rate_limit":
+        return True
+    combined = ((result.get("stderr") or "") + " " + (result.get("stdout") or "")).lower()
+    return any(s in combined for s in ("rate limit", "usage limit", "rate_limit", "claude ai usage",
+                                       "session limit", "token limit"))
+
+
+def _waitForSessionReset() -> None:
+    """Block until 5 hours have elapsed since the first rate-limit hit, then clear state."""
+    now = time.time()
+    first_hit = _SESSION_LIMIT_STATE.get("first_hit_at")
+    if first_hit is None:
+        _SESSION_LIMIT_STATE["first_hit_at"] = now
+        first_hit = now
+
+    reset_at = first_hit + config.SESSION_LIMIT_PAUSE_SECONDS
+    remaining = reset_at - now
+
+    if remaining <= 0:
+        _SESSION_LIMIT_STATE["first_hit_at"] = None
+        LOG.info("Session token window already elapsed -- resuming immediately")
+        return
+
+    reset_fmt = time.strftime("%H:%M:%S", time.localtime(reset_at))
+    LOG.warning("Session token limit hit -- pausing %.0f min (reset at %s)",
+                remaining / 60, reset_fmt)
+    try:
+        from notifications import discord_bot as discord
+        discord.sendEmbed(discord.blockedEmbed(
+            f"⏳ Session token limit hit. Pausing {remaining / 3600:.1f}h until reset at {reset_fmt}."
+        ))
+    except Exception:  # noqa: BLE001
+        pass
+
+    check_interval = 60
+    while True:
+        remaining = reset_at - time.time()
+        if remaining <= 0:
+            break
+        LOG.info("Rate-limit pause: %.0f min remaining until session reset", remaining / 60)
+        time.sleep(min(check_interval, max(remaining, 1)))
+
+    _SESSION_LIMIT_STATE["first_hit_at"] = None
+    LOG.info("Session token limit reset -- resuming")
+    try:
+        from notifications import discord_bot as discord
+        discord.sendEmbed(discord.blockedEmbed("✅ Session token limit reset -- resuming work."))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _killProcessTree(pid: int) -> None:
@@ -220,6 +281,7 @@ def _parseEnvelope(out: str) -> "tuple[str, dict]":
             text = f"[claude {obj.get('subtype') or ('error' if obj.get('is_error') else 'no-output')}]"
         return text, {
             "is_error": bool(obj.get("is_error")),
+            "subtype": obj.get("subtype"),
             "session_id": obj.get("session_id"),
             "cost_usd": obj.get("total_cost_usd") if obj.get("total_cost_usd") is not None else obj.get("cost_usd"),
             "usage": obj.get("usage"),
@@ -309,6 +371,10 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
         base_cmd += ["--output-format", "json"]
     if config.CLAUDE_SETTINGS_PATH.exists():
         base_cmd += ["--settings", str(config.CLAUDE_SETTINGS_PATH)]
+    # Smart model routing: pick the cheapest model that can handle this effort level.
+    # low→haiku, default/high→sonnet, xhigh/ultracode→opus. Overridable via MODEL_* env vars.
+    model = config.MODEL_BY_EFFORT.get(effort, config.MODEL_BY_EFFORT.get("default", config.PRIMARY_MODEL))
+    base_cmd += ["--model", model]
     base_cmd += ["--fallback-model", config.FALLBACK_MODEL]   # auto model failover on rate-limit
     if flag:
         base_cmd += ["--effort", flag]
@@ -373,6 +439,7 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
             ok = (not fields["is_error"]) if "is_error" in fields else (proc.returncode == 0)
             return {"ok": ok, "returncode": proc.returncode, "stdout": text, "stderr": err or "",
                     "profile": profile, "session_id": fields.get("session_id"), "is_error": fields.get("is_error"),
+                    "subtype": fields.get("subtype"),
                     "cost_usd": fields.get("cost_usd"), "usage": fields.get("usage"), "num_turns": fields.get("num_turns"),
                     "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
         except subprocess.TimeoutExpired:
@@ -396,14 +463,23 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
                     "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
 
     if not is_resume:
-        return _run(fresh_cmd, full_prompt)
-    result = _run(resume_cmd, resume_prompt)
-    # If the resume LAUNCH failed (claude exited with a real positive code and emitted no result
-    # envelope), the session was unresumable -- retry ONCE on a fresh session so a stale session id
-    # never silently burns one of the caller's MAX_SUBTASK_ATTEMPTS. (rc>0 excludes a genuine
-    # timeout (-1) which should not be re-run here.)
-    rc = result.get("returncode")
-    if config.EXECUTOR_OUTPUT_JSON and result.get("is_error") is None and isinstance(rc, int) and rc > 0:
-        LOG.warning("resume launch yielded no envelope (rc=%s) -- retrying once on a fresh session", rc)
         result = _run(fresh_cmd, full_prompt)
+    else:
+        result = _run(resume_cmd, resume_prompt)
+        # If the resume LAUNCH failed (claude exited with a real positive code and emitted no result
+        # envelope), the session was unresumable -- retry ONCE on a fresh session so a stale session id
+        # never silently burns one of the caller's MAX_SUBTASK_ATTEMPTS. (rc>0 excludes a genuine
+        # timeout (-1) which should not be re-run here.)
+        rc = result.get("returncode")
+        if config.EXECUTOR_OUTPUT_JSON and result.get("is_error") is None and isinstance(rc, int) and rc > 0:
+            LOG.warning("resume launch yielded no envelope (rc=%s) -- retrying once on a fresh session", rc)
+            result = _run(fresh_cmd, full_prompt)
+
+    # Session token limit: when the 5-hour Pro budget is exhausted, pause until it resets
+    # then retry once on a fresh session (resume would be invalid after a long pause).
+    if _isRateLimitError(result):
+        _waitForSessionReset()
+        LOG.info("Retrying subtask on fresh session after session token limit reset")
+        result = _run(fresh_cmd, full_prompt)
+
     return result

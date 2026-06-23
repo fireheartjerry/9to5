@@ -323,6 +323,18 @@ VENV_PYTHON: Path = PROJECT_ROOT / "venv" / "Scripts" / "python.exe"
 # Automatic model fallback chain (handed to `claude --fallback-model`).
 PRIMARY_MODEL: str = "claude-opus-4-8"
 FALLBACK_MODEL: str = "claude-sonnet-4-6"
+# Smart model routing: select model by effort level so light tasks don't burn Opus.
+# haiku for throwaway work, sonnet for standard, opus only for the heaviest effort.
+MODEL_BY_EFFORT: dict[str, str] = {
+    "low":       os.getenv("MODEL_LOW",       "claude-haiku-4-5-20251001"),
+    "default":   os.getenv("MODEL_DEFAULT",   "claude-sonnet-4-6"),
+    "medium":    os.getenv("MODEL_MEDIUM",    "claude-sonnet-4-6"),
+    "high":      os.getenv("MODEL_HIGH",      "claude-sonnet-4-6"),
+    "xhigh":     os.getenv("MODEL_XHIGH",     "claude-opus-4-8"),
+    "ultracode": os.getenv("MODEL_ULTRACODE", "claude-opus-4-8"),
+}
+# Session token limit (Claude Pro 5-hour window). When hit, pause until reset.
+SESSION_LIMIT_PAUSE_SECONDS: int = int(os.getenv("SESSION_LIMIT_PAUSE_SECONDS", str(5 * 3600)))
 # Skills + subagents the Orchestrator (Ollama) is allowed to reference in a spec.
 AVAILABLE_SKILLS: tuple[str, ...] = ("/architect-review", "/write-obsidian-note", "/create-pr")
 AVAILABLE_SUBAGENTS: tuple[str, ...] = ("architect", "security-reviewer")
