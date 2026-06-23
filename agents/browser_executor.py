@@ -117,7 +117,8 @@ def _run_actions(actions: list[dict[str, Any]], *, timeout_ms: int = 30000,
                     val = page.evaluate(act["script"])
                     lines.append(f"eval -> {str(val)[:500]}")
                 elif kind == "screenshot":
-                    name = act.get("path") or f"screenshot-{i}.png"
+                    raw_name = act.get("path") or f"screenshot-{i}.png"
+                    name = Path(raw_name).name or f"screenshot-{i}.png"
                     path = str(Path(screenshot_dir) / name) if screenshot_dir else name
                     page.screenshot(path=path)
                     lines.append(f"screenshot -> {path}")
