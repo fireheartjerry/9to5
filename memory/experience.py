@@ -188,6 +188,9 @@ _SCHEMA: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_subtasks_run ON subtasks(run_id)",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_passed ON subtasks(verify_passed)",
     "CREATE INDEX IF NOT EXISTS idx_arms_ctx ON policy_arms(context_key)",
+    # Partial index for the retrieval pool query (embedded, verify-passing subtasks).
+    "CREATE INDEX IF NOT EXISTS idx_subtasks_embedded ON subtasks(verify_passed) "
+    "WHERE embedding IS NOT NULL",
 )
 
 
@@ -196,18 +199,28 @@ def _db_path(db_path: Optional[Path] = None) -> Path:
     return Path(db_path) if db_path is not None else Path(config.EXPERIENCE_DB_PATH)
 
 
+# Paths whose schema (CREATE TABLE + WAL) has been ensured this process. Running the ~13
+# DDL statements on EVERY write cost 50-100ms/subtask; we do it once per path instead.
+_schema_ready: set[str] = set()
+
+
 @contextmanager
 def _connect(db_path: Optional[Path] = None) -> Iterator[sqlite3.Connection]:
-    """Open a WAL connection with the schema ensured. Caller commits on success."""
+    """Open a connection (schema ensured once per path). Caller commits on success."""
     p = _db_path(db_path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(p), timeout=30.0)
+    key = str(p)
+    first = key not in _schema_ready
+    if first:
+        p.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(key, timeout=30.0)
     try:
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        for stmt in _SCHEMA:
-            conn.execute(stmt)
+        conn.execute("PRAGMA synchronous=NORMAL")   # per-connection, cheap
+        if first:
+            conn.execute("PRAGMA journal_mode=WAL")  # persists in the db file -> set once
+            for stmt in _SCHEMA:
+                conn.execute(stmt)
+            _schema_ready.add(key)
         yield conn
         conn.commit()
     finally:
@@ -216,8 +229,14 @@ def _connect(db_path: Optional[Path] = None) -> Iterator[sqlite3.Connection]:
 
 def init(db_path: Optional[Path] = None) -> None:
     """Create the database + schema if absent (idempotent)."""
+    Path(_db_path(db_path)).parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path):
         pass
+
+
+def _reset_schema_cache() -> None:
+    """Forget which paths are initialized (tests that delete+recreate a db file)."""
+    _schema_ready.clear()
 
 
 def _nowIso() -> str:
