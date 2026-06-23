@@ -134,6 +134,13 @@ def main() -> int:
     if any(a.lstrip("-/").lower() == "refresh" for a in sys.argv[1:]):
         return _runRefreshCommand()
 
+    # Preflight doctor: `python main.py --doctor` -> report exactly what 'start' needs.
+    if any(a.lstrip("-/").lower() == "doctor" for a in sys.argv[1:]):
+        import doctor
+        report = doctor.run()
+        print(doctor.render(report))
+        return 0 if report["ready"] else 1
+
     parser = argparse.ArgumentParser(prog="9to5", description="Autonomous AI orchestrator.")
     parser.add_argument("--goal", help="Raw goal. If omitted you are prompted.")
     parser.add_argument("--hours", type=float, default=1.0, help="Time horizon in hours (default 1).")
@@ -227,6 +234,16 @@ def main() -> int:
     state.save()
     LOG.info("Created task %s (horizon %sh, mode %s, parallel %s)",
              state.task_id, args.hours, args.mode, args.parallel)
+    # Best-effort preflight: surface any hard blocker up front (don't abort -- degraded
+    # mode + the elaboration fallback keep a run going; the user just sees what's missing).
+    try:
+        import doctor
+        _pf = doctor.run()
+        if not _pf["ready"]:
+            print(doctor.render(_pf))
+            print("(continuing in degraded mode — run `python main.py --doctor` for details)\n")
+    except Exception:  # noqa: BLE001
+        pass
 
     elaborated = elaborator.elaborate(goal)
     state.setElaboratedGoal(elaborated)
