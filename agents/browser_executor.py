@@ -50,9 +50,14 @@ def _actions_from_prompt(prompt: str) -> list[dict[str, Any]]:
     return actions
 
 
-def _run_actions(actions: list[dict[str, Any]], *, timeout_ms: int = 30000) -> str:
+def _run_actions(actions: list[dict[str, Any]], *, timeout_ms: int = 30000,
+                 screenshot_dir: Optional[str] = None) -> str:
     """Execute structured CDP actions via Playwright; return a transcript. Raises
-    BrowserUnavailable if Playwright/Chromium is not installed (caller degrades)."""
+    BrowserUnavailable if Playwright/Chromium is not installed (caller degrades).
+
+    Supported actions: goto, click, type, press, select, scroll, wait, extract, eval,
+    screenshot. Each line of the transcript records the action + its observable result so
+    the verifier can check the outcome."""
     try:
         from playwright.sync_api import sync_playwright  # type: ignore
     except Exception as e:  # noqa: BLE001 -- not installed -> caller degrades cleanly
@@ -65,7 +70,7 @@ def _run_actions(actions: list[dict[str, Any]], *, timeout_ms: int = 30000) -> s
         try:
             page = browser.new_page()
             page.set_default_timeout(timeout_ms)
-            for act in actions:
+            for i, act in enumerate(actions):
                 kind = (act.get("action") or "").lower()
                 if kind == "goto":
                     page.goto(act["url"])
@@ -76,15 +81,32 @@ def _run_actions(actions: list[dict[str, Any]], *, timeout_ms: int = 30000) -> s
                 elif kind == "type":
                     page.fill(act["selector"], act.get("text", ""))
                     lines.append(f"type into {act['selector']}")
+                elif kind == "press":
+                    page.press(act["selector"], act.get("key", "Enter"))
+                    lines.append(f"press {act.get('key', 'Enter')} on {act['selector']}")
+                elif kind == "select":
+                    page.select_option(act["selector"], act.get("value"))
+                    lines.append(f"select {act.get('value')} in {act['selector']}")
+                elif kind == "scroll":
+                    page.mouse.wheel(0, int(act.get("dy", 800)))
+                    lines.append(f"scroll dy={act.get('dy', 800)}")
                 elif kind == "wait":
-                    page.wait_for_selector(act["selector"])
-                    lines.append(f"wait {act['selector']}")
+                    if act.get("selector"):
+                        page.wait_for_selector(act["selector"])
+                        lines.append(f"wait {act['selector']}")
+                    else:
+                        page.wait_for_timeout(int(act.get("ms", 1000)))
+                        lines.append(f"wait {act.get('ms', 1000)}ms")
                 elif kind == "extract":
                     sel = act.get("selector")
                     text = (page.inner_text(sel) if sel else page.inner_text("body"))[:2000]
                     lines.append(f"extract {sel or 'body'}:\n{text}")
+                elif kind == "eval":
+                    val = page.evaluate(act["script"])
+                    lines.append(f"eval -> {str(val)[:500]}")
                 elif kind == "screenshot":
-                    path = act.get("path") or "screenshot.png"
+                    name = act.get("path") or f"screenshot-{i}.png"
+                    path = str(Path(screenshot_dir) / name) if screenshot_dir else name
                     page.screenshot(path=path)
                     lines.append(f"screenshot -> {path}")
                 else:
@@ -104,7 +126,7 @@ def runBrowser(spec_or_prompt, *, work_dir: Optional[str] = None, task_state=Non
         return _result(spec, ok=False, is_error=True,
                        stderr="browser surface needs 'browser_actions' or a URL in the prompt")
     try:
-        transcript = _run_actions(actions)
+        transcript = _run_actions(actions, screenshot_dir=work_dir)
         LOG.info("browser run: %d actions ok", len(actions))
         return _result(spec, ok=True, is_error=False, stdout=transcript)
     except BrowserUnavailable as e:
