@@ -741,6 +741,15 @@ class Orchestrator:
         resp = self._ollamaChat(system_prompt, user, want_json=True)
         spec = _chatJson(resp)
         spec = self._sanitizeSpec(spec if isinstance(spec, dict) else {}, subtask)
+        # FX-6: the brain frequently returns EMPTY, so failure_feedback (and the clarifier answer it
+        # carries) -- which was only interpolated into the brain's USER prompt -- is LOST: the sanitized
+        # spec is just the bare description and the executor repeats the same mistake. Fold the feedback
+        # DETERMINISTICALLY into the spec (both the living CLAUDE.md and the prompt body, the latter so a
+        # --resume retry carries it too) so the executor always sees WHY the last attempt failed.
+        if failure_feedback:
+            block = "## PREVIOUS ATTEMPT FAILED THE VERIFICATION — fix this\n" + failure_feedback.strip()[:1500]
+            spec["claude_md_inject"] = ((spec.get("claude_md_inject") or "") + "\n\n" + block).strip()
+            spec["prompt"] = block + "\n\n" + (spec.get("prompt") or "")
         # SIE subsystem I: ask the executor (the strong teacher) for a learning summary so
         # we can distill its reasoning. Best-effort + only if it produced a prompt.
         try:
