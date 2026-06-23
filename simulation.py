@@ -9,10 +9,26 @@ real confidence in the orchestration before a live 9-to-5 run.
 from __future__ import annotations
 
 import json
+import re as _re
+from pathlib import Path as _Path
 
 import config
 
 LOG = config.getLogger("simulation")
+
+
+def _extractUserContent(messages) -> str:
+    """Return the last user-role message content from a messages list, or ``""``."""
+    try:
+        msgs = messages or []
+        content = next(
+            (m.get("content", "") for m in reversed(msgs)
+             if isinstance(m, dict) and m.get("role") == "user"),
+            "",
+        )
+        return content or ""
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 class SimBrain:
@@ -33,9 +49,7 @@ class SimBrain:
 
     def chat(self, *, model=None, messages=None, **kwargs):  # noqa: ANN001
         self.calls += 1
-        msgs = messages or []
-        user = next((m.get("content", "") for m in reversed(msgs) if m.get("role") == "user"), "")
-        u = user.lower()
+        u = _extractUserContent(messages).lower()
         if "invocation spec" in u:
             payload = {"prompt": "Simulated implementation work.", "effort_level": "default",
                        "skills_to_invoke": [], "subagent": None,
@@ -75,15 +89,17 @@ class SimObs:
         self.notes: dict[str, str] = {}
 
     def writeNote(self, rel_path: str, content: str) -> dict:
-        self.notes[rel_path] = content
-        return {"ok": True, "via": "sim", "rel_path": rel_path}
+        key = str(rel_path)
+        self.notes[key] = content
+        return {"ok": True, "via": "sim", "rel_path": key}
 
     def appendNote(self, rel_path: str, content: str) -> dict:
-        self.notes[rel_path] = self.notes.get(rel_path, "") + content
-        return {"ok": True, "via": "sim", "rel_path": rel_path}
+        key = str(rel_path)
+        self.notes[key] = self.notes.get(key, "") + content
+        return {"ok": True, "via": "sim", "rel_path": key}
 
     def readNote(self, rel_path: str):
-        return self.notes.get(rel_path)
+        return self.notes.get(str(rel_path))
 
     def health(self) -> dict:
         return {"rest_ok": False, "authed": False}
@@ -91,7 +107,14 @@ class SimObs:
 
 def buildOrchestrator(n_subtasks: int = 3):
     """An Orchestrator wired entirely with simulation doubles (no external services)."""
-    from orchestrator import Orchestrator
+    try:
+        from orchestrator import Orchestrator
+    except ImportError as exc:
+        raise ImportError(
+            "simulation.buildOrchestrator requires 'orchestrator' and its dependencies "
+            "(e.g. 'ollama'). Install missing packages or run in the full 9to5 environment. "
+            f"Underlying error: {exc}"
+        ) from exc
     return Orchestrator(brain=SimBrain(n_subtasks=n_subtasks), obs=SimObs(),
                         run_claude=simRunClaude, replan=simReplan, review=simReview)
 
@@ -101,8 +124,6 @@ def buildOrchestrator(n_subtasks: int = 3):
 # verify them for real (real subprocess), so a dry-run exercises the work-dir +
 # verification paths against an actual project tree -- not just no-ops.
 # ---------------------------------------------------------------------------
-import re as _re
-from pathlib import Path as _Path
 
 
 class BuilderBrain:
@@ -124,7 +145,7 @@ class BuilderBrain:
         return {"subtasks": subs}
 
     def chat(self, *, model=None, messages=None, **kwargs):
-        user = next((m.get("content", "") for m in (messages or []) if m.get("role") == "user"), "")
+        user = _extractUserContent(messages)
         if "invocation spec" in user.lower():
             return {"message": {"content": json.dumps(
                 {"prompt": "Write the target file so it runs cleanly.", "effort_level": "default"})}}
@@ -143,7 +164,11 @@ def builderRunClaude(spec, *, work_dir=None, task_state=None, subtask=None,
     sid = (subtask or {}).get("subtask_id", "?")
     if m:
         try:
-            p = _Path(m.group(1))
+            p = _Path(m.group(1)).resolve()
+            if work_dir and not str(p).startswith(str(_Path(work_dir).resolve())):
+                return {"ok": False, "returncode": 1,
+                        "stdout": f"path traversal blocked: {p} outside {work_dir}",
+                        "is_error": True, "session_id": None}
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(f'"""Built by 9to5 builder-sim for {sid}."""\nprint("{sid} ok")\n',
                          encoding="utf-8")
@@ -156,6 +181,13 @@ def builderRunClaude(spec, *, work_dir=None, task_state=None, subtask=None,
 
 def buildBuilderOrchestrator(work_dir: str, n_subtasks: int = 3):
     """An Orchestrator that produces real artifacts under work_dir and verifies them for real."""
-    from orchestrator import Orchestrator
+    try:
+        from orchestrator import Orchestrator
+    except ImportError as exc:
+        raise ImportError(
+            "simulation.buildBuilderOrchestrator requires 'orchestrator' and its dependencies "
+            "(e.g. 'ollama'). Install missing packages or run in the full 9to5 environment. "
+            f"Underlying error: {exc}"
+        ) from exc
     return Orchestrator(brain=BuilderBrain(work_dir, n_subtasks), obs=SimObs(),
                         run_claude=builderRunClaude, replan=simReplan, review=simReview)
