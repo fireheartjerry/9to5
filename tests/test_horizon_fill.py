@@ -134,7 +134,7 @@ class TestPrGateDegraded(unittest.TestCase):
         self.dir.rmdir()
 
     def test_degraded_when_selfmod_reverted(self):
-        self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['orchestrator.py']")
+        self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['orchestrator.py']", reverted=True)
         self.assertTrue(self.orch._runIsDegraded(self.state))
 
     def test_degraded_when_majority_failed(self):
@@ -149,7 +149,7 @@ class TestPrGateDegraded(unittest.TestCase):
         self.assertFalse(self.orch._runIsDegraded(self.state))
 
     def test_night_mode_holds_pr_for_degraded_run(self):
-        self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['config.py']")
+        self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['config.py']", reverted=True)
         review = {"verdict": "challenged", "concerns": ["broke core"]}
         with mock.patch.object(config, "NIGHT_MODE", True), \
                 mock.patch.object(config, "ADVERSARY_PR_HOLD_ENABLED", True):
@@ -159,7 +159,7 @@ class TestPrGateDegraded(unittest.TestCase):
 
     def test_degraded_holds_pr_even_when_adversary_approved(self):
         # FX-18: degraded check is unconditional -- a stub/approved verdict can't green-light a broken run
-        self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['config.py']")
+        self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['config.py']", reverted=True)
         with mock.patch.object(config, "ADVERSARY_PR_HOLD_ENABLED", True):
             create, reason = self.orch._prGate({"verdict": "approved"}, auto_pr=True, state=self.state)
         self.assertFalse(create)

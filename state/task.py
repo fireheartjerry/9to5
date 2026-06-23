@@ -334,8 +334,8 @@ class TaskState:
         self._ledgerSubtask(subtask_id)
         return rec
 
-    def addNotification(self, kind: str, detail: str) -> dict[str, Any]:
-        rec = {"kind": kind, "detail": detail, "at": nowIso()}
+    def addNotification(self, kind: str, detail: str, **extra: Any) -> dict[str, Any]:
+        rec = {"kind": kind, "detail": detail, "at": nowIso(), **extra}
         self.data["notifications"].append(rec)
         self.save()
         return rec
@@ -353,15 +353,19 @@ class TaskState:
         return done, countable
 
     def nextActionable(self) -> Optional[dict[str, Any]]:
-        """First subtask whose deps are done; falls back to first not-finished."""
-        finished = {"done", "failed", "removed"}
+        """First PENDING subtask whose deps are all done. FX-21: the fallback must NOT run a subtask
+        whose dependency FAILED -- building on broken/absent prior work and marking it done
+        misrepresents a broken chain as complete. If nothing is actionable (all blocked by failed
+        deps), return None so the run finalizes 'partial' instead."""
         for s in self.subtasks:
             if s["status"] != "pending":
                 continue
             deps = s.get("depends_on") or []
             if all((self.getSubtask(d) or {}).get("status") == "done" for d in deps):
                 return s
+        # fallback: a pending subtask with NO dependencies (deps-less work can always run). A pending
+        # subtask whose deps failed/are unmet is intentionally skipped -- not run on a broken prereq.
         for s in self.subtasks:
-            if s["status"] not in finished:
+            if s["status"] == "pending" and not (s.get("depends_on") or []):
                 return s
         return None

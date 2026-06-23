@@ -1115,8 +1115,9 @@ class Orchestrator:
         """A run is degraded if its self-mod gate reverted core changes, or fewer than half its
         subtasks passed. Such a run must never auto-ship -- not even in night mode."""
         notes = state.data.get("notifications", []) if isinstance(state.data, dict) else []
-        if any(isinstance(n, dict) and n.get("kind") == "selfmod_gate"
-               and "REVERTED" in str(n.get("detail", "")) for n in notes):
+        # FX-11: key off the STRUCTURED `reverted` flag, not a "REVERTED" substring. A gate that KEPT
+        # a change on a pre-existing-red baseline must NOT be classified degraded (it deliberately kept).
+        if any(isinstance(n, dict) and n.get("kind") == "selfmod_gate" and n.get("reverted") for n in notes):
             return True
         done, total = state.progress()
         return total > 0 and done * 2 < total
@@ -1230,7 +1231,12 @@ class Orchestrator:
             spec = self.authorInvocationSpec(state, subtask, architect_doc, failure_feedback)
             with self._state_lock:
                 sess = dict(subtask.get("session") or {})
-                sess.update({"effort": spec.get("effort_level"), "model": config.PRIMARY_MODEL,
+                # FX-20: record the model the executor will ACTUALLY route to by effort (low->haiku,
+                # default/high->sonnet, xhigh/ultracode->opus) -- not a hardcoded opus. State/Obsidian/
+                # dashboards/SIE attribution read session.model and were wrong for most subtasks.
+                routed_model = config.MODEL_BY_EFFORT.get(
+                    (spec.get("effort_level") or "default").lower(), config.PRIMARY_MODEL)
+                sess.update({"effort": spec.get("effort_level"), "model": routed_model,
                              "skills": spec.get("skills_to_invoke"), "subagent": spec.get("subagent"),
                              "surfaces": surfaces.surfaces_used(spec),   # SIE surface learning
                              "use_workflow": bool(spec.get("use_workflow")), "attempts": attempt})
@@ -1669,16 +1675,26 @@ class Orchestrator:
         # The brain may return malformed add/remove (non-list, or items of the wrong type). A crash
         # here would propagate to the caller's handler and flip the just-COMPLETED subtask to failed,
         # so coerce defensively and skip any entry that isn't the expected shape.
+        # FX-24: de-dup adds against the live (pending/in-progress) queue so two parallel workers that
+        # both propose the same backfill title (their replan decisions race lock-free) don't enqueue
+        # duplicate subtasks that both run (wasted horizon / conflicting edits to the same file).
+        live_titles = {(s.get("title") or "").strip().lower()
+                       for s in state.subtasks if s["status"] in ("pending", "in_progress")}
         adds = decision.get("add") or []
         for add in (adds if isinstance(adds, list) else []):
             if not isinstance(add, dict):
                 continue
+            title = (add.get("title") or "untitled").strip()
+            if title.lower() in live_titles:
+                diff.append(f"(skipped duplicate add '{title}')")
+                continue
             if active >= config.MAX_SUBTASKS:
                 LOG.info("replan add skipped: MAX_SUBTASKS (%d) reached", config.MAX_SUBTASKS)
-                diff.append(f"(skipped add '{add.get('title')}' -- MAX_SUBTASKS cap)")
+                diff.append(f"(skipped add '{title}' -- MAX_SUBTASKS cap)")
                 break
-            st = state.addSubtask(add.get("title", "untitled"), add.get("description", ""),
+            st = state.addSubtask(title, add.get("description", ""),
                                   layer=add.get("layer", 3), verify=verifier.sanitizeVerify(add.get("verify")))
+            live_titles.add(title.lower())
             active += 1
             diff.append(f"+ {st['subtask_id']} {st['title']}")
         rems = decision.get("remove") or []
@@ -1689,6 +1705,10 @@ class Orchestrator:
             if st and st["status"] == "pending":
                 state.updateSubtask(rid, status="removed")
                 diff.append(f"- {rid} {st['title']}")
+                # FX-19: the BRAIN dropped a planned, never-completed subtask. For a bounded goal that
+                # means a deliverable was silently dropped -> the run is not a clean "done". Record it
+                # so finalization reports 'partial' rather than "done N/N" on the shrunken denominator.
+                state.addNotification("replan_removed", f"{rid} {st.get('title', '')}"[:200])
         diff.append("")
         state.addNotification("replan", decision.get("reason", "")[:200])
         self.obs.appendNote(state.replanLogRel(), "\n".join(diff) + "\n")
@@ -1858,9 +1878,19 @@ class Orchestrator:
                     import selfmod
                     gate = selfmod.safety_gate(work_dir, is_self_referential=True)
                     if gate.get("ran"):
-                        verdict = "PASSED" if gate.get("passed") else "REVERTED (tests failed)"
+                        # FX-11: label from the ACTUAL outcome. safety_gate may KEEP a core change when
+                        # the baseline is also red (kept_despite_failure) -- calling that "REVERTED" is
+                        # factually wrong AND trips _runIsDegraded's "REVERTED" match, holding a PR the
+                        # gate deliberately chose to keep. Record a structured `reverted` flag too.
+                        if gate.get("passed"):
+                            verdict = "PASSED"
+                        elif gate.get("reverted"):
+                            verdict = "REVERTED (tests failed)"
+                        else:
+                            verdict = "KEPT (pre-existing test failure)"
                         dashboard.update(state, "executing", f"core self-mod gate: {verdict}")
-                        state.addNotification("selfmod_gate", f"{verdict}: {gate.get('changed')}")
+                        state.addNotification("selfmod_gate", f"{verdict}: {gate.get('changed')}",
+                                              reverted=bool(gate.get("reverted")))
                 except Exception:  # noqa: BLE001 -- safety gate is best-effort, never blocks
                     LOG.warning("selfmod safety gate failed (ignored)", exc_info=True)
 
@@ -1900,8 +1930,14 @@ class Orchestrator:
             reason = str(pr.get("reason", ""))
             held_broken = bool(pr.get("skipped")) and any(
                 s in reason for s in ("test suite failing", "degraded run", "no tracked changes"))
+            # FX-19: for a BOUNDED (non-self-ref) goal, a planned subtask the brain removed without
+            # completing is a dropped deliverable -> not a clean "done" (self-ref runs have no fixed
+            # deliverable list, so their replan-removes are fine).
+            dropped_planned = (not state.meta.get("is_self_referential")) and any(
+                isinstance(n, dict) and n.get("kind") == "replan_removed"
+                for n in (state.data.get("notifications", []) or []))
             all_done = total > 0 and done == total
-            final_status = "done" if (all_done and not held_broken) else "partial"
+            final_status = "done" if (all_done and not held_broken and not dropped_planned) else "partial"
             state.setStatus(final_status)
             self.writeIndex(state)
             pr_link = pr.get("url") or f"skipped: {pr.get('reason', '')}"

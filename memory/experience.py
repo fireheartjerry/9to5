@@ -350,7 +350,7 @@ def record_run(run: dict[str, Any], db_path: Optional[Path] = None) -> bool:
                     fitness_json=COALESCE(excluded.fitness_json, runs.fitness_json),
                     prompt_set_id=COALESCE(excluded.prompt_set_id, runs.prompt_set_id),
                     adapter_id=COALESCE(excluded.adapter_id, runs.adapter_id),
-                    ended_at=excluded.ended_at""",
+                    ended_at=COALESCE(excluded.ended_at, runs.ended_at)""",
                 {
                     "run_id": run["run_id"],
                     "task_id": run.get("task_id"),
