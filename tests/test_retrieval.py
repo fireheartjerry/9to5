@@ -29,9 +29,15 @@ class TestRetrieval(unittest.TestCase):
         self.db = self.dir / "experience.db"
         mock.patch.object(config, "EXPERIENCE_LEDGER_ENABLED", True).start()
         retrieval.reset_embed_cache()
+        # Drop any pooled connection a prior test left open to a now-deleted temp db --
+        # without this, the per-thread pool can hand back a stale connection (to the old
+        # inode), so seeds land in one db while retrieve() reads another -> empty hits and
+        # a flaky IndexError. Reset makes each test open a fresh connection to its own db.
+        experience._reset_schema_cache()
 
     def tearDown(self):
         mock.patch.stopall()
+        experience._reset_schema_cache()   # release this test's pooled conn before unlinking
         for p in self.dir.rglob("*"):
             if p.is_file():
                 p.unlink()
