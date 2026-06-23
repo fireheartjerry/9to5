@@ -1,0 +1,70 @@
+"""Blameless post-mortems -> failure-mode taxonomy -- subsystem L of the SIE.
+
+Per-subtask reflection is success-biased; failures need their own loop. This scans the
+ledger for failures, classifies each into a growing taxonomy, and exposes pre-emptive
+guidance the brain can consult to avoid known traps. Pure-stdlib + ledger; offline-testable.
+
+See the spec (subsystem L).
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Optional
+
+import config
+from learning.lessons import family_of
+from memory import experience
+
+LOG = config.getLogger("sie.postmortem")
+
+
+def classify(row: dict[str, Any]) -> Optional[str]:
+    """Map a subtask outcome to a taxonomy class (None == not a failure)."""
+    if row.get("verify_passed") == 1:
+        return None
+    status = (row.get("status") or "").lower()
+    attempts = row.get("attempt_count") or 1
+    if status in ("aborted", "blocked"):
+        return status
+    if attempts and int(attempts) >= config.MAX_SUBTASK_ATTEMPTS:
+        return "repeat_fail"
+    if row.get("verify_passed") == 0:
+        return "verify_failed"
+    return None
+
+
+def run_postmortems(*, db_path: Optional[Path] = None) -> dict[str, int]:
+    """Scan failures, accrete the taxonomy. Idempotent-ish (occurrence-counted)."""
+    classified = 0
+    for r in experience.fetch_subtasks(db_path=db_path):
+        cls = classify(r)
+        if not cls:
+            continue
+        fam = family_of(r.get("title") or "", r.get("signature_tags"))
+        root = f"{cls} on '{fam}' (effort={r.get('effort')}, attempts={r.get('attempt_count')})"
+        mitigation = {"repeat_fail": "raise effort / split the subtask",
+                      "verify_failed": "tighten the spec; check the verify is reachable",
+                      "aborted": "n/a (human/operator stop)",
+                      "blocked": "resolve the blocker before retrying"}.get(cls, "")
+        if experience.upsert_failure_mode(fam, cls, root_cause=root, mitigation=mitigation,
+                                          db_path=db_path):
+            classified += 1
+    return {"classified": classified}
+
+
+def guidance_for(title: str, *, db_path: Optional[Path] = None) -> str:
+    """Best-effort pre-emptive guidance for a subtask's family (or "")."""
+    try:
+        fam = family_of(title or "", None)
+        modes = experience.fetch_failure_modes(fam, db_path=db_path)
+        if not modes:
+            return ""
+        top = modes[:3]
+        lines = [f"- {m['taxonomy_class']} (x{m['occurrences']}): {m['mitigation']}"
+                 for m in top if m.get("mitigation")]
+        if not lines:
+            return ""
+        return "## KNOWN FAILURE MODES for this kind of task:\n" + "\n".join(lines) + "\n\n"
+    except Exception as e:  # noqa: BLE001
+        LOG.debug("guidance_for failed (ignored): %s", e)
+        return ""

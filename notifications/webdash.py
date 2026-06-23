@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
 import config
-from control import ControlBus
+from control import GATES, ControlBus
 from state.task import TaskState
 
 LOG = config.getLogger("webdash")
@@ -54,7 +54,8 @@ h3{color:#9aa7b8;font-size:12px;text-transform:uppercase;letter-spacing:.6px;mar
 .log div{padding:2px 0;border-bottom:1px solid #141a24}
 </style></head><body>
 <header><h1>🛰 9TO5</h1><span id="status" class="pill"></span><span id="mode" class="muted"></span>
-<span id="goal" class="muted" style="flex:1;min-width:200px"></span></header>
+<span id="goal" class="muted" style="flex:1;min-width:200px"></span>
+<span id="workdir" class="muted" title="working directory"></span></header>
 <div class="wrap">
 <div id="gate"></div>
 <div class="grid">
@@ -87,6 +88,7 @@ async function load(){
  const sp=document.getElementById('status'); sp.textContent=st; sp.style.background=(COL[st]||'#6b7686'); sp.style.color='#0b0e14';
  document.getElementById('mode').textContent='mode: '+(m.control_mode||'watch');
  document.getElementById('goal').textContent=m.goal_raw||'';
+ document.getElementById('workdir').textContent='📁 '+(r.work_dir||'—');
  document.getElementById('prog').textContent=r.progress.done+' / '+r.progress.total;
  document.getElementById('barfill').style.width=(r.progress.total? 100*r.progress.done/r.progress.total:0)+'%';
  document.getElementById('phase').textContent=st;
@@ -125,6 +127,7 @@ def _snapshot(task_id: str) -> dict:
     return {
         "empty": False,
         "meta": state.meta,
+        "work_dir": state.meta.get("work_dir") or "—",
         "progress": {"done": done, "total": total},
         "elapsed_s": elapsed_s,
         "eta_s": eta_s,
@@ -150,18 +153,18 @@ def _applyControl(task_id: str, action: str, arg: Optional[str]) -> dict:
         bus.requestPause()
     elif action == "resume":
         bus.clearPause()
-    elif action == "approve":
+    elif action in ("approve", "reject"):
         gate = arg or bus.getPendingGate()
-        if gate:
-            bus.decide(gate, "approve")
-    elif action == "reject":
-        gate = arg or bus.getPendingGate()
-        if gate:
-            bus.decide(gate, "reject")
+        if gate not in GATES:   # ignore a missing/unknown gate, never write a stray decision key
+            return {"ok": False, "error": "no valid pending gate"}
+        bus.decide(gate, action)
+        return {"ok": True, "gate": gate}
     elif action == "skip" and arg:
         bus.pushOp({"op": "skip", "subtask_id": arg})
     elif action == "add" and arg:
         bus.pushOp({"op": "add", "title": arg, "description": arg})
+    else:
+        return {"ok": False, "error": f"unknown or incomplete action: {action!r}"}
     return {"ok": True}
 
 
@@ -187,9 +190,15 @@ def _makeHandler(task_id: str):
             if not self.path.startswith("/api/control"):
                 self._send(404, b"{}", "application/json")
                 return
-            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except (TypeError, ValueError):
+                length = 0
+            length = max(0, min(length, 64_000))   # cap the read; control payloads are tiny
             try:
                 payload = json.loads(self.rfile.read(length) or b"{}")
+                if not isinstance(payload, dict):
+                    payload = {}
             except Exception:  # noqa: BLE001
                 payload = {}
             result = _applyControl(task_id, payload.get("action", ""), payload.get("arg"))

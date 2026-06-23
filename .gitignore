@@ -5,6 +5,13 @@ logs/
 vault/
 state/tasks/
 state/control/
+# SIE Experience Ledger (runtime SQLite, accumulates per run)
+state/experience.db
+state/experience.db-wal
+state/experience.db-shm
+# SIE runtime artifacts (LoRA adapters, datasets, sie state)
+state/adapters/
+state/sie_state.json
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -13,3 +20,6 @@ test-run2/
 test-run3/
 .sc-ctx/
 CLAUDE.md.bak
+# stray dir created when run on non-Windows (config paths default to C:\supercritical);
+# the backslash is escaped so the literal directory name matches on Linux
+C:\\supercritical/

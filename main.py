@@ -17,15 +17,30 @@ import argparse
 import json
 import sys
 import threading
+from pathlib import Path
 
 import config
 from agents import elaborator
 from control import ControlBus
 from memory.obsidian import ObsidianClient
-from orchestrator import Orchestrator
+from orchestrator import Orchestrator, refreshClaudeKnowledge
 from state.task import TaskState
 
 LOG = config.getLogger("main")
+
+
+def _runRefreshCommand() -> int:
+    """`python main.py /refresh` -- manually rebuild the living Claude Code knowledge
+    base (scrape latest docs + scan installed .claude + product-self-knowledge), overwrite
+    claude_code.md, and recompute the injected CLAUDE CODE CAPABILITIES summary."""
+    config.ensureDirs()
+    print("Refreshing Claude Code knowledge base (fetching latest docs + scanning .claude)...")
+    summary = refreshClaudeKnowledge(force=True)
+    print(f"\nKnowledge written -> {config.CLAUDE_KNOWLEDGE_PATH}")
+    print(f"Injected CLAUDE CODE CAPABILITIES summary: {len(summary)} chars\n")
+    print("===== CLAUDE CODE CAPABILITIES (injected into every Ollama prompt) =====")
+    print(summary)
+    return 0
 
 _CTL_HELP = ("[terminal control] commands: abort | pause | resume | skip <st-00N> | "
              "add <text> | approve | reject | status | help")
@@ -87,7 +102,79 @@ def _collectEditedSpec() -> str:
     return "\n".join(buf).strip()
 
 
+def _runDryRun(args) -> int:
+    """Simulate a FULL run (architect -> plan -> execute -> verify -> complete) with no
+    Ollama / Claude CLI / Discord / Obsidian. Proves the orchestration end-to-end."""
+    import simulation
+    import tempfile
+    config.WEB_DASHBOARD = False
+    config.CLAUDE_DOC_FETCH = False   # offline knowledge build only -- no web fetch in a dry-run
+    config.ensureDirs()
+    goal = (args.goal or "Simulated dry-run goal").strip()
+    state = TaskState.create(goal, args.hours)
+    state.setElaboratedGoal(goal)
+    state.setUniverse({"description": "dry-run", "allowed_paths": [],
+                       "allowed_to_expand_to": [], "hard_boundaries": []})
+    state.save()
+    # isolated temp work_dir: keeps the dry-run from tripping self-referential detection
+    # (which would create a git branch) or writing into the real project tree.
+    work_dir = tempfile.mkdtemp(prefix="9to5-dryrun-")
+    print(f"[DRY-RUN] simulating a full run for {goal!r} — no Ollama/Claude/Discord/Obsidian touched.")
+    orch = simulation.buildOrchestrator()
+    summary = orch.runFull(state, work_dir=work_dir, auto_pr=False,
+                           control_mode=args.mode, parallelism=max(1, args.parallel))
+    print("\n===== DRY-RUN SUMMARY =====")
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    return 0
+
+
+def _applyMentionShorthand(raw_args: list[str]) -> list[str]:
+    """`python main.py @9to5 <free-text goal> [--flags]` -> fire-and-forget launch.
+
+    Lowers the barrier from `--goal "..." --auto-approve` to a single chat-style line: the
+    leading ``@9to5`` mention (optionally ``@9to5: goal`` with the goal on the same token)
+    signals shorthand; every token up to the first ``-`` flag is the goal, real flags pass
+    through untouched, and ``--auto-approve`` is implied so it truly fires and forgets.
+    Returns the argv to feed argparse (unchanged when no @9to5 mention leads)."""
+    token = raw_args[0].lstrip("/") if raw_args else ""
+    if not token.lower().startswith("@9to5"):
+        return raw_args
+    lead = token[len("@9to5"):].lstrip(": ").strip()              # "@9to5:do x" -> "do x"
+    goal_words: list[str] = [lead] if lead else []
+    passthrough: list[str] = []
+    rest = list(raw_args[1:])
+    for i, tok in enumerate(rest):
+        if tok.startswith("-"):
+            goal_words += rest[:i]
+            passthrough = rest[i:]
+            break
+    else:
+        goal_words += rest
+    new: list[str] = []
+    goal = " ".join(goal_words).strip()
+    if goal:
+        new += ["--goal", goal]
+    if "--auto-approve" not in passthrough:
+        new.append("--auto-approve")
+    return new + passthrough
+
+
 def main() -> int:
+    # `@9to5 <goal>` chat-style shorthand -> rewrite to `--goal "..." --auto-approve`.
+    argv = _applyMentionShorthand(sys.argv[1:])
+
+    # Standalone knowledge-refresh command (intercept before argparse, which would
+    # reject the bare "/refresh" token): `python main.py /refresh`.
+    if any(a.lstrip("-/").lower() == "refresh" for a in argv):
+        return _runRefreshCommand()
+
+    # Preflight doctor: `python main.py --doctor` -> report exactly what 'start' needs.
+    if any(a.lstrip("-/").lower() == "doctor" for a in argv):
+        import doctor
+        report = doctor.run()
+        print(doctor.render(report))
+        return 0 if report["ready"] else 1
+
     parser = argparse.ArgumentParser(prog="9to5", description="Autonomous AI orchestrator.")
     parser.add_argument("--goal", help="Raw goal. If omitted you are prompted.")
     parser.add_argument("--hours", type=float, default=1.0, help="Time horizon in hours (default 1).")
@@ -103,11 +190,23 @@ def main() -> int:
     parser.add_argument("--no-web", action="store_true", help="Disable the local web dashboard.")
     parser.add_argument("--task-id", help="Alias for --resume: restore + continue a task by id.")
     parser.add_argument("--health", action="store_true", help="Run environment health checks and exit.")
-    args = parser.parse_args()
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Simulate a full run with no external services (offline; for testing).")
+    parser.add_argument("--e2e", action="store_true",
+                        help="Run the virtual-operator end-to-end test suite (a scripted 'human' "
+                             "drives full simulated runs through the real control surfaces) and exit.")
+    args = parser.parse_args(argv)
 
     if args.health:
         import health
         return 0 if health.runHealthChecks() else 1
+
+    if args.e2e:
+        from testing.e2e import main as e2eMain
+        return e2eMain()
+
+    if args.dry_run:
+        return _runDryRun(args)
 
     if args.task_id and not args.resume:   # --task-id is an alias for --resume
         args.resume = args.task_id
@@ -117,6 +216,18 @@ def main() -> int:
         config.WEB_DASHBOARD = False
     config.ensureDirs()
 
+    # Living knowledge refresh: the absolute first thing every session does, BEFORE any
+    # Ollama call (elaborator/architect/planner/spec), so the brain reasons from the
+    # current Claude Code feature set. Idempotent per process; never blocks the run.
+    try:
+        refreshClaudeKnowledge()
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("startup knowledge refresh failed (non-fatal): %s", e)
+
+    # A user-chosen --work-dir must exist (9to5 operates on YOUR project tree, not its own root).
+    if args.work_dir and not Path(args.work_dir).is_dir():
+        print(f"--work-dir does not exist or is not a directory: {args.work_dir}")
+        return 2
     work_dir = args.work_dir or str(config.PROJECT_ROOT)
     if config.WEB_DASHBOARD:
         print(f"Live web dashboard -> http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/  "
@@ -129,9 +240,12 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001
             print(f"Cannot resume {args.resume}: {e}")
             return 2
-        LOG.info("Resuming task %s", state.task_id)
+        # remember the original working directory: explicit --work-dir overrides, else the one
+        # the task was launched with, else the project root.
+        resume_work_dir = args.work_dir or state.meta.get("work_dir") or str(config.PROJECT_ROOT)
+        LOG.info("Resuming task %s in %s", state.task_id, resume_work_dir)
         _startTerminalControl(state.task_id)
-        summary = Orchestrator().runFull(state, work_dir=work_dir, auto_pr=not args.no_pr,
+        summary = Orchestrator().runFull(state, work_dir=resume_work_dir, auto_pr=not args.no_pr,
                                          control_mode=args.mode, resume=True, parallelism=max(1, args.parallel))
         print("\n===== RUN SUMMARY =====")
         print(json.dumps(summary, indent=2, ensure_ascii=False))
@@ -154,6 +268,16 @@ def main() -> int:
     state.save()
     LOG.info("Created task %s (horizon %sh, mode %s, parallel %s)",
              state.task_id, args.hours, args.mode, args.parallel)
+    # Best-effort preflight: surface any hard blocker up front (don't abort -- degraded
+    # mode + the elaboration fallback keep a run going; the user just sees what's missing).
+    try:
+        import doctor
+        _pf = doctor.run()
+        if not _pf["ready"]:
+            print(doctor.render(_pf))
+            print("(continuing in degraded mode — run `python main.py --doctor` for details)\n")
+    except Exception:  # noqa: BLE001
+        pass
 
     elaborated = elaborator.elaborate(goal)
     state.setElaboratedGoal(elaborated)
@@ -177,8 +301,16 @@ def main() -> int:
                 print("Elaboration replaced.")
 
     _startTerminalControl(state.task_id)
-    summary = Orchestrator().runFull(state, work_dir=work_dir, auto_pr=not args.no_pr,
-                                     control_mode=args.mode, parallelism=max(1, args.parallel))
+    # Supervised run: send one sentence at 9am, return at 5pm to a finished job. If the
+    # run crashes, the supervisor auto-resumes the SAME task (committed progress is the
+    # source of truth) until it is terminal or the deadline passes -- no human needed.
+    import resilience
+
+    def _run(st):
+        return Orchestrator().runFull(st, work_dir=work_dir, auto_pr=not args.no_pr,
+                                      control_mode=args.mode, parallelism=max(1, args.parallel))
+
+    summary = resilience.run_with_recovery(_run, state)
     print("\n===== RUN SUMMARY =====")
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     return 0

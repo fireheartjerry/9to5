@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 import config
+from agents import playbook
 from memory.obsidian import writeClaudioMd
 
 LOG = config.getLogger("executor")
@@ -73,6 +74,10 @@ def normalizeSpec(spec_or_prompt: Union[dict, str, None]) -> dict:
         "prompt": "", "claude_md_inject": "", "skills_to_invoke": [],
         "effort_level": "default", "subagent": None,
         "pre_tool_hooks": [], "post_tool_hooks": [],
+        "use_workflow": False, "workflow_definition": None,
+        # Surface routing (rich cross-surface automation): which "hands" execute this spec.
+        "surface": "terminal",          # terminal (Claude CLI, L3) | browser (CDP, L1)
+        "browser_actions": [],          # structured CDP steps when surface == browser
     }
     if isinstance(spec_or_prompt, str):
         base["prompt"] = spec_or_prompt
@@ -81,6 +86,55 @@ def normalizeSpec(spec_or_prompt: Union[dict, str, None]) -> dict:
         for k, v in spec_or_prompt.items():
             base[k] = v
     return base
+
+
+def _composeWorkflowPrompt(definition: dict, base_prompt: str) -> str:
+    """Render a brain-authored workflow_definition into an explicit, headless-executable
+    multi-phase orchestration instruction.
+
+    Headless ``claude --print`` cannot open the interactive ``/workflows`` UI, so the
+    faithful realization is to instruct Claude to EXECUTE the workflow: dispatch one
+    subagent (Task tool) per agent, run a phase's agents in PARALLEL when marked, carry
+    each phase's outputs into the next, and finally synthesize. A Claude build that
+    exposes the Workflow tool may run it natively; either way the structured plan drives
+    the same fan-out / verify / synthesize shape the brain intended."""
+    if not isinstance(definition, dict):
+        return base_prompt
+    name = definition.get("name") or "dynamic-workflow"
+    desc = definition.get("description") or ""
+    phases = definition.get("phases") or []
+    lines: list[str] = [
+        f"EXECUTE THIS DYNAMIC WORKFLOW — \"{name}\".",
+        "This subtask is structured as a multi-phase workflow. Run it as one: for each phase, dispatch the "
+        "listed agents (use the Task tool, one subagent per agent; if a Workflow/`/workflows` primitive is "
+        "available to you, you may run it natively instead). Run a phase's agents CONCURRENTLY when it is "
+        "marked parallel; otherwise run them in order. Feed each phase's results into the next. End with the "
+        "synthesis step, which produces the final deliverable for this subtask.",
+        "",
+    ]
+    if desc:
+        lines += [f"Goal of the workflow: {desc}", ""]
+    for i, ph in enumerate(phases, 1):
+        if not isinstance(ph, dict):
+            continue
+        title = ph.get("title") or f"Phase {i}"
+        par = "PARALLEL" if ph.get("parallel") else "sequential"
+        lines.append(f"## Phase {i}: {title}  [{par}]")
+        for j, ag in enumerate(ph.get("agents") or [], 1):
+            if isinstance(ag, dict):
+                label = ag.get("label") or f"agent-{j}"
+                aprompt = ag.get("prompt") or ""
+                eff = ag.get("effort")
+                lines.append(f"- Agent `{label}`" + (f" (effort {eff})" if eff else "") + f": {aprompt}")
+            elif isinstance(ag, str):
+                lines.append(f"- Agent {j}: {ag}")
+        lines.append("")
+    synth = definition.get("synthesis") or definition.get("synthesize")
+    if synth:
+        lines += ["## Synthesis", str(synth), ""]
+    if base_prompt:
+        lines += ["## Underlying subtask (the workflow must accomplish this)", base_prompt, ""]
+    return "\n".join(lines).strip()
 
 
 def _composePrompt(spec: dict, system_prompt: Optional[str], extra: Optional[str]) -> str:
@@ -93,7 +147,11 @@ def _composePrompt(spec: dict, system_prompt: Optional[str], extra: Optional[str
     subagent = spec.get("subagent")
     if subagent:
         parts.append(f"Use the '{subagent}' subagent for the analysis portion of this task.")
-    parts.append(spec.get("prompt") or "")
+    # Dynamic workflow: a brain-authored multi-phase plan replaces the flat prompt body.
+    if spec.get("use_workflow") and isinstance(spec.get("workflow_definition"), dict):
+        parts.append(_composeWorkflowPrompt(spec["workflow_definition"], spec.get("prompt") or ""))
+    else:
+        parts.append(spec.get("prompt") or "")
     if extra:
         parts.append("\n" + extra)
     return "\n\n".join(p for p in parts if p).strip()
@@ -108,9 +166,11 @@ def effortFlag(effort_level: str) -> Optional[str]:
 # here, in plumbing we control (deterministic, always-on in autonomous mode).
 # Match destructive commands at a COMMAND POSITION (start of line, or after a shell separator)
 # with word boundaries -- so benign prose like "format the output" or "run rm later" never blocks.
+# An optional sudo/doas privilege prefix is consumed so `sudo rm -rf /` is still caught at command
+# position (this only ADDS matches over already-destructive commands -- no new false positives).
 _DESTRUCTIVE_RE = re.compile(
-    r"(?:^|[\n;&|`]\s*)(rm\s+-[rf]{2}\b|rmdir\s+/s\b|del\s+/[fsq]\b|format\s+[a-z]:|drop\s+table\b|"
-    r"git\s+push\s+(?:--force\b|-f\b)|mkfs\b|:\(\)\s*\{|>\s*/dev/sd[a-z])",
+    r"(?:^|[\n;&|`]\s*)(?:sudo\s+|doas\s+)?(rm\s+-[rf]{2}\b|rmdir\s+/s\b|del\s+/[fsq]\b|format\s+[a-z]:|"
+    r"drop\s+table\b|git\s+push\s+(?:--force\b|-f\b)|mkfs\b|:\(\)\s*\{|>\s*/dev/sd[a-z])",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -127,14 +187,57 @@ def _alertBlocked(reason: str) -> None:
         LOG.warning("blocked-alert failed: %s", e)
 
 
+def _parseEnvelope(out: str) -> "tuple[str, dict]":
+    """Parse the `claude --print --output-format json` result envelope.
+
+    Returns ``(assistant_text, fields)`` where fields carries is_error / session_id / cost /
+    usage / num_turns. Robust to a leading preamble line (e.g. a fallback-model notice) by
+    scanning for the JSON object too, not only requiring the WHOLE stdout to be one object.
+    Returns ``(out, {})`` only when no result envelope is found (caller logs the degrade). For an
+    error/empty envelope whose ``result`` is missing/non-string, the TEXT channel gets a short
+    clean marker -- NEVER the raw JSON blob (which would garble adversary/clarifier/notes)."""
+    import json
+    s = (out or "").strip()
+    if not s:
+        return "", {}
+    candidates: list[str] = []
+    if s.startswith("{") and s.endswith("}"):
+        candidates.append(s)
+    for line in reversed(s.splitlines()):   # tolerate a preamble: last JSON-object line
+        ls = line.strip()
+        if ls.startswith("{") and ls.endswith("}") and ls not in candidates:
+            candidates.append(ls)
+            break
+    for cand in candidates:
+        try:
+            obj = json.loads(cand)
+        except Exception:  # noqa: BLE001
+            continue
+        if not isinstance(obj, dict) or ("result" not in obj and obj.get("type") != "result"):
+            continue
+        text = obj.get("result")
+        if not isinstance(text, str):
+            text = f"[claude {obj.get('subtype') or ('error' if obj.get('is_error') else 'no-output')}]"
+        return text, {
+            "is_error": bool(obj.get("is_error")),
+            "session_id": obj.get("session_id"),
+            "cost_usd": obj.get("total_cost_usd") if obj.get("total_cost_usd") is not None else obj.get("cost_usd"),
+            "usage": obj.get("usage"),
+            "num_turns": obj.get("num_turns"),
+        }
+    return out, {}
+
+
 def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = None,
               task_state=None, subtask: Optional[dict] = None,
               system_prompt: Optional[str] = None, extra: Optional[str] = None,
-              timeout: Optional[int] = None) -> dict:
+              timeout: Optional[int] = None, resume_session: Optional[str] = None) -> dict:
     """Prepare the environment from the invocation spec, then fire one Claude run.
 
-    Returns ``{ok, returncode, stdout, stderr, effort, effort_flag, spec, claude_md_path}``.
-    """
+    Returns ``{ok, returncode, stdout, stderr, profile, effort, effort_flag, spec,
+    claude_md_path}`` plus, when --output-format json is parsed, ``session_id / is_error /
+    cost_usd / usage / num_turns``. ``resume_session`` continues an existing Claude session
+    (used to resume across a subtask's retries)."""
     spec = normalizeSpec(spec_or_prompt)
     timeout = timeout or config.CLAUDE_CLI_TIMEOUT_SECONDS
     work = str(work_dir) if work_dir else str(config.PROJECT_ROOT)
@@ -143,19 +246,48 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
     effort = (spec.get("effort_level") or "default").lower()
     flag = effortFlag(effort)
 
+    # 0. role-scoped executor playbook -- DETERMINISTIC, no-forget expertise for the hands.
+    # Only for real subtask execution (skip internal calls that pass their own system_prompt,
+    # e.g. the architect phase). Injected via BOTH the living CLAUDE.md and --append-system-prompt.
+    profile = None
+    playbook_md = ""
+    charter = ""
+    if config.EXECUTOR_PLAYBOOK_ENABLED and subtask is not None and system_prompt is None:
+        try:
+            profile = playbook.classifyProfile(spec, subtask, task_state)
+            playbook_md = playbook.buildPlaybook(profile)
+            if config.EXECUTOR_APPEND_SYSTEM_PROMPT:
+                charter = playbook.buildCharter(profile)
+        except Exception as e:  # noqa: BLE001 -- briefing must never break a run
+            LOG.warning("executor playbook build failed: %s", e)
+
     # 1. living CLAUDE.md (only when we have task context)
     claude_md_path = None
     if task_state is not None:
         try:
-            claude_md_path = str(writeClaudioMd(task_state, subtask, spec.get("claude_md_inject", ""), work))
+            claude_md_path = str(writeClaudioMd(task_state, subtask, spec.get("claude_md_inject", ""),
+                                                work, executor_playbook=playbook_md))
         except Exception as e:  # noqa: BLE001
             LOG.warning("writeClaudioMd failed: %s", e)
 
     full_prompt = _composePrompt(spec, system_prompt, extra)
 
-    # deterministic block_destructive guardrail (headless mode bypasses Claude hooks)
+    # Resume context, computed BEFORE the guard so block_destructive scans the EXACT prompt sent.
+    # On --resume Claude continues the session: it does NOT re-read CLAUDE.md and the charter is
+    # already pinned, so fold the (re-authored) claude_md_inject into the prompt and DROP the
+    # charter flag. On a fresh launch CLAUDE.md + the charter carry that context.
+    is_resume = bool(resume_session and config.EXECUTOR_RESUME_RETRIES)
+    inject = (spec.get("claude_md_inject") or "").strip()
+    resume_prompt = full_prompt
+    if is_resume and inject:
+        resume_prompt = ("## Updated context for this retry (CLAUDE.md is not re-read on resume)\n"
+                         + inject + "\n\n---\n\n" + full_prompt)
+    prompt_to_send = resume_prompt if is_resume else full_prompt
+
+    # deterministic block_destructive guardrail (headless mode bypasses Claude hooks) -- scan the
+    # ACTUAL prompt that will be sent, including any folded claude_md_inject on a resume retry.
     if "block_destructive" in (spec.get("pre_tool_hooks") or []):
-        hits = scanDestructive(full_prompt)
+        hits = scanDestructive(prompt_to_send)
         if hits:
             reason = f"block_destructive refused subtask -- prompt contains {hits}"
             LOG.warning(reason)
@@ -170,65 +302,108 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
         return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
                 "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
 
-    cmd = launcher + ["--print", "--dangerously-skip-permissions"]
-    # hooks + permissions (deterministic guardrails) load from our settings file
+    # --- base command (shared by the fresh + resume launches) ---
+    base_cmd = launcher + ["--print", "--dangerously-skip-permissions"]
+    # structured envelope: is_error (the trustworthy success signal) + session_id (resume) + cost
+    if config.EXECUTOR_OUTPUT_JSON:
+        base_cmd += ["--output-format", "json"]
     if config.CLAUDE_SETTINGS_PATH.exists():
-        cmd += ["--settings", str(config.CLAUDE_SETTINGS_PATH)]
-    # automatic model failover on rate-limit
-    cmd += ["--fallback-model", config.FALLBACK_MODEL]
-    # reasoning effort selected by the brain
+        base_cmd += ["--settings", str(config.CLAUDE_SETTINGS_PATH)]
+    base_cmd += ["--fallback-model", config.FALLBACK_MODEL]   # auto model failover on rate-limit
     if flag:
-        cmd += ["--effort", flag]
-    # make the project's .claude (skills/agents/settings) discoverable from a sub-work-dir
-    cmd += ["--add-dir", str(config.PROJECT_ROOT)]
-    # self-referential safety: forbid edits to the core files that run the loop
-    if task_state is not None and getattr(task_state, "meta", {}).get("is_self_referential"):
+        base_cmd += ["--effort", flag]
+    base_cmd += ["--add-dir", str(config.PROJECT_ROOT)]       # make .claude discoverable from a sub-cwd
+    if (task_state is not None and getattr(task_state, "meta", {}).get("is_self_referential")
+            and not getattr(config, "SELFMOD_ALLOW_CORE", False)):
         for core in config.CORE_PROTECTED_FILES:
             core_abs = str(config.PROJECT_ROOT / core)
-            cmd += ["--disallowedTools", f"Edit({core_abs})", f"Write({core_abs})"]
+            base_cmd += ["--disallowedTools", f"Edit({core_abs})", f"Write({core_abs})"]
+    charter_args = ["--append-system-prompt", charter] if charter else []
+    fresh_cmd = base_cmd + charter_args
+    resume_cmd = (base_cmd + ["--resume", resume_session]) if is_resume else None
 
-    LOG.info("Claude run (cwd=%s effort=%s skills=%s subagent=%s hooks=%s/%s prompt=%dch)",
-             work, flag or "default", spec.get("skills_to_invoke"), spec.get("subagent"),
-             spec.get("pre_tool_hooks"), spec.get("post_tool_hooks"), len(full_prompt))
-    # New process group so the timeout path can kill the WHOLE tree (launcher + node grandchildren),
-    # not just the direct child -- otherwise orphans leak and block the drain (the real root cause).
+    # New process group so the timeout path can kill the WHOLE tree (launcher + node grandchildren).
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-    try:
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True, encoding="utf-8",
-                                errors="replace", cwd=work, creationflags=creationflags)
-    except Exception as e:  # noqa: BLE001
-        LOG.error("Claude launch failed: %s", e)
-        return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
-                "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
-    try:
-        out, err = proc.communicate(input=full_prompt, timeout=timeout)
-        out = out or ""
-        if "block_destructive" in (spec.get("pre_tool_hooks") or []):
-            out_hits = scanDestructive(out)
-            if out_hits:
-                _alertBlocked(f"block_destructive: executor output shows destructive command(s) {out_hits}")
-        return {"ok": proc.returncode == 0, "returncode": proc.returncode,
-                "stdout": out, "stderr": err or "",
-                "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
-    except subprocess.TimeoutExpired:
-        # Kill the entire tree so the work actually stops, procs don't leak, and the drain below
-        # returns immediately instead of blocking ~200s on the orphans' inherited stdout pipe.
-        _killProcessTree(proc.pid)
+    # Identify the active task to the hooks via env -- so PreToolUse guards resolve THIS task's
+    # hard_boundaries deterministically instead of TaskState.loadLatest() guessing. The absolute
+    # state-FILE path is exported too, so the hook (whose hardcoded config.STATE_DIR may point at a
+    # different root in a worktree run) loads the right task without a STATE_DIR mismatch.
+    env = os.environ.copy()
+    if task_state is not None and getattr(task_state, "task_id", None):
+        env["NINE_TO_FIVE_TASK_ID"] = str(task_state.task_id)
+        env["NINE_TO_FIVE_PROJECT_ROOT"] = str(config.PROJECT_ROOT)
         try:
-            out, err = proc.communicate(timeout=15)
-        except Exception:  # noqa: BLE001
-            out, err = "", ""
-        LOG.error("Claude timed out after %ss -- process tree killed (captured %d stdout chars)",
-                  timeout, len(out or ""))
-        return {"ok": False, "returncode": -1, "stdout": out or "",
-                "stderr": (err or "") + f"\nTIMEOUT after {timeout}s",
-                "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
-    except Exception as e:  # noqa: BLE001
-        try:
-            _killProcessTree(proc.pid)
+            env["NINE_TO_FIVE_TASK_FILE"] = str(task_state.path())
         except Exception:  # noqa: BLE001
             pass
-        LOG.error("Claude failed: %s", e)
-        return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
-                "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+    if subtask is not None and subtask.get("subtask_id"):
+        env["NINE_TO_FIVE_SUBTASK_ID"] = str(subtask.get("subtask_id"))
+
+    def _run(run_cmd, run_prompt) -> dict:
+        wf = spec.get("use_workflow") and isinstance(spec.get("workflow_definition"), dict)
+        LOG.info("Claude run (cwd=%s effort=%s role=%s resume=%s skills=%s subagent=%s hooks=%s/%s workflow=%s prompt=%dch)",
+                 work, flag or "default", profile or "-", "--resume" in run_cmd,
+                 spec.get("skills_to_invoke"), spec.get("subagent"),
+                 spec.get("pre_tool_hooks"), spec.get("post_tool_hooks"),
+                 (spec["workflow_definition"].get("name") if wf else False), len(run_prompt))
+        try:
+            proc = subprocess.Popen(run_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                                    errors="replace", cwd=work, creationflags=creationflags, env=env)
+        except Exception as e:  # noqa: BLE001
+            LOG.error("Claude launch failed: %s", e)
+            return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
+                    "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+        try:
+            out, err = proc.communicate(input=run_prompt, timeout=timeout)
+            out = out or ""
+            if config.EXECUTOR_OUTPUT_JSON:
+                text, fields = _parseEnvelope(out)
+                if not fields:   # the contract degraded silently otherwise
+                    LOG.warning("EXECUTOR_OUTPUT_JSON on but no result envelope parsed (rc=%s, %dch)",
+                                proc.returncode, len(out))
+            else:
+                text, fields = out, {}
+            if "block_destructive" in (spec.get("pre_tool_hooks") or []):
+                out_hits = scanDestructive(text)
+                if out_hits:
+                    _alertBlocked(f"block_destructive: executor output shows destructive command(s) {out_hits}")
+            # success signal: is_error from the envelope when present (the exit code is unreliable --
+            # headless claude exits nonzero for benign reasons like a fallback-model switch).
+            ok = (not fields["is_error"]) if "is_error" in fields else (proc.returncode == 0)
+            return {"ok": ok, "returncode": proc.returncode, "stdout": text, "stderr": err or "",
+                    "profile": profile, "session_id": fields.get("session_id"), "is_error": fields.get("is_error"),
+                    "cost_usd": fields.get("cost_usd"), "usage": fields.get("usage"), "num_turns": fields.get("num_turns"),
+                    "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+        except subprocess.TimeoutExpired:
+            _killProcessTree(proc.pid)   # stop the work, no orphan leak, drain returns immediately
+            try:
+                out, err = proc.communicate(timeout=15)
+            except Exception:  # noqa: BLE001
+                out, err = "", ""
+            LOG.error("Claude timed out after %ss -- process tree killed (captured %d stdout chars)",
+                      timeout, len(out or ""))
+            return {"ok": False, "returncode": -1, "stdout": out or "",
+                    "stderr": (err or "") + f"\nTIMEOUT after {timeout}s",
+                    "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+        except Exception as e:  # noqa: BLE001
+            try:
+                _killProcessTree(proc.pid)
+            except Exception:  # noqa: BLE001
+                pass
+            LOG.error("Claude failed: %s", e)
+            return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
+                    "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+
+    if not is_resume:
+        return _run(fresh_cmd, full_prompt)
+    result = _run(resume_cmd, resume_prompt)
+    # If the resume LAUNCH failed (claude exited with a real positive code and emitted no result
+    # envelope), the session was unresumable -- retry ONCE on a fresh session so a stale session id
+    # never silently burns one of the caller's MAX_SUBTASK_ATTEMPTS. (rc>0 excludes a genuine
+    # timeout (-1) which should not be re-run here.)
+    rc = result.get("returncode")
+    if config.EXECUTOR_OUTPUT_JSON and result.get("is_error") is None and isinstance(rc, int) and rc > 0:
+        LOG.warning("resume launch yielded no envelope (rc=%s) -- retrying once on a fresh session", rc)
+        result = _run(fresh_cmd, full_prompt)
+    return result

@@ -1,0 +1,107 @@
+"""Surface & tool catalog -- rich automation across EVERY reachable surface.
+
+9to5's value is not "run a shell command"; it is taking one sentence and orchestrating
+across whatever surfaces the job needs -- code, email, calendar, docs, design, GitHub,
+the browser, native apps. The brain can only compose richly if it knows what is reachable,
+so this module enumerates the available surfaces/tools and injects a compact catalog into
+spec-authoring with a directive to use the RIGHT surface for each step (not default to the
+terminal). Per-surface usage is tracked so the SIE learns which surfaces win for which goals.
+
+Layers (see CLAUDE.md): L3 terminal (live), MCP tools + skills + subagents (live via Claude
+Code), L1 browser / L2 native (config-gated as they come online). Pure-stdlib; offline-testable.
+"""
+from __future__ import annotations
+
+import re
+from typing import Any, Optional
+
+import config
+
+LOG = config.getLogger("surfaces")
+
+SURFACE_KINDS = ("terminal", "mcp", "skill", "subagent", "browser", "native")
+
+# The catalog is stable within a run; cache it so we don't re-scan .claude on every
+# single brain authoring call (that scan is filesystem-heavy).
+_catalog_cache: str | None = None
+
+
+def reset_cache() -> None:
+    global _catalog_cache
+    _catalog_cache = None
+
+
+def available() -> dict[str, Any]:
+    """Everything the executor can reach right now, grouped by surface kind."""
+    skills = list(dict.fromkeys((*config.AVAILABLE_SKILLS, *_scanned("skills"))))
+    subagents = list(dict.fromkeys((*config.AVAILABLE_SUBAGENTS, *_scanned("agents"))))
+    return {
+        "terminal": True,                                   # always available (L3)
+        "mcp": list(config.MCP_SERVERS),                    # gmail, gcal, drive, github, ...
+        "skill": skills,
+        "subagent": subagents,
+        "browser": bool(config.BROWSER_LAYER_ENABLED),      # L1 (CDP) when online
+        "native": bool(config.NATIVE_LAYER_ENABLED),        # L2 (UIA) when online
+    }
+
+
+def _scanned(kind: str) -> list[str]:
+    """Best-effort scan of the installed .claude surface (reuses the knowledge scanner).
+    Items may be dicts ({'name': ...}) or strings -- coerce to display names."""
+    try:
+        import knowledge
+        scan = knowledge.scanLocalClaude() if hasattr(knowledge, "scanLocalClaude") else {}
+        out = []
+        for item in (scan.get(kind, []) or []):
+            if isinstance(item, dict):
+                name = item.get("name") or item.get("title") or item.get("id")
+                if name:
+                    out.append(str(name))
+            elif item:
+                out.append(str(item))
+        return out
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def catalog_block() -> str:
+    """A compact, injectable catalog + directive so the brain composes across surfaces.
+    Cached per process (reset_cache() to rebuild)."""
+    global _catalog_cache
+    if _catalog_cache is not None:
+        return _catalog_cache
+    a = available()
+    lines = ["## AVAILABLE SURFACES & TOOLS — compose across these; pick the RIGHT surface "
+             "per step, do NOT default to the shell when a richer tool fits:"]
+    if a["mcp"]:
+        lines.append(f"- MCP servers (email/calendar/drive/repo/etc.): {', '.join(a['mcp'])}")
+    if a["skill"]:
+        lines.append(f"- Skills: {', '.join(a['skill'][:12])}")
+    if a["subagent"]:
+        lines.append(f"- Subagents: {', '.join(a['subagent'][:12])}")
+    lines.append(f"- Terminal/CLI: yes (git, gh, build tools)"
+                 + (f"  · Browser: yes" if a["browser"] else "")
+                 + (f"  · Native apps: yes" if a["native"] else ""))
+    _catalog_cache = "\n".join(lines) + "\n\n"
+    return _catalog_cache
+
+
+# Recognized surface signals in a brain-authored spec / prompt (for outcome tracking).
+_MCP_RE = re.compile(r"\bmcp__([a-z0-9_]+?)__", re.IGNORECASE)
+
+
+def surfaces_used(spec: dict[str, Any]) -> list[str]:
+    """Which surfaces a spec actually invokes -> tags stored for SIE learning."""
+    used: set[str] = set()
+    if spec.get("skills_to_invoke"):
+        used.add("skill")
+    if spec.get("subagent"):
+        used.add("subagent")
+    blob = " ".join(str(spec.get(k, "")) for k in ("prompt", "skills_to_invoke", "subagent"))
+    for m in _MCP_RE.findall(blob):
+        used.add(f"mcp:{m.lower()}")
+    if any(t in blob.lower() for t in ("http://", "https://", "navigate", "browser")):
+        used.add("browser")
+    if not used:
+        used.add("terminal")
+    return sorted(used)

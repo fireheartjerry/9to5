@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import contextlib
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -98,9 +99,20 @@ class ControlBus:
 
     def _write(self, data: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, self.path)
+        # UNIQUE temp per writer (pid+thread+rand): a shared ".json.tmp" raced across the
+        # run / Discord bot / web dashboard -- two writers would write the same temp and the
+        # second os.replace hit FileNotFoundError when the first had already moved it. With a
+        # unique source each replace finds its own temp; the destination swap stays atomic.
+        tmp = self.path.with_suffix(f".{os.getpid()}-{threading.get_ident()}-{os.urandom(4).hex()}.tmp")
+        try:
+            tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, self.path)
+        except Exception:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            raise
 
     def _mutate(self, fn) -> dict[str, Any]:
         with _fileLock(self.path):   # serialize the load->mutate->write across processes

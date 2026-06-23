@@ -14,8 +14,9 @@ Python is plumbing: Ollama → prompt → Claude Code CLI → output → Obsidia
 Ollama → repeat.
 
 ## Phase 1 scope
-Layer 3 (Terminal/CLI) only. The **Adversary is stubbed** (auto-approves).
-Browser (Layer 1) and Native (Layer 2) come later.
+Layer 3 (Terminal/CLI) only. The **Adversary** runs a real Ollama-backed critique
+(verdict + concerns, conservative auto-approve fallback). Browser (Layer 1) and
+Native (Layer 2) come later.
 
 ## Setup
 ```powershell
@@ -40,11 +41,15 @@ venv\Scripts\python main.py --goal "Build X at C:\path\to\file.py" --hours 1
 # Fully non-interactive (walk away — watch + control from Discord/web):
 venv\Scripts\python main.py --goal "..." --hours 1 --auto-approve
 
+# Chat-style one-liner (implies --auto-approve; flags still pass through):
+venv\Scripts\python main.py @9to5 make the test suite green --hours 2
+
 # Useful flags:
 #   --mode watch|gated   watch = autonomous + abort (default); gated = approval gates
 #   --work-dir C:\path   working dir for Claude Code CLI (default PROJECT_ROOT)
 #   --web-port 8787      local web dashboard port    --no-web  disable it
 #   --no-pr              skip the GitHub PR step
+#   --dry-run            simulate a FULL run offline (no Ollama/Claude/Discord/Obsidian)
 
 # While a run is live you get a glass box:
 #   - Discord: one self-updating dashboard embed + milestone embeds
@@ -57,9 +62,18 @@ venv\Scripts\python -m notifications.command_bot
 ```
 
 **Verification gate:** the brain authors a `verify` `{cmd, expect}` per subtask;
-a subtask is only `done` when its command passes (`exit_zero` /
-`stdout_contains:` / `stdout_regex:`), otherwise the executor is re-prompted with
-the failure and retried up to 3×.
+a subtask is only `done` when its command passes (`exit_zero` / `stdout_contains:` /
+`stdout_regex:`, plus the compound `stdout_contains_all:` / `stdout_regex_all:` that
+assert every deliverable of a multi-requirement goal), otherwise the executor is
+re-prompted with the failure and retried up to 3×.
+
+## Tests
+```powershell
+# stdlib unittest only; no extra test deps
+venv\Scripts\python -m unittest discover -s tests
+```
+GitHub Actions runs the same suite on every push/PR (`.github/workflows/tests.yml`,
+Python 3.11 + 3.12).
 
 ## Layout
 | Path | Role |
@@ -68,7 +82,7 @@ the failure and retried up to 3×.
 | `orchestrator.py` | brain (Ollama) + core loop (architect→plan→verify→exec→PR) |
 | `config.py` | env/config + logging + UTF-8 stdio |
 | `control.py` | `ControlBus` — file-backed cross-process control (abort/pause/gates/ops) |
-| `agents/` | elaborator, architect, executor, adversary (stub), replanner, **verifier** |
+| `agents/` | elaborator, architect, executor, adversary, replanner, **verifier**, clarifier, playbook |
 | `state/task.py` | lean task-state model + JSON persistence |
 | `memory/obsidian.py` | REST-first, disk-fallback note writer/reader |
 | `notifications/discord_bot.py` | REST embeds + message create/edit/poll helpers |

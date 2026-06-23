@@ -1,0 +1,106 @@
+"""Consolidation -- Layer 2 of the Self-Improvement Engine ("sleep-time" learning).
+
+A nightly pass that mines the Experience Ledger into compact, durable *lessons*: for
+each task family, which effort level actually correlates with passing. Lessons are
+rebuilt from scratch each pass (idempotent; naturally decays away unsupported advice)
+and are the structured input the brain reads back via Layer 1 retrieval / Layer 4 policy.
+
+Pure-stdlib, offline-testable. See the spec (Layer 2).
+"""
+from __future__ import annotations
+
+import re
+from collections import defaultdict
+from pathlib import Path
+from typing import Any, Optional
+
+import config
+from memory import experience
+
+LOG = config.getLogger("sie.lessons")
+
+_STOPWORDS = {"the", "a", "an", "and", "to", "of", "for", "in", "on", "add", "fix",
+              "make", "update", "create", "implement", "improve", "with", "from"}
+
+
+def family_of(title: str, signature_tags: Optional[str] = None) -> str:
+    """Coarse task-family key. Prefers an explicit ``signature_tags`` if present, else the
+    first meaningful word of the title -- enough to cluster 'add discord embed' with
+    'discord slash command' loosely by domain without any model call."""
+    if signature_tags:
+        return signature_tags.strip().lower()
+    words = re.findall(r"[a-z0-9]+", (title or "").lower())
+    for w in words:
+        if w not in _STOPWORDS and len(w) > 2:
+            return w
+    return words[0] if words else "misc"
+
+
+def _digest_path(digest_path: Optional[Path]) -> Path:
+    if digest_path is not None:
+        return Path(digest_path)
+    return Path(config.VAULT_DISK_ROOT) / config.SESSIONS_DIR_REL / "lessons.md"
+
+
+def consolidate(*, db_path: Optional[Path] = None, write_digest: bool = True,
+                digest_path: Optional[Path] = None) -> dict[str, Any]:
+    """Rebuild the ``lessons`` table from the ledger and (optionally) write the digest.
+
+    Emits an *effort* lesson for any family with >= ``LESSONS_MIN_SUPPORT`` samples whose
+    best and worst effort levels separate by >= ``LESSONS_WIN_GAP`` in pass rate.
+    """
+    rows = experience.fetch_subtasks(db_path=db_path)
+
+    # family -> effort -> [n_total, n_passed]
+    cells: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0]))
+    for r in rows:
+        effort = r.get("effort")
+        if not effort:
+            continue
+        fam = family_of(r.get("title") or "", r.get("signature_tags"))
+        cell = cells[fam][effort]
+        cell[0] += 1
+        if r.get("verify_passed") == 1:
+            cell[1] += 1
+
+    experience.clear_lessons(db_path=db_path)
+    emitted = 0
+    for fam, by_effort in cells.items():
+        support = sum(c[0] for c in by_effort.values())
+        if support < config.LESSONS_MIN_SUPPORT:
+            continue
+        rates = {e: (c[1] / c[0]) for e, c in by_effort.items() if c[0] > 0}
+        if len(rates) < 2:
+            continue
+        best = max(rates, key=rates.get)
+        worst = min(rates, key=rates.get)
+        if rates[best] - rates[worst] < config.LESSONS_WIN_GAP:
+            continue
+        text = (f"For '{fam}' tasks, effort={best} passed {rates[best]:.0%} "
+                f"vs effort={worst} at {rates[worst]:.0%}; prefer {best}.")
+        if experience.upsert_lesson("effort", fam, text, support_count=support,
+                                    win_rate=rates[best], db_path=db_path):
+            emitted += 1
+
+    if write_digest:
+        _write_digest(_digest_path(digest_path), db_path=db_path)
+    LOG.info("consolidation: %d families, %d lessons", len(cells), emitted)
+    return {"families": len(cells), "lessons": emitted}
+
+
+def _write_digest(path: Path, *, db_path: Optional[Path] = None) -> None:
+    lessons = experience.fetch_lessons(db_path=db_path)
+    lines = ["# 9TO5 Consolidated Lessons", "",
+             f"_{len(lessons)} lesson(s), highest-support first._", ""]
+    for ls in lessons:
+        lines.append(f"- ({ls['scope']}, support={ls['support_count']}) {ls['text']}")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except Exception as e:  # noqa: BLE001 -- digest is a convenience, not load-bearing
+        LOG.warning("lessons digest write failed (ignored): %s", e)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    experience.init()
+    print(consolidate())

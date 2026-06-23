@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import config
+from memory import experience
 
 # Serializes concurrent save() calls within this process so the temp-file
 # write + os.replace swap never interleave. os.replace itself is atomic at the
@@ -52,6 +53,7 @@ class TaskState:
                 "status": "created",
                 "blocked_reason": None,
                 "control_mode": config.CONTROL_MODE_DEFAULT,
+                "work_dir": None,
                 "is_self_referential": False,
                 "self_ref_branch": None,
                 "subtask_seq": 0,
@@ -103,7 +105,27 @@ class TaskState:
         p = config.STATE_DIR / f"{task_id}.json"
         return cls(json.loads(p.read_text(encoding="utf-8")))
 
+    @classmethod
+    def loadSafe(cls, task_id: str) -> Optional["TaskState"]:
+        """Like ``load`` but returns None for a missing/corrupt file instead of raising,
+        so callers (e.g. the Discord /run command) can show a clean message."""
+        try:
+            return cls.load(task_id)
+        except Exception:  # noqa: BLE001 -- missing/corrupt => None
+            return None
+
     _TERMINAL = ("done", "complete", "aborted", "partial", "blocked", "failed")
+
+    @classmethod
+    def iterStored(cls):
+        """Yield ``(path, data)`` for every readable task JSON in the store. The single
+        place that scans STATE_DIR -- corrupt/unreadable files are skipped silently so
+        every consumer (loadLatest/listRecent/metrics) gets the same robust behavior."""
+        for f in config.STATE_DIR.glob("*.json"):
+            try:
+                yield f, json.loads(f.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 -- missing/corrupt file => skip
+                continue
 
     @classmethod
     def loadLatest(cls) -> Optional["TaskState"]:
@@ -111,16 +133,32 @@ class TaskState:
         # bumps an old task's file mtime must not cause the wrong task to be resumed/inspected.
         best = None
         best_key = None
-        for f in config.STATE_DIR.glob("*.json"):
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-            except Exception:  # noqa: BLE001
-                continue
+        for f, data in cls.iterStored():
             meta = data.get("meta", {})
             key = (0 if meta.get("status") in cls._TERMINAL else 1, meta.get("started_at", ""))
             if best_key is None or key > best_key:
                 best_key, best = key, data
         return cls(best) if best is not None else None
+
+    @classmethod
+    def listRecent(cls, n: int = 10) -> list[dict[str, Any]]:
+        """Lightweight summaries of recent tasks, newest first. Reads the JSON store directly."""
+        out: list[dict[str, Any]] = []
+        for f, data in cls.iterStored():
+            meta = data.get("meta", {})
+            subs = (data.get("plan", {}) or {}).get("subtasks", []) or []
+            done = sum(1 for s in subs if s.get("status") == "done")
+            total = sum(1 for s in subs if s.get("status") != "removed")
+            out.append({
+                "task_id": data.get("task_id", f.stem),
+                "status": meta.get("status", "unknown"),
+                "goal": meta.get("goal_raw", ""),
+                "done": done,
+                "total": total,
+                "started_at": meta.get("started_at", ""),
+            })
+        out.sort(key=lambda d: d["started_at"], reverse=True)
+        return out[:n]
 
     # ---- vault-relative note paths -------------------------------------
     def vaultTaskDir(self) -> str:
@@ -144,12 +182,30 @@ class TaskState:
     def replanLogRel(self) -> str:
         return f"{self.vaultTaskDir()}/replan-log.md"
 
+    # ---- Experience Ledger sinks (Layer 0; best-effort, never blocks) ----
+    def _ledgerRun(self) -> None:
+        """Mirror the run row into the SIE ledger. Swallows every error so a ledger
+        problem can never affect task execution."""
+        try:
+            experience.sync_run(self.data)
+        except Exception:  # noqa: BLE001 -- learning is best-effort
+            pass
+
+    def _ledgerSubtask(self, subtask_id: str) -> None:
+        try:
+            st = self.getSubtask(subtask_id)
+            if st is not None:
+                experience.sync_subtask(self.data, st)
+        except Exception:  # noqa: BLE001
+            pass
+
     # ---- mutation -------------------------------------------------------
     def setStatus(self, status: str, blocked_reason: Optional[str] = None) -> None:
         self.meta["status"] = status
         if blocked_reason is not None:
             self.meta["blocked_reason"] = blocked_reason
         self.save()
+        self._ledgerRun()
 
     def setElaboratedGoal(self, text: str) -> None:
         self.meta["goal_elaborated"] = text
@@ -163,6 +219,16 @@ class TaskState:
         self.meta["control_mode"] = mode
         self.save()
 
+    def setWorkDir(self, work_dir: str) -> None:
+        """Persist the working directory this run targets (resolved absolute), so resume and
+        every status surface know which project tree the run operates on."""
+        try:
+            resolved = str(Path(work_dir).resolve())
+        except Exception:  # noqa: BLE001
+            resolved = str(work_dir)
+        self.meta["work_dir"] = resolved
+        self.save()
+
     def markSelfReferential(self, branch: Optional[str] = None) -> None:
         self.meta["is_self_referential"] = True
         if branch:
@@ -174,7 +240,9 @@ class TaskState:
         self.save()
 
     def recordVerify(self, subtask_id: str, result: dict) -> Optional[dict[str, Any]]:
-        return self.updateSubtask(subtask_id, verify_result=result)
+        out = self.updateSubtask(subtask_id, verify_result=result)
+        self._ledgerSubtask(subtask_id)
+        return out
 
     def _nextSubtaskSeq(self) -> int:
         """Allocate a never-reused subtask number from a persisted counter.
@@ -240,6 +308,7 @@ class TaskState:
                "verdict": verdict, "note_ref": note_ref, "at": nowIso()}
         self.data["adversary_reviews"].append(rec)
         self.save()
+        self._ledgerSubtask(subtask_id)
         return rec
 
     def addNotification(self, kind: str, detail: str) -> dict[str, Any]:

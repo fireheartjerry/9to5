@@ -1,166 +1,120 @@
-"""Gateway command bot -- rich, interactive Discord control.
-
-Runs as its own long-lived process:
-
-    venv\\Scripts\\python -m notifications.command_bot
-
-It always targets the most recent task and writes commands to that task's
-ControlBus, which the running orchestrator drains between steps.
-
-Commands:
-  !status                current phase, subtask X/Y, elapsed/ETA
-  !plan                  full subtask list with statuses
-  !log                   Obsidian index note path + web dashboard URL
-  !abort                 graceful stop after the current step
-  !pause / !resume       hold / continue the run
-  !approve / !reject     answer the pending approval gate (gated mode)
-  !skip <st-00N>         drop a pending subtask
-  !add <title>           queue a new subtask
-  !retry                 re-run the current subtask
+"""Gateway command bot -- slim shell. Registers the slash command suite (slash.py),
+persistent component views (views.py), a presence loop, and the legacy '!' text path
+(via the commands.py spine). Run:  venv\\Scripts\\python -m notifications.command_bot
 """
 from __future__ import annotations
 
-from datetime import datetime
+import asyncio
+import time
 
 import config
 from control import ControlBus
-from state.task import TaskState
+from notifications import commands
+from state.task import TaskState  # noqa: F401  (kept for parity / external imports)
 
 LOG = config.getLogger("command_bot")
 
-
-def _fmtDelta(seconds: float) -> str:
-    seconds = max(0, int(seconds))
-    h, rem = divmod(seconds, 3600)
-    m, s = divmod(rem, 60)
-    return f"{h}h{m:02d}m{s:02d}s"
+MAX_REPLY_CHARS = config.DISCORD_MAX_CONTENT - 100
 
 
 def handleCommand(content: str) -> str:
-    """Pure command handler (also unit-testable without a gateway)."""
-    parts = content.strip().split(maxsplit=1)
-    cmd = parts[0].lower()
-    arg = parts[1].strip() if len(parts) > 1 else ""
-
-    state = TaskState.loadLatest()
+    """Parse + apply a '!' command against the latest task. '' if not a command."""
+    cmd = commands.parseCommand(content)
+    if cmd is None:
+        return ""
+    state = commands.resolveTargetTask()
     if state is None:
-        return "No 9TO5 task on record yet."
-    bus = ControlBus(state.task_id)
-
-    if cmd == "!status":
-        done, total = state.progress()
-        try:
-            started = datetime.fromisoformat(state.meta["started_at"])
-            deadline = datetime.fromisoformat(state.meta["deadline_at"])
-            now = datetime.now().astimezone()
-            elapsed = _fmtDelta((now - started).total_seconds())
-            eta = _fmtDelta((deadline - now).total_seconds())
-        except Exception:  # noqa: BLE001
-            elapsed = eta = "-"
-        cur = next((s for s in state.subtasks if s["status"] == "in_progress"), None) or state.nextActionable()
-        cur_txt = f"{cur['subtask_id']} {cur['title']}" if cur else "-"
-        gate = bus.getPendingGate()
-        gate_txt = f"\n⏳ awaiting gate: **{gate}** (!approve / !reject)" if gate else ""
-        return (f"**`{state.meta['status']}`** · subtask {done}/{total} · mode {state.meta.get('control_mode')}\n"
-                f"Current: {cur_txt}\nElapsed {elapsed} · ETA {eta}{gate_txt}")
-
-    if cmd == "!plan":
-        lines = [f"{s['subtask_id']} [{s['status']}] {s['title']}" for s in state.subtasks]
-        return "```\n" + ("\n".join(lines) or "(no subtasks)")[:1800] + "\n```"
-
-    if cmd == "!log":
-        return (f"Index: `{state.indexNoteRel()}`\n"
-                f"Vault: `{state.data['obsidian']['vault_root']}`\n"
-                f"Web: http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/")
-
-    if cmd == "!abort":
-        bus.requestAbort()
-        return "🛑 abort requested — run will stop after the current step."
-    if cmd == "!pause":
-        bus.requestPause()
-        return "⏸ pause requested."
-    if cmd == "!resume":
-        bus.clearPause()
-        return "▶ resumed."
-    if cmd in ("!approve", "!reject"):
-        gate = bus.getPendingGate()
-        if not gate:
-            return "No gate is currently pending."
-        bus.decide(gate, "approve" if cmd == "!approve" else "reject")
-        return f"Gate **{gate}** → {cmd[1:]}d."
-    if cmd == "!skip":
-        if not arg:
-            return "usage: !skip <st-00N>"
-        bus.pushOp({"op": "skip", "subtask_id": arg})
-        return f"queued skip of {arg}."
-    if cmd == "!add":
-        if not arg:
-            return "usage: !add <title>"
-        bus.pushOp({"op": "add", "title": arg, "description": arg})
-        return f"queued new subtask: {arg}"
-    if cmd == "!retry":
-        bus.pushOp({"op": "retry"})
-        return "queued retry of the current subtask."
-
-    return ("commands: !status !plan !log !abort !pause !resume "
-            "!approve !reject !skip <id> !add <title> !retry")
-
-
-def handleButton(custom_id: str) -> str:
-    """Handle a Discord component-button click (sc_answer / sc_skip / sc_abort)."""
-    state = TaskState.loadLatest()
-    if state is None:
-        return "No 9TO5 task on record."
-    bus = ControlBus(state.task_id)
-    if custom_id == "sc_abort":
-        bus.requestAbort()
-        return "🛑 Abort requested — run stops after the current step."
-    if custom_id == "sc_skip":
-        cur = next((s for s in state.subtasks if s["status"] == "in_progress"), None)
-        if cur:
-            bus.pushOp({"op": "skip", "subtask_id": cur["subtask_id"]})
-            return f"⏭️ Skipping {cur['subtask_id']}."
-        return "Nothing in progress to skip."
-    if custom_id == "sc_answer":
-        return "✍️ Type your answer as a normal message and the orchestrator will pick it up."
-    return "Unknown action."
+        return commands.NO_TASK
+    return commands.applyCommand(ControlBus(state.task_id), state, cmd)
 
 
 def runCommandBot() -> None:  # pragma: no cover -- long-lived gateway process
-    import discord
-
-    intents = discord.Intents.default()
-    intents.message_content = True
-    client = discord.Client(intents=intents)
-
-    @client.event
-    async def on_ready() -> None:
-        LOG.info("Command bot online as %s", client.user)
-
-    @client.event
-    async def on_interaction(interaction: "discord.Interaction") -> None:
-        try:
-            if interaction.type == discord.InteractionType.component:
-                reply = handleButton((interaction.data or {}).get("custom_id", ""))
-                await interaction.response.send_message(reply)
-        except Exception as e:  # noqa: BLE001
-            LOG.warning("interaction error: %s", e)
-
-    @client.event
-    async def on_message(message: "discord.Message") -> None:
-        if message.author == client.user:
-            return
-        if not message.content.strip().startswith("!"):
-            return
-        try:
-            reply = handleCommand(message.content)
-        except Exception as e:  # noqa: BLE001
-            reply = f"error: {e}"
-        await message.channel.send(reply[:1900])
+    import discord as dpy
+    from discord import app_commands
+    from notifications import slash, views
 
     if not config.DISCORD_BOT_TOKEN:
         LOG.error("DISCORD_BOT_TOKEN missing; cannot start command bot")
         return
+
+    started_at = time.time()
+    intents = dpy.Intents.default()
+    intents.message_content = True
+    client = dpy.Client(intents=intents)
+    tree = app_commands.CommandTree(client)
+    slash.registerSlashCommands(tree, client, started_at)
+    _state = {"synced": False, "presence": False, "views": False}
+
+    @tree.error
+    async def _on_app_error(interaction, error):  # noqa: ANN001
+        if isinstance(error, app_commands.CommandOnCooldown):
+            msg = f"⏳ Slow down — try again in {error.retry_after:.0f}s."
+        else:
+            LOG.exception("slash error: %s", error)
+            msg = "internal error (see logs)"
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+    async def _presenceLoop():
+        await client.wait_until_ready()
+        while not client.is_closed():
+            try:
+                state = commands.resolveTargetTask()
+                if state is not None and commands.isRunActive(state):
+                    done, total = state.progress()
+                    name = f"{done}/{total} · {state.meta.get('status', 'run')}"
+                else:
+                    name = "idle · /help"
+                await client.change_presence(
+                    activity=dpy.Activity(type=dpy.ActivityType.watching, name=name))
+            except Exception:  # noqa: BLE001
+                pass
+            await asyncio.sleep(config.PRESENCE_INTERVAL)
+
+    @client.event
+    async def on_ready() -> None:
+        if not _state["synced"]:
+            try:
+                if config.DISCORD_GUILD_ID:
+                    guild = dpy.Object(id=config.DISCORD_GUILD_ID)
+                    tree.copy_global_to(guild=guild)
+                    synced = await tree.sync(guild=guild)
+                else:
+                    synced = await tree.sync()
+                _state["synced"] = True
+                LOG.info("Command bot online as %s; synced %d slash command(s)", client.user, len(synced))
+            except Exception as e:  # noqa: BLE001
+                LOG.warning("slash sync failed: %s", e)
+        if not _state["views"]:                      # register persistent views once (avoid reconnect churn)
+            _state["views"] = True
+            client.add_view(views.ControlPanelView())   # persistent: matches cp_* on any message
+            client.add_view(views.BlockedView())        # persistent: matches sc_*
+        if not _state["presence"]:
+            _state["presence"] = True
+            client.loop.create_task(_presenceLoop())
+
+    @client.event
+    async def on_message(message: "dpy.Message") -> None:
+        if message.author == client.user or not message.content.strip().startswith("!"):
+            return
+        if not commands.isAuthorized(message.author.id):
+            LOG.info("ignored '!' command from unauthorized user %s", message.author.id)
+            return
+        if config.DISCORD_CHANNEL_ID and message.channel.id != config.DISCORD_CHANNEL_ID:
+            return
+        try:
+            reply = handleCommand(message.content)
+        except Exception:  # noqa: BLE001
+            LOG.exception("command error")
+            reply = "internal error (see logs)"
+        if reply:
+            await message.channel.send(reply[:MAX_REPLY_CHARS])
+
     client.run(config.DISCORD_BOT_TOKEN)
 
 

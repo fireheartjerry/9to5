@@ -13,6 +13,7 @@ import json
 import ollama
 
 import config
+import knowledge
 
 LOG = config.getLogger("replanner")
 _OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
@@ -34,11 +35,24 @@ REPLANNER_SYSTEM = (
 
 
 def replan(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, executor_output: str,
-           self_referential: bool = False) -> dict:
+           self_referential: bool = False, remaining_hours: "float | None" = None) -> dict:
     """Return the replan decision dict (always well-formed)."""
     brief = [{k: s.get(k) for k in ("subtask_id", "title", "status")} for s in subtasks]
+    # Time-budget awareness: near the deadline, adding work just produces subtasks that never run
+    # (the execution loop stops at deadline_at). Tell the brain to wind down.
+    budget = ""
+    if remaining_hours is not None:
+        if remaining_hours <= 0:
+            budget = "The DEADLINE HAS PASSED. action='keep' and finalize; add NOTHING.\n\n"
+        elif remaining_hours < 0.5:
+            budget = (f"Time budget: ~{remaining_hours:.2f}h remain. UNDER 30 MIN LEFT: prefer "
+                      "action='keep' and finalize; do NOT add subtasks.\n\n")
+        else:
+            budget = (f"Time budget: ~{remaining_hours:.2f}h remain. Only add a subtask if it clearly "
+                      "fits in the remaining time.\n\n")
     user = (
         f"Goal:\n{goal_elaborated}\n\n"
+        f"{budget}"
         f"Current subtasks:\n{json.dumps(brief, indent=2)}\n\n"
         f"Just-finished: {last_subtask.get('subtask_id')} - {last_subtask.get('title')}\n"
         f"Executor output (truncated):\n{(executor_output or '')[:2000]}\n\n"
@@ -51,8 +65,10 @@ def replan(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, execu
     try:
         resp = _OLLAMA.chat(
             model=config.OLLAMA_MODEL,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            messages=[{"role": "system", "content": knowledge.injectCapabilities(system)},
+                      {"role": "user", "content": user}],
             format="json",
+            options={"num_ctx": config.OLLAMA_NUM_CTX},
         )
         data = json.loads(resp["message"]["content"])
         data.setdefault("action", "keep")

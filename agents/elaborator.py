@@ -6,13 +6,46 @@ produces the text a human approves before the autonomous run begins.
 from __future__ import annotations
 
 import json
+import time
 
 import ollama
 
 import config
+import knowledge
 
 LOG = config.getLogger("elaborator")
 _OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
+
+
+def _chat(system: str, user: str, *, want_json: bool = False, retries: int = 3) -> str:
+    """Resilient local-Ollama call with exponential backoff. Returns the content string,
+    or "" after all retries fail -- so the caller can degrade instead of crashing the run
+    before it even starts (this is the very first brain touch)."""
+    delay = 2.0
+    for attempt in range(1, retries + 1):
+        try:
+            kwargs = {"options": {"num_ctx": config.OLLAMA_NUM_CTX}}
+            if want_json:
+                kwargs["format"] = "json"
+            resp = _OLLAMA.chat(model=config.OLLAMA_MODEL,
+                                messages=[{"role": "system", "content": system},
+                                          {"role": "user", "content": user}], **kwargs)
+            return ((resp.get("message") or {}).get("content") or "").strip()
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("elaborator Ollama call failed (%d/%d): %s", attempt, retries, e)
+            if attempt < retries:
+                time.sleep(delay)
+                delay *= 2
+    return ""
+
+
+def _fallbackSpec(goal_raw: str) -> str:
+    """A minimal but valid spec so the run proceeds even if elaboration is unavailable."""
+    return (f"# Objective\n{goal_raw}\n\n"
+            "# Deliverables\n- Implement the goal exactly as stated.\n\n"
+            "# Acceptance Criteria\n- The goal is satisfied and verified.\n\n"
+            "# Constraints\n- Keep changes surgical and on-scope.\n\n"
+            "# Assumptions\n- (elaboration brain was unavailable; using the raw goal)\n")
 
 ELABORATOR_SYSTEM = (
     "You are the Elaborator for 9TO5, an autonomous engineering orchestrator. "
@@ -25,16 +58,15 @@ ELABORATOR_SYSTEM = (
 
 
 def elaborate(goal_raw: str) -> str:
-    """Return the elaborated specification for ``goal_raw``."""
+    """Return the elaborated specification for ``goal_raw`` (never raises -- degrades to a
+    minimal spec built from the raw goal if the brain is unavailable)."""
     LOG.info("Elaborating raw goal via %s", config.OLLAMA_MODEL)
-    resp = _OLLAMA.chat(
-        model=config.OLLAMA_MODEL,
-        messages=[
-            {"role": "system", "content": ELABORATOR_SYSTEM},
-            {"role": "user", "content": f"Raw goal:\n{goal_raw}\n\nProduce the elaborated specification."},
-        ],
-    )
-    return resp["message"]["content"].strip()
+    out = _chat(knowledge.injectCapabilities(ELABORATOR_SYSTEM),
+                f"Raw goal:\n{goal_raw}\n\nProduce the elaborated specification.")
+    if not out:
+        LOG.warning("elaboration unavailable after retries; using raw goal as spec")
+        return _fallbackSpec(goal_raw)
+    return out
 
 
 UNIVERSE_SYSTEM = (
@@ -56,13 +88,11 @@ def extractUniverse(goal_raw: str, goal_elaborated: str, work_dir: str) -> dict:
     """Extract the operating universe (scope boundary) from the goal (with safe defaults)."""
     user = (f"Goal:\n{goal_raw}\n\nElaborated spec:\n{goal_elaborated[:2000]}\n\n"
             f"Working directory: {work_dir}\n\nReturn the universe JSON.")
+    raw = _chat(knowledge.injectCapabilities(UNIVERSE_SYSTEM), user, want_json=True)
     try:
-        resp = _OLLAMA.chat(model=config.OLLAMA_MODEL,
-                            messages=[{"role": "system", "content": UNIVERSE_SYSTEM},
-                                      {"role": "user", "content": user}], format="json")
-        u = json.loads(resp["message"]["content"]) or {}
+        u = json.loads(raw) if raw else {}
     except Exception as e:  # noqa: BLE001
-        LOG.warning("extractUniverse failed (%s); using defaults", e)
+        LOG.warning("extractUniverse parse failed (%s); using defaults", e)
         u = {}
     if not isinstance(u, dict):
         u = {}

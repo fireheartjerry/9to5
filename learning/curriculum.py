@@ -1,0 +1,76 @@
+"""Self-generated curriculum -- subsystem C of the Self-Improvement Engine.
+
+Active learning over the system's own weaknesses: find the task families with the lowest
+first-pass rates and author fresh goals targeting them, so the brain practices exactly
+where it is weakest instead of waiting for organic coverage. Pure-stdlib + ledger;
+offline-testable. The orchestrator (not this module) executes the suggested goals.
+
+See the spec (subsystem C).
+"""
+from __future__ import annotations
+
+from collections import defaultdict
+from pathlib import Path
+from typing import Any, Optional
+
+import config
+from learning.lessons import family_of
+from memory import experience
+
+LOG = config.getLogger("sie.curriculum")
+
+# Templates rotate so a weak family gets varied practice rather than the same goal.
+_TEMPLATES = (
+    "Harden the '{fam}' area: add missing unit tests and strengthen error handling.",
+    "Audit the '{fam}' code path for edge cases and fix the most likely failure modes.",
+    "Refactor the '{fam}' area for clarity and add regression tests for past failures.",
+)
+
+
+def family_stats(*, min_support: int = 3,
+                 db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    """Per-family {family, support, first_pass_rate}, weakest first, support-gated."""
+    agg: dict[str, list[int]] = defaultdict(lambda: [0, 0])  # total, first_pass
+    for r in experience.fetch_subtasks(db_path=db_path):
+        fam = family_of(r.get("title") or "", r.get("signature_tags"))
+        cell = agg[fam]
+        cell[0] += 1
+        if r.get("verify_passed") == 1 and (r.get("attempt_count") or 1) <= 1:
+            cell[1] += 1
+    out = [{"family": f, "support": t, "first_pass_rate": fp / t}
+           for f, (t, fp) in agg.items() if t >= min_support]
+    out.sort(key=lambda d: d["first_pass_rate"])
+    return out
+
+
+def generate_goals(*, n: int = 3, min_support: int = 3,
+                   db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    """Author up to ``n`` practice goals targeting the weakest families."""
+    weak = family_stats(min_support=min_support, db_path=db_path)
+    goals: list[dict[str, Any]] = []
+    for i, fam in enumerate(weak[:n]):
+        template = _TEMPLATES[i % len(_TEMPLATES)]
+        goals.append({
+            "family": fam["family"],
+            "goal": template.format(fam=fam["family"]),
+            "reason": f"first-pass rate {fam['first_pass_rate']:.0%} over {fam['support']} subtasks",
+            "self_generated": True,
+        })
+    return goals
+
+
+def write_suggestions(goals: list[dict[str, Any]], path: Optional[Path] = None) -> Optional[Path]:
+    """Persist suggested goals (for the human/orchestrator to pick up). Best-effort."""
+    p = Path(path) if path is not None \
+        else Path(config.VAULT_DISK_ROOT) / config.SESSIONS_DIR_REL / "curriculum.md"
+    lines = ["# 9TO5 Self-Generated Curriculum", "",
+             "_Practice goals targeting the weakest task families._", ""]
+    for g in goals:
+        lines.append(f"- **{g['family']}** — {g['goal']}  _({g['reason']})_")
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return p
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("curriculum write failed (ignored): %s", e)
+        return None

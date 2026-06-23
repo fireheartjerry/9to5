@@ -48,12 +48,65 @@ def _envBool(key: str, default: bool = False) -> bool:
 PROJECT_ROOT: Path = _envPath("PROJECT_ROOT", str(_THIS_DIR)) or _THIS_DIR
 LOG_PATH: Path = _envPath("LOG_PATH", str(PROJECT_ROOT / "logs")) or (PROJECT_ROOT / "logs")
 
+# Install root (the durable home of vault/logs/knowledge), independent of which
+# git worktree the code happens to run from. Defaults to C:\supercritical.
+SUPERCRITICAL_ROOT: Path = _envPath("SUPERCRITICAL_ROOT", r"C:\supercritical") or Path(r"C:\supercritical")
+
+# --- Living Claude Code knowledge base -----------------------------------
+# The maximalist self-analysis reference, refreshed each session and compressed
+# into the "CLAUDE CODE CAPABILITIES" section injected into every Ollama prompt.
+KNOWLEDGE_DIR: Path = _envPath("KNOWLEDGE_DIR", str(SUPERCRITICAL_ROOT / "knowledge")) or (SUPERCRITICAL_ROOT / "knowledge")
+CLAUDE_KNOWLEDGE_PATH: Path = KNOWLEDGE_DIR / "claude_code.md"
+# Expert, opinionated recommendations (how 9to5 should wield every Claude Code primitive).
+# Folded into the unified reference as "Part E" and surfaced (executive slice) in the injection.
+CLAUDE_RECOMMENDATIONS_PATH: Path = KNOWLEDGE_DIR / "recommendations.md"
+# Roots scanned recursively for installed skills/agents/workflows/hooks/settings.
+# Both the install root's .claude AND the running project's .claude are merged.
+CLAUDE_SCAN_ROOTS: tuple[Path, ...] = (SUPERCRITICAL_ROOT / ".claude", PROJECT_ROOT / ".claude")
+# Best-effort live-docs fetch (Python has internet; Ollama does not -- exploit it).
+CLAUDE_DOC_FETCH: bool = _envBool("CLAUDE_DOC_FETCH", True)
+CLAUDE_DOC_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_DOC_TIMEOUT_SECONDS", "8"))
+# Parallel doc fetch (the 27-page scrape goes from ~10s sequential to ~2s).
+CLAUDE_DOC_FETCH_WORKERS: int = int(os.getenv("CLAUDE_DOC_FETCH_WORKERS", "10"))
+# Freshness guard: if claude_code.md is younger than this, a (non-forced) refresh skips the
+# web re-scrape and just recompresses the cached doc -- so frequent restarts stay instant.
+CLAUDE_KNOWLEDGE_MAX_AGE_HOURS: float = float(os.getenv("CLAUDE_KNOWLEDGE_MAX_AGE_HOURS", "6"))
+# Hard cap on the compressed injection so a 7B brain's context never overflows.
+CLAUDE_CAPABILITIES_MAX_CHARS: int = int(os.getenv("CLAUDE_CAPABILITIES_MAX_CHARS", "9000"))
+
 # --- Discord -------------------------------------------------------------
 DISCORD_BOT_TOKEN: str = os.getenv("DISCORD_BOT_TOKEN", "")
 _RAW_CHANNEL = os.getenv("DISCORD_CHANNEL_ID", "0") or "0"
 DISCORD_CHANNEL_ID: int = int(_RAW_CHANNEL) if _RAW_CHANNEL.isdigit() else 0
 # Human to @-ping for severe events only (blocked / critical decision / deadlock abort).
 DISCORD_HUMAN_USER_ID: str = os.getenv("DISCORD_HUMAN_USER_ID", "")
+
+# Guild for instant slash-command registration; 0 => global (can take ~1h to propagate).
+_RAW_GUILD = os.getenv("DISCORD_GUILD_ID", "0") or "0"
+DISCORD_GUILD_ID: int = int(_RAW_GUILD) if _RAW_GUILD.isdigit() else 0
+
+# Discord hard limits (single source of truth for all truncation/clamping).
+DISCORD_MAX_CONTENT: int = 2000
+DISCORD_MAX_EMBED_DESC: int = 4096
+DISCORD_MAX_FIELD_NAME: int = 256
+DISCORD_MAX_FIELD_VALUE: int = 1024
+DISCORD_EMBED_TOTAL_MAX: int = 6000
+DISCORD_REST_TIMEOUT: int = 15      # seconds per Discord REST call
+DISCORD_RETRY_MAX: int = 2          # 429 retries for milestone sends (NOT the control poll)
+
+# --- Bot identity / branding ---
+VERSION: str = "1.0.0"
+BRAND_COLOR: int = 0x5865F2                      # 9TO5 brand (Discord blurple)
+BRAND_ICON_URL: str = os.getenv("BRAND_ICON_URL", "")
+
+# --- Bot UX behaviour ---
+COOLDOWN_RATE: int = 3                            # max mutating-command uses ...
+COOLDOWN_PER: float = 10.0                        # ... per this many seconds, per user
+PRESENCE_INTERVAL: int = 30                       # seconds between bot presence refreshes
+
+# --- Audit log (who issued which control command) ---
+AUDIT_LOG_PATH: Path = PROJECT_ROOT / "state" / "audit.jsonl"
+AUDIT_MAX_BYTES: int = 1_000_000                  # rotate audit.jsonl past ~1 MB
 
 # --- Obsidian Local REST API ---------------------------------------------
 OBSIDIAN_API_KEY: str = os.getenv("OBSIDIAN_API_KEY", "")
@@ -72,11 +125,21 @@ VAULT_DISK_ROOT: Path = OBSIDIAN_VAULT_PATH / "9to5"
 # Vault-relative folders (used for both REST paths and on-disk paths).
 TASKS_DIR_REL: str = "tasks"
 SESSIONS_DIR_REL: str = "sessions"
+# Write notes to disk synchronously (durable + readable) and sync to Obsidian via REST in
+# the background, so a slow/absent vault never blocks the run loop (~5-10s/run saved).
+OBSIDIAN_ASYNC: bool = _envBool("OBSIDIAN_ASYNC", True)
+# Reuse one SQLite connection per (thread, ledger path) instead of opening one per call.
+EXPERIENCE_POOL: bool = _envBool("EXPERIENCE_POOL", True)
 
 # --- Ollama (Orchestrator brain) -----------------------------------------
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")  # code-specialized brain (fits 8GB VRAM)
 OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_TIMEOUT_SECONDS: int = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))  # prevent indefinite hangs
+# Explicit context window: the injected CLAUDE CODE CAPABILITIES block (~2.2k tokens) sits in
+# every system prompt; without this, ollama's small default num_ctx SILENTLY TRUNCATES the
+# trailing JSON-schema instructions that format="json" calls depend on. Sized for injection +
+# the largest user payload. Passed as options.num_ctx on every .chat() call.
+OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
 
 # --- Claude Code CLI (Executor hands) ------------------------------------
 # A `claude --print` call is a FULL agent session (explore repo -> reason -> write -> self-verify),
@@ -90,6 +153,131 @@ CLAUDE_CLI_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_CLI_TIMEOUT_SECONDS", "6
 STATE_DIR: Path = PROJECT_ROOT / "state" / "tasks"
 CONTROL_DIR: Path = PROJECT_ROOT / "state" / "control"
 
+# --- Self-Improvement Engine (SIE) ---------------------------------------
+# Layer 0: the Experience Ledger -- a best-effort SQLite store of every run+subtask so
+# the brain can learn from its own history. Sits beside the task store; writes never
+# block a run. See docs/superpowers/specs/2026-06-22-self-improvement-engine-design.md.
+EXPERIENCE_DB_PATH: Path = PROJECT_ROOT / "state" / "experience.db"
+EXPERIENCE_LEDGER_ENABLED: bool = _envBool("EXPERIENCE_LEDGER_ENABLED", True)
+# Layer 1 retrieval (wired in a later phase): local embedding model + injection budget.
+EMBED_MODEL: str = os.getenv("EMBED_MODEL", "nomic-embed-text")
+RETRIEVAL_K: int = int(os.getenv("RETRIEVAL_K", "5"))
+RETRIEVAL_MAX_TOKENS: int = int(os.getenv("RETRIEVAL_MAX_TOKENS", "350"))
+# Eval harness (the spine): golden suite + the single fitness scalar's weights.
+EVAL_SUITE_DIR: Path = PROJECT_ROOT / "learning" / "eval_suite"
+EVAL_FITNESS_WEIGHTS: dict[str, float] = {
+    "first_pass_rate": 0.5,
+    "attempts": 0.2,        # applied to (1 - norm_attempts)
+    "cost": 0.15,           # applied to (1 - norm_cost)
+    "plan_stability": 0.1,
+    "challenge_rate": 0.05,  # applied to (1 - challenge_rate)
+}
+# Layer 2 consolidation: a lesson needs this many samples, and arms must separate by
+# this win-rate gap, before it is emitted (keeps the digest high-signal, not noise).
+LESSONS_MIN_SUPPORT: int = int(os.getenv("LESSONS_MIN_SUPPORT", "3"))
+LESSONS_WIN_GAP: float = float(os.getenv("LESSONS_WIN_GAP", "0.2"))
+# Layer 4 policy bandit reward weights (first-pass success minus cost/attempt penalties).
+POLICY_REWARD_WEIGHTS: dict[str, float] = {
+    "first_pass": 1.0, "attempts": 0.3, "cost": 0.2, "wallclock": 0.1,
+}
+# Layer 3 prompt promotion gate: a challenger needs this many field uses and this z-score
+# (one-sided proportion test, 1.64 ~ 95%) on first-pass rate before it can become champion.
+PROMPT_PROMOTE_MIN_USES: int = int(os.getenv("PROMPT_PROMOTE_MIN_USES", "20"))
+PROMPT_PROMOTE_Z: float = float(os.getenv("PROMPT_PROMOTE_Z", "1.64"))
+# Auto-maintenance: fire the throttled learning passes automatically after every run, so
+# the user only ever starts/aborts/checks. (The test package disables this to stay fast;
+# the runner itself is still exercised directly.)
+SIE_AUTO_MAINTENANCE: bool = _envBool("SIE_AUTO_MAINTENANCE", True)
+# Global kill switch: revert the brain to the frozen base model + freeze all promotions.
+SIE_KILL_SWITCH: bool = _envBool("SIE_KILL_SWITCH", False)
+# The frozen base model tag; champion adapters are served under BRAIN_MODEL_TAG:vN.
+BRAIN_MODEL_TAG: str = os.getenv("BRAIN_MODEL_TAG", "9to5-brain")
+# Layer 5 LoRA distillation: how many gold examples before a training cycle, and where
+# adapters/datasets land. Training itself is a local, queued job (host GPU).
+LORA_MIN_EXAMPLES: int = int(os.getenv("LORA_MIN_EXAMPLES", "50"))
+LORA_OUTPUT_DIR: Path = _envPath("LORA_OUTPUT_DIR", str(PROJECT_ROOT / "state" / "adapters")) \
+    or (PROJECT_ROOT / "state" / "adapters")
+# DPO/ORPO preference training: KL anchor strength + minimum preference pairs to train.
+DPO_KL_BETA: float = float(os.getenv("DPO_KL_BETA", "0.1"))
+DPO_MIN_PAIRS: int = int(os.getenv("DPO_MIN_PAIRS", "30"))
+# Next-wave knobs: confidence deferral threshold (escalate below this P(success)).
+CONFIDENCE_DEFER_THRESHOLD: float = float(os.getenv("CONFIDENCE_DEFER_THRESHOLD", "0.4"))
+# Subsystem I: ask the executor for a learning summary (teacher->student distillation).
+SIE_REFLECTION_ENABLED: bool = _envBool("SIE_REFLECTION_ENABLED", True)
+# Inject the learned authoring context (lessons/policy/guidance/surfaces/...) into specs.
+SIE_AUTHORING_CONTEXT: bool = _envBool("SIE_AUTHORING_CONTEXT", True)
+# Let 9to5 improve its OWN core loop files (orchestrator.py/main.py/config.py/hooks.py)
+# during self-referential runs. Safe because: edits land on the isolated branch, the running
+# process keeps its old bytecode, and a post-run test-suite gate reverts any breaking change
+# before a PR. Default off (opt-in) -- the most powerful + most safety-sensitive capability.
+SELFMOD_ALLOW_CORE: bool = _envBool("SELFMOD_ALLOW_CORE", False)
+# Compute router for LoRA/DPO training: auto (GPU if present) | gpu (force) | cpu | off.
+SIE_COMPUTE: str = os.getenv("SIE_COMPUTE", "auto")
+# LoRA hyperparameters (used by the real local trainer on a GPU host).
+LORA_RANK: int = int(os.getenv("LORA_RANK", "16"))
+LORA_EPOCHS: int = int(os.getenv("LORA_EPOCHS", "2"))
+# Autonomous self-play: practice self-generated goals during the work window (hands-off).
+SELFPLAY_ENABLED: bool = _envBool("SELFPLAY_ENABLED", True)
+SELFPLAY_MAX_PER_DAY: int = int(os.getenv("SELFPLAY_MAX_PER_DAY", "3"))
+SELFPLAY_HOURS: float = float(os.getenv("SELFPLAY_HOURS", "1"))
+SELFPLAY_START_HOUR: int = int(os.getenv("SELFPLAY_START_HOUR", "9"))
+SELFPLAY_END_HOUR: int = int(os.getenv("SELFPLAY_END_HOUR", "17"))
+# Auto-bootstrap the training stack + Ollama models (so the user only presses start).
+SIE_BOOTSTRAP: bool = _envBool("SIE_BOOTSTRAP", True)
+# Run supervision (the 9->5 promise): auto-resume a crashed run this many times before
+# giving up, with exponential backoff capped here. Keeps a long run alive unattended.
+RUN_MAX_RESTARTS: int = int(os.getenv("RUN_MAX_RESTARTS", "5"))
+RUN_RESTART_MAX_BACKOFF: float = float(os.getenv("RUN_RESTART_MAX_BACKOFF", "60"))
+RUN_STALL_SECONDS: float = float(os.getenv("RUN_STALL_SECONDS", "1800"))  # 30m no-progress
+
+# Rich cross-surface automation: which non-terminal surfaces the executor can reach.
+# MCP servers it should compose across (comma-separated env), plus browser/native layers.
+MCP_SERVERS: tuple[str, ...] = tuple(
+    s.strip() for s in os.getenv(
+        "MCP_SERVERS", "github,gmail,google_calendar,google_drive,canva").split(",") if s.strip())
+BROWSER_LAYER_ENABLED: bool = _envBool("BROWSER_LAYER_ENABLED", False)   # L1 (CDP)
+NATIVE_LAYER_ENABLED: bool = _envBool("NATIVE_LAYER_ENABLED", False)     # L2 (UIA)
+# Meta-optimization may auto-apply tuning to these knobs (persisted across restarts).
+SIE_META_AUTOAPPLY: bool = _envBool("SIE_META_AUTOAPPLY", True)
+SIE_TUNABLE_KNOBS: tuple[str, ...] = (
+    "MAX_SUBTASK_ATTEMPTS", "RETRIEVAL_K", "ADVERSARY_HEARTBEAT_EVERY",
+    "PROMPT_PROMOTE_MIN_USES", "CONFIDENCE_DEFER_THRESHOLD",
+)
+SIE_OVERRIDES_PATH: Path = PROJECT_ROOT / "state" / "sie_overrides.json"
+
+
+def set_override(knob: str, value) -> bool:
+    """Persist + live-apply a meta-optimizer knob change (whitelisted knobs only)."""
+    if knob not in SIE_TUNABLE_KNOBS:
+        return False
+    import json as _json
+    globals()[knob] = value
+    try:
+        data = {}
+        if SIE_OVERRIDES_PATH.exists():
+            data = _json.loads(SIE_OVERRIDES_PATH.read_text(encoding="utf-8"))
+        data[knob] = value
+        SIE_OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SIE_OVERRIDES_PATH.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _load_overrides() -> None:
+    """Apply persisted meta-optimizer knob overrides at import (survives restarts)."""
+    try:
+        import json as _json
+        data = _json.loads(SIE_OVERRIDES_PATH.read_text(encoding="utf-8"))
+        for k, v in data.items():
+            if k in SIE_TUNABLE_KNOBS:
+                globals()[k] = v
+    except Exception:  # noqa: BLE001 -- absent/corrupt -> stock defaults
+        pass
+
+
+_load_overrides()
+
 # --- Adversary trigger configuration -------------------------------------
 ADVERSARY_TRIGGER_PHRASES: tuple[str, ...] = (
     "i'm not sure",
@@ -101,6 +289,11 @@ ADVERSARY_TRIGGER_PHRASES: tuple[str, ...] = (
     "ambiguous",
 )
 ADVERSARY_HEARTBEAT_EVERY: int = 3   # every 3rd subtask -> heartbeat review
+# Adversary "teeth": a 'challenged' verdict on a PASSED subtask triggers ONE bounded
+# remediation attempt (concerns injected; never downgrades the passing result), and a
+# 'challenged' pre-PR review HOLDS PR creation. Both default on; set False to keep advisory.
+ADVERSARY_REMEDIATION_ENABLED: bool = os.getenv("ADVERSARY_REMEDIATION", "1") != "0"
+ADVERSARY_PR_HOLD_ENABLED: bool = os.getenv("ADVERSARY_PR_HOLD", "1") != "0"
 MAX_SUBTASK_ATTEMPTS: int = 3        # max executor attempts per subtask (verify-retry)
 MAX_SUBTASKS: int = 8                # hard cap on plan size (anti-runaway / anti-livelock)
 
@@ -129,6 +322,19 @@ AVAILABLE_SKILLS: tuple[str, ...] = ("/architect-review", "/write-obsidian-note"
 AVAILABLE_SUBAGENTS: tuple[str, ...] = ("architect", "security-reviewer")
 AVAILABLE_PRE_HOOKS: tuple[str, ...] = ("block_destructive", "log_all")
 AVAILABLE_POST_HOOKS: tuple[str, ...] = ("write_obsidian", "discord_notify", "log_all")
+
+# --- Executor playbook (role-scoped expertise handed to the HANDS) --------
+# Deterministically inject a role-scoped briefing into every subtask-execution run via the
+# living CLAUDE.md (always-read) and --append-system-prompt (system-level, unforgettable),
+# so the executor's expertise never depends on what the 7B brain remembered to include.
+EXECUTOR_PLAYBOOK_ENABLED: bool = _envBool("EXECUTOR_PLAYBOOK_ENABLED", True)
+EXECUTOR_APPEND_SYSTEM_PROMPT: bool = _envBool("EXECUTOR_APPEND_SYSTEM_PROMPT", True)
+# Parse the structured --output-format json envelope (is_error/session_id/usage/cost) -- the
+# trustworthy success signal (headless claude exits nonzero for benign reasons) + unblocks resume.
+EXECUTOR_OUTPUT_JSON: bool = _envBool("EXECUTOR_OUTPUT_JSON", True)
+# Resume the SAME Claude session across a subtask's retries (--resume <session_id>) so attempt 2/3
+# fixes the failing assertion instead of re-exploring the repo from scratch.
+EXECUTOR_RESUME_RETRIES: bool = _envBool("EXECUTOR_RESUME_RETRIES", True)
 
 # --- Self-referential safety (9to5 modifying itself) ----------------------
 # When a task targets 9to5 itself: run on a dedicated git branch, inject the
@@ -176,6 +382,11 @@ EFFORT_FLAG_MAP: dict[str, str] = {
 EFFORT_BARS: dict[str, str] = {
     "low": "▰▱▱▱▱", "default": "▰▰▱▱▱", "medium": "▰▰▱▱▱",
     "high": "▰▰▰▱▱", "xhigh": "▰▰▰▰▱", "ultracode": "▰▰▰▰▰",
+}
+# Human display labels (single home; discord_bot.effortBar reads these — no private copy).
+EFFORT_LABELS: dict[str, str] = {
+    "low": "Low", "default": "Standard", "medium": "Standard",
+    "high": "High", "xhigh": "Very High", "ultracode": "Max",
 }
 
 # --- Discord status palette (embed sidebar color by phase/status) ----------

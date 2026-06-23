@@ -1,0 +1,189 @@
+"""Pure, discord-free command layer -- the single source of truth for the '!' grammar,
+authorization, and active-run policy. Consumed by command_bot (gateway), orchestrator
+(in-run poller), work_launcher (/work), and dashboard (footer help). No network, no
+discord.py import -> fully unit-testable.
+"""
+from __future__ import annotations
+
+import re
+from datetime import datetime
+from typing import NamedTuple, Optional
+
+import config
+from control import ControlBus
+from notifications import discord_bot as discord
+from state.task import TaskState
+
+LOG = config.getLogger("commands")
+
+_SKIP_ID_RE = re.compile(r"^st-\d{3}$")
+NO_TASK = "No 9TO5 task on record yet."
+
+# Canonical command list. 'arg': none|required|optional. 'mutating' gates owner-only intent.
+COMMAND_REGISTRY: dict[str, dict] = {
+    "status":  {"arg": "none",     "mutating": False, "help": "current phase, subtask X/Y, elapsed/ETA"},
+    "plan":    {"arg": "none",     "mutating": False, "help": "full subtask list with statuses"},
+    "log":     {"arg": "none",     "mutating": False, "help": "Obsidian index + web dashboard URL"},
+    "help":    {"arg": "none",     "mutating": False, "help": "show this command list"},
+    "abort":   {"arg": "none",     "mutating": True,  "help": "graceful stop after the current step"},
+    "pause":   {"arg": "none",     "mutating": True,  "help": "hold the run"},
+    "resume":  {"arg": "none",     "mutating": True,  "help": "continue a paused run"},
+    "approve": {"arg": "none",     "mutating": True,  "help": "approve the pending gate"},
+    "reject":  {"arg": "none",     "mutating": True,  "help": "reject the pending gate"},
+    "skip":    {"arg": "required", "mutating": True,  "help": "skip a pending subtask: !skip st-00N"},
+    "add":     {"arg": "required", "mutating": True,  "help": "queue a new subtask: !add <title>"},
+    "retry":   {"arg": "none",     "mutating": True,  "help": "re-run the current subtask"},
+}
+
+
+class Command(NamedTuple):
+    name: str
+    arg: str
+
+
+def parseCommand(content: str) -> Optional[Command]:
+    """Exact-token parse of a '!' command. None for non-'!' or unknown names."""
+    s = (content or "").strip()
+    if not s.startswith("!"):
+        return None
+    parts = s[1:].split(maxsplit=1)
+    if not parts:
+        return None
+    name = parts[0].lower()
+    if name not in COMMAND_REGISTRY:
+        return None
+    arg = parts[1].strip() if len(parts) > 1 else ""
+    return Command(name, arg)
+
+
+def isAuthorized(user_id: Optional[object]) -> bool:
+    """True if no owner configured (dev), else only the configured owner. Empty-string safe."""
+    raw = (config.DISCORD_HUMAN_USER_ID or "").strip()
+    if not raw or not raw.isdigit():
+        return True
+    try:
+        return user_id is not None and int(user_id) == int(raw)
+    except (TypeError, ValueError):
+        return False
+
+
+def decide(author_id: Optional[object], is_bot: bool, content: str) -> Optional[Command]:
+    """Shared gate for BOTH the gateway and the in-run poller: returns the command to
+    apply only if the author is a non-bot AND authorized. Pure -> directly testable."""
+    if is_bot:
+        return None
+    if not isAuthorized(author_id):
+        return None
+    return parseCommand(content)
+
+
+# ---- task resolution / active-run policy (one definition reused everywhere) ----
+def resolveTargetTask() -> Optional[TaskState]:
+    return TaskState.loadLatest()
+
+
+def isRunActive(state: Optional[TaskState]) -> bool:
+    """A run is 'active' iff its status is not terminal. Derived from TaskState._TERMINAL
+    so it can never drift from the terminal set."""
+    if state is None:
+        return False
+    return state.meta.get("status") not in TaskState._TERMINAL
+
+
+def footerHelp() -> str:
+    """Short, never-stale command hint derived from the registry (used by the dashboard)."""
+    return " ".join(f"!{n}" for n in ("status", "abort", "pause", "help"))
+
+
+def _fmtDelta(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}h{m:02d}m{s:02d}s"
+
+
+def _statusText(bus: ControlBus, state: TaskState) -> str:
+    done, total = state.progress()
+    try:
+        started = datetime.fromisoformat(state.meta["started_at"])
+        deadline = datetime.fromisoformat(state.meta["deadline_at"])
+        now = datetime.now().astimezone()
+        elapsed = _fmtDelta((now - started).total_seconds())
+        eta = _fmtDelta((deadline - now).total_seconds())
+    except Exception:  # noqa: BLE001
+        elapsed = eta = "-"
+    cur = next((s for s in state.subtasks if s["status"] == "in_progress"), None) or state.nextActionable()
+    cur_txt = f"`{cur['subtask_id']}` {cur['title']}" if cur else "—"
+    gate = bus.getPendingGate()
+    gate_txt = f"\n⏳ awaiting gate **{gate}** — `!approve` / `!reject`" if gate else ""
+    return (f"**`{state.meta['status']}`** · {discord.progressBar(done, total)} · "
+            f"mode `{state.meta.get('control_mode', 'watch')}`\n"
+            f"Current: {cur_txt}\n📁 `{state.meta.get('work_dir') or '—'}`\n"
+            f"Elapsed {elapsed} · ETA {eta}{gate_txt}")
+
+
+def _planText(state: TaskState) -> str:
+    lines = [f"{s['subtask_id']} [{s['status']}] {s['title']}" for s in state.subtasks]
+    body = ("\n".join(lines) or "(no subtasks)")[:1800]
+    return f"{discord.subtaskTracker(state.subtasks)}\n```\n{body}\n```"
+
+
+def _helpText() -> str:
+    rows = [f"`!{n}` — {m['help']}" for n, m in COMMAND_REGISTRY.items()]
+    return "**9TO5 commands**\n" + "\n".join(rows)
+
+
+def applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str:
+    """Perform the bus mutation and return human markdown text ('' for silent control ops)."""
+    if state is None:
+        return NO_TASK
+    n = cmd.name
+    # SIE subsystem J: capture the human's decision as an implicit-feedback label
+    # (best-effort, never affects control flow).
+    if n in ("approve", "reject", "skip", "abort", "retry", "add"):
+        try:
+            from learning import human_feedback
+            human_feedback.record(n, run_id=state.task_id,
+                                  subtask_id=getattr(cmd, "arg", None) or None)
+        except Exception:  # noqa: BLE001
+            pass
+    if n == "status":
+        return _statusText(bus, state)
+    if n == "plan":
+        return _planText(state)
+    if n == "log":
+        return (f"Index: `{state.indexNoteRel()}`\n"
+                f"Vault: `{state.data['obsidian']['vault_root']}`\n"
+                f"Web: http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/")
+    if n == "help":
+        return _helpText()
+    if n == "abort":
+        bus.requestAbort()
+        return "🛑 Abort requested — run stops after the current step."
+    if n == "pause":
+        bus.requestPause()
+        return "⏸ Paused."
+    if n == "resume":
+        bus.clearPause()
+        return "▶ Resumed."
+    if n in ("approve", "reject"):
+        gate = bus.getPendingGate()
+        if not gate:
+            return "No gate is currently pending."
+        verdict = "approve" if n == "approve" else "reject"
+        bus.decide(gate, verdict)
+        return f"Gate **{gate}** → {'approved' if n == 'approve' else 'rejected'}."
+    if n == "skip":
+        if not _SKIP_ID_RE.match(cmd.arg):
+            return "usage: `!skip st-00N` (e.g. `!skip st-003`)"
+        bus.pushOp({"op": "skip", "subtask_id": cmd.arg})
+        return f"⏭️ Queued skip of `{cmd.arg}`."
+    if n == "add":
+        if not cmd.arg:
+            return "usage: `!add <title>`"
+        bus.pushOp({"op": "add", "title": cmd.arg, "description": cmd.arg})
+        return f"➕ Queued new subtask: {cmd.arg}"
+    if n == "retry":
+        bus.pushOp({"op": "retry"})
+        return "🔁 Queued retry of the current subtask."
+    return _helpText()

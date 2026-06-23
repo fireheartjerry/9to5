@@ -10,6 +10,9 @@ so notes are never lost.
 """
 from __future__ import annotations
 
+import atexit
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -22,17 +25,55 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 LOG = config.getLogger("obsidian")
 
-_APPEND_LOCK = __import__("threading").Lock()  # serialize appendNote read-modify-write
+_APPEND_LOCK = threading.Lock()  # serialize appendNote read-modify-write
+
+# Background pool for REST syncs to Obsidian -- the disk write is the source of truth and
+# happens synchronously; the (slow, 10s-timeout) REST PUT runs off the hot path so a slow
+# or unavailable vault never blocks the run loop. Flushed at process exit.
+_REST_POOL: Optional[ThreadPoolExecutor] = None
+_REST_LOCK = threading.Lock()
+
+
+def _restPool() -> ThreadPoolExecutor:
+    global _REST_POOL
+    with _REST_LOCK:
+        if _REST_POOL is None:
+            _REST_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="obsidian-rest")
+            atexit.register(lambda: _REST_POOL and _REST_POOL.shutdown(wait=True))
+    return _REST_POOL
+
+
+def _restPut(base_url: str, headers: dict, rel_path: str, content: str) -> None:
+    """Best-effort REST sync to Obsidian (runs in the background pool)."""
+    try:
+        r = requests.put(f"{base_url}/vault/{rel_path}", data=content.encode("utf-8"),
+                         headers={**headers, "Content-Type": "text/markdown"},
+                         verify=False, timeout=10)
+        if not (200 <= r.status_code < 300):
+            LOG.debug("REST PUT %s -> %s (disk copy already written)", rel_path, r.status_code)
+    except Exception as e:  # noqa: BLE001 -- disk already has it; REST is a bonus
+        LOG.debug("REST PUT %s failed (%s); disk copy already written", rel_path, e)
+
+
+def flushRest(timeout: Optional[float] = None) -> None:
+    """Wait for queued REST syncs to drain (used on shutdown / before resume reads)."""
+    global _REST_POOL
+    with _REST_LOCK:
+        pool, _REST_POOL = _REST_POOL, None
+    if pool is not None:
+        pool.shutdown(wait=True)
 
 
 def writeClaudioMd(task_state, subtask: Optional[dict], additional_context: str = "",
-                   work_dir: Optional[str] = None) -> Path:
+                   work_dir: Optional[str] = None, executor_playbook: str = "") -> Path:
     """Write a fresh per-subtask CLAUDE.md to the working directory.
 
     Claude Code auto-reads CLAUDE.md at session start, so this is how the
     Orchestrator hands full, just-in-time context to the Executor instead of
     stuffing it all into the prompt string. ``additional_context`` is the
-    ``claude_md_inject`` field from the Ollama invocation spec.
+    ``claude_md_inject`` field from the Ollama invocation spec; ``executor_playbook``
+    is the deterministic role-scoped briefing (from ``agents/playbook.py``) -- it is
+    injected on EVERY attempt so the executor's expertise is never forgotten.
     """
     work_dir_path = Path(work_dir) if work_dir else config.PROJECT_ROOT
     work_dir_path.mkdir(parents=True, exist_ok=True)
@@ -61,6 +102,8 @@ def writeClaudioMd(task_state, subtask: Optional[dict], additional_context: str 
                 f"`{verify['cmd']}`  (expect: {verify.get('expect', 'exit_zero')})",
                 "",
             ]
+    if executor_playbook:
+        parts += [executor_playbook.strip(), ""]
     if additional_context:
         parts += ["## Orchestrator-injected context", additional_context.strip(), ""]
     parts += [
@@ -95,24 +138,40 @@ class ObsidianClient:
 
     # ---- public API -----------------------------------------------------
     def writeNote(self, rel_path: str, content: str) -> dict:
-        """Write ``content`` to ``rel_path`` via REST, falling back to disk."""
-        url = f"{self.base_url}/vault/{rel_path}"
+        """Persist ``content`` to ``rel_path``: disk first (fast + durable + readable, the
+        source of truth), then sync to Obsidian via REST in the BACKGROUND so the slow
+        10s-timeout PUT never blocks the run. Set ``OBSIDIAN_ASYNC=false`` for the old
+        synchronous REST-first behavior."""
+        if not getattr(config, "OBSIDIAN_ASYNC", True):
+            return self._writeNoteSync(rel_path, content)
+        try:
+            disk = self._writeDisk(rel_path, content)
+            result = {"ok": True, "via": "disk", "rel_path": rel_path, "disk_path": str(disk)}
+        except Exception as e:  # noqa: BLE001 -- never raise into the run (documented contract)
+            LOG.error("writeNote disk write failed for %s: %s", rel_path, e)
+            result = {"ok": False, "via": "none", "rel_path": rel_path, "error": str(e)}
+        try:
+            _restPool().submit(_restPut, self.base_url, dict(self.headers), rel_path, content)
+        except Exception:  # noqa: BLE001 -- background sync is a bonus, never load-bearing
+            pass
+        return result
+
+    def _writeNoteSync(self, rel_path: str, content: str) -> dict:
+        """Legacy synchronous REST-first write (disk fallback)."""
         try:
             r = requests.put(
-                url,
-                data=content.encode("utf-8"),
-                headers={**self.headers, "Content-Type": "text/markdown"},
-                verify=False,
-                timeout=10,
-            )
+                f"{self.base_url}/vault/{rel_path}", data=content.encode("utf-8"),
+                headers={**self.headers, "Content-Type": "text/markdown"}, verify=False, timeout=10)
             if 200 <= r.status_code < 300:
-                LOG.info("REST wrote %s (%s)", rel_path, r.status_code)
                 return {"ok": True, "via": "rest", "rel_path": rel_path, "status": r.status_code}
-            LOG.warning("REST PUT %s -> %s; falling back to disk", rel_path, r.status_code)
         except Exception as e:  # noqa: BLE001 -- any transport error => disk
             LOG.warning("REST PUT %s failed (%s); falling back to disk", rel_path, e)
-        disk = self._writeDisk(rel_path, content)
-        return {"ok": True, "via": "disk", "rel_path": rel_path, "disk_path": str(disk)}
+        try:
+            disk = self._writeDisk(rel_path, content)
+            return {"ok": True, "via": "disk", "rel_path": rel_path, "disk_path": str(disk)}
+        except Exception as e:  # noqa: BLE001
+            LOG.error("writeNote disk fallback failed for %s: %s", rel_path, e)
+            return {"ok": False, "via": "none", "rel_path": rel_path, "error": str(e)}
 
     def readNote(self, rel_path: str) -> Optional[str]:
         url = f"{self.base_url}/vault/{rel_path}"

@@ -1,0 +1,124 @@
+"""Preflight doctor -- tells the user (in one command) exactly what 'start' needs.
+
+The 9->5 promise is "send one sentence." This checks every prerequisite for an unattended
+run and reports what's ready, what's missing, and the one-line fix -- and what each gap
+costs (hard blocker vs degraded feature). Run via ``python main.py --doctor`` or
+automatically (warn-only) at startup. Best-effort + read-only; never raises.
+"""
+from __future__ import annotations
+
+import shutil
+import subprocess
+from typing import Any
+
+import config
+
+LOG = config.getLogger("doctor")
+
+
+def _check(name: str, ok: bool, *, hard: bool, detail: str = "", fix: str = "") -> dict[str, Any]:
+    return {"name": name, "ok": ok, "hard": hard, "detail": detail, "fix": fix}
+
+
+def check_ollama() -> dict[str, Any]:
+    """The local brain -- a HARD requirement (planning/spec authoring need it)."""
+    try:
+        import ollama
+        client = ollama.Client(host=config.OLLAMA_HOST, timeout=5)
+        models = client.list().get("models", [])
+        names = {(m.get("model") or m.get("name") or "").split(":")[0] for m in models}
+        want = config.OLLAMA_MODEL.split(":")[0]
+        if want in names:
+            return _check("Ollama brain", True, hard=True, detail=f"{config.OLLAMA_MODEL} ready")
+        return _check("Ollama brain", False, hard=True,
+                      detail=f"running, but {config.OLLAMA_MODEL} not pulled",
+                      fix=f"ollama pull {config.OLLAMA_MODEL}")
+    except Exception as e:  # noqa: BLE001
+        return _check("Ollama brain", False, hard=True, detail=f"not reachable at {config.OLLAMA_HOST} ({e})",
+                      fix="start `ollama serve` (the system can also auto-bootstrap it)")
+
+
+def check_claude_cli() -> dict[str, Any]:
+    """The Claude Code hands -- a HARD requirement (executes every subtask)."""
+    path = shutil.which("claude")
+    if not path:
+        return _check("Claude Code CLI", False, hard=True, detail="`claude` not on PATH",
+                      fix="install Claude Code and run `claude` once to authenticate")
+    return _check("Claude Code CLI", True, hard=True, detail=path)
+
+
+def check_embedder() -> dict[str, Any]:
+    """Local embedder for retrieval (degraded feature: no retrieval until present)."""
+    try:
+        import ollama
+        names = {(m.get("model") or m.get("name") or "").split(":")[0]
+                 for m in ollama.Client(host=config.OLLAMA_HOST, timeout=5).list().get("models", [])}
+        ok = config.EMBED_MODEL.split(":")[0] in names
+        return _check("Embedder (retrieval)", ok, hard=False,
+                      detail=config.EMBED_MODEL if ok else "not pulled",
+                      fix="" if ok else f"ollama pull {config.EMBED_MODEL} (auto-bootstrapped)")
+    except Exception:  # noqa: BLE001
+        return _check("Embedder (retrieval)", False, hard=False, detail="ollama unreachable")
+
+
+def _git(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=str(config.PROJECT_ROOT),
+                          capture_output=True, text=True, timeout=15)
+
+
+def check_git() -> dict[str, Any]:
+    """Git repo -- needed for safe self-referential isolation + PR output (degraded)."""
+    if not shutil.which("git"):
+        return _check("Git", False, hard=False, detail="git not installed",
+                      fix="install git (self-ref runs lose branch isolation without it)")
+    try:
+        r = _git("rev-parse", "--is-inside-work-tree")
+        if r.returncode == 0 and "true" in (r.stdout or "").lower():
+            return _check("Git repo", True, hard=False, detail="project is a git repo")
+        return _check("Git repo", False, hard=False, detail="project is not a git repo",
+                      fix="git init (recommended for safe self-improvement)")
+    except Exception as e:  # noqa: BLE001
+        return _check("Git repo", False, hard=False, detail=str(e))
+
+
+def check_gh() -> dict[str, Any]:
+    """GitHub CLI -- needed only for auto-PR output (fully optional)."""
+    if not shutil.which("gh"):
+        return _check("GitHub CLI (PRs)", False, hard=False, detail="gh not installed",
+                      fix="install gh + `gh auth login` (run still completes without PRs)")
+    return _check("GitHub CLI (PRs)", True, hard=False, detail=shutil.which("gh"))
+
+
+def check_gpu() -> dict[str, Any]:
+    """GPU -- optional; enables local LoRA/DPO training of the brain."""
+    from learning import compute
+    info = compute.detect_gpu()
+    return _check("GPU (LoRA training)", info["available"], hard=False,
+                  detail=info.get("name") or "no CUDA GPU (training auto-skips)")
+
+
+def run() -> dict[str, Any]:
+    """Run every preflight check. Returns {checks, ready, blockers}."""
+    checks = [check_ollama(), check_claude_cli(), check_embedder(), check_git(),
+              check_gh(), check_gpu()]
+    blockers = [c for c in checks if c["hard"] and not c["ok"]]
+    return {"checks": checks, "ready": not blockers, "blockers": blockers}
+
+
+def render(report: dict[str, Any]) -> str:
+    lines = ["9TO5 preflight:"]
+    for c in report["checks"]:
+        mark = "✅" if c["ok"] else ("❌" if c["hard"] else "⚠️ ")
+        line = f"  {mark} {c['name']}: {c['detail']}"
+        if not c["ok"] and c["fix"]:
+            line += f"\n        → {c['fix']}"
+        lines.append(line)
+    if report["ready"]:
+        lines.append("\nReady — send one sentence and walk away.")
+    else:
+        lines.append(f"\nNOT ready — {len(report['blockers'])} hard blocker(s) above must be fixed.")
+    return "\n".join(lines)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    print(render(run()))
