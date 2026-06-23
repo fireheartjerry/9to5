@@ -327,6 +327,7 @@ class Orchestrator:
         self._replan = replan or replanner.replan
         self._review = review or adversary.review
         self._state_lock = threading.Lock()
+        self._poll_lock = threading.Lock()      # serialize Discord poll cursor across parallel workers (CB-7)
         self._selfref_prompt_cache: dict = {}   # task_id -> self-ref system-prompt prefix (built once)
         self._brain_tag_override: str | None = None   # force a model tag (adapter A/B eval)
         # SIE: register a per-adapter fitness evaluator so adapter promotion is autonomous.
@@ -782,17 +783,26 @@ class Orchestrator:
     # Control plane (poll Discord + drain ControlBus between steps)
     # ===================================================================
     def _translateDiscord(self, bus: ControlBus, state: TaskState) -> None:
-        msgs, latest = discord.fetchMessagesAfter(bus.getSeen())
-        if latest != bus.getSeen():
-            bus.setSeen(latest)
-        for m in msgs:
-            author_id = m.get("author_id") or None
-            cmd = commands.decide(int(author_id) if author_id else None,
-                                  m.get("author_is_bot", False), m.get("content", ""))
-            if cmd:
-                if commands.COMMAND_REGISTRY.get(cmd.name, {}).get("mutating"):
-                    audit.record(author_id, cmd.name, state.task_id, "discord-poll")
-                commands.applyCommand(bus, state, cmd)
+        # Serialize the getSeen->fetch->apply->setSeen sequence: with parallelism>1 several worker
+        # threads poll on the same cadence, and an unsynchronized cursor lets two threads fetch the
+        # SAME message batch and apply each command TWICE (e.g. a !add creating duplicate subtasks),
+        # while setSeen races backward and re-delivers (CB-7). The lock makes polling atomic.
+        if not self._poll_lock.acquire(blocking=False):
+            return   # another worker is already polling this tick; skip (it covers our messages)
+        try:
+            msgs, latest = discord.fetchMessagesAfter(bus.getSeen())
+            if latest != bus.getSeen():
+                bus.setSeen(latest)
+            for m in msgs:
+                author_id = m.get("author_id") or None
+                cmd = commands.decide(int(author_id) if author_id else None,
+                                      m.get("author_is_bot", False), m.get("content", ""))
+                if cmd:
+                    if commands.COMMAND_REGISTRY.get(cmd.name, {}).get("mutating"):
+                        audit.record(author_id, cmd.name, state.task_id, "discord-poll")
+                    commands.applyCommand(bus, state, cmd)
+        finally:
+            self._poll_lock.release()
 
     def _applyOps(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard) -> None:
         for op in bus.drainOps():
@@ -819,21 +829,33 @@ class Orchestrator:
                         state.updateSubtask(cur["subtask_id"], status="pending")
                         dashboard.event(f"retry {cur['subtask_id']}")
 
-    def _checkControl(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard,
-                      gate: str | None = None) -> None:
-        self._translateDiscord(bus, state)
-        self._applyOps(state, bus, dashboard)
-        pause_start = time.time() if bus.isPaused() else None
+    def _waitWhilePaused(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard,
+                         label: str = "paused") -> None:
+        """Block while the bus is paused, but ALWAYS escapable: returns on resume, on abort, on the
+        night-mode pause timeout, or once the work-horizon deadline passes. Shared by _checkControl
+        and the mid-subtask pause loop so a !pause can never wedge an unattended run forever (CB-1)."""
+        if not bus.isPaused():
+            return
+        pause_start = time.time()
         while bus.isPaused() and not bus.isAbort():
-            # Night mode: auto-resume after timeout so a stray !pause never blocks overnight.
-            if config.NIGHT_MODE and pause_start and (time.time() - pause_start) > config.NIGHT_MODE_PAUSE_TIMEOUT:
+            if config.NIGHT_MODE and (time.time() - pause_start) > config.NIGHT_MODE_PAUSE_TIMEOUT:
                 bus.clearPause()
                 dashboard.event(f"night mode: auto-resumed after {config.NIGHT_MODE_PAUSE_TIMEOUT}s pause timeout")
                 LOG.info("night mode: auto-resumed after pause timeout")
                 break
-            dashboard.update(state, "paused", "paused -- waiting for !resume")
+            if self._deadlinePassed(state):   # never park past the 5pm horizon
+                bus.clearPause()
+                LOG.warning("deadline reached while paused -- auto-resuming to finalize")
+                break
+            dashboard.update(state, "paused", f"{label} -- waiting for !resume")
             time.sleep(config.DISCORD_POLL_SECONDS)
             self._translateDiscord(bus, state)
+
+    def _checkControl(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard,
+                      gate: str | None = None) -> None:
+        self._translateDiscord(bus, state)
+        self._applyOps(state, bus, dashboard)
+        self._waitWhilePaused(state, bus, dashboard)
         if bus.isAbort():
             raise AbortRun("abort requested")
         if gate and state.meta.get("control_mode") == "gated":
@@ -854,6 +876,12 @@ class Orchestrator:
                 if decision == "reject":
                     bus.setPendingGate(None)
                     raise AbortRun(f"gate '{gate}' rejected")
+                # CB-6: never park a gate past the horizon. In night mode the safe default for a
+                # pre-PR gate is to NOT auto-ship; either way finalize the run instead of hanging.
+                if self._deadlinePassed(state):
+                    bus.setPendingGate(None)
+                    LOG.warning("gate '%s' timed out at deadline -- aborting to finalize", gate)
+                    raise AbortRun(f"gate '{gate}' timed out at deadline")
                 time.sleep(config.DISCORD_POLL_SECONDS)
             bus.setPendingGate(None)
 
@@ -1004,25 +1032,42 @@ class Orchestrator:
     # Phase 4 -- PR creation (best effort; skips gracefully)
     # ===================================================================
     def createPullRequest(self, state: TaskState, work_dir: str) -> dict:
-        def git(*args: str) -> subprocess.CompletedProcess:
-            return subprocess.run(["git", *args], cwd=work_dir, capture_output=True, text=True)
+        # Hard timeout + DEVNULL stdin + GIT_TERMINAL_PROMPT=0 so a credential/auth/network prompt
+        # at the very end can NEVER hang the run forever (work is already committed locally) -- the
+        # run must always reach finalization (CB-14). A timeout degrades to a clean "skipped".
+        env = os.environ.copy()
+        env["GIT_TERMINAL_PROMPT"] = "0"   # git never blocks on a credential prompt
 
-        chk = git("rev-parse", "--is-inside-work-tree")
-        if chk.returncode != 0 or "true" not in (chk.stdout or "").lower():
-            LOG.info("PR skipped: %s is not a git repository", work_dir)
-            return {"skipped": True, "reason": "not a git repository"}
-        branch = f"9to5/{state.task_id[:8]}"
-        git("checkout", "-B", branch)
-        git("add", "-A")
-        git("commit", "-m", f"9TO5: {state.meta['goal_raw'][:60]}")
-        push = git("push", "-u", "origin", branch)
-        if push.returncode != 0:
-            return {"skipped": True, "reason": f"git push failed: {(push.stderr or '')[:200]}"}
-        pr = subprocess.run(["gh", "pr", "create", "--fill", "--head", branch],
-                            cwd=work_dir, capture_output=True, text=True)
-        if pr.returncode != 0:
-            return {"skipped": True, "reason": f"gh pr create failed: {(pr.stderr or '')[:200]}"}
-        return {"ok": True, "url": (pr.stdout or "").strip()}
+        def _runp(cmd: list[str]) -> subprocess.CompletedProcess:
+            return subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True,
+                                  stdin=subprocess.DEVNULL, env=env,
+                                  timeout=config.GIT_TIMEOUT_SECONDS)
+
+        def git(*args: str) -> subprocess.CompletedProcess:
+            return _runp(["git", *args])
+
+        try:
+            chk = git("rev-parse", "--is-inside-work-tree")
+            if chk.returncode != 0 or "true" not in (chk.stdout or "").lower():
+                LOG.info("PR skipped: %s is not a git repository", work_dir)
+                return {"skipped": True, "reason": "not a git repository"}
+            branch = f"9to5/{state.task_id[:8]}"
+            git("checkout", "-B", branch)
+            git("add", "-A")
+            git("commit", "-m", f"9TO5: {state.meta['goal_raw'][:60]}")
+            push = git("push", "-u", "origin", branch)
+            if push.returncode != 0:
+                return {"skipped": True, "reason": f"git push failed: {(push.stderr or '')[:200]}"}
+            pr = _runp(["gh", "pr", "create", "--fill", "--head", branch])
+            if pr.returncode != 0:
+                return {"skipped": True, "reason": f"gh pr create failed: {(pr.stderr or '')[:200]}"}
+            return {"ok": True, "url": (pr.stdout or "").strip()}
+        except subprocess.TimeoutExpired as e:
+            LOG.error("PR creation timed out (%ss) on %s -- finalizing without a PR", config.GIT_TIMEOUT_SECONDS, e.cmd)
+            return {"skipped": True, "reason": f"git/gh timed out after {config.GIT_TIMEOUT_SECONDS}s"}
+        except Exception as e:  # noqa: BLE001 -- PR is best-effort; never block finalization
+            LOG.warning("PR creation failed (%s) -- finalizing without a PR", e)
+            return {"skipped": True, "reason": f"PR error: {e}"[:200]}
 
     # ===================================================================
     # Phase 3 -- execution (per-subtask unit + serial / parallel loops)
@@ -1062,8 +1107,11 @@ class Orchestrator:
                              effort=spec.get("effort_level"))
             attempt_started = time.time()
             hands = self._selectExecutor(spec)   # route to the right surface (terminal | browser)
+            # cancel_check lets a long in-hands wait (the session-token-limit pause) break early on
+            # an abort or the work-horizon deadline instead of wedging the run for hours (CB-9).
             result = hands(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
-                           resume_session=resume_session)
+                           resume_session=resume_session,
+                           cancel_check=lambda: bus.isAbort() or self._deadlinePassed(state))
             if not isinstance(result, dict):   # a hands layer that returns junk must fail cleanly, not crash
                 result = {"ok": False, "returncode": -1, "stdout": "",
                           "stderr": f"executor returned non-dict result: {type(result).__name__}"}
@@ -1115,10 +1163,10 @@ class Orchestrator:
                     )
                     resume_session = None   # approach is changing -> start the next attempt fresh
             self._translateDiscord(bus, state)
-            while bus.isPaused() and not bus.isAbort():   # honor !pause mid-subtask, not just between
-                dashboard.update(state, "paused", f"{sid} paused -- waiting for !resume")
-                time.sleep(config.DISCORD_POLL_SECONDS)
-                self._translateDiscord(bus, state)
+            # honor !pause mid-subtask via the SHARED escapable wait (abort / night-mode timeout /
+            # deadline) -- the inline loop here previously ignored all three and could wedge an
+            # unattended night run forever (CB-1).
+            self._waitWhilePaused(state, bus, dashboard, label=f"{sid} paused")
             if bus.isAbort():
                 raise AbortRun("abort requested")
             if (state.getSubtask(sid) or {}).get("status") == "removed":
@@ -1408,8 +1456,15 @@ class Orchestrator:
                         with self._state_lock:
                             state.updateSubtask(st["subtask_id"], status="failed", completed_at=nowIso())
                             state.addNotification("subtask_crashed", f"{st.get('subtask_id')}: {e}")
-                if abort is not None:
-                    raise abort
+            # This batch's worker threads have exited; their thread-local SQLite connections are now
+            # dead weight pinned in the experience pool's global registry. Close them so connections
+            # (and WAL/SHM handles) don't accumulate unboundedly across hundreds of batches (CB-3).
+            try:
+                experience.close_pool()
+            except Exception:  # noqa: BLE001 -- best-effort cleanup, never affects the run
+                pass
+            if abort is not None:
+                raise abort
 
     def _readySet(self, state: TaskState) -> list[dict]:
         out = []
@@ -1703,6 +1758,12 @@ class Orchestrator:
             if config.SIE_AUTO_MAINTENANCE:
                 try:
                     from learning import sie
-                    sie.run_maintenance_async(reason="post-run")
+                    _mt = sie.run_maintenance_async(reason="post-run")
+                    # Join with a bounded timeout so the pass DURABLY finishes (writes last_full_at)
+                    # before the process exits; a bare daemon would be killed mid-write at shutdown,
+                    # leaving the throttle stuck so the next run re-runs the full pass forever (CB-11).
+                    # When not due it returns ~instantly, so this adds no latency on most runs.
+                    if _mt is not None:
+                        _mt.join(timeout=config.SIE_MAINTENANCE_JOIN_SECONDS)
                 except Exception:  # noqa: BLE001 -- learning is best-effort, never blocks
                     LOG.debug("sie maintenance dispatch failed (ignored)", exc_info=True)

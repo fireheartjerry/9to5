@@ -68,6 +68,9 @@ CLAUDE_DOC_FETCH: bool = _envBool("CLAUDE_DOC_FETCH", True)
 CLAUDE_DOC_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_DOC_TIMEOUT_SECONDS", "8"))
 # Parallel doc fetch (the 27-page scrape goes from ~10s sequential to ~2s).
 CLAUDE_DOC_FETCH_WORKERS: int = int(os.getenv("CLAUDE_DOC_FETCH_WORKERS", "10"))
+# Hard TOTAL budget for the whole doc scrape at run start. The per-socket timeout does not bound a
+# slow-trickle server, which could hang run start forever; this caps the entire fetch (CB-10).
+CLAUDE_DOC_FETCH_BUDGET_SECONDS: float = float(os.getenv("CLAUDE_DOC_FETCH_BUDGET_SECONDS", "30"))
 # Freshness guard: if claude_code.md is younger than this, a (non-forced) refresh skips the
 # web re-scrape and just recompresses the cached doc -- so frequent restarts stay instant.
 CLAUDE_KNOWLEDGE_MAX_AGE_HOURS: float = float(os.getenv("CLAUDE_KNOWLEDGE_MAX_AGE_HOURS", "6"))
@@ -188,6 +191,10 @@ PROMPT_PROMOTE_Z: float = float(os.getenv("PROMPT_PROMOTE_Z", "1.64"))
 # the user only ever starts/aborts/checks. (The test package disables this to stay fast;
 # the runner itself is still exercised directly.)
 SIE_AUTO_MAINTENANCE: bool = _envBool("SIE_AUTO_MAINTENANCE", True)
+# Bound how long run teardown waits for the post-run maintenance thread to finish. A daemon
+# thread would otherwise be killed mid-write at interpreter exit, so the throttle never advances
+# and the learning layer silently never progresses (CB-11). Joining makes it durable.
+SIE_MAINTENANCE_JOIN_SECONDS: float = float(os.getenv("SIE_MAINTENANCE_JOIN_SECONDS", "180"))
 # Global kill switch: revert the brain to the frozen base model + freeze all promotions.
 SIE_KILL_SWITCH: bool = _envBool("SIE_KILL_SWITCH", False)
 # The frozen base model tag; champion adapters are served under BRAIN_MODEL_TAG:vN.
@@ -227,7 +234,9 @@ SIE_BOOTSTRAP: bool = _envBool("SIE_BOOTSTRAP", True)
 # Run supervision (the 9->5 promise): auto-resume a crashed run this many times before
 # giving up, with exponential backoff capped here. Keeps a long run alive unattended.
 RUN_MAX_RESTARTS: int = int(os.getenv("RUN_MAX_RESTARTS", "5"))
-RUN_RESTART_MAX_BACKOFF: float = float(os.getenv("RUN_RESTART_MAX_BACKOFF", "60"))
+# Backoff cap raised so a deterministic no-progress crash retries SLOWLY (minutes apart) across the
+# horizon instead of burning the whole budget in ~2 min of hot-spinning (CB-13).
+RUN_RESTART_MAX_BACKOFF: float = float(os.getenv("RUN_RESTART_MAX_BACKOFF", "300"))
 RUN_STALL_SECONDS: float = float(os.getenv("RUN_STALL_SECONDS", "1800"))  # 30m no-progress
 
 # Rich cross-surface automation: which non-terminal surfaces the executor can reach.
@@ -335,6 +344,11 @@ MODEL_BY_EFFORT: dict[str, str] = {
 }
 # Session token limit (Claude Pro 5-hour window). When hit, pause until reset.
 SESSION_LIMIT_PAUSE_SECONDS: int = int(os.getenv("SESSION_LIMIT_PAUSE_SECONDS", str(5 * 3600)))
+# Max times to wait-out-and-retry a still-rate-limited subtask before giving up (CB-4).
+SESSION_LIMIT_MAX_RETRIES: int = int(os.getenv("SESSION_LIMIT_MAX_RETRIES", "3"))
+# Hard timeout for git/gh subprocesses in PR creation so a credential/network prompt can't hang
+# the end of a run forever (CB-14).
+GIT_TIMEOUT_SECONDS: int = int(os.getenv("GIT_TIMEOUT_SECONDS", "120"))
 # Skills + subagents the Orchestrator (Ollama) is allowed to reference in a spec.
 AVAILABLE_SKILLS: tuple[str, ...] = ("/architect-review", "/write-obsidian-note", "/create-pr")
 AVAILABLE_SUBAGENTS: tuple[str, ...] = ("architect", "security-reviewer")

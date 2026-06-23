@@ -87,6 +87,8 @@ def run_with_recovery(run_fn: Callable[[TaskState], dict], state: TaskState, *,
     max_restarts = config.RUN_MAX_RESTARTS if max_restarts is None else max_restarts
     reload_state = reload_state or TaskState.load
     attempt = 0
+    no_progress_streak = 0
+    prev_progress = last_progress_at(state)
     last_summary: dict[str, Any] = {"task_id": state.task_id, "status": "unknown"}
 
     while True:
@@ -108,14 +110,26 @@ def run_with_recovery(run_fn: Callable[[TaskState], dict], state: TaskState, *,
             _finalize_partial(state)
             return {"task_id": state.task_id, "status": state.meta.get("status", "partial"),
                     "reason": "deadline"}
+
         attempt += 1
-        if attempt > max_restarts:
-            LOG.error("exhausted %d restarts; leaving task blocked", max_restarts)
-            _finalize_partial(state, status="blocked", reason="restart budget exhausted")
+        # PROGRESS-AWARE, HORIZON-SCALED budget (CB-13): a restart that completed new subtasks resets
+        # the streak, so a run that keeps making headway is NEVER abandoned before the deadline -- only
+        # a run that crashes WITHOUT progress repeatedly (a deterministic crash) burns the budget. The
+        # budget also scales with the time left (~1 retry / 15 min) so an early crash doesn't strand an
+        # 8h run dead at 09:02; backoff grows up to RUN_RESTART_MAX_BACKOFF so we never hot-spin.
+        cur_progress = last_progress_at(state)
+        no_progress_streak = 0 if cur_progress != prev_progress else no_progress_streak + 1
+        prev_progress = cur_progress
+        rem = remaining_seconds(state) or 0
+        budget = max(max_restarts, int(rem // 900))
+        if no_progress_streak > budget:
+            LOG.error("exhausted %d no-progress restarts (budget %d); leaving task blocked",
+                      no_progress_streak, budget)
+            _finalize_partial(state, status="blocked", reason="restart budget exhausted (no progress)")
             return {"task_id": state.task_id, "status": "blocked", "reason": "max_restarts"}
-        delay = min(backoff_base ** attempt, config.RUN_RESTART_MAX_BACKOFF)
-        LOG.warning("resuming task %s in %.0fs (restart %d/%d)",
-                    state.task_id, delay, attempt, max_restarts)
+        delay = min(backoff_base ** min(no_progress_streak, 12), config.RUN_RESTART_MAX_BACKOFF)
+        LOG.warning("resuming task %s in %.0fs (restart %d, no-progress streak %d/%d)",
+                    state.task_id, delay, attempt, no_progress_streak, budget)
         sleep(delay)
 
 

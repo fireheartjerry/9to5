@@ -251,8 +251,15 @@ def main() -> int:
         resume_work_dir = args.work_dir or state.meta.get("work_dir") or str(config.PROJECT_ROOT)
         LOG.info("Resuming task %s in %s", state.task_id, resume_work_dir)
         _startTerminalControl(state.task_id)
-        summary = Orchestrator().runFull(state, work_dir=resume_work_dir, auto_pr=not args.no_pr,
-                                         control_mode=args.mode, resume=True, parallelism=max(1, args.parallel))
+        # Wrap the resume in the SAME supervisor as a fresh run (CB-12): a crash in runFull's setup
+        # or a non-terminal return must auto-recover, not exit 0 and strand the task for the day.
+        import resilience
+
+        def _run_resume(st):
+            return Orchestrator().runFull(st, work_dir=resume_work_dir, auto_pr=not args.no_pr,
+                                          control_mode=args.mode, resume=True, parallelism=max(1, args.parallel))
+
+        summary = resilience.run_with_recovery(_run_resume, state)
         print("\n===== RUN SUMMARY =====")
         print(json.dumps(summary, indent=2, ensure_ascii=False))
         return 0
