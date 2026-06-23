@@ -194,6 +194,25 @@ _SCHEMA: tuple[str, ...] = (
 )
 
 
+def _ensureColumns(conn: sqlite3.Connection, table: str, cols: dict[str, str]) -> None:
+    """Idempotently ADD COLUMN for any of ``cols`` (name->SQL decl) missing from ``table``.
+    CREATE TABLE IF NOT EXISTS never alters an existing table, so new columns need this."""
+    have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+    for name, decl in cols.items():
+        if name not in have:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
+
+# Columns added after the initial table DDL (table -> {col: decl}). Applied every
+# schema-ensure so an old db file is upgraded in place. Phases 2/4 extend this.
+_MIGRATIONS: dict[str, dict[str, str]] = {}
+
+
+def _applyMigrations(conn: sqlite3.Connection) -> None:
+    for table, cols in _MIGRATIONS.items():
+        _ensureColumns(conn, table, cols)
+
+
 def _db_path(db_path: Optional[Path] = None) -> Path:
     """Resolve the ledger path at call time (so tests can monkeypatch the config const)."""
     return Path(db_path) if db_path is not None else Path(config.EXPERIENCE_DB_PATH)
@@ -220,6 +239,7 @@ def _new_conn(key: str, first: bool) -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode=WAL")  # persists in the db file -> set once
         for stmt in _SCHEMA:
             conn.execute(stmt)
+        _applyMigrations(conn)
         _schema_ready.add(key)
     with _pool_lock:
         _all_conns.append(conn)
@@ -250,6 +270,7 @@ def _connect(db_path: Optional[Path] = None) -> Iterator[sqlite3.Connection]:
         conn.execute("PRAGMA journal_mode=WAL")
         for stmt in _SCHEMA:
             conn.execute(stmt)
+        _applyMigrations(conn)
         _schema_ready.add(key)
 
     try:
