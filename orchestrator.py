@@ -851,6 +851,32 @@ class Orchestrator:
             time.sleep(config.DISCORD_POLL_SECONDS)
             self._translateDiscord(bus, state)
 
+    def _autoApprovePlan(self, state: TaskState) -> "tuple[str, str]":
+        """Ollama is the plan gatekeeper -- a human never approves plans (design: zero human
+        interaction). The plan is already brain-authored + self-critiqued, so this is a final sanity
+        check: approve unless the plan is clearly broken. Any failure approves, and a soft reject is
+        recorded but never wedges or aborts the autonomous run."""
+        subs = [{"title": s.get("title"), "expect": (s.get("verify") or {}).get("expect")}
+                for s in state.subtasks if s.get("status") != "removed"]
+        if not subs:
+            return "reject", "empty plan"
+        goal = state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "")
+        system = (
+            "You are the PLAN GATEKEEPER for an autonomous agent (no human is available to approve). "
+            "Given the goal and the proposed subtask plan, decide if it is sane and ready to execute. "
+            "Approve unless it is clearly broken (off-goal, or missing obviously-required work). "
+            'Respond with JSON ONLY: {"approve": true|false, "reason": "..."}.'
+        )
+        user = (f"GOAL:\n{goal[:1500]}\n\nPLAN ({len(subs)} subtasks):\n"
+                f"{json.dumps(subs, indent=2)[:2000]}\n\nReturn the verdict JSON.")
+        try:
+            data = _chatJson(self._ollamaChat(system, user, want_json=True)) or {}
+            approve = data.get("approve", True) if isinstance(data, dict) else True
+            reason = str((data or {}).get("reason") or "")[:200]
+            return ("approve" if approve else "reject"), reason
+        except Exception as e:  # noqa: BLE001 -- the gate must never block the autonomous run
+            return "approve", f"auto-approve (gate review failed: {e})"
+
     def _checkControl(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard,
                       gate: str | None = None) -> None:
         self._translateDiscord(bus, state)
@@ -858,6 +884,39 @@ class Orchestrator:
         self._waitWhilePaused(state, bus, dashboard)
         if bus.isAbort():
             raise AbortRun("abort requested")
+        # PLAN gate auto-approves through Ollama -- a human is NEVER required to approve plans. A
+        # watching human may still !abort / !reject / !skip / !add during a brief window; if no human
+        # decision arrives, the brain approves and the run proceeds autonomously. (watch mode has no
+        # gate at all; abort is always honored.)
+        if gate == "plan" and state.meta.get("control_mode") == "gated":
+            bus.clearDecision("plan")
+            bus.setPendingGate("plan")
+            dashboard.update(state, "awaiting plan", "plan gate — ollama auto-approves shortly")
+            auto_at = time.time() + config.PLAN_GATE_AUTO_APPROVE_SECONDS
+            while True:
+                self._translateDiscord(bus, state)
+                self._applyOps(state, bus, dashboard)   # honor !skip/!add while parked at the gate
+                if bus.isAbort():
+                    bus.setPendingGate(None)
+                    raise AbortRun("aborted at plan gate")
+                decision = bus.getDecision("plan")
+                if decision == "approve":
+                    dashboard.event("plan gate: approved (human)")
+                    break
+                if decision == "reject":
+                    bus.setPendingGate(None)
+                    raise AbortRun("plan rejected")
+                if time.time() >= auto_at or self._deadlinePassed(state):
+                    verdict, reason = self._autoApprovePlan(state)
+                    dashboard.event(f"plan gate: ollama auto-{verdict} — {reason[:50]}")
+                    with self._state_lock:
+                        state.addNotification("plan_gate", f"ollama auto-{verdict}: {reason}")
+                    if verdict == "reject":
+                        LOG.warning("plan gate: ollama auto-rejected (%s) -- proceeding autonomously", reason)
+                    break
+                time.sleep(config.DISCORD_POLL_SECONDS)
+            bus.setPendingGate(None)
+            return
         if gate and state.meta.get("control_mode") == "gated":
             bus.clearDecision(gate)
             bus.setPendingGate(gate)
