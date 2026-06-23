@@ -278,7 +278,13 @@ def baselineLatestId() -> Optional[str]:
         return None
 
 
-def sendEmbed(embed: dict, content: Optional[str] = None, components: Optional[list] = None) -> dict:
+def sendEmbed(embed: dict, content: Optional[str] = None, components: Optional[list] = None,
+              milestone: bool = False) -> dict:
+    """Post a new embed message.  When ``milestone=True`` the embed is a non-critical run
+    milestone (architect done, planning start, adversary heartbeat, self-ref notice) that is
+    suppressed in night mode to keep the channel quiet during unattended overnight runs."""
+    if milestone and config.NIGHT_MODE:
+        return {"ok": True, "status": None, "suppressed": True}
     payload: dict = {"embeds": [_clampEmbed(embed)]}
     if content:
         payload["content"] = content

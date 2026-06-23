@@ -172,7 +172,11 @@ def _replyFromTranscript(transcript: str) -> str:
         return ""
     block = text[idx:]                  # "extract <selector>:\n<reply text...>"
     nl = block.find("\n")
-    return block[nl + 1:].strip() if nl >= 0 else ""
+    if nl >= 0:
+        return block[nl + 1:].strip()
+    # no newline: transcript was truncated after the selector line — return the
+    # selector itself so callers get a non-empty, identifiable fallback
+    return block[len("extract "):].rstrip(":").strip()
 
 
 def askChatGPT(message: str, *, runner=None, work_dir: Optional[str] = None) -> Optional[str]:
