@@ -181,14 +181,45 @@ def _replyFromTranscript(transcript: str) -> str:
     return block[nl + 1:].strip()
 
 
-def askChatGPT(message: str, *, runner=None, work_dir: Optional[str] = None) -> Optional[str]:
-    """Send one ``message`` to chatgpt.com over CDP and return GPT's reply text.
+# --- intelligent session (Phase 2 production path) --------------------------------------
+# A single long-lived ChatGPTSession per process: logged-in profile, streaming-aware, one
+# conversation per run, self-healing selectors. The orchestrator owns its lifecycle (probe
+# at run start, close at run end). The legacy recipe above is kept only as a back-compat /
+# test path used when a ``runner`` is injected explicitly.
+_SESSION = None
 
-    Routes through :func:`runBrowser` (the L1 hands) using :func:`chatgptActions`, so the
-    transport, Playwright degradation, and result contract are shared with every other
-    browser subtask. Returns ``None`` when the browser layer is unavailable or the run
-    fails, so callers (e.g. the Adversary) can degrade conservatively instead of crashing.
+
+def get_session():
+    """Lazily build the process-wide ChatGPTSession (does NOT open the browser yet)."""
+    global _SESSION
+    if _SESSION is None:
+        from agents.chatgpt_driver import ChatGPTSession
+        _SESSION = ChatGPTSession()
+    return _SESSION
+
+
+def sessionAsk(message: str, *, expect_json: bool = False) -> Optional[str]:
+    """Ask GPT-5.5 one message through the intelligent session. Re-raises typed ChatGPTError
+    subclasses (login/Cloudflare/rate-limit) so the Adversary can route the fallback chain;
+    returns None on a benign empty reply."""
+    return get_session().ask(message, expect_json=expect_json)
+
+
+def askChatGPT(message: str, *, runner=None, work_dir: Optional[str] = None,
+               expect_json: bool = False) -> Optional[str]:
+    """Send one ``message`` to chatgpt.com and return GPT's reply text.
+
+    Production path (no ``runner``, browser layer enabled): the intelligent
+    :class:`~agents.chatgpt_driver.ChatGPTSession` -- logged-in profile, streaming-aware,
+    one conversation per run, self-healing selectors.
+
+    Legacy / test path (``runner`` injected, or browser layer disabled): the original
+    one-shot :func:`chatgptActions` recipe through :func:`runBrowser`, so existing tests and
+    the generic browser surface keep working unchanged. Returns ``None`` when the layer is
+    unavailable or the run fails, so callers can degrade conservatively instead of crashing.
     """
+    if runner is None and config.BROWSER_LAYER_ENABLED:
+        return sessionAsk(message, expect_json=expect_json)
     run = runner or runBrowser
     res = run({"surface": "browser", "browser_actions": chatgptActions(message)},
               work_dir=work_dir)
