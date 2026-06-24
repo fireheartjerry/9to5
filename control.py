@@ -100,6 +100,12 @@ def _fileLock(target: Path, timeout: float = 5.0):
                 pass
 
 
+class _CorruptBus(Exception):
+    """The bus file is present but its content is persistently un-parseable (not a transient
+    sharing violation). A mutation should REBUILD rather than no-op forever -- otherwise a corrupt
+    bus would make abort/pause/decisions impossible to write and an aborting run would never stop."""
+
+
 class AbortRun(Exception):
     """Raised inside the orchestrator when an abort has been requested."""
 
@@ -133,6 +139,7 @@ class ControlBus:
         and the file EXISTS but stays unreadable, raise instead of fabricating blank -- so a mutation
         never clobbers a queued abort/decision it simply failed to read (CB-5)."""
         last_exc: Exception | None = None
+        last_was_corrupt = False
         for attempt in range(_READ_RETRIES):
             try:
                 raw = json.loads(self.path.read_text(encoding="utf-8"))
@@ -141,10 +148,19 @@ class ControlBus:
                 return raw
             except FileNotFoundError:
                 return _blank()
-            except Exception as e:  # noqa: BLE001 -- transient sharing violation OR corrupt content
-                last_exc = e
+            except (json.JSONDecodeError, ValueError) as e:
+                # A torn read of an in-progress atomic write ALSO shows up as a decode error, so retry
+                # first; only a decode error that PERSISTS through every retry is genuinely corrupt.
+                last_exc, last_was_corrupt = e, True
+                time.sleep(min(_READ_BACKOFF_BASE * (2 ** attempt), 0.4))
+            except Exception as e:  # noqa: BLE001 -- transient sharing violation (Windows) etc.
+                last_exc, last_was_corrupt = e, False
                 time.sleep(min(_READ_BACKOFF_BASE * (2 ** attempt), 0.4))
         if strict and self.path.exists():
+            # Corrupt content -> recoverable by rebuild; transient IO -> preserve (never clobber a
+            # queued abort/decision we merely failed to read this instant, CB-5).
+            if last_was_corrupt:
+                raise _CorruptBus(f"control bus corrupt after {_READ_RETRIES} tries: {last_exc}")
             raise OSError(f"control bus unreadable after {_READ_RETRIES} tries: {last_exc}")
         return _blank()   # tolerant reads: a single missed poll is re-checked next tick
 
@@ -181,6 +197,13 @@ class ControlBus:
                                 "in-process lock still serializes this write", self.path.name)
                 try:
                     data = self._readRaw(strict=True)   # never clobber unreadable-but-present state (CB-5)
+                except _CorruptBus as e:
+                    # Content is garbage and won't get better -- rebuild from blank so this mutation
+                    # (e.g. abort=True) can still land. Preserving a corrupt file would make the run
+                    # uncontrollable forever.
+                    LOG.error("control bus %s corrupt; rebuilding so control can still land: %s",
+                              self.path.name, e)
+                    data = {}
                 except OSError as e:
                     LOG.warning("control bus read failed under mutate; preserving on-disk state: %s", e)
                     return self.load()

@@ -80,6 +80,15 @@ class TestConcurrentWrites(unittest.TestCase):
         self.assertEqual(missing, [], f"decisions lost to a clobbering RMW: {missing}")
         # the file is still valid JSON after the storm
         self.assertIsInstance(bus.load(), dict)
+
+    def test_corrupt_bus_rebuilds_so_abort_still_lands(self):
+        """A persistently corrupt bus file must NOT permanently no-op mutations -- otherwise an
+        aborting run could never stop. The mutation rebuilds from blank and lands."""
+        bus = ControlBus("corrupt-task")
+        bus.path.write_text("{ not valid json ::::::", encoding="utf-8")   # corrupt the file
+        bus.requestAbort()
+        self.assertTrue(ControlBus("corrupt-task").isAbort(), "abort lost on a corrupt bus")
+        self.assertIsInstance(ControlBus("corrupt-task").load(), dict)
         # no temp files were left behind
         self.assertEqual(list(self.dir.glob("*.tmp")), [])
 
