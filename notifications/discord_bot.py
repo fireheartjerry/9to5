@@ -104,6 +104,13 @@ def formatVerdict(verdict: Optional[str]) -> str:
 # REST plumbing -- one chokepoint
 # =====================================================================
 _DISABLED = False   # latched ON only by a hard 401 (bad token); never by 403/404
+# Global 429 circuit breaker: a monotonic deadline. While now < this, EVERY REST call short-circuits
+# locally (returns None without touching the network). Discord rate-limits are global to the bot, so
+# without this any caller -- the 4s control poll, the dashboard PATCH, parallel workers -- keeps
+# hitting a rate-limited API and deepens the ban (the same-millisecond 429 storms seen in logs). The
+# chokepoint itself now enforces the backoff so no caller can hammer regardless of its loop cadence.
+_RATE_LIMITED_UNTIL = 0.0
+_RL_COOLDOWN_MAX = 60.0   # sanity cap so a malformed huge retry_after can't wedge Discord off for long
 
 
 def _authHeaders() -> dict:
@@ -121,8 +128,11 @@ def _request(method: str, path: str, *, json: Optional[dict] = None,
     """Single REST chokepoint. 429 -> sleep(retry_after) up to `retries` (milestone sends);
     pass retries=0 on the control-poll path so it never blocks the run loop. A hard 401 latches
     the whole surface off; 403/404 are logged but NEVER disable (a deleted message is normal)."""
-    global _DISABLED
+    global _DISABLED, _RATE_LIMITED_UNTIL
     if _DISABLED or not config.DISCORD_BOT_TOKEN or not config.DISCORD_CHANNEL_ID:
+        return None
+    # Global 429 circuit breaker: while inside the rate-limit window, do not touch the network at all.
+    if time.monotonic() < _RATE_LIMITED_UNTIL:
         return None
     url = f"{_API}{path}"
     attempt = 0
@@ -133,15 +143,24 @@ def _request(method: str, path: str, *, json: Optional[dict] = None,
         except Exception as e:  # noqa: BLE001
             LOG.warning("Discord %s %s failed: %s", method, path, e)
             return None
-        if r.status_code == 429 and attempt < retries:
+        if r.status_code == 429:
             try:
                 retry_after = float((r.json() or {}).get("retry_after",
                                     r.headers.get("Retry-After", 1)))
             except Exception:  # noqa: BLE001
                 retry_after = 1.0
-            time.sleep(min(retry_after, 10.0))
-            attempt += 1
-            continue
+            retry_after = min(max(retry_after, 0.0), _RL_COOLDOWN_MAX)
+            # Arm the global breaker so the NEXT call (any path, any thread) short-circuits instead of
+            # re-hitting the rate-limited API -- this is what stops the 429 storm even on retries=0.
+            _RATE_LIMITED_UNTIL = time.monotonic() + retry_after
+            if attempt < retries:
+                time.sleep(retry_after)
+                attempt += 1
+                continue
+            # poll path (retries=0): return now without blocking the run loop; the breaker above
+            # throttles every subsequent call until the window passes. Log once (not per-spin).
+            LOG.warning("Discord %s %s -> 429; global backoff %.1fs", method, path, retry_after)
+            return r
         if r.status_code == 401:
             _DISABLED = True
             LOG.error("Discord auth failed (401) -> disabling Discord for this process")
