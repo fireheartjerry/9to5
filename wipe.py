@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 import tarfile
 from datetime import datetime
@@ -117,6 +118,20 @@ def executeWipe(keys: list[str], backup: bool = False) -> dict[str, str]:
 
 
 def restartBot() -> None:
-    """Replace current process with a fresh bot instance (no leftover in-memory state)."""
-    LOG.info("Restarting bot via os.execv")
-    os.execv(sys.executable, [sys.executable, "-m", "notifications.command_bot"])
+    """Spawn a FRESH detached bot process, then exit this one -- a clean handoff with no leftover
+    in-memory state. os.execv is avoided on purpose: this runs inside the gateway's asyncio loop,
+    where execv abandons the live Discord websocket uncleanly and is unreliable on Windows (it is
+    emulated as spawn+exit and can leave the parent alive). The explicit spawn + os._exit is
+    deterministic on both platforms."""
+    LOG.info("Restarting bot: spawning fresh instance then exiting current process")
+    try:
+        creationflags = 0
+        if os.name == "nt":
+            creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        subprocess.Popen([sys.executable, "-m", "notifications.command_bot"],
+                         cwd=str(config.INSTALL_ROOT), stdin=subprocess.DEVNULL,
+                         close_fds=True, creationflags=creationflags)
+    except Exception:  # noqa: BLE001
+        LOG.exception("failed to spawn fresh bot instance; NOT exiting current bot")
+        return
+    os._exit(0)   # hard exit: the new process owns the gateway now; no async cleanup to await

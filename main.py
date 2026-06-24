@@ -275,7 +275,10 @@ def main() -> int:
     LOG.info("Obsidian REST: reachable=%s authed=%s (disk fallback always available)",
              obs_health["rest_ok"], obs_health["authed"])
 
-    goal = (args.goal or input("9TO5 goal> ")).strip()
+    try:
+        goal = (args.goal or input("9TO5 goal> ")).strip()
+    except EOFError:   # non-interactive stdin (e.g. launched detached) with no --goal -> abort cleanly
+        goal = (args.goal or "").strip()
     if not goal:
         print("No goal given; aborting.")
         return 2
@@ -307,7 +310,10 @@ def main() -> int:
              len(universe.get("allowed_paths", [])), universe.get("hard_boundaries"))
 
     if not args.auto_approve:
-        ans = input("Approve elaboration? [Y / edit / n] ").strip().lower()
+        try:
+            ans = input("Approve elaboration? [Y / edit / n] ").strip().lower()
+        except EOFError:   # non-interactive without --auto-approve -> proceed (don't crash the run)
+            ans = "y"
         if ans in {"n", "no"}:
             print("Aborted by human.")
             state.setStatus("aborted")

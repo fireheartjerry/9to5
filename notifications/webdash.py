@@ -178,11 +178,18 @@ def _makeHandler(task_id: str):
             return
 
         def _send(self, code: int, body: bytes, ctype: str) -> None:
-            self.send_response(code)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            # The dashboard page polls /api/state continuously; a browser tab closing or navigating
+            # away mid-response drops the socket, and the write then raises a connection error that
+            # BaseHTTPRequestHandler prints as a scary stderr traceback. Swallow the disconnect --
+            # the client is already gone and there is nothing to deliver.
+            try:
+                self.send_response(code)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionError, ConnectionResetError, ConnectionAbortedError):
+                pass
 
         def do_GET(self):  # noqa: N802
             if self.path.startswith("/api/state"):
