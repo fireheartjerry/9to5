@@ -11,7 +11,9 @@ so notes are never lost.
 from __future__ import annotations
 
 import atexit
+import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
@@ -115,9 +117,41 @@ def writeClaudioMd(task_state, subtask: Optional[dict], additional_context: str 
         "",
     ]
     path = work_dir_path / "CLAUDE.md"
-    path.write_text("\n".join(parts), encoding="utf-8")
-    LOG.info("Wrote living CLAUDE.md (%d chars) to %s", path.stat().st_size, path)
+    content = "\n".join(parts)
+    _atomicWriteText(path, content)
+    LOG.info("Wrote living CLAUDE.md (%d chars) to %s", len(content.encode("utf-8")), path)
     return path
+
+
+def _atomicWriteText(path: Path, content: str) -> None:
+    """Write text as a COMPLETE-file swap (unique temp + os.replace) so a concurrent reader never
+    sees a half-written file. Parallel non-self-referential subtasks share one ``work_dir/CLAUDE.md``
+    and the executor launches ``claude`` (which auto-reads it) right after writing -- a plain
+    truncate-then-write would let one worker read another's torn CLAUDE.md. Bounded retry mirrors
+    control.py's: on Windows ``os.replace`` raises PermissionError while a reader momentarily holds
+    the destination. FALLS BACK to a direct write if the swap can't complete, so this is never worse
+    than the previous plain write."""
+    tmp = path.parent / f"{path.name}.{os.getpid()}-{threading.get_ident()}-{os.urandom(4).hex()}.tmp"
+    try:
+        tmp.write_text(content, encoding="utf-8")
+        delay = 0.02
+        for attempt in range(6):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if attempt == 5:
+                    break
+                time.sleep(min(delay, 0.3))
+                delay *= 2
+        path.write_text(content, encoding="utf-8")   # swap kept failing: fall back (no regression)
+        tmp.unlink(missing_ok=True)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        path.write_text(content, encoding="utf-8")   # last resort: behave exactly like the old code
 
 
 class ObsidianClient:
