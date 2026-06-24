@@ -254,10 +254,33 @@ SIE_TUNABLE_KNOBS: tuple[str, ...] = (
 )
 SIE_OVERRIDES_PATH: Path = PROJECT_ROOT / "state" / "sie_overrides.json"
 
+# Inclusive (lo, hi) bounds for each tunable knob. A value outside the band is refused
+# (set_override) or skipped+logged (_load_overrides) so a self-written overrides file
+# can never disable review or force single-use promotion.
+_SIE_BOUNDS: dict[str, tuple[float, float]] = {
+    "MAX_SUBTASK_ATTEMPTS": (1, 6),
+    "RETRIEVAL_K": (1, 32),
+    "ADVERSARY_HEARTBEAT_EVERY": (1, 10),
+    "PROMPT_PROMOTE_MIN_USES": (3, 100),
+    "CONFIDENCE_DEFER_THRESHOLD": (0.0, 1.0),
+}
+
+_cfg_log = logging.getLogger("9to5.config")
+
+
+def _withinBounds(knob: str, value) -> bool:
+    lo, hi = _SIE_BOUNDS.get(knob, (float("-inf"), float("inf")))
+    try:
+        return lo <= float(value) <= hi
+    except (TypeError, ValueError):
+        return False
+
 
 def set_override(knob: str, value) -> bool:
     """Persist + live-apply a meta-optimizer knob change (whitelisted knobs only)."""
     if knob not in SIE_TUNABLE_KNOBS:
+        return False
+    if not _withinBounds(knob, value):
         return False
     import json as _json
     globals()[knob] = value
@@ -280,6 +303,12 @@ def _load_overrides() -> None:
         data = _json.loads(SIE_OVERRIDES_PATH.read_text(encoding="utf-8"))
         for k, v in data.items():
             if k in SIE_TUNABLE_KNOBS:
+                if not _withinBounds(k, v):
+                    _cfg_log.warning(
+                        "sie_overrides: skipping %s=%r — out of bounds %s",
+                        k, v, _SIE_BOUNDS.get(k),
+                    )
+                    continue
                 globals()[k] = v
     except Exception:  # noqa: BLE001 -- absent/corrupt -> stock defaults
         pass
