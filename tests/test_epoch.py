@@ -36,5 +36,16 @@ class TestSnapshot(unittest.TestCase):
         self.assertIn("secret.py", snap.universe["hard_boundaries"])
 
 
+class TestDiverged(unittest.TestCase):
+    def test_diverged_true_after_a_self_code_edit(self):
+        f = Path(tempfile.mkdtemp()) / "m.py"
+        f.write_text("x = 1", encoding="utf-8")
+        with mock.patch("identity.selfCodeFiles", return_value=[str(f)]):
+            snap = epoch.snapshot(universe={})
+            self.assertFalse(epoch.diverged(snap))
+            f.write_text("x = 2", encoding="utf-8")
+            self.assertTrue(epoch.diverged(snap))
+
+
 if __name__ == "__main__":
     unittest.main()

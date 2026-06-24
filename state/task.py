@@ -81,6 +81,7 @@ class TaskState:
                 "self_ref_branch": None,
                 "subtask_seq": 0,
                 "universe": None,
+                "epoch": None,
             },
             "plan": {"architect_design_doc": None, "subtasks": []},
             "adversary_reviews": [],
@@ -260,6 +261,11 @@ class TaskState:
 
     def setUniverse(self, universe: dict) -> None:
         self.meta["universe"] = universe
+        self.save()
+
+    def setEpoch(self, ep) -> None:
+        """Pin the per-run epoch snapshot (epoch.Epoch) into meta and persist."""
+        self.meta["epoch"] = ep.toDict()
         self.save()
 
     def recordVerify(self, subtask_id: str, result: dict) -> Optional[dict[str, Any]]:

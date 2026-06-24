@@ -70,3 +70,8 @@ def snapshot(*, universe: Optional[dict] = None, brain_tag: Optional[str] = None
     uni = dict(universe or {})
     uni["hard_boundaries"] = list(uni.get("hard_boundaries") or [])
     return Epoch(config_knobs=knobs, universe=uni, brain_tag=brain_tag, code=fingerprint())
+
+
+def diverged(pinned: Epoch) -> bool:
+    """True iff the on-disk self.code differs from what was pinned at snapshot time."""
+    return fingerprint()["files"] != pinned.code.get("files", {})
