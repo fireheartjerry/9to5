@@ -4,6 +4,7 @@ a self.code bytecode fingerprint, written into task meta. Pins "the running self
 imported bytecode + start-of-run config, full stop." See spec."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import subprocess
 from dataclasses import dataclass
@@ -31,7 +32,7 @@ def fingerprint() -> dict[str, Any]:
                 data = fh.read()
         except OSError:
             data = b""
-        files[path.lower()] = hashlib.sha256(data).hexdigest()
+        files[str(path).lower()] = hashlib.sha256(data).hexdigest()
     return {"git_sha": _gitSha(), "files": files}
 
 
@@ -53,8 +54,10 @@ class Epoch:
     code: dict[str, Any]            # the fingerprint()
 
     def toDict(self) -> dict[str, Any]:
-        return {"config_knobs": dict(self.config_knobs), "universe": dict(self.universe),
-                "brain_tag": self.brain_tag, "code": self.code}
+        return {"config_knobs": dict(self.config_knobs),
+                "universe": copy.deepcopy(self.universe),
+                "brain_tag": self.brain_tag,
+                "code": copy.deepcopy(self.code)}
 
     @classmethod
     def fromDict(cls, d: dict[str, Any]) -> "Epoch":

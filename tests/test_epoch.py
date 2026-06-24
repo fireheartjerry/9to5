@@ -35,6 +35,15 @@ class TestSnapshot(unittest.TestCase):
         snap = epoch.snapshot(universe={"hard_boundaries": ["state/tasks", "secret.py"]})
         self.assertIn("secret.py", snap.universe["hard_boundaries"])
 
+    def test_todict_is_independent_of_the_live_epoch(self):
+        # Mutating the exported dict must NOT corrupt the live Epoch (which would break diverged()).
+        snap = epoch.snapshot(universe={"hard_boundaries": [".env"]})
+        d = snap.toDict()
+        d["code"]["files"]["INJECTED"] = "deadbeef"
+        d["universe"]["hard_boundaries"].append("INJECTED")
+        self.assertNotIn("INJECTED", snap.code["files"])
+        self.assertNotIn("INJECTED", snap.universe["hard_boundaries"])
+
 
 class TestDiverged(unittest.TestCase):
     def test_diverged_true_after_a_self_code_edit(self):
