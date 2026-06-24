@@ -60,11 +60,17 @@ class TestEventDeque(unittest.TestCase):
         snap.append("injected")
         self.assertEqual(len(d._eventsSnapshot()), 1)
 
-    def test_deque_maxlen_8(self):
+    def test_deque_maxlen_caps_recent_events(self):
         d = DiscordDashboard()
-        for i in range(12):
-            d.event(f"evt{i}")
-        self.assertEqual(len(d._eventsSnapshot()), 8)
+        for i in range(20):
+            d.event(f"e{i}x")   # unique tokens (e0x..e19x); no substring overlap between them
+        snap = d._eventsSnapshot()
+        # the "Recent events" ring is bounded (deque maxlen=10) and keeps the NEWEST. Events are
+        # stored timestamp-prefixed, so match on the joined text, not exact list membership.
+        self.assertEqual(len(snap), 10)
+        joined = "\n".join(snap)
+        self.assertIn("e19x", joined)       # newest kept
+        self.assertNotIn("e0x", joined)     # oldest evicted
 
     def test_thread_safety(self):
         d = DiscordDashboard()
