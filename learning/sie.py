@@ -58,14 +58,33 @@ def _write_state(data: dict[str, Any]) -> None:
         LOG.warning("sie state write failed (ignored): %s", e)
 
 
+def _lock_owner_alive(lp: Path) -> bool:
+    """True if the PID written in the lock file is still running. Maintenance runs on a DAEMON
+    thread, so a process that exits (or is killed) while a pass is mid-flight leaves the lock with
+    a dead owner -- which otherwise blocks ALL maintenance until the 1h staleness reclaim. If the
+    owner can't be determined, assume alive (never steal a lock we can't prove is dead)."""
+    try:
+        pid = int((lp.read_text(encoding="utf-8") or "").strip())
+    except Exception:  # noqa: BLE001 -- unreadable/garbage owner -> conservative
+        return True
+    if pid == os.getpid():
+        return True
+    try:
+        import psutil
+        return psutil.pid_exists(pid)
+    except Exception:  # noqa: BLE001 -- psutil missing/errored -> conservative
+        return True
+
+
 def _acquire_lock() -> Optional[Path]:
-    """O_EXCL lock so two concurrent runs never run maintenance at once. A stale lock
-    (>1h, e.g. a crashed pass) is reclaimed. Returns the lock path, or None if held."""
+    """O_EXCL lock so two concurrent runs never run maintenance at once. A stale lock is reclaimed
+    when it is older than 1h (a wedged pass) OR its owning PID is dead (an orphaned lock from a
+    process that exited mid-maintenance). Returns the lock path, or None if held by a live owner."""
     lp = _lock_path()
     try:
         lp.parent.mkdir(parents=True, exist_ok=True)
-        if lp.exists() and time.time() - lp.stat().st_mtime > 3600:
-            lp.unlink(missing_ok=True)  # reclaim a stale lock
+        if lp.exists() and (time.time() - lp.stat().st_mtime > 3600 or not _lock_owner_alive(lp)):
+            lp.unlink(missing_ok=True)  # reclaim a stale or orphaned lock
         fd = os.open(str(lp), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.write(fd, str(os.getpid()).encode())
         os.close(fd)
