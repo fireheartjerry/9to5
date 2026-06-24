@@ -43,5 +43,23 @@ unmodified), each with a reproduction + regression test.
 
 ---
 
-_Source: deep-audit-pass2 workflow, adversarially verified. Findings cached at run time; re-derive
+---
+
+## 3. Knowledge-doc atomic write uses a FIXED temp name (cross-process clobber)
+
+- **File:** `orchestrator.py` — `refreshClaudeKnowledge` (~155-163)
+- **Severity:** MEDIUM. 
+- **Root cause:** Writes the ~1MB unified reference via a FIXED temp `kpath.with_suffix(".md.tmp")`
+  (always `knowledge/claude_code.md.tmp`), guarded only by `_KNOWLEDGE_LOCK` (a **process-local**
+  threading.Lock). `refreshClaudeKnowledge` runs at the start of *every* process (each run, the
+  gateway bot, etc.), so two processes refreshing concurrently write the same temp and the second
+  `os.replace` hits `FileNotFoundError` after the first moved it — exactly the bug already fixed in
+  `ControlBus._write` and `TaskState.save`.
+- **Fix:** Unique temp per writer — `kpath.with_suffix(f".{os.getpid()}-{threading.get_ident()}-{os.urandom(4).hex()}.md.tmp")`
+  — with `try/except` cleanup of the temp on failure. (Same one-line pattern as the task.py fix in
+  commit `3eca882`.)
+
+---
+
+_Source: deep-audit passes 2 & 3, adversarially verified. Findings cached at run time; re-derive
 exact line numbers against the current file before fixing (the concurrent refactor will have moved them)._
