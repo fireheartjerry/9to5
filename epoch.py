@@ -52,18 +52,21 @@ class Epoch:
     universe: dict[str, Any]
     brain_tag: Optional[str]
     code: dict[str, Any]            # the fingerprint()
+    core_protected_files: tuple     # pinned CORE_PROTECTED_FILES (so a mid-run edit cannot change it)
 
     def toDict(self) -> dict[str, Any]:
         return {"config_knobs": dict(self.config_knobs),
                 "universe": copy.deepcopy(self.universe),
                 "brain_tag": self.brain_tag,
-                "code": copy.deepcopy(self.code)}
+                "code": copy.deepcopy(self.code),
+                "core_protected_files": list(self.core_protected_files)}
 
     @classmethod
     def fromDict(cls, d: dict[str, Any]) -> "Epoch":
         return cls(config_knobs=dict(d.get("config_knobs") or {}),
                    universe=dict(d.get("universe") or {}),
-                   brain_tag=d.get("brain_tag"), code=d.get("code") or {})
+                   brain_tag=d.get("brain_tag"), code=d.get("code") or {},
+                   core_protected_files=tuple(d.get("core_protected_files") or []))
 
 
 def snapshot(*, universe: Optional[dict] = None, brain_tag: Optional[str] = None) -> Epoch:
@@ -72,7 +75,9 @@ def snapshot(*, universe: Optional[dict] = None, brain_tag: Optional[str] = None
     knobs = {k: getattr(config, k, None) for k in _PINNED_KNOBS}
     uni = dict(universe or {})
     uni["hard_boundaries"] = list(uni.get("hard_boundaries") or [])
-    return Epoch(config_knobs=knobs, universe=uni, brain_tag=brain_tag, code=fingerprint())
+    core_files = tuple(getattr(config, "CORE_PROTECTED_FILES", ()) or ())
+    return Epoch(config_knobs=knobs, universe=uni, brain_tag=brain_tag, code=fingerprint(),
+                 core_protected_files=core_files)
 
 
 def diverged(pinned: Epoch) -> bool:

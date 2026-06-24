@@ -270,6 +270,23 @@ def _boundarySetFor(state) -> set:
     return set(base)
 
 
+def _coreLockFor(state):
+    """The (allow_core, core_files) the guard uses. Prefer the PINNED epoch so a mid-run
+    edit to SELFMOD_ALLOW_CORE / CORE_PROTECTED_FILES cannot change what THIS run enforces
+    (#1 keystone, full fix). Falls back to live config for legacy tasks with no epoch."""
+    meta = getattr(state, "meta", {}) or {}
+    ep = meta.get("epoch")
+    if ep:
+        allow_core = bool((ep.get("config_knobs") or {}).get("SELFMOD_ALLOW_CORE", False))
+        core_files = tuple(ep.get("core_protected_files") or ())
+        if core_files:
+            return allow_core, core_files
+        # epoch present but no core list pinned -> still use pinned allow_core, live core list
+        return allow_core, tuple(getattr(config, "CORE_PROTECTED_FILES", ()) or ())
+    return (bool(getattr(config, "SELFMOD_ALLOW_CORE", False)),
+            tuple(getattr(config, "CORE_PROTECTED_FILES", ()) or ()))
+
+
 def selfModificationGuard(data):
     """PreToolUse: during a SELF-REFERENTIAL task, block edits to the core files
     that run the orchestrator loop (orchestrator.py, main.py, agents/hooks.py, config.py).
@@ -314,10 +331,13 @@ def selfModificationGuard(data):
         # SELFMOD_ALLOW_CORE lets 9to5 improve its OWN core loop: edits are permitted on the
         # isolated branch (the running process keeps its old bytecode, so it's unaffected), and a
         # post-run test-suite safety gate reverts any core change that breaks the build before a PR.
-        allow_core = bool(getattr(config, "SELFMOD_ALLOW_CORE", False)) if config else False
+        allow_core, _core_files = _coreLockFor(state) if state else (
+            bool(getattr(config, "SELFMOD_ALLOW_CORE", False)) if config else False,
+            tuple(getattr(config, "CORE_PROTECTED_FILES", ()) or ()) if config
+            else ("orchestrator.py", "main.py", "agents/hooks.py", "config.py"))
         if not allow_core and (
                 (state and state.meta.get("is_self_referential")) or (env_requested and not explicit)):
-            for c in (list(getattr(config, "CORE_PROTECTED_FILES", ()) or ()) if config
+            for c in (list(_core_files) if _core_files
                       else ["orchestrator.py", "main.py", "agents/hooks.py", "config.py"]):
                 if c not in boundaries:
                     boundaries.append(c)
