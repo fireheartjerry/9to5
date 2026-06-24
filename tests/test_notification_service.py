@@ -256,11 +256,12 @@ class TestSubtaskFailedEmbed(unittest.TestCase):
         field_names = [f["name"] for f in embed["fields"]]
         self.assertIn("Subtask", field_names)
         self.assertIn("Attempts", field_names)
-        self.assertIn("Verify", field_names)
+        self.assertIn("Verify cmd", field_names)
 
     def test_none_verify_result_handled(self):
         embed = d.subtaskFailedEmbed("st-003", "title", None, 1)
-        verify_val = next(f["value"] for f in embed["fields"] if f["name"] == "Verify")
+        # None verify_result falls back to {} — "Verify cmd" field still present with default
+        verify_val = next(f["value"] for f in embed["fields"] if f["name"] == "Verify cmd")
         self.assertIsInstance(verify_val, str)
 
 
@@ -326,11 +327,11 @@ class TestDashboardEventDeque(unittest.TestCase):
         # format: `HH:MM:SS` <text>
         self.assertIn("`", snapshot[0])
 
-    def test_maxlen_eight(self):
-        for i in range(12):
+    def test_maxlen_ten(self):
+        for i in range(15):
             self.db.event(f"event {i}")
         snapshot = self.db._eventsSnapshot()
-        self.assertEqual(len(snapshot), 8)
+        self.assertEqual(len(snapshot), 10)
 
     def test_snapshot_returns_list_copy(self):
         self.db.event("a")

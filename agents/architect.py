@@ -52,6 +52,7 @@ def authorArchitectPrompt(goal_elaborated: str, chat=None) -> str:
             messages=[{"role": "system", "content": knowledge.injectCapabilities(_ARCHITECT_PROMPT_SYSTEM)},
                       {"role": "user", "content": user}],
             options={"num_ctx": config.OLLAMA_NUM_CTX},
+            keep_alive=config.OLLAMA_KEEP_ALIVE,
         )
     # Safe extraction: the brain may return None / a non-dict message / non-string content.
     try:

@@ -24,6 +24,8 @@ import config
 
 LOG = config.getLogger("discord")
 
+_SESSION = requests.Session()   # persistent connection pool; reused across all REST calls
+
 _API = "https://discord.com/api/v10"
 
 def _nowIso() -> str:
@@ -126,7 +128,7 @@ def _request(method: str, path: str, *, json: Optional[dict] = None,
     attempt = 0
     while True:
         try:
-            r = requests.request(method, url, headers=_authHeaders(), json=json, params=params,
+            r = _SESSION.request(method, url, headers=_authHeaders(), json=json, params=params,
                                  timeout=config.DISCORD_REST_TIMEOUT)
         except Exception as e:  # noqa: BLE001
             LOG.warning("Discord %s %s failed: %s", method, path, e)
@@ -187,10 +189,12 @@ def _clampEmbed(embed: dict) -> dict:
         guard = 0
         while _embedLen(e) > config.DISCORD_EMBED_TOTAL_MAX and guard < 50:
             guard += 1
+            over = _embedLen(e) - config.DISCORD_EMBED_TOTAL_MAX
             biggest = max(e["fields"], key=lambda f: len(str(f.get("value", ""))), default=None)
             if biggest is None or len(str(biggest.get("value", ""))) <= 8:
                 break
-            biggest["value"] = truncate(biggest["value"], max(8, len(str(biggest["value"])) // 2))
+            cur_len = len(str(biggest["value"]))
+            biggest["value"] = truncate(biggest["value"], max(8, cur_len - over - 1))
     return e
 
 

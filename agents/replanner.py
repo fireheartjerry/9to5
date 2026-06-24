@@ -72,6 +72,7 @@ def replan(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, execu
                       {"role": "user", "content": user}],
             format="json",
             options={"num_ctx": config.OLLAMA_NUM_CTX},
+            keep_alive=config.OLLAMA_KEEP_ALIVE,
         )
         data = json.loads(resp["message"]["content"])
         data.setdefault("action", "keep")

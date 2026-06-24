@@ -138,18 +138,23 @@ EXPERIENCE_POOL: bool = _envBool("EXPERIENCE_POOL", True)
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")  # code-specialized brain (fits 8GB VRAM)
 OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_TIMEOUT_SECONDS: int = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))  # prevent indefinite hangs
-# Explicit context window: the injected CLAUDE CODE CAPABILITIES block (~2.2k tokens) sits in
-# every system prompt; without this, ollama's small default num_ctx SILENTLY TRUNCATES the
-# trailing JSON-schema instructions that format="json" calls depend on. Sized for injection +
-# the largest user payload. Passed as options.num_ctx on every .chat() call.
+# Context window for EVERY brain call. CRITICAL: this value MUST be identical on every ollama
+# .chat() across the whole orchestrator. Ollama tears down and RELOADS the entire model runner
+# whenever the requested num_ctx changes. A previous "size num_ctx to the prompt" scheme made it
+# oscillate (8192<->16384) against the static 8192 used by elaborator/architect/replanner, forcing
+# a 4.7GB reload on nearly every call; under VRAM pressure a slow reload's connection is dropped
+# ("client connection closed before llama-server finished loading" -> "Load failed") and the chat
+# returns an EMPTY completion -- the "Brain (Ollama) unavailable" notice. So num_ctx is one
+# constant; an over-long prompt is TRIMMED to fit (orchestrator._fitUserToCtx) instead of growing
+# the window. 8192 holds the caps block + typical payloads and is VRAM-safe on an 8GB card (a 7B at
+# 16384 is ~6.7GB and crowds out the co-resident embed model). Raise via env only if VRAM allows.
 OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
-# Floor num_ctx is not enough for the LARGE brain prompts (adversary review + planner embed
-# the full executor output + architect.md -> 10-13k tokens). When system+user exceeds num_ctx
-# ollama truncates from the FRONT, dropping the system prompt's JSON-schema instruction, and
-# qwen dead-ends to an EMPTY completion. _ollamaChat grows num_ctx to fit the prompt + a
-# generation headroom, clamped to this VRAM-safe ceiling (16384 verified on an 8GB card).
-OLLAMA_NUM_CTX_MAX: int = int(os.getenv("OLLAMA_NUM_CTX_MAX", "16384"))
-OLLAMA_GEN_HEADROOM: int = int(os.getenv("OLLAMA_GEN_HEADROOM", "2048"))  # tokens reserved for the reply
+OLLAMA_GEN_HEADROOM: int = int(os.getenv("OLLAMA_GEN_HEADROOM", "2048"))  # tokens reserved for reply / prompt-trim budget
+# Pin the runner resident BETWEEN calls. A subtask's Claude CLI run can take up to
+# CLAUDE_CLI_TIMEOUT_SECONDS (~10min) during which the brain sits idle; ollama's 5-min default
+# keep_alive would UNLOAD it mid-run, forcing a reload (another empty-completion window) on the
+# next brain call. Keep it alive comfortably past the longest Claude run.
+OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 
 # --- Claude Code CLI (Executor hands) ------------------------------------
 # A `claude --print` call is a FULL agent session (explore repo -> reason -> write -> self-verify),

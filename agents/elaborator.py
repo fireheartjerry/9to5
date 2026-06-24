@@ -24,7 +24,8 @@ def _chat(system: str, user: str, *, want_json: bool = False, retries: int = 3) 
     delay = 2.0
     for attempt in range(1, retries + 1):
         try:
-            kwargs = {"options": {"num_ctx": config.OLLAMA_NUM_CTX}}
+            kwargs = {"options": {"num_ctx": config.OLLAMA_NUM_CTX},
+                      "keep_alive": config.OLLAMA_KEEP_ALIVE}
             if want_json:
                 kwargs["format"] = "json"
             resp = _OLLAMA.chat(model=config.OLLAMA_MODEL,

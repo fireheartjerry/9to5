@@ -79,6 +79,7 @@ def heal(screenshot_png: bytes, dom_html: str, *, want: str) -> dict:
                        "images": [screenshot_png]}],
             format="json",
             options={"num_ctx": config.OLLAMA_NUM_CTX},
+            keep_alive=config.OLLAMA_KEEP_ALIVE,
         )
         content = (resp.get("message") or {}).get("content") if isinstance(resp, dict) else None
         data = _loadJson(content)

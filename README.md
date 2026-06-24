@@ -92,6 +92,51 @@ Python 3.11 + 3.12).
 
 See `CLAUDE.md` for the full mental model handed to spawned Claude sessions.
 
+## Discord notifications
+
+9to5 maintains a **live dashboard embed** (single message, PATCH-edited every
+step) plus **milestone embeds** for key events.
+
+### Live dashboard embed fields
+
+| Field | Content |
+|-------|---------|
+| Status | Current task status (e.g. `executing`) |
+| Mode | `watch` or `gated` |
+| Progress | `▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱ 20% (2/10)` — 16-cell bar |
+| Subtasks | `✅ N  ⚡ N  ⬜ N  ❌ N  ·  XX% pass` |
+| Current | Active subtask ID + title; appends `(attempt N)` on retries |
+| Model | Model in use |
+| Mode | Control mode |
+| Elapsed | Wall-clock time since run start |
+| ETA | Remaining-time estimate based on pace so far; `—` until ≥1 subtask done |
+| Replans | Total replanner invocations |
+| Adversary | Total adversary triggers |
+| Effort | Visual effort-level bar |
+| Last verify | Most recent verification result |
+| Recent events | Up to 10 timestamped events (HH:MM format) |
+
+### Control-panel buttons
+
+Two rows attached to the dashboard embed:
+
+- **Row 1 — flow** (secondary/success): ⏸️ Pause · ▶️ Resume · ✅ Approve
+- **Row 2 — destructive** (secondary/danger): ⚔️ Reject · ⏭️ Skip · 🛑 Abort
+
+### Milestone embeds
+
+| Trigger | Embed |
+|---------|-------|
+| Task complete | Shows subtasks done/total, success rate %, elapsed, replans, adversary count, PR link |
+| Subtask failed | Shows subtask ID, attempts, exit code, verify command, stdout/stderr tail |
+| Gate needed | Prompts `!approve` / `!reject` |
+| Blocked | Shows reason + Claude Code's question (separated by `━━━ Claude Code asks ━━━`) |
+| Adversary triggered | Shows verdict + concerns |
+
+### Status embed (!/status command)
+
+Fields: Status, Mode, Subtasks, Current, Working dir, ⏰ Deadline (shown only when set).
+
 ## Conventions
 `ALL_CAPS` constants, `snake_case` variables, `camelCase` functions,
 `pathlib.Path` everywhere.
