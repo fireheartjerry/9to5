@@ -438,7 +438,12 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
         try:
             proc = subprocess.Popen(run_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE, text=True, encoding="utf-8",
-                                    errors="replace", cwd=work, creationflags=creationflags, env=env)
+                                    errors="replace", cwd=work, creationflags=creationflags, env=env,
+                                    # POSIX: give the child its OWN session so the timeout-kill's
+                                    # os.killpg(os.getpgid(pid)) targets the child's group, NOT the
+                                    # orchestrator's own (which would SIGKILL 9to5 itself). No-op on
+                                    # Windows, where CREATE_NEW_PROCESS_GROUP + taskkill /T handle it.
+                                    start_new_session=(os.name != "nt"))
         except Exception as e:  # noqa: BLE001
             LOG.error("Claude launch failed: %s", e)
             return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),

@@ -58,7 +58,10 @@ def _runShell(cmd: str, work_dir: str) -> subprocess.CompletedProcess:
     # stdin=DEVNULL so a program that reads stdin gets EOF and exits instead of hanging to timeout.
     proc = subprocess.Popen(cmd, shell=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
-                            cwd=work_dir, creationflags=creationflags)
+                            cwd=work_dir, creationflags=creationflags,
+                            # POSIX: own session so timeout-kill's killpg targets the verify shell's
+                            # group, not the orchestrator's. No-op on Windows (see executor.runClaude).
+                            start_new_session=(os.name != "nt"))
     try:
         out, err = proc.communicate(timeout=config.VERIFY_TIMEOUT_SECONDS)
         return subprocess.CompletedProcess(cmd, proc.returncode, out or "", err or "")
