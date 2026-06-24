@@ -351,3 +351,51 @@ Evidence: `python scripts/spike_headless_hook.py` printed `HOOK_FIRED: False`
 Task 5.1's epoch read must ALSO live in `agents/executor.py`'s in-process
 guard (where `block_destructive` already lives); the hook change still lands
 but is not sole enforcement.
+
+## Implementation review addendum (post-build)
+
+After implementation, a holistic security review was run over the whole branch.
+Outcome and honest scope notes:
+
+- **#1 (keystone) — fully closed.** Initial wiring pinned only the universe
+  `hard_boundaries`; a follow-up (`1fa947e`) also pins `SELFMOD_ALLOW_CORE` and
+  `CORE_PROTECTED_FILES` into the epoch and routes the guard's core-lock through
+  `hooks._coreLockFor(state)`. A mid-run edit to those constants is now ignored by the
+  running guard (test: `test_core_lock_uses_pinned_epoch_not_live_config`). Legacy
+  (no-epoch) tasks fall back to live config unchanged.
+
+- **What the epoch ENFORCES vs only SNAPSHOTS.** Consumed at enforcement points:
+  `universe.hard_boundaries` + `SELFMOD_ALLOW_CORE` + `core_protected_files` (the hook)
+  and the `self.code` fingerprint (divergence detector + post-run gate). Also snapshotted
+  but NOT yet consumed by a decision site: the remaining `config_knobs`
+  (`MAX_SUBTASK_ATTEMPTS`, `RETRIEVAL_K`, …) and `brain_tag` — the loop still reads these
+  live. This is not in-process-exploitable today because the only `set_override` caller
+  runs **post-run** (`sie.run_maintenance`), so config doesn't mutate within a run.
+  Pinning the loop's non-security knobs + brain identity to the epoch is deferred to a
+  later spec.
+
+- **#24 correction.** The earlier note that #24 (brain identity) "closes for free" was
+  optimistic: `brain_tag` is snapshotted but no consumer reads it yet (the loop resolves
+  the tag live via `finetune.active_brain_tag()`). #24 is therefore **deferred to Spec 2**,
+  not closed here.
+
+- **`reflection.trust` (advisory) — deliberate scope.** `trust()` still treats a
+  verify-passing, never-adversary-reviewed subtask as trusted. This is acceptable because
+  `trusted` reflections feed only **advisory lessons**, not the weight-rewriting sinks:
+  distillation/LoRA (#9) and `solution_cache` (#11b) draw exclusively from
+  `gold_examples`, which requires a real (non-stub) approval. Tightening the advisory
+  path to require positive attestation is deferred to avoid starving the lessons pool;
+  the catastrophic B-chain (gamed spec → weights) is already closed.
+
+- **Bonus fix — R10.** `agents/hooks.py` previously hardcoded `sys.path.insert(0,
+  r"C:\9to5")`; it now derives its root from `__file__` (`18470a2`), so a worktree imports
+  its OWN tree. This is itself a self/other-identity fix (a constant standing in for
+  "self") and is required for worktree-isolated self-improvement.
+
+- **Forgery residual (the documented Spec-1 boundary).** All provenance attestations are
+  unsigned JSON in task-writable stores (`experience.db`, `knowledge/*`). A task with
+  write access can forge `{"origin":"human"}` / `attested_by` and defeat any gate. Every
+  gate notes this consistently; no gate claims to be unforgeable. Closing it requires
+  Spec 3: boundary enforcement covering `state/experience.db` + `knowledge/` and an
+  unforgeable integrity signature (HMAC over the provenance field). The gates here are the
+  chokepoint + the honest default (unattested ⇒ untrusted), not a cryptographic guarantee.
