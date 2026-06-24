@@ -242,6 +242,31 @@ def logAll(data):
     sys.exit(0)
 
 
+def _boundarySetFor(state) -> set:
+    """The universe/baseline boundary set the guard enforces.
+
+    Prefers the PINNED epoch stored in task meta over a live config re-import so
+    a mid-run edit to config/sie_overrides cannot change what this run enforces
+    (fix #1, keystone).  Falls back to the live baseline when no epoch is present
+    (legacy tasks -- fail-closed: baseline is always included).
+
+    NOTE: core-file protection (CORE_PROTECTED_FILES) is NOT included here --
+    that depends on is_self_referential / explicit resolution state which only
+    selfModificationGuard knows.  This helper covers the universe + baseline
+    layer only.
+    """
+    meta = getattr(state, "meta", {}) or {}
+    ep = meta.get("epoch") or {}
+    pinned = (ep.get("universe") or {}).get("hard_boundaries") or []
+    base: list = [str(b) for b in pinned if b]
+    # ALWAYS include the baseline secret/VCS/state boundaries (fail-closed).
+    for b in (list(getattr(config, "UNIVERSE_DEFAULT_HARD_BOUNDARIES", ()) or ()) if config
+              else [".env", ".git", "venv", "state/tasks"]):
+        if b not in base:
+            base.append(b)
+    return set(base)
+
+
 def selfModificationGuard(data):
     """PreToolUse: during a SELF-REFERENTIAL task, block edits to the core files
     that run the orchestrator loop (orchestrator.py, main.py, agents/hooks.py, config.py).
@@ -268,15 +293,18 @@ def selfModificationGuard(data):
         # even with state=None, enforcing the baseline + core-file boundaries (fail CLOSED).
         if state is None and not env_requested:
             sys.exit(0)
-        # Hard boundaries are read DYNAMICALLY from the task's universe (set at /goal time).
-        universe = (state.meta.get("universe") if state else None) or {}
-        boundaries = [str(b) for b in (universe.get("hard_boundaries") or []) if b]
-        # ALWAYS enforce the baseline secret/VCS boundaries -- even if the universe is None/empty
-        # (legacy or resumed task) so .env/.git/venv/state are never left unprotected.
-        for d in (list(getattr(config, "UNIVERSE_DEFAULT_HARD_BOUNDARIES", ()) or ()) if config
-                  else [".env", ".git", "venv", "state/tasks"]):
-            if d not in boundaries:
-                boundaries.append(d)
+        # Build the boundary list: universe + baseline from the PINNED epoch (or live fallback
+        # for legacy tasks).  Core-file protection is appended below when conditions require it.
+        boundaries = list(_boundarySetFor(state))
+        # When no epoch is present (legacy task), also pull in the live universe.hard_boundaries
+        # so existing behavior is fully preserved for tasks that pre-date epoch pinning.
+        meta = getattr(state, "meta", {}) or {}
+        if not (meta.get("epoch") or {}):
+            universe = (state.meta.get("universe") if state else None) or {}
+            for b in (universe.get("hard_boundaries") or []):
+                b = str(b)
+                if b and b not in boundaries:
+                    boundaries.append(b)
         # Protect the core loop files when this is a self-ref run OR when a run is active but its
         # task could NOT be trusted (env pinned a task, yet resolution fell back) -- fail CLOSED
         # rather than leave orchestrator.py/main.py/hooks.py/config.py editable on an unknown task.
