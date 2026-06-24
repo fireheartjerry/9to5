@@ -5,6 +5,7 @@ or `python health.py`. Exits 0 only if every check passes.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -119,8 +120,13 @@ def _envKeys() -> tuple[bool, str, str]:
 
 def _git() -> tuple[bool, str, str]:
     try:
+        # timeout + no terminal prompt: a hung git (network remote, credential prompt, locked index)
+        # must never wedge /health and the gateway thread that calls collectHealth. Matches the
+        # bounded sibling checks (_claudeCli=40s, _gh=15s). TimeoutExpired is caught below.
         proc = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"],
-                              cwd=config.PROJECT_ROOT, capture_output=True, text=True)
+                              cwd=config.PROJECT_ROOT, capture_output=True, text=True,
+                              timeout=15, stdin=subprocess.DEVNULL,
+                              env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
         ok = proc.returncode == 0 and "true" in (proc.stdout or "").lower()
         return ok, ("initialized" if ok else "not a git repo"), \
             ("" if ok else f"run: git -C {config.PROJECT_ROOT} init")

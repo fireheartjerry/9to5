@@ -125,9 +125,22 @@ class TaskState:
             # while json.dumps walks it raises "changed size during iteration".
             payload = json.dumps(self.data, indent=2, ensure_ascii=False)
             p.parent.mkdir(parents=True, exist_ok=True)
-            tmp = p.with_suffix(".json.tmp")
-            tmp.write_text(payload, encoding="utf-8")
-            _atomicReplace(tmp, p)
+            # UNIQUE temp per writer (pid+thread+rand). _SAVE_LOCK only serializes THIS process; a
+            # second process saving the same task_id (a resume relaunch overlapping the prior run, the
+            # gateway/webdash persisting state) shared a fixed "<id>.json.tmp" -- both wrote the same
+            # temp and the second os.replace hit FileNotFoundError after the first moved it. A unique
+            # source makes each replace find its own temp; the destination swap stays atomic. Mirrors
+            # ControlBus._write.
+            tmp = p.with_suffix(f".{os.getpid()}-{threading.get_ident()}-{os.urandom(4).hex()}.json.tmp")
+            try:
+                tmp.write_text(payload, encoding="utf-8")
+                _atomicReplace(tmp, p)
+            except Exception:
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+                raise
         return p
 
     @classmethod
