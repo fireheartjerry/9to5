@@ -18,5 +18,23 @@ class TestFingerprint(unittest.TestCase):
         self.assertNotEqual(before["files"][str(f).lower()], after["files"][str(f).lower()])
 
 
+class TestSnapshot(unittest.TestCase):
+    def test_snapshot_is_immutable_under_later_config_change(self):
+        import config
+        with mock.patch.object(config, "MAX_SUBTASK_ATTEMPTS", 3):
+            snap = epoch.snapshot(universe={"hard_boundaries": [".env"]})
+        with mock.patch.object(config, "MAX_SUBTASK_ATTEMPTS", 99):
+            # The snapshot captured 3 at snapshot time and does not see the later 99.
+            self.assertEqual(snap.config_knobs["MAX_SUBTASK_ATTEMPTS"], 3)
+
+    def test_snapshot_roundtrips_through_meta_dict(self):
+        snap = epoch.snapshot(universe={"hard_boundaries": [".env"]})
+        self.assertEqual(epoch.Epoch.fromDict(snap.toDict()).universe, snap.universe)
+
+    def test_snapshot_carries_boundary_set(self):
+        snap = epoch.snapshot(universe={"hard_boundaries": ["state/tasks", "secret.py"]})
+        self.assertIn("secret.py", snap.universe["hard_boundaries"])
+
+
 if __name__ == "__main__":
     unittest.main()

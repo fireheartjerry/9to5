@@ -33,3 +33,40 @@ def fingerprint() -> dict[str, Any]:
             data = b""
         files[path.lower()] = hashlib.sha256(data).hexdigest()
     return {"git_sha": _gitSha(), "files": files}
+
+
+import config  # noqa: E402 -- intentional late import to avoid circular deps
+
+# The config constants whose values govern a run and must be pinned (the hook + loop read
+# these from the epoch, never a live re-import). Mirrors config.SIE_TUNABLE_KNOBS + flags.
+_PINNED_KNOBS: tuple[str, ...] = (
+    "MAX_SUBTASK_ATTEMPTS", "RETRIEVAL_K", "ADVERSARY_HEARTBEAT_EVERY",
+    "PROMPT_PROMOTE_MIN_USES", "CONFIDENCE_DEFER_THRESHOLD", "SELFMOD_ALLOW_CORE",
+)
+
+
+@dataclass(frozen=True)
+class Epoch:
+    config_knobs: dict[str, Any]
+    universe: dict[str, Any]
+    brain_tag: Optional[str]
+    code: dict[str, Any]            # the fingerprint()
+
+    def toDict(self) -> dict[str, Any]:
+        return {"config_knobs": dict(self.config_knobs), "universe": dict(self.universe),
+                "brain_tag": self.brain_tag, "code": self.code}
+
+    @classmethod
+    def fromDict(cls, d: dict[str, Any]) -> "Epoch":
+        return cls(config_knobs=dict(d.get("config_knobs") or {}),
+                   universe=dict(d.get("universe") or {}),
+                   brain_tag=d.get("brain_tag"), code=d.get("code") or {})
+
+
+def snapshot(*, universe: Optional[dict] = None, brain_tag: Optional[str] = None) -> Epoch:
+    """Freeze governing state at process/run start. Deep-copies values so later mutation
+    of config or the universe dict cannot change what was pinned."""
+    knobs = {k: getattr(config, k, None) for k in _PINNED_KNOBS}
+    uni = dict(universe or {})
+    uni["hard_boundaries"] = list(uni.get("hard_boundaries") or [])
+    return Epoch(config_knobs=knobs, universe=uni, brain_tag=brain_tag, code=fingerprint())
