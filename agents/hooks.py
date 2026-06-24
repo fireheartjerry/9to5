@@ -291,11 +291,11 @@ def selfModificationGuard(data):
     """PreToolUse: during a SELF-REFERENTIAL task, block edits to the core files
     that run the orchestrator loop (orchestrator.py, main.py, agents/hooks.py, config.py).
     Exits 2 to block; exits 0 otherwise."""
+    bash_cmd = ""      # defined BEFORE the try so the fail-closed handler can read them even if the
+    file_path = ""     # body raises early (else they'd NameError and we'd lose the block decision)
     try:
         tool_name = data.get("tool_name", "")
         tool_input = data.get("tool_input", {}) or {}
-        bash_cmd = ""
-        file_path = ""
         if tool_name in ("Edit", "Write", "MultiEdit"):
             file_path = tool_input.get("file_path", "") or ""
         elif tool_name == "Bash":
@@ -371,8 +371,17 @@ def selfModificationGuard(data):
         sys.exit(0)
     except SystemExit:
         raise
-    except Exception:
-        sys.exit(0)
+    except Exception as e:  # noqa: BLE001
+        # FAIL CLOSED: the guard protects hard boundaries (.env / .git / state/tasks / core loop
+        # files). If it crashes WHILE guarding an identified write target (e.g. a malformed task
+        # meta), allowing the edit would silently defeat the boundary. Block instead, and log the
+        # swallow so a guard failure is never mistaken for "this edit is safe". With no write target
+        # identified there is nothing to guard, so allow (exit 0) as before.
+        try:
+            sys.stderr.write(f"self_modification_guard: internal error, failing closed: {e}\n")
+        except Exception:  # noqa: BLE001
+            pass
+        sys.exit(2 if (file_path or bash_cmd) else 0)
 
 
 def main():
