@@ -12,6 +12,10 @@ state/experience.db-shm
 # SIE runtime artifacts (LoRA adapters, datasets, sie state)
 state/adapters/
 state/sie_state.json
+# Phase 2 second brain (chatgpt.com): logged-in profile, self-heal cache, trust log
+state/chatgpt_profile/
+state/chatgpt_selectors.json
+state/adversary_trust.jsonl
 __pycache__/
 *.pyc
 .pytest_cache/

@@ -1,0 +1,92 @@
+"""adversary_trust -- measurable trust for the GPT-5.5 second brain.
+
+A second opinion is only worth its cost if it's *measurable*, not vibes. Every consult records
+who reviewed (GPT / Ollama / stub), the verdict + severity, and -- when known later -- whether a
+challenge was UPHELD (i.e. the remediation/verify actually confirmed the problem was real). From
+those rows we report agreement and challenge rates the orchestrator surfaces on the dashboard and
+rolls up to Obsidian.
+
+Durable + dependency-light: append-only JSONL at ``config.ADVERSARY_TRUST_LOG``. ``summary``
+reads it back and aggregates. Never raises into the run loop.
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+import config
+
+LOG = config.getLogger("adversary_trust")
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def record(review_type: str, verdict: dict, *, tier: Optional[str] = None,
+           ollama_verdict: Optional[str] = None, upheld: Optional[bool] = None,
+           task_id: Optional[str] = None) -> None:
+    """Append one consult row. ``upheld`` is None until remediation/verify resolves a challenge;
+    ``ollama_verdict`` is set only when BOTH brains ran (so agreement can be computed)."""
+    row = {
+        "at": _now_iso(),
+        "task_id": task_id,
+        "review_type": review_type,
+        "tier": tier or verdict.get("tier"),
+        "verdict": verdict.get("verdict"),
+        "severity": verdict.get("severity"),
+        "confidence": verdict.get("confidence"),
+        "gpt_verdict": verdict.get("verdict") if (tier or verdict.get("tier")) == "gpt" else None,
+        "ollama_verdict": ollama_verdict,
+        "agreed": (None if ollama_verdict is None else (verdict.get("verdict") == ollama_verdict)),
+        "upheld": upheld,
+    }
+    try:
+        path = config.ADVERSARY_TRUST_LOG
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")
+    except Exception as e:  # noqa: BLE001 -- telemetry must never break a run
+        LOG.warning("trust record write failed: %s", e)
+
+
+def _rows() -> list[dict]:
+    try:
+        path = config.ADVERSARY_TRUST_LOG
+        if not path.exists():
+            return []
+        return [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("trust log unreadable: %s", e)
+        return []
+
+
+def summary(task_id: Optional[str] = None) -> dict:
+    """Aggregate trust metrics (optionally for one task): consult counts by tier, challenge rate,
+    GPT<->Ollama agreement rate (where both ran), and upheld-challenge rate."""
+    rows = [r for r in _rows() if task_id is None or r.get("task_id") == task_id]
+    n = len(rows)
+    gpt = sum(1 for r in rows if r.get("tier") == "gpt")
+    challenges = [r for r in rows if r.get("verdict") == "challenged"]
+    agreed = [r for r in rows if r.get("agreed") is not None]
+    upheld = [r for r in challenges if r.get("upheld") is not None]
+    return {
+        "consults": n,
+        "gpt": gpt,
+        "ollama": sum(1 for r in rows if r.get("tier") == "ollama"),
+        "stub": sum(1 for r in rows if r.get("tier") == "stub"),
+        "challenges": len(challenges),
+        "challenge_rate": (len(challenges) / n) if n else 0.0,
+        "agreement_rate": (sum(1 for r in agreed if r["agreed"]) / len(agreed)) if agreed else None,
+        "upheld_rate": (sum(1 for r in upheld if r["upheld"]) / len(upheld)) if upheld else None,
+    }
+
+
+def dashboard_line(task_id: Optional[str] = None) -> str:
+    """One compact line for the live Discord dashboard / logs."""
+    s = summary(task_id)
+    agree = "n/a" if s["agreement_rate"] is None else f"{s['agreement_rate']*100:.0f}%"
+    upheld = "n/a" if s["upheld_rate"] is None else f"{s['upheld_rate']*100:.0f}%"
+    return (f"{s['consults']} consults (GPT {s['gpt']}/Ollama {s['ollama']}/stub {s['stub']}) · "
+            f"{s['challenges']} challenged · agree {agree} · upheld {upheld}")
