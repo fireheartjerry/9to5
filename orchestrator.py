@@ -341,7 +341,14 @@ class Orchestrator:
         self.obs = obs if obs is not None else ObsidianClient()
         self._run_claude = run_claude or executor.runClaude
         self._replan = replan or replanner.replan
-        self._review = review or adversary.review
+        # Default reviewer = the dual-brain dispatcher (GPT-5.5 -> Ollama -> stub). Tests inject a
+        # plain `review` callable, which bypasses GPT and keeps the legacy single-brain contract.
+        self._review = review or self._adversaryReview
+        # Phase 2 second-brain session state (only used when BROWSER_LAYER_ENABLED + probe passes).
+        self._chatgpt_session = None
+        self._chatgpt_session_ok = False
+        self._chatgpt_ask = None        # bound (message)->reply once the session is live
+        self._last_review_hash = None   # cost guard: skip GPT on near-duplicate output
         self._state_lock = threading.Lock()
         self._poll_lock = threading.Lock()      # serialize Discord poll cursor across parallel workers (CB-7)
         self._selfref_prompt_cache: dict = {}   # task_id -> self-ref system-prompt prefix (built once)
@@ -1059,33 +1066,182 @@ class Orchestrator:
         )
 
     # ===================================================================
-    # Adversary teeth -- bounded remediation + pre-PR hold
+    # Dual-brain second opinion -- dispatcher, cost guard, session lifecycle
+    # ===================================================================
+    def _goalText(self, state: TaskState) -> str:
+        return state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "")
+
+    def _worthGptReview(self, output: str) -> bool:
+        """Cost guard: skip a GPT call on trivially-short or near-duplicate executor output (the
+        adversary fires many times per run; GPT quota is finite). Non-subtask touchpoints bypass."""
+        import hashlib
+        text = (output or "").strip()
+        if len(text) < config.CHATGPT_MIN_OUTPUT_CHARS:
+            return False
+        h = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()
+        if h == self._last_review_hash:
+            return False
+        self._last_review_hash = h
+        return True
+
+    def _adversaryReview(self, subtask_title: str, trigger_reason: str, executor_output: str, *,
+                         ollama_chat=None, goal: str = "", review_type: str = "subtask",
+                         worth=None) -> dict:
+        """Default reviewer: route through second_brain (GPT-5.5 -> Ollama -> stub), apply the cost
+        guard, disable a dead GPT session for the rest of the run, and record trust telemetry.
+        Signature matches the legacy ``adversary.review`` so every existing call site is unchanged."""
+        from agents import second_brain
+        if worth is None:
+            worth = self._worthGptReview(executor_output) if review_type == "subtask" else True
+        rv = second_brain.consult(
+            review_type, title=subtask_title, trigger_reason=trigger_reason,
+            content=executor_output, goal=goal,
+            ollama_chat=ollama_chat or self._ollamaChat,
+            browser_ask=self._chatgpt_ask, session_ok=self._chatgpt_session_ok, worth=worth)
+        if rv.get("session_dead") and self._chatgpt_session_ok:
+            self._chatgpt_session_ok = False
+            try:
+                discord.sendEmbed(discord.noticeEmbed(
+                    "GPT-5.5 second brain unreachable (login / Cloudflare / rate-limit) — "
+                    "using the Ollama brain for the rest of this run."))
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            from learning import adversary_trust
+            adversary_trust.record(review_type, rv, tier=rv.get("tier"))
+        except Exception:  # noqa: BLE001 -- telemetry never affects the run
+            pass
+        return rv
+
+    def _consult(self, state: TaskState, review_type: str, title: str, reason: str,
+                 content: str, *, worth: bool = True) -> dict:
+        """Second-opinion entry for the plan / architecture / pre-PR touchpoints. Honors an
+        injected reviewer (tests) via the legacy signature; otherwise routes to the dual brain."""
+        if getattr(self._review, "__func__", None) is not Orchestrator._adversaryReview:
+            rv = self._review(title, reason, content, ollama_chat=self._ollamaChat,
+                              goal=self._goalText(state))
+            if isinstance(rv, dict):
+                rv.setdefault("tier", "ollama" if not rv.get("stub") else "stub")
+            return rv
+        return self._adversaryReview(title, reason, content, goal=self._goalText(state),
+                                     review_type=review_type, worth=worth)
+
+    def _planReview(self, state: TaskState, elaborated: str, dashboard) -> None:
+        """GPT-5.5 critiques the proposed plan BEFORE execution; a blocking challenge feeds the
+        concerns back through ONE Ollama re-plan pass. Best-effort -- never blocks the run."""
+        if not config.ADVERSARY_REVIEW_PLAN:
+            return
+        try:
+            from agents import second_brain
+            plan_text = "\n".join(f"- {s['title']}: {s.get('description','')}" for s in state.subtasks)
+            rv = self._consult(state, "plan", "plan review", "plan review", plan_text)
+            with self._state_lock:
+                state.addAdversaryReview("plan", "plan review", rv.get("verdict", "approved"), None)
+            if second_brain.is_blocking(rv) and (rv.get("must_fix") or rv.get("concerns")):
+                fixes = "; ".join((rv.get("must_fix") or rv.get("concerns"))[:6])
+                dashboard.update(state, "planning", f"plan challenged -> revising: {fixes[:80]}")
+                state.addNotification("plan_challenged", fixes[:300])
+                LOG.info("Plan challenged by second brain: %s", fixes)
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("plan review failed (non-fatal): %s", e)
+
+    def _architectureReview(self, state: TaskState, architect_doc: str, dashboard) -> str:
+        """GPT-5.5 second opinion on the architecture doc; concerns are appended to the doc so the
+        planner sees them. Returns the (possibly annotated) doc. Best-effort."""
+        if not config.ADVERSARY_REVIEW_ARCH:
+            return architect_doc
+        try:
+            rv = self._consult(state, "architecture", "architecture review",
+                               "architecture review", architect_doc)
+            with self._state_lock:
+                state.addAdversaryReview("architecture", "architecture review",
+                                         rv.get("verdict", "approved"), None)
+            notes = (rv.get("must_fix") or []) + (rv.get("concerns") or [])
+            if rv.get("verdict") == "challenged" and notes:
+                dashboard.update(state, "architecting", "architecture concerns noted for planning")
+                state.addNotification("architecture_challenged", "; ".join(notes)[:300])
+                return architect_doc + "\n\n## Adversary concerns (address in planning)\n- " + "\n- ".join(notes[:8])
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("architecture review failed (non-fatal): %s", e)
+        return architect_doc
+
+    def _openChatGptSession(self, state: TaskState, dashboard=None) -> None:
+        """Run-start: open the logged-in ChatGPT session, health-probe it, and start ONE run
+        conversation inside the 9to5 project. On any failure, GPT stays disabled and the run uses
+        the Ollama brain -- announced once, never fatal."""
+        if not config.BROWSER_LAYER_ENABLED:
+            return
+        try:
+            from agents import browser_executor
+            session = browser_executor.get_session()
+            if not session.health_probe():
+                discord.sendEmbed(discord.noticeEmbed(
+                    "GPT-5.5 second brain unavailable (health probe failed) — Ollama for this run."))
+                return
+            session.start_run_conversation(self._goalText(state), state.task_id)
+            self._chatgpt_session = session
+            self._chatgpt_ask = lambda message: browser_executor.sessionAsk(message, expect_json=True)
+            self._chatgpt_session_ok = True
+            LOG.info("GPT-5.5 second brain online for task %s", state.task_id)
+            discord.sendEmbed(discord.noticeEmbed("🧠 GPT-5.5 second brain online (chatgpt.com)."))
+        except Exception as e:  # noqa: BLE001 -- never block a run on the second brain
+            LOG.warning("could not start ChatGPT session (%s); Ollama only", e)
+            self._chatgpt_session_ok = False
+
+    def _closeChatGptSession(self) -> None:
+        try:
+            if self._chatgpt_session is not None:
+                self._chatgpt_session.close()
+        except Exception:  # noqa: BLE001
+            pass
+        self._chatgpt_session = None
+        self._chatgpt_session_ok = False
+        self._chatgpt_ask = None
+
+    # ===================================================================
+    # Adversary teeth -- bounded remediation LOOP + pre-PR hold
     # ===================================================================
     def _remediate(self, state: TaskState, subtask: dict, architect_doc: str, exec_cwd: str,
                    concerns: list[str]) -> dict:
-        """ONE bounded extra executor attempt to address an adversary's concerns on a subtask that
-        ALREADY passed verification. Re-verifies; only keeps or improves -- a remediation that fails
-        to verify never downgrades the prior pass (the subtask stays done). Returns the verify_result."""
+        """Bounded remediation LOOP (up to ADVERSARY_REMEDIATION_MAX_ATTEMPTS) on a subtask that
+        ALREADY passed verification: feed the reviewer's concerns back to the executor, re-verify,
+        then re-review with the second brain; stop when it approves (or attempts run out). Each
+        attempt is snapshot-guarded -- an edit that breaks the artifact is reverted and the prior
+        pass kept, so remediation can only keep or improve. Returns the last verify_result."""
         sid = subtask["subtask_id"]
-        feedback = ("The work PASSED its acceptance check, but an adversarial reviewer raised concerns. "
-                    "Address these WITHOUT breaking the passing verification:\n- " + "\n- ".join(concerns))
-        # FX-10: snapshot the work tree BEFORE remediation. A remediation edit that breaks the artifact
-        # (fails re-verify) must be REVERTED -- otherwise the broken files stay on disk and get committed
-        # while the subtask still reports the prior pass (verify_result no longer matches disk).
-        snap = self._gitSnapshot(exec_cwd)
-        spec = self.authorInvocationSpec(state, subtask, architect_doc, feedback)
-        result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask)
-        vres = verifier.runVerification(subtask.get("verify"), exec_cwd, result)
-        with self._state_lock:
-            if vres.get("passed"):
-                state.recordVerify(sid, vres)   # adopt the still-passing post-remediation evidence
-            else:
-                self._gitRestore(exec_cwd, snap)   # revert broken remediation edits so disk == kept pass
-            state.addNotification(
-                "adversary_remediation",
-                f"{sid}: remediation {'verified' if vres.get('passed') else 'did not verify (reverted, prior pass kept)'}")
-        LOG.info("Adversary remediation for %s -> %s", sid,
-                 "verified" if vres.get("passed") else "reverted (kept prior pass)")
+        goal = self._goalText(state)
+        vres: dict = {}
+        attempts = max(1, config.ADVERSARY_REMEDIATION_MAX_ATTEMPTS)
+        for i in range(1, attempts + 1):
+            feedback = ("The work PASSED its acceptance check, but an adversarial reviewer raised "
+                        "concerns. Address these WITHOUT breaking the passing verification:\n- "
+                        + "\n- ".join(concerns))
+            snap = self._gitSnapshot(exec_cwd)
+            spec = self.authorInvocationSpec(state, subtask, architect_doc, feedback)
+            result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask)
+            vres = verifier.runVerification(subtask.get("verify"), exec_cwd, result)
+            with self._state_lock:
+                if vres.get("passed"):
+                    state.recordVerify(sid, vres)   # adopt the still-passing post-remediation evidence
+                else:
+                    self._gitRestore(exec_cwd, snap)   # revert broken edits so disk == kept pass
+                state.addNotification(
+                    "adversary_remediation",
+                    f"{sid}: remediation {i}/{attempts} "
+                    f"{'verified' if vres.get('passed') else 'did not verify (reverted, prior pass kept)'}")
+            LOG.info("Adversary remediation %d/%d for %s -> %s", i, attempts, sid,
+                     "verified" if vres.get("passed") else "reverted (kept prior pass)")
+            if not vres.get("passed"):
+                break   # a broken attempt was reverted; another try would re-break -- stop
+            # Re-review the remediated output: if the second brain is now satisfied, we're done.
+            combined = ((result or {}).get("stdout", "") + "\n" + (result or {}).get("stderr", "")) \
+                if isinstance(result, dict) else ""
+            rv = self._review(subtask["title"], f"remediation re-review {i}/{attempts}", combined,
+                              ollama_chat=self._ollamaChat, goal=goal)
+            from agents import second_brain
+            if not second_brain.is_blocking(rv):
+                break
+            concerns = (rv.get("must_fix") or rv.get("concerns") or concerns)[:10]
         return vres
 
     @staticmethod
@@ -1108,17 +1264,39 @@ class Orchestrator:
         except Exception as e:  # noqa: BLE001
             LOG.warning("remediation revert failed: %s", e)
 
-    def _prePrAdversary(self, state: TaskState) -> dict:
-        """Pre-PR safety review: the adversary judges the whole run before a PR is opened. Best-effort
-        -- any failure approves (the reviewer must never block a run by erroring). Returns the verdict dict."""
+    def _gitDiffForReview(self, work_dir: "str | None") -> str:
+        """The whole change as a (stat + truncated patch) for the pre-PR diff review. '' when
+        there's no repo / no diff, so the reviewer falls back to a subtask-status summary."""
+        if not work_dir:
+            return ""
+        try:
+            t = config.GIT_TIMEOUT_SECONDS
+            stat = subprocess.run(["git", "diff", "HEAD", "--stat"], cwd=work_dir,
+                                  capture_output=True, text=True, timeout=t)
+            patch = subprocess.run(["git", "diff", "HEAD"], cwd=work_dir,
+                                   capture_output=True, text=True, timeout=t)
+            body = ((stat.stdout or "") + "\n\n" + (patch.stdout or "")).strip()
+            return body[:config.ADVERSARY_PREPR_DIFF_MAX_CHARS]
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("git diff for pre-PR review failed: %s", e)
+            return ""
+
+    def _prePrAdversary(self, state: TaskState, work_dir: "str | None" = None) -> dict:
+        """Pre-PR safety review: the second brain judges the whole change before a PR is opened --
+        from the REAL git diff when available, else a subtask-status summary. Best-effort: any
+        failure approves (the reviewer must never block a run by erroring). Returns the verdict dict."""
         try:
             _t, reason = adversary.shouldTrigger("", 0, pre_pr=True)
-            summary = "\n".join(
-                f"- {s['subtask_id']} [{s['status']}] {s['title']}"
-                + (" (verify PASS)" if (s.get('verify_result') or {}).get('passed') else "")
-                for s in state.subtasks if s["status"] != "removed") or "(no subtasks)"
-            rv = self._review("Pre-PR safety review", reason, summary, ollama_chat=self._ollamaChat,
-                              goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
+            diff = self._gitDiffForReview(work_dir)
+            if diff:
+                review_type, content = "pre_pr_diff", diff
+            else:
+                review_type = "pre_pr_diff"
+                content = "\n".join(
+                    f"- {s['subtask_id']} [{s['status']}] {s['title']}"
+                    + (" (verify PASS)" if (s.get('verify_result') or {}).get('passed') else "")
+                    for s in state.subtasks if s["status"] != "removed") or "(no subtasks)"
+            rv = self._consult(state, review_type, "Pre-PR safety review", reason, content)
             with self._state_lock:
                 state.addAdversaryReview("pre_pr", reason, rv["verdict"], None, stub=rv.get("stub", False))
             discord.sendEmbed(discord.adversaryTriggeredEmbed("Pre-PR review", reason, rv.get("verdict")))
@@ -1140,6 +1318,7 @@ class Orchestrator:
 
     def _prGate(self, review: dict, auto_pr: bool, state: TaskState) -> "tuple[bool, str]":
         """Decide whether to create the PR. Returns (create, skip_reason)."""
+        from agents import second_brain
         if not auto_pr:
             return False, "--no-pr"
         # FX-18: a DEGRADED run (most subtasks failed, or core changes reverted) must NEVER open a PR,
@@ -1147,11 +1326,11 @@ class Orchestrator:
         # completions), so gating the degraded check behind a 'challenged' verdict made it dead code.
         if self._runIsDegraded(state):
             return False, "degraded run (majority failed / core reverted) — PR held for review"
-        if config.ADVERSARY_PR_HOLD_ENABLED and review.get("verdict") == "challenged":
+        if config.ADVERSARY_PR_HOLD_ENABLED and second_brain.is_blocking(review):
             # Night mode normally suppresses an advisory challenge hold (hands-off); the degraded
             # check above already covers the must-never-ship cases regardless of night mode.
             if not config.NIGHT_MODE:
-                concerns = "; ".join(review.get("concerns") or ["challenged"])
+                concerns = "; ".join(review.get("must_fix") or review.get("concerns") or ["challenged"])
                 return False, f"adversary HOLD: {concerns}"[:300]
         return True, ""
 
@@ -1833,6 +2012,9 @@ class Orchestrator:
         started = time.time()
         elaborated = state.meta["goal_elaborated"] or state.meta["goal_raw"]
         self.writeIndex(state)
+        # Phase 2: bring the GPT-5.5 second brain online for this run (probe + run conversation).
+        # No-op unless BROWSER_LAYER_ENABLED; failure leaves the Ollama brain in charge.
+        self._openChatGptSession(state, dashboard)
 
         try:
             if not resume and self._detectSelfReferential(state, work_dir):
@@ -1887,6 +2069,8 @@ class Orchestrator:
                 discord.sendEmbed(discord.architectDoneEmbed(state.architectNoteRel()))
                 state.addNotification("architect_done", state.architectNoteRel())
                 dashboard.update(state, "architecting", f"architecture done ({len(architect_doc)} chars)")
+                # Second brain: critique the architecture; concerns are folded into the doc.
+                architect_doc = self._architectureReview(state, architect_doc, dashboard)
 
                 # --- Phase 2: Planning ---
                 state.setStatus("planning")
@@ -1900,6 +2084,8 @@ class Orchestrator:
                 state.addNotification("planning_start", f"{len(state.subtasks)} subtasks")
                 self.writeIndex(state)
                 dashboard.update(state, "planning", f"planned {len(state.subtasks)} subtasks")
+                # Second brain: critique the plan BEFORE execution (missing steps, ordering, scope).
+                self._planReview(state, elaborated, dashboard)
                 self._checkControl(state, bus, dashboard, gate="plan")
 
             # --- Epoch pin (run-start snapshot; observe-only, never blocks) ---
@@ -1941,7 +2127,7 @@ class Orchestrator:
 
             # --- Phase 4: PR + complete ---
             self._checkControl(state, bus, dashboard, gate="pre_pr")
-            pr_review = self._prePrAdversary(state)
+            pr_review = self._prePrAdversary(state, work_dir)
             create_pr, skip_reason = self._prGate(pr_review, auto_pr, state)
             if create_pr:
                 # Final gate: never open a PR whose own test suite is red (a self-improvement run can
@@ -1989,6 +2175,16 @@ class Orchestrator:
             discord.sendEmbed(discord.completeEmbed(state, pr_link, _fmtElapsed(elapsed)))
             state.addNotification("complete", pr_link)
             dashboard.update(state, "complete", f"done {done}/{total} · {_fmtElapsed(elapsed)}")
+            # Trust telemetry rollup: surface GPT<->Ollama agreement + challenge stats for the run.
+            try:
+                from learning import adversary_trust
+                line = adversary_trust.dashboard_line(state.task_id)
+                dashboard.event(f"🧠 second brain: {line}")
+                self.obs.writeNote(state.taskNoteRel("adversary-trust") if hasattr(state, "taskNoteRel")
+                                   else f"tasks/{state.task_id}/adversary-trust.md",
+                                   f"# Adversary trust — {state.task_id}\n\n{line}\n")
+            except Exception:  # noqa: BLE001
+                pass
             LOG.info("Run complete: status=%s subtasks=%d/%d elapsed=%s",
                      final_status, done, total, _fmtElapsed(elapsed))
             return {
@@ -2033,6 +2229,7 @@ class Orchestrator:
                     "subtasks": [{"subtask_id": s["subtask_id"], "status": s["status"]} for s in state.subtasks]}
         finally:
             bus.setPendingGate(None)
+            self._closeChatGptSession()   # tear down the GPT-5.5 browser session for this run
             try:
                 dashboard.unpin()
             except Exception:  # noqa: BLE001
