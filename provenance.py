@@ -42,3 +42,34 @@ def coerce(d: Optional[dict]) -> Provenance:
         return Provenance.fromDict(d)
     except Exception:  # noqa: BLE001
         return Provenance(origin=Origin.EXECUTOR)
+
+
+class Verdict(Enum):
+    ALLOW = "allow"          # content may enter the intended path
+    NEUTRAL = "neutral"      # admitted as data but counts as NO evidence (believe-paths)
+    QUARANTINE = "quarantine"  # refused on this path; treat as untrusted other.content
+
+
+@dataclass(frozen=True)
+class Decision:
+    verdict: "Verdict"
+    reason: str
+
+
+_OBEY_OK = {Origin.HUMAN}                    # only human directives may be obeyed
+_BELIEVE_TRUSTED = {Origin.HUMAN, Origin.SCRAPE}  # plus anything with real attestation
+
+
+def assertIngestible(surface: str, intended_role: str, prov: Provenance) -> Decision:
+    """The single ingestion chokepoint. ``intended_role`` is 'obey' (becomes a directive)
+    or 'believe' (becomes trusted evidence). Fails CLOSED."""
+    if intended_role == "obey":
+        if prov.origin in _OBEY_OK or prov.attested_by:
+            return Decision(Verdict.ALLOW, f"{surface}: {prov.origin.value} obey-ok")
+        return Decision(Verdict.QUARANTINE, f"{surface}: {prov.origin.value} may not be obeyed")
+    if intended_role == "believe":
+        if prov.attested_by or prov.origin in _BELIEVE_TRUSTED:
+            return Decision(Verdict.ALLOW, f"{surface}: attested/{prov.origin.value}")
+        return Decision(Verdict.NEUTRAL, f"{surface}: unattested {prov.origin.value} -> neutral")
+    # Unknown intended_role -> safest is quarantine.
+    return Decision(Verdict.QUARANTINE, f"{surface}: unknown role {intended_role!r}")
