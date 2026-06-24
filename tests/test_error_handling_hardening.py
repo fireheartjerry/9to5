@@ -253,7 +253,10 @@ class TestWebdashPostActionNormalization(unittest.TestCase):
     def test_null_action_returns_error_not_crash(self):
         result = self._post("t-web", {"action": None})
         self.assertFalse(result["ok"])
-        self.assertIn("unknown", result["error"])
+        # a null action is rejected with a non-empty error (the handler now reports the specific
+        # "action must be a non-empty string" rather than the old generic "unknown"); assert the
+        # intent -- an error, not a crash -- without coupling to the exact wording.
+        self.assertTrue(result.get("error"))
 
     def test_integer_action_returns_error_not_crash(self):
         result = self._post("t-web", {"action": 42})

@@ -73,6 +73,12 @@ _USER_GLOBAL_CLAUDE_MD = Path.home() / ".claude" / "CLAUDE.md"
 # running self diverging).
 _FINGERPRINT_EXCLUDE_DIRS: tuple[Path, ...] = (PROJECT_ROOT / "tests", PROJECT_ROOT / "testing")
 
+# Nested trees that are NOT the running orchestrator's importable self-code: throwaway git worktrees
+# under .claude/worktrees, the VCS dir, and the venv. Without pruning these, rglob pulls a worktree's
+# FULL duplicate of the tree (a second orchestrator.py, config.py, AND its tests/) into the fingerprint
+# set -- polluting epoch hashes and reading as self-divergence whenever such a worktree exists.
+_NON_SELF_TREES: tuple[Path, ...] = (PROJECT_ROOT / ".claude", PROJECT_ROOT / ".git", PROJECT_ROOT / "venv")
+
 
 def roleOf(path: str | os.PathLike) -> Role:
     """Classify ``path`` into exactly one Role. Canonical, containment-based."""
@@ -110,6 +116,8 @@ def selfCodeFiles() -> list[str]:
     out: list[str] = []
     for p in PROJECT_ROOT.rglob("*.py"):
         canon = _canonical(p)
+        if any(_isUnder(canon, d) for d in _NON_SELF_TREES):
+            continue   # a worktree/venv/.git copy, not the running self
         if any(_isUnder(canon, d) for d in _FINGERPRINT_EXCLUDE_DIRS):
             continue
         if roleOf(p) == Role.SELF_CODE:
