@@ -47,18 +47,30 @@ _SESSION_LIMIT_STATE: dict = {"first_hit_at": None}
 
 
 def _isRateLimitError(result: dict) -> bool:
-    """Return True when the result envelope signals a session token limit hit."""
+    """Return True when the result envelope signals a session token limit hit.
+
+    Trust the STRUCTURED signal (subtype=="rate_limit"). The substring fallback scans ONLY
+    stderr (the CLI/harness error channel) for the harness's anchored phrases -- NEVER stdout,
+    which is Claude's task output: 9TO5 self-improves on THIS very file, so a failed subtask
+    that edits executor.py (or a test asserting on 'token limit') would otherwise echo a trigger
+    phrase into stdout and wedge the run in a bogus multi-hour pause (CB-8)."""
     if not result.get("is_error"):
         return False
     if result.get("subtype") == "rate_limit":
         return True
-    combined = ((result.get("stderr") or "") + " " + (result.get("stdout") or "")).lower()
-    return any(s in combined for s in ("rate limit", "usage limit", "rate_limit", "claude ai usage",
-                                       "session limit", "token limit"))
+    stderr = (result.get("stderr") or "").lower()
+    return any(s in stderr for s in ("claude ai usage limit reached", "usage limit reached",
+                                     "5-hour limit", "rate limit exceeded"))
 
 
-def _waitForSessionReset() -> None:
-    """Block until 5 hours have elapsed since the first rate-limit hit, then clear state."""
+def _waitForSessionReset(cancel_check=None) -> bool:
+    """Block until the session token window resets, then clear state. Returns True if the wait
+    completed (reset reached), False if it was cancelled early via ``cancel_check``.
+
+    ``cancel_check`` is a no-arg predicate (e.g. ``lambda: bus.isAbort() or deadline_passed``)
+    polled each iteration so an unattended run can NEVER be wedged for up to 5h ignoring an abort
+    or the work-horizon deadline (CB-9). On cancel we leave ``first_hit_at`` set (budget is still
+    exhausted) and hand control back to the caller."""
     now = time.time()
     first_hit = _SESSION_LIMIT_STATE.get("first_hit_at")
     if first_hit is None:
@@ -71,24 +83,31 @@ def _waitForSessionReset() -> None:
     if remaining <= 0:
         _SESSION_LIMIT_STATE["first_hit_at"] = None
         LOG.info("Session token window already elapsed -- resuming immediately")
-        return
+        return True
 
     reset_fmt = time.strftime("%H:%M:%S", time.localtime(reset_at))
-    LOG.warning("Session token limit hit -- pausing %.0f min (reset at %s)",
+    LOG.warning("Session token limit hit -- pausing up to %.0f min (reset at %s)",
                 remaining / 60, reset_fmt)
     try:
         from notifications import discord_bot as discord
-        discord.sendEmbed(discord.blockedEmbed(
-            f"⏳ Session token limit hit. Pausing {remaining / 3600:.1f}h until reset at {reset_fmt}."
-        ))
+        discord.sendEmbed(discord.noticeEmbed(
+            f"⏳ Session token limit hit. Auto-pausing up to {remaining / 3600:.1f}h until reset at {reset_fmt} "
+            "(resumes automatically; no action needed).", title="ℹ️ 9TO5 — auto-pause"))
     except Exception:  # noqa: BLE001
         pass
 
-    check_interval = 60
+    check_interval = 30
     while True:
         remaining = reset_at - time.time()
         if remaining <= 0:
             break
+        if cancel_check is not None:
+            try:
+                if cancel_check():
+                    LOG.warning("Session-reset wait cancelled (abort/deadline) -- returning control to caller")
+                    return False
+            except Exception:  # noqa: BLE001 -- a bad predicate must not wedge the wait
+                pass
         LOG.info("Rate-limit pause: %.0f min remaining until session reset", remaining / 60)
         time.sleep(min(check_interval, max(remaining, 1)))
 
@@ -96,9 +115,10 @@ def _waitForSessionReset() -> None:
     LOG.info("Session token limit reset -- resuming")
     try:
         from notifications import discord_bot as discord
-        discord.sendEmbed(discord.blockedEmbed("✅ Session token limit reset -- resuming work."))
+        discord.sendEmbed(discord.noticeEmbed("✅ Session token limit reset — resuming work.", title="ℹ️ 9TO5 — resumed"))
     except Exception:  # noqa: BLE001
         pass
+    return True
 
 
 def _killProcessTree(pid: int) -> None:
@@ -241,9 +261,11 @@ def scanDestructive(text: str) -> list[str]:
 
 
 def _alertBlocked(reason: str) -> None:
+    # An AUTO-REFUSED safety event (a destructive command was blocked): inform, don't summon. No
+    # "human decision required" framing and no @-ping -- 9to5 already handled it autonomously.
     try:
         from notifications import discord_bot as discord
-        discord.sendBlocked(reason)
+        discord.sendEmbed(discord.noticeEmbed(reason, title="🛡️ 9TO5 — auto-refused (safety)"))
     except Exception as e:  # noqa: BLE001
         LOG.warning("blocked-alert failed: %s", e)
 
@@ -293,7 +315,8 @@ def _parseEnvelope(out: str) -> "tuple[str, dict]":
 def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = None,
               task_state=None, subtask: Optional[dict] = None,
               system_prompt: Optional[str] = None, extra: Optional[str] = None,
-              timeout: Optional[int] = None, resume_session: Optional[str] = None) -> dict:
+              timeout: Optional[int] = None, resume_session: Optional[str] = None,
+              cancel_check=None) -> dict:
     """Prepare the environment from the invocation spec, then fire one Claude run.
 
     Returns ``{ok, returncode, stdout, stderr, profile, effort, effort_flag, spec,
@@ -475,11 +498,25 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
             LOG.warning("resume launch yielded no envelope (rc=%s) -- retrying once on a fresh session", rc)
             result = _run(fresh_cmd, full_prompt)
 
-    # Session token limit: when the 5-hour Pro budget is exhausted, pause until it resets
-    # then retry once on a fresh session (resume would be invalid after a long pause).
-    if _isRateLimitError(result):
-        _waitForSessionReset()
-        LOG.info("Retrying subtask on fresh session after session token limit reset")
+    # Session token limit: when the Pro budget is exhausted, wait out the window then retry on a
+    # fresh session (resume is invalid after a long pause). BOUNDED + abort/deadline-aware (CB-4/9):
+    # re-arm first_hit_at each round so a stale-but-elapsed timer can't pass a still-exhausted budget,
+    # stop after SESSION_LIMIT_MAX_RETRIES, and bail immediately if the wait is cancelled.
+    tries = 0
+    while _isRateLimitError(result) and tries < config.SESSION_LIMIT_MAX_RETRIES:
+        if cancel_check is not None:
+            try:
+                if cancel_check():
+                    LOG.warning("rate-limit retry abandoned (abort/deadline) after %d tries", tries)
+                    break
+            except Exception:  # noqa: BLE001
+                pass
+        _SESSION_LIMIT_STATE["first_hit_at"] = time.time()   # re-arm: guarantee a real wait, not an instant pass
+        if not _waitForSessionReset(cancel_check):
+            break   # cancelled mid-wait -> hand the (still error) result back; caller finalizes/aborts
+        tries += 1
+        LOG.info("Retrying subtask on fresh session after session reset (try %d/%d)",
+                 tries, config.SESSION_LIMIT_MAX_RETRIES)
         result = _run(fresh_cmd, full_prompt)
 
     return result

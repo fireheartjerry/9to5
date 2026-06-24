@@ -1,5 +1,8 @@
 """Unit tests for the Experience Ledger (SIE Layer 0)."""
+import os
+import shutil
 import sqlite3
+import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +10,18 @@ from unittest import mock
 
 import config
 from memory import experience
+
+
+def _forceRmtree(path) -> None:
+    """Best-effort temp cleanup that tolerates a SQLite handle Windows hasn't released yet
+    (WAL/-shm sidecars) so a passing test never errors in teardown."""
+    def _onerror(func, p, _exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception:  # noqa: BLE001
+            pass
+    shutil.rmtree(path, onerror=_onerror)
 
 
 class TestExperienceLedger(unittest.TestCase):
@@ -21,21 +36,23 @@ class TestExperienceLedger(unittest.TestCase):
 
     def tearDown(self):
         mock.patch.stopall()
-        for p in self.dir.rglob("*"):
-            if p.is_file():
-                p.unlink()
-        for p in sorted(self.dir.rglob("*"), reverse=True):
-            if p.is_dir():
-                p.rmdir()
-        self.dir.rmdir()
+        # Release the pooled SQLite connection before unlinking the temp db, or Windows
+        # raises PermissionError (WinError 32: file in use) on the open inode.
+        experience._reset_schema_cache()
+        _forceRmtree(self.dir)
 
     # ---- schema + roundtrip -------------------------------------------
     def test_init_creates_schema_in_wal(self):
         experience.init(self.db)
         self.assertTrue(self.db.exists())
-        with sqlite3.connect(self.db) as c:
+        # NOTE: `with sqlite3.connect(...)` does NOT close the connection (it only manages the
+        # transaction), so it would leak a handle and fail the Windows tearDown unlink. Close it.
+        c = sqlite3.connect(self.db)
+        try:
             tables = {r[0] for r in c.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'")}
+        finally:
+            c.close()
         self.assertTrue({"runs", "subtasks", "eval_runs"}.issubset(tables))
 
     def test_record_run_and_fetch(self):

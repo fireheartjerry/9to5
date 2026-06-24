@@ -1,4 +1,5 @@
 """Unit tests for the pure /work launcher core (no real subprocess)."""
+import os
 import subprocess
 import unittest
 from unittest import mock
@@ -89,13 +90,29 @@ class TestActiveRun(unittest.TestCase):
 class TestSpawn(unittest.TestCase):
     def test_spawn_uses_argv(self):
         fake = mock.Mock(pid=4321)
-        with mock.patch.object(subprocess, "Popen", return_value=fake) as p, \
+        # opt out of the test-mode spawn guard: this test asserts the real Popen path.
+        with mock.patch.object(wl, "_spawnBlocked", return_value=False), \
+                mock.patch.object(subprocess, "Popen", return_value=fake) as p, \
                 mock.patch("builtins.open", mock.mock_open()):
             pid = wl.spawn(wl.WorkRequest(goal="do x"))
         self.assertEqual(pid, 4321)
         args, kwargs = p.call_args
         self.assertEqual(args[0], wl.buildArgv(wl.WorkRequest(goal="do x")))
         self.assertEqual(kwargs["cwd"], str(config.PROJECT_ROOT))
+
+    def test_spawn_suppressed_in_test_mode(self):
+        # the guard must hard-block a real launch and never call Popen during tests
+        with mock.patch.object(wl, "_spawnBlocked", return_value=True), \
+                mock.patch.object(subprocess, "Popen") as p:
+            pid = wl.spawn(wl.WorkRequest(goal="do x"))
+        self.assertEqual(pid, wl._SPAWN_BLOCKED_PID)
+        p.assert_not_called()
+
+    def test_guard_active_under_unittest_by_default(self):
+        # with no env override, simply running under unittest blocks real spawns
+        with mock.patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("NINE_TO_FIVE_TEST_MODE", None)
+            self.assertTrue(wl._spawnBlocked())
 
 
 class TestResume(unittest.TestCase):
@@ -117,7 +134,9 @@ class TestResume(unittest.TestCase):
 
     def test_spawn_resume_uses_argv(self):
         fake = mock.Mock(pid=99)
-        with mock.patch.object(subprocess, "Popen", return_value=fake) as p, \
+        # opt out of the test-mode spawn guard: this test asserts the real Popen path.
+        with mock.patch.object(wl, "_spawnBlocked", return_value=False), \
+                mock.patch.object(subprocess, "Popen", return_value=fake) as p, \
                 mock.patch("builtins.open", mock.mock_open()):
             pid = wl.spawnResume("abc-123")
         self.assertEqual(pid, 99)

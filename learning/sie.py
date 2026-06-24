@@ -254,9 +254,10 @@ def _weekly_steps(db_path: Optional[Path]):
             ("curriculum_and_report", curriculum_and_report)]
 
 
-def run_maintenance_async(**kwargs) -> None:
-    """Fire-and-forget maintenance on a daemon thread so it never adds latency to the
-    run's teardown. Best-effort: swallows everything."""
+def run_maintenance_async(**kwargs):
+    """Start maintenance on a daemon thread and RETURN the thread so the caller can join it with a
+    bounded timeout (CB-11) -- otherwise the daemon is killed mid-write at interpreter exit and the
+    throttle/learning state never durably advances. Best-effort: swallows everything."""
     import threading
 
     def _bg():
@@ -265,7 +266,9 @@ def run_maintenance_async(**kwargs) -> None:
         except Exception as e:  # noqa: BLE001
             LOG.debug("async maintenance failed (ignored): %s", e)
 
-    threading.Thread(target=_bg, name="sie-maintenance", daemon=True).start()
+    t = threading.Thread(target=_bg, name="sie-maintenance", daemon=True)
+    t.start()
+    return t
 
 
 if __name__ == "__main__":  # pragma: no cover -- manual full pass

@@ -28,6 +28,9 @@ class TestSieMaintenance(unittest.TestCase):
 
     def tearDown(self):
         mock.patch.stopall()
+        # Release the pooled SQLite connection(s) maintenance opened before unlinking the temp
+        # db, or Windows raises PermissionError (WinError 32: file in use) on the open inode/WAL.
+        experience._reset_schema_cache()
         for p in sorted(self.dir.rglob("*"), reverse=True):
             if p.is_file():
                 p.unlink()

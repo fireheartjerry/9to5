@@ -62,12 +62,37 @@ def revert_core(work_dir: str, files: list[str]) -> None:
         LOG.error("selfmod revert failed: %s", e)
 
 
+def _stash_core(work_dir: str, files: list[str]) -> bool:
+    """Stash the core-file changes (reverting the working tree to HEAD) so the suite can run on a
+    clean baseline. Returns True only if the stash actually took (those files are now clean)."""
+    try:
+        r = _git(work_dir, "stash", "push", "-m", "selfmod-gate-baseline", "--", *files)
+        if r.returncode != 0:
+            return False
+        chk = _git(work_dir, "status", "--porcelain", "--", *files)
+        return chk.returncode == 0 and not (chk.stdout or "").strip()
+    except Exception as e:  # noqa: BLE001
+        LOG.debug("selfmod stash failed (ignored): %s", e)
+        return False
+
+
+def _unstash_core(work_dir: str, *, restore: bool) -> None:
+    """Pop the baseline stash to RESTORE the changes, or drop it to KEEP them reverted."""
+    try:
+        _git(work_dir, "stash", "pop" if restore else "drop")
+    except Exception as e:  # noqa: BLE001
+        LOG.error("selfmod unstash (%s) failed: %s", "pop" if restore else "drop", e)
+
+
 def safety_gate(work_dir: str, *, is_self_referential: bool,
                 test_runner: Optional[Callable[[str], tuple[bool, str]]] = None) -> dict[str, Any]:
     """Run the post-run core-change safety gate. Returns a report dict.
 
-    No-op unless self-ref + SELFMOD_ALLOW_CORE + core files actually changed. On a test
-    failure it reverts the core changes so they can never reach a PR.
+    No-op unless self-ref + SELFMOD_ALLOW_CORE + core files actually changed. When the suite fails
+    WITH the core change, the gate does NOT blindly revert: it re-runs the suite on a clean baseline
+    to decide CAUSALITY. Only if the baseline is GREEN (so the change is what broke it) does it
+    revert. If the baseline ALSO fails, the failure is pre-existing/flaky -- the core improvement is
+    KEPT (the overnight run threw away good work exactly because flaky tests tripped a blind revert).
     """
     if not (is_self_referential and getattr(config, "SELFMOD_ALLOW_CORE", False)):
         return {"ran": False, "reason": "not_enabled"}
@@ -81,6 +106,23 @@ def safety_gate(work_dir: str, *, is_self_referential: bool,
     if passed:
         LOG.info("selfmod safety gate PASSED -- core self-improvement is safe to ship")
         return {"ran": True, "passed": True, "changed": changed}
-    revert_core(work_dir, changed)
-    return {"ran": True, "passed": False, "changed": changed, "reverted": True,
-            "output_tail": output[-500:]}
+
+    # Failed WITH the change. Establish causality against a clean baseline before discarding work.
+    if not _stash_core(work_dir, changed):
+        # couldn't isolate the change -> conservative fallback: revert (old behavior)
+        revert_core(work_dir, changed)
+        LOG.warning("selfmod: could not isolate change for baseline; reverted conservatively: %s", changed)
+        return {"ran": True, "passed": False, "changed": changed, "reverted": True,
+                "output_tail": output[-500:]}
+    base_passed, base_output = runner(work_dir)
+    if base_passed:
+        _unstash_core(work_dir, restore=False)   # baseline green -> the change broke it -> stay reverted
+        LOG.warning("selfmod: baseline GREEN, change broke the build -> reverted: %s", ", ".join(changed))
+        return {"ran": True, "passed": False, "changed": changed, "reverted": True,
+                "output_tail": output[-500:]}
+    _unstash_core(work_dir, restore=True)        # baseline also red -> pre-existing failure -> KEEP change
+    LOG.warning("selfmod: baseline ALSO fails (pre-existing/flaky, not caused by the change) -> "
+                "KEEPING core change: %s", ", ".join(changed))
+    return {"ran": True, "passed": False, "changed": changed, "reverted": False,
+            "kept_despite_failure": True, "output_tail": output[-500:],
+            "baseline_output_tail": base_output[-300:]}

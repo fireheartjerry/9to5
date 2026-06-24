@@ -21,6 +21,8 @@ from typing import Any, Optional
 
 import config
 
+LOG = config.getLogger("control")
+
 # Windows: os.replace raises PermissionError (WinError 5) when the destination is
 # momentarily held by another handle -- and the control bus is written from THREE
 # processes (run, Discord bot, web dashboard), so contention is routine. The lock is
@@ -28,6 +30,10 @@ import config
 # of dropping a control command (abort/pause/decision). POSIX never contends here.
 _REPLACE_RETRIES: int = 8
 _REPLACE_BACKOFF_BASE: float = 0.02
+# Read side mirrors the write side: a transient sharing violation on read must not silently become
+# a blank bus that a subsequent mutation writes back, clobbering a queued abort/decision (CB-5).
+_READ_RETRIES: int = 5
+_READ_BACKOFF_BASE: float = 0.02
 
 
 def _atomicReplace(tmp: Path, dest: Path) -> None:
@@ -108,11 +114,26 @@ class ControlBus:
             self._write(_blank())
 
     # ---- low-level atomic IO -------------------------------------------
+    def _readRaw(self, *, strict: bool) -> dict[str, Any]:
+        """Read the bus JSON with a bounded retry on a transient read error (Windows sharing
+        violation mid-write). A genuinely ABSENT file yields blank (authoritative). When ``strict``
+        and the file EXISTS but stays unreadable, raise instead of fabricating blank -- so a mutation
+        never clobbers a queued abort/decision it simply failed to read (CB-5)."""
+        last_exc: Exception | None = None
+        for attempt in range(_READ_RETRIES):
+            try:
+                return json.loads(self.path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                return _blank()
+            except Exception as e:  # noqa: BLE001 -- transient sharing violation OR corrupt content
+                last_exc = e
+                time.sleep(min(_READ_BACKOFF_BASE * (2 ** attempt), 0.4))
+        if strict and self.path.exists():
+            raise OSError(f"control bus unreadable after {_READ_RETRIES} tries: {last_exc}")
+        return _blank()   # tolerant reads: a single missed poll is re-checked next tick
+
     def load(self) -> dict[str, Any]:
-        try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001 -- missing/corrupt => fresh
-            data = _blank()
+        data = self._readRaw(strict=False)
         # forward-compatible defaults
         base = _blank()
         base.update(data)
@@ -138,7 +159,15 @@ class ControlBus:
 
     def _mutate(self, fn) -> dict[str, Any]:
         with _fileLock(self.path):   # serialize the load->mutate->write across processes
-            data = self.load()
+            try:
+                data = self._readRaw(strict=True)   # never clobber unreadable-but-present state (CB-5)
+            except OSError as e:
+                LOG.warning("control bus read failed under mutate; preserving on-disk state: %s", e)
+                return self.load()
+            base = _blank()
+            base.update(data)
+            base["decisions"] = {**_blank()["decisions"], **(data.get("decisions") or {})}
+            data = base
             fn(data)
             self._write(data)
         return data

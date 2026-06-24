@@ -1,4 +1,7 @@
 """Tests for the safe self-modification gate (improve own core, never ship a broken build)."""
+import os
+import shutil
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -11,6 +14,19 @@ import selfmod
 
 def _git(d, *a):
     return subprocess.run(["git", *a], cwd=d, capture_output=True, text=True)
+
+
+def _forceRmtree(path) -> None:
+    """Delete a temp dir robustly on Windows: git marks .git/objects/* read-only, so a plain
+    unlink raises PermissionError (WinError 5). Clear the read-only bit and retry; tolerate a
+    still-locked file (best-effort temp cleanup -- the OS reclaims %TEMP% regardless)."""
+    def _onerror(func, p, _exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception:  # noqa: BLE001 -- cleanup must never fail a passing test
+            pass
+    shutil.rmtree(path, onerror=_onerror)
 
 
 class TestSelfMod(unittest.TestCase):
@@ -30,12 +46,7 @@ class TestSelfMod(unittest.TestCase):
 
     def tearDown(self):
         mock.patch.stopall()
-        for p in sorted(self.dir.rglob("*"), reverse=True):
-            if p.is_file():
-                p.unlink()
-            elif p.is_dir():
-                p.rmdir()
-        self.dir.rmdir()
+        _forceRmtree(self.dir)
 
     def test_detects_core_change(self):
         (self.dir / "orchestrator.py").write_text("CHANGED\n", encoding="utf-8")
@@ -56,12 +67,24 @@ class TestSelfMod(unittest.TestCase):
         self.assertEqual((self.dir / "orchestrator.py").read_text(), "IMPROVED\n")  # kept
 
     def test_gate_fails_reverts_core(self):
+        # Suite fails WITH the change but PASSES on the clean baseline => the change broke it => revert.
         (self.dir / "orchestrator.py").write_text("BROKEN\n", encoding="utf-8")
-        out = selfmod.safety_gate(str(self.dir), is_self_referential=True,
-                                  test_runner=lambda d: (False, "FAILED (errors=3)"))
+        runner = mock.Mock(side_effect=[(False, "FAILED (errors=3)"), (True, "baseline OK")])
+        out = selfmod.safety_gate(str(self.dir), is_self_referential=True, test_runner=runner)
         self.assertFalse(out["passed"])
         self.assertTrue(out["reverted"])
         self.assertEqual((self.dir / "orchestrator.py").read_text(), "ORIGINAL\n")  # reverted!
+
+    def test_gate_keeps_change_when_baseline_also_fails(self):
+        # Suite fails WITH the change AND on the clean baseline => failure is pre-existing/flaky,
+        # NOT caused by the change => KEEP the improvement (don't throw away good work).
+        (self.dir / "orchestrator.py").write_text("IMPROVED\n", encoding="utf-8")
+        runner = mock.Mock(side_effect=[(False, "flaky fail"), (False, "baseline also red")])
+        out = selfmod.safety_gate(str(self.dir), is_self_referential=True, test_runner=runner)
+        self.assertFalse(out["passed"])
+        self.assertFalse(out["reverted"])
+        self.assertTrue(out.get("kept_despite_failure"))
+        self.assertEqual((self.dir / "orchestrator.py").read_text(), "IMPROVED\n")  # kept!
 
     def test_gate_disabled_when_flag_off(self):
         with mock.patch.object(config, "SELFMOD_ALLOW_CORE", False):

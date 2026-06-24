@@ -10,22 +10,28 @@ from state.task import TaskState
 
 
 class TestPrGate(unittest.TestCase):
+    def setUp(self):
+        # _prGate is now an instance method that consults run state (for the night-mode degraded
+        # check). A fresh, healthy (non-degraded) state exercises the normal day-mode hold paths.
+        self.orch = Orchestrator()
+        self.state = TaskState.create("g", 1.0)
+
     def test_approved_creates_pr(self):
-        self.assertEqual(Orchestrator._prGate({"verdict": "approved"}, True), (True, ""))
+        self.assertEqual(self.orch._prGate({"verdict": "approved"}, True, self.state), (True, ""))
 
     def test_no_pr_flag_skips(self):
-        self.assertEqual(Orchestrator._prGate({"verdict": "approved"}, False), (False, "--no-pr"))
+        self.assertEqual(self.orch._prGate({"verdict": "approved"}, False, self.state), (False, "--no-pr"))
 
     def test_challenged_holds_pr_with_concerns(self):
-        create, reason = Orchestrator._prGate(
-            {"verdict": "challenged", "concerns": ["secret leak", "no rollback"]}, True)
+        create, reason = self.orch._prGate(
+            {"verdict": "challenged", "concerns": ["secret leak", "no rollback"]}, True, self.state)
         self.assertFalse(create)
         self.assertIn("HOLD", reason)
         self.assertIn("secret leak", reason)
 
     def test_challenged_respects_disable_flag(self):
         with mock.patch.object(config, "ADVERSARY_PR_HOLD_ENABLED", False):
-            create, _ = Orchestrator._prGate({"verdict": "challenged", "concerns": ["x"]}, True)
+            create, _ = self.orch._prGate({"verdict": "challenged", "concerns": ["x"]}, True, self.state)
         self.assertTrue(create)   # hold disabled -> PR proceeds
 
 

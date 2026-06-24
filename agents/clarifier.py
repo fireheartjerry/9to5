@@ -113,5 +113,10 @@ def answerClarifications(chat: Callable, goal: str, subtask: dict, claude_output
         return None
     if not resp:
         return None
-    answer = (resp.get("message", {}) or {}).get("content", "").strip()
+    # Type-check the extraction (CB-2): a present-but-None content (empty/tool-call Message) would
+    # make `.strip()` raise AttributeError OUTSIDE the try above, unwinding out of _executeSubtask
+    # and forfeiting a struggling subtask's remaining retries. Mirror architect.py's safe parse.
+    msg = resp.get("message") if isinstance(resp, dict) else None
+    content = msg.get("content") if isinstance(msg, dict) else None
+    answer = content.strip() if isinstance(content, str) else ""
     return answer or None

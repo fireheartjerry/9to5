@@ -146,6 +146,10 @@ def _snapshot(task_id: str) -> dict:
 
 
 def _applyControl(task_id: str, action: str, arg: Optional[str]) -> dict:
+    if not task_id:
+        return {"ok": False, "error": "no active task"}
+    if not isinstance(action, str) or not action:
+        return {"ok": False, "error": "action must be a non-empty string"}
     bus = ControlBus(task_id)
     if action == "abort":
         bus.requestAbort()

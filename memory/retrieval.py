@@ -66,7 +66,7 @@ def embed(text: str) -> Optional[list[float]]:
     if vec is None:
         _last_embed_fail_at = time.monotonic()
     else:
-        _last_embed_fail_at = 0.0
+        _last_embed_fail_at = float("-inf")  # reset so next call is never wrongly suppressed
     return vec
 
 
@@ -78,11 +78,18 @@ def reset_embed_cache() -> None:
 
 def pack(vec: list[float]) -> bytes:
     """Pack a float vector into compact float32 bytes for the BLOB column."""
-    return array.array("f", vec).tobytes()
+    if not vec:
+        return b""
+    return array.array("f", [float(x) for x in vec]).tobytes()
 
 
 def unpack(blob: bytes) -> list[float]:
-    """Inverse of ``pack``."""
+    """Inverse of ``pack``. Returns [] for None/empty/misaligned blobs."""
+    if not blob or not isinstance(blob, (bytes, bytearray)):
+        return []
+    if len(blob) % 4:  # float32 requires 4-byte alignment
+        LOG.debug("unpack: blob length %d is not a multiple of 4, skipping", len(blob))
+        return []
     a = array.array("f")
     a.frombytes(blob)
     return list(a)
@@ -171,8 +178,12 @@ def render_lessons(neighbors: list[dict[str, Any]],
         bits = [f"- \"{title}\": effort={effort}"]
         if n.get("model"):
             bits.append(f"model={n['model']}")
-        if attempts and int(attempts) > 1:
-            bits.append(f"needed {attempts} tries -- be careful")
+        try:
+            _attempts_int = int(float(attempts)) if attempts is not None else 0
+        except (TypeError, ValueError):
+            _attempts_int = 0
+        if _attempts_int > 1:
+            bits.append(f"needed {_attempts_int} tries -- be careful")
         line = ", ".join(bits)
         candidate = header + "\n".join(lines + [line])
         if _approx_tokens(candidate) > budget:

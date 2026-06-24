@@ -333,6 +333,9 @@ def record_run(run: dict[str, Any], db_path: Optional[Path] = None) -> bool:
     """Upsert a run row keyed by ``run_id``. Returns True on success (best-effort)."""
     if not config.EXPERIENCE_LEDGER_ENABLED:
         return False
+    if not isinstance(run, dict) or not (run.get("run_id") or "").strip():
+        LOG.warning("record_run: missing or empty run_id, skipping")
+        return False
     try:
         with _WRITE_LOCK, _connect(db_path) as conn:
             conn.execute(
@@ -375,6 +378,12 @@ def record_run(run: dict[str, Any], db_path: Optional[Path] = None) -> bool:
 def record_subtask(run_id: str, st: dict[str, Any], db_path: Optional[Path] = None) -> bool:
     """Upsert a subtask row keyed by ``(run_id, st_id)``. Best-effort."""
     if not config.EXPERIENCE_LEDGER_ENABLED:
+        return False
+    if not (run_id or "").strip():
+        LOG.warning("record_subtask: missing or empty run_id, skipping")
+        return False
+    if not isinstance(st, dict) or not (st.get("subtask_id") or "").strip():
+        LOG.warning("record_subtask: missing or empty subtask_id, skipping")
         return False
     try:
         with _WRITE_LOCK, _connect(db_path) as conn:
@@ -436,11 +445,15 @@ def set_subtask_embedding(run_id: str, st_id: str, blob: bytes,
 def embedded_subtasks(only_passed: bool = True,
                       db_path: Optional[Path] = None) -> list[dict[str, Any]]:
     """Subtask rows that carry an embedding -- the candidate pool for top-K retrieval."""
-    with _connect(db_path) as conn:
-        sql = "SELECT * FROM subtasks WHERE embedding IS NOT NULL"
-        if only_passed:
-            sql += " AND verify_passed=1"
-        return [dict(r) for r in conn.execute(sql)]
+    try:
+        with _connect(db_path) as conn:
+            sql = "SELECT * FROM subtasks WHERE embedding IS NOT NULL"
+            if only_passed:
+                sql += " AND verify_passed=1"
+            return [dict(r) for r in conn.execute(sql)]
+    except Exception as e:  # noqa: BLE001 -- missing/corrupt DB degrades to empty pool
+        LOG.warning("embedded_subtasks failed (ignored): %s", e)
+        return []
 
 
 def record_eval(score: dict[str, Any], *, suite_version: str = "v1",

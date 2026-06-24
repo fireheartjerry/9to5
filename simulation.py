@@ -62,7 +62,7 @@ class SimBrain:
 
 
 def simRunClaude(spec, *, work_dir=None, task_state=None, subtask=None,
-                 system_prompt=None, extra=None, timeout=None, resume_session=None):
+                 system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw):
     """Fake executor. The architect phase (system_prompt set) returns a design doc long
     enough to pass the architect gate; subtask runs return a clean success envelope."""
     if system_prompt is not None:
@@ -153,7 +153,7 @@ class BuilderBrain:
 
 
 def builderRunClaude(spec, *, work_dir=None, task_state=None, subtask=None,
-                     system_prompt=None, extra=None, timeout=None, resume_session=None):
+                     system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw):
     """Fake hands that ACTUALLY write the target file parsed from the subtask's verify cmd,
     so the real verify (`python <file>`) passes. Architect phase returns a design doc."""
     if system_prompt is not None:

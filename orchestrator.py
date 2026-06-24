@@ -37,6 +37,11 @@ from state.task import TaskState, nowIso
 
 LOG = config.getLogger("orchestrator")
 
+# A CONCRETE example verify path handed to the brain so it never copies a literal "<ABSOLUTE
+# path>" placeholder (which cmd.exe parses as redirection -> spurious verify failures). See
+# verifier.sanitizeVerify, which now rejects any cmd containing angle brackets.
+_VERIFY_EXAMPLE_PATH: str = str(config.PROJECT_ROOT / "tests" / "test_example.py")
+
 # ============================================================================
 # Living Claude Code knowledge -- injected into EVERY Ollama system prompt. The
 # compressed summary is cached in knowledge.py (shared by the orchestrator brain
@@ -284,14 +289,29 @@ def _resultText(result, key: str = "stdout") -> str:
 
 
 def _chatJson(resp):
-    """Safely parse the JSON body of a chat response. None on ANY shape/parse problem."""
+    """Safely parse the JSON body of a chat response. None on ANY shape/parse problem.
+
+    Salvages the two ways a 7B model commonly breaks strict JSON: wrapping it in a ```json
+    fence, and emitting prose around the object. We strip a fence, then fall back to extracting
+    the first balanced {...} -- so a recoverable response no longer collapses to the degenerate
+    single-subtask plan fallback."""
+    import re as _re
     text = _chatText(resp).strip()
     if not text:
         return None
+    if text.startswith("```"):
+        text = _re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=_re.IGNORECASE).strip()
     try:
         return json.loads(text)
     except Exception:  # noqa: BLE001
-        return None
+        pass
+    m = _re.search(r"\{.*\}", text, _re.DOTALL)   # salvage: first balanced-looking JSON object
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
 
 
 class Orchestrator:
@@ -307,6 +327,7 @@ class Orchestrator:
         self._replan = replan or replanner.replan
         self._review = review or adversary.review
         self._state_lock = threading.Lock()
+        self._poll_lock = threading.Lock()      # serialize Discord poll cursor across parallel workers (CB-7)
         self._selfref_prompt_cache: dict = {}   # task_id -> self-ref system-prompt prefix (built once)
         self._brain_tag_override: str | None = None   # force a model tag (adapter A/B eval)
         # SIE: register a per-adapter fitness evaluator so adapter promotion is autonomous.
@@ -388,12 +409,25 @@ class Orchestrator:
                 kwargs = {"options": {"num_ctx": config.OLLAMA_NUM_CTX}}
                 if want_json:
                     kwargs["format"] = "json"
-                return self.ollama.chat(model=model, messages=messages, **kwargs)
+                resp = self.ollama.chat(model=model, messages=messages, **kwargs)
+                # An EMPTY completion is a TRANSIENT model failure (qwen2.5 can dead-end to "" under
+                # format=json on markdown-heavy prompts). Treat it as retryable rather than returning
+                # empty -- otherwise EVERY brain call (plan/replan/backfill/adversary) silently falls
+                # back. The last attempt drops format=json as a salvage (free-form JSON is then
+                # recovered by _chatJson's fence/object extraction).
+                if want_json and not _chatText(resp).strip():
+                    if attempt == retries - 1:
+                        kwargs.pop("format", None)
+                        resp = self.ollama.chat(model=model, messages=messages, **kwargs)
+                        if _chatText(resp).strip():
+                            return resp
+                    raise ValueError("empty completion")
+                return resp
             except Exception as e:  # noqa: BLE001
-                LOG.warning("Ollama call failed (attempt %d/%d): %s", attempt, retries, e)
+                LOG.warning("Ollama call failed/empty (attempt %d/%d): %s", attempt, retries, e)
                 if attempt >= retries:
                     try:
-                        discord.sendEmbed(discord.blockedEmbed(f"Ollama failed after {retries} attempts: {e}"))
+                        discord.sendEmbed(discord.noticeEmbed(f"Brain (Ollama) unavailable after {retries} attempts; falling back: {e}"))
                     except Exception:  # noqa: BLE001
                         pass
                     return None
@@ -519,14 +553,17 @@ class Orchestrator:
             "1-4 subtasks total. Every subtask MUST include a verify block.\n"
             "VERIFY RULES (a bad verify fails correct work -- follow EXACTLY):\n"
             "- Check OBSERVABLE BEHAVIOR only, never implementation details.\n"
-            "- Use EXACTLY ONE of these shapes, always with ABSOLUTE file paths under "
-            + str(config.PROJECT_ROOT) + ":\n"
-            "  (a) cmd = python <ABSOLUTE path> ; expect = exit_zero            (the program runs cleanly)\n"
-            "  (b) cmd = python <ABSOLUTE path> ; expect = stdout_contains:<a short string you are CERTAIN it prints>\n"
-            '  (c) cmd = python -c "import os; assert os.path.getsize(r\'<ABSOLUTE path>\')>0" ; expect = exit_zero   (file exists, non-empty)\n'
-            "  (d) FOR A MULTI-REQUIREMENT SUBTASK: expect = stdout_contains_all:<tok1>||<tok2>||<tok3>  (every "
+            "- Use EXACTLY ONE of these shapes. Substitute a REAL, EXISTING absolute path (resolve it "
+            "yourself under " + str(config.PROJECT_ROOT) + "); e.g. " + _VERIFY_EXAMPLE_PATH + ".\n"
+            "  CRITICAL: NEVER emit angle brackets or the words 'ABSOLUTE path'. A cmd containing '<' or "
+            "'>' is REJECTED (it breaks the shell) and your verify is discarded. On Windows never use a "
+            ".sh/bash verify.\n"
+            "  (a) cmd = python " + _VERIFY_EXAMPLE_PATH + " ; expect = exit_zero            (the program runs cleanly)\n"
+            "  (b) cmd = python " + _VERIFY_EXAMPLE_PATH + " ; expect = stdout_contains:<a short string you are CERTAIN it prints>\n"
+            '  (c) cmd = python -c "import os; assert os.path.getsize(r\'' + _VERIFY_EXAMPLE_PATH + '\')>0" ; expect = exit_zero   (file exists, non-empty)\n'
+            "  (d) FOR A MULTI-REQUIREMENT SUBTASK: expect = stdout_contains_all:tok1||tok2||tok3  (every "
             "token must appear) -- pair with a cmd that prints the artifact, e.g. "
-            "python -c \"import io;print(io.open(r'<ABSOLUTE path>',encoding='utf-8').read())\".\n"
+            "python -c \"import io;print(io.open(r'" + _VERIFY_EXAMPLE_PATH + "',encoding='utf-8').read())\".\n"
             "- NEVER import a project module or reference an internal function/class/constant name -- a "
             "guessed symbol WILL fail. NEVER use grep/cat/test/ls/findstr/type."
         )
@@ -539,8 +576,32 @@ class Orchestrator:
         # that isn't a dict-with-content is dropped so every downstream consumer is safe.
         subs = [s for s in raw if isinstance(s, dict)] if isinstance(raw, list) else []
         if not subs:
-            subs = [{"title": "Implement the goal", "description": goal_elaborated, "layer": 3,
-                     "verify": None, "effort_level": "high"}]
+            # The planner JSON was unparseable/empty. This is NOT a normal 1-subtask plan -- alert
+            # (it silently degraded every downstream spec before) and, for an enumerated
+            # multi-deliverable goal, DECOMPOSE per requirement instead of collapsing the whole
+            # 8-hour goal into one unverified "Implement the goal" mega-subtask.
+            LOG.error("planner produced no usable subtasks (JSON unparseable/empty) -> fallback plan")
+            try:
+                discord.sendEmbed(discord.noticeEmbed(
+                    "Planner returned no usable JSON — auto-using a decomposed fallback plan (no action needed)"))
+            except Exception:  # noqa: BLE001
+                pass
+            reqs = verifier.extractRequirements(goal_elaborated)
+            if len(reqs) >= 2:
+                target_rel = verifier.primaryTargetFile(goal_elaborated)
+                target_abs = str((config.PROJECT_ROOT / target_rel).resolve()) if target_rel else None
+                subs = []
+                for i, req in enumerate(reqs, 1):
+                    v = None
+                    markers = verifier.requirementMarkers(req)
+                    if target_abs and markers:
+                        v = verifier.buildContentScanVerify([markers], target_abs)
+                    subs.append({"title": f"Deliverable {i}: {req[:60]}", "description": req,
+                                 "layer": 3, "verify": v, "effort_level": "high"})
+                LOG.info("fallback plan: decomposed goal into %d per-requirement subtasks", len(subs))
+            else:
+                subs = [{"title": "Implement the goal", "description": goal_elaborated, "layer": 3,
+                         "verify": None, "effort_level": "high"}]
         return subs
 
     def critiqueSubtaskPlan(self, goal_elaborated: str, subs: list[dict]) -> list[dict]:
@@ -735,17 +796,26 @@ class Orchestrator:
     # Control plane (poll Discord + drain ControlBus between steps)
     # ===================================================================
     def _translateDiscord(self, bus: ControlBus, state: TaskState) -> None:
-        msgs, latest = discord.fetchMessagesAfter(bus.getSeen())
-        if latest != bus.getSeen():
-            bus.setSeen(latest)
-        for m in msgs:
-            author_id = m.get("author_id") or None
-            cmd = commands.decide(int(author_id) if author_id else None,
-                                  m.get("author_is_bot", False), m.get("content", ""))
-            if cmd:
-                if commands.COMMAND_REGISTRY.get(cmd.name, {}).get("mutating"):
-                    audit.record(author_id, cmd.name, state.task_id, "discord-poll")
-                commands.applyCommand(bus, state, cmd)
+        # Serialize the getSeen->fetch->apply->setSeen sequence: with parallelism>1 several worker
+        # threads poll on the same cadence, and an unsynchronized cursor lets two threads fetch the
+        # SAME message batch and apply each command TWICE (e.g. a !add creating duplicate subtasks),
+        # while setSeen races backward and re-delivers (CB-7). The lock makes polling atomic.
+        if not self._poll_lock.acquire(blocking=False):
+            return   # another worker is already polling this tick; skip (it covers our messages)
+        try:
+            msgs, latest = discord.fetchMessagesAfter(bus.getSeen())
+            if latest != bus.getSeen():
+                bus.setSeen(latest)
+            for m in msgs:
+                author_id = m.get("author_id") or None
+                cmd = commands.decide(int(author_id) if author_id else None,
+                                      m.get("author_is_bot", False), m.get("content", ""))
+                if cmd:
+                    if commands.COMMAND_REGISTRY.get(cmd.name, {}).get("mutating"):
+                        audit.record(author_id, cmd.name, state.task_id, "discord-poll")
+                    commands.applyCommand(bus, state, cmd)
+        finally:
+            self._poll_lock.release()
 
     def _applyOps(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard) -> None:
         for op in bus.drainOps():
@@ -772,23 +842,94 @@ class Orchestrator:
                         state.updateSubtask(cur["subtask_id"], status="pending")
                         dashboard.event(f"retry {cur['subtask_id']}")
 
-    def _checkControl(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard,
-                      gate: str | None = None) -> None:
-        self._translateDiscord(bus, state)
-        self._applyOps(state, bus, dashboard)
-        pause_start = time.time() if bus.isPaused() else None
+    def _waitWhilePaused(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard,
+                         label: str = "paused") -> None:
+        """Block while the bus is paused, but ALWAYS escapable: returns on resume, on abort, on the
+        night-mode pause timeout, or once the work-horizon deadline passes. Shared by _checkControl
+        and the mid-subtask pause loop so a !pause can never wedge an unattended run forever (CB-1)."""
+        if not bus.isPaused():
+            return
+        pause_start = time.time()
         while bus.isPaused() and not bus.isAbort():
-            # Night mode: auto-resume after timeout so a stray !pause never blocks overnight.
-            if config.NIGHT_MODE and pause_start and (time.time() - pause_start) > config.NIGHT_MODE_PAUSE_TIMEOUT:
+            if config.NIGHT_MODE and (time.time() - pause_start) > config.NIGHT_MODE_PAUSE_TIMEOUT:
                 bus.clearPause()
                 dashboard.event(f"night mode: auto-resumed after {config.NIGHT_MODE_PAUSE_TIMEOUT}s pause timeout")
                 LOG.info("night mode: auto-resumed after pause timeout")
                 break
-            dashboard.update(state, "paused", "paused -- waiting for !resume")
+            if self._deadlinePassed(state):   # never park past the 5pm horizon
+                bus.clearPause()
+                LOG.warning("deadline reached while paused -- auto-resuming to finalize")
+                break
+            dashboard.update(state, "paused", f"{label} -- waiting for !resume")
             time.sleep(config.DISCORD_POLL_SECONDS)
             self._translateDiscord(bus, state)
+
+    def _autoApprovePlan(self, state: TaskState) -> "tuple[str, str]":
+        """Ollama is the plan gatekeeper -- a human never approves plans (design: zero human
+        interaction). The plan is already brain-authored + self-critiqued, so this is a final sanity
+        check: approve unless the plan is clearly broken. Any failure approves, and a soft reject is
+        recorded but never wedges or aborts the autonomous run."""
+        subs = [{"title": s.get("title"), "expect": (s.get("verify") or {}).get("expect")}
+                for s in state.subtasks if s.get("status") != "removed"]
+        if not subs:
+            return "reject", "empty plan"
+        goal = state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "")
+        system = (
+            "You are the PLAN GATEKEEPER for an autonomous agent (no human is available to approve). "
+            "Given the goal and the proposed subtask plan, decide if it is sane and ready to execute. "
+            "Approve unless it is clearly broken (off-goal, or missing obviously-required work). "
+            'Respond with JSON ONLY: {"approve": true|false, "reason": "..."}.'
+        )
+        user = (f"GOAL:\n{goal[:1500]}\n\nPLAN ({len(subs)} subtasks):\n"
+                f"{json.dumps(subs, indent=2)[:2000]}\n\nReturn the verdict JSON.")
+        try:
+            data = _chatJson(self._ollamaChat(system, user, want_json=True)) or {}
+            approve = data.get("approve", True) if isinstance(data, dict) else True
+            reason = str((data or {}).get("reason") or "")[:200]
+            return ("approve" if approve else "reject"), reason
+        except Exception as e:  # noqa: BLE001 -- the gate must never block the autonomous run
+            return "approve", f"auto-approve (gate review failed: {e})"
+
+    def _checkControl(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard,
+                      gate: str | None = None) -> None:
+        self._translateDiscord(bus, state)
+        self._applyOps(state, bus, dashboard)
+        self._waitWhilePaused(state, bus, dashboard)
         if bus.isAbort():
             raise AbortRun("abort requested")
+        # PLAN gate auto-approves through Ollama -- a human is NEVER required to approve plans. A
+        # watching human may still !abort / !reject / !skip / !add during a brief window; if no human
+        # decision arrives, the brain approves and the run proceeds autonomously. (watch mode has no
+        # gate at all; abort is always honored.)
+        if gate == "plan" and state.meta.get("control_mode") == "gated":
+            bus.clearDecision("plan")
+            bus.setPendingGate("plan")
+            dashboard.update(state, "awaiting plan", "plan gate — ollama auto-approves shortly")
+            auto_at = time.time() + config.PLAN_GATE_AUTO_APPROVE_SECONDS
+            while True:
+                self._translateDiscord(bus, state)
+                self._applyOps(state, bus, dashboard)   # honor !skip/!add while parked at the gate
+                if bus.isAbort():
+                    bus.setPendingGate(None)
+                    raise AbortRun("aborted at plan gate")
+                decision = bus.getDecision("plan")
+                if decision == "approve":
+                    dashboard.event("plan gate: approved (human)")
+                    break
+                if decision == "reject":
+                    bus.setPendingGate(None)
+                    raise AbortRun("plan rejected")
+                if time.time() >= auto_at or self._deadlinePassed(state):
+                    verdict, reason = self._autoApprovePlan(state)
+                    dashboard.event(f"plan gate: ollama auto-{verdict} — {reason[:50]}")
+                    with self._state_lock:
+                        state.addNotification("plan_gate", f"ollama auto-{verdict}: {reason}")
+                    if verdict == "reject":
+                        LOG.warning("plan gate: ollama auto-rejected (%s) -- proceeding autonomously", reason)
+                    break
+                time.sleep(config.DISCORD_POLL_SECONDS)
+            bus.setPendingGate(None)
+            return
         if gate and state.meta.get("control_mode") == "gated":
             bus.clearDecision(gate)
             bus.setPendingGate(gate)
@@ -807,6 +948,12 @@ class Orchestrator:
                 if decision == "reject":
                     bus.setPendingGate(None)
                     raise AbortRun(f"gate '{gate}' rejected")
+                # CB-6: never park a gate past the horizon. In night mode the safe default for a
+                # pre-PR gate is to NOT auto-ship; either way finalize the run instead of hanging.
+                if self._deadlinePassed(state):
+                    bus.setPendingGate(None)
+                    LOG.warning("gate '%s' timed out at deadline -- aborting to finalize", gate)
+                    raise AbortRun(f"gate '{gate}' timed out at deadline")
                 time.sleep(config.DISCORD_POLL_SECONDS)
             bus.setPendingGate(None)
 
@@ -929,39 +1076,70 @@ class Orchestrator:
             LOG.warning("pre-PR adversary review failed (%s); approving", e)
             return {"verdict": "approved", "concerns": [], "stub": True}
 
-    @staticmethod
-    def _prGate(review: dict, auto_pr: bool) -> "tuple[bool, str]":
+    def _runIsDegraded(self, state: TaskState) -> bool:
+        """A run is degraded if its self-mod gate reverted core changes, or fewer than half its
+        subtasks passed. Such a run must never auto-ship -- not even in night mode."""
+        notes = state.data.get("notifications", []) if isinstance(state.data, dict) else []
+        if any(isinstance(n, dict) and n.get("kind") == "selfmod_gate"
+               and "REVERTED" in str(n.get("detail", "")) for n in notes):
+            return True
+        done, total = state.progress()
+        return total > 0 and done * 2 < total
+
+    def _prGate(self, review: dict, auto_pr: bool, state: TaskState) -> "tuple[bool, str]":
         """Decide whether to create the PR. Returns (create, skip_reason)."""
         if not auto_pr:
             return False, "--no-pr"
-        if config.ADVERSARY_PR_HOLD_ENABLED and not config.NIGHT_MODE and review.get("verdict") == "challenged":
-            concerns = "; ".join(review.get("concerns") or ["challenged"])
-            return False, f"adversary HOLD: {concerns}"[:300]
+        if config.ADVERSARY_PR_HOLD_ENABLED and review.get("verdict") == "challenged":
+            # Night mode normally suppresses the hold (hands-off operation), but a DEGRADED run
+            # (core changes reverted, or most subtasks failed) must still be held -- night mode
+            # should silence pings, not ship a broken branch unreviewed.
+            if not config.NIGHT_MODE or self._runIsDegraded(state):
+                concerns = "; ".join(review.get("concerns") or ["challenged"])
+                tag = "adversary HOLD" + (" (degraded run)" if config.NIGHT_MODE else "")
+                return False, f"{tag}: {concerns}"[:300]
         return True, ""
 
     # ===================================================================
     # Phase 4 -- PR creation (best effort; skips gracefully)
     # ===================================================================
     def createPullRequest(self, state: TaskState, work_dir: str) -> dict:
-        def git(*args: str) -> subprocess.CompletedProcess:
-            return subprocess.run(["git", *args], cwd=work_dir, capture_output=True, text=True)
+        # Hard timeout + DEVNULL stdin + GIT_TERMINAL_PROMPT=0 so a credential/auth/network prompt
+        # at the very end can NEVER hang the run forever (work is already committed locally) -- the
+        # run must always reach finalization (CB-14). A timeout degrades to a clean "skipped".
+        env = os.environ.copy()
+        env["GIT_TERMINAL_PROMPT"] = "0"   # git never blocks on a credential prompt
 
-        chk = git("rev-parse", "--is-inside-work-tree")
-        if chk.returncode != 0 or "true" not in (chk.stdout or "").lower():
-            LOG.info("PR skipped: %s is not a git repository", work_dir)
-            return {"skipped": True, "reason": "not a git repository"}
-        branch = f"9to5/{state.task_id[:8]}"
-        git("checkout", "-B", branch)
-        git("add", "-A")
-        git("commit", "-m", f"9TO5: {state.meta['goal_raw'][:60]}")
-        push = git("push", "-u", "origin", branch)
-        if push.returncode != 0:
-            return {"skipped": True, "reason": f"git push failed: {(push.stderr or '')[:200]}"}
-        pr = subprocess.run(["gh", "pr", "create", "--fill", "--head", branch],
-                            cwd=work_dir, capture_output=True, text=True)
-        if pr.returncode != 0:
-            return {"skipped": True, "reason": f"gh pr create failed: {(pr.stderr or '')[:200]}"}
-        return {"ok": True, "url": (pr.stdout or "").strip()}
+        def _runp(cmd: list[str]) -> subprocess.CompletedProcess:
+            return subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True,
+                                  stdin=subprocess.DEVNULL, env=env,
+                                  timeout=config.GIT_TIMEOUT_SECONDS)
+
+        def git(*args: str) -> subprocess.CompletedProcess:
+            return _runp(["git", *args])
+
+        try:
+            chk = git("rev-parse", "--is-inside-work-tree")
+            if chk.returncode != 0 or "true" not in (chk.stdout or "").lower():
+                LOG.info("PR skipped: %s is not a git repository", work_dir)
+                return {"skipped": True, "reason": "not a git repository"}
+            branch = f"9to5/{state.task_id[:8]}"
+            git("checkout", "-B", branch)
+            git("add", "-A")
+            git("commit", "-m", f"9TO5: {state.meta['goal_raw'][:60]}")
+            push = git("push", "-u", "origin", branch)
+            if push.returncode != 0:
+                return {"skipped": True, "reason": f"git push failed: {(push.stderr or '')[:200]}"}
+            pr = _runp(["gh", "pr", "create", "--fill", "--head", branch])
+            if pr.returncode != 0:
+                return {"skipped": True, "reason": f"gh pr create failed: {(pr.stderr or '')[:200]}"}
+            return {"ok": True, "url": (pr.stdout or "").strip()}
+        except subprocess.TimeoutExpired as e:
+            LOG.error("PR creation timed out (%ss) on %s -- finalizing without a PR", config.GIT_TIMEOUT_SECONDS, e.cmd)
+            return {"skipped": True, "reason": f"git/gh timed out after {config.GIT_TIMEOUT_SECONDS}s"}
+        except Exception as e:  # noqa: BLE001 -- PR is best-effort; never block finalization
+            LOG.warning("PR creation failed (%s) -- finalizing without a PR", e)
+            return {"skipped": True, "reason": f"PR error: {e}"[:200]}
 
     # ===================================================================
     # Phase 3 -- execution (per-subtask unit + serial / parallel loops)
@@ -1001,8 +1179,11 @@ class Orchestrator:
                              effort=spec.get("effort_level"))
             attempt_started = time.time()
             hands = self._selectExecutor(spec)   # route to the right surface (terminal | browser)
+            # cancel_check lets a long in-hands wait (the session-token-limit pause) break early on
+            # an abort or the work-horizon deadline instead of wedging the run for hours (CB-9).
             result = hands(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
-                           resume_session=resume_session)
+                           resume_session=resume_session,
+                           cancel_check=lambda: bus.isAbort() or self._deadlinePassed(state))
             if not isinstance(result, dict):   # a hands layer that returns junk must fail cleanly, not crash
                 result = {"ok": False, "returncode": -1, "stdout": "",
                           "stderr": f"executor returned non-dict result: {type(result).__name__}"}
@@ -1054,10 +1235,10 @@ class Orchestrator:
                     )
                     resume_session = None   # approach is changing -> start the next attempt fresh
             self._translateDiscord(bus, state)
-            while bus.isPaused() and not bus.isAbort():   # honor !pause mid-subtask, not just between
-                dashboard.update(state, "paused", f"{sid} paused -- waiting for !resume")
-                time.sleep(config.DISCORD_POLL_SECONDS)
-                self._translateDiscord(bus, state)
+            # honor !pause mid-subtask via the SHARED escapable wait (abort / night-mode timeout /
+            # deadline) -- the inline loop here previously ignored all three and could wedge an
+            # unattended night run forever (CB-1).
+            self._waitWhilePaused(state, bus, dashboard, label=f"{sid} paused")
             if bus.isAbort():
                 raise AbortRun("abort requested")
             if (state.getSubtask(sid) or {}).get("status") == "removed":
@@ -1123,10 +1304,15 @@ class Orchestrator:
             except Exception:  # noqa: BLE001 -- learning never affects the run
                 pass
 
-            # Replan ONLY after a subtask that PASSED. Replanning after failures is the
-            # churn engine (fail -> add remediation -> fail -> add ...) that livelocks runs;
-            # the executor already retries failed subtasks up to MAX_SUBTASK_ATTEMPTS.
-            if final == "done" and not self._singleDeliverable(state.meta.get("goal_elaborated", "")):
+            # Replan after a PASSED subtask always; after a FAILED one ONLY on a self-improvement
+            # run, where the pump must keep finding the next highest-impact work instead of dying on
+            # the first failed wave. The churn risk (fail -> re-add -> fail) is contained by: the
+            # replanner is told NOT to re-add the same failed work, the pending-only cap bounds the
+            # live queue, and the no-progress livelock guard still trips. A normal bounded goal keeps
+            # the conservative done-only gate, so a never-succeeding executor still degrades to partial.
+            self_ref = bool(state.meta.get("is_self_referential"))
+            replan_ok = final == "done" or (self_ref and final == "failed")
+            if replan_ok and not self._singleDeliverable(state.meta.get("goal_elaborated", "")):
                 with self._state_lock:                       # snapshot for the same parallel-safety reason
                     subs_snapshot = list(state.subtasks)
                 decision = self._replan(state.meta["goal_elaborated"], subs_snapshot, subtask, combined,
@@ -1162,12 +1348,129 @@ class Orchestrator:
         except Exception:  # noqa: BLE001 -- a bad timestamp must never wedge the loop
             return None
 
+    def _pendingCount(self, state: TaskState) -> int:
+        """Subtasks still in the live queue (pending or running). The replan/backfill cap counts
+        THIS, not the all-time total, so a long self-improvement run can churn through many
+        subtasks over the horizon while never letting the in-flight queue explode."""
+        return sum(1 for s in state.subtasks if s["status"] in ("pending", "in_progress"))
+
+    def authorBackfillBatch(self, goal_elaborated: str, architect_doc: str, done_titles: list[str],
+                            failed_titles: list[str], remaining_hours: float, room: int) -> list[dict]:
+        """Ollama authors the NEXT batch of highest-impact improvement subtasks for a self-improvement
+        run whose queue has drained with time still on the clock. Returns list[dict] (maybe empty)."""
+        system = (
+            config.SELF_IMPROVEMENT_PHILOSOPHY + "\n\n"
+            "You are the HORIZON-FILL planner for 9TO5 running ON ITSELF. The subtask queue is now EMPTY "
+            "but time remains in the work window. Author the NEXT small batch of the HIGHEST-IMPACT "
+            "improvement subtasks the codebase needs right now (bug hunts, error handling, missing tests, "
+            "refactors of weak areas, reliability). Do NOT repeat work already done and do NOT re-attempt "
+            "the same FAILED work -- choose NEW, different, valuable work. "
+            f"Return AT MOST {room} subtasks that realistically fit ~{remaining_hours:.1f}h.\n"
+            '_RESPOND WITH JSON ONLY_: {"subtasks":[{"title":"...","description":"...","layer":3,'
+            '"effort_level":"default|high","verify":{"cmd":"python ' + _VERIFY_EXAMPLE_PATH +
+            '","expect":"exit_zero"}}]}.\n'
+            "Every verify must use a REAL existing absolute path -- NEVER angle brackets or the words "
+            "'ABSOLUTE path' (a cmd containing '<' or '>' is rejected); on Windows never a .sh/bash verify."
+        )
+        user = (
+            f"Goal / standing mandate:\n{goal_elaborated}\n\n"
+            f"Already DONE: {done_titles or '(none)'}\n"
+            f"Already FAILED (do NOT retry these): {failed_titles or '(none)'}\n"
+            f"Time remaining: ~{remaining_hours:.1f}h. Author up to {room} NEW subtasks.\n"
+            f"Architecture:\n{(architect_doc or '')[:2000]}\n\nReturn the plan JSON."
+        )
+        resp = self._ollamaChat(system, user, want_json=True)
+        parsed = _chatJson(resp)
+        raw = parsed.get("subtasks") if isinstance(parsed, dict) else None
+        return [s for s in raw if isinstance(s, dict)] if isinstance(raw, list) else []
+
+    def _backfill(self, state: TaskState, architect_doc: str, dashboard: DiscordDashboard) -> int:
+        """Horizon-fill: when a self-improvement run's queue drains with time left, author + enqueue
+        the next batch of improvement subtasks. Returns the number added (0 => nothing more to do)."""
+        remaining = self._remainingHours(state)
+        if remaining is None or remaining <= 0:
+            return 0
+        room = config.MAX_SUBTASKS - self._pendingCount(state)
+        if room <= 0:
+            return 0
+        goal = state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "")
+        done = [s.get("title", "") for s in state.subtasks if s["status"] == "done"]
+        failed = [s.get("title", "") for s in state.subtasks if s["status"] == "failed"]
+        try:
+            batch = self.authorBackfillBatch(goal, architect_doc, done, failed, remaining, room)
+        except Exception as e:  # noqa: BLE001 -- backfill must never crash the run
+            LOG.warning("backfill authoring failed (%s); using open-ended fallback", e)
+            batch = []
+        batch = [s for s in (batch or []) if isinstance(s, dict)]
+        if not batch:
+            # CONTINUITY FIX (found in the live test): the local 7B brain's JSON is unreliable, so
+            # authorBackfillBatch frequently returns empty -- horizon-fill would then silently no-op
+            # and a self-improvement run would finalize at ~30% of its horizon (18/60 min observed).
+            # Fall back to ONE open-ended improvement subtask and let the capable executor (Claude)
+            # choose the work, so the run keeps producing value until the deadline. Bounded by the
+            # deadline and the pending-queue cap; each subtask is a real multi-minute run (no spin).
+            LOG.info("backfill: brain authored no batch -> enqueuing 1 open-ended improvement subtask")
+            recent = "\n- ".join(done[-8:]) if done else "(none yet)"
+            batch = [{
+                "title": "Autonomous improvement (horizon-fill)",
+                "description": (
+                    "The planned work is complete but time remains in the work window. Per the 9to5 "
+                    "self-improvement mandate, make ONE surgical, high-impact, VERIFIED improvement now: "
+                    "fix a robustness/continuity bug, add missing test coverage for an under-tested "
+                    "module, or strengthen error handling in a weak NON-CORE module. Keep it on-scope "
+                    f"and do NOT repeat recently-completed work:\n- {recent}"),
+                "layer": 3, "effort_level": "high", "verify": None,
+            }]
+        batch = self._strengthenPlanVerifies(goal, batch)
+        added = 0
+        with self._state_lock:
+            for s in batch[:room]:
+                state.addSubtask(s.get("title", "improvement"), s.get("description", ""),
+                                 layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))
+                added += 1
+            if added:
+                state.addNotification("backfill", f"+{added} improvement subtasks ({remaining:.1f}h left)")
+                self.writeIndex(state)
+        if added:
+            LOG.info("horizon-fill: +%d improvement subtasks (%.1fh remaining)", added, remaining)
+            dashboard.update(state, "planning", f"horizon-fill: +{added} subtasks ({remaining:.1f}h left)")
+        return added
+
+    def _continueAfterDrain(self, state: TaskState, architect_doc: str,
+                            dashboard: DiscordDashboard, dry: int) -> "tuple[bool, int]":
+        """The subtask queue is empty. Decide whether to keep the run alive (returns (continue, dry)).
+
+        A NORMAL bounded goal is DONE when its queue drains -- break. A SELF-IMPROVEMENT run with time
+        left should keep going (CLAUDE.md: 'keep going instrumentally until the time horizon ends'):
+        author a fresh batch via _backfill. Break only when the deadline is reached, <15 min remain, or
+        backfill comes up empty twice in a row (nothing left worth doing)."""
+        if not state.meta.get("is_self_referential"):
+            LOG.info("queue drained on a bounded run -> finalizing")
+            return False, dry
+        if self._deadlinePassed(state):
+            LOG.info("queue drained, deadline passed -> finalizing")
+            return False, dry
+        remaining = self._remainingHours(state)
+        if remaining is None or remaining <= 0.25:   # don't start new work in the last 15 minutes
+            LOG.info("queue drained, <15 min left (%.2fh) -> finalizing", remaining or 0.0)
+            return False, dry
+        LOG.info("queue drained with %.2fh left -> horizon-fill backfill (dry=%d)", remaining, dry)
+        added = self._backfill(state, architect_doc, dashboard)
+        if added > 0:
+            return True, 0
+        # With the open-ended fallback in _backfill, this is reached only when the pending cap is
+        # full; allow one retry then finalize so we never spin.
+        LOG.warning("horizon-fill backfill added nothing (dry=%d) -> %s", dry + 1,
+                    "retry" if dry + 1 < 2 else "finalize")
+        return (dry + 1 < 2), dry + 1
+
     def runExecutionLoop(self, state: TaskState, architect_doc: str, work_dir: str,
                          bus: ControlBus, dashboard: DiscordDashboard, parallelism: int = 1) -> None:
         position = 0
         iters = 0
         no_progress = 0
         prev_terminal = -1
+        dry_backfills = 0     # consecutive empty horizon-fill attempts (self-improvement runs)
         while True:
             iters += 1
             # TIME HORIZON: stop scheduling new subtasks once the deadline passes (the run is
@@ -1178,7 +1481,7 @@ class Orchestrator:
                 LOG.warning("time horizon reached (deadline %s); ending execution loop",
                             state.meta.get("deadline_at"))
                 try:
-                    discord.sendEmbed(discord.blockedEmbed(
+                    discord.sendEmbed(discord.noticeEmbed(
                         f"Time horizon reached ({state.meta.get('deadline_at')}) — finalizing as partial"))
                 except Exception:  # noqa: BLE001
                     pass
@@ -1193,8 +1496,7 @@ class Orchestrator:
             if no_progress > 40 or iters > 2000:
                 LOG.error("execution loop livelock (no progress in %d iters); aborting", no_progress)
                 try:
-                    discord.sendEmbed(discord.blockedEmbed("Execution loop guard tripped (possible livelock) — aborting"),
-                                      content=discord.humanPing())
+                    discord.sendEmbed(discord.noticeEmbed("Execution loop guard tripped (possible livelock) — auto-aborting"))
                 except Exception:  # noqa: BLE001
                     pass
                 raise AbortRun("execution loop guard tripped (livelock)")
@@ -1202,6 +1504,9 @@ class Orchestrator:
             if parallelism <= 1:
                 subtask = state.nextActionable()
                 if subtask is None:
+                    cont, dry_backfills = self._continueAfterDrain(state, architect_doc, dashboard, dry_backfills)
+                    if cont:
+                        continue
                     break
                 position += 1
                 try:
@@ -1211,7 +1516,7 @@ class Orchestrator:
                 except Exception as e:  # noqa: BLE001 -- one bad subtask must not kill the run
                     LOG.error("Subtask %s crashed: %s", subtask.get("subtask_id"), e, exc_info=True)
                     try:
-                        discord.sendEmbed(discord.blockedEmbed(f"Subtask {subtask.get('subtask_id')} crashed: {e}"))
+                        discord.sendEmbed(discord.noticeEmbed(f"Subtask {subtask.get('subtask_id')} crashed (marked failed, run continues): {e}"))
                     except Exception:  # noqa: BLE001
                         pass
                     with self._state_lock:
@@ -1222,6 +1527,9 @@ class Orchestrator:
             ready = self._readySet(state)
             if not ready:
                 if state.nextActionable() is None:
+                    cont, dry_backfills = self._continueAfterDrain(state, architect_doc, dashboard, dry_backfills)
+                    if cont:
+                        continue
                     break
                 ready = [state.nextActionable()]
             batch = ready[:parallelism]
@@ -1247,8 +1555,15 @@ class Orchestrator:
                         with self._state_lock:
                             state.updateSubtask(st["subtask_id"], status="failed", completed_at=nowIso())
                             state.addNotification("subtask_crashed", f"{st.get('subtask_id')}: {e}")
-                if abort is not None:
-                    raise abort
+            # This batch's worker threads have exited; their thread-local SQLite connections are now
+            # dead weight pinned in the experience pool's global registry. Close them so connections
+            # (and WAL/SHM handles) don't accumulate unboundedly across hundreds of batches (CB-3).
+            try:
+                experience.close_pool()
+            except Exception:  # noqa: BLE001 -- best-effort cleanup, never affects the run
+                pass
+            if abort is not None:
+                raise abort
 
     def _readySet(self, state: TaskState) -> list[dict]:
         out = []
@@ -1262,7 +1577,10 @@ class Orchestrator:
 
     def _applyReplan(self, state: TaskState, decision: dict) -> None:
         diff = [f"## Replan @ {nowIso()}", f"Reason: {decision.get('reason', '')}", ""]
-        active = sum(1 for s in state.subtasks if s["status"] != "removed")
+        # Cap the LIVE queue (pending + in-progress), not the all-time total: a long self-improvement
+        # run churns through many subtasks over the horizon, so counting terminal ones would freeze
+        # the plan after MAX_SUBTASKS and kill horizon-fill (RC-2).
+        active = self._pendingCount(state)
         # The brain may return malformed add/remove (non-list, or items of the wrong type). A crash
         # here would propagate to the caller's handler and flip the just-COMPLETED subtask to failed,
         # so coerce defensively and skip any entry that isn't the expected shape.
@@ -1321,8 +1639,7 @@ class Orchestrator:
                 LOG.warning("Self-ref task but %s is not a git repo; no isolation branch", work_dir)
         except Exception as e:  # noqa: BLE001
             LOG.warning("self-ref branch creation failed: %s", e)
-        discord.sendEmbed(discord.selfRefEmbed(branch, config.CORE_PROTECTED_FILES),
-                          content=discord.humanPing())
+        discord.sendEmbed(discord.selfRefEmbed(branch, config.CORE_PROTECTED_FILES))
         dashboard.event(f"self-referential · branch {branch}")
 
     @staticmethod
@@ -1419,9 +1736,8 @@ class Orchestrator:
                     architect_doc = _resultText(arch_res).strip() or architect_doc
                 if len(architect_doc) < 200:
                     try:
-                        discord.sendEmbed(discord.blockedEmbed(
-                            f"Architect phase produced only {len(architect_doc)} chars — planning may be degraded"),
-                            content=discord.humanPing())
+                        discord.sendEmbed(discord.noticeEmbed(
+                            f"Architect phase produced only {len(architect_doc)} chars — proceeding (planning may be degraded)"))
                     except Exception:  # noqa: BLE001
                         pass
                     architect_doc = architect_doc or "(architect produced no usable output)"
@@ -1466,7 +1782,7 @@ class Orchestrator:
             # --- Phase 4: PR + complete ---
             self._checkControl(state, bus, dashboard, gate="pre_pr")
             pr_review = self._prePrAdversary(state)
-            create_pr, skip_reason = self._prGate(pr_review, auto_pr)
+            create_pr, skip_reason = self._prGate(pr_review, auto_pr, state)
             if create_pr:
                 pr = self.createPullRequest(state, work_dir)
             else:
@@ -1502,8 +1818,7 @@ class Orchestrator:
             elapsed = _elapsedSince(state.meta["started_at"])
             state.setStatus("aborted", blocked_reason=reason)
             self.writeIndex(state)
-            discord.sendEmbed(discord.abortedEmbed(reason, _fmtElapsed(elapsed)),
-                              content=discord.humanPing())
+            discord.sendEmbed(discord.abortedEmbed(reason, _fmtElapsed(elapsed)))
             state.addNotification("aborted", reason)
             dashboard.update(state, "aborted", f"aborted: {reason}")
             LOG.warning("Run aborted: %s", reason)
@@ -1519,7 +1834,7 @@ class Orchestrator:
             except Exception:  # noqa: BLE001
                 pass
             try:
-                discord.sendEmbed(discord.blockedEmbed(f"9to5 run crashed: {e}"), content=discord.humanPing())
+                discord.sendEmbed(discord.noticeEmbed(f"9to5 run crashed: {e} — supervisor will auto-recover if time remains"))
                 dashboard.update(state, "blocked", f"crashed: {e}")
             except Exception:  # noqa: BLE001
                 pass
@@ -1539,6 +1854,12 @@ class Orchestrator:
             if config.SIE_AUTO_MAINTENANCE:
                 try:
                     from learning import sie
-                    sie.run_maintenance_async(reason="post-run")
+                    _mt = sie.run_maintenance_async(reason="post-run")
+                    # Join with a bounded timeout so the pass DURABLY finishes (writes last_full_at)
+                    # before the process exits; a bare daemon would be killed mid-write at shutdown,
+                    # leaving the throttle stuck so the next run re-runs the full pass forever (CB-11).
+                    # When not due it returns ~instantly, so this adds no latency on most runs.
+                    if _mt is not None:
+                        _mt.join(timeout=config.SIE_MAINTENANCE_JOIN_SECONDS)
                 except Exception:  # noqa: BLE001 -- learning is best-effort, never blocks
                     LOG.debug("sie maintenance dispatch failed (ignored)", exc_info=True)

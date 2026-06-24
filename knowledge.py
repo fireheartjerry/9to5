@@ -132,27 +132,45 @@ def fetchClaudeDocs(enabled: bool = True, timeout: Optional[int] = None) -> dict
         LOG.warning("requests unavailable; skipping doc fetch (%s)", e)
         return result
 
-    from concurrent.futures import ThreadPoolExecutor
+    import time as _time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import TimeoutError as _FuturesTimeout
 
     workers = max(1, int(getattr(config, "CLAUDE_DOC_FETCH_WORKERS", 10)))
+    budget = float(getattr(config, "CLAUDE_DOC_FETCH_BUDGET_SECONDS", 30))
     urls = list(_CHANGELOG_URLS) + [_DOC_BASES[0] + p for p in _DOC_PAGES]
     seen_pages: set[str] = set()
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for url, body in pool.map(lambda u: _fetchOne(u, timeout), urls):
-            if body:
-                result["pages"][url] = body
-                result["ok"].append(url)
-                seen_pages.add(url.rsplit("/", 1)[-1])
-            else:
-                result["failed"].append(url)
-        # legacy-domain retry (parallel) only for pages that failed on the current domain
-        retry = [_DOC_BASES[1] + p for p in _DOC_PAGES if p not in seen_pages]
-        for url, body in pool.map(lambda u: _fetchOne(u, timeout), retry):
-            if body:
-                result["pages"][url] = body
-                result["ok"].append(url)
-            else:
-                result["failed"].append(url)
+    deadline = _time.monotonic() + budget
+
+    def _drain(futures: dict) -> None:
+        """Collect results until each future completes OR the TOTAL budget elapses, then stop waiting.
+        A slow-trickle server (whose per-socket read timeout never trips) therefore cannot hang run
+        start past `budget` -- we proceed with whatever has arrived (CB-10)."""
+        remaining = max(0.1, deadline - _time.monotonic())
+        try:
+            for fut in as_completed(list(futures), timeout=remaining):
+                url, body = fut.result()
+                if body:
+                    result["pages"][url] = body
+                    result["ok"].append(url)
+                    seen_pages.add(url.rsplit("/", 1)[-1])
+                else:
+                    result["failed"].append(url)
+        except _FuturesTimeout:
+            LOG.warning("doc fetch exceeded %.0fs total budget; proceeding with %d pages",
+                        budget, len(result["ok"]))
+
+    # Own the pool explicitly so we can shutdown(cancel_futures) WITHOUT a wait=True that would block
+    # on a stuck socket (the `with` form's implicit shutdown(wait=True) is the actual hang risk).
+    pool = ThreadPoolExecutor(max_workers=workers)
+    try:
+        _drain({pool.submit(_fetchOne, u, timeout): u for u in urls})
+        if _time.monotonic() < deadline:   # legacy-domain retry within the remaining budget
+            retry = [_DOC_BASES[1] + p for p in _DOC_PAGES if p not in seen_pages]
+            if retry:
+                _drain({pool.submit(_fetchOne, u, timeout): u for u in retry})
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
     LOG.info("doc fetch (%d workers): %d ok, %d failed", workers, len(result["ok"]), len(result["failed"]))
     return result
 
