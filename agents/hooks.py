@@ -14,7 +14,10 @@ import os
 import re
 
 # Make "import config" (and other project modules) work regardless of cwd.
-sys.path.insert(0, r"C:\9to5")
+# Derive the repo root from THIS file's location so hooks always adds ITS OWN tree,
+# not a hardcoded install path -- this is correct under any checkout or git worktree.
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
 # config is safe to import at module load; project sub-modules are imported
 # lazily inside handlers so a broken import can never crash the dispatcher.
