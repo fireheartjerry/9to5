@@ -16,6 +16,39 @@ def _state():
     return st
 
 
+class TestRecreateOnlyOn404(unittest.TestCase):
+    """A transient Discord failure (429 breaker armed / timeout) must NOT recreate the dashboard
+    (which would spawn a duplicate pinned embed and burn the one-shot guard); only a genuine 404 does."""
+    def _dash(self):
+        d = DiscordDashboard()
+        d.message_id = "123"
+        return d
+
+    def test_transient_edit_does_not_recreate(self):
+        d = self._dash()
+        with mock.patch.object(config, "DISCORD_DASHBOARD", True), \
+                mock.patch.object(d, "_embed", return_value={}), \
+                mock.patch("notifications.dashboard.discord.editMessageResult", return_value="transient") as ed, \
+                mock.patch("notifications.dashboard.discord.createMessage") as create:
+            d.update(mock.Mock(), "executing")
+        ed.assert_called_once()
+        create.assert_not_called()
+        self.assertEqual(d.message_id, "123")   # unchanged
+        self.assertFalse(d._recreated)          # one-shot NOT burned
+
+    def test_genuine_404_recreates_once(self):
+        d = self._dash()
+        with mock.patch.object(config, "DISCORD_DASHBOARD", True), \
+                mock.patch.object(d, "_embed", return_value={}), \
+                mock.patch("notifications.dashboard.discord.editMessageResult", return_value="not_found"), \
+                mock.patch("notifications.dashboard.discord.createMessage", return_value="456") as create, \
+                mock.patch("notifications.dashboard.discord.pinMessage"):
+            d.update(mock.Mock(), "executing")
+        create.assert_called_once()
+        self.assertEqual(d.message_id, "456")
+        self.assertTrue(d._recreated)
+
+
 class TestElapsed(unittest.TestCase):
     def test_recent_seconds(self):
         started = (datetime.now() - timedelta(seconds=30)).isoformat()

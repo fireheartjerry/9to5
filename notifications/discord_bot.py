@@ -233,10 +233,17 @@ def createMessage(embed: dict, content: Optional[str] = None, components: Option
     return None
 
 
-def editMessage(message_id: str, embed: dict, content: Optional[str] = None,
-                components: Optional[list] = None) -> bool:
+def editMessageResult(message_id: str, embed: dict, content: Optional[str] = None,
+                      components: Optional[list] = None) -> str:
+    """Edit a message, returning a status the caller can ACT on:
+      'ok'         -- edited (2xx)
+      'not_found'  -- the message is genuinely gone (404) -> safe to recreate
+      'transient'  -- None (429 breaker armed / timeout / network) or 429/5xx -> DO NOT recreate;
+                      the message almost certainly still exists, just retry the edit next tick.
+    Distinguishing these stops a transient Discord blip from spawning a DUPLICATE dashboard embed
+    and burning the one-shot recreation guard."""
     if not message_id:
-        return False
+        return "not_found"
     payload: dict = {"embeds": [_clampEmbed(embed)]}
     if content is not None:
         payload["content"] = content
@@ -245,7 +252,18 @@ def editMessage(message_id: str, embed: dict, content: Optional[str] = None,
     if components is not None:
         payload["components"] = components
     r = _request("PATCH", f"/channels/{config.DISCORD_CHANNEL_ID}/messages/{message_id}", json=payload)
-    return r is not None and 200 <= r.status_code < 300
+    if r is None:
+        return "transient"
+    if 200 <= r.status_code < 300:
+        return "ok"
+    if r.status_code == 404:
+        return "not_found"
+    return "transient"   # 429/5xx/etc -> retry, never recreate
+
+
+def editMessage(message_id: str, embed: dict, content: Optional[str] = None,
+                components: Optional[list] = None) -> bool:
+    return editMessageResult(message_id, embed, content, components) == "ok"
 
 
 def pinMessage(message_id: Optional[str]) -> bool:

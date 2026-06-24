@@ -169,12 +169,20 @@ class DiscordDashboard:
             # creating a new pinned embed (and firing all its button components) on every restart.
             existing_id = state.meta.get("dashboard_message_id")
             if existing_id:
-                ok = discord.editMessage(existing_id, embed, components=branding.controlPanelRow())
-                if ok:
+                res = discord.editMessageResult(existing_id, embed, components=branding.controlPanelRow())
+                if res == "ok":
                     self.message_id = existing_id
                     self._recreated = True  # suppress further recreation attempts
                     LOG.info("Dashboard message %s resumed (resilience restart)", self.message_id)
                     return
+                if res == "transient":
+                    # Discord momentarily unreachable (429 breaker / timeout); the message almost
+                    # certainly still exists -- reuse it instead of spawning a duplicate pinned embed.
+                    # Don't burn the one-shot: update() can still recreate if it's truly a 404 later.
+                    self.message_id = existing_id
+                    LOG.info("Dashboard message %s reused (Discord transient at start)", existing_id)
+                    return
+                # res == "not_found": the old message is gone -> create a fresh one below
             self.message_id = discord.createMessage(embed, components=branding.controlPanelRow())
             if self.message_id:
                 discord.pinMessage(self.message_id)
@@ -199,8 +207,11 @@ class DiscordDashboard:
         with self._send_lock:
             row = branding.controlPanelRow()
             if self.message_id:
-                ok = discord.editMessage(self.message_id, embed, components=row)
-                if not ok and not self._recreated:
+                res = discord.editMessageResult(self.message_id, embed, components=row)
+                # ONLY recreate on a genuine 404. A 'transient' failure (429 breaker armed, timeout)
+                # must leave message_id + _recreated untouched and just retry the edit next tick --
+                # otherwise a Discord blip spawns a duplicate dashboard and burns the one-shot guard.
+                if res == "not_found" and not self._recreated:
                     self._recreated = True
                     self.message_id = discord.createMessage(embed, components=row)
                     if self.message_id:
