@@ -82,6 +82,7 @@ class TaskState:
                 "subtask_seq": 0,
                 "universe": None,
                 "epoch": None,
+                "state_epoch": 0,
             },
             "plan": {"architect_design_doc": None, "subtasks": []},
             "adversary_reviews": [],
@@ -115,6 +116,11 @@ class TaskState:
     def save(self) -> Path:
         p = self.path()
         with _SAVE_LOCK:
+            # COHERENCE INVARIANT (#15): stamp a monotonically increasing state_epoch before
+            # every serialization so out-of-process readers can detect a racing write by
+            # comparing epochs. The in-RAM TaskState remains authoritative; disk is a lossy
+            # checkpoint. Increment BEFORE json.dumps so the new value is what hits the file.
+            self.meta["state_epoch"] = int(self.meta.get("state_epoch", 0)) + 1
             # serialize INSIDE the lock: another thread appending to a list/dict in self.data
             # while json.dumps walks it raises "changed size during iteration".
             payload = json.dumps(self.data, indent=2, ensure_ascii=False)
