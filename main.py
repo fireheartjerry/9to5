@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import threading
 from pathlib import Path
@@ -256,6 +257,8 @@ def main() -> int:
         import resilience
 
         def _run_resume(st):
+            st.meta["run_pid"] = os.getpid()   # liveness beacon so the launcher never double-spawns a live run
+            st.save()
             return Orchestrator().runFull(st, work_dir=resume_work_dir, auto_pr=not args.no_pr,
                                           control_mode=args.mode, resume=True, parallelism=max(1, args.parallel))
 
@@ -321,6 +324,8 @@ def main() -> int:
     import resilience
 
     def _run(st):
+        st.meta["run_pid"] = os.getpid()   # liveness beacon so the launcher never double-spawns a live run
+        st.save()
         return Orchestrator().runFull(st, work_dir=work_dir, auto_pr=not args.no_pr,
                                       control_mode=args.mode, parallelism=max(1, args.parallel))
 

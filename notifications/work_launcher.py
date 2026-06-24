@@ -120,13 +120,31 @@ def activeRun() -> Optional[TaskState]:
         return None
     if _isStale(state):
         try:
+            # The orchestrator process is gone -> also request a real abort on the bus (belt and
+            # suspenders) before marking the JSON aborted, then let a fresh run take over.
+            from control import ControlBus
+            ControlBus(state.task_id).requestAbort()
             state.setStatus("aborted")
-            LOG.warning("auto-aborted stale task %s (no heartbeat for >%ds)",
-                        state.task_id[:8], _STALE_SECONDS)
+            LOG.warning("auto-aborted stale task %s (process dead / no heartbeat)", state.task_id[:8])
         except Exception:  # noqa: BLE001
             pass
         return None
     return state
+
+
+def _runPidAlive(state: TaskState) -> Optional[bool]:
+    """Tri-state liveness of the orchestrator process recorded in the task: True alive, False the
+    PID is gone, None when no/garbage PID was recorded (caller falls back to the mtime heuristic).
+    main.py stamps meta['run_pid'] before runFull, so a LIVE run -- even one quiet for >30min during
+    a long subtask or a Pro token-limit pause -- is never misread as stale and double-spawned over."""
+    pid = (getattr(state, "meta", {}) or {}).get("run_pid")
+    if not isinstance(pid, int) or pid <= 0:
+        return None
+    try:
+        import psutil
+        return psutil.pid_exists(pid)
+    except Exception:  # noqa: BLE001 -- psutil missing/errored -> unknown, fall back to mtime
+        return None
 
 
 # A task is stale if its state file hasn't been touched in this many seconds.
@@ -136,10 +154,16 @@ _STALE_SECONDS: int = int(getattr(config, "RUN_STALL_SECONDS", 1800))
 
 
 def _isStale(state: Optional[TaskState]) -> bool:
-    """True when a task's state file mtime implies the orchestrator process is dead."""
+    """True when the orchestrator process is dead. PID liveness is authoritative; the mtime
+    heuristic is only a fallback for legacy tasks with no recorded run_pid."""
     if state is None:
         return False
-    try:
+    alive = _runPidAlive(state)
+    if alive is True:
+        return False            # process is running -> NEVER stale, no matter how quiet
+    if alive is False:
+        return True             # the recorded orchestrator PID is gone -> the run is dead
+    try:                        # no/unknown PID -> fall back to the mtime heuristic
         mtime = (config.STATE_DIR / f"{state.task_id}.json").stat().st_mtime
         age = time.time() - mtime
         cutoff = (_STALE_CREATED_SECONDS if state.meta.get("status") in ("created", "planning")
