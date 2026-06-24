@@ -14,6 +14,7 @@ and never raises out of :func:`fetchClaudeDocs` / :func:`scanLocalClaude`.
 """
 from __future__ import annotations
 
+import json as _json
 import re
 import threading
 from datetime import datetime
@@ -22,6 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 import config
+import provenance as _prov
 
 LOG = config.getLogger("knowledge")
 
@@ -315,6 +317,54 @@ def readRecommendations(path: Optional[Path] = None) -> dict:
     return {"found": False, "path": str(path), "text": ""}
 
 
+# ============================================================================
+# Provenance gate for knowledge-doc injection
+# ============================================================================
+_PROV_HEADER_RE = re.compile(
+    r"^<!--\s*provenance:\s*(\{[^}]*\})\s*-->\n?", re.MULTILINE
+)
+
+# Header prepended by the writer path so genuinely-built docs pass the gate.
+_SCRAPE_PROVENANCE_HEADER = '<!-- provenance: {"origin": "scrape"} -->\n'
+
+
+def injectableDoc(text: str, *, name: str) -> str:
+    """Gate a knowledge-doc for injection into the brain prompt.
+
+    Parses an optional FIRST-LINE HTML provenance comment
+    ``<!-- provenance: {"origin": "<value>"} -->`` from *text*.  Coerces it
+    through :mod:`provenance` and calls ``assertIngestible`` with
+    ``intended_role="obey"`` (docs become directives inside the brain prompt).
+
+    Returns the doc body (without the header line) when the verdict is
+    ``ALLOW`` (i.e. origin is ``human`` or ``scrape``).  Returns ``""`` for
+    any other verdict (executor/brain/derived/absent/malformed) so an
+    unattested or task-forged-absent doc contributes nothing to the prompt.
+
+    Fails CLOSED: no header → EXECUTOR provenance → quarantined → "".
+    """
+    if not text:
+        return ""
+    m = _PROV_HEADER_RE.match(text)
+    raw_dict: Optional[dict] = None
+    body = text
+    if m:
+        try:
+            raw_dict = _json.loads(m.group(1))
+        except Exception:  # noqa: BLE001
+            raw_dict = None  # malformed JSON → coerces to EXECUTOR
+        body = text[m.end():]  # strip the header from returned content
+
+    prov = _prov.coerce(raw_dict)
+    # Knowledge docs are trusted evidence (believe), not user directives (obey).
+    # "believe" allows origin=human and origin=scrape; blocks executor/brain/derived.
+    decision = _prov.assertIngestible(name, "believe", prov)
+    if decision.verdict is _prov.Verdict.ALLOW:
+        return body
+    LOG.debug("knowledge doc %r quarantined: %s", name, decision.reason)
+    return ""
+
+
 def _executiveExcerpt(recs_text: str, max_chars: int = 2400) -> str:
     """Pull the 'Executive Recommendations' block (top-N) out of recommendations.md for
     the injection. Falls back to the document head if no executive header is found."""
@@ -492,7 +542,10 @@ def buildUnifiedDoc(prior_doc: str, fetched: dict, local: dict, psk: dict, *,
         lines.append(recs["text"].strip())
         lines.append("")
 
-    return "\n".join(lines).rstrip() + "\n"
+    # Stamp the finished doc with scrape provenance so the gate in injectableDoc
+    # lets this legitimately-built reference pass when it is read back for injection.
+    # The header is the very first line so _PROV_HEADER_RE anchored at ^ matches it.
+    return _SCRAPE_PROVENANCE_HEADER + "\n".join(lines).rstrip() + "\n"
 
 
 def diffHeadings(prior_doc: str, new_doc: str) -> dict:
@@ -559,8 +612,11 @@ def compressForInjection(unified_doc: str, local: dict, fetched: dict,
     parts: list[str] = []
 
     # Executive expert recommendations FIRST -- the highest-leverage, brain-actionable slice.
+    # Gate: only inject if recommendations.md carries an attested provenance header.
     if recs and recs.get("found"):
-        ex = _executiveExcerpt(recs.get("text", ""))
+        recs_raw = recs.get("text", "")
+        recs_gated = injectableDoc(recs_raw, name=recs.get("path") or "recommendations.md")
+        ex = _executiveExcerpt(recs_gated) if recs_gated else ""
         if ex:
             parts.append("### Expert recommendations (apply to EVERY spec; full set = Part E of claude_code.md)")
             parts.append(ex)
@@ -650,7 +706,10 @@ def ensureCapabilities() -> str:
         try:
             prior = ""
             if config.CLAUDE_KNOWLEDGE_PATH.exists():
-                prior = _readText(config.CLAUDE_KNOWLEDGE_PATH, limit=2_000_000)
+                raw = _readText(config.CLAUDE_KNOWLEDGE_PATH, limit=2_000_000)
+                # Gate: only use the on-disk unified doc as the heading-index source
+                # if it carries a valid provenance stamp (written by buildUnifiedDoc).
+                prior = injectableDoc(raw, name="claude_code.md")
             local = scanLocalClaude()
             recs = readRecommendations()
             _CAPABILITIES = compressForInjection(prior, local, {"pages": {}, "ok": [], "failed": []}, recs=recs)
