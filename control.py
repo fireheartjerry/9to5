@@ -35,6 +35,15 @@ _REPLACE_BACKOFF_BASE: float = 0.02
 _READ_RETRIES: int = 5
 _READ_BACKOFF_BASE: float = 0.02
 
+# Serialize the load->mutate->write critical section for ALL writers IN THIS PROCESS. The O_EXCL
+# sidecar lock (_fileLock) serializes ACROSS processes, but it is bypassed on timeout/orphaned-holder
+# (it yields without the lock). The web dashboard (ThreadingHTTPServer = thread-per-request) and the
+# in-process Discord channel poller both mutate the bus from different threads, so a bypassed sidecar
+# would let two threads run unguarded read-modify-write and silently clobber each other -- e.g. an
+# Abort or an approve/reject decision is lost and the run never stops. This module-wide lock closes
+# that window regardless of the sidecar's state. Reentrant so nested bus calls on one thread are safe.
+_PROCESS_LOCK = threading.RLock()
+
 
 def _atomicReplace(tmp: Path, dest: Path) -> None:
     """os.replace(tmp, dest) with a bounded backoff retry on a transient Windows lock."""
@@ -59,9 +68,11 @@ def _fileLock(target: Path, timeout: float = 5.0):
     lock = Path(str(target) + ".lock")
     start = time.time()
     fd = None
+    acquired = False
     while fd is None:
         try:
             fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            acquired = True
         except FileExistsError:
             try:
                 # remove an obviously-stale lock (crashed holder) then retry a clean acquire;
@@ -77,7 +88,9 @@ def _fileLock(target: Path, timeout: float = 5.0):
         except OSError:
             break  # never block control on a lock-fs error
     try:
-        yield
+        # acquired tells the caller whether the cross-process lock is actually held, so it can keep
+        # the in-process _PROCESS_LOCK as the serialization backstop when this was bypassed.
+        yield acquired
     finally:
         if fd is not None:
             try:
@@ -161,18 +174,22 @@ class ControlBus:
             raise
 
     def _mutate(self, fn) -> dict[str, Any]:
-        with _fileLock(self.path):   # serialize the load->mutate->write across processes
-            try:
-                data = self._readRaw(strict=True)   # never clobber unreadable-but-present state (CB-5)
-            except OSError as e:
-                LOG.warning("control bus read failed under mutate; preserving on-disk state: %s", e)
-                return self.load()
-            base = _blank()
-            base.update(data)
-            base["decisions"] = {**_blank()["decisions"], **(data.get("decisions") or {})}
-            data = base
-            fn(data)
-            self._write(data)
+        with _PROCESS_LOCK:                  # serialize same-process writers even if the sidecar is bypassed
+            with _fileLock(self.path) as acquired:   # serialize across processes
+                if not acquired:
+                    LOG.warning("control bus %s: cross-process lock not acquired (orphan/contention); "
+                                "in-process lock still serializes this write", self.path.name)
+                try:
+                    data = self._readRaw(strict=True)   # never clobber unreadable-but-present state (CB-5)
+                except OSError as e:
+                    LOG.warning("control bus read failed under mutate; preserving on-disk state: %s", e)
+                    return self.load()
+                base = _blank()
+                base.update(data)
+                base["decisions"] = {**_blank()["decisions"], **(data.get("decisions") or {})}
+                data = base
+                fn(data)
+                self._write(data)
         return data
 
     # ---- abort / pause --------------------------------------------------
@@ -216,12 +233,13 @@ class ControlBus:
         self._mutate(lambda d: d["plan_ops"].append(op))
 
     def drainOps(self) -> list[dict[str, Any]]:
-        with _fileLock(self.path):   # don't lose ops a bot/web pushed between our load and write
-            data = self.load()
-            ops = list(data.get("plan_ops") or [])
-            if ops:
-                data["plan_ops"] = []
-                self._write(data)
+        with _PROCESS_LOCK:              # serialize same-process writers even if the sidecar is bypassed
+            with _fileLock(self.path):   # don't lose ops a bot/web pushed between our load and write
+                data = self.load()
+                ops = list(data.get("plan_ops") or [])
+                if ops:
+                    data["plan_ops"] = []
+                    self._write(data)
         return ops
 
     # ---- Discord poll cursor -------------------------------------------
