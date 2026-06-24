@@ -68,8 +68,11 @@ class TestSieMaintenance(unittest.TestCase):
     def test_lock_prevents_overlap(self):
         lp = sie._lock_path()
         lp.parent.mkdir(parents=True, exist_ok=True)
-        lp.write_text("999")            # simulate another run holding the lock
-        out = sie.run_maintenance(force=True, db_path=self.db)
+        lp.write_text("999")            # another run holds the lock...
+        # ...and it's ALIVE -- so the lock must NOT be reclaimed and maintenance skips. (A lock whose
+        # owner PID is dead is correctly reclaimed; that path is covered by test_sie_lock.)
+        with mock.patch.object(sie, "_lock_owner_alive", return_value=True):
+            out = sie.run_maintenance(force=True, db_path=self.db)
         self.assertEqual(out["skipped"], "locked")
 
     def test_maintenance_rebuilds_policy_arms(self):
