@@ -82,3 +82,27 @@ def roleOf(path: str | os.PathLike) -> Role:
         if _isUnder(canon, root):
             return role
     return Role.OTHER_CONTENT
+
+
+def isObeyable(path: str | os.PathLike) -> bool:
+    """True only for directives 9to5 may treat as its OWN instructions."""
+    return roleOf(path) == Role.SELF_INSTRUCTIONS
+
+
+def isEditable(path: str | os.PathLike) -> bool:
+    """Editing is unrestricted EXCEPT the narrow hard_boundary set."""
+    return roleOf(path) != Role.HARD_BOUNDARY
+
+
+def isCodeSelf(path: str | os.PathLike) -> bool:
+    return roleOf(path) == Role.SELF_CODE
+
+
+def selfCodeFiles() -> list[str]:
+    """Every *.py under the project tree that classifies as SELF_CODE -- the set the
+    epoch fingerprints. Excludes venv/.git (hard_boundary) and docs/state by role."""
+    out: list[str] = []
+    for p in PROJECT_ROOT.rglob("*.py"):
+        if roleOf(p) == Role.SELF_CODE:
+            out.append(_canonical(p))
+    return sorted(out)

@@ -54,5 +54,25 @@ class TestRoleOf(unittest.TestCase):
         self.assertEqual(identity.roleOf(tempfile.gettempdir()), identity.Role.OTHER_CONTENT)
 
 
+class TestPredicates(unittest.TestCase):
+    def test_object_meta_is_editable_but_not_obeyable(self):
+        p = str(identity.PROJECT_ROOT / "CLAUDE.md")
+        self.assertTrue(identity.isEditable(p))
+        self.assertFalse(identity.isObeyable(p))
+
+    def test_env_is_not_editable(self):
+        self.assertFalse(identity.isEditable(str(identity.PROJECT_ROOT / ".env")))
+
+    def test_user_global_claude_md_is_obeyable(self):
+        self.assertTrue(identity.isObeyable(str(identity._USER_GLOBAL_CLAUDE_MD)))
+
+    def test_self_code_files_lists_loop_modules(self):
+        files = identity.selfCodeFiles()
+        names = {Path(f).name for f in files}
+        self.assertIn("orchestrator.py", names)
+        self.assertIn("identity.py", names)
+        self.assertNotIn("CLAUDE.md", names)  # object_meta, not code
+
+
 if __name__ == "__main__":
     unittest.main()
