@@ -332,9 +332,9 @@ class TaskState:
         return st
 
     def addAdversaryReview(self, subtask_id: str, trigger_reason: str, verdict: str,
-                           note_ref: Optional[str] = None) -> dict[str, Any]:
+                           note_ref: Optional[str] = None, stub: bool = False) -> dict[str, Any]:
         rec = {"subtask_id": subtask_id, "trigger_reason": trigger_reason,
-               "verdict": verdict, "note_ref": note_ref, "at": nowIso()}
+               "verdict": verdict, "note_ref": note_ref, "stub": bool(stub), "at": nowIso()}
         self.data["adversary_reviews"].append(rec)
         self.save()
         self._ledgerSubtask(subtask_id)

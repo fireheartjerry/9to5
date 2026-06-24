@@ -1104,7 +1104,7 @@ class Orchestrator:
             rv = self._review("Pre-PR safety review", reason, summary, ollama_chat=self._ollamaChat,
                               goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
             with self._state_lock:
-                state.addAdversaryReview("pre_pr", reason, rv["verdict"], None)
+                state.addAdversaryReview("pre_pr", reason, rv["verdict"], None, stub=rv.get("stub", False))
             discord.sendEmbed(discord.adversaryTriggeredEmbed("Pre-PR review", reason, rv.get("verdict")))
             return rv
         except Exception as e:  # noqa: BLE001 -- never block a run on the reviewer itself
@@ -1372,7 +1372,7 @@ class Orchestrator:
                 with self._state_lock:
                     state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
                     self.obs.writeNote(state.subtaskReviewNoteRel(sid), self._reviewNote(subtask, reason, rv, combined))
-                    state.addAdversaryReview(sid, reason, rv["verdict"], state.subtaskReviewNoteRel(sid))
+                    state.addAdversaryReview(sid, reason, rv["verdict"], state.subtaskReviewNoteRel(sid), stub=rv.get("stub", False))
                 # TEETH: a challenged verdict on a PASSED subtask earns ONE bounded remediation
                 # attempt with the concerns injected. Never downgrades the passing result.
                 if (config.ADVERSARY_REMEDIATION_ENABLED and final == "done"

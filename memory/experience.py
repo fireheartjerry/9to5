@@ -409,13 +409,13 @@ def record_subtask(run_id: str, st: dict[str, Any], db_path: Optional[Path] = No
                    (run_id, st_id, position, title, signature_tags, effort, model,
                     skills_json, subagents_json, invocation_spec_json, cost_usd, num_turns,
                     session_id, verify_cmd, verify_expect, verify_passed, attempt_count,
-                    adversary_verdict, adversary_concerns_json, replan_delta_json, status,
+                    adversary_verdict, adversary_stub, adversary_concerns_json, replan_delta_json, status,
                     predicted_success, started_at, ended_at)
                    VALUES
                    (:run_id, :st_id, :position, :title, :signature_tags, :effort, :model,
                     :skills_json, :subagents_json, :invocation_spec_json, :cost_usd, :num_turns,
                     :session_id, :verify_cmd, :verify_expect, :verify_passed, :attempt_count,
-                    :adversary_verdict, :adversary_concerns_json, :replan_delta_json, :status,
+                    :adversary_verdict, :adversary_stub, :adversary_concerns_json, :replan_delta_json, :status,
                     :predicted_success, :started_at, :ended_at)
                    ON CONFLICT(run_id, st_id) DO UPDATE SET
                     position=excluded.position, title=excluded.title,
@@ -433,6 +433,7 @@ def record_subtask(run_id: str, st: dict[str, Any], db_path: Optional[Path] = No
                     verify_passed=COALESCE(excluded.verify_passed, subtasks.verify_passed),
                     attempt_count=COALESCE(excluded.attempt_count, subtasks.attempt_count),
                     adversary_verdict=COALESCE(excluded.adversary_verdict, subtasks.adversary_verdict),
+                    adversary_stub=COALESCE(excluded.adversary_stub, subtasks.adversary_stub),
                     adversary_concerns_json=COALESCE(excluded.adversary_concerns_json, subtasks.adversary_concerns_json),
                     replan_delta_json=COALESCE(excluded.replan_delta_json, subtasks.replan_delta_json),
                     status=COALESCE(excluded.status, subtasks.status),
@@ -519,6 +520,7 @@ def _subtask_params(run_id: str, st: dict[str, Any]) -> dict[str, Any]:
         "verify_passed": None if passed is None else int(bool(passed)),
         "attempt_count": session.get("attempts") or vres.get("attempt_count"),
         "adversary_verdict": st.get("_adversary_verdict"),
+        "adversary_stub": st.get("_adversary_stub"),
         "adversary_concerns_json": _j(st.get("_adversary_concerns")),
         "replan_delta_json": _j(st.get("_replan_delta")),
         "status": st.get("status"),
@@ -559,10 +561,13 @@ def sync_subtask(state_data: dict[str, Any], st: dict[str, Any],
     except StopIteration:
         enriched["_position"] = None
     verdict = None
+    adversary_stub = 0
     for rv in state_data.get("adversary_reviews", []) or []:
         if rv.get("subtask_id") == st.get("subtask_id"):
             verdict = rv.get("verdict")  # last wins
+            adversary_stub = 1 if rv.get("stub") else 0
     enriched["_adversary_verdict"] = verdict
+    enriched["_adversary_stub"] = adversary_stub
     return record_subtask(state_data.get("task_id"), enriched, db_path=db_path)
 
 
