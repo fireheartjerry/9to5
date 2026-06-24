@@ -143,6 +143,13 @@ OLLAMA_TIMEOUT_SECONDS: int = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))  #
 # trailing JSON-schema instructions that format="json" calls depend on. Sized for injection +
 # the largest user payload. Passed as options.num_ctx on every .chat() call.
 OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
+# Floor num_ctx is not enough for the LARGE brain prompts (adversary review + planner embed
+# the full executor output + architect.md -> 10-13k tokens). When system+user exceeds num_ctx
+# ollama truncates from the FRONT, dropping the system prompt's JSON-schema instruction, and
+# qwen dead-ends to an EMPTY completion. _ollamaChat grows num_ctx to fit the prompt + a
+# generation headroom, clamped to this VRAM-safe ceiling (16384 verified on an 8GB card).
+OLLAMA_NUM_CTX_MAX: int = int(os.getenv("OLLAMA_NUM_CTX_MAX", "16384"))
+OLLAMA_GEN_HEADROOM: int = int(os.getenv("OLLAMA_GEN_HEADROOM", "2048"))  # tokens reserved for the reply
 
 # --- Claude Code CLI (Executor hands) ------------------------------------
 # A `claude --print` call is a FULL agent session (explore repo -> reason -> write -> self-verify),
@@ -258,7 +265,10 @@ CHATGPT_PROJECT_DESC: str = os.getenv(
     "CHATGPT_PROJECT_DESC",
     "Automated adversarial review + second-opinion for the 9to5 autonomous orchestrator. "
     "Counterpart is an AI agent, not a human.")
-CHATGPT_PROJECT_URL: str = os.getenv("CHATGPT_PROJECT_URL", "")   # cached after first bootstrap
+CHATGPT_PROJECT_URL: str = os.getenv(
+    "CHATGPT_PROJECT_URL",
+    "https://chatgpt.com/g/g-p-6a3b5bc2c1708191b67f1546ae6468d8/project",
+)  # the dedicated 9to5 ChatGPT project; every review conversation lives in here
 CHATGPT_NAV_TIMEOUT_MS: int = int(os.getenv("CHATGPT_NAV_TIMEOUT_MS", "45000"))
 CHATGPT_REPLY_TIMEOUT_MS: int = int(os.getenv("CHATGPT_REPLY_TIMEOUT_MS", "120000"))
 CHATGPT_REPLY_SETTLE_MS: int = int(os.getenv("CHATGPT_REPLY_SETTLE_MS", "900"))   # stable-text window

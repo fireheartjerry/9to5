@@ -232,20 +232,47 @@ class ChatGPTSession:
         return ""
 
     def start_run_conversation(self, goal: str, task_id: str) -> None:
-        """Open a fresh conversation (inside the 9to5 project when known) for this run. GPT then
-        accumulates run context across every subtask review -> cheaper, more grounded critiques."""
-        project_url = self.ensure_project()
+        """Open a fresh conversation INSIDE the 9to5 ChatGPT project for this run, so every review
+        inherits the project's system prompt + memory. GPT then accumulates run context across each
+        subtask review -> cheaper, more grounded critiques.
+
+        We navigate straight to the project URL and then WAIT for the composer to actually render
+        (condition-based, not an arbitrary sleep) -- the project page hydrates the composer ~1-2s
+        after navigation, so a fixed sleep raced and intermittently missed it."""
+        project_url = config.CHATGPT_PROJECT_URL or "https://chatgpt.com/"
         try:
-            self.page.goto(project_url or "https://chatgpt.com/")
-            self._guard_state()
-            self._conversation_url = self.page.url
+            self.page.goto(project_url, wait_until="domcontentloaded",
+                           timeout=config.CHATGPT_NAV_TIMEOUT_MS)
+            self._guard_state()  # surface a login/cloudflare/rate-limit wall as a typed error
+            # Block until the in-project composer is in the DOM before anyone tries to type.
+            self._await_composer()
+            current_url = self.page.url
+            in_project = "/g/g-p-" in current_url
+            if not in_project:
+                LOG.warning("not in project context after nav: %s (wanted %s)",
+                            current_url[:90], project_url[:90])
+            self._conversation_url = current_url
             self._turns = 0
-            LOG.info("started run conversation for task %s (project=%s)",
-                     task_id, project_url or "<root>")
+            LOG.info("started run conversation for task %s (in_project=%s url=%s)",
+                     task_id, in_project, current_url[:90])
         except ChatGPTError:
             raise
         except Exception as e:  # noqa: BLE001
             raise ChatGPTError(f"could not start run conversation: {e}") from e
+
+    def _await_composer(self) -> None:
+        """Wait until any known composer selector resolves in the DOM (handles the project page's
+        ~1-2s hydration). Tries each fallback selector; raises SelectorMiss only if none appear."""
+        deadline_ms = config.CHATGPT_NAV_TIMEOUT_MS
+        for css in sel.get("composer"):
+            try:
+                self.page.wait_for_selector(css, state="visible",
+                                            timeout=max(1500, deadline_ms // 3))
+                return
+            except Exception:  # noqa: BLE001 -- try the next fallback selector
+                continue
+        # last resort: let _resolve's self-heal have a turn (raises SelectorMiss if it also misses)
+        self._resolve("composer")
 
     # -- the one verb everything routes through ----------------------------------------------
     def ask(self, message: str, *, expect_json: bool = False) -> Optional[str]:
@@ -296,31 +323,39 @@ class ChatGPTSession:
         return extract_latest_reply(self.page)
 
     def _type_humanlike(self, composer: Any, text: str) -> None:
-        """Type with a small per-keystroke delay (less bot-like than an instant fill). Falls back
-        to fill() when the page object doesn't support sequential typing (e.g. test fakes)."""
+        """Type with per-keystroke delay, handling newlines as Shift+Enter (multiline not submit)."""
         target = composer.last
-        for meth in ("press_sequentially", "type"):
-            fn = getattr(target, meth, None)
-            if callable(fn):
-                try:
-                    fn(text, delay=15)
-                    return
-                except Exception:  # noqa: BLE001
-                    break
-        target.fill(text)
+        lines = text.split('\n')
+        for i, line in enumerate(lines):
+            if i > 0:
+                target.press("Shift+Enter")
+                self.page.wait_for_timeout(100)
+            if not line:
+                continue
+            typed = False
+            for meth in ("type", "press_sequentially"):
+                fn = getattr(target, meth, None)
+                if callable(fn):
+                    try:
+                        fn(line, delay=8)
+                        typed = True
+                        break
+                    except Exception:  # noqa: BLE001
+                        pass
+            if not typed:
+                target.fill(line)
 
     # -- run-start health probe --------------------------------------------------------------
     def health_probe(self) -> bool:
         """Confirm the session is logged in + reachable before a run relies on it. Returns False
-        (never raises) on any problem so the orchestrator can fall back to Ollama for the run."""
+        (never raises) on any problem so the orchestrator can fall back to Ollama for the run.
+        Just checks login state; doesn't send a message (simpler, avoids composer races)."""
         try:
             self.open()
-            self.page.goto("https://chatgpt.com/")
-            self._guard_state()
-            reply = self.ask("Reply with the single word READY and nothing else.")
-            ok = bool(reply) and "READY" in reply.upper()
-            LOG.info("health probe %s", "passed" if ok else "failed (no READY)")
-            return ok
+            self.page.goto("https://chatgpt.com/", wait_until="domcontentloaded", timeout=30000)
+            self._guard_state()  # raises LoginRequired, Blocked, RateLimited if not ready
+            LOG.info("health probe passed (logged in and reachable)")
+            return True
         except Exception as e:  # noqa: BLE001
             LOG.warning("health probe failed: %s", e)
             return False

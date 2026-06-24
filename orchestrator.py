@@ -424,27 +424,31 @@ class Orchestrator:
             model = getattr(self, "_brain_tag_override", None) or finetune.active_brain_tag()
         except Exception:  # noqa: BLE001
             model = config.OLLAMA_MODEL
+        # Size num_ctx to the prompt. The ~2.2k-token capabilities block + a large user payload
+        # (adversary review / planner embed the full executor output + architect.md) can reach
+        # 10-13k tokens; at the static floor ollama truncates from the FRONT, drops the system
+        # prompt's JSON-schema instruction, and qwen dead-ends to an EMPTY completion -- the root
+        # cause of the "Brain (Ollama) unavailable; empty completion" fallback. Grow to fit
+        # prompt + reply headroom, clamped to a VRAM-safe ceiling (~3.5 chars/token estimate).
+        needed = int((len(system) + len(user)) / 3.5) + config.OLLAMA_GEN_HEADROOM
+        num_ctx = max(config.OLLAMA_NUM_CTX, min(needed, config.OLLAMA_NUM_CTX_MAX))
         delay = 2.0
         for attempt in range(1, retries + 1):
             try:
-                # num_ctx is REQUIRED: the ~2.2k-token capabilities block sits in the system
-                # prompt; ollama's small default would silently truncate the JSON-schema tail.
-                kwargs = {"options": {"num_ctx": config.OLLAMA_NUM_CTX}}
+                kwargs = {"options": {"num_ctx": num_ctx}}
                 if want_json:
                     kwargs["format"] = "json"
                 resp = self.ollama.chat(model=model, messages=messages, **kwargs)
                 # An EMPTY completion is a TRANSIENT model failure (qwen2.5 can dead-end to "" under
-                # format=json on markdown-heavy prompts). Treat it as retryable rather than returning
-                # empty -- otherwise EVERY brain call (plan/replan/backfill/adversary) silently falls
-                # back. The last attempt drops format=json as a salvage (free-form JSON is then
-                # recovered by _chatJson's fence/object extraction).
+                # format=json on markdown-heavy prompts). Salvage IN-attempt by dropping format=json
+                # (free-form JSON is recovered by _chatJson's fence/object extraction); only if THAT
+                # is also empty do we treat the attempt as failed and back off. Done on every attempt
+                # -- not gated to one index -- so a single transient empty no longer dooms the call.
                 if want_json and not _chatText(resp).strip():
-                    if attempt == retries - 1:
-                        kwargs.pop("format", None)
-                        resp = self.ollama.chat(model=model, messages=messages, **kwargs)
-                        if _chatText(resp).strip():
-                            return resp
-                    raise ValueError("empty completion")
+                    resp = self.ollama.chat(model=model, messages=messages,
+                                            options={"num_ctx": num_ctx})
+                    if not _chatText(resp).strip():
+                        raise ValueError("empty completion")
                 return resp
             except Exception as e:  # noqa: BLE001
                 LOG.warning("Ollama call failed/empty (attempt %d/%d): %s", attempt, retries, e)

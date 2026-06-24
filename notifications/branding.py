@@ -19,17 +19,18 @@ CONTROL_PANEL_IDS = {
 
 
 def controlPanelRow() -> list:
-    """Two action rows of control buttons (<=5/row). Handled by views.ControlPanelView."""
+    """Two action rows of control buttons (<=5/row). Handled by views.ControlPanelView.
+    Row 1: positive/flow actions (Pause · Resume · Approve). Row 2: destructive/skip (Reject · Skip · Abort)."""
     return [
         {"type": 1, "components": [
-            {"type": 2, "style": 1, "label": "Pause", "custom_id": "cp_pause", "emoji": {"name": "⏸️"}},
+            {"type": 2, "style": 2, "label": "Pause", "custom_id": "cp_pause", "emoji": {"name": "⏸️"}},
             {"type": 2, "style": 3, "label": "Resume", "custom_id": "cp_resume", "emoji": {"name": "▶️"}},
-            {"type": 2, "style": 4, "label": "Abort", "custom_id": "cp_abort", "emoji": {"name": "🛑"}},
+            {"type": 2, "style": 3, "label": "Approve", "custom_id": "cp_approve", "emoji": {"name": "✅"}},
         ]},
         {"type": 1, "components": [
-            {"type": 2, "style": 3, "label": "Approve", "custom_id": "cp_approve", "emoji": {"name": "✅"}},
             {"type": 2, "style": 2, "label": "Reject", "custom_id": "cp_reject", "emoji": {"name": "⚔️"}},
             {"type": 2, "style": 2, "label": "Skip", "custom_id": "cp_skip", "emoji": {"name": "⏭️"}},
+            {"type": 2, "style": 4, "label": "Abort", "custom_id": "cp_abort", "emoji": {"name": "🛑"}},
         ]},
     ]
 
@@ -91,6 +92,7 @@ def statusEmbed(state, bus, uptime: Optional[str] = None) -> dict:
     cur = next((s for s in state.subtasks if s["status"] == "in_progress"), None) or state.nextActionable()
     cur_txt = f"`{cur['subtask_id']}` {cur['title']}" if cur else "—"
     gate = bus.getPendingGate() if bus else None
+    deadline = m.get("deadline_at")
     fields = [
         {"name": "Status", "value": f"`{m.get('status', '?')}`", "inline": True},
         {"name": "Mode", "value": f"`{m.get('control_mode', 'watch')}`", "inline": True},
@@ -98,6 +100,8 @@ def statusEmbed(state, bus, uptime: Optional[str] = None) -> dict:
         {"name": "Current", "value": discord.truncate(cur_txt, 1024), "inline": False},
         {"name": "Working dir", "value": f"`{discord.truncate(m.get('work_dir') or '—', 200)}`", "inline": False},
     ]
+    if deadline:
+        fields.append({"name": "⏰ Deadline", "value": discord.relTime(deadline), "inline": True})
     if gate:
         fields.append({"name": "⏳ Gate", "value": f"`{gate}` — /approve or /reject", "inline": False})
     return brandEmbed("📊 Run status",
@@ -111,8 +115,15 @@ _PLAN_ICON = {"done": "✅", "in_progress": "⚡", "failed": "❌", "pending": "
 
 
 def _planLines(subtasks) -> list[str]:
-    return [f"{_PLAN_ICON.get(s['status'], '⬜')} `{s['subtask_id']}` {s['title']}"
-            for s in subtasks if s["status"] != "removed"]
+    lines = []
+    for s in subtasks:
+        if s["status"] == "removed":
+            continue
+        icon = _PLAN_ICON.get(s["status"], "⬜")
+        attempts = s.get("attempts", 0)
+        attempt_tag = f" ×{attempts}" if attempts and attempts > 1 else ""
+        lines.append(f"{icon} `{s['subtask_id']}` {s['title']}{attempt_tag}")
+    return lines
 
 
 def planEmbed(state, page: int = 0, per: int = 10):

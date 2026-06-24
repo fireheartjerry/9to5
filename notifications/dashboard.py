@@ -32,7 +32,7 @@ _PHASE_EMOJI = {
 class DiscordDashboard:
     def __init__(self) -> None:
         self.message_id: Optional[str] = None
-        self.events: deque[str] = deque(maxlen=8)
+        self.events: deque[str] = deque(maxlen=10)
         self.effort: str = "default"
         self.model: str = config.PRIMARY_MODEL
         self._lock = threading.Lock()   # guards mutable state under parallel workers
@@ -42,7 +42,7 @@ class DiscordDashboard:
 
     def event(self, text: str) -> None:
         with self._lock:
-            self.events.append(f"`{datetime.now().astimezone().strftime('%H:%M:%S')}` {text}")
+            self.events.append(f"`{datetime.now().astimezone().strftime('%H:%M')}` {text}")
 
     def _eventsSnapshot(self) -> list:
         with self._lock:
@@ -69,6 +69,30 @@ class DiscordDashboard:
             return f"{mins}m"
         return f"{secs}s"
 
+    @staticmethod
+    def _eta(started_at, done: int, total: int) -> str:
+        """Remaining time estimate based on current pace; '—' if insufficient data."""
+        remaining = total - done
+        if remaining <= 0 or done <= 0 or not started_at:
+            return "—"
+        try:
+            start = datetime.fromisoformat(str(started_at))
+            now = datetime.now(start.tzinfo) if start.tzinfo else datetime.now()
+            elapsed_secs = (now - start).total_seconds()
+        except Exception:  # noqa: BLE001
+            return "—"
+        if elapsed_secs <= 0:
+            return "—"
+        secs_per_task = elapsed_secs / done
+        eta_secs = int(secs_per_task * remaining)
+        h, rem = divmod(eta_secs, 3600)
+        mins = rem // 60
+        if h:
+            return f"~{h}h {mins}m"
+        if mins:
+            return f"~{mins}m"
+        return f"~{eta_secs}s"
+
     # ---- embed construction --------------------------------------------
     def _embed(self, state: TaskState, phase: str) -> dict:
         lock = self._state_lock
@@ -89,7 +113,10 @@ class DiscordDashboard:
         current = next((s for s in subtasks if s["status"] == "in_progress"), None)
         if current is None:
             current = next((s for s in subtasks if s["status"] == "pending"), None)
-        cur_txt = f"`{current['subtask_id']}` {current['title']}" if current else "—"
+        attempt_hint = ""
+        if current and current.get("attempts"):
+            attempt_hint = f"  (attempt {current['attempts']})"
+        cur_txt = (f"`{current['subtask_id']}` {current['title']}{attempt_hint}") if current else "—"
 
         last_v = None
         for s in subtasks:
@@ -118,6 +145,7 @@ class DiscordDashboard:
                 {"name": "Model", "value": f"`{self.model}`", "inline": True},
                 {"name": "Mode", "value": f"`{m.get('control_mode', 'watch')}`", "inline": True},
                 {"name": "Elapsed", "value": self._elapsed(m.get("started_at")), "inline": True},
+                {"name": "ETA", "value": self._eta(m.get("started_at"), done, total), "inline": True},
                 {"name": "🔁 Replans", "value": str(replans), "inline": True},
                 {"name": "⚔️ Adversary", "value": str(advs), "inline": True},
                 {"name": "Effort", "value": discord.effortBar(self.effort), "inline": True},

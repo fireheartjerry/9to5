@@ -41,7 +41,7 @@ def humanPing() -> str:
     return f"<@{config.DISCORD_HUMAN_USER_ID}>"
 
 
-def progressBar(done: int, total: int, width: int = 12) -> str:
+def progressBar(done: int, total: int, width: int = 16) -> str:
     total = max(int(total), 1)
     done = max(0, min(int(done), total))
     pct = int(round(100 * done / total))
@@ -55,7 +55,9 @@ def subtaskTracker(subtasks: list[dict], limit: int = 12) -> str:
     n_running = sum(1 for s in subtasks if s.get("status") == "in_progress")
     n_failed = sum(1 for s in subtasks if s.get("status") == "failed")
     n_pending = len(subtasks) - n_done - n_running - n_failed
-    return f"✅ {n_done}  ⚡ {n_running}  ⬜ {max(n_pending, 0)}  ❌ {n_failed}"
+    countable = n_done + n_failed
+    pass_rate = f"  ·  {round(100 * n_done / countable)}% pass" if countable > 0 else ""
+    return f"✅ {n_done}  ⚡ {n_running}  ⬜ {max(n_pending, 0)}  ❌ {n_failed}{pass_rate}"
 
 
 def effortBar(effort: Optional[str]) -> str:
@@ -393,8 +395,9 @@ def noticeEmbed(reason: str, title: str = "ℹ️ 9TO5 — notice") -> dict:
 def blockedEmbed(reason: str, question: Optional[str] = None) -> dict:
     desc = f"**{reason[:1500]}**"
     if question:
-        quoted = "\n".join(f"> {line}" for line in question[:1500].splitlines() or [""])
-        desc += f"\n\nClaude Code is asking:\n{quoted}"
+        q_lines = question[:1500].splitlines() or [""]
+        quoted = "\n".join(f"> {line}" for line in q_lines)
+        desc += f"\n\n━━━ Claude Code asks ━━━\n{quoted}"
     return {
         "title": "🚨 BLOCKED — human decision required",
         "color": statusColor("blocked"),
@@ -420,6 +423,8 @@ def completeEmbed(state, pr_link: str, elapsed: str) -> dict:
     failed = sum(1 for s in state.subtasks if s["status"] == "failed")
 
     subtasks_val = f"{done}/{total}" + (f"  ({failed} failed)" if failed else "")
+    countable = done + failed
+    sr_val = f"{round(100 * done / countable)}%" if countable else "—"
     pr = (pr_link or "").strip()
     pr_val = f"[Open PR]({pr})" if pr.lower().startswith("http") else (pr or "—")
 
@@ -434,6 +439,7 @@ def completeEmbed(state, pr_link: str, elapsed: str) -> dict:
         "timestamp": _nowIso(),
         "fields": [
             {"name": "Subtasks", "value": subtasks_val, "inline": True},
+            {"name": "Success rate", "value": sr_val, "inline": True},
             {"name": "Time elapsed", "value": elapsed or "—", "inline": True},
             {"name": "Replans", "value": str(replans), "inline": True},
             {"name": "Adversary", "value": str(advs), "inline": True},
@@ -462,15 +468,22 @@ def gateNeededEmbed(gate: str) -> dict:
 
 def subtaskFailedEmbed(subtask_id: str, title: str, verify_result: Optional[dict], attempts: int) -> dict:
     vr = verify_result or {}
+    fields = [
+        {"name": "Subtask", "value": truncate(f"`{subtask_id}` {title}", 256), "inline": False},
+        {"name": "Attempts", "value": str(attempts), "inline": True},
+        {"name": "Exit code", "value": str(vr.get("returncode", "—")), "inline": True},
+        {"name": "Verify cmd", "value": f"`{truncate(str(vr.get('cmd') or 'exit'), 200)}`", "inline": False},
+    ]
+    stdout = (vr.get("stdout") or "").strip()
+    stderr = (vr.get("stderr") or "").strip()
+    output = (stdout or stderr)[:800]
+    if output:
+        fields.append({"name": "Output", "value": f"```\n{output}\n```", "inline": False})
     return {
         "title": "⚠️ Subtask failed verification",
         "color": statusColor("failed"),
         "timestamp": _nowIso(),
-        "fields": [
-            {"name": "Subtask", "value": truncate(f"`{subtask_id}` {title}", 256), "inline": False},
-            {"name": "Attempts", "value": str(attempts), "inline": True},
-            {"name": "Verify", "value": truncate(str(vr.get("cmd") or "exit"), 512), "inline": False},
-        ],
+        "fields": fields,
         "footer": {"text": "task continues with remaining subtasks"},
     }
 
