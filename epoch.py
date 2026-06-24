@@ -27,7 +27,8 @@ def fingerprint() -> dict[str, Any]:
     files: dict[str, str] = {}
     for path in identity.selfCodeFiles():
         try:
-            data = open(path, "rb").read()
+            with open(path, "rb") as fh:
+                data = fh.read()
         except OSError:
             data = b""
         files[path.lower()] = hashlib.sha256(data).hexdigest()
