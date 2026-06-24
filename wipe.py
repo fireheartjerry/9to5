@@ -50,6 +50,10 @@ CATEGORIES: dict[str, dict] = {
         "paths": [ROOT / "knowledge"],
         "label": "Knowledge base",
     },
+    "chatgpt_profile": {
+        "paths": [ROOT / "state" / "chatgpt_profile"],
+        "label": "ChatGPT browser profile",
+    },
 }
 
 BACKUP_DIR = ROOT / "state" / "backups"

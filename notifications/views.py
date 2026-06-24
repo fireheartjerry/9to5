@@ -254,7 +254,7 @@ class WipeSetupView(discord.ui.View):
     @discord.ui.select(
         placeholder="Select categories to wipe…",
         min_values=0,
-        max_values=7,
+        max_values=8,
         options=[
             discord.SelectOption(label="Tasks", value="tasks",
                                  description="Task JSON files (state/tasks/)"),
@@ -270,6 +270,8 @@ class WipeSetupView(discord.ui.View):
                                  description="learning/ directory"),
             discord.SelectOption(label="Knowledge Base", value="knowledge",
                                  description="knowledge/ directory"),
+            discord.SelectOption(label="ChatGPT Profile", value="chatgpt_profile",
+                                 description="ChatGPT browser profile (state/chatgpt_profile/)"),
         ],
     )
     async def _categories(self, interaction: "discord.Interaction", select: "discord.ui.Select"):  # noqa: ANN001
