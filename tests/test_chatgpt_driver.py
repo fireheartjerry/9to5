@@ -43,5 +43,31 @@ class TestHealthProbeLeak(unittest.TestCase):
         self.assertTrue(sess.opened)
 
 
+class TestAskJsonContract(unittest.TestCase):
+    def _open_session(self):
+        sess = cd.ChatGPTSession()
+        sess._pw, sess._ctx, sess._page = mock.Mock(), mock.Mock(), mock.Mock()
+        sess.opened = True
+        sess._conversation_url = "https://chatgpt.com/c/x"   # skip the goto branch
+        return sess
+
+    def test_expect_json_returns_none_when_reply_never_json(self):
+        """Persistent prose must become None (no usable reply), never be returned as a 'verdict'."""
+        sess = self._open_session()
+        with mock.patch.object(sess, "_guard_state"), \
+                mock.patch.object(sess, "_send_and_read", return_value="Sorry! Here is some prose."), \
+                mock.patch.object(cd.config, "CHATGPT_JSON_REPAIR_RETRIES", 1), \
+                mock.patch.object(cd.config, "CHATGPT_MAX_TURNS", 100):
+            self.assertIsNone(sess.ask("give me json", expect_json=True))
+
+    def test_expect_json_returns_json_when_valid(self):
+        sess = self._open_session()
+        with mock.patch.object(sess, "_guard_state"), \
+                mock.patch.object(sess, "_send_and_read", return_value='{"verdict": "approved"}'), \
+                mock.patch.object(cd.config, "CHATGPT_JSON_REPAIR_RETRIES", 1), \
+                mock.patch.object(cd.config, "CHATGPT_MAX_TURNS", 100):
+            self.assertEqual(sess.ask("give me json", expect_json=True), '{"verdict": "approved"}')
+
+
 if __name__ == "__main__":
     unittest.main()

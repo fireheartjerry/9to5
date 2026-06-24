@@ -342,6 +342,13 @@ class ChatGPTSession:
                 self._turns += 1
                 if _looks_like_json(reply):
                     break
+            if not _looks_like_json(reply):
+                # Still prose after every repair nudge. Return None -- NOT the prose -- so the caller
+                # treats it as 'no usable GPT reply' (Ollama fallback) instead of mis-parsing prose as
+                # a verdict (which silently auto-approved every review while still re-paying GPT).
+                LOG.warning("GPT reply still not JSON after %d repair attempt(s); returning no reply",
+                            max(0, config.CHATGPT_JSON_REPAIR_RETRIES))
+                return None
         return reply or None
 
     def _send_and_read(self, message: str) -> str:
