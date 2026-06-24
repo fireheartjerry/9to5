@@ -34,8 +34,24 @@ from notifications import discord_bot as discord
 from notifications.dashboard import DiscordDashboard
 from notifications.webdash import startWebDashboard, stopWebDashboard
 from state.task import TaskState, nowIso
+import epoch
 
 LOG = config.getLogger("orchestrator")
+
+
+def _checkCodeDivergence(state) -> bool:
+    """At each subtask boundary: has on-disk self.code drifted from the pinned epoch?
+    If so, record it on meta so the post-run gate can refuse to bless edited-but-never-
+    executed modules (#12). Observe-only -- never blocks the edit."""
+    ep_dict = (getattr(state, "meta", {}) or {}).get("epoch")
+    if not ep_dict:
+        return False
+    diverged = epoch.diverged(epoch.Epoch.fromDict(ep_dict))
+    if diverged and not state.meta.get("code_diverged"):
+        state.meta["code_diverged"] = True
+        state.save()
+    return diverged
+
 
 # A CONCRETE example verify path handed to the brain so it never copies a literal "<ABSOLUTE
 # path>" placeholder (which cmd.exe parses as redirection -> spurious verify failures). See
@@ -1224,6 +1240,12 @@ class Orchestrator:
         exec_cwd = exec_cwd or self._execCwd(state, sid, work_dir)
         dashboard.update(state, "executing", f"-> {sid} {subtask['title']}")
 
+        # Boundary divergence check (#12): observe-only, never blocks.
+        try:
+            _checkCodeDivergence(state)
+        except Exception:  # noqa: BLE001
+            pass
+
         attempt = 0
         passed = False
         failure_feedback = None
@@ -1879,6 +1901,14 @@ class Orchestrator:
                 self.writeIndex(state)
                 dashboard.update(state, "planning", f"planned {len(state.subtasks)} subtasks")
                 self._checkControl(state, bus, dashboard, gate="plan")
+
+            # --- Epoch pin (run-start snapshot; observe-only, never blocks) ---
+            try:
+                state.setEpoch(epoch.snapshot(
+                    universe=(state.meta.get("universe") or {}),
+                    brain_tag=(state.meta.get("active_brain_tag") if isinstance(state.meta, dict) else None)))
+            except Exception:  # noqa: BLE001 -- epoch is observability; never break a run
+                pass
 
             # --- Phase 3: Execution ---
             state.setStatus("executing")
