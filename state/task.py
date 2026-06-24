@@ -81,6 +81,8 @@ class TaskState:
                 "self_ref_branch": None,
                 "subtask_seq": 0,
                 "universe": None,
+                "epoch": None,
+                "state_epoch": 0,
             },
             "plan": {"architect_design_doc": None, "subtasks": []},
             "adversary_reviews": [],
@@ -114,6 +116,11 @@ class TaskState:
     def save(self) -> Path:
         p = self.path()
         with _SAVE_LOCK:
+            # COHERENCE INVARIANT (#15): stamp a monotonically increasing state_epoch before
+            # every serialization so out-of-process readers can detect a racing write by
+            # comparing epochs. The in-RAM TaskState remains authoritative; disk is a lossy
+            # checkpoint. Increment BEFORE json.dumps so the new value is what hits the file.
+            self.meta["state_epoch"] = int(self.meta.get("state_epoch", 0)) + 1
             # serialize INSIDE the lock: another thread appending to a list/dict in self.data
             # while json.dumps walks it raises "changed size during iteration".
             payload = json.dumps(self.data, indent=2, ensure_ascii=False)
@@ -126,7 +133,10 @@ class TaskState:
     @classmethod
     def load(cls, task_id: str) -> "TaskState":
         p = config.STATE_DIR / f"{task_id}.json"
-        return cls(json.loads(p.read_text(encoding="utf-8")))
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError(f"task JSON for {task_id!r} is not a dict: {type(data).__name__}")
+        return cls(data)
 
     @classmethod
     def loadSafe(cls, task_id: str) -> Optional["TaskState"]:
@@ -262,6 +272,11 @@ class TaskState:
         self.meta["universe"] = universe
         self.save()
 
+    def setEpoch(self, ep) -> None:
+        """Pin the per-run epoch snapshot (epoch.Epoch) into meta and persist."""
+        self.meta["epoch"] = ep.toDict()
+        self.save()
+
     def recordVerify(self, subtask_id: str, result: dict) -> Optional[dict[str, Any]]:
         out = self.updateSubtask(subtask_id, verify_result=result)
         self._ledgerSubtask(subtask_id)
@@ -326,9 +341,9 @@ class TaskState:
         return st
 
     def addAdversaryReview(self, subtask_id: str, trigger_reason: str, verdict: str,
-                           note_ref: Optional[str] = None) -> dict[str, Any]:
+                           note_ref: Optional[str] = None, stub: bool = False) -> dict[str, Any]:
         rec = {"subtask_id": subtask_id, "trigger_reason": trigger_reason,
-               "verdict": verdict, "note_ref": note_ref, "at": nowIso()}
+               "verdict": verdict, "note_ref": note_ref, "stub": bool(stub), "at": nowIso()}
         self.data["adversary_reviews"].append(rec)
         self.save()
         self._ledgerSubtask(subtask_id)

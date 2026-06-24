@@ -122,7 +122,10 @@ class ControlBus:
         last_exc: Exception | None = None
         for attempt in range(_READ_RETRIES):
             try:
-                return json.loads(self.path.read_text(encoding="utf-8"))
+                raw = json.loads(self.path.read_text(encoding="utf-8"))
+                if not isinstance(raw, dict):
+                    raise ValueError(f"control bus JSON is not a dict: {type(raw).__name__}")
+                return raw
             except FileNotFoundError:
                 return _blank()
             except Exception as e:  # noqa: BLE001 -- transient sharing violation OR corrupt content

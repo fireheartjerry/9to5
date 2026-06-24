@@ -194,6 +194,30 @@ _SCHEMA: tuple[str, ...] = (
 )
 
 
+def _ensureColumns(conn: sqlite3.Connection, table: str, cols: dict[str, str]) -> None:
+    """Idempotently ADD COLUMN for any of ``cols`` (name->SQL decl) missing from ``table``.
+    CREATE TABLE IF NOT EXISTS never alters an existing table, so new columns need this."""
+    have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+    for name, decl in cols.items():
+        if name not in have:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
+
+# Columns added after the initial table DDL (table -> {col: decl}). Applied every
+# schema-ensure so an old db file is upgraded in place. Phases 2/4 extend this.
+_MIGRATIONS: dict[str, dict[str, str]] = {
+    "subtasks": {"adversary_stub": "INTEGER", "provenance": "TEXT"},
+    "prompt_variants": {"provenance": "TEXT"},
+    "reflections": {"provenance": "TEXT"},
+    "solution_cache": {"provenance": "TEXT"},
+}
+
+
+def _applyMigrations(conn: sqlite3.Connection) -> None:
+    for table, cols in _MIGRATIONS.items():
+        _ensureColumns(conn, table, cols)
+
+
 def _db_path(db_path: Optional[Path] = None) -> Path:
     """Resolve the ledger path at call time (so tests can monkeypatch the config const)."""
     return Path(db_path) if db_path is not None else Path(config.EXPERIENCE_DB_PATH)
@@ -220,6 +244,7 @@ def _new_conn(key: str, first: bool) -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode=WAL")  # persists in the db file -> set once
         for stmt in _SCHEMA:
             conn.execute(stmt)
+        _applyMigrations(conn)
         _schema_ready.add(key)
     with _pool_lock:
         _all_conns.append(conn)
@@ -250,6 +275,7 @@ def _connect(db_path: Optional[Path] = None) -> Iterator[sqlite3.Connection]:
         conn.execute("PRAGMA journal_mode=WAL")
         for stmt in _SCHEMA:
             conn.execute(stmt)
+        _applyMigrations(conn)
         _schema_ready.add(key)
 
     try:
@@ -333,6 +359,9 @@ def record_run(run: dict[str, Any], db_path: Optional[Path] = None) -> bool:
     """Upsert a run row keyed by ``run_id``. Returns True on success (best-effort)."""
     if not config.EXPERIENCE_LEDGER_ENABLED:
         return False
+    if not isinstance(run, dict) or not (run.get("run_id") or "").strip():
+        LOG.warning("record_run: missing or empty run_id, skipping")
+        return False
     try:
         with _WRITE_LOCK, _connect(db_path) as conn:
             conn.execute(
@@ -376,6 +405,12 @@ def record_subtask(run_id: str, st: dict[str, Any], db_path: Optional[Path] = No
     """Upsert a subtask row keyed by ``(run_id, st_id)``. Best-effort."""
     if not config.EXPERIENCE_LEDGER_ENABLED:
         return False
+    if not (run_id or "").strip():
+        LOG.warning("record_subtask: missing or empty run_id, skipping")
+        return False
+    if not isinstance(st, dict) or not (st.get("subtask_id") or "").strip():
+        LOG.warning("record_subtask: missing or empty subtask_id, skipping")
+        return False
     try:
         with _WRITE_LOCK, _connect(db_path) as conn:
             conn.execute(
@@ -383,13 +418,13 @@ def record_subtask(run_id: str, st: dict[str, Any], db_path: Optional[Path] = No
                    (run_id, st_id, position, title, signature_tags, effort, model,
                     skills_json, subagents_json, invocation_spec_json, cost_usd, num_turns,
                     session_id, verify_cmd, verify_expect, verify_passed, attempt_count,
-                    adversary_verdict, adversary_concerns_json, replan_delta_json, status,
+                    adversary_verdict, adversary_stub, adversary_concerns_json, replan_delta_json, status,
                     predicted_success, started_at, ended_at)
                    VALUES
                    (:run_id, :st_id, :position, :title, :signature_tags, :effort, :model,
                     :skills_json, :subagents_json, :invocation_spec_json, :cost_usd, :num_turns,
                     :session_id, :verify_cmd, :verify_expect, :verify_passed, :attempt_count,
-                    :adversary_verdict, :adversary_concerns_json, :replan_delta_json, :status,
+                    :adversary_verdict, :adversary_stub, :adversary_concerns_json, :replan_delta_json, :status,
                     :predicted_success, :started_at, :ended_at)
                    ON CONFLICT(run_id, st_id) DO UPDATE SET
                     position=excluded.position, title=excluded.title,
@@ -407,6 +442,7 @@ def record_subtask(run_id: str, st: dict[str, Any], db_path: Optional[Path] = No
                     verify_passed=COALESCE(excluded.verify_passed, subtasks.verify_passed),
                     attempt_count=COALESCE(excluded.attempt_count, subtasks.attempt_count),
                     adversary_verdict=COALESCE(excluded.adversary_verdict, subtasks.adversary_verdict),
+                    adversary_stub=COALESCE(excluded.adversary_stub, subtasks.adversary_stub),
                     adversary_concerns_json=COALESCE(excluded.adversary_concerns_json, subtasks.adversary_concerns_json),
                     replan_delta_json=COALESCE(excluded.replan_delta_json, subtasks.replan_delta_json),
                     status=COALESCE(excluded.status, subtasks.status),
@@ -436,11 +472,15 @@ def set_subtask_embedding(run_id: str, st_id: str, blob: bytes,
 def embedded_subtasks(only_passed: bool = True,
                       db_path: Optional[Path] = None) -> list[dict[str, Any]]:
     """Subtask rows that carry an embedding -- the candidate pool for top-K retrieval."""
-    with _connect(db_path) as conn:
-        sql = "SELECT * FROM subtasks WHERE embedding IS NOT NULL"
-        if only_passed:
-            sql += " AND verify_passed=1"
-        return [dict(r) for r in conn.execute(sql)]
+    try:
+        with _connect(db_path) as conn:
+            sql = "SELECT * FROM subtasks WHERE embedding IS NOT NULL"
+            if only_passed:
+                sql += " AND verify_passed=1"
+            return [dict(r) for r in conn.execute(sql)]
+    except Exception as e:  # noqa: BLE001 -- missing/corrupt DB degrades to empty pool
+        LOG.warning("embedded_subtasks failed (ignored): %s", e)
+        return []
 
 
 def record_eval(score: dict[str, Any], *, suite_version: str = "v1",
@@ -493,6 +533,7 @@ def _subtask_params(run_id: str, st: dict[str, Any]) -> dict[str, Any]:
         "verify_passed": None if passed is None else int(bool(passed)),
         "attempt_count": session.get("attempts") or vres.get("attempt_count"),
         "adversary_verdict": st.get("_adversary_verdict"),
+        "adversary_stub": st.get("_adversary_stub"),
         "adversary_concerns_json": _j(st.get("_adversary_concerns")),
         "replan_delta_json": _j(st.get("_replan_delta")),
         "status": st.get("status"),
@@ -533,10 +574,13 @@ def sync_subtask(state_data: dict[str, Any], st: dict[str, Any],
     except StopIteration:
         enriched["_position"] = None
     verdict = None
+    adversary_stub = 0
     for rv in state_data.get("adversary_reviews", []) or []:
         if rv.get("subtask_id") == st.get("subtask_id"):
             verdict = rv.get("verdict")  # last wins
+            adversary_stub = 1 if rv.get("stub") else 0
     enriched["_adversary_verdict"] = verdict
+    enriched["_adversary_stub"] = adversary_stub
     return record_subtask(state_data.get("task_id"), enriched, db_path=db_path)
 
 
@@ -619,9 +663,12 @@ def clear_arms(db_path: Optional[Path] = None) -> None:
 
 def register_variant(role: str, body: str, *, state: str = "challenger",
                      parent_id: Optional[int] = None, file_path: Optional[str] = None,
+                     provenance: Optional[str] = None,
                      db_path: Optional[Path] = None) -> Optional[int]:
     """Register a prompt variant (deduped by role+body hash). Returns its id. If the body
-    already exists for the role, returns the existing id without changing its state."""
+    already exists for the role, returns the existing id without changing its state.
+
+    ``provenance`` is a JSON string stamped on new rows (not updated for deduped rows)."""
     import hashlib
     h = hashlib.sha256(body.encode("utf-8")).hexdigest()
     try:
@@ -635,9 +682,10 @@ def register_variant(role: str, body: str, *, state: str = "challenger",
                 (role,)).fetchone()["v"]
             cur = conn.execute(
                 """INSERT INTO prompt_variants
-                   (role, version, parent_id, body_hash, body, file_path, created_at, state)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (role, ver, parent_id, h, body, file_path, _nowIso(), state))
+                   (role, version, parent_id, body_hash, body, file_path, created_at, state,
+                    provenance)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (role, ver, parent_id, h, body, file_path, _nowIso(), state, provenance))
             return int(cur.lastrowid)
     except Exception as e:  # noqa: BLE001
         LOG.warning("register_variant failed (ignored): %s", e)
@@ -657,6 +705,22 @@ def get_champion_body(role: str, db_path: Optional[Path] = None) -> Optional[str
     return champ["body"] if champ else None
 
 
+def get_champion_provenance(role: str, db_path: Optional[Path] = None) -> Optional[dict]:
+    """Return the provenance dict for the current champion of ``role``, or None."""
+    import json
+    champ = get_champion(role, db_path=db_path)
+    if not champ:
+        return None
+    raw = champ.get("provenance")
+    if not raw:
+        return None
+    try:
+        val = json.loads(raw)
+        return val if isinstance(val, dict) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def fetch_variants(role: str, state: Optional[str] = None,
                    db_path: Optional[Path] = None) -> list[dict[str, Any]]:
     with _connect(db_path) as conn:
@@ -672,15 +736,18 @@ def fetch_variants(role: str, state: Optional[str] = None,
 
 def promote_variant(role: str, variant_id: int, db_path: Optional[Path] = None) -> bool:
     """Make ``variant_id`` the champion for ``role``; retire the previous champion(s).
-    Atomic: a single transaction so there is never two champions or none."""
+    Atomic: a single transaction so there is never two champions or none.
+    Stamps gate attestation on the promoted variant so provenance gate allows it."""
+    import json
+    _GATE_PROVENANCE = json.dumps({"origin": "brain", "attested_by": "sie:promotion-gate"})
     try:
         with _WRITE_LOCK, _connect(db_path) as conn:
             conn.execute(
                 "UPDATE prompt_variants SET state='retired' WHERE role=? AND state='champion'",
                 (role,))
             conn.execute(
-                "UPDATE prompt_variants SET state='champion' WHERE id=? AND role=?",
-                (variant_id, role))
+                "UPDATE prompt_variants SET state='champion', provenance=? WHERE id=? AND role=?",
+                (_GATE_PROVENANCE, variant_id, role))
         return True
     except Exception as e:  # noqa: BLE001
         LOG.warning("promote_variant failed (ignored): %s", e)
@@ -851,19 +918,30 @@ def fetch_failure_modes(signature_tags: Optional[str] = None,
         return [dict(r) for r in rows]
 
 
+_EXECUTOR_PROVENANCE = '{"origin":"executor"}'
+
+
 def upsert_solution(signature: str, spec_json: str, *, verify_passed: bool,
+                    provenance: Optional[str] = None,
                     db_path: Optional[Path] = None) -> bool:
-    """Cache a working solution keyed by signature (O)."""
+    """Cache a working solution keyed by signature (O).
+
+    ``provenance`` should be a JSON string describing the origin of this spec.
+    Defaults to ``{"origin":"executor"}`` (untrusted) so that a raw verify-pass
+    is NOT warm-startable unless the caller explicitly stamps a trusted provenance
+    (e.g. gold rows from build_from_ledger).
+    """
+    prov = provenance if provenance is not None else _EXECUTOR_PROVENANCE
     try:
         with _WRITE_LOCK, _connect(db_path) as conn:
             conn.execute(
                 """INSERT INTO solution_cache
-                   (signature, spec_json, last_verify_passed, reuse_count, last_used_at)
-                   VALUES (?, ?, ?, 0, ?)
+                   (signature, spec_json, last_verify_passed, reuse_count, last_used_at, provenance)
+                   VALUES (?, ?, ?, 0, ?, ?)
                    ON CONFLICT(signature) DO UPDATE SET
                      spec_json=excluded.spec_json, last_verify_passed=excluded.last_verify_passed,
-                     last_used_at=excluded.last_used_at""",
-                (signature, spec_json, 1 if verify_passed else 0, _nowIso()))
+                     last_used_at=excluded.last_used_at, provenance=excluded.provenance""",
+                (signature, spec_json, 1 if verify_passed else 0, _nowIso(), prov))
         return True
     except Exception as e:  # noqa: BLE001
         LOG.warning("upsert_solution failed (ignored): %s", e)
@@ -959,13 +1037,14 @@ def fetch_subtasks(run_id: Optional[str] = None, *, limit: Optional[int] = None,
 
 
 def gold_examples(db_path: Optional[Path] = None) -> list[dict[str, Any]]:
-    """First-attempt, verify-passing, adversary-approved subtasks -- the clean training
+    """First-attempt, verify-passing, **really** adversary-approved subtasks -- the clean training
     signal later phases distill from. (Defined now so downstream phases can rely on it.)"""
     with _connect(db_path) as conn:
         rows = conn.execute(
             """SELECT * FROM subtasks
                WHERE verify_passed=1 AND (attempt_count IS NULL OR attempt_count<=1)
-                 AND (adversary_verdict IS NULL OR adversary_verdict IN ('approved','approve'))
+                 AND adversary_verdict IN ('approved','approve')
+                 AND COALESCE(adversary_stub, 0) = 0
                ORDER BY run_id, position""")
         return [dict(r) for r in rows]
 

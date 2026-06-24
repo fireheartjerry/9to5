@@ -34,8 +34,24 @@ from notifications import discord_bot as discord
 from notifications.dashboard import DiscordDashboard
 from notifications.webdash import startWebDashboard, stopWebDashboard
 from state.task import TaskState, nowIso
+import epoch
 
 LOG = config.getLogger("orchestrator")
+
+
+def _checkCodeDivergence(state) -> bool:
+    """At each subtask boundary: has on-disk self.code drifted from the pinned epoch?
+    If so, record it on meta so the post-run gate can refuse to bless edited-but-never-
+    executed modules (#12). Observe-only -- never blocks the edit."""
+    ep_dict = (getattr(state, "meta", {}) or {}).get("epoch")
+    if not ep_dict:
+        return False
+    diverged = epoch.diverged(epoch.Epoch.fromDict(ep_dict))
+    if diverged and not state.meta.get("code_diverged"):
+        state.meta["code_diverged"] = True
+        state.save()
+    return diverged
+
 
 # A CONCRETE example verify path handed to the brain so it never copies a literal "<ABSOLUTE
 # path>" placeholder (which cmd.exe parses as redirection -> spurious verify failures). See
@@ -417,15 +433,18 @@ class Orchestrator:
                 if want_json:
                     kwargs["format"] = "json"
                 resp = self.ollama.chat(model=model, messages=messages, **kwargs)
-                # qwen2.5 can dead-end to an EMPTY completion under format=json on markdown-heavy
-                # prompts. Do ONE fast salvage WITHOUT the json grammar (free-form JSON is recovered by
-                # _chatJson's fence/object extraction) -- but NO backoff loop: an empty here is usually
-                # deterministic for this prompt, and looping would burn minutes per brain call for no
-                # gain (the caller has a fallback). If still empty, return it and let the caller fall back.
+                # An EMPTY completion is a TRANSIENT model failure (qwen2.5 can dead-end to "" under
+                # format=json on markdown-heavy prompts). Treat it as retryable rather than returning
+                # empty -- otherwise EVERY brain call (plan/replan/backfill/adversary) silently falls
+                # back. The last attempt drops format=json as a salvage (free-form JSON is then
+                # recovered by _chatJson's fence/object extraction).
                 if want_json and not _chatText(resp).strip():
-                    kwargs.pop("format", None)
-                    salvage = self.ollama.chat(model=model, messages=messages, **kwargs)
-                    return salvage if _chatText(salvage).strip() else resp
+                    if attempt == retries - 1:
+                        kwargs.pop("format", None)
+                        resp = self.ollama.chat(model=model, messages=messages, **kwargs)
+                        if _chatText(resp).strip():
+                            return resp
+                    raise ValueError("empty completion")
                 return resp
             except Exception as e:  # noqa: BLE001
                 LOG.warning("Ollama call failed/empty (attempt %d/%d): %s", attempt, retries, e)
@@ -1282,7 +1301,7 @@ class Orchestrator:
                     for s in state.subtasks if s["status"] != "removed") or "(no subtasks)"
             rv = self._consult(state, review_type, "Pre-PR safety review", reason, content)
             with self._state_lock:
-                state.addAdversaryReview("pre_pr", reason, rv["verdict"], None)
+                state.addAdversaryReview("pre_pr", reason, rv["verdict"], None, stub=rv.get("stub", False))
             discord.sendEmbed(discord.adversaryTriggeredEmbed("Pre-PR review", reason, rv.get("verdict")))
             return rv
         except Exception as e:  # noqa: BLE001 -- never block a run on the reviewer itself
@@ -1402,6 +1421,12 @@ class Orchestrator:
         verify_spec = subtask.get("verify")
         exec_cwd = exec_cwd or self._execCwd(state, sid, work_dir)
         dashboard.update(state, "executing", f"-> {sid} {subtask['title']}")
+
+        # Boundary divergence check (#12): observe-only, never blocks.
+        try:
+            _checkCodeDivergence(state)
+        except Exception:  # noqa: BLE001
+            pass
 
         attempt = 0
         passed = False
@@ -1541,17 +1566,19 @@ class Orchestrator:
             with self._state_lock:
                 heartbeat_ordinal = sum(1 for s in state.subtasks if s["status"] in ("done", "failed", "removed"))
             _adv_verdict = None
+            _adv_stub = False
             triggered, reason = adversary.shouldTrigger(combined, heartbeat_ordinal, attempt)
             if triggered:
                 rv = self._review(subtask["title"], reason, combined,
                                   ollama_chat=self._ollamaChat,
                                   goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
                 _adv_verdict = rv.get("verdict")
+                _adv_stub = rv.get("stub", False)
                 discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason, rv.get("verdict")))
                 with self._state_lock:
                     state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
                     self.obs.writeNote(state.subtaskReviewNoteRel(sid), self._reviewNote(subtask, reason, rv, combined))
-                    state.addAdversaryReview(sid, reason, rv["verdict"], state.subtaskReviewNoteRel(sid))
+                    state.addAdversaryReview(sid, reason, rv["verdict"], state.subtaskReviewNoteRel(sid), stub=rv.get("stub", False))
                 # TEETH: a challenged verdict on a PASSED subtask earns ONE bounded remediation
                 # attempt with the concerns injected. Never downgrades the passing result.
                 if (config.ADVERSARY_REMEDIATION_ENABLED and final == "done"
@@ -1563,13 +1590,15 @@ class Orchestrator:
             # the real verify + adversary verdict) and memoize a passing spec. Best-effort.
             try:
                 reflection.capture(run_id=state.task_id, subtask_id=sid, executor_output=combined,
-                                   verify_passed=passed, adversary_verdict=_adv_verdict)
+                                   verify_passed=passed, adversary_verdict=_adv_verdict,
+                                   adversary_stub=_adv_stub)
                 if passed and spec.get("prompt"):
                     import json as _json
                     solution_cache_spec = _json.dumps({k: spec.get(k) for k in
                         ("prompt", "effort_level", "skills_to_invoke", "subagent") if spec.get(k)})
                     experience.upsert_solution(solution_cache.signature_of(subtask.get("title", "")),
-                                               solution_cache_spec, verify_passed=True)
+                                               solution_cache_spec, verify_passed=True,
+                                               provenance='{"origin":"executor"}')
             except Exception:  # noqa: BLE001 -- learning never affects the run
                 pass
 
@@ -2062,6 +2091,14 @@ class Orchestrator:
                 self._planReview(state, elaborated, dashboard)
                 self._checkControl(state, bus, dashboard, gate="plan")
 
+            # --- Epoch pin (run-start snapshot; observe-only, never blocks) ---
+            try:
+                state.setEpoch(epoch.snapshot(
+                    universe=(state.meta.get("universe") or {}),
+                    brain_tag=(state.meta.get("active_brain_tag") if isinstance(state.meta, dict) else None)))
+            except Exception:  # noqa: BLE001 -- epoch is observability; never break a run
+                pass
+
             # --- Phase 3: Execution ---
             state.setStatus("executing")
             self.runExecutionLoop(state, architect_doc, work_dir, bus, dashboard, parallelism=parallelism)
@@ -2072,7 +2109,8 @@ class Orchestrator:
             if state.meta.get("is_self_referential"):
                 try:
                     import selfmod
-                    gate = selfmod.safety_gate(work_dir, is_self_referential=True)
+                    gate = selfmod.safety_gate(work_dir, is_self_referential=True,
+                                               code_diverged=state.meta.get("code_diverged", False))
                     if gate.get("ran"):
                         # FX-11: label from the ACTUAL outcome. safety_gate may KEEP a core change when
                         # the baseline is also red (kept_despite_failure) -- calling that "REVERTED" is

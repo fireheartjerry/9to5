@@ -6,16 +6,25 @@ default)`` returns the in-code constant byte-for-byte until a challenger is actu
 promoted to champion -- so wiring this in changes nothing until the evidence says to.
 
 See the spec (Layer 3) + learning/promotion.py for the champion/challenger gate.
+
+Provenance gate (fix #2): a champion body is only served when its provenance is
+gate-attested (origin=human/attested_by set). Any unattested/executor-origin body
+is refused and the in-code fallback is returned instead.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Optional
 
 import config
+import provenance as _prov
 from memory import experience
 
 LOG = config.getLogger("sie.prompts")
+
+# Provenance stamped on in-code seed champion rows (authored by a human developer).
+_SEED_PROVENANCE = json.dumps({"origin": "human", "attested_by": "sie:seed"})
 
 # Roles whose system prompts can evolve. Names are stable keys, not import paths.
 ROLES = ("orchestrator", "planner", "replanner", "elaborator", "adversary", "architect")
@@ -26,12 +35,25 @@ def get(role: str, default: str, *, db_path: Optional[Path] = None) -> str:
 
     On first sight of a role we seed ``default`` as champion v1 (a versioned baseline),
     then return it -- guaranteeing byte-identical behavior until a real promotion happens.
+
+    Provenance gate: a stored champion body is only returned when its provenance is
+    gate-attested (ALLOW verdict). Any unattested/executor-origin body is refused and
+    ``default`` is returned instead, keeping the gate fail-closed.
     """
     try:
         champ = experience.get_champion_body(role, db_path=db_path)
         if champ is not None:
+            prov_dict = experience.get_champion_provenance(role, db_path=db_path)
+            prov = _prov.coerce(prov_dict)
+            decision = _prov.assertIngestible(f"prompt_variants:{role}", "obey", prov)
+            if decision.verdict is not _prov.Verdict.ALLOW:
+                LOG.warning("prompts.get: rejected champion for %s (%s), using default",
+                            role, decision.reason)
+                return default
             return champ
-        experience.register_variant(role, default, state="champion", db_path=db_path)
+        # No champion yet -- seed from the in-code constant (human-authored).
+        experience.register_variant(role, default, state="champion",
+                                    provenance=_SEED_PROVENANCE, db_path=db_path)
     except Exception as e:  # noqa: BLE001 -- registry must never break the brain
         LOG.debug("prompts.get fell back to default for %s: %s", role, e)
     return default
@@ -45,7 +67,7 @@ def champion_id(role: str, default: Optional[str] = None,
         if champ:
             return int(champ["id"])
         if default is not None:
-            return experience.register_variant(role, default, state="champion", db_path=db_path)
+            return experience.register_variant(role, default, state="champion", provenance=_SEED_PROVENANCE, db_path=db_path)
     except Exception as e:  # noqa: BLE001
         LOG.debug("champion_id failed for %s: %s", role, e)
     return None
