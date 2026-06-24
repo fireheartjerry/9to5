@@ -37,6 +37,7 @@ CATEGORIES: dict[str, dict] = {
     "vault": {
         "paths": [ROOT / "vault"],
         "label": "Obsidian vault",
+        "keep_dir": True,
     },
     "logs": {
         "paths": [ROOT / "logs"],
@@ -88,7 +89,10 @@ def deleteCategory(key: str) -> tuple[bool, str]:
         if not p.exists():
             continue
         try:
-            if p.is_dir():
+            if p.is_dir() and cat.get("keep_dir"):
+                for child in p.iterdir():
+                    shutil.rmtree(child) if child.is_dir() else child.unlink()
+            elif p.is_dir():
                 shutil.rmtree(p)
             else:
                 p.unlink()
