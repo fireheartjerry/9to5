@@ -20,6 +20,7 @@ from typing import Any, Optional
 
 import config
 from agents import chatgpt_selectors as sel
+from agents import profile_hygiene
 
 LOG = config.getLogger("chatgpt_driver")
 
@@ -105,25 +106,38 @@ class ChatGPTSession:
                 "browser layer unavailable: `pip install playwright && playwright install chromium`"
             ) from e
         self._pw = sync_playwright().start()
-        # The profile is a single-instance Chromium user-data-dir. A just-closed prior holder
-        # (e.g. the Discord bot's pre-flight, or a previous run) can keep the SingletonLock for a
-        # beat on Windows, so launch_persistent_context fails with "profile is already in use by
-        # another instance of Chromium". Retry with a short backoff so a transient lock self-heals
-        # instead of disabling the second brain for the whole run.
+        # Pre-launch hygiene: reap any orphaned Chromium still holding the single-instance profile
+        # and erase the crash-restore flag, so a prior hard-kill can neither block this launch
+        # ("profile already in use") nor pop the "Chrome didn't shut down correctly / restore
+        # pages?" bubble. Always start from a clean profile.
+        profile_hygiene.sanitize()
+        # Flags that suppress the crash/restore/first-run chrome on a recovered profile (belt and
+        # suspenders alongside the Preferences reset) plus the automation-detection masking.
+        launch_args = [
+            "--disable-blink-features=AutomationControlled",
+            "--hide-crash-restore-bubble",
+            "--disable-session-crashed-bubble",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-features=InfiniteSessionRestore",
+        ]
         last_err = None
         for attempt in range(1, 6):
             try:
                 self._ctx = self._pw.chromium.launch_persistent_context(
                     user_data_dir=str(config.CHATGPT_USER_DATA_DIR),
                     headless=config.CHATGPT_HEADLESS,
-                    args=["--disable-blink-features=AutomationControlled"],
+                    args=launch_args,
                 )
                 break
             except Exception as e:  # noqa: BLE001
                 last_err = e
                 if "already in use" not in str(e).lower() or attempt == 5:
                     raise
-                LOG.warning("profile locked (attempt %d/5); retrying: %s", attempt, e)
+                # A failed attempt can ITSELF orphan a half-started chrome on the profile, which
+                # would then block every retry. Reap it before backing off so retries can win.
+                LOG.warning("profile locked (attempt %d/5); reaping + retrying: %s", attempt, e)
+                profile_hygiene.killZombies()
                 time.sleep(1.5 * attempt)
         self._ctx.set_default_timeout(config.CHATGPT_NAV_TIMEOUT_MS)
         self._page = self._ctx.pages[0] if self._ctx.pages else self._ctx.new_page()
@@ -143,6 +157,12 @@ class ChatGPTSession:
                 pass
         self._ctx = self._pw = self._page = None
         self.opened = False
+        # Stamp the profile clean even if the context close was abrupt, so the NEXT launch never
+        # inherits a crash flag -> no "restore pages?" bubble.
+        try:
+            profile_hygiene.markCleanExit()
+        except Exception:  # noqa: BLE001
+            pass
 
     @property
     def page(self):
