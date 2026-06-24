@@ -990,13 +990,14 @@ def fetch_subtasks(run_id: Optional[str] = None, *, limit: Optional[int] = None,
 
 
 def gold_examples(db_path: Optional[Path] = None) -> list[dict[str, Any]]:
-    """First-attempt, verify-passing, adversary-approved subtasks -- the clean training
+    """First-attempt, verify-passing, **really** adversary-approved subtasks -- the clean training
     signal later phases distill from. (Defined now so downstream phases can rely on it.)"""
     with _connect(db_path) as conn:
         rows = conn.execute(
             """SELECT * FROM subtasks
                WHERE verify_passed=1 AND (attempt_count IS NULL OR attempt_count<=1)
-                 AND (adversary_verdict IS NULL OR adversary_verdict IN ('approved','approve'))
+                 AND adversary_verdict IN ('approved','approve')
+                 AND COALESCE(adversary_stub, 0) = 0
                ORDER BY run_id, position""")
         return [dict(r) for r in rows]
 
