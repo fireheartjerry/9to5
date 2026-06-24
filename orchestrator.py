@@ -433,15 +433,18 @@ class Orchestrator:
                 if want_json:
                     kwargs["format"] = "json"
                 resp = self.ollama.chat(model=model, messages=messages, **kwargs)
-                # qwen2.5 can dead-end to an EMPTY completion under format=json on markdown-heavy
-                # prompts. Do ONE fast salvage WITHOUT the json grammar (free-form JSON is recovered by
-                # _chatJson's fence/object extraction) -- but NO backoff loop: an empty here is usually
-                # deterministic for this prompt, and looping would burn minutes per brain call for no
-                # gain (the caller has a fallback). If still empty, return it and let the caller fall back.
+                # An EMPTY completion is a TRANSIENT model failure (qwen2.5 can dead-end to "" under
+                # format=json on markdown-heavy prompts). Treat it as retryable rather than returning
+                # empty -- otherwise EVERY brain call (plan/replan/backfill/adversary) silently falls
+                # back. The last attempt drops format=json as a salvage (free-form JSON is then
+                # recovered by _chatJson's fence/object extraction).
                 if want_json and not _chatText(resp).strip():
-                    kwargs.pop("format", None)
-                    salvage = self.ollama.chat(model=model, messages=messages, **kwargs)
-                    return salvage if _chatText(salvage).strip() else resp
+                    if attempt == retries - 1:
+                        kwargs.pop("format", None)
+                        resp = self.ollama.chat(model=model, messages=messages, **kwargs)
+                        if _chatText(resp).strip():
+                            return resp
+                    raise ValueError("empty completion")
                 return resp
             except Exception as e:  # noqa: BLE001
                 LOG.warning("Ollama call failed/empty (attempt %d/%d): %s", attempt, retries, e)

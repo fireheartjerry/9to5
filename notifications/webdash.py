@@ -146,6 +146,10 @@ def _snapshot(task_id: str) -> dict:
 
 
 def _applyControl(task_id: str, action: str, arg: Optional[str]) -> dict:
+    if not task_id:
+        return {"ok": False, "error": "no active task"}
+    if not isinstance(action, str) or not action:
+        return {"ok": False, "error": "action must be a non-empty string"}
     bus = ControlBus(task_id)
     if action == "abort":
         bus.requestAbort()
@@ -201,7 +205,13 @@ def _makeHandler(task_id: str):
                     payload = {}
             except Exception:  # noqa: BLE001
                 payload = {}
-            result = _applyControl(task_id, payload.get("action", ""), payload.get("arg"))
+            action = payload.get("action") or ""
+            if not isinstance(action, str):
+                action = ""
+            arg = payload.get("arg")
+            if arg is not None and not isinstance(arg, str):
+                arg = str(arg)
+            result = _applyControl(task_id, action, arg)
             self._send(200, json.dumps(result).encode("utf-8"), "application/json")
 
     return Handler
