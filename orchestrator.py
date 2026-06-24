@@ -1362,12 +1362,14 @@ class Orchestrator:
             with self._state_lock:
                 heartbeat_ordinal = sum(1 for s in state.subtasks if s["status"] in ("done", "failed", "removed"))
             _adv_verdict = None
+            _adv_stub = False
             triggered, reason = adversary.shouldTrigger(combined, heartbeat_ordinal, attempt)
             if triggered:
                 rv = self._review(subtask["title"], reason, combined,
                                   ollama_chat=self._ollamaChat,
                                   goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
                 _adv_verdict = rv.get("verdict")
+                _adv_stub = rv.get("stub", False)
                 discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason, rv.get("verdict")))
                 with self._state_lock:
                     state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
@@ -1384,7 +1386,8 @@ class Orchestrator:
             # the real verify + adversary verdict) and memoize a passing spec. Best-effort.
             try:
                 reflection.capture(run_id=state.task_id, subtask_id=sid, executor_output=combined,
-                                   verify_passed=passed, adversary_verdict=_adv_verdict)
+                                   verify_passed=passed, adversary_verdict=_adv_verdict,
+                                   adversary_stub=_adv_stub)
                 if passed and spec.get("prompt"):
                     import json as _json
                     solution_cache_spec = _json.dumps({k: spec.get(k) for k in
