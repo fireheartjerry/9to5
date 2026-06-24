@@ -68,6 +68,11 @@ _DIR_ROLES: tuple[tuple[Role, Path], ...] = (
 # Files the CLI's memory walk reads as instructions but that live OUTSIDE the tree.
 _USER_GLOBAL_CLAUDE_MD = Path.home() / ".claude" / "CLAUDE.md"
 
+# Dirs that are SELF_CODE by role but NOT executed by the running orchestrator, so they
+# are excluded from the epoch fingerprint set (editing a test must not read as the
+# running self diverging).
+_FINGERPRINT_EXCLUDE_DIRS: tuple[Path, ...] = (PROJECT_ROOT / "tests", PROJECT_ROOT / "testing")
+
 
 def roleOf(path: str | os.PathLike) -> Role:
     """Classify ``path`` into exactly one Role. Canonical, containment-based."""
@@ -99,10 +104,14 @@ def isCodeSelf(path: str | os.PathLike) -> bool:
 
 
 def selfCodeFiles() -> list[str]:
-    """Every *.py under the project tree that classifies as SELF_CODE -- the set the
-    epoch fingerprints. Excludes venv/.git (hard_boundary) and docs/state by role."""
+    """Every *.py under the project tree that the RUNNING orchestrator could import --
+    the set the epoch fingerprints. SELF_CODE by role, minus test/harness dirs (which are
+    self code but never executed by the loop, so they must not trigger divergence)."""
     out: list[str] = []
     for p in PROJECT_ROOT.rglob("*.py"):
+        canon = _canonical(p)
+        if any(_isUnder(canon, d) for d in _FINGERPRINT_EXCLUDE_DIRS):
+            continue
         if roleOf(p) == Role.SELF_CODE:
-            out.append(_canonical(p))
+            out.append(canon)
     return sorted(out)

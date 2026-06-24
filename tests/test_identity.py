@@ -73,6 +73,19 @@ class TestPredicates(unittest.TestCase):
         self.assertIn("identity.py", names)
         self.assertNotIn("CLAUDE.md", names)  # object_meta, not code
 
+    def test_self_code_files_excludes_test_dirs(self):
+        files = identity.selfCodeFiles()
+        # Test/harness files are SELF_CODE by role but must NOT be in the fingerprint set:
+        # the running orchestrator never imports them, so editing a test must not look like
+        # the running self diverging.
+        self.assertFalse(any((os.sep + "tests" + os.sep) in f for f in files),
+                         "tests/ files must be excluded from the fingerprint set")
+        self.assertFalse(any((os.sep + "testing" + os.sep) in f for f in files),
+                         "testing/ files must be excluded from the fingerprint set")
+        # But real loop modules remain present:
+        names = {Path(f).name for f in files}
+        self.assertIn("orchestrator.py", names)
+
 
 if __name__ == "__main__":
     unittest.main()
