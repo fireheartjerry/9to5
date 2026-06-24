@@ -67,7 +67,7 @@ def champion_id(role: str, default: Optional[str] = None,
         if champ:
             return int(champ["id"])
         if default is not None:
-            return experience.register_variant(role, default, state="champion", db_path=db_path)
+            return experience.register_variant(role, default, state="champion", provenance=_SEED_PROVENANCE, db_path=db_path)
     except Exception as e:  # noqa: BLE001
         LOG.debug("champion_id failed for %s: %s", role, e)
     return None

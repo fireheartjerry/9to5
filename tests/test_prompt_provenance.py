@@ -66,5 +66,15 @@ class TestPromptProvenance(unittest.TestCase):
         self.assertEqual(got, "TRUSTED CONSTITUTION")  # gate-attested body survives
 
 
+    def test_champion_id_seed_is_servable_by_get(self):
+        # A champion seeded via champion_id() must carry trusted provenance, so a later
+        # get() serves it (the in-code default) instead of quarantining it.
+        from learning import prompts
+        experience.init(self.db)
+        prompts.champion_id("planner", "PLANNER DEFAULT", db_path=self.db)
+        got = prompts.get("planner", "FALLBACK", db_path=self.db)
+        self.assertEqual(got, "PLANNER DEFAULT")
+
+
 if __name__ == "__main__":
     unittest.main()
