@@ -326,6 +326,46 @@ class ChatGPTSession:
             return False
 
 
+def quickLoginCheck(timeout_s: int = 15) -> tuple[str, "ChatGPTSession"]:
+    """Open a non-headless browser, navigate to chatgpt.com, return (state, session).
+    Caller is responsible for closing the session. Never raises — returns UNKNOWN on error."""
+    sess = ChatGPTSession()
+    try:
+        sess.open()
+        sess.page.goto("https://chatgpt.com/", wait_until="domcontentloaded",
+                       timeout=timeout_s * 1000)
+        state = classify_state(sess.page)
+        LOG.info("quickLoginCheck → %s", state)
+        return state, sess
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("quickLoginCheck error: %s", e)
+        return UNKNOWN, sess
+
+
+def waitForLogin(sess: "ChatGPTSession", timeout_s: int = 300, poll_s: int = 3) -> bool:
+    """Poll classify_state on an already-open session until READY or timeout.
+    Closes the session before returning. Returns True if login was confirmed."""
+    import time as _time
+    deadline = _time.monotonic() + timeout_s
+    try:
+        while _time.monotonic() < deadline:
+            state = classify_state(sess.page)
+            LOG.debug("waitForLogin poll → %s", state)
+            if state == READY:
+                return True
+            _time.sleep(poll_s)
+        LOG.warning("waitForLogin timed out after %ds", timeout_s)
+        return False
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("waitForLogin error: %s", e)
+        return False
+    finally:
+        try:
+            sess.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _looks_like_json(text: Optional[str]) -> bool:
     import re
     t = (text or "").strip()

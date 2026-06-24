@@ -206,6 +206,26 @@ def registerSlashCommands(tree: "app_commands.CommandTree", client: "discord.Cli
             from notifications.views import WorkModal
             return await interaction.response.send_modal(WorkModal())
         await interaction.response.defer(ephemeral=True)
+
+        # Pre-flight: ensure ChatGPT is logged in before spawning the run.
+        if config.BROWSER_LAYER_ENABLED:
+            from agents.chatgpt_driver import READY, quickLoginCheck, waitForLogin
+            state, sess = await asyncio.to_thread(quickLoginCheck)
+            if state != READY:
+                await interaction.followup.send(
+                    "🔐 ChatGPT is not logged in. Opening browser — **log in then close the tab** "
+                    "(or just leave it; I'll detect when you're in). Waiting up to 5 minutes…",
+                    ephemeral=True)
+                logged_in = await asyncio.to_thread(waitForLogin, sess, 300, 3)
+                if not logged_in:
+                    await interaction.followup.send(
+                        "❌ ChatGPT login timed out (5 min). Run aborted — re-run `/work` after logging in.",
+                        ephemeral=True)
+                    return
+                await interaction.followup.send("✅ ChatGPT logged in. Starting run…", ephemeral=True)
+            else:
+                await asyncio.to_thread(sess.close)
+
         req = work_launcher.WorkRequest(
             goal=goal, hours=work_launcher.parseHours(hours),
             mode=(mode.value if mode else "watch"), parallel=parallel or 1,

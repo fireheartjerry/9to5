@@ -221,9 +221,30 @@ class WorkSetupView(discord.ui.View):
     @discord.ui.button(label="Launch", style=discord.ButtonStyle.success)
     async def _launch(self, interaction, button):  # noqa: ANN001
         import asyncio
+        import config as _cfg
         for c in self.children:
             c.disabled = True
         await interaction.response.edit_message(content="🚀 Launching…", view=self)
+
+        if _cfg.BROWSER_LAYER_ENABLED:
+            from agents.chatgpt_driver import READY, quickLoginCheck, waitForLogin
+            state, sess = await asyncio.to_thread(quickLoginCheck)
+            if state != READY:
+                await interaction.followup.send(
+                    "🔐 ChatGPT is not logged in. Opening browser — **log in then close the tab** "
+                    "(or just leave it; I'll detect when you're in). Waiting up to 5 minutes…",
+                    ephemeral=True)
+                logged_in = await asyncio.to_thread(waitForLogin, sess, 300, 3)
+                if not logged_in:
+                    await interaction.followup.send(
+                        "❌ ChatGPT login timed out (5 min). Run aborted — re-run `/work` after logging in.",
+                        ephemeral=True)
+                    self.stop()
+                    return
+                await interaction.followup.send("✅ ChatGPT logged in. Starting run…", ephemeral=True)
+            else:
+                await asyncio.to_thread(sess.close)
+
         audit.record(interaction.user.id, "work", None, "modal")
         reply = await asyncio.to_thread(work_launcher.launchOrError, self.req)
         await interaction.followup.send(reply[:MAX_REPLY], ephemeral=True)
