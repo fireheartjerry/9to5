@@ -18,12 +18,40 @@ Trigger signals (per the 9TO5 spec):
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Callable, Optional
 
 import config
 
 LOG = config.getLogger("adversary")
+
+
+def _loadJsonLoose(content: object):
+    """Parse a brain JSON reply the way the orchestrator's _chatJson does -- tolerating a ```json
+    fence or prose around the object. Critical for the Adversary (FX-5): a real 'challenged' verdict
+    wrapped in a fence/prose must NOT silently fail json.loads and degrade to a conservative
+    'approved', which would neuter the PR-hold and remediation. Returns a dict or None."""
+    if isinstance(content, dict):
+        return content
+    if not isinstance(content, str):
+        return None
+    text = content.strip()
+    if not text:
+        return None
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE).strip()
+    try:
+        return json.loads(text)
+    except Exception:  # noqa: BLE001
+        pass
+    m = re.search(r"\{.*\}", text, re.DOTALL)   # salvage the first balanced-looking object
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
 
 # Vocabulary aligned with notifications.discord_bot._APPROVED / _CHALLENGED.
 _APPROVED = "approved"
@@ -47,14 +75,69 @@ _CDP_TRANSIENT_SIGNALS: tuple[str, ...] = (
 _SYSTEM = (
     "You are the 9TO5 Adversary: a strict, independent reviewer of work just produced by an "
     "executor agent. You did NOT do the work and have no stake in approving it. Judge ONLY what "
-    "the output evidences: did it actually accomplish the subtask, or did it cut corners, leave "
+    "the output evidences: did it actually accomplish the task, or did it cut corners, leave "
     "TODOs, fake/skip verification, mis-handle errors, or drift off-scope? Be skeptical but fair "
     "-- do not invent problems. Respond with JSON ONLY, no prose, exactly this shape:\n"
-    '{"verdict": "approved" | "challenged", "concerns": ["short, specific concern", ...], '
+    '{"verdict": "approved" | "challenged", '
+    '"severity": "none" | "low" | "medium" | "high", '
+    '"must_fix": ["specific, actionable fix the executor must make", ...], '
+    '"suggested_fix": "one concrete suggestion (may be empty)", '
+    '"confidence": 0.0-1.0, '
+    '"concerns": ["short, specific concern", ...], '
     '"notes": "one or two sentences of rationale"}\n'
     'Use "challenged" when there is real evidence of incomplete, incorrect, unsafe, or off-scope '
-    'work; otherwise "approved" with an empty concerns list.'
+    'work; otherwise "approved" with empty concerns/must_fix and severity "none". Set "severity" '
+    'to "high" only for work that is broken, unsafe, or clearly fails the task -- this is the bar '
+    'that holds a PR. "must_fix" items feed directly into the executor\'s next attempt, so make '
+    'each one precise and verifiable.'
 )
+
+# AI-to-AI preamble for the chatgpt.com path: tell GPT-5.5 it is talking to an autonomous agent,
+# not a human, so it drops social/hedging tokens and answers in the densest machine form.
+_CHATGPT_PREAMBLE = (
+    "SYSTEM CONTEXT: You are GPT-5.5 operating as an automated adversarial reviewer inside the "
+    "9to5 autonomous pipeline. Your counterpart is an AUTONOMOUS SOFTWARE AGENT, not a human. "
+    "Communicate machine-to-machine: NO greetings, apologies, hedging, praise, or restating the "
+    "question. Emit ONLY the requested JSON object -- nothing before or after it. Be maximally "
+    "information-dense; every token must carry signal."
+)
+
+# Per-review-type guidance appended to _SYSTEM. The verdict schema lives ONLY in _SYSTEM so the
+# touchpoints can never drift; each entry just reframes WHAT is being judged.
+REVIEW_GUIDANCE: dict[str, str] = {
+    "subtask": "You are reviewing one subtask's executor output.",
+    "plan": ("You are reviewing a PROPOSED PLAN (an ordered subtask list) BEFORE any execution. "
+             "Judge completeness, ordering, missing steps, and scope. 'must_fix' = plan changes."),
+    "architecture": ("You are reviewing an ARCHITECTURE/DESIGN document before planning. Judge "
+                     "soundness, risk, and feasibility. 'must_fix' = design changes."),
+    "pre_pr_diff": ("You are reviewing the FINAL git diff of the whole change before a PR is "
+                    "opened. Judge correctness, safety, scope, and leftover debt. A 'high' "
+                    "severity holds the PR."),
+}
+
+
+def systemFor(review_type: str = "subtask") -> str:
+    """The system prompt for a given touchpoint: the one schema + a type-specific lead-in."""
+    guidance = REVIEW_GUIDANCE.get(review_type, REVIEW_GUIDANCE["subtask"])
+    return f"{_SYSTEM}\n\n{guidance}"
+
+
+def _richFields(data: dict, verdict: str) -> dict:
+    """Extract the rich-verdict fields with back-compatible defaults (missing => old behavior)."""
+    sev = str(data.get("severity") or "").strip().lower()
+    if sev not in ("none", "low", "medium", "high"):
+        sev = "none" if verdict == _APPROVED else "medium"
+    must_fix = [str(m) for m in (data.get("must_fix") or []) if str(m).strip()][:10]
+    try:
+        conf = float(data["confidence"]) if data.get("confidence") is not None else None
+    except (TypeError, ValueError):
+        conf = None
+    return {
+        "severity": sev,
+        "must_fix": must_fix,
+        "suggested_fix": str(data.get("suggested_fix") or "").strip(),
+        "confidence": conf,
+    }
 
 
 def isCdpTransient(exc: BaseException) -> bool:
@@ -97,6 +180,10 @@ def _stubReview(trigger_reason: str, *, note: Optional[str] = None) -> dict:
         "notes": note or ("Adversary brain unavailable; auto-approved without a real critique. "
                           "Phase 2 -> GPT-5.5 via chatgpt.com CDP."),
         "stub": True,
+        "severity": "none",
+        "must_fix": [],
+        "suggested_fix": "",
+        "confidence": None,
     }
 
 
@@ -113,10 +200,11 @@ def _buildReviewUser(subtask_title: str, trigger_reason: str, executor_output: s
     )
 
 
-def _parseVerdict(raw_content: object, trigger_reason: str, *, surface: str) -> dict:
+def _parseVerdict(raw_content: object, trigger_reason: str, *, surface: str,
+                  review_type: str = "subtask") -> dict:
     """Turn a brain's raw JSON reply into the verdict contract. Raises on junk so the
     caller can degrade to a conservative stub."""
-    data = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
+    data = _loadJsonLoose(raw_content)
     if not isinstance(data, dict):
         raise ValueError("non-object review payload")
     verdict = _normalizeVerdict(data.get("verdict"))
@@ -129,11 +217,14 @@ def _parseVerdict(raw_content: object, trigger_reason: str, *, surface: str) -> 
         "notes": notes,
         "stub": False,
         "surface": surface,
+        "review_type": review_type,
+        **_richFields(data, verdict),
     }
 
 
 def reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: str, *,
-                     browser_ask: Optional[Callable] = None, goal: str = "") -> dict:
+                     browser_ask: Optional[Callable] = None, goal: str = "",
+                     review_type: str = "subtask") -> dict:
     """Phase-2 critique: route the review to GPT-5.5 on chatgpt.com over CDP.
 
     ``browser_ask`` is a ``(message) -> reply_text | None`` callable; it defaults to
@@ -151,7 +242,7 @@ def reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: s
         browser_ask = browser_executor.askChatGPT
 
     user = _buildReviewUser(subtask_title, trigger_reason, executor_output, goal)
-    message = f"{_SYSTEM}\n\n{user}"
+    message = f"{_CHATGPT_PREAMBLE}\n\n{systemFor(review_type)}\n\n{user}"
     last_exc: Optional[Exception] = None
 
     for attempt in range(CDP_MAX_RETRIES + 1):
@@ -159,7 +250,7 @@ def reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: s
             reply = browser_ask(message)
             if not reply:
                 raise ValueError("empty reply from chatgpt.com")
-            rv = _parseVerdict(reply, trigger_reason, surface="browser")
+            rv = _parseVerdict(reply, trigger_reason, surface="browser", review_type=review_type)
             LOG.info(
                 "Adversary (browser/GPT) verdict for '%s' (%s) -> %s (%d concern(s))",
                 subtask_title, trigger_reason, rv["verdict"], len(rv["concerns"]),
@@ -190,7 +281,8 @@ def reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: s
 
 
 def review(subtask_title: str, trigger_reason: str, executor_output: str, *,
-           ollama_chat: Optional[Callable] = None, goal: str = "") -> dict:
+           ollama_chat: Optional[Callable] = None, goal: str = "",
+           review_type: str = "subtask") -> dict:
     """Critique the executor output and return a verdict dict.
 
     ``ollama_chat`` is the orchestrator's resilient Ollama caller
@@ -204,8 +296,9 @@ def review(subtask_title: str, trigger_reason: str, executor_output: str, *,
 
     user = _buildReviewUser(subtask_title, trigger_reason, executor_output, goal)
     try:
-        resp = ollama_chat(_SYSTEM, user, want_json=True)
-        data = json.loads(resp["message"]["content"]) if resp else None
+        resp = ollama_chat(systemFor(review_type), user, want_json=True)
+        content = (resp.get("message") or {}).get("content") if isinstance(resp, dict) else None
+        data = _loadJsonLoose(content)
         if not isinstance(data, dict):
             raise ValueError("non-object review payload")
         verdict = _normalizeVerdict(data.get("verdict"))
@@ -219,6 +312,9 @@ def review(subtask_title: str, trigger_reason: str, executor_output: str, *,
             "concerns": concerns,
             "notes": notes,
             "stub": False,
+            "surface": "ollama",
+            "review_type": review_type,
+            **_richFields(data, verdict),
         }
     except Exception as e:  # noqa: BLE001
         LOG.warning("Adversary brain critique failed (%s); conservative auto-approve", e)

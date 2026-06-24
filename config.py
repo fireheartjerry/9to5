@@ -246,6 +246,44 @@ MCP_SERVERS: tuple[str, ...] = tuple(
         "MCP_SERVERS", "github,gmail,google_calendar,google_drive,canva").split(",") if s.strip())
 BROWSER_LAYER_ENABLED: bool = _envBool("BROWSER_LAYER_ENABLED", False)   # L1 (CDP)
 NATIVE_LAYER_ENABLED: bool = _envBool("NATIVE_LAYER_ENABLED", False)     # L2 (UIA)
+
+# --- Phase 2: GPT-5.5 as the second brain (chatgpt.com via a logged-in browser) ----------
+# Dedicated persistent Chrome profile 9to5 owns -- user logs into ChatGPT once; cookies persist.
+CHATGPT_USER_DATA_DIR: Path = _envPath(
+    "CHATGPT_USER_DATA_DIR", str(PROJECT_ROOT / "state" / "chatgpt_profile")
+) or (PROJECT_ROOT / "state" / "chatgpt_profile")
+CHATGPT_HEADLESS: bool = _envBool("CHATGPT_HEADLESS", False)   # head-ful = less bot-detectable
+CHATGPT_PROJECT_NAME: str = os.getenv("CHATGPT_PROJECT_NAME", "9to5")
+CHATGPT_PROJECT_DESC: str = os.getenv(
+    "CHATGPT_PROJECT_DESC",
+    "Automated adversarial review + second-opinion for the 9to5 autonomous orchestrator. "
+    "Counterpart is an AI agent, not a human.")
+CHATGPT_PROJECT_URL: str = os.getenv("CHATGPT_PROJECT_URL", "")   # cached after first bootstrap
+CHATGPT_NAV_TIMEOUT_MS: int = int(os.getenv("CHATGPT_NAV_TIMEOUT_MS", "45000"))
+CHATGPT_REPLY_TIMEOUT_MS: int = int(os.getenv("CHATGPT_REPLY_TIMEOUT_MS", "120000"))
+CHATGPT_REPLY_SETTLE_MS: int = int(os.getenv("CHATGPT_REPLY_SETTLE_MS", "900"))   # stable-text window
+CHATGPT_MAX_TURNS: int = int(os.getenv("CHATGPT_MAX_TURNS", "40"))   # rollover to a fresh chat
+CHATGPT_MIN_OUTPUT_CHARS: int = int(os.getenv("CHATGPT_MIN_OUTPUT_CHARS", "200"))   # cost guard
+CHATGPT_SELECTOR_CACHE: Path = PROJECT_ROOT / "state" / "chatgpt_selectors.json"
+CHATGPT_JSON_REPAIR_RETRIES: int = int(os.getenv("CHATGPT_JSON_REPAIR_RETRIES", "1"))
+
+# Where GPT-5.5 acts as the second brain (each gated, all default on; require BROWSER_LAYER_ENABLED).
+ADVERSARY_REVIEW_PLAN: bool = _envBool("ADVERSARY_REVIEW_PLAN", True)
+ADVERSARY_REVIEW_ARCH: bool = _envBool("ADVERSARY_REVIEW_ARCH", True)
+ADVERSARY_REVIEW_PREPR_DIFF: bool = _envBool("ADVERSARY_REVIEW_PREPR_DIFF", True)
+ADVERSARY_LOWCONF_CONSULT: bool = _envBool("ADVERSARY_LOWCONF_CONSULT", True)
+ADVERSARY_PREPR_DIFF_MAX_CHARS: int = int(os.getenv("ADVERSARY_PREPR_DIFF_MAX_CHARS", "12000"))
+# Teeth: severity at/above this holds the PR + drives the remediation loop.
+ADVERSARY_BLOCKING_SEVERITY: str = os.getenv("ADVERSARY_BLOCKING_SEVERITY", "high")
+ADVERSARY_REMEDIATION_MAX_ATTEMPTS: int = int(os.getenv("ADVERSARY_REMEDIATION_MAX_ATTEMPTS", "2"))
+
+# Local VLM self-heal (off the hot path; fires only on a selector miss / unknown page state).
+VLM_SELF_HEAL_ENABLED: bool = _envBool("VLM_SELF_HEAL_ENABLED", True)
+VLM_MODEL: str = os.getenv("VLM_MODEL", "qwen2.5vl:7b")   # local Ollama vision model
+VLM_SELF_HEAL_MAX_PER_RUN: int = int(os.getenv("VLM_SELF_HEAL_MAX_PER_RUN", "2"))
+
+# Trust telemetry: GPT<->Ollama agreement + upheld-challenge log.
+ADVERSARY_TRUST_LOG: Path = PROJECT_ROOT / "state" / "adversary_trust.jsonl"
 # Meta-optimization may auto-apply tuning to these knobs (persisted across restarts).
 SIE_META_AUTOAPPLY: bool = _envBool("SIE_META_AUTOAPPLY", True)
 SIE_TUNABLE_KNOBS: tuple[str, ...] = (
@@ -254,10 +292,33 @@ SIE_TUNABLE_KNOBS: tuple[str, ...] = (
 )
 SIE_OVERRIDES_PATH: Path = PROJECT_ROOT / "state" / "sie_overrides.json"
 
+# Inclusive (lo, hi) bounds for each tunable knob. A value outside the band is refused
+# (set_override) or skipped+logged (_load_overrides) so a self-written overrides file
+# can never disable review or force single-use promotion.
+_SIE_BOUNDS: dict[str, tuple[float, float]] = {
+    "MAX_SUBTASK_ATTEMPTS": (1, 6),
+    "RETRIEVAL_K": (1, 32),
+    "ADVERSARY_HEARTBEAT_EVERY": (1, 10),
+    "PROMPT_PROMOTE_MIN_USES": (3, 100),
+    "CONFIDENCE_DEFER_THRESHOLD": (0.0, 1.0),
+}
+
+_cfg_log = logging.getLogger("9to5.config")
+
+
+def _withinBounds(knob: str, value) -> bool:
+    lo, hi = _SIE_BOUNDS.get(knob, (float("-inf"), float("inf")))
+    try:
+        return lo <= float(value) <= hi
+    except (TypeError, ValueError):
+        return False
+
 
 def set_override(knob: str, value) -> bool:
     """Persist + live-apply a meta-optimizer knob change (whitelisted knobs only)."""
     if knob not in SIE_TUNABLE_KNOBS:
+        return False
+    if not _withinBounds(knob, value):
         return False
     import json as _json
     globals()[knob] = value
@@ -280,6 +341,12 @@ def _load_overrides() -> None:
         data = _json.loads(SIE_OVERRIDES_PATH.read_text(encoding="utf-8"))
         for k, v in data.items():
             if k in SIE_TUNABLE_KNOBS:
+                if not _withinBounds(k, v):
+                    _cfg_log.warning(
+                        "sie_overrides: skipping %s=%r — out of bounds %s",
+                        k, v, _SIE_BOUNDS.get(k),
+                    )
+                    continue
                 globals()[k] = v
     except Exception:  # noqa: BLE001 -- absent/corrupt -> stock defaults
         pass

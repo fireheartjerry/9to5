@@ -27,12 +27,17 @@ class _Base(unittest.TestCase):
         self.dir.rmdir()
 
     def _sub(self, st_id, *, passed, status="done", attempts=1, title="discord task", spec=None,
-             skills=None):
-        experience.record_subtask("r1", {
+             skills=None, approved=False):
+        st = {
             "subtask_id": st_id, "title": title, "status": status,
             "verify_result": {"passed": passed},
             "session": {"attempts": attempts, "effort": "high",
-                        "invocation_spec": spec, "skills": skills}}, db_path=self.db)
+                        "invocation_spec": spec, "skills": skills},
+        }
+        if approved:
+            st["_adversary_verdict"] = "approved"
+            st["_adversary_stub"] = 0
+        experience.record_subtask("r1", st, db_path=self.db)
 
 
 class TestPostmortem(_Base):
@@ -58,7 +63,7 @@ class TestPostmortem(_Base):
 class TestSolutionCache(_Base):
     def test_build_and_warm_start(self):
         self._sub("st-1", passed=True, attempts=1, title="Build the webdash",
-                  spec={"effort": "high"})
+                  spec={"effort": "high"}, approved=True)
         solution_cache.build_from_ledger(db_path=self.db)
         hit = solution_cache.warm_start("build the webdash", db_path=self.db)
         self.assertIsNotNone(hit)

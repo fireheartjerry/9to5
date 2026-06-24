@@ -60,7 +60,9 @@ def test_compress_injection() -> None:
     print("[compressForInjection]")
     local = knowledge.scanLocalClaude()
     empty = {"pages": {}, "ok": [], "failed": []}
-    recs = {"found": True, "text": "## Executive Recommendations — Top 20\n1. always inject exact paths\n", "path": "r"}
+    # Fixture must carry a provenance header (human-authored) so injectableDoc gate
+    # allows injection -- matching real-world requirements for recommendations.md.
+    recs = {"found": True, "text": '<!-- provenance: {"origin": "human"} -->\n## Executive Recommendations — Top 20\n1. always inject exact paths\n', "path": "r"}
     out = knowledge.compressForInjection("## Slash Commands\nx\n", local, empty, recs=recs)
     check("under cap", len(out) <= config.CLAUDE_CAPABILITIES_MAX_CHARS)
     for token in ("Installed skills", "Effort levels", "Scheduling / waiting", "use_workflow",

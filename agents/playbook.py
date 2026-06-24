@@ -117,14 +117,22 @@ PROFILES: dict[str, dict] = {
         "title": "Test author",
         "charter": (
             "Write/extend tests that check OBSERVABLE BEHAVIOR (inputs->outputs), never implementation details. "
-            "Assertions must be robust (no guessed internal symbols). RUN the tests and ensure they pass before finishing."
+            "Assertions must be robust (no guessed internal symbols). Put every test as a FLAT file "
+            "tests/test_<name>.py -- NEVER create a tests/<package>/ subdirectory. RUN the FULL suite "
+            "(python -m unittest discover -s tests) and ensure it is green before finishing."
         ),
         "playbook": (
             "### Testing discipline\n"
             "- Test behavior, not internals: never assert on a private function/constant name you guessed.\n"
+            "- FILE PLACEMENT (critical): every test is a FLAT file `tests/test_<name>.py`. NEVER create a\n"
+            "  `tests/<name>/` subdirectory -- if its name matches a real top-level package (e.g.\n"
+            "  `tests/notifications/`, `tests/memory/`) it SHADOWS that package during `unittest discover`\n"
+            "  and breaks EVERY import in the whole suite. Mirror the source name in the FILENAME instead\n"
+            "  (e.g. tests for `memory/foo.py` go in `tests/test_memory_foo.py`).\n"
             "- Cover the happy path AND the edge/error cases the subtask implies.\n"
             "- Make assertions deterministic; avoid timing/order flakiness.\n"
-            "- Actually run the suite (e.g. `python -m pytest -q` or `python <test>.py`) and confirm green output."
+            "- Run the WHOLE suite (`python -m unittest discover -s tests`) and confirm it is green --\n"
+            "  not just your new file -- so a new test can't break the rest of the suite."
         ),
     },
     "docs": {

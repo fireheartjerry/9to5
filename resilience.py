@@ -99,6 +99,10 @@ def run_with_recovery(run_fn: Callable[[TaskState], dict], state: TaskState, *,
             last_summary = {"task_id": state.task_id, "status": "crashed", "error": str(e)}
 
         try:
+            # COHERENCE INVARIANT (#13): this recovery path reloads persisted *state* (JSON),
+            # NOT module bytecode. Never call importlib's reload() here -- the running process
+            # must keep its pinned start-of-run bytecode so in-process re-invocations of run_fn
+            # stay coherent. Self-edits to loop code are inert until a fresh process is started.
             state = reload_state(state.task_id)   # adopt committed progress before deciding
         except Exception:  # noqa: BLE001
             pass

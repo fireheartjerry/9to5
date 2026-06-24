@@ -57,6 +57,18 @@ def authorArchitectPrompt(goal_elaborated: str, chat=None) -> str:
     try:
         msg = resp.get("message") if isinstance(resp, dict) else None
         content = msg.get("content") if isinstance(msg, dict) else None
-        return content.strip() if isinstance(content, str) else ""
+        prompt = content.strip() if isinstance(content, str) else ""
     except Exception:  # noqa: BLE001
-        return ""
+        prompt = ""
+    # FX-12: the local 7B brain frequently returns EMPTY here. Returning "" would send the architect
+    # Claude a prompt with NO specification (it would design for nothing, and the orchestrator's retry
+    # would re-fire the same empty prompt). Fall back to a deterministic GOAL-BEARING prompt so the
+    # goal always reaches the architect even with a dead brain.
+    if not prompt:
+        LOG.warning("architect-prompt brain output empty -> deterministic goal-bearing fallback")
+        prompt = (
+            "Produce a thorough architecture and design document for the following specification. "
+            "Cover the approach, the modules/files to add or change, data flow, key dependencies, "
+            "risks, and an ORDERED implementation outline.\n\nSpecification:\n" + (goal_elaborated or "").strip()
+        )
+    return prompt

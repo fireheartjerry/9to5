@@ -162,19 +162,37 @@ class TestExecutionLoop(unittest.TestCase):
         orch.runExecutionLoop(st, "doc", str(self.dir), bus, mock.Mock(), parallelism=1)
         self.assertEqual(st.getSubtask("st-001")["status"], "done")
 
-    def test_challenged_verdict_triggers_one_bounded_remediation(self):
-        # a challenged verdict on a PASSED subtask earns exactly ONE extra executor attempt
+    def test_challenged_verdict_triggers_remediation_loop_stops_on_approval(self):
+        # The remediation LOOP feeds concerns back, re-runs, then RE-REVIEWS; it stops as soon as
+        # the reviewer approves. Here: challenged (trigger) -> 1 remediation -> approved -> stop.
         st = self._state([_verify_pass()])
-        review = mock.Mock(return_value={"verdict": "challenged", "concerns": ["add error handling"],
-                                         "notes": "", "stub": False, "trigger_reason": "forced"})
+        review = mock.Mock(side_effect=[
+            {"verdict": "challenged", "concerns": ["add error handling"], "notes": "",
+             "stub": False, "trigger_reason": "forced"},                       # triggers remediation
+            {"verdict": "approved", "concerns": [], "notes": "", "stub": False},  # re-review: satisfied
+        ])
         orch = self._orch(review=review)
         with mock.patch("orchestrator.adversary.shouldTrigger", return_value=(True, "forced")):
             bus = ControlBus(st.task_id)
             orch.runExecutionLoop(st, "doc", str(self.dir), bus, mock.Mock(), parallelism=1)
         self.assertEqual(st.getSubtask("st-001")["status"], "done")
-        self.assertEqual(self.run_claude_calls, ["st-001", "st-001"])   # original + 1 remediation only
+        self.assertEqual(self.run_claude_calls, ["st-001", "st-001"])   # original + 1 remediation (stopped early)
         kinds = [n["kind"] for n in st.data["notifications"]]
         self.assertIn("adversary_remediation", kinds)
+
+    def test_remediation_loop_is_bounded(self):
+        # A reviewer that NEVER approves must not loop forever: capped at
+        # ADVERSARY_REMEDIATION_MAX_ATTEMPTS remediations (here forced to 2) + the original run.
+        st = self._state([_verify_pass()])
+        review = mock.Mock(return_value={"verdict": "challenged", "concerns": ["still bad"],
+                                         "notes": "", "stub": False, "trigger_reason": "forced"})
+        orch = self._orch(review=review)
+        with mock.patch("orchestrator.adversary.shouldTrigger", return_value=(True, "forced")), \
+                mock.patch.object(config, "ADVERSARY_REMEDIATION_MAX_ATTEMPTS", 2):
+            bus = ControlBus(st.task_id)
+            orch.runExecutionLoop(st, "doc", str(self.dir), bus, mock.Mock(), parallelism=1)
+        self.assertEqual(st.getSubtask("st-001")["status"], "done")     # never downgrades the pass
+        self.assertEqual(self.run_claude_calls, ["st-001", "st-001", "st-001"])  # original + 2 capped
 
     def test_adversary_trigger_does_not_fail_a_passed_subtask(self):
         # force the adversary to fire and CHALLENGE; the subtask still PASSED verification,

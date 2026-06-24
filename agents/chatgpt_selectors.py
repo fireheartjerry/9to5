@@ -1,0 +1,162 @@
+"""chatgpt.com selectors -- centralized, fallback-listed, self-healable.
+
+Every DOM hook the ChatGPT driver needs lives here as an ORDERED FALLBACK LIST: the driver
+tries each selector in turn (``first_visible``) so one OpenAI UI tweak rarely breaks us. When
+all known selectors miss, the VLM self-healer (agents/vlm_healer.py) proposes a new one, the
+driver validates it against the live DOM, and ``save_selector`` writes it back to the on-disk
+cache (``config.CHATGPT_SELECTOR_CACHE``) -- so a UI change self-heals once and stays fixed.
+
+Pure + offline-testable: ``load``/``save_*`` only touch the cache JSON; ``first_visible`` takes
+any object exposing ``locator(css)`` (a Playwright page, or a fake in tests).
+"""
+from __future__ import annotations
+
+import json
+import os
+from typing import Any, Optional
+
+import config
+
+LOG = config.getLogger("chatgpt_selectors")
+
+# Ordered fallback lists. The FIRST that resolves to a visible element wins. Cached/self-healed
+# selectors are prepended at load() time so a learned fix takes precedence over the defaults.
+DEFAULTS: dict[str, list[str]] = {
+    "composer": [
+        "#prompt-textarea",
+        "div[contenteditable='true']",
+        "textarea[data-testid='prompt-textarea']",
+        "textarea[name='prompt-textarea']",
+    ],
+    "send_button": [
+        "button[data-testid='send-button']",
+        "button[aria-label*='Send']",
+    ],
+    "stop_button": [
+        "button[data-testid='stop-button']",
+        "button[aria-label*='Stop']",
+        "button[aria-label*='stop streaming']",
+    ],
+    "assistant_msg": [
+        "[data-message-author-role='assistant']",
+        "div.agent-turn",
+        "article[data-testid^='conversation-turn']",
+    ],
+    "action_bar": [
+        "[data-testid='copy-turn-action-button']",
+        "button[aria-label='Copy']",
+        "div[data-testid$='-action-button']",
+    ],
+    "new_chat": [
+        "a[data-testid='create-new-chat-button']",
+        "button[aria-label*='New chat']",
+        "nav a[href='/']",
+    ],
+    "login_wall": [
+        "[data-testid='login-button']",
+        "button[data-testid='mobile-login-button']",
+        "text=Log in",
+        "text=Welcome back",
+    ],
+    "cloudflare": [
+        "#challenge-running",
+        "iframe[src*='challenges.cloudflare']",
+        "text=Verify you are human",
+    ],
+    "rate_limit": [
+        "text=You've reached",
+        "text=rate limit",
+        "text=try again later",
+        "text=usage limit",
+    ],
+    "project_new": [
+        "button[aria-label*='New project']",
+        "text=New project",
+    ],
+    "project_link": [
+        "a[href*='/g/g-p-']",
+    ],
+    "convo_title": [
+        "button[data-testid='conversation-title']",
+        "div[class*='truncate']",
+    ],
+}
+
+_CACHE_VERSION = 1
+
+
+def _read_cache() -> dict[str, Any]:
+    path = config.CHATGPT_SELECTOR_CACHE
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001 -- a corrupt cache must never break the driver
+        LOG.warning("selector cache unreadable (%s); ignoring", e)
+    return {}
+
+
+def _write_cache(data: dict[str, Any]) -> None:
+    """Atomic temp+replace so a crash mid-write can't corrupt the cache."""
+    path = config.CHATGPT_SELECTOR_CACHE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def load() -> dict[str, list[str]]:
+    """Return role -> ordered selector list, with any cached/self-healed selector prepended."""
+    cache = _read_cache()
+    learned = cache.get("selectors") or {}
+    merged: dict[str, list[str]] = {}
+    for role, defaults in DEFAULTS.items():
+        css = learned.get(role)
+        merged[role] = ([css] + [d for d in defaults if d != css]) if css else list(defaults)
+    return merged
+
+
+def get(role: str) -> list[str]:
+    """Ordered selector list for one role (cached selector first)."""
+    return load().get(role, list(DEFAULTS.get(role, [])))
+
+
+def save_selector(role: str, css: str) -> None:
+    """Persist a self-healed selector for ``role`` so it takes precedence next time."""
+    data = _read_cache()
+    data.setdefault("version", _CACHE_VERSION)
+    data.setdefault("selectors", {})
+    data["selectors"][role] = css
+    _write_cache(data)
+    LOG.info("cached self-healed selector for %s -> %s", role, css)
+
+
+def cached_project_url() -> str:
+    """The 9to5 ChatGPT project URL discovered/created on a prior run (or '')."""
+    return (_read_cache().get("project_url") or "") or config.CHATGPT_PROJECT_URL
+
+
+def save_project_url(url: str) -> None:
+    data = _read_cache()
+    data.setdefault("version", _CACHE_VERSION)
+    data["project_url"] = url
+    _write_cache(data)
+
+
+def first_visible(page: Any, role_or_names) -> Optional[Any]:
+    """Return the first locator (from a role name or an explicit selector list) that resolves
+    to >=1 element on ``page``, else None. ``page`` need only expose ``locator(css) -> loc``
+    where ``loc.count()`` works (real Playwright page or a test fake)."""
+    names = get(role_or_names) if isinstance(role_or_names, str) else list(role_or_names)
+    for css in names:
+        try:
+            loc = page.locator(css)
+            if loc.count() > 0:
+                return loc
+        except Exception:  # noqa: BLE001 -- bad/unsupported selector -> try the next
+            continue
+    return None
+
+
+def visible_role(page: Any, role: str) -> bool:
+    """True when any selector for ``role`` currently resolves on ``page``."""
+    return first_visible(page, role) is not None

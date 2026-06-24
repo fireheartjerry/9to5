@@ -33,6 +33,7 @@ class TestDistillBuilder(unittest.TestCase):
             "subtask_id": st_id, "title": f"do {st_id}", "status": "done",
             "verify_result": {"passed": True}, "verify": {"cmd": "pytest", "expect": "exit_zero"},
             "session": {"attempts": 1, "effort": "high", "invocation_spec": json.loads(spec)},
+            "_adversary_verdict": "approved", "_adversary_stub": 0,
         }, db_path=self.db)
 
     def test_build_emits_clean_pairs(self):
@@ -83,6 +84,7 @@ class TestModelfileAndCycle(unittest.TestCase):
                 "subtask_id": f"st-{i}", "title": f"do {i}", "status": "done",
                 "verify_result": {"passed": True}, "verify": {"cmd": "c", "expect": "exit_zero"},
                 "session": {"attempts": 1, "invocation_spec": {"effort": "high", "i": i}},
+                "_adversary_verdict": "approved", "_adversary_stub": 0,
             }, db_path=self.db)
 
     def test_modelfile_format(self):
@@ -96,8 +98,9 @@ class TestModelfileAndCycle(unittest.TestCase):
 
     def test_cycle_skips_without_trainer(self):
         self._gold(5)
-        out = finetune.run_finetune_cycle(out_dir=self.dir, min_examples=3,
-                                          trainer=None, db_path=self.db)
+        with mock.patch.object(finetune, "default_trainer", return_value=None):
+            out = finetune.run_finetune_cycle(out_dir=self.dir, min_examples=3,
+                                              trainer=None, db_path=self.db)
         self.assertEqual(out["skipped"], "no_trainer")
 
     def test_cycle_trains_registers_and_builds_model(self):

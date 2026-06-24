@@ -14,6 +14,7 @@ and never raises out of :func:`fetchClaudeDocs` / :func:`scanLocalClaude`.
 """
 from __future__ import annotations
 
+import json as _json
 import re
 import threading
 from datetime import datetime
@@ -22,6 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 import config
+import provenance as _prov
 
 LOG = config.getLogger("knowledge")
 
@@ -227,24 +229,29 @@ def scanLocalClaude(roots: Optional[tuple] = None) -> dict:
         # --- skills: <root>/skills/<name>/SKILL.md (and plugin skills nested deeper)
         for skill_md in root.glob("**/SKILL.md"):
             inv["files_scanned"] += 1
-            fm = _parseFrontmatter(_readText(skill_md))
+            raw_text = _readText(skill_md)
+            desc_trusted = _isTrustedSource(raw_text, str(skill_md))
+            fm = _parseFrontmatter(_stripProvHeader(raw_text))
             name = fm.get("name") or skill_md.parent.name
             if name in seen_skill:
                 continue
             seen_skill.add(name)
             inv["skills"].append({"name": name, "description": (fm.get("description") or "")[:400],
                                   "allowed_tools": fm.get("allowed-tools") or fm.get("allowed_tools"),
-                                  "path": str(skill_md)})
+                                  "path": str(skill_md), "desc_trusted": desc_trusted})
         # --- subagents: <root>/agents/*.md
         for agent_md in (root / "agents").glob("*.md") if (root / "agents").exists() else []:
             inv["files_scanned"] += 1
-            fm = _parseFrontmatter(_readText(agent_md))
+            raw_text = _readText(agent_md)
+            desc_trusted = _isTrustedSource(raw_text, str(agent_md))
+            fm = _parseFrontmatter(_stripProvHeader(raw_text))
             name = fm.get("name") or agent_md.stem
             if name in seen_agent:
                 continue
             seen_agent.add(name)
             inv["agents"].append({"name": name, "description": (fm.get("description") or "")[:400],
-                                  "tools": fm.get("tools"), "model": fm.get("model"), "path": str(agent_md)})
+                                  "tools": fm.get("tools"), "model": fm.get("model"), "path": str(agent_md),
+                                  "desc_trusted": desc_trusted})
         # --- workflows: <root>/workflows/*.{js,ts,md}
         for wf in (root / "workflows").glob("**/*") if (root / "workflows").exists() else []:
             if wf.is_file() and wf.suffix in (".js", ".ts", ".md"):
@@ -313,6 +320,85 @@ def readRecommendations(path: Optional[Path] = None) -> dict:
             return {"found": True, "path": str(path), "text": txt}
     LOG.info("recommendations doc not present at %s", path)
     return {"found": False, "path": str(path), "text": ""}
+
+
+# ============================================================================
+# Provenance gate for knowledge-doc injection
+# ============================================================================
+_PROV_HEADER_RE = re.compile(
+    r"^<!--\s*provenance:\s*(\{[^}]*\})\s*-->\n?", re.MULTILINE
+)
+
+# Header prepended by the writer path so genuinely-built docs pass the gate.
+_SCRAPE_PROVENANCE_HEADER = '<!-- provenance: {"origin": "scrape"} -->\n'
+
+
+def injectableDoc(text: str, *, name: str) -> str:
+    """Gate a knowledge-doc for injection into the brain prompt.
+
+    Parses an optional FIRST-LINE HTML provenance comment
+    ``<!-- provenance: {"origin": "<value>"} -->`` from *text*.  Coerces it
+    through :mod:`provenance` and calls ``assertIngestible`` with
+    ``intended_role="believe"`` (docs are trusted evidence but not user directives).
+
+    Returns the doc body (without the header line) when the verdict is
+    ``ALLOW`` (i.e. origin is ``human`` or ``scrape``).  Returns ``""`` for
+    any other verdict (executor/brain/derived/absent/malformed) so an
+    unattested or task-forged-absent doc contributes nothing to the prompt.
+
+    Fails CLOSED: no header → EXECUTOR provenance → quarantined → "".
+    """
+    if not text:
+        return ""
+    m = _PROV_HEADER_RE.match(text)
+    raw_dict: Optional[dict] = None
+    body = text
+    if m:
+        try:
+            raw_dict = _json.loads(m.group(1))
+        except Exception:  # noqa: BLE001
+            raw_dict = None  # malformed JSON → coerces to EXECUTOR
+        body = text[m.end():]  # strip the header from returned content
+
+    prov = _prov.coerce(raw_dict)
+    # Knowledge docs are trusted evidence (believe), not user directives (obey).
+    # "believe" allows origin=human and origin=scrape; blocks executor/brain/derived.
+    decision = _prov.assertIngestible(name, "believe", prov)
+    if decision.verdict is _prov.Verdict.ALLOW:
+        return body
+    LOG.debug("knowledge doc %r quarantined: %s", name, decision.reason)
+    return ""
+
+
+def _isTrustedSource(text: str, name: str) -> bool:
+    """Return True iff *text* carries a trusted provenance header (human or scrape origin).
+
+    Reuses the same provenance-parse + coerce + assertIngestible logic as
+    :func:`injectableDoc` so the gate is identical.  Fails closed: no header →
+    EXECUTOR provenance → untrusted → False.
+
+    Used by :func:`scanLocalClaude` to decide whether a locally-scanned agent/skill
+    description is safe to inject into the brain prompt.
+    """
+    if not text:
+        return False
+    m = _PROV_HEADER_RE.match(text)
+    raw_dict: Optional[dict] = None
+    if m:
+        try:
+            raw_dict = _json.loads(m.group(1))
+        except Exception:  # noqa: BLE001
+            raw_dict = None  # malformed JSON → coerces to EXECUTOR
+    prov = _prov.coerce(raw_dict)
+    decision = _prov.assertIngestible(name, "believe", prov)
+    return decision.verdict is _prov.Verdict.ALLOW
+
+
+def _stripProvHeader(text: str) -> str:
+    """Strip the first-line provenance comment (if present) so frontmatter parsing
+    sees ``---`` as the first meaningful line.  Returns the text unchanged if no header."""
+    m = _PROV_HEADER_RE.match(text)
+    return text[m.end():] if m else text
 
 
 def _executiveExcerpt(recs_text: str, max_chars: int = 2400) -> str:
@@ -492,7 +578,10 @@ def buildUnifiedDoc(prior_doc: str, fetched: dict, local: dict, psk: dict, *,
         lines.append(recs["text"].strip())
         lines.append("")
 
-    return "\n".join(lines).rstrip() + "\n"
+    # Stamp the finished doc with scrape provenance so the gate in injectableDoc
+    # lets this legitimately-built reference pass when it is read back for injection.
+    # The header is the very first line so _PROV_HEADER_RE anchored at ^ matches it.
+    return _SCRAPE_PROVENANCE_HEADER + "\n".join(lines).rstrip() + "\n"
 
 
 def diffHeadings(prior_doc: str, new_doc: str) -> dict:
@@ -559,8 +648,11 @@ def compressForInjection(unified_doc: str, local: dict, fetched: dict,
     parts: list[str] = []
 
     # Executive expert recommendations FIRST -- the highest-leverage, brain-actionable slice.
+    # Gate: only inject if recommendations.md carries an attested provenance header.
     if recs and recs.get("found"):
-        ex = _executiveExcerpt(recs.get("text", ""))
+        recs_raw = recs.get("text", "")
+        recs_gated = injectableDoc(recs_raw, name=recs.get("path") or "recommendations.md")
+        ex = _executiveExcerpt(recs_gated) if recs_gated else ""
         if ex:
             parts.append("### Expert recommendations (apply to EVERY spec; full set = Part E of claude_code.md)")
             parts.append(ex)
@@ -570,13 +662,25 @@ def compressForInjection(unified_doc: str, local: dict, fetched: dict,
     if skills:
         parts.append("### Installed skills (invoke by name in skills_to_invoke / via /<name>)")
         for s in skills[:40]:
-            parts.append(f"- {s['name']}: {s['description'][:160]}")
+            # Gate: only inject free-text description when the source file carries a trusted
+            # provenance header (human/scrape origin). Untrusted files (no header → coerces
+            # to executor) omit description to close the directive-injection vector (#6).
+            # The skill name is always listed so the brain retains capability awareness.
+            # Residual: a task could forge a human header — addressed in Spec 3.
+            if s.get("desc_trusted"):
+                parts.append(f"- {s['name']}: {s['description'][:160]}")
+            else:
+                parts.append(f"- {s['name']}")
     parts.append("")
     agents = local.get("agents", [])
     if agents:
         parts.append("### Installed subagents (route isolated analysis here)")
         for a in agents[:30]:
-            parts.append(f"- {a['name']} (tools: {a.get('tools') or '*'}): {a['description'][:140]}")
+            # Same provenance gate as skills above.
+            if a.get("desc_trusted"):
+                parts.append(f"- {a['name']} (tools: {a.get('tools') or '*'}): {a['description'][:140]}")
+            else:
+                parts.append(f"- {a['name']} (tools: {a.get('tools') or '*'})")
     parts.append("")
     if local.get("workflows"):
         parts.append("### Saved workflows")
@@ -650,7 +754,10 @@ def ensureCapabilities() -> str:
         try:
             prior = ""
             if config.CLAUDE_KNOWLEDGE_PATH.exists():
-                prior = _readText(config.CLAUDE_KNOWLEDGE_PATH, limit=2_000_000)
+                raw = _readText(config.CLAUDE_KNOWLEDGE_PATH, limit=2_000_000)
+                # Gate: only use the on-disk unified doc as the heading-index source
+                # if it carries a valid provenance stamp (written by buildUnifiedDoc).
+                prior = injectableDoc(raw, name="claude_code.md")
             local = scanLocalClaude()
             recs = readRecommendations()
             _CAPABILITIES = compressForInjection(prior, local, {"pages": {}, "ok": [], "failed": []}, recs=recs)

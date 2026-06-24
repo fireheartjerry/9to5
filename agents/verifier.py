@@ -130,6 +130,10 @@ def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
 
 _COMPOUND_PREFIXES = ("stdout_contains_all:", "stdout_regex_all:")
 
+# Cap distinctive markers per requirement so a verbose elaborated goal can't bloat a compound verify
+# into trivially passing on boilerplate (LIVE BUG #2b). Clean short requirements have fewer anyway.
+_MAX_MARKERS_PER_REQ: int = 6
+
 # Filler / structural / HTML-ambient words that are NOT distinctive of a deliverable. Dropping them
 # keeps a synthesized requirement marker from being satisfied by boilerplate that is ALWAYS present
 # (e.g. a goal asking for an "auto-refresh meta tag" must key on 'refresh', not the ambient 'meta'
@@ -204,7 +208,13 @@ def requirementMarkers(phrase: str) -> list[str]:
         for part in w.split("-"):
             if len(part) >= 3 and part not in _MARKER_STOPWORDS and part not in out:
                 out.append(part)
-    return out
+    # Keep only the most DISTINCTIVE markers. A verbose elaborated goal (markdown acceptance criteria)
+    # yields dozens of common-ish content words, and since the compound verify passes when ANY ONE
+    # marker is present, a bloated group is satisfied trivially by boilerplate -- defeating the
+    # anti-partial-work check (LIVE BUG #2b). Longer words are rarer/more specific, so cap to the
+    # longest few; a clean short requirement (<=cap markers) is unchanged.
+    out.sort(key=lambda m: (len(m), m), reverse=True)
+    return out[:_MAX_MARKERS_PER_REQ]
 
 
 def buildContentScanVerify(marker_groups: list[list[str]], target_path: str) -> dict:
@@ -215,11 +225,17 @@ def buildContentScanVerify(marker_groups: list[list[str]], target_path: str) -> 
     """
     groups = [[str(m).lower() for m in g if m] for g in marker_groups]
     groups = [g for g in groups if g]
+    # FX-3: match markers at WORD level, not as bare substrings over the whole lowercased file. A
+    # substring scan false-PASSes constantly -- a generic word in a comment/docstring/string, or a
+    # marker that is a substring of an unrelated identifier ('red' in 'predicate', 'log' in
+    # 'getLogger', 'task' in 'subtask'), satisfies the group. Tokenising to a word set and testing
+    # membership requires the marker to actually appear as its own identifier/word.
     code = (
-        "import io,sys; "
+        "import io,sys,re; "
         f"s=io.open({str(target_path)!r},encoding='utf-8',errors='ignore').read().lower(); "
+        "toks=set(re.findall(r'[a-z0-9_]+', s)); "
         f"g={groups!r}; "
-        "miss=[grp for grp in g if not any(k in s for k in grp)]; "
+        "miss=[grp for grp in g if not any(k in toks for k in grp)]; "
         "print('MISSING_REQUIREMENTS '+repr(miss)) if miss else print('ALL_REQUIREMENTS_PRESENT'); "
         "sys.exit(1 if miss else 0)"
     )
@@ -235,7 +251,12 @@ def buildRequirementsVerify(goal: str, target_path: str) -> Optional[dict]:
     if len(reqs) < 2:
         return None
     groups = [requirementMarkers(r) for r in reqs]
-    groups = [g for g in groups if g]
+    # FX-15: do NOT silently drop a requirement whose markers are all stopwords/numbers -- that would
+    # leave the "strict" verify NOT asserting that deliverable, the exact false-pass it exists to
+    # prevent. If ANY requirement is un-markerizable, refuse to synthesize an incomplete strict check
+    # (return None -> the caller keeps the brain verify / falls back) rather than certify partial work.
+    if any(not g for g in groups):
+        return None
     if len(groups) < 2:
         return None
     return buildContentScanVerify(groups, target_path)
@@ -249,7 +270,14 @@ def isStrictVerify(verify: Optional[dict]) -> bool:
         return False
     if verify.get("strict"):
         return True
-    return str(verify.get("expect") or "").startswith(_COMPOUND_PREFIXES)
+    # FX-14: a COMPOUND expect is "strict" (and so exempt from the repair fallback) only when it
+    # actually asserts >=2 deliverables. A single-token `stdout_contains_all:Foo` is just a guessed
+    # needle -- treating it as strict disables repair and false-FAILs correct work.
+    expect = str(verify.get("expect") or "")
+    for pfx in _COMPOUND_PREFIXES:
+        if expect.startswith(pfx):
+            return len([t for t in expect[len(pfx):].split("||") if t.strip()]) >= 2
+    return False
 
 
 def _evaluate(expect: str, returncode: int, stdout: str) -> bool:
@@ -259,9 +287,16 @@ def _evaluate(expect: str, returncode: int, stdout: str) -> bool:
         return returncode == 0
     if expect.startswith("stdout_contains:"):
         needle = expect[len("stdout_contains:"):]
+        # FX-2: an EMPTY needle makes `"" in stdout` always True -> the subtask passes even when the
+        # command crashed (the brain drops the planner's "<...>" placeholder). Treat empty as malformed
+        # and fall back to the exit code, so a crash can't false-PASS.
+        if not needle:
+            return returncode == 0
         return needle in stdout
     if expect.startswith("stdout_regex:"):
         pattern = expect[len("stdout_regex:"):]
+        if not pattern:                       # FX-2: empty pattern -> re.search("") always matches
+            return returncode == 0
         try:
             return re.search(pattern, stdout) is not None
         except re.error:

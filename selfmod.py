@@ -85,7 +85,8 @@ def _unstash_core(work_dir: str, *, restore: bool) -> None:
 
 
 def safety_gate(work_dir: str, *, is_self_referential: bool,
-                test_runner: Optional[Callable[[str], tuple[bool, str]]] = None) -> dict[str, Any]:
+                test_runner: Optional[Callable[[str], tuple[bool, str]]] = None,
+                code_diverged: bool = False) -> dict[str, Any]:
     """Run the post-run core-change safety gate. Returns a report dict.
 
     No-op unless self-ref + SELFMOD_ALLOW_CORE + core files actually changed. When the suite fails
@@ -93,7 +94,20 @@ def safety_gate(work_dir: str, *, is_self_referential: bool,
     to decide CAUSALITY. Only if the baseline is GREEN (so the change is what broke it) does it
     revert. If the baseline ALSO fails, the failure is pre-existing/flaky -- the core improvement is
     KEPT (the overnight run threw away good work exactly because flaky tests tripped a blind revert).
+
+    ``code_diverged`` (Task 5.2): when True, on-disk self.code was edited mid-run but this process
+    kept running the pre-edit bytecode -- so any test run here would exercise the edited modules,
+    NOT the code this process actually ran. We must NOT bless that as "verified by this run."
+    Short-circuit immediately with ran=False and a clear reason; never touch or revert files.
     """
+    if code_diverged:
+        LOG.warning("selfmod safety gate: code_diverged=True -- self.code was edited mid-run but "
+                    "this process ran pre-edit bytecode; edits are inert until next process restart. "
+                    "Refusing to bless as verified by this run.")
+        return {"ran": False,
+                "reason": "self.code diverged mid-run; edits inert until next process -- "
+                          "not verified by this run"}
+
     if not (is_self_referential and getattr(config, "SELFMOD_ALLOW_CORE", False)):
         return {"ran": False, "reason": "not_enabled"}
     changed = core_files_changed(work_dir)

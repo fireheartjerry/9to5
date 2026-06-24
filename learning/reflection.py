@@ -50,11 +50,14 @@ def parse(text: str) -> Optional[dict[str, Any]]:
 
 
 def trust(summary: dict[str, Any], *, verify_passed: Optional[bool],
-          adversary_verdict: Optional[str]) -> bool:
+          adversary_verdict: Optional[str],
+          adversary_stub: bool = False) -> bool:
     """A summary is trusted only if its claim is consistent with the REAL outcome.
 
     A high-confidence debrief on a FAILED verify is self-serving -> not trusted. A
-    challenged adversary verdict also blocks trust.
+    challenged adversary verdict also blocks trust. A stub/degraded adversary verdict
+    (auto-approve fallback with no real signal) is also untrusted — ``adversary_stub=True``
+    means the adversary did not actually evaluate the output.
     """
     if not isinstance(summary, dict):
         return False
@@ -63,11 +66,14 @@ def trust(summary: dict[str, Any], *, verify_passed: Optional[bool],
     if adversary_verdict and adversary_verdict.lower() not in _APPROVED \
             and adversary_verdict.lower() not in ("", "none"):
         return False
+    if adversary_stub:
+        return False
     return True
 
 
 def capture(*, run_id: str, subtask_id: str, executor_output: str,
             verify_passed: Optional[bool] = None, adversary_verdict: Optional[str] = None,
+            adversary_stub: bool = False,
             role: str = "executor", teacher: str = "claude",
             db_path: Optional[Path] = None) -> dict[str, Any]:
     """Parse + trust-check + persist a learning summary. Best-effort; returns a small
@@ -75,7 +81,8 @@ def capture(*, run_id: str, subtask_id: str, executor_output: str,
     summary = parse(executor_output)
     if summary is None:
         return {"captured": False, "reason": "no_summary"}
-    trusted = trust(summary, verify_passed=verify_passed, adversary_verdict=adversary_verdict)
+    trusted = trust(summary, verify_passed=verify_passed, adversary_verdict=adversary_verdict,
+                    adversary_stub=adversary_stub)
     experience.record_reflection(
         run_id=run_id, subtask_id=subtask_id, role=role, teacher=teacher, trusted=trusted,
         approach=summary.get("approach"), reusable_recipe=summary.get("reusable_recipe"),

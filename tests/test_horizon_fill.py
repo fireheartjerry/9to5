@@ -61,6 +61,9 @@ class TestHorizonFill(unittest.TestCase):
         self.assertEqual(added, 1)
         self.assertEqual(self.orch._pendingCount(self.state), 1)
         self.assertIn("improvement", self.state.subtasks[0]["title"].lower())
+        # LIVE BUG #2a: the open-ended fallback must NOT get a strict compound verify -> verify None
+        # (executor-exit-zero), so it isn't spuriously failed/trivially passed against the goal's reqs.
+        self.assertIsNone(self.state.subtasks[0].get("verify"))
 
     def test_backfill_fallback_on_authoring_exception(self):
         with mock.patch.object(self.orch, "authorBackfillBatch", side_effect=RuntimeError("brain down")):
@@ -131,7 +134,7 @@ class TestPrGateDegraded(unittest.TestCase):
         self.dir.rmdir()
 
     def test_degraded_when_selfmod_reverted(self):
-        self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['orchestrator.py']")
+        self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['orchestrator.py']", reverted=True)
         self.assertTrue(self.orch._runIsDegraded(self.state))
 
     def test_degraded_when_majority_failed(self):
@@ -146,13 +149,41 @@ class TestPrGateDegraded(unittest.TestCase):
         self.assertFalse(self.orch._runIsDegraded(self.state))
 
     def test_night_mode_holds_pr_for_degraded_run(self):
-        self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['config.py']")
+        self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['config.py']", reverted=True)
         review = {"verdict": "challenged", "concerns": ["broke core"]}
         with mock.patch.object(config, "NIGHT_MODE", True), \
                 mock.patch.object(config, "ADVERSARY_PR_HOLD_ENABLED", True):
             create, reason = self.orch._prGate(review, auto_pr=True, state=self.state)
+        self.assertFalse(create)                 # degraded run held regardless of night mode (FX-18)
+        self.assertIn("degraded", reason.lower())
+
+    def test_degraded_holds_pr_even_when_adversary_approved(self):
+        # FX-18: degraded check is unconditional -- a stub/approved verdict can't green-light a broken run
+        self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['config.py']", reverted=True)
+        with mock.patch.object(config, "ADVERSARY_PR_HOLD_ENABLED", True):
+            create, reason = self.orch._prGate({"verdict": "approved"}, auto_pr=True, state=self.state)
         self.assertFalse(create)
-        self.assertIn("HOLD", reason)
+        self.assertIn("degraded", reason.lower())
+
+    def test_suite_gate_skips_non_self_ref(self):
+        ok, _ = self.orch._prePrSuiteGate(self.state, ".")   # not self-referential
+        self.assertTrue(ok)
+
+    def test_suite_gate_holds_pr_on_red_suite(self):
+        # A self-improvement run must NOT open a PR whose own suite is red (the PR #10 bug).
+        self.state.meta["is_self_referential"] = True
+        import selfmod
+        with mock.patch.object(selfmod, "_default_test_runner", return_value=(False, "FAILED (errors=128)")):
+            ok, detail = self.orch._prePrSuiteGate(self.state, ".")
+        self.assertFalse(ok)
+        self.assertIn("128", detail)
+
+    def test_suite_gate_allows_pr_on_green_suite(self):
+        self.state.meta["is_self_referential"] = True
+        import selfmod
+        with mock.patch.object(selfmod, "_default_test_runner", return_value=(True, "OK")):
+            ok, _ = self.orch._prePrSuiteGate(self.state, ".")
+        self.assertTrue(ok)
 
     def test_night_mode_ships_healthy_challenged_run(self):
         self.state.addSubtask("a", "d"); self.state.updateSubtask("st-001", status="done")

@@ -34,8 +34,24 @@ from notifications import discord_bot as discord
 from notifications.dashboard import DiscordDashboard
 from notifications.webdash import startWebDashboard, stopWebDashboard
 from state.task import TaskState, nowIso
+import epoch
 
 LOG = config.getLogger("orchestrator")
+
+
+def _checkCodeDivergence(state) -> bool:
+    """At each subtask boundary: has on-disk self.code drifted from the pinned epoch?
+    If so, record it on meta so the post-run gate can refuse to bless edited-but-never-
+    executed modules (#12). Observe-only -- never blocks the edit."""
+    ep_dict = (getattr(state, "meta", {}) or {}).get("epoch")
+    if not ep_dict:
+        return False
+    diverged = epoch.diverged(epoch.Epoch.fromDict(ep_dict))
+    if diverged and not state.meta.get("code_diverged"):
+        state.meta["code_diverged"] = True
+        state.save()
+    return diverged
+
 
 # A CONCRETE example verify path handed to the brain so it never copies a literal "<ABSOLUTE
 # path>" placeholder (which cmd.exe parses as redirection -> spurious verify failures). See
@@ -325,7 +341,14 @@ class Orchestrator:
         self.obs = obs if obs is not None else ObsidianClient()
         self._run_claude = run_claude or executor.runClaude
         self._replan = replan or replanner.replan
-        self._review = review or adversary.review
+        # Default reviewer = the dual-brain dispatcher (GPT-5.5 -> Ollama -> stub). Tests inject a
+        # plain `review` callable, which bypasses GPT and keeps the legacy single-brain contract.
+        self._review = review or self._adversaryReview
+        # Phase 2 second-brain session state (only used when BROWSER_LAYER_ENABLED + probe passes).
+        self._chatgpt_session = None
+        self._chatgpt_session_ok = False
+        self._chatgpt_ask = None        # bound (message)->reply once the session is live
+        self._last_review_hash = None   # cost guard: skip GPT on near-duplicate output
         self._state_lock = threading.Lock()
         self._poll_lock = threading.Lock()      # serialize Discord poll cursor across parallel workers (CB-7)
         self._selfref_prompt_cache: dict = {}   # task_id -> self-ref system-prompt prefix (built once)
@@ -511,27 +534,29 @@ class Orchestrator:
             except Exception:  # noqa: BLE001
                 return False
 
-        text = ((subtask.get("verify") or {}).get("cmd") or "") + "  " + (subtask.get("description") or "")
+        orig = subtask.get("verify") or {}
+        orig_expect = orig.get("expect")
+        # FX-4: PRESERVE the original behavioral assertion (stdout_contains/regex) so repair re-checks
+        # the REAL needle on the fresh artifact instead of degrading to "it exits 0" -- which would
+        # flip genuinely-broken work to PASS. Only fall back to exit_zero when there was no output check.
+        keep_expect = orig_expect if (isinstance(orig_expect, str) and orig_expect.startswith(
+            ("stdout_contains:", "stdout_regex:"))) else "exit_zero"
+        text = (orig.get("cmd") or "") + "  " + (subtask.get("description") or "")
         # 1) absolute .py referenced by the verify/description that THIS attempt wrote
         for m in re.findall(r"([A-Za-z]:\\[^\s\"'`]+\.py|/[^\s\"'`]+\.py)", text):
             if _fresh(m):
-                return {"cmd": f'python "{m}"', "expect": "exit_zero"}
+                return {"cmd": f'python "{m}"', "expect": keep_expect}
         # 2) relative .py token resolved against exec_cwd (preserve any subpath), written this attempt
         for cand in re.findall(r"([\w./\\-]+\.py)\b", text):
             if os.path.isabs(cand):
                 continue
             p = os.path.normpath(os.path.join(exec_cwd, cand))
             if _fresh(p):
-                return {"cmd": f'python "{p}"', "expect": "exit_zero"}
-        # 3) newest .py written into the work dir DURING this attempt
-        try:
-            fresh = [os.path.join(exec_cwd, f) for f in os.listdir(exec_cwd)
-                     if f.endswith(".py") and _fresh(os.path.join(exec_cwd, f))]
-            if fresh:
-                return {"cmd": f'python "{max(fresh, key=os.path.getmtime)}"', "expect": "exit_zero"}
-        except Exception:  # noqa: BLE001
-            pass
-        # 4) a NON-.py artifact written this attempt -> non-empty check (never mask a broken .py)
+                return {"cmd": f'python "{p}"', "expect": keep_expect}
+        # FX-4/17: do NOT rescue with an ARBITRARY newest .py in cwd -- it is often an unrelated scratch
+        # /helper file (especially under .sc-ctx) and would false-PASS partial/broken work. Only files
+        # the verify or description ACTUALLY reference (steps 1-2) qualify for a behavioral repair.
+        # 4) a NON-.py artifact REFERENCED by the verify/description -> non-empty check (never mask a broken .py)
         for m in re.findall(r"([A-Za-z]:\\[^\s\"'`]+\.[A-Za-z0-9]{1,5}|/[^\s\"'`]+\.[A-Za-z0-9]{1,5})", text):
             if m.lower().endswith(".py") or not _fresh(m):
                 continue
@@ -742,6 +767,15 @@ class Orchestrator:
         resp = self._ollamaChat(system_prompt, user, want_json=True)
         spec = _chatJson(resp)
         spec = self._sanitizeSpec(spec if isinstance(spec, dict) else {}, subtask)
+        # FX-6: the brain frequently returns EMPTY, so failure_feedback (and the clarifier answer it
+        # carries) -- which was only interpolated into the brain's USER prompt -- is LOST: the sanitized
+        # spec is just the bare description and the executor repeats the same mistake. Fold the feedback
+        # DETERMINISTICALLY into the spec (both the living CLAUDE.md and the prompt body, the latter so a
+        # --resume retry carries it too) so the executor always sees WHY the last attempt failed.
+        if failure_feedback:
+            block = "## PREVIOUS ATTEMPT FAILED THE VERIFICATION — fix this\n" + failure_feedback.strip()[:1500]
+            spec["claude_md_inject"] = ((spec.get("claude_md_inject") or "") + "\n\n" + block).strip()
+            spec["prompt"] = block + "\n\n" + (spec.get("prompt") or "")
         # SIE subsystem I: ask the executor (the strong teacher) for a learning summary so
         # we can distill its reasoning. Best-effort + only if it produced a prompt.
         try:
@@ -1035,41 +1069,239 @@ class Orchestrator:
         )
 
     # ===================================================================
-    # Adversary teeth -- bounded remediation + pre-PR hold
+    # Dual-brain second opinion -- dispatcher, cost guard, session lifecycle
+    # ===================================================================
+    def _goalText(self, state: TaskState) -> str:
+        return state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "")
+
+    def _worthGptReview(self, output: str) -> bool:
+        """Cost guard: skip a GPT call on trivially-short or near-duplicate executor output (the
+        adversary fires many times per run; GPT quota is finite). Non-subtask touchpoints bypass."""
+        import hashlib
+        text = (output or "").strip()
+        if len(text) < config.CHATGPT_MIN_OUTPUT_CHARS:
+            return False
+        h = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()
+        if h == self._last_review_hash:
+            return False
+        self._last_review_hash = h
+        return True
+
+    def _adversaryReview(self, subtask_title: str, trigger_reason: str, executor_output: str, *,
+                         ollama_chat=None, goal: str = "", review_type: str = "subtask",
+                         worth=None) -> dict:
+        """Default reviewer: route through second_brain (GPT-5.5 -> Ollama -> stub), apply the cost
+        guard, disable a dead GPT session for the rest of the run, and record trust telemetry.
+        Signature matches the legacy ``adversary.review`` so every existing call site is unchanged."""
+        from agents import second_brain
+        if worth is None:
+            worth = self._worthGptReview(executor_output) if review_type == "subtask" else True
+        rv = second_brain.consult(
+            review_type, title=subtask_title, trigger_reason=trigger_reason,
+            content=executor_output, goal=goal,
+            ollama_chat=ollama_chat or self._ollamaChat,
+            browser_ask=self._chatgpt_ask, session_ok=self._chatgpt_session_ok, worth=worth)
+        if rv.get("session_dead") and self._chatgpt_session_ok:
+            self._chatgpt_session_ok = False
+            try:
+                discord.sendEmbed(discord.noticeEmbed(
+                    "GPT-5.5 second brain unreachable (login / Cloudflare / rate-limit) — "
+                    "using the Ollama brain for the rest of this run."))
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            from learning import adversary_trust
+            adversary_trust.record(review_type, rv, tier=rv.get("tier"))
+        except Exception:  # noqa: BLE001 -- telemetry never affects the run
+            pass
+        return rv
+
+    def _consult(self, state: TaskState, review_type: str, title: str, reason: str,
+                 content: str, *, worth: bool = True) -> dict:
+        """Second-opinion entry for the plan / architecture / pre-PR touchpoints. Honors an
+        injected reviewer (tests) via the legacy signature; otherwise routes to the dual brain."""
+        if getattr(self._review, "__func__", None) is not Orchestrator._adversaryReview:
+            rv = self._review(title, reason, content, ollama_chat=self._ollamaChat,
+                              goal=self._goalText(state))
+            if isinstance(rv, dict):
+                rv.setdefault("tier", "ollama" if not rv.get("stub") else "stub")
+            return rv
+        return self._adversaryReview(title, reason, content, goal=self._goalText(state),
+                                     review_type=review_type, worth=worth)
+
+    def _planReview(self, state: TaskState, elaborated: str, dashboard) -> None:
+        """GPT-5.5 critiques the proposed plan BEFORE execution; a blocking challenge feeds the
+        concerns back through ONE Ollama re-plan pass. Best-effort -- never blocks the run."""
+        if not config.ADVERSARY_REVIEW_PLAN:
+            return
+        try:
+            from agents import second_brain
+            plan_text = "\n".join(f"- {s['title']}: {s.get('description','')}" for s in state.subtasks)
+            rv = self._consult(state, "plan", "plan review", "plan review", plan_text)
+            with self._state_lock:
+                state.addAdversaryReview("plan", "plan review", rv.get("verdict", "approved"), None)
+            if second_brain.is_blocking(rv) and (rv.get("must_fix") or rv.get("concerns")):
+                fixes = "; ".join((rv.get("must_fix") or rv.get("concerns"))[:6])
+                dashboard.update(state, "planning", f"plan challenged -> revising: {fixes[:80]}")
+                state.addNotification("plan_challenged", fixes[:300])
+                LOG.info("Plan challenged by second brain: %s", fixes)
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("plan review failed (non-fatal): %s", e)
+
+    def _architectureReview(self, state: TaskState, architect_doc: str, dashboard) -> str:
+        """GPT-5.5 second opinion on the architecture doc; concerns are appended to the doc so the
+        planner sees them. Returns the (possibly annotated) doc. Best-effort."""
+        if not config.ADVERSARY_REVIEW_ARCH:
+            return architect_doc
+        try:
+            rv = self._consult(state, "architecture", "architecture review",
+                               "architecture review", architect_doc)
+            with self._state_lock:
+                state.addAdversaryReview("architecture", "architecture review",
+                                         rv.get("verdict", "approved"), None)
+            notes = (rv.get("must_fix") or []) + (rv.get("concerns") or [])
+            if rv.get("verdict") == "challenged" and notes:
+                dashboard.update(state, "architecting", "architecture concerns noted for planning")
+                state.addNotification("architecture_challenged", "; ".join(notes)[:300])
+                return architect_doc + "\n\n## Adversary concerns (address in planning)\n- " + "\n- ".join(notes[:8])
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("architecture review failed (non-fatal): %s", e)
+        return architect_doc
+
+    def _openChatGptSession(self, state: TaskState, dashboard=None) -> None:
+        """Run-start: open the logged-in ChatGPT session, health-probe it, and start ONE run
+        conversation inside the 9to5 project. On any failure, GPT stays disabled and the run uses
+        the Ollama brain -- announced once, never fatal."""
+        if not config.BROWSER_LAYER_ENABLED:
+            return
+        try:
+            from agents import browser_executor
+            session = browser_executor.get_session()
+            if not session.health_probe():
+                discord.sendEmbed(discord.noticeEmbed(
+                    "GPT-5.5 second brain unavailable (health probe failed) — Ollama for this run."))
+                return
+            session.start_run_conversation(self._goalText(state), state.task_id)
+            self._chatgpt_session = session
+            self._chatgpt_ask = lambda message: browser_executor.sessionAsk(message, expect_json=True)
+            self._chatgpt_session_ok = True
+            LOG.info("GPT-5.5 second brain online for task %s", state.task_id)
+            discord.sendEmbed(discord.noticeEmbed("🧠 GPT-5.5 second brain online (chatgpt.com)."))
+        except Exception as e:  # noqa: BLE001 -- never block a run on the second brain
+            LOG.warning("could not start ChatGPT session (%s); Ollama only", e)
+            self._chatgpt_session_ok = False
+
+    def _closeChatGptSession(self) -> None:
+        try:
+            if self._chatgpt_session is not None:
+                self._chatgpt_session.close()
+        except Exception:  # noqa: BLE001
+            pass
+        self._chatgpt_session = None
+        self._chatgpt_session_ok = False
+        self._chatgpt_ask = None
+
+    # ===================================================================
+    # Adversary teeth -- bounded remediation LOOP + pre-PR hold
     # ===================================================================
     def _remediate(self, state: TaskState, subtask: dict, architect_doc: str, exec_cwd: str,
                    concerns: list[str]) -> dict:
-        """ONE bounded extra executor attempt to address an adversary's concerns on a subtask that
-        ALREADY passed verification. Re-verifies; only keeps or improves -- a remediation that fails
-        to verify never downgrades the prior pass (the subtask stays done). Returns the verify_result."""
+        """Bounded remediation LOOP (up to ADVERSARY_REMEDIATION_MAX_ATTEMPTS) on a subtask that
+        ALREADY passed verification: feed the reviewer's concerns back to the executor, re-verify,
+        then re-review with the second brain; stop when it approves (or attempts run out). Each
+        attempt is snapshot-guarded -- an edit that breaks the artifact is reverted and the prior
+        pass kept, so remediation can only keep or improve. Returns the last verify_result."""
         sid = subtask["subtask_id"]
-        feedback = ("The work PASSED its acceptance check, but an adversarial reviewer raised concerns. "
-                    "Address these WITHOUT breaking the passing verification:\n- " + "\n- ".join(concerns))
-        spec = self.authorInvocationSpec(state, subtask, architect_doc, feedback)
-        result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask)
-        vres = verifier.runVerification(subtask.get("verify"), exec_cwd, result)
-        with self._state_lock:
-            if vres.get("passed"):
-                state.recordVerify(sid, vres)   # adopt the still-passing post-remediation evidence
-            state.addNotification(
-                "adversary_remediation",
-                f"{sid}: remediation {'verified' if vres.get('passed') else 'did not verify (prior pass kept)'}")
-        LOG.info("Adversary remediation for %s -> %s", sid, "verified" if vres.get("passed") else "kept prior pass")
+        goal = self._goalText(state)
+        vres: dict = {}
+        attempts = max(1, config.ADVERSARY_REMEDIATION_MAX_ATTEMPTS)
+        for i in range(1, attempts + 1):
+            feedback = ("The work PASSED its acceptance check, but an adversarial reviewer raised "
+                        "concerns. Address these WITHOUT breaking the passing verification:\n- "
+                        + "\n- ".join(concerns))
+            snap = self._gitSnapshot(exec_cwd)
+            spec = self.authorInvocationSpec(state, subtask, architect_doc, feedback)
+            result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask)
+            vres = verifier.runVerification(subtask.get("verify"), exec_cwd, result)
+            with self._state_lock:
+                if vres.get("passed"):
+                    state.recordVerify(sid, vres)   # adopt the still-passing post-remediation evidence
+                else:
+                    self._gitRestore(exec_cwd, snap)   # revert broken edits so disk == kept pass
+                state.addNotification(
+                    "adversary_remediation",
+                    f"{sid}: remediation {i}/{attempts} "
+                    f"{'verified' if vres.get('passed') else 'did not verify (reverted, prior pass kept)'}")
+            LOG.info("Adversary remediation %d/%d for %s -> %s", i, attempts, sid,
+                     "verified" if vres.get("passed") else "reverted (kept prior pass)")
+            if not vres.get("passed"):
+                break   # a broken attempt was reverted; another try would re-break -- stop
+            # Re-review the remediated output: if the second brain is now satisfied, we're done.
+            combined = ((result or {}).get("stdout", "") + "\n" + (result or {}).get("stderr", "")) \
+                if isinstance(result, dict) else ""
+            rv = self._review(subtask["title"], f"remediation re-review {i}/{attempts}", combined,
+                              ollama_chat=self._ollamaChat, goal=goal)
+            from agents import second_brain
+            if not second_brain.is_blocking(rv):
+                break
+            concerns = (rv.get("must_fix") or rv.get("concerns") or concerns)[:10]
         return vres
 
-    def _prePrAdversary(self, state: TaskState) -> dict:
-        """Pre-PR safety review: the adversary judges the whole run before a PR is opened. Best-effort
-        -- any failure approves (the reviewer must never block a run by erroring). Returns the verdict dict."""
+    @staticmethod
+    def _gitSnapshot(cwd: str) -> "str | None":
+        """Capture the current (dirty) tree as a throwaway stash commit WITHOUT touching the tree;
+        returns its SHA, or None if cwd isn't a git repo / nothing to snapshot. (FX-10)"""
+        try:
+            r = subprocess.run(["git", "stash", "create"], cwd=cwd, capture_output=True, text=True, timeout=30)
+            return (r.stdout or "").strip() or None
+        except Exception:  # noqa: BLE001
+            return None
+
+    @staticmethod
+    def _gitRestore(cwd: str, sha: "str | None") -> None:
+        """Restore tracked files in cwd to a snapshot SHA from _gitSnapshot (revert edits since)."""
+        if not sha:
+            return
+        try:
+            subprocess.run(["git", "checkout", sha, "--", "."], cwd=cwd, capture_output=True, text=True, timeout=30)
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("remediation revert failed: %s", e)
+
+    def _gitDiffForReview(self, work_dir: "str | None") -> str:
+        """The whole change as a (stat + truncated patch) for the pre-PR diff review. '' when
+        there's no repo / no diff, so the reviewer falls back to a subtask-status summary."""
+        if not work_dir:
+            return ""
+        try:
+            t = config.GIT_TIMEOUT_SECONDS
+            stat = subprocess.run(["git", "diff", "HEAD", "--stat"], cwd=work_dir,
+                                  capture_output=True, text=True, timeout=t)
+            patch = subprocess.run(["git", "diff", "HEAD"], cwd=work_dir,
+                                   capture_output=True, text=True, timeout=t)
+            body = ((stat.stdout or "") + "\n\n" + (patch.stdout or "")).strip()
+            return body[:config.ADVERSARY_PREPR_DIFF_MAX_CHARS]
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("git diff for pre-PR review failed: %s", e)
+            return ""
+
+    def _prePrAdversary(self, state: TaskState, work_dir: "str | None" = None) -> dict:
+        """Pre-PR safety review: the second brain judges the whole change before a PR is opened --
+        from the REAL git diff when available, else a subtask-status summary. Best-effort: any
+        failure approves (the reviewer must never block a run by erroring). Returns the verdict dict."""
         try:
             _t, reason = adversary.shouldTrigger("", 0, pre_pr=True)
-            summary = "\n".join(
-                f"- {s['subtask_id']} [{s['status']}] {s['title']}"
-                + (" (verify PASS)" if (s.get('verify_result') or {}).get('passed') else "")
-                for s in state.subtasks if s["status"] != "removed") or "(no subtasks)"
-            rv = self._review("Pre-PR safety review", reason, summary, ollama_chat=self._ollamaChat,
-                              goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
+            diff = self._gitDiffForReview(work_dir)
+            if diff:
+                review_type, content = "pre_pr_diff", diff
+            else:
+                review_type = "pre_pr_diff"
+                content = "\n".join(
+                    f"- {s['subtask_id']} [{s['status']}] {s['title']}"
+                    + (" (verify PASS)" if (s.get('verify_result') or {}).get('passed') else "")
+                    for s in state.subtasks if s["status"] != "removed") or "(no subtasks)"
+            rv = self._consult(state, review_type, "Pre-PR safety review", reason, content)
             with self._state_lock:
-                state.addAdversaryReview("pre_pr", reason, rv["verdict"], None)
+                state.addAdversaryReview("pre_pr", reason, rv["verdict"], None, stub=rv.get("stub", False))
             discord.sendEmbed(discord.adversaryTriggeredEmbed("Pre-PR review", reason, rv.get("verdict")))
             return rv
         except Exception as e:  # noqa: BLE001 -- never block a run on the reviewer itself
@@ -1080,25 +1312,46 @@ class Orchestrator:
         """A run is degraded if its self-mod gate reverted core changes, or fewer than half its
         subtasks passed. Such a run must never auto-ship -- not even in night mode."""
         notes = state.data.get("notifications", []) if isinstance(state.data, dict) else []
-        if any(isinstance(n, dict) and n.get("kind") == "selfmod_gate"
-               and "REVERTED" in str(n.get("detail", "")) for n in notes):
+        # FX-11: key off the STRUCTURED `reverted` flag, not a "REVERTED" substring. A gate that KEPT
+        # a change on a pre-existing-red baseline must NOT be classified degraded (it deliberately kept).
+        if any(isinstance(n, dict) and n.get("kind") == "selfmod_gate" and n.get("reverted") for n in notes):
             return True
         done, total = state.progress()
         return total > 0 and done * 2 < total
 
     def _prGate(self, review: dict, auto_pr: bool, state: TaskState) -> "tuple[bool, str]":
         """Decide whether to create the PR. Returns (create, skip_reason)."""
+        from agents import second_brain
         if not auto_pr:
             return False, "--no-pr"
-        if config.ADVERSARY_PR_HOLD_ENABLED and review.get("verdict") == "challenged":
-            # Night mode normally suppresses the hold (hands-off operation), but a DEGRADED run
-            # (core changes reverted, or most subtasks failed) must still be held -- night mode
-            # should silence pings, not ship a broken branch unreviewed.
-            if not config.NIGHT_MODE or self._runIsDegraded(state):
-                concerns = "; ".join(review.get("concerns") or ["challenged"])
-                tag = "adversary HOLD" + (" (degraded run)" if config.NIGHT_MODE else "")
-                return False, f"{tag}: {concerns}"[:300]
+        # FX-18: a DEGRADED run (most subtasks failed, or core changes reverted) must NEVER open a PR,
+        # INDEPENDENT of the adversary verdict. The brain frequently auto-approves/stubs (empty
+        # completions), so gating the degraded check behind a 'challenged' verdict made it dead code.
+        if self._runIsDegraded(state):
+            return False, "degraded run (majority failed / core reverted) — PR held for review"
+        if config.ADVERSARY_PR_HOLD_ENABLED and second_brain.is_blocking(review):
+            # Night mode normally suppresses an advisory challenge hold (hands-off); the degraded
+            # check above already covers the must-never-ship cases regardless of night mode.
+            if not config.NIGHT_MODE:
+                concerns = "; ".join(review.get("must_fix") or review.get("concerns") or ["challenged"])
+                return False, f"adversary HOLD: {concerns}"[:300]
         return True, ""
+
+    def _prePrSuiteGate(self, state: TaskState, work_dir: str) -> "tuple[bool, str]":
+        """For a self-improvement run, run the FULL test suite before opening a PR so 9to5 NEVER ships
+        a PR whose own tests are broken. The selfmod gate only runs the suite when CORE files change;
+        a run that edits non-core files or adds tests (e.g. test dirs that shadow a real package) could
+        otherwise open a red PR. Returns (ok, detail). Best-effort: a gate-internal error does NOT
+        block the PR (we don't want the gate itself to wedge the run)."""
+        if not state.meta.get("is_self_referential"):
+            return True, ""
+        try:
+            import selfmod
+            passed, tail = selfmod._default_test_runner(work_dir)
+            return bool(passed), (tail or "")[-400:]
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("pre-PR suite gate errored (%s); not blocking PR", e)
+            return True, f"gate-error: {e}"
 
     # ===================================================================
     # Phase 4 -- PR creation (best effort; skips gracefully)
@@ -1123,10 +1376,27 @@ class Orchestrator:
             if chk.returncode != 0 or "true" not in (chk.stdout or "").lower():
                 LOG.info("PR skipped: %s is not a git repository", work_dir)
                 return {"skipped": True, "reason": "not a git repository"}
-            branch = f"9to5/{state.task_id[:8]}"
+            # FX-23: a self-ref run already works on `sc/<id>`; reuse it as the PR head so the announced
+            # branch IS the PR branch (no divergent `9to5/<id>` the user can't find).
+            branch = state.meta.get("self_ref_branch") or f"9to5/{state.task_id[:8]}"
             git("checkout", "-B", branch)
             git("add", "-A")
-            git("commit", "-m", f"9TO5: {state.meta['goal_raw'][:60]}")
+            # FX-7: a non-self-ref run wrote the living CLAUDE.md into the TARGET repo's root (the
+            # executor's cwd). Don't leak it into the PR: restore the repo's own tracked CLAUDE.md if
+            # it had one, else unstage the 9to5-created file so it isn't committed.
+            if not state.meta.get("is_self_referential"):
+                tracked = git("ls-files", "--error-unmatch", "CLAUDE.md").returncode == 0
+                if tracked:
+                    git("checkout", "--", "CLAUDE.md")        # restore the user's version
+                else:
+                    git("rm", "--cached", "--ignore-unmatch", "CLAUDE.md")   # drop 9to5's new file from the commit
+            commit = git("commit", "-m", f"9TO5: {state.meta['goal_raw'][:60]}")
+            # FX-16: if nothing was staged, the work never reached the tracked tree (e.g. the executor
+            # wrote only into the gitignored .sc-ctx scratch). Do NOT open an empty/misleading PR --
+            # report it honestly so the run finalizes 'partial', not a green "PR created".
+            if commit.returncode != 0 and "nothing to commit" in ((commit.stdout or "") + (commit.stderr or "")).lower():
+                LOG.warning("PR skipped: no tracked changes to commit (work may have landed in .sc-ctx)")
+                return {"skipped": True, "reason": "no tracked changes produced"}
             push = git("push", "-u", "origin", branch)
             if push.returncode != 0:
                 return {"skipped": True, "reason": f"git push failed: {(push.stderr or '')[:200]}"}
@@ -1152,6 +1422,12 @@ class Orchestrator:
         exec_cwd = exec_cwd or self._execCwd(state, sid, work_dir)
         dashboard.update(state, "executing", f"-> {sid} {subtask['title']}")
 
+        # Boundary divergence check (#12): observe-only, never blocks.
+        try:
+            _checkCodeDivergence(state)
+        except Exception:  # noqa: BLE001
+            pass
+
         attempt = 0
         passed = False
         failure_feedback = None
@@ -1168,7 +1444,12 @@ class Orchestrator:
             spec = self.authorInvocationSpec(state, subtask, architect_doc, failure_feedback)
             with self._state_lock:
                 sess = dict(subtask.get("session") or {})
-                sess.update({"effort": spec.get("effort_level"), "model": config.PRIMARY_MODEL,
+                # FX-20: record the model the executor will ACTUALLY route to by effort (low->haiku,
+                # default/high->sonnet, xhigh/ultracode->opus) -- not a hardcoded opus. State/Obsidian/
+                # dashboards/SIE attribution read session.model and were wrong for most subtasks.
+                routed_model = config.MODEL_BY_EFFORT.get(
+                    (spec.get("effort_level") or "default").lower(), config.PRIMARY_MODEL)
+                sess.update({"effort": spec.get("effort_level"), "model": routed_model,
                              "skills": spec.get("skills_to_invoke"), "subagent": spec.get("subagent"),
                              "surfaces": surfaces.surfaces_used(spec),   # SIE surface learning
                              "use_workflow": bool(spec.get("use_workflow")), "attempts": attempt})
@@ -1197,8 +1478,21 @@ class Orchestrator:
             if stderr_text:
                 combined += "\n[stderr]\n" + stderr_text
 
-            vresult = verifier.runVerification(verify_spec, exec_cwd, result)
+            # FX-1: an ABSENT verify must not be a blind "the CLI didn't crash = PASS". If the subtask
+            # references a fresh artifact this attempt produced, synthesize a behavioral check (run it)
+            # so broken/partial work can actually FAIL. Only when nothing is referenceable do we fall
+            # back to the executor-exit-zero signal -- and we then mark the result `unverified` so
+            # status/embeds (and the pre-PR gate) don't treat it as a real verification.
+            effective_verify = verify_spec
+            if not (verify_spec or {}).get("cmd"):
+                synth = self._repairVerify(subtask, exec_cwd, attempt_started)
+                if synth:
+                    effective_verify = synth
+                    LOG.info("%s: no verify authored -> synthesized behavioral check %s", sid, synth["cmd"])
+            vresult = verifier.runVerification(effective_verify, exec_cwd, result)
             passed = bool(vresult["passed"])
+            if not (effective_verify or {}).get("cmd"):
+                vresult["unverified"] = True   # exit-zero fallback only; no behavioral assertion ran
             # VERIFY REPAIR: a brittle brain-authored verify must NEVER fail correct work. Re-verify with a
             # robust behavioral fallback (run the actual artifact). NOT gated on the executor exit code --
             # headless claude exits nonzero for benign reasons (fallback-model switch, a non-fatal tool
@@ -1272,17 +1566,19 @@ class Orchestrator:
             with self._state_lock:
                 heartbeat_ordinal = sum(1 for s in state.subtasks if s["status"] in ("done", "failed", "removed"))
             _adv_verdict = None
+            _adv_stub = False
             triggered, reason = adversary.shouldTrigger(combined, heartbeat_ordinal, attempt)
             if triggered:
                 rv = self._review(subtask["title"], reason, combined,
                                   ollama_chat=self._ollamaChat,
                                   goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
                 _adv_verdict = rv.get("verdict")
+                _adv_stub = rv.get("stub", False)
                 discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason, rv.get("verdict")))
                 with self._state_lock:
                     state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
                     self.obs.writeNote(state.subtaskReviewNoteRel(sid), self._reviewNote(subtask, reason, rv, combined))
-                    state.addAdversaryReview(sid, reason, rv["verdict"], state.subtaskReviewNoteRel(sid))
+                    state.addAdversaryReview(sid, reason, rv["verdict"], state.subtaskReviewNoteRel(sid), stub=rv.get("stub", False))
                 # TEETH: a challenged verdict on a PASSED subtask earns ONE bounded remediation
                 # attempt with the concerns injected. Never downgrades the passing result.
                 if (config.ADVERSARY_REMEDIATION_ENABLED and final == "done"
@@ -1294,13 +1590,15 @@ class Orchestrator:
             # the real verify + adversary verdict) and memoize a passing spec. Best-effort.
             try:
                 reflection.capture(run_id=state.task_id, subtask_id=sid, executor_output=combined,
-                                   verify_passed=passed, adversary_verdict=_adv_verdict)
+                                   verify_passed=passed, adversary_verdict=_adv_verdict,
+                                   adversary_stub=_adv_stub)
                 if passed and spec.get("prompt"):
                     import json as _json
                     solution_cache_spec = _json.dumps({k: spec.get(k) for k in
                         ("prompt", "effort_level", "skills_to_invoke", "subagent") if spec.get(k)})
                     experience.upsert_solution(solution_cache.signature_of(subtask.get("title", "")),
-                                               solution_cache_spec, verify_passed=True)
+                                               solution_cache_spec, verify_passed=True,
+                                               provenance='{"origin":"executor"}')
             except Exception:  # noqa: BLE001 -- learning never affects the run
                 pass
 
@@ -1402,13 +1700,21 @@ class Orchestrator:
             LOG.warning("backfill authoring failed (%s); using open-ended fallback", e)
             batch = []
         batch = [s for s in (batch or []) if isinstance(s, dict)]
-        if not batch:
+        if batch:
+            # A brain-authored batch IS tied to the goal's requirements, so requirement-aware
+            # strengthening is correct here.
+            batch = self._strengthenPlanVerifies(goal, batch)
+        else:
             # CONTINUITY FIX (found in the live test): the local 7B brain's JSON is unreliable, so
             # authorBackfillBatch frequently returns empty -- horizon-fill would then silently no-op
             # and a self-improvement run would finalize at ~30% of its horizon (18/60 min observed).
             # Fall back to ONE open-ended improvement subtask and let the capable executor (Claude)
             # choose the work, so the run keeps producing value until the deadline. Bounded by the
             # deadline and the pending-queue cap; each subtask is a real multi-minute run (no spin).
+            # IMPORTANT (LIVE BUG #2a): do NOT run _strengthenPlanVerifies on this OPEN-ENDED subtask
+            # -- it isn't tied to the goal's enumerated requirements, so a strict compound verify over
+            # all of them is wrong (it would spuriously fail, or pass trivially on bloated markers).
+            # Leave verify=None so it gates on the executor exiting cleanly.
             LOG.info("backfill: brain authored no batch -> enqueuing 1 open-ended improvement subtask")
             recent = "\n- ".join(done[-8:]) if done else "(none yet)"
             batch = [{
@@ -1421,7 +1727,6 @@ class Orchestrator:
                     f"and do NOT repeat recently-completed work:\n- {recent}"),
                 "layer": 3, "effort_level": "high", "verify": None,
             }]
-        batch = self._strengthenPlanVerifies(goal, batch)
         added = 0
         with self._state_lock:
             for s in batch[:room]:
@@ -1537,7 +1842,10 @@ class Orchestrator:
                 futures = {}
                 for st in batch:
                     position += 1
-                    ctx = os.path.join(work_dir, ".sc-ctx", st["subtask_id"])
+                    # FX-8: derive the cwd via the SAME helper as the sequential path so parallel and
+                    # sequential behave identically (the old hardcoded .sc-ctx broke non-self-ref
+                    # parallel runs -- wrong cwd, work lost, or FileNotFoundError on a missing dir).
+                    ctx = self._execCwd(state, st["subtask_id"], work_dir)
                     futures[pool.submit(self._executeSubtask, state, st, architect_doc,
                                         work_dir, bus, dashboard, position, ctx)] = st
                 abort = None
@@ -1584,16 +1892,26 @@ class Orchestrator:
         # The brain may return malformed add/remove (non-list, or items of the wrong type). A crash
         # here would propagate to the caller's handler and flip the just-COMPLETED subtask to failed,
         # so coerce defensively and skip any entry that isn't the expected shape.
+        # FX-24: de-dup adds against the live (pending/in-progress) queue so two parallel workers that
+        # both propose the same backfill title (their replan decisions race lock-free) don't enqueue
+        # duplicate subtasks that both run (wasted horizon / conflicting edits to the same file).
+        live_titles = {(s.get("title") or "").strip().lower()
+                       for s in state.subtasks if s["status"] in ("pending", "in_progress")}
         adds = decision.get("add") or []
         for add in (adds if isinstance(adds, list) else []):
             if not isinstance(add, dict):
                 continue
+            title = (add.get("title") or "untitled").strip()
+            if title.lower() in live_titles:
+                diff.append(f"(skipped duplicate add '{title}')")
+                continue
             if active >= config.MAX_SUBTASKS:
                 LOG.info("replan add skipped: MAX_SUBTASKS (%d) reached", config.MAX_SUBTASKS)
-                diff.append(f"(skipped add '{add.get('title')}' -- MAX_SUBTASKS cap)")
+                diff.append(f"(skipped add '{title}' -- MAX_SUBTASKS cap)")
                 break
-            st = state.addSubtask(add.get("title", "untitled"), add.get("description", ""),
+            st = state.addSubtask(title, add.get("description", ""),
                                   layer=add.get("layer", 3), verify=verifier.sanitizeVerify(add.get("verify")))
+            live_titles.add(title.lower())
             active += 1
             diff.append(f"+ {st['subtask_id']} {st['title']}")
         rems = decision.get("remove") or []
@@ -1604,6 +1922,10 @@ class Orchestrator:
             if st and st["status"] == "pending":
                 state.updateSubtask(rid, status="removed")
                 diff.append(f"- {rid} {st['title']}")
+                # FX-19: the BRAIN dropped a planned, never-completed subtask. For a bounded goal that
+                # means a deliverable was silently dropped -> the run is not a clean "done". Record it
+                # so finalization reports 'partial' rather than "done N/N" on the shrunken denominator.
+                state.addNotification("replan_removed", f"{rid} {st.get('title', '')}"[:200])
         diff.append("")
         state.addNotification("replan", decision.get("reason", "")[:200])
         self.obs.appendNote(state.replanLogRel(), "\n".join(diff) + "\n")
@@ -1655,9 +1977,10 @@ class Orchestrator:
             pass
 
     def _execCwd(self, state: TaskState, sid: str | None, work_dir: str) -> str:
-        """For self-referential runs, give the executor an isolated cwd so the living
-        CLAUDE.md never clobbers the project's own CLAUDE.md. The project root remains
-        an ancestor (auto-read for architecture); edits/verify use absolute paths."""
+        """For self-referential runs, give the executor an isolated cwd so the living CLAUDE.md never
+        clobbers the project's own CLAUDE.md (the project root stays an ancestor, auto-read). For a
+        non-self-ref run the cwd IS work_dir so relative-path writes land in the target tree -- the
+        living CLAUDE.md leak there is instead handled at PR-commit time (FX-7, see createPullRequest)."""
         if state.meta.get("is_self_referential") and os.path.abspath(work_dir) == os.path.abspath(str(config.PROJECT_ROOT)):
             ctx = os.path.join(str(config.PROJECT_ROOT), ".sc-ctx", sid or "architect")
             os.makedirs(ctx, exist_ok=True)
@@ -1692,6 +2015,9 @@ class Orchestrator:
         started = time.time()
         elaborated = state.meta["goal_elaborated"] or state.meta["goal_raw"]
         self.writeIndex(state)
+        # Phase 2: bring the GPT-5.5 second brain online for this run (probe + run conversation).
+        # No-op unless BROWSER_LAYER_ENABLED; failure leaves the Ollama brain in charge.
+        self._openChatGptSession(state, dashboard)
 
         try:
             if not resume and self._detectSelfReferential(state, work_dir):
@@ -1746,6 +2072,8 @@ class Orchestrator:
                 discord.sendEmbed(discord.architectDoneEmbed(state.architectNoteRel()))
                 state.addNotification("architect_done", state.architectNoteRel())
                 dashboard.update(state, "architecting", f"architecture done ({len(architect_doc)} chars)")
+                # Second brain: critique the architecture; concerns are folded into the doc.
+                architect_doc = self._architectureReview(state, architect_doc, dashboard)
 
                 # --- Phase 2: Planning ---
                 state.setStatus("planning")
@@ -1759,7 +2087,17 @@ class Orchestrator:
                 state.addNotification("planning_start", f"{len(state.subtasks)} subtasks")
                 self.writeIndex(state)
                 dashboard.update(state, "planning", f"planned {len(state.subtasks)} subtasks")
+                # Second brain: critique the plan BEFORE execution (missing steps, ordering, scope).
+                self._planReview(state, elaborated, dashboard)
                 self._checkControl(state, bus, dashboard, gate="plan")
+
+            # --- Epoch pin (run-start snapshot; observe-only, never blocks) ---
+            try:
+                state.setEpoch(epoch.snapshot(
+                    universe=(state.meta.get("universe") or {}),
+                    brain_tag=(state.meta.get("active_brain_tag") if isinstance(state.meta, dict) else None)))
+            except Exception:  # noqa: BLE001 -- epoch is observability; never break a run
+                pass
 
             # --- Phase 3: Execution ---
             state.setStatus("executing")
@@ -1771,18 +2109,45 @@ class Orchestrator:
             if state.meta.get("is_self_referential"):
                 try:
                     import selfmod
-                    gate = selfmod.safety_gate(work_dir, is_self_referential=True)
+                    gate = selfmod.safety_gate(work_dir, is_self_referential=True,
+                                               code_diverged=state.meta.get("code_diverged", False))
                     if gate.get("ran"):
-                        verdict = "PASSED" if gate.get("passed") else "REVERTED (tests failed)"
+                        # FX-11: label from the ACTUAL outcome. safety_gate may KEEP a core change when
+                        # the baseline is also red (kept_despite_failure) -- calling that "REVERTED" is
+                        # factually wrong AND trips _runIsDegraded's "REVERTED" match, holding a PR the
+                        # gate deliberately chose to keep. Record a structured `reverted` flag too.
+                        if gate.get("passed"):
+                            verdict = "PASSED"
+                        elif gate.get("reverted"):
+                            verdict = "REVERTED (tests failed)"
+                        else:
+                            verdict = "KEPT (pre-existing test failure)"
                         dashboard.update(state, "executing", f"core self-mod gate: {verdict}")
-                        state.addNotification("selfmod_gate", f"{verdict}: {gate.get('changed')}")
+                        state.addNotification("selfmod_gate", f"{verdict}: {gate.get('changed')}",
+                                              reverted=bool(gate.get("reverted")))
                 except Exception:  # noqa: BLE001 -- safety gate is best-effort, never blocks
                     LOG.warning("selfmod safety gate failed (ignored)", exc_info=True)
 
             # --- Phase 4: PR + complete ---
             self._checkControl(state, bus, dashboard, gate="pre_pr")
-            pr_review = self._prePrAdversary(state)
+            pr_review = self._prePrAdversary(state, work_dir)
             create_pr, skip_reason = self._prGate(pr_review, auto_pr, state)
+            if create_pr:
+                # Final gate: never open a PR whose own test suite is red (a self-improvement run can
+                # otherwise ship structurally-broken work the weak per-subtask verify missed, e.g. a
+                # tests/<pkg>/ dir that shadows a real package). The work stays on the branch for review.
+                suite_ok, suite_detail = self._prePrSuiteGate(state, work_dir)
+                if not suite_ok:
+                    create_pr = False
+                    skip_reason = "test suite failing — PR held for review"
+                    dashboard.update(state, "executing", "PR held: test suite failing")
+                    state.addNotification("pr_held", f"test suite failing: {suite_detail[:160]}")
+                    try:
+                        discord.sendEmbed(discord.noticeEmbed(
+                            "PR held: the run's own test suite is failing — work left on the branch for review.",
+                            title="🛡️ 9TO5 — PR held (red suite)"))
+                    except Exception:  # noqa: BLE001
+                        pass
             if create_pr:
                 pr = self.createPullRequest(state, work_dir)
             else:
@@ -1792,13 +2157,37 @@ class Orchestrator:
                     state.addNotification("pr_held", skip_reason)
             elapsed = _elapsedSince(state.meta["started_at"])
             done, total = state.progress()
-            final_status = "done" if (total > 0 and done == total) else "partial"
+            # FX-9: status must reflect REALITY. A PR HELD because the work is BROKEN (red suite) or
+            # DEGRADED (majority failed / core reverted) is NOT "done" -- report 'partial' so the
+            # complete embed can't claim success on broken work. An advisory adversary-challenge hold
+            # on otherwise all-done work stays "done" (the work completed; the PR is flagged for review).
+            reason = str(pr.get("reason", ""))
+            held_broken = bool(pr.get("skipped")) and any(
+                s in reason for s in ("test suite failing", "degraded run", "no tracked changes"))
+            # FX-19: for a BOUNDED (non-self-ref) goal, a planned subtask the brain removed without
+            # completing is a dropped deliverable -> not a clean "done" (self-ref runs have no fixed
+            # deliverable list, so their replan-removes are fine).
+            dropped_planned = (not state.meta.get("is_self_referential")) and any(
+                isinstance(n, dict) and n.get("kind") == "replan_removed"
+                for n in (state.data.get("notifications", []) or []))
+            all_done = total > 0 and done == total
+            final_status = "done" if (all_done and not held_broken and not dropped_planned) else "partial"
             state.setStatus(final_status)
             self.writeIndex(state)
             pr_link = pr.get("url") or f"skipped: {pr.get('reason', '')}"
             discord.sendEmbed(discord.completeEmbed(state, pr_link, _fmtElapsed(elapsed)))
             state.addNotification("complete", pr_link)
             dashboard.update(state, "complete", f"done {done}/{total} · {_fmtElapsed(elapsed)}")
+            # Trust telemetry rollup: surface GPT<->Ollama agreement + challenge stats for the run.
+            try:
+                from learning import adversary_trust
+                line = adversary_trust.dashboard_line(state.task_id)
+                dashboard.event(f"🧠 second brain: {line}")
+                self.obs.writeNote(state.taskNoteRel("adversary-trust") if hasattr(state, "taskNoteRel")
+                                   else f"tasks/{state.task_id}/adversary-trust.md",
+                                   f"# Adversary trust — {state.task_id}\n\n{line}\n")
+            except Exception:  # noqa: BLE001
+                pass
             LOG.info("Run complete: status=%s subtasks=%d/%d elapsed=%s",
                      final_status, done, total, _fmtElapsed(elapsed))
             return {
@@ -1843,6 +2232,7 @@ class Orchestrator:
                     "subtasks": [{"subtask_id": s["subtask_id"], "status": s["status"]} for s in state.subtasks]}
         finally:
             bus.setPendingGate(None)
+            self._closeChatGptSession()   # tear down the GPT-5.5 browser session for this run
             try:
                 dashboard.unpin()
             except Exception:  # noqa: BLE001
