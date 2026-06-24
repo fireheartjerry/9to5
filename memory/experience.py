@@ -205,7 +205,12 @@ def _ensureColumns(conn: sqlite3.Connection, table: str, cols: dict[str, str]) -
 
 # Columns added after the initial table DDL (table -> {col: decl}). Applied every
 # schema-ensure so an old db file is upgraded in place. Phases 2/4 extend this.
-_MIGRATIONS: dict[str, dict[str, str]] = {}
+_MIGRATIONS: dict[str, dict[str, str]] = {
+    "subtasks": {"adversary_stub": "INTEGER", "provenance": "TEXT"},
+    "prompt_variants": {"provenance": "TEXT"},
+    "reflections": {"provenance": "TEXT"},
+    "solution_cache": {"provenance": "TEXT"},
+}
 
 
 def _applyMigrations(conn: sqlite3.Connection) -> None:
