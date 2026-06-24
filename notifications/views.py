@@ -237,6 +237,115 @@ class WorkSetupView(discord.ui.View):
         self.stop()
 
 
+class WipeSetupView(discord.ui.View):
+    """Multi-select wipe config view. Shown immediately after /wipe."""
+    def __init__(self, owner_id: int):
+        super().__init__(timeout=120)
+        self.owner_id = owner_id
+        self.selected_keys: list[str] = []
+        self.backup = False
+
+    async def interaction_check(self, interaction: "discord.Interaction") -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Not your wipe dialog.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.select(
+        placeholder="Select categories to wipe…",
+        min_values=0,
+        max_values=7,
+        options=[
+            discord.SelectOption(label="Tasks", value="tasks",
+                                 description="Task JSON files (state/tasks/)"),
+            discord.SelectOption(label="Control Files", value="control",
+                                 description="Control bus files (state/control/)"),
+            discord.SelectOption(label="Experience DB", value="experience",
+                                 description="experience.db + audit + trust logs"),
+            discord.SelectOption(label="Obsidian Vault", value="vault",
+                                 description="vault/ directory"),
+            discord.SelectOption(label="Logs", value="logs",
+                                 description="logs/ directory"),
+            discord.SelectOption(label="Learning", value="learning",
+                                 description="learning/ directory"),
+            discord.SelectOption(label="Knowledge Base", value="knowledge",
+                                 description="knowledge/ directory"),
+        ],
+    )
+    async def _categories(self, interaction: "discord.Interaction", select: "discord.ui.Select"):  # noqa: ANN001
+        self.selected_keys = list(select.values)
+        await interaction.response.defer()
+
+    @discord.ui.select(
+        placeholder="Backup before wipe?",
+        min_values=1,
+        max_values=1,
+        options=[
+            discord.SelectOption(label="No backup", value="no", default=True),
+            discord.SelectOption(label="Backup first (tar.gz)", value="yes"),
+        ],
+    )
+    async def _backup(self, interaction: "discord.Interaction", select: "discord.ui.Select"):  # noqa: ANN001
+        self.backup = (select.values[0] == "yes")
+        await interaction.response.defer()
+
+    @discord.ui.button(label="Proceed to Confirm", style=discord.ButtonStyle.danger, emoji="⚠️")
+    async def _proceed(self, interaction: "discord.Interaction", button: "discord.ui.Button"):  # noqa: ANN001
+        if not self.selected_keys:
+            return await interaction.response.send_message(
+                "No categories selected — pick at least one.", ephemeral=True)
+        from wipe import CATEGORIES
+        items = [CATEGORIES[k]["label"] for k in self.selected_keys if k in CATEGORIES]
+        backup_note = " + backup" if self.backup else ""
+        summary = "\n".join(f"• {i}" for i in items)
+        await interaction.response.send_message(
+            f"**Confirm wipe{backup_note}:**\n{summary}\n\nThis cannot be undone.",
+            view=WipeConfirmView(self.owner_id, self.selected_keys, self.backup),
+            ephemeral=True,
+        )
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def _cancel(self, interaction: "discord.Interaction", button: "discord.ui.Button"):  # noqa: ANN001
+        for c in self.children:
+            c.disabled = True
+        await interaction.response.edit_message(content="Wipe cancelled.", view=self)
+        self.stop()
+
+
+class WipeConfirmView(discord.ui.View):
+    """Final confirm/cancel for a wipe. Executes then restarts the bot."""
+    def __init__(self, owner_id: int, keys: list[str], backup: bool):
+        super().__init__(timeout=60)
+        self.owner_id = owner_id
+        self.keys = keys
+        self.backup = backup
+
+    async def interaction_check(self, interaction: "discord.Interaction") -> bool:
+        return interaction.user.id == self.owner_id
+
+    @discord.ui.button(label="Confirm Wipe", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def _confirm(self, interaction: "discord.Interaction", button: "discord.ui.Button"):  # noqa: ANN001
+        import asyncio
+        from wipe import executeWipe, restartBot
+
+        await interaction.response.defer(ephemeral=True)
+        results = await asyncio.to_thread(executeWipe, self.keys, self.backup)
+        lines = "\n".join(v for v in results.values())
+        await interaction.followup.send(
+            f"**Wipe complete:**\n{lines}\n\n🔄 Restarting bot…", ephemeral=True)
+        self.stop()
+        await asyncio.sleep(1)
+        restartBot()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def _cancel(self, interaction: "discord.Interaction", button: "discord.ui.Button"):  # noqa: ANN001
+        for c in self.children:
+            c.disabled = True
+        await interaction.response.edit_message(content="Wipe cancelled.", view=self)
+        self.stop()
+
+
 class WorkModal(discord.ui.Modal, title="Start a 9TO5 run"):
     goal = discord.ui.TextInput(label="Goal", style=discord.TextStyle.paragraph,
                                 required=True, max_length=4000)

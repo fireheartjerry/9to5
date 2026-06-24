@@ -215,6 +215,19 @@ def registerSlashCommands(tree: "app_commands.CommandTree", client: "discord.Cli
         reply = await asyncio.to_thread(work_launcher.launchOrError, req)
         await interaction.followup.send(reply[:MAX_REPLY], ephemeral=True)
 
+    @tree.command(name="wipe", description="Factory reset — granular wipe of state, vault, and logs")
+    @cooldown
+    async def wipe(interaction):  # noqa: ANN001
+        if not _ownerOk(interaction):
+            return await interaction.response.send_message("⛔ Not authorized.", ephemeral=True)
+        from notifications.views import WipeSetupView
+        audit.record(interaction.user.id, "wipe", None, "slash")
+        await interaction.response.send_message(
+            "**Memory Wipe** — select categories and backup preference, then proceed:",
+            view=WipeSetupView(interaction.user.id),
+            ephemeral=True,
+        )
+
     @tree.command(name="runs", description="List recent runs")
     async def runs(interaction):  # noqa: ANN001
         await interaction.response.defer(ephemeral=True)
