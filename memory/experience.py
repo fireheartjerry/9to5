@@ -650,9 +650,12 @@ def clear_arms(db_path: Optional[Path] = None) -> None:
 
 def register_variant(role: str, body: str, *, state: str = "challenger",
                      parent_id: Optional[int] = None, file_path: Optional[str] = None,
+                     provenance: Optional[str] = None,
                      db_path: Optional[Path] = None) -> Optional[int]:
     """Register a prompt variant (deduped by role+body hash). Returns its id. If the body
-    already exists for the role, returns the existing id without changing its state."""
+    already exists for the role, returns the existing id without changing its state.
+
+    ``provenance`` is a JSON string stamped on new rows (not updated for deduped rows)."""
     import hashlib
     h = hashlib.sha256(body.encode("utf-8")).hexdigest()
     try:
@@ -666,9 +669,10 @@ def register_variant(role: str, body: str, *, state: str = "challenger",
                 (role,)).fetchone()["v"]
             cur = conn.execute(
                 """INSERT INTO prompt_variants
-                   (role, version, parent_id, body_hash, body, file_path, created_at, state)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (role, ver, parent_id, h, body, file_path, _nowIso(), state))
+                   (role, version, parent_id, body_hash, body, file_path, created_at, state,
+                    provenance)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (role, ver, parent_id, h, body, file_path, _nowIso(), state, provenance))
             return int(cur.lastrowid)
     except Exception as e:  # noqa: BLE001
         LOG.warning("register_variant failed (ignored): %s", e)
@@ -688,6 +692,22 @@ def get_champion_body(role: str, db_path: Optional[Path] = None) -> Optional[str
     return champ["body"] if champ else None
 
 
+def get_champion_provenance(role: str, db_path: Optional[Path] = None) -> Optional[dict]:
+    """Return the provenance dict for the current champion of ``role``, or None."""
+    import json
+    champ = get_champion(role, db_path=db_path)
+    if not champ:
+        return None
+    raw = champ.get("provenance")
+    if not raw:
+        return None
+    try:
+        val = json.loads(raw)
+        return val if isinstance(val, dict) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def fetch_variants(role: str, state: Optional[str] = None,
                    db_path: Optional[Path] = None) -> list[dict[str, Any]]:
     with _connect(db_path) as conn:
@@ -703,15 +723,18 @@ def fetch_variants(role: str, state: Optional[str] = None,
 
 def promote_variant(role: str, variant_id: int, db_path: Optional[Path] = None) -> bool:
     """Make ``variant_id`` the champion for ``role``; retire the previous champion(s).
-    Atomic: a single transaction so there is never two champions or none."""
+    Atomic: a single transaction so there is never two champions or none.
+    Stamps gate attestation on the promoted variant so provenance gate allows it."""
+    import json
+    _GATE_PROVENANCE = json.dumps({"origin": "brain", "attested_by": "sie:promotion-gate"})
     try:
         with _WRITE_LOCK, _connect(db_path) as conn:
             conn.execute(
                 "UPDATE prompt_variants SET state='retired' WHERE role=? AND state='champion'",
                 (role,))
             conn.execute(
-                "UPDATE prompt_variants SET state='champion' WHERE id=? AND role=?",
-                (variant_id, role))
+                "UPDATE prompt_variants SET state='champion', provenance=? WHERE id=? AND role=?",
+                (_GATE_PROVENANCE, variant_id, role))
         return True
     except Exception as e:  # noqa: BLE001
         LOG.warning("promote_variant failed (ignored): %s", e)
