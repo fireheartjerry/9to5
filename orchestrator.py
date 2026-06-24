@@ -297,6 +297,26 @@ def _chatText(resp) -> str:
         return ""
 
 
+def _fitUserToCtx(system: str, user: str, num_ctx: int, headroom: int) -> str:
+    """Bound the USER payload so system+user fits a FIXED num_ctx -- without growing the window
+    (which would force an ollama runner reload, the empty-completion storm) and without letting
+    ollama front-truncate the SYSTEM prompt (which carries the JSON-schema instruction format="json"
+    depends on). Elides the MIDDLE of an over-long user message: the embedded context (head) and the
+    actual instruction (tail) are kept; the bulk in between (executor output / architect.md) is what
+    overflows. ~3.5 chars/token estimate, matching the rest of the brain sizing."""
+    CHARS_PER_TOK = 3.5
+    budget = int((num_ctx - headroom) * CHARS_PER_TOK) - len(system)
+    if budget <= 0 or len(user) <= budget:
+        return user
+    marker = "\n\n...[context trimmed to fit the model window]...\n\n"
+    keep = budget - len(marker)
+    if keep <= 0:
+        return user[-budget:]
+    head = keep * 2 // 3
+    tail = keep - head
+    return user[:head] + marker + (user[-tail:] if tail > 0 else "")
+
+
 def _resultText(result, key: str = "stdout") -> str:
     """Pull a text field from an executor result, '' if the hands layer returned a non-string
     (the executor contract is str, but a fake/buggy/fuzzed one may not honor it)."""
@@ -416,6 +436,13 @@ class Orchestrator:
         Every system prompt is augmented with the live CLAUDE CODE CAPABILITIES block so
         Qwen reasons from the current Claude Code feature set on every single brain call."""
         system = injectCapabilities(system)
+        # ONE constant context window for every brain call. Sizing num_ctx per-prompt forces ollama
+        # to reload the entire 4.7GB runner on each change (the empty-completion storm: a slow reload
+        # under VRAM pressure gets its connection dropped -> "Load failed" -> empty). Instead keep
+        # num_ctx fixed and TRIM an over-long user payload so the system prompt -- which carries the
+        # JSON-schema instruction format="json" relies on -- is never the thing that gets truncated.
+        num_ctx = config.OLLAMA_NUM_CTX
+        user = _fitUserToCtx(system, user, num_ctx, config.OLLAMA_GEN_HEADROOM)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         # SIE Layer 5/G: route to a forced tag (adapter A/B eval), else the champion
         # adapter, else the frozen base. Best-effort -- any error falls back to OLLAMA_MODEL.
@@ -424,18 +451,12 @@ class Orchestrator:
             model = getattr(self, "_brain_tag_override", None) or finetune.active_brain_tag()
         except Exception:  # noqa: BLE001
             model = config.OLLAMA_MODEL
-        # Size num_ctx to the prompt. The ~2.2k-token capabilities block + a large user payload
-        # (adversary review / planner embed the full executor output + architect.md) can reach
-        # 10-13k tokens; at the static floor ollama truncates from the FRONT, drops the system
-        # prompt's JSON-schema instruction, and qwen dead-ends to an EMPTY completion -- the root
-        # cause of the "Brain (Ollama) unavailable; empty completion" fallback. Grow to fit
-        # prompt + reply headroom, clamped to a VRAM-safe ceiling (~3.5 chars/token estimate).
-        needed = int((len(system) + len(user)) / 3.5) + config.OLLAMA_GEN_HEADROOM
-        num_ctx = max(config.OLLAMA_NUM_CTX, min(needed, config.OLLAMA_NUM_CTX_MAX))
         delay = 2.0
         for attempt in range(1, retries + 1):
             try:
-                kwargs = {"options": {"num_ctx": num_ctx}}
+                # keep_alive pins the runner resident so a long Claude run between calls can't trigger
+                # an idle unload+reload; num_ctx is the shared constant so no call ever reloads it.
+                kwargs = {"options": {"num_ctx": num_ctx}, "keep_alive": config.OLLAMA_KEEP_ALIVE}
                 if want_json:
                     kwargs["format"] = "json"
                 resp = self.ollama.chat(model=model, messages=messages, **kwargs)
@@ -446,7 +467,8 @@ class Orchestrator:
                 # -- not gated to one index -- so a single transient empty no longer dooms the call.
                 if want_json and not _chatText(resp).strip():
                     resp = self.ollama.chat(model=model, messages=messages,
-                                            options={"num_ctx": num_ctx})
+                                            options={"num_ctx": num_ctx},
+                                            keep_alive=config.OLLAMA_KEEP_ALIVE)
                     if not _chatText(resp).strip():
                         raise ValueError("empty completion")
                 return resp
@@ -1180,13 +1202,14 @@ class Orchestrator:
             return
         try:
             from agents import browser_executor
-            session = browser_executor.get_session()
-            if not session.health_probe():
+            # All session ops go through browser_executor's dedicated single thread so sync-Playwright
+            # thread affinity holds even though the second brain is later consulted from pool workers.
+            if not browser_executor.probe():
                 discord.sendEmbed(discord.noticeEmbed(
                     "GPT-5.5 second brain unavailable (health probe failed) — Ollama for this run."))
                 return
-            session.start_run_conversation(self._goalText(state), state.task_id)
-            self._chatgpt_session = session
+            browser_executor.startConversation(self._goalText(state), state.task_id)
+            self._chatgpt_session = browser_executor
             self._chatgpt_ask = lambda message: browser_executor.sessionAsk(message, expect_json=True)
             self._chatgpt_session_ok = True
             LOG.info("GPT-5.5 second brain online for task %s", state.task_id)
@@ -1198,7 +1221,7 @@ class Orchestrator:
     def _closeChatGptSession(self) -> None:
         try:
             if self._chatgpt_session is not None:
-                self._chatgpt_session.close()
+                self._chatgpt_session.closeSession()   # browser_executor: closes on the dedicated thread
         except Exception:  # noqa: BLE001
             pass
         self._chatgpt_session = None

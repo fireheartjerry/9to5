@@ -16,8 +16,10 @@ See docs (Layer 1 browser) + surfaces.py + the orchestrator dispatcher.
 from __future__ import annotations
 
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import config
 from agents import executor
@@ -188,6 +190,32 @@ def _replyFromTranscript(transcript: str) -> str:
 # test path used when a ``runner`` is injected explicitly.
 _SESSION = None
 
+# Sync Playwright is THREAD-AFFINE: every call on a browser/page/context must happen on the
+# SAME thread that created it, and that thread must NOT have a running asyncio loop. The
+# orchestrator opens the session on its main thread but consults the second brain from
+# ThreadPoolExecutor workers (parallel subtasks), and the Discord bot drives the pre-flight
+# from asyncio.to_thread workers -- both cross the affinity boundary, which surfaced as
+# "Cannot switch to a different thread" / "Sync API inside the asyncio loop" health-probe
+# failures. Pin the ENTIRE session lifecycle to ONE dedicated worker thread and marshal every
+# operation onto it, so no caller thread ever touches a Playwright object directly.
+_SESSION_EXEC: Optional[ThreadPoolExecutor] = None
+_EXEC_LOCK = threading.Lock()
+
+
+def _executor() -> ThreadPoolExecutor:
+    global _SESSION_EXEC
+    if _SESSION_EXEC is None:
+        with _EXEC_LOCK:
+            if _SESSION_EXEC is None:
+                _SESSION_EXEC = ThreadPoolExecutor(max_workers=1, thread_name_prefix="chatgpt-session")
+    return _SESSION_EXEC
+
+
+def _call(fn: Callable, *args, **kwargs):
+    """Run a session operation on the dedicated single thread and block for its result, so
+    sync-Playwright thread affinity holds no matter which thread the caller runs on."""
+    return _executor().submit(lambda: fn(*args, **kwargs)).result()
+
 
 def get_session():
     """Lazily build the process-wide ChatGPTSession (does NOT open the browser yet)."""
@@ -198,11 +226,58 @@ def get_session():
     return _SESSION
 
 
+def probe() -> bool:
+    """Health-probe the session on the dedicated thread. Never raises; False on any failure."""
+    return bool(_call(lambda: get_session().health_probe()))
+
+
+def startConversation(goal: str, task_id: str) -> None:
+    """Start the single run conversation on the dedicated thread."""
+    _call(lambda: get_session().start_run_conversation(goal, task_id))
+
+
+def closeSession() -> None:
+    """Close + tear down the session on the dedicated thread (where it was created)."""
+    if _SESSION is not None:
+        _call(lambda: _SESSION.close())
+
+
+def preflightLogin(timeout_s: int = 300, poll_s: int = 3) -> bool:
+    """Open the browser, poll until logged in (READY) or timeout, then close -- ALL on the one
+    dedicated thread so the Discord bot's asyncio loop never touches a Playwright object. The
+    close releases the profile lock so the orchestrator's own session can launch it next.
+    Returns True if login was confirmed."""
+    return bool(_call(_preflightLoginBlocking, timeout_s, poll_s))
+
+
+def _preflightLoginBlocking(timeout_s: int, poll_s: int) -> bool:
+    import time
+    from agents.chatgpt_driver import READY, classify_state
+    sess = get_session()
+    try:
+        sess.open()
+        sess.page.goto("https://chatgpt.com/", wait_until="domcontentloaded", timeout=30000)
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if classify_state(sess.page) == READY:
+                return True
+            time.sleep(poll_s)
+        return False
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("preflightLogin error: %s", e)
+        return False
+    finally:
+        try:
+            sess.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def sessionAsk(message: str, *, expect_json: bool = False) -> Optional[str]:
-    """Ask GPT-5.5 one message through the intelligent session. Re-raises typed ChatGPTError
-    subclasses (login/Cloudflare/rate-limit) so the Adversary can route the fallback chain;
-    returns None on a benign empty reply."""
-    return get_session().ask(message, expect_json=expect_json)
+    """Ask GPT-5.5 one message through the intelligent session, marshaled onto the dedicated
+    session thread. Re-raises typed ChatGPTError subclasses (login/Cloudflare/rate-limit) so the
+    Adversary can route the fallback chain; returns None on a benign empty reply."""
+    return _call(lambda: get_session().ask(message, expect_json=expect_json))
 
 
 def askChatGPT(message: str, *, runner=None, work_dir: Optional[str] = None,
