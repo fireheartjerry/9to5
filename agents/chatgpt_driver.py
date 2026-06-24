@@ -393,6 +393,14 @@ class ChatGPTSession:
             return True
         except Exception as e:  # noqa: BLE001
             LOG.warning("health probe failed: %s", e)
+            # Tear down the browser we just launched. Otherwise a failed probe (login wall /
+            # Cloudflare / rate-limit / goto timeout) leaks the Chromium context + Playwright driver,
+            # orphaning a chrome.exe that keeps holding the single-instance profile lock and blocks
+            # every later launch -- the zombie cascade. close() is idempotent and never raises.
+            try:
+                self.close()
+            except Exception:  # noqa: BLE001
+                pass
             return False
 
 
