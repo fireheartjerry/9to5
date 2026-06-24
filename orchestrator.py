@@ -1920,7 +1920,8 @@ class Orchestrator:
             if state.meta.get("is_self_referential"):
                 try:
                     import selfmod
-                    gate = selfmod.safety_gate(work_dir, is_self_referential=True)
+                    gate = selfmod.safety_gate(work_dir, is_self_referential=True,
+                                               code_diverged=state.meta.get("code_diverged", False))
                     if gate.get("ran"):
                         # FX-11: label from the ACTUAL outcome. safety_gate may KEEP a core change when
                         # the baseline is also red (kept_despite_failure) -- calling that "REVERTED" is
