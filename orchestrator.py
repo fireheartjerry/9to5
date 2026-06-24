@@ -21,6 +21,7 @@ import ollama
 
 import config
 import knowledge
+import llm_io
 import surfaces
 from agents import adversary, architect, clarifier, executor, replanner, verifier
 from control import AbortRun, ControlBus
@@ -287,14 +288,12 @@ def _elapsedSince(started_at_iso: str) -> float:
 
 
 def _chatText(resp) -> str:
-    """Safely pull resp['message']['content'] as text. '' for ANY malformed shape
-    (None resp, non-dict message, non-string content) -- the 7B brain emits all of these."""
-    try:
-        msg = resp.get("message") if isinstance(resp, dict) else None
-        content = msg.get("content") if isinstance(msg, dict) else None
-        return content if isinstance(content, str) else ""
-    except Exception:  # noqa: BLE001
-        return ""
+    """Safely pull resp['message']['content'] as text. '' for ANY malformed shape (None resp,
+    non-dict message, non-string content) -- the 7B brain emits all of these. Delegates to
+    llm_io.responseText, which ALSO handles the ollama-python PYDANTIC ChatResponse: the real
+    client returns objects (not dicts), so the old isinstance(dict) gate made every reply look
+    empty -- the actual root cause of the "Brain (Ollama) unavailable; empty completion" notice."""
+    return llm_io.responseText(resp)
 
 
 def _fitUserToCtx(system: str, user: str, num_ctx: int, headroom: int) -> str:
@@ -330,7 +329,7 @@ def _chatJson(resp):
     Salvages the two ways a 7B model commonly breaks strict JSON: wrapping it in a ```json
     fence, and emitting prose around the object. We strip a fence, then fall back to extracting
     the first balanced {...} -- so a recoverable response no longer collapses to the degenerate
-    single-subtask plan fallback."""
+    single-subtask plan fallback. Pydantic-aware via _chatText -> llm_io.responseText."""
     import re as _re
     text = _chatText(resp).strip()
     if not text:

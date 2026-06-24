@@ -17,6 +17,7 @@ import re
 from typing import Callable, Optional
 
 import config
+import llm_io
 
 LOG = config.getLogger("clarifier")
 
@@ -113,10 +114,8 @@ def answerClarifications(chat: Callable, goal: str, subtask: dict, claude_output
         return None
     if not resp:
         return None
-    # Type-check the extraction (CB-2): a present-but-None content (empty/tool-call Message) would
-    # make `.strip()` raise AttributeError OUTSIDE the try above, unwinding out of _executeSubtask
-    # and forfeiting a struggling subtask's remaining retries. Mirror architect.py's safe parse.
-    msg = resp.get("message") if isinstance(resp, dict) else None
-    content = msg.get("content") if isinstance(msg, dict) else None
-    answer = content.strip() if isinstance(content, str) else ""
+    # Safe extraction (CB-2): a present-but-None content (empty/tool-call Message) must not make
+    # `.strip()` raise AttributeError out of _executeSubtask, forfeiting a subtask's retries.
+    # llm_io.responseText handles dict AND pydantic ChatResponse AND every malformed shape.
+    answer = llm_io.responseText(resp).strip()
     return answer or None

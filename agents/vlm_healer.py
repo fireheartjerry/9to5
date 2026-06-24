@@ -18,6 +18,7 @@ import re
 from typing import Any, Optional
 
 import config
+import llm_io
 
 LOG = config.getLogger("vlm_healer")
 
@@ -81,7 +82,7 @@ def heal(screenshot_png: bytes, dom_html: str, *, want: str) -> dict:
             options={"num_ctx": config.OLLAMA_NUM_CTX},
             keep_alive=config.OLLAMA_KEEP_ALIVE,
         )
-        content = (resp.get("message") or {}).get("content") if isinstance(resp, dict) else None
+        content = llm_io.responseText(resp) or None   # dict- AND pydantic-aware (else every reply looked empty)
         data = _loadJson(content)
         if not isinstance(data, dict):
             return {}

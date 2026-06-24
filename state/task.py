@@ -363,7 +363,8 @@ class TaskState:
         return rec
 
     def addNotification(self, kind: str, detail: str, **extra: Any) -> dict[str, Any]:
-        rec = {"kind": kind, "detail": detail, "at": nowIso(), **extra}
+        from notifications.entry import makeEntry
+        rec = makeEntry(kind, detail, **extra)
         self.data["notifications"].append(rec)
         self.save()
         return rec
@@ -373,6 +374,16 @@ class TaskState:
         self.data["context_handoffs"].append(rec)
         self.save()
         return rec
+
+    def saveDashboardEvents(self, events: list) -> None:
+        """Persist the recent-events ring so the dashboard survives a resilience restart."""
+        self.data["dashboard_events"] = list(events)
+        self.save()
+
+    def setDashboardMessageId(self, message_id: str) -> None:
+        """Persist the Discord dashboard message ID so a resilience restart can reuse it."""
+        self.meta["dashboard_message_id"] = message_id
+        self.save()
 
     # ---- progress helpers ----------------------------------------------
     def progress(self) -> tuple[int, int]:

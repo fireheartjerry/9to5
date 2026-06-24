@@ -23,6 +23,7 @@ import time
 from typing import Callable, Optional
 
 import config
+import llm_io
 
 LOG = config.getLogger("adversary")
 
@@ -297,7 +298,7 @@ def review(subtask_title: str, trigger_reason: str, executor_output: str, *,
     user = _buildReviewUser(subtask_title, trigger_reason, executor_output, goal)
     try:
         resp = ollama_chat(systemFor(review_type), user, want_json=True)
-        content = (resp.get("message") or {}).get("content") if isinstance(resp, dict) else None
+        content = llm_io.responseText(resp) or None   # dict- AND pydantic-aware (else every reply looked empty)
         data = _loadJsonLoose(content)
         if not isinstance(data, dict):
             raise ValueError("non-object review payload")
@@ -317,6 +318,7 @@ def review(subtask_title: str, trigger_reason: str, executor_output: str, *,
             **_richFields(data, verdict),
         }
     except Exception as e:  # noqa: BLE001
-        LOG.warning("Adversary brain critique failed (%s); conservative auto-approve", e)
+        LOG.warning("Adversary brain critique failed (%s); conservative auto-approve", e,
+                    exc_info=True)
         return _stubReview(trigger_reason,
                            note=f"Adversary critique errored ({e}); auto-approved conservatively.")

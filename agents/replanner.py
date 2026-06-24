@@ -14,9 +14,17 @@ import ollama
 
 import config
 import knowledge
+import llm_io
 
 LOG = config.getLogger("replanner")
-_OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
+_OLLAMA: "ollama.Client | None" = None
+
+
+def _getOllama() -> "ollama.Client":
+    global _OLLAMA
+    if _OLLAMA is None:
+        _OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
+    return _OLLAMA
 
 REPLANNER_SYSTEM = (
     "You are the Replanner for 9TO5. After each subtask, decide whether the remaining plan should "
@@ -66,7 +74,7 @@ def replan(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, execu
         # self-improvement runs replan by impact, not by checklist
         system = config.SELF_IMPROVEMENT_PHILOSOPHY + "\n\n" + REPLANNER_SYSTEM
     try:
-        resp = _OLLAMA.chat(
+        resp = _getOllama().chat(
             model=config.OLLAMA_MODEL,
             messages=[{"role": "system", "content": knowledge.injectCapabilities(system)},
                       {"role": "user", "content": user}],
@@ -74,7 +82,9 @@ def replan(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, execu
             options={"num_ctx": config.OLLAMA_NUM_CTX},
             keep_alive=config.OLLAMA_KEEP_ALIVE,
         )
-        data = json.loads(resp["message"]["content"])
+        data = llm_io.responseJson(resp)   # dict- AND pydantic-aware; salvages fenced/prose JSON
+        if not isinstance(data, dict):
+            raise ValueError("replan payload not a JSON object")
         data.setdefault("action", "keep")
         data.setdefault("add", [])
         data.setdefault("remove", [])
