@@ -905,19 +905,30 @@ def fetch_failure_modes(signature_tags: Optional[str] = None,
         return [dict(r) for r in rows]
 
 
+_EXECUTOR_PROVENANCE = '{"origin":"executor"}'
+
+
 def upsert_solution(signature: str, spec_json: str, *, verify_passed: bool,
+                    provenance: Optional[str] = None,
                     db_path: Optional[Path] = None) -> bool:
-    """Cache a working solution keyed by signature (O)."""
+    """Cache a working solution keyed by signature (O).
+
+    ``provenance`` should be a JSON string describing the origin of this spec.
+    Defaults to ``{"origin":"executor"}`` (untrusted) so that a raw verify-pass
+    is NOT warm-startable unless the caller explicitly stamps a trusted provenance
+    (e.g. gold rows from build_from_ledger).
+    """
+    prov = provenance if provenance is not None else _EXECUTOR_PROVENANCE
     try:
         with _WRITE_LOCK, _connect(db_path) as conn:
             conn.execute(
                 """INSERT INTO solution_cache
-                   (signature, spec_json, last_verify_passed, reuse_count, last_used_at)
-                   VALUES (?, ?, ?, 0, ?)
+                   (signature, spec_json, last_verify_passed, reuse_count, last_used_at, provenance)
+                   VALUES (?, ?, ?, 0, ?, ?)
                    ON CONFLICT(signature) DO UPDATE SET
                      spec_json=excluded.spec_json, last_verify_passed=excluded.last_verify_passed,
-                     last_used_at=excluded.last_used_at""",
-                (signature, spec_json, 1 if verify_passed else 0, _nowIso()))
+                     last_used_at=excluded.last_used_at, provenance=excluded.provenance""",
+                (signature, spec_json, 1 if verify_passed else 0, _nowIso(), prov))
         return True
     except Exception as e:  # noqa: BLE001
         LOG.warning("upsert_solution failed (ignored): %s", e)

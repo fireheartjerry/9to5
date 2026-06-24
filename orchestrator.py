@@ -1393,7 +1393,8 @@ class Orchestrator:
                     solution_cache_spec = _json.dumps({k: spec.get(k) for k in
                         ("prompt", "effort_level", "skills_to_invoke", "subagent") if spec.get(k)})
                     experience.upsert_solution(solution_cache.signature_of(subtask.get("title", "")),
-                                               solution_cache_spec, verify_passed=True)
+                                               solution_cache_spec, verify_passed=True,
+                                               provenance='{"origin":"executor"}')
             except Exception:  # noqa: BLE001 -- learning never affects the run
                 pass
 
