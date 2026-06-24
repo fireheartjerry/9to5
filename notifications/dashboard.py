@@ -162,7 +162,15 @@ class DiscordDashboard:
         if not config.DISCORD_DASHBOARD:
             return
         self._state_lock = state_lock
+        # Restore the event ring from a previous run so Recent Events survives a resilience restart
+        with self._lock:
+            for e in state.data.get("dashboard_events", []):
+                self.events.append(e)
         self.event(f"run started · mode `{state.meta.get('control_mode', 'watch')}`")
+        try:
+            state.saveDashboardEvents(self._eventsSnapshot())
+        except Exception:  # noqa: BLE001 -- never fail a run over event persistence
+            pass
         embed = self._embed(state, phase)
         with self._send_lock:
             # Reuse existing dashboard message when resilience restarts the same task — avoids
@@ -203,6 +211,10 @@ class DiscordDashboard:
                 self.model = model
         if note:
             self.event(note)
+        try:
+            state.saveDashboardEvents(self._eventsSnapshot())
+        except Exception:  # noqa: BLE001 -- never fail a run over event persistence
+            pass
         embed = self._embed(state, phase)
         with self._send_lock:
             row = branding.controlPanelRow()

@@ -1,8 +1,12 @@
 """Unit tests for DiscordDashboard (no live Discord connection)."""
+import sys
 import threading
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config
 from notifications.dashboard import DiscordDashboard
@@ -185,6 +189,77 @@ class TestEmbedBuilding(unittest.TestCase):
             d.update(_state(), "executing", effort="high", model="claude-opus")
         self.assertEqual(d.effort, "high")
         self.assertEqual(d.model, "claude-opus")
+
+
+class TestEventPersistence(unittest.TestCase):
+    def test_start_loads_persisted_events(self):
+        """Events stored in state.data are prepended into the deque on start()."""
+        d = DiscordDashboard()
+        st = _state()
+        st.data["dashboard_events"] = ["`09:00` old event"]
+        with mock.patch.object(config, "DISCORD_DASHBOARD", True), \
+             mock.patch.object(d, "_embed", return_value={}), \
+             mock.patch("notifications.dashboard.discord.editMessageResult", return_value="not_found"), \
+             mock.patch("notifications.dashboard.discord.createMessage", return_value="999"), \
+             mock.patch("notifications.dashboard.discord.pinMessage"), \
+             mock.patch.object(st, "saveDashboardEvents"):
+            d.start(st)
+        snap = d._eventsSnapshot()
+        self.assertTrue(any("old event" in e for e in snap))
+
+    def test_start_saves_events_to_state(self):
+        """start() persists the updated event ring back to state."""
+        d = DiscordDashboard()
+        st = _state()
+        with mock.patch.object(config, "DISCORD_DASHBOARD", True), \
+             mock.patch.object(d, "_embed", return_value={}), \
+             mock.patch("notifications.dashboard.discord.editMessageResult", return_value="not_found"), \
+             mock.patch("notifications.dashboard.discord.createMessage", return_value="999"), \
+             mock.patch("notifications.dashboard.discord.pinMessage"), \
+             mock.patch.object(st, "saveDashboardEvents") as save_ev:
+            d.start(st)
+        save_ev.assert_called_once()
+        saved = save_ev.call_args[0][0]
+        self.assertTrue(any("run started" in e for e in saved))
+
+    def test_update_persists_events_to_state(self):
+        """update() saves the event ring (including the new event) to state."""
+        d = DiscordDashboard()
+        d.message_id = "abc"
+        st = _state()
+        with mock.patch.object(config, "DISCORD_DASHBOARD", True), \
+             mock.patch.object(d, "_embed", return_value={}), \
+             mock.patch("notifications.dashboard.discord.editMessageResult", return_value="ok"), \
+             mock.patch("notifications.branding.controlPanelRow", return_value=[]), \
+             mock.patch.object(st, "saveDashboardEvents") as save_ev:
+            d.update(st, "executing", note="step done")
+        save_ev.assert_called()
+        saved = save_ev.call_args[0][0]
+        self.assertTrue(any("step done" in e for e in saved))
+
+    def test_update_persists_even_without_note(self):
+        """update() always calls saveDashboardEvents, not only when there is a note."""
+        d = DiscordDashboard()
+        d.message_id = "abc"
+        st = _state()
+        with mock.patch.object(config, "DISCORD_DASHBOARD", True), \
+             mock.patch.object(d, "_embed", return_value={}), \
+             mock.patch("notifications.dashboard.discord.editMessageResult", return_value="ok"), \
+             mock.patch("notifications.branding.controlPanelRow", return_value=[]), \
+             mock.patch.object(st, "saveDashboardEvents") as save_ev:
+            d.update(st, "executing")
+        save_ev.assert_called()
+
+    def test_persistence_noop_when_discord_disabled(self):
+        """When DISCORD_DASHBOARD is False, start() exits before touching events."""
+        d = DiscordDashboard()
+        st = _state()
+        st.data["dashboard_events"] = ["`09:00` old event"]
+        with mock.patch.object(config, "DISCORD_DASHBOARD", False), \
+             mock.patch.object(st, "saveDashboardEvents") as save_ev:
+            d.start(st)
+        save_ev.assert_not_called()
+        self.assertEqual(len(d._eventsSnapshot()), 0)
 
 
 if __name__ == "__main__":

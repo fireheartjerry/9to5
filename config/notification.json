@@ -1,0 +1,26 @@
+{
+  "environment": "production",
+  "discord": {
+    "poll_seconds": 4,
+    "dashboard": true,
+    "rest_timeout": 15,
+    "retry_max": 2,
+    "max_content": 2000,
+    "max_embed_desc": 4096,
+    "max_field_name": 256,
+    "max_field_value": 1024,
+    "embed_total_max": 6000
+  },
+  "webdash": {
+    "host": "127.0.0.1",
+    "port": 8787
+  },
+  "milestones": [
+    "planning_start",
+    "architect_done",
+    "adversary_triggered",
+    "subtask_failed",
+    "complete",
+    "aborted"
+  ]
+}
