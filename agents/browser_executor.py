@@ -252,19 +252,28 @@ def preflightLogin(timeout_s: int = 300, poll_s: int = 3) -> bool:
 
 def _preflightLoginBlocking(timeout_s: int, poll_s: int) -> bool:
     import time
-    from agents.chatgpt_driver import READY, classify_state
+    from agents.chatgpt_driver import READY, ChatGPTError, classify_state
     sess = get_session()
+    deadline = time.monotonic() + timeout_s
     try:
-        sess.open()
-        sess.page.goto("https://chatgpt.com/", wait_until="domcontentloaded", timeout=30000)
-        deadline = time.monotonic() + timeout_s
+        # Open/navigate INSIDE the poll loop so a TRANSIENT open/nav blip (a slow page, a momentary
+        # network error) is retried until the deadline -- it must NOT immediately return False, which
+        # the caller treats as 'login timed out' and aborts the whole /work run. Only a SUSTAINED
+        # failure (deadline reached) or a hard 'browser unavailable' returns False.
         while time.monotonic() < deadline:
-            if classify_state(sess.page) == READY:
-                return True
+            try:
+                sess.open()
+                sess.page.goto("https://chatgpt.com/", wait_until="domcontentloaded", timeout=30000)
+                if classify_state(sess.page) == READY:
+                    return True
+            except ChatGPTError as e:
+                if any(s in str(e).lower() for s in ("unavailable", "blocked under a test")):
+                    LOG.warning("preflight: browser unavailable, not retrying: %s", e)
+                    return False
+                LOG.debug("preflight transient ChatGPTError (will retry): %s", e)
+            except Exception as e:  # noqa: BLE001 -- transient open/nav/classify error -> retry
+                LOG.debug("preflight transient error (will retry): %s", e)
             time.sleep(poll_s)
-        return False
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("preflightLogin error: %s", e)
         return False
     finally:
         try:

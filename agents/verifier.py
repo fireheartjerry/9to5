@@ -304,13 +304,15 @@ def _evaluate(expect: str, returncode: int, stdout: str) -> bool:
         # and fall back to the exit code, so a crash can't false-PASS.
         if not needle:
             return returncode == 0
-        return needle in stdout
+        # Gate on a clean exit too: a program that prints the needle and THEN crashes (non-zero exit)
+        # was false-passing -- a program asserting its own output should exit 0.
+        return returncode == 0 and needle in stdout
     if expect.startswith("stdout_regex:"):
         pattern = expect[len("stdout_regex:"):]
         if not pattern:                       # FX-2: empty pattern -> re.search("") always matches
             return returncode == 0
         try:
-            return re.search(pattern, stdout) is not None
+            return returncode == 0 and re.search(pattern, stdout) is not None
         except re.error:
             return False
     # Compound expectations -- pass ONLY if EVERY '||'-separated needle/pattern is present.
@@ -318,13 +320,13 @@ def _evaluate(expect: str, returncode: int, stdout: str) -> bool:
     # subtask that did 1 of 3 can no longer slip through (the original 'partial work passed' bug).
     if expect.startswith("stdout_contains_all:"):
         needles = [n for n in expect[len("stdout_contains_all:"):].split("||") if n]
-        return bool(needles) and all(n in stdout for n in needles)
+        return returncode == 0 and bool(needles) and all(n in stdout for n in needles)
     if expect.startswith("stdout_regex_all:"):
         pats = [p for p in expect[len("stdout_regex_all:"):].split("||") if p]
         if not pats:
             return False
         try:
-            return all(re.search(p, stdout) is not None for p in pats)
+            return returncode == 0 and all(re.search(p, stdout) is not None for p in pats)
         except re.error:
             return False
     # Unknown expectation -> conservative default.
