@@ -217,8 +217,10 @@ def _depends_on(tree: ast.Module, roots: set[str], *, toplevel_only: bool = Fals
 
 
 def _read_source(path: Path) -> str:
-    """Read source, stripping a leading UTF-8 BOM (some files carry one; ast.parse rejects it)."""
-    return path.read_text(encoding="utf-8-sig")
+    """Read source, normalized for stable comparison: strip a leading UTF-8 BOM (some files carry
+    one; ast.parse rejects it) and fold CRLF/CR -> LF so the drift test never trips on a Windows
+    autocrlf checkout (the generator always writes LF)."""
+    return path.read_text(encoding="utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
 
 
 def parse_module(path: Path, roots: set[str]) -> dict:

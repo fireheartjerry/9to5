@@ -5654,70 +5654,70 @@
           "kind": "function",
           "signature": "(path: Path, roots: set[str]) -> dict",
           "summary": "Extract the per-module record (sans callers, which are computed globally).",
-          "lineno": 224
+          "lineno": 226
         },
         {
           "name": "find_tests",
           "kind": "function",
           "signature": "(dotted: str, name: str) -> list[str]",
           "summary": "Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> glob -> [].",
-          "lineno": 242
+          "lineno": 244
         },
         {
           "name": "build_map",
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> dict",
           "summary": "Full-repo machine index",
-          "lineno": 254
+          "lineno": 256
         },
         {
           "name": "toplevel_import_graph",
           "kind": "function",
           "signature": "() -> dict[str, list[str]]",
           "summary": "{dotted-module: [first-party modules imported at LOAD time]}",
-          "lineno": 287
+          "lineno": 289
         },
         {
           "name": "render_header",
           "kind": "function",
           "signature": "(rec: dict) -> str",
           "summary": "Render the @AI-MAP block (text only, no surrounding quotes).",
-          "lineno": 302
+          "lineno": 304
         },
         {
           "name": "splice_header",
           "kind": "function",
           "signature": "(src: str, header: str) -> Optional[str]",
           "summary": "Return ``src`` with ``header`` placed inside the module docstring (below the prose,",
-          "lineno": 319
+          "lineno": 321
         },
         {
           "name": "render_root_agents_md",
           "kind": "function",
           "signature": "(m: dict) -> str",
           "summary": "",
-          "lineno": 345
+          "lineno": 347
         },
         {
           "name": "render_package_agents_md",
           "kind": "function",
           "signature": "(m: dict, pkg: str) -> str",
           "summary": "",
-          "lineno": 394
+          "lineno": 396
         },
         {
           "name": "write_outputs",
           "kind": "function",
           "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 423
+          "lineno": 425
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: Optional[list[str]]=None) -> int",
           "summary": "",
-          "lineno": 497
+          "lineno": 499
         }
       ],
       "depends_on": [],
