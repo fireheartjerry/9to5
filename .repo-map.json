@@ -1,0 +1,5775 @@
+{
+  "schema": "ai-map/1",
+  "generated_by": "tools/repo_map.py",
+  "root": "9to5-ai-legibility",
+  "first_party_roots": [
+    "agents",
+    "config",
+    "contracts",
+    "control",
+    "doctor",
+    "epoch",
+    "health",
+    "identity",
+    "knowledge",
+    "learning",
+    "llm_io",
+    "login_chatgpt",
+    "main",
+    "memory",
+    "notifications",
+    "orchestrator",
+    "provenance",
+    "resilience",
+    "selfmod",
+    "sim_error_handling",
+    "simulation",
+    "state",
+    "surfaces",
+    "test_health_probe",
+    "test_phase2_project",
+    "testing",
+    "tests",
+    "wipe"
+  ],
+  "modules": {
+    "agents": {
+      "path": "agents/__init__.py",
+      "purpose": "9TO5 agent roster.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "agents.adversary": {
+      "path": "agents/adversary.py",
+      "purpose": "Adversary -- independent reviewer of executor output.",
+      "exports": [
+        {
+          "name": "systemFor",
+          "kind": "function",
+          "signature": "(review_type: str='subtask') -> str",
+          "summary": "The system prompt for a given touchpoint: the one schema + a type-specific lead-in.",
+          "lineno": 136
+        },
+        {
+          "name": "isCdpTransient",
+          "kind": "function",
+          "signature": "(exc: BaseException) -> bool",
+          "summary": "True when ``exc`` looks like a transient CDP/network hiccup worth retrying.",
+          "lineno": 160
+        },
+        {
+          "name": "shouldTrigger",
+          "kind": "function",
+          "signature": "(executor_output: str, subtask_position: int, attempt_count: int=1, pre_pr: bool=False) -> tuple[bool, str]",
+          "summary": "Return ``(triggered, reason)``.",
+          "lineno": 166
+        },
+        {
+          "name": "reviewViaBrowser",
+          "kind": "function",
+          "signature": "(subtask_title: str, trigger_reason: str, executor_output: str, *, browser_ask: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict",
+          "summary": "Phase-2 critique: route the review to GPT-5.5 on chatgpt.com over CDP.",
+          "lineno": 258
+        },
+        {
+          "name": "review",
+          "kind": "function",
+          "signature": "(subtask_title: str, trigger_reason: str, executor_output: str, *, ollama_chat: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict",
+          "summary": "Critique the executor output and return a verdict dict.",
+          "lineno": 316
+        }
+      ],
+      "depends_on": [
+        "agents.browser_executor",
+        "config",
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_adversary.py"
+      ],
+      "callers": [
+        "agents.second_brain",
+        "orchestrator"
+      ]
+    },
+    "agents.architect": {
+      "path": "agents/architect.py",
+      "purpose": "Architect (Step 1).",
+      "exports": [
+        {
+          "name": "authorArchitectPrompt",
+          "kind": "function",
+          "signature": "(goal_elaborated: str, chat=None) -> str",
+          "summary": "Ollama authors the prompt that will be sent to Claude Code CLI.",
+          "lineno": 54
+        }
+      ],
+      "depends_on": [
+        "config",
+        "knowledge",
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_phase_3_architecture.py"
+      ],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "agents.browser_executor": {
+      "path": "agents/browser_executor.py",
+      "purpose": "Browser execution backend -- Layer 1 (CDP) \"hands\" for 9TO5.",
+      "exports": [
+        {
+          "name": "BrowserUnavailable",
+          "kind": "class",
+          "signature": "",
+          "summary": "Raised when no browser backend (Playwright/Chromium) is installed.",
+          "lineno": 60
+        },
+        {
+          "name": "runBrowser",
+          "kind": "function",
+          "signature": "(spec_or_prompt, *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, resume_session: Optional[str]=None, **_kw) -> dict",
+          "summary": "Execute a browser subtask",
+          "lineno": 150
+        },
+        {
+          "name": "chatgptActions",
+          "kind": "function",
+          "signature": "(message: str) -> list[dict[str, Any]]",
+          "summary": "Build the CDP action recipe that asks chatgpt.com one ``message`` and reads the reply:",
+          "lineno": 171
+        },
+        {
+          "name": "get_session",
+          "kind": "function",
+          "signature": "()",
+          "summary": "Lazily build the process-wide ChatGPTSession (does NOT open the browser yet).",
+          "lineno": 236
+        },
+        {
+          "name": "probe",
+          "kind": "function",
+          "signature": "() -> bool",
+          "summary": "Health-probe the session on the dedicated thread",
+          "lineno": 245
+        },
+        {
+          "name": "startConversation",
+          "kind": "function",
+          "signature": "(goal: str, task_id: str) -> None",
+          "summary": "Start the single run conversation on the dedicated thread.",
+          "lineno": 250
+        },
+        {
+          "name": "closeSession",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Close + tear down the session on the dedicated thread (where it was created).",
+          "lineno": 255
+        },
+        {
+          "name": "preflightLogin",
+          "kind": "function",
+          "signature": "(timeout_s: int=300, poll_s: int=3) -> bool",
+          "summary": "Open the browser, poll until logged in (READY) or timeout, then close",
+          "lineno": 261
+        },
+        {
+          "name": "sessionAsk",
+          "kind": "function",
+          "signature": "(message: str, *, expect_json: bool=False) -> Optional[str]",
+          "summary": "Ask GPT-5.5 one message through the intelligent session, marshaled onto the dedicated",
+          "lineno": 292
+        },
+        {
+          "name": "askChatGPT",
+          "kind": "function",
+          "signature": "(message: str, *, runner=None, work_dir: Optional[str]=None, expect_json: bool=False) -> Optional[str]",
+          "summary": "Send one ``message`` to chatgpt.com and return GPT's reply text.",
+          "lineno": 299
+        }
+      ],
+      "depends_on": [
+        "agents.chatgpt_driver",
+        "agents.executor",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_browser_executor.py",
+        "tests/test_phase2_cdp_adversary.py"
+      ],
+      "callers": [
+        "agents.adversary",
+        "notifications.slash",
+        "notifications.views",
+        "orchestrator"
+      ]
+    },
+    "agents.chatgpt_driver": {
+      "path": "agents/chatgpt_driver.py",
+      "purpose": "ChatGPTSession -- the intelligent, DOM-aware hands that drive chatgpt.com for 9to5.",
+      "exports": [
+        {
+          "name": "ChatGPTError",
+          "kind": "class",
+          "signature": "",
+          "summary": "Base for any chatgpt.com driving failure.",
+          "lineno": 67
+        },
+        {
+          "name": "ChatGPTLoginRequired",
+          "kind": "class",
+          "signature": "",
+          "summary": "The session is not logged in (login wall / redirect).",
+          "lineno": 71
+        },
+        {
+          "name": "ChatGPTBlocked",
+          "kind": "class",
+          "signature": "",
+          "summary": "A Cloudflare / bot-detection challenge is in the way.",
+          "lineno": 75
+        },
+        {
+          "name": "ChatGPTRateLimited",
+          "kind": "class",
+          "signature": "",
+          "summary": "ChatGPT reported a usage / rate limit.",
+          "lineno": 79
+        },
+        {
+          "name": "ChatGPTSelectorMiss",
+          "kind": "class",
+          "signature": "",
+          "summary": "A required element could not be located even after self-heal.",
+          "lineno": 83
+        },
+        {
+          "name": "classify_state",
+          "kind": "function",
+          "signature": "(page: Any) -> str",
+          "summary": "Cheap DOM-only triage of the current page",
+          "lineno": 94
+        },
+        {
+          "name": "extract_latest_reply",
+          "kind": "function",
+          "signature": "(page: Any) -> str",
+          "summary": "Text of the newest assistant message",
+          "lineno": 116
+        },
+        {
+          "name": "ChatGPTSession",
+          "kind": "class",
+          "signature": "",
+          "summary": "A long-lived, logged-in chatgpt.com session",
+          "lineno": 124
+        }
+      ],
+      "depends_on": [
+        "agents.chatgpt_selectors",
+        "agents.profile_hygiene",
+        "agents.vlm_healer",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_chatgpt_driver.py",
+        "tests/test_chatgpt_e2e_offline.py"
+      ],
+      "callers": [
+        "agents.browser_executor",
+        "agents.second_brain",
+        "login_chatgpt",
+        "test_health_probe",
+        "test_phase2_project"
+      ]
+    },
+    "agents.chatgpt_selectors": {
+      "path": "agents/chatgpt_selectors.py",
+      "purpose": "chatgpt.com selectors -- centralized, fallback-listed, self-healable.",
+      "exports": [
+        {
+          "name": "load",
+          "kind": "function",
+          "signature": "() -> dict[str, list[str]]",
+          "summary": "Return role -> ordered selector list, with any cached/self-healed selector prepended.",
+          "lineno": 120
+        },
+        {
+          "name": "get",
+          "kind": "function",
+          "signature": "(role: str) -> list[str]",
+          "summary": "Ordered selector list for one role (cached selector first).",
+          "lineno": 131
+        },
+        {
+          "name": "save_selector",
+          "kind": "function",
+          "signature": "(role: str, css: str) -> None",
+          "summary": "Persist a self-healed selector for ``role`` so it takes precedence next time.",
+          "lineno": 136
+        },
+        {
+          "name": "cached_project_url",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "The 9to5 ChatGPT project URL discovered/created on a prior run (or '').",
+          "lineno": 146
+        },
+        {
+          "name": "save_project_url",
+          "kind": "function",
+          "signature": "(url: str) -> None",
+          "summary": "",
+          "lineno": 151
+        },
+        {
+          "name": "first_visible",
+          "kind": "function",
+          "signature": "(page: Any, role_or_names) -> Optional[Any]",
+          "summary": "Return the first locator (from a role name or an explicit selector list) that resolves",
+          "lineno": 158
+        },
+        {
+          "name": "visible_role",
+          "kind": "function",
+          "signature": "(page: Any, role: str) -> bool",
+          "summary": "True when any selector for ``role`` currently resolves on ``page``.",
+          "lineno": 173
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.chatgpt_driver"
+      ]
+    },
+    "agents.clarifier": {
+      "path": "agents/clarifier.py",
+      "purpose": "Clarifier -- the Orchestrator brain answers the Executor's questions, no human.",
+      "exports": [
+        {
+          "name": "detectClarificationNeeded",
+          "kind": "function",
+          "signature": "(text: str) -> list[str]",
+          "summary": "Return the snippets where the executor appears to be asking a human to decide.",
+          "lineno": 77
+        },
+        {
+          "name": "answerClarifications",
+          "kind": "function",
+          "signature": "(chat: Callable, goal: str, subtask: dict, claude_output: str, questions: list[str]) -> Optional[str]",
+          "summary": "Ask the Ollama brain (via the orchestrator's ``_ollamaChat`` callable) to answer the",
+          "lineno": 101
+        }
+      ],
+      "depends_on": [
+        "config",
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_clarifier.py"
+      ],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "agents.elaborator": {
+      "path": "agents/elaborator.py",
+      "purpose": "Elaborator (Step 0.5) -- Ollama expands the raw goal into a buildable spec.",
+      "exports": [
+        {
+          "name": "elaborate",
+          "kind": "function",
+          "signature": "(goal_raw: str) -> str",
+          "summary": "Return the elaborated specification for ``goal_raw`` (never raises",
+          "lineno": 69
+        },
+        {
+          "name": "extractUniverse",
+          "kind": "function",
+          "signature": "(goal_raw: str, goal_elaborated: str, work_dir: str) -> dict",
+          "summary": "Extract the operating universe (scope boundary) from the goal (with safe defaults).",
+          "lineno": 96
+        }
+      ],
+      "depends_on": [
+        "config",
+        "knowledge"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_elaborator.py"
+      ],
+      "callers": [
+        "main"
+      ]
+    },
+    "agents.executor": {
+      "path": "agents/executor.py",
+      "purpose": "Executor (the hands) -- run Claude Code CLI from an Orchestrator invocation spec.",
+      "exports": [
+        {
+          "name": "normalizeSpec",
+          "kind": "function",
+          "signature": "(spec_or_prompt: Union[dict, str, None]) -> dict",
+          "summary": "Accept a full invocation spec dict OR a bare prompt string",
+          "lineno": 162
+        },
+        {
+          "name": "effortFlag",
+          "kind": "function",
+          "signature": "(effort_level: str) -> Optional[str]",
+          "summary": "",
+          "lineno": 251
+        },
+        {
+          "name": "scanDestructive",
+          "kind": "function",
+          "signature": "(text: str) -> list[str]",
+          "summary": "",
+          "lineno": 269
+        },
+        {
+          "name": "runClaude",
+          "kind": "function",
+          "signature": "(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, system_prompt: Optional[str]=None, extra: Optional[str]=None, timeout: Optional[int]=None, resume_session: Optional[str]=None, cancel_check=None) -> dict",
+          "summary": "Prepare the environment from the invocation spec, then fire one Claude run.",
+          "lineno": 325
+        }
+      ],
+      "depends_on": [
+        "agents.playbook",
+        "config",
+        "memory.obsidian",
+        "notifications.discord_bot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_executor.py"
+      ],
+      "callers": [
+        "agents.browser_executor",
+        "agents.native_executor",
+        "agents.verifier",
+        "orchestrator"
+      ]
+    },
+    "agents.hooks": {
+      "path": "agents/hooks.py",
+      "purpose": "9TO5 deterministic hook dispatcher.",
+      "exports": [
+        {
+          "name": "blockDestructive",
+          "kind": "function",
+          "signature": "(data)",
+          "summary": "PreToolUse: block destructive Bash commands by exiting 2.",
+          "lineno": 122
+        },
+        {
+          "name": "writeObsidian",
+          "kind": "function",
+          "signature": "(data)",
+          "summary": "PostToolUse: log the edited file path to the in-progress subtask note.",
+          "lineno": 172
+        },
+        {
+          "name": "discordNotify",
+          "kind": "function",
+          "signature": "(data)",
+          "summary": "Notification: forward the message to Discord as a compact embed.",
+          "lineno": 223
+        },
+        {
+          "name": "logAll",
+          "kind": "function",
+          "signature": "(data)",
+          "summary": "PostToolUse / any: append one JSON line {time, tool_name} to the log.",
+          "lineno": 240
+        },
+        {
+          "name": "selfModificationGuard",
+          "kind": "function",
+          "signature": "(data)",
+          "summary": "PreToolUse: during a SELF-REFERENTIAL task, block edits to the core files",
+          "lineno": 302
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "()",
+          "summary": "Dispatch to the requested handler based on argv[1].",
+          "lineno": 406
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.obsidian",
+        "notifications.discord_bot",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_hooks_self_path.py"
+      ],
+      "callers": []
+    },
+    "agents.native_executor": {
+      "path": "agents/native_executor.py",
+      "purpose": "Native UI execution backend -- Layer 2 (UIA/pywinauto) \"hands\" for 9TO5.",
+      "exports": [
+        {
+          "name": "NativeUnavailable",
+          "kind": "class",
+          "signature": "",
+          "summary": "Raised when pywinauto is not installed",
+          "lineno": 44
+        },
+        {
+          "name": "nativeActions",
+          "kind": "function",
+          "signature": "(app: str, steps: list[dict[str, Any]]) -> list[dict[str, Any]]",
+          "summary": "Build a canonical action list from a high-level recipe",
+          "lineno": 125
+        },
+        {
+          "name": "runNative",
+          "kind": "function",
+          "signature": "(spec_or_prompt, *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, resume_session: Optional[str]=None, **_kw) -> dict",
+          "summary": "Execute a native UI subtask",
+          "lineno": 131
+        },
+        {
+          "name": "selectForSurface",
+          "kind": "function",
+          "signature": "(terminal_fn, spec: dict)",
+          "summary": "Routing helper: return runNative when surface=native and NATIVE_LAYER_ENABLED,",
+          "lineno": 152
+        }
+      ],
+      "depends_on": [
+        "agents.executor",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "agents.orchestration_pipeline": {
+      "path": "agents/orchestration_pipeline.py",
+      "purpose": "Orchestration pipeline -- finer-grained step control.",
+      "exports": [
+        {
+          "name": "StepResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 38
+        },
+        {
+          "name": "PipelineStep",
+          "kind": "class",
+          "signature": "",
+          "summary": "Metadata for one named orchestration step.",
+          "lineno": 56
+        },
+        {
+          "name": "stepFor",
+          "kind": "function",
+          "signature": "(name: str) -> PipelineStep",
+          "summary": "Return the PipelineStep for *name*, raising KeyError when unknown.",
+          "lineno": 92
+        },
+        {
+          "name": "executionOrder",
+          "kind": "function",
+          "signature": "(steps: 'list[PipelineStep] | None'=None) -> list[str]",
+          "summary": "Topological order of step names (respects ``depends_on`` edges).",
+          "lineno": 100
+        },
+        {
+          "name": "sanitizeSpec",
+          "kind": "function",
+          "signature": "(spec: Any, subtask: dict, available_skills: 'frozenset[str] | None'=None, available_subagents: 'frozenset[str] | None'=None, available_pre_hooks: 'frozenset[str] | None'=None, available_post_hooks: 'frozenset[str] | None'=None) -> StepResult",
+          "summary": "Pure spec-sanitize step: coerce, filter, and validate a brain-authored spec.",
+          "lineno": 151
+        },
+        {
+          "name": "validateSpec",
+          "kind": "function",
+          "signature": "(spec: dict) -> StepResult",
+          "summary": "Validate a sanitized spec has the minimum required fields populated.",
+          "lineno": 222
+        },
+        {
+          "name": "fmtElapsed",
+          "kind": "function",
+          "signature": "(seconds: float) -> str",
+          "summary": "Format elapsed seconds as ``Hh MMm SSs``.",
+          "lineno": 235
+        },
+        {
+          "name": "singleDeliverable",
+          "kind": "function",
+          "signature": "(goal: str) -> bool",
+          "summary": "True when the goal targets at most one file with no multi-deliverable phrasing.",
+          "lineno": 243
+        },
+        {
+          "name": "verifyStep",
+          "kind": "function",
+          "signature": "(verify: 'Optional[dict]', work_dir: str, executor_result: dict) -> StepResult",
+          "summary": "Thin wrapper around ``verifier.runVerification`` returning a ``StepResult``.",
+          "lineno": 266
+        },
+        {
+          "name": "runSteps",
+          "kind": "function",
+          "signature": "(steps: 'list[str]', context: dict, handlers: 'dict[str, Callable[[dict], StepResult]]') -> 'list[StepResult]'",
+          "summary": "Execute a named sequence of steps, stopping on first failure.",
+          "lineno": 286
+        }
+      ],
+      "depends_on": [
+        "agents.verifier",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "agents.playbook": {
+      "path": "agents/playbook.py",
+      "purpose": "Executor playbook -- deterministic, role-scoped expertise for the HANDS.",
+      "exports": [
+        {
+          "name": "classifyProfile",
+          "kind": "function",
+          "signature": "(spec: Optional[dict], subtask: Optional[dict], task_state=None) -> str",
+          "summary": "Deterministically pick the executor profile from the spec + subtask.",
+          "lineno": 210
+        },
+        {
+          "name": "buildCharter",
+          "kind": "function",
+          "signature": "(profile: str) -> str",
+          "summary": "Compact system-level charter for ``--append-system-prompt`` (always injected).",
+          "lineno": 256
+        },
+        {
+          "name": "buildPlaybook",
+          "kind": "function",
+          "signature": "(profile: str) -> str",
+          "summary": "Richer role playbook rendered as a CLAUDE.md section (auto-read by Claude Code).",
+          "lineno": 262
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_playbook.py"
+      ],
+      "callers": [
+        "agents.executor"
+      ]
+    },
+    "agents.profile_hygiene": {
+      "path": "agents/profile_hygiene.py",
+      "purpose": "Chromium profile hygiene for the 9to5 ChatGPT second-brain profile.",
+      "exports": [
+        {
+          "name": "killZombies",
+          "kind": "function",
+          "signature": "(profile_dir: Optional[Path]=None) -> int",
+          "summary": "Kill every chrome/chromium process whose command line binds this profile",
+          "lineno": 47
+        },
+        {
+          "name": "clearStaleLocks",
+          "kind": "function",
+          "signature": "(profile_dir: Optional[Path]=None) -> None",
+          "summary": "Remove leftover single-instance lock artifacts",
+          "lineno": 76
+        },
+        {
+          "name": "markCleanExit",
+          "kind": "function",
+          "signature": "(profile_dir: Optional[Path]=None) -> None",
+          "summary": "Erase the crash-restore flag so Chromium never shows the 'didn't shut down correctly /",
+          "lineno": 90
+        },
+        {
+          "name": "sanitize",
+          "kind": "function",
+          "signature": "(profile_dir: Optional[Path]=None, *, kill: bool=True) -> int",
+          "summary": "Full pre-launch hygiene: reap zombies, clear stale locks, erase the crash-restore flag.",
+          "lineno": 110
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.chatgpt_driver"
+      ]
+    },
+    "agents.replanner": {
+      "path": "agents/replanner.py",
+      "purpose": "Replanner -- Ollama decides whether to mutate the subtask list.",
+      "exports": [
+        {
+          "name": "replan",
+          "kind": "function",
+          "signature": "(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, executor_output: str, self_referential: bool=False, remaining_hours: 'float | None'=None) -> dict",
+          "summary": "Return the replan decision dict (always well-formed).",
+          "lineno": 55
+        }
+      ],
+      "depends_on": [
+        "config",
+        "knowledge",
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "agents.second_brain": {
+      "path": "agents/second_brain.py",
+      "purpose": "second_brain -- the dual-brain consult router.",
+      "exports": [
+        {
+          "name": "consult",
+          "kind": "function",
+          "signature": "(review_type: str, *, title: str, trigger_reason: str, content: str, goal: str='', ollama_chat: Optional[Callable]=None, browser_ask: Optional[Callable]=None, session_ok: bool=False, worth: bool=True) -> dict",
+          "summary": "Run one second-opinion review through the GPT -> Ollama -> stub chain",
+          "lineno": 69
+        },
+        {
+          "name": "is_blocking",
+          "kind": "function",
+          "signature": "(verdict: dict) -> bool",
+          "summary": "True when a verdict should hold a PR / drive remediation.",
+          "lineno": 99
+        }
+      ],
+      "depends_on": [
+        "agents.adversary",
+        "agents.chatgpt_driver",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_phase2_second_brain.py"
+      ],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "agents.verifier": {
+      "path": "agents/verifier.py",
+      "purpose": "Verifier -- run the brain-authored verification check for a subtask.",
+      "exports": [
+        {
+          "name": "sanitizeVerify",
+          "kind": "function",
+          "signature": "(verify: Optional[dict]) -> Optional[dict]",
+          "summary": "Drop a structurally-unreliable brain-authored verify so the subtask falls back to",
+          "lineno": 99
+        },
+        {
+          "name": "extractRequirements",
+          "kind": "function",
+          "signature": "(goal: str) -> list[str]",
+          "summary": "Pull the EXPLICITLY enumerated deliverables out of a goal.",
+          "lineno": 178
+        },
+        {
+          "name": "primaryTargetFile",
+          "kind": "function",
+          "signature": "(goal: str) -> Optional[str]",
+          "summary": "The single distinct file path a goal targets, else None (zero or several files named).",
+          "lineno": 211
+        },
+        {
+          "name": "requirementMarkers",
+          "kind": "function",
+          "signature": "(phrase: str) -> list[str]",
+          "summary": "Lowercased, distinctive content-word markers for one requirement phrase.",
+          "lineno": 223
+        },
+        {
+          "name": "buildContentScanVerify",
+          "kind": "function",
+          "signature": "(marker_groups: list[list[str]], target_path: str) -> dict",
+          "summary": "A compound, deterministic, stdlib-only verify: the target file's (lowercased) source mu…",
+          "lineno": 246
+        },
+        {
+          "name": "buildRequirementsVerify",
+          "kind": "function",
+          "signature": "(goal: str, target_path: str) -> Optional[dict]",
+          "summary": "Synthesize a compound content-scan verify for an enumerated multi-deliverable `goal` ag…",
+          "lineno": 271
+        },
+        {
+          "name": "isStrictVerify",
+          "kind": "function",
+          "signature": "(verify: Optional[dict]) -> bool",
+          "summary": "True for a deliberate multi-requirement verify (compound expect or ``strict`` flag)",
+          "lineno": 291
+        },
+        {
+          "name": "runVerification",
+          "kind": "function",
+          "signature": "(verify: Optional[dict], work_dir: str, executor_result: dict) -> dict",
+          "summary": "Return a verify_result dict: {passed, cmd, expect, returncode, stdout, stderr}.",
+          "lineno": 348
+        }
+      ],
+      "depends_on": [
+        "agents.executor",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.orchestration_pipeline",
+        "learning.eval_runner",
+        "orchestrator"
+      ]
+    },
+    "agents.vlm_healer": {
+      "path": "agents/vlm_healer.py",
+      "purpose": "vlm_healer -- local-VLM perception for self-healing chatgpt.com selectors.",
+      "exports": [
+        {
+          "name": "heal",
+          "kind": "function",
+          "signature": "(screenshot_png: bytes, dom_html: str, *, want: str) -> dict",
+          "summary": "Ask the local VLM to classify the page + propose a selector for role ``want``.",
+          "lineno": 68
+        }
+      ],
+      "depends_on": [
+        "config",
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.chatgpt_driver"
+      ]
+    },
+    "config": {
+      "path": "config.py",
+      "purpose": "9TO5 -- central configuration.",
+      "exports": [
+        {
+          "name": "set_override",
+          "kind": "function",
+          "signature": "(knob: str, value) -> bool",
+          "summary": "Persist + live-apply a meta-optimizer knob change (whitelisted knobs only).",
+          "lineno": 359
+        },
+        {
+          "name": "ensureDirs",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Create every directory 9TO5 needs (idempotent).",
+          "lineno": 587
+        },
+        {
+          "name": "validateEnv",
+          "kind": "function",
+          "signature": "() -> list[str]",
+          "summary": "Return the names of required-but-missing environment values.",
+          "lineno": 593
+        },
+        {
+          "name": "getLogger",
+          "kind": "function",
+          "signature": "(name: str='9to5') -> logging.Logger",
+          "summary": "Return a child of the configured ``9to5`` logger.",
+          "lineno": 626
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_config_robust_env.py",
+        "tests/test_notification_config.py"
+      ],
+      "callers": [
+        "agents.adversary",
+        "agents.architect",
+        "agents.browser_executor",
+        "agents.chatgpt_driver",
+        "agents.chatgpt_selectors",
+        "agents.clarifier",
+        "agents.elaborator",
+        "agents.executor",
+        "agents.hooks",
+        "agents.native_executor",
+        "agents.orchestration_pipeline",
+        "agents.playbook",
+        "agents.profile_hygiene",
+        "agents.replanner",
+        "agents.second_brain",
+        "agents.verifier",
+        "agents.vlm_healer",
+        "control",
+        "doctor",
+        "epoch",
+        "health",
+        "identity",
+        "knowledge",
+        "learning.adapter_ops",
+        "learning.adapter_promotion",
+        "learning.adversary_trust",
+        "learning.bootstrap",
+        "learning.compute",
+        "learning.confidence",
+        "learning.counterfactual",
+        "learning.curriculum",
+        "learning.dataset",
+        "learning.distill",
+        "learning.eval_harness",
+        "learning.eval_runner",
+        "learning.finetune",
+        "learning.human_feedback",
+        "learning.knowledge_graph",
+        "learning.lessons",
+        "learning.meta_opt",
+        "learning.policy",
+        "learning.postmortem",
+        "learning.preferences",
+        "learning.promotion",
+        "learning.prompts",
+        "learning.reflection",
+        "learning.release",
+        "learning.reward",
+        "learning.safety",
+        "learning.selfplay",
+        "learning.sie",
+        "learning.solution_cache",
+        "learning.toolsmith",
+        "login_chatgpt",
+        "main",
+        "memory.experience",
+        "memory.obsidian",
+        "memory.retrieval",
+        "memory.subtask_manager",
+        "notifications.ask",
+        "notifications.audit",
+        "notifications.bot.cogs.admin",
+        "notifications.bot.cogs.ask_cog",
+        "notifications.bot.cogs.plan_cog",
+        "notifications.bot.core",
+        "notifications.bot.ui.dynamic",
+        "notifications.branding",
+        "notifications.cast",
+        "notifications.command_bot",
+        "notifications.commands",
+        "notifications.console_hud",
+        "notifications.cv2",
+        "notifications.dashboard",
+        "notifications.discord_bot",
+        "notifications.metrics",
+        "notifications.personas",
+        "notifications.slash",
+        "notifications.views",
+        "notifications.visuals",
+        "notifications.webdash",
+        "notifications.work_launcher",
+        "orchestrator",
+        "resilience",
+        "selfmod",
+        "simulation",
+        "state.task",
+        "surfaces",
+        "test_health_probe",
+        "test_phase2_project",
+        "wipe"
+      ]
+    },
+    "contracts": {
+      "path": "contracts.py",
+      "purpose": "contracts -- the central 9to5 data contracts as TypedDicts.",
+      "exports": [
+        {
+          "name": "InvocationSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "The brain-authored spec the executor turns into a Claude Code CLI invocation.",
+          "lineno": 25
+        },
+        {
+          "name": "ExecutorResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "The uniform result dict every executor surface returns (terminal/browser/native).",
+          "lineno": 41
+        },
+        {
+          "name": "Verdict",
+          "kind": "class",
+          "signature": "",
+          "summary": "The adversary/second-brain review verdict (rich contract",
+          "lineno": 57
+        },
+        {
+          "name": "Verify",
+          "kind": "class",
+          "signature": "",
+          "summary": "A brain-authored verification check run after the executor.",
+          "lineno": 74
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "control": {
+      "path": "control.py",
+      "purpose": "ControlBus -- file-backed, cross-process run control.",
+      "exports": [
+        {
+          "name": "AbortRun",
+          "kind": "class",
+          "signature": "",
+          "summary": "Raised inside the orchestrator when an abort has been requested.",
+          "lineno": 109
+        },
+        {
+          "name": "ControlBus",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 128
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_control_concurrency.py",
+        "tests/test_fuzz_control.py",
+        "tests/test_webdash_control.py"
+      ],
+      "callers": []
+    },
+    "doctor": {
+      "path": "doctor.py",
+      "purpose": "Preflight doctor -- tells the user (in one command) exactly what 'start' needs.",
+      "exports": [
+        {
+          "name": "check_ollama",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "The local brain",
+          "lineno": 23
+        },
+        {
+          "name": "check_claude_cli",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "The Claude Code hands",
+          "lineno": 41
+        },
+        {
+          "name": "check_embedder",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Local embedder for retrieval (degraded feature: no retrieval until present).",
+          "lineno": 50
+        },
+        {
+          "name": "check_git",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Git repo",
+          "lineno": 69
+        },
+        {
+          "name": "check_gh",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "GitHub CLI",
+          "lineno": 84
+        },
+        {
+          "name": "check_gpu",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "GPU",
+          "lineno": 92
+        },
+        {
+          "name": "run",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Run every preflight check",
+          "lineno": 100
+        },
+        {
+          "name": "render",
+          "kind": "function",
+          "signature": "(report: dict[str, Any]) -> str",
+          "summary": "",
+          "lineno": 108
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.compute"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_doctor.py"
+      ],
+      "callers": [
+        "main"
+      ]
+    },
+    "epoch": {
+      "path": "epoch.py",
+      "purpose": "Primitive 2 -- the epoch pin. An immutable per-run snapshot of governing config +",
+      "exports": [
+        {
+          "name": "fingerprint",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "A content hash of every self.code module + the git SHA",
+          "lineno": 25
+        },
+        {
+          "name": "Epoch",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 50
+        },
+        {
+          "name": "snapshot",
+          "kind": "function",
+          "signature": "(*, universe: Optional[dict]=None, brain_tag: Optional[str]=None) -> Epoch",
+          "summary": "Freeze governing state at process/run start",
+          "lineno": 72
+        },
+        {
+          "name": "diverged",
+          "kind": "function",
+          "signature": "(pinned: Epoch) -> bool",
+          "summary": "True iff the on-disk self.code differs from what was pinned at snapshot time.",
+          "lineno": 83
+        }
+      ],
+      "depends_on": [
+        "config",
+        "identity"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_epoch.py"
+      ],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "health": {
+      "path": "health.py",
+      "purpose": "9to5 /health -- environment readiness checks.",
+      "exports": [
+        {
+          "name": "collectHealth",
+          "kind": "function",
+          "signature": "() -> list[dict]",
+          "summary": "Run every check and return structured results (used by the bot's /diagnostics).",
+          "lineno": 172
+        },
+        {
+          "name": "runHealthChecks",
+          "kind": "function",
+          "signature": "() -> bool",
+          "summary": "",
+          "lineno": 185
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_health_collect.py"
+      ],
+      "callers": [
+        "main",
+        "notifications.slash"
+      ]
+    },
+    "identity": {
+      "path": "identity.py",
+      "purpose": "The SELF manifest -- 9to5's positive notion of identity.",
+      "exports": [
+        {
+          "name": "Role",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 35
+        },
+        {
+          "name": "roleOf",
+          "kind": "function",
+          "signature": "(path: str | os.PathLike) -> Role",
+          "summary": "Classify ``path`` into exactly one Role",
+          "lineno": 83
+        },
+        {
+          "name": "isObeyable",
+          "kind": "function",
+          "signature": "(path: str | os.PathLike) -> bool",
+          "summary": "True only for directives 9to5 may treat as its OWN instructions.",
+          "lineno": 98
+        },
+        {
+          "name": "isEditable",
+          "kind": "function",
+          "signature": "(path: str | os.PathLike) -> bool",
+          "summary": "Editing is unrestricted EXCEPT the narrow hard_boundary set.",
+          "lineno": 103
+        },
+        {
+          "name": "isCodeSelf",
+          "kind": "function",
+          "signature": "(path: str | os.PathLike) -> bool",
+          "summary": "",
+          "lineno": 108
+        },
+        {
+          "name": "selfCodeFiles",
+          "kind": "function",
+          "signature": "() -> list[str]",
+          "summary": "Every *.py under the project tree that the RUNNING orchestrator could import --",
+          "lineno": 112
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_identity.py"
+      ],
+      "callers": [
+        "epoch"
+      ]
+    },
+    "knowledge": {
+      "path": "knowledge.py",
+      "purpose": "Living Claude Code knowledge base -- mechanics for ``refreshClaudeKnowledge()``.",
+      "exports": [
+        {
+          "name": "fetchClaudeDocs",
+          "kind": "function",
+          "signature": "(enabled: bool=True, timeout: Optional[int]=None) -> dict",
+          "summary": "Scrape current Claude Code docs + changelog IN PARALLEL",
+          "lineno": 120
+        },
+        {
+          "name": "scanLocalClaude",
+          "kind": "function",
+          "signature": "(roots: Optional[tuple]=None) -> dict",
+          "summary": "Recursively read every installed ``.claude`` surface",
+          "lineno": 215
+        },
+        {
+          "name": "readProductSelfKnowledge",
+          "kind": "function",
+          "signature": "(roots: Optional[tuple]=None) -> dict",
+          "summary": "Locate + read the product-self-knowledge skill (Claude Code's own current",
+          "lineno": 292
+        },
+        {
+          "name": "readRecommendations",
+          "kind": "function",
+          "signature": "(path: Optional[Path]=None) -> dict",
+          "summary": "Read the expert recommendations doc (how 9to5 should wield Claude Code)",
+          "lineno": 312
+        },
+        {
+          "name": "injectableDoc",
+          "kind": "function",
+          "signature": "(text: str, *, name: str) -> str",
+          "summary": "Gate a knowledge-doc for injection into the brain prompt.",
+          "lineno": 336
+        },
+        {
+          "name": "buildUnifiedDoc",
+          "kind": "function",
+          "signature": "(prior_doc: str, fetched: dict, local: dict, psk: dict, *, refreshed_at: str, sources: list[str], recs: Optional[dict]=None) -> str",
+          "summary": "Fold prior self-analysis + live docs + local capability surface +",
+          "lineno": 464
+        },
+        {
+          "name": "diffHeadings",
+          "kind": "function",
+          "signature": "(prior_doc: str, new_doc: str) -> dict",
+          "summary": "Naive 'what changed' delta on top-level headings (for the refresh log).",
+          "lineno": 587
+        },
+        {
+          "name": "compressForInjection",
+          "kind": "function",
+          "signature": "(unified_doc: str, local: dict, fetched: dict, max_chars: Optional[int]=None, recs: Optional[dict]=None) -> str",
+          "summary": "Distill the unified reference into the structured ``CLAUDE CODE CAPABILITIES``",
+          "lineno": 640
+        },
+        {
+          "name": "setCapabilities",
+          "kind": "function",
+          "signature": "(summary: str) -> None",
+          "summary": "Cache the compressed CLAUDE CODE CAPABILITIES summary (called by the full refresh).",
+          "lineno": 734
+        },
+        {
+          "name": "getCapabilities",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "",
+          "lineno": 740
+        },
+        {
+          "name": "ensureCapabilities",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "Lazily build the capabilities summary OFFLINE (no web fetch) from the on-disk",
+          "lineno": 744
+        },
+        {
+          "name": "injectCapabilities",
+          "kind": "function",
+          "signature": "(system_prompt: str) -> str",
+          "summary": "Prepend the cached CLAUDE CODE CAPABILITIES block to ANY brain system prompt.",
+          "lineno": 769
+        }
+      ],
+      "depends_on": [
+        "config",
+        "provenance"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_knowledge.py"
+      ],
+      "callers": [
+        "agents.architect",
+        "agents.elaborator",
+        "agents.replanner",
+        "orchestrator",
+        "surfaces"
+      ]
+    },
+    "learning": {
+      "path": "learning/__init__.py",
+      "purpose": "Self-Improvement Engine (SIE) -- the learning subsystems.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "learning.adapter_ops": {
+      "path": "learning/adapter_ops.py",
+      "purpose": "Continual-learning hygiene -- subsystem R of the SIE.",
+      "exports": [
+        {
+          "name": "merge_plan",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "The champion adapters (one per role) that a soup would average.",
+          "lineno": 23
+        },
+        {
+          "name": "soup",
+          "kind": "function",
+          "signature": "(*, merger: Optional[Merger]=None, out_dir: Optional[Path]=None, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "Average the champion adapters into one (via the merger seam)",
+          "lineno": 28
+        },
+        {
+          "name": "overfit_signal",
+          "kind": "function",
+          "signature": "(*, recent: int=5, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "Flag possible eval-suite overfitting: fitness rising while it should be held-out.",
+          "lineno": 42
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "learning.adapter_promotion": {
+      "path": "learning/adapter_promotion.py",
+      "purpose": "Automatic adapter promotion -- closes the 'adapters never promote' gap.",
+      "exports": [
+        {
+          "name": "run",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "Evaluate challenger adapters and promote the best one that beats the champion.",
+          "lineno": 22
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.eval_runner",
+        "learning.finetune",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "learning.sie"
+      ]
+    },
+    "learning.adversary_trust": {
+      "path": "learning/adversary_trust.py",
+      "purpose": "adversary_trust -- measurable trust for the GPT-5.5 second brain.",
+      "exports": [
+        {
+          "name": "record",
+          "kind": "function",
+          "signature": "(review_type: str, verdict: dict, *, tier: Optional[str]=None, ollama_verdict: Optional[str]=None, upheld: Optional[bool]=None, task_id: Optional[str]=None) -> None",
+          "summary": "Append one consult row",
+          "lineno": 27
+        },
+        {
+          "name": "summary",
+          "kind": "function",
+          "signature": "(task_id: Optional[str]=None) -> dict",
+          "summary": "Aggregate trust metrics (optionally for one task): consult counts by tier, challenge ra…",
+          "lineno": 65
+        },
+        {
+          "name": "dashboard_line",
+          "kind": "function",
+          "signature": "(task_id: Optional[str]=None) -> str",
+          "summary": "One compact line for the live Discord dashboard / logs.",
+          "lineno": 86
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "learning.bootstrap": {
+      "path": "learning/bootstrap.py",
+      "purpose": "Zero-touch environment bootstrap -- so the user only ever presses start.",
+      "exports": [
+        {
+          "name": "ensure_training_deps",
+          "kind": "function",
+          "signature": "() -> dict",
+          "summary": "Install the LoRA training stack if a GPU host lacks it (best-effort, once).",
+          "lineno": 31
+        },
+        {
+          "name": "ensure_models",
+          "kind": "function",
+          "signature": "() -> dict",
+          "summary": "Pull the embedder + base brain into Ollama if missing (best-effort, once).",
+          "lineno": 53
+        },
+        {
+          "name": "ensure_all",
+          "kind": "function",
+          "signature": "() -> dict",
+          "summary": "Run the full bootstrap once",
+          "lineno": 74
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.compute"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "learning.sie"
+      ]
+    },
+    "learning.compute": {
+      "path": "learning/compute.py",
+      "purpose": "Compute router -- decides whether to use the GPU for SIE training.",
+      "exports": [
+        {
+          "name": "detect_gpu",
+          "kind": "function",
+          "signature": "() -> dict",
+          "summary": "Best-effort GPU probe -> {available, name, source}",
+          "lineno": 23
+        },
+        {
+          "name": "policy",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "",
+          "lineno": 52
+        },
+        {
+          "name": "training_enabled",
+          "kind": "function",
+          "signature": "() -> bool",
+          "summary": "False only when the operator turned training off entirely.",
+          "lineno": 56
+        },
+        {
+          "name": "should_use_gpu",
+          "kind": "function",
+          "signature": "() -> bool",
+          "summary": "Resolve policy + detection into a yes/no for GPU training.",
+          "lineno": 61
+        },
+        {
+          "name": "device",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "",
+          "lineno": 72
+        },
+        {
+          "name": "summary",
+          "kind": "function",
+          "signature": "() -> dict",
+          "summary": "Human-facing compute status for dashboards/reports.",
+          "lineno": 76
+        },
+        {
+          "name": "reset_cache",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Clear the detection cache (tests / after a driver change).",
+          "lineno": 83
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_compute.py"
+      ],
+      "callers": [
+        "doctor",
+        "learning.bootstrap",
+        "learning.finetune",
+        "learning.release"
+      ]
+    },
+    "learning.confidence": {
+      "path": "learning/confidence.py",
+      "purpose": "Introspective confidence + calibrated deferral -- subsystem K of the SIE.",
+      "exports": [
+        {
+          "name": "fit_from_ledger",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None, epochs: int=300) -> reward.Calibrator",
+          "summary": "Fit a success-probability head on all subtasks with a known verify outcome.",
+          "lineno": 21
+        },
+        {
+          "name": "predict",
+          "kind": "function",
+          "signature": "(cal: reward.Calibrator, row: dict[str, Any]) -> float",
+          "summary": "",
+          "lineno": 29
+        },
+        {
+          "name": "recommend",
+          "kind": "function",
+          "signature": "(prob: float, *, threshold: Optional[float]=None) -> str",
+          "summary": "Map a predicted success probability to an action.",
+          "lineno": 33
+        },
+        {
+          "name": "should_escalate",
+          "kind": "function",
+          "signature": "(cal: reward.Calibrator, row: dict[str, Any], *, threshold: Optional[float]=None) -> bool",
+          "summary": "",
+          "lineno": 48
+        },
+        {
+          "name": "prior_success",
+          "kind": "function",
+          "signature": "(title: str, *, min_support: int=3, db_path: Optional[Path]=None) -> Optional[float]",
+          "summary": "PRE-run confidence: this task family's historical first-pass rate (or None when",
+          "lineno": 53
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.lessons",
+        "learning.reward",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "learning.counterfactual": {
+      "path": "learning/counterfactual.py",
+      "purpose": "Counterfactual offline replay -- subsystem D of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "estimate_uplift",
+          "kind": "function",
+          "signature": "(rows: list[dict[str, Any]], replay_fn: ReplayFn, *, label_key: str='verify_passed') -> dict[str, Any]",
+          "summary": "Compare the challenger's replayed pass rate against the logged champion rate.",
+          "lineno": 25
+        },
+        {
+          "name": "replay_over_ledger",
+          "kind": "function",
+          "signature": "(replay_fn: ReplayFn, *, limit: Optional[int]=None, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "Estimate uplift over recent logged subtasks that carry a real verify result.",
+          "lineno": 48
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "learning.curriculum": {
+      "path": "learning/curriculum.py",
+      "purpose": "Self-generated curriculum -- subsystem C of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "family_stats",
+          "kind": "function",
+          "signature": "(*, min_support: int=3, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Per-family {family, support, first_pass_rate}, weakest first, support-gated.",
+          "lineno": 30
+        },
+        {
+          "name": "generate_goals",
+          "kind": "function",
+          "signature": "(*, n: int=3, min_support: int=3, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Author up to ``n`` practice goals targeting the weakest families.",
+          "lineno": 46
+        },
+        {
+          "name": "write_suggestions",
+          "kind": "function",
+          "signature": "(goals: list[dict[str, Any]], path: Optional[Path]=None) -> Optional[Path]",
+          "summary": "Persist suggested goals (for the human/orchestrator to pick up)",
+          "lineno": 62
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.lessons",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_curriculum_release.py"
+      ],
+      "callers": [
+        "learning.meta_opt",
+        "learning.selfplay",
+        "learning.sie"
+      ]
+    },
+    "learning.dataset": {
+      "path": "learning/dataset.py",
+      "purpose": "Data-quality & safety gate (subsystem G) -- guards every SIE training set.",
+      "exports": [
+        {
+          "name": "has_secret",
+          "kind": "function",
+          "signature": "(text: str) -> bool",
+          "summary": "",
+          "lineno": 35
+        },
+        {
+          "name": "scrub",
+          "kind": "function",
+          "signature": "(text: str) -> str",
+          "summary": "Redact secret-looking spans",
+          "lineno": 39
+        },
+        {
+          "name": "suite_signatures",
+          "kind": "function",
+          "signature": "(suite: Optional[list[dict[str, Any]]]=None) -> set[str]",
+          "summary": "Normalized goal strings of the eval suite",
+          "lineno": 51
+        },
+        {
+          "name": "validate",
+          "kind": "function",
+          "signature": "(example: dict[str, Any]) -> bool",
+          "summary": "A trainable example needs a non-empty prompt and completion (both strings).",
+          "lineno": 57
+        },
+        {
+          "name": "is_contaminated",
+          "kind": "function",
+          "signature": "(example: dict[str, Any], sigs: set[str]) -> bool",
+          "summary": "True if the example's goal/prompt overlaps the held-out eval suite.",
+          "lineno": 68
+        },
+        {
+          "name": "clean",
+          "kind": "function",
+          "signature": "(examples: Iterable[dict[str, Any]], *, suite: Optional[list[dict[str, Any]]]=None) -> dict[str, Any]",
+          "summary": "Run the full gate",
+          "lineno": 76
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.eval_harness"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_dataset_gate.py"
+      ],
+      "callers": [
+        "learning.distill",
+        "learning.preferences"
+      ]
+    },
+    "learning.distill": {
+      "path": "learning/distill.py",
+      "purpose": "Gold dataset builder -- Layer 5 (SFT) of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "format_pair",
+          "kind": "function",
+          "signature": "(row: dict[str, Any]) -> Optional[dict[str, Any]]",
+          "summary": "Turn one gold subtask row into an SFT (prompt, completion) pair, or None if it",
+          "lineno": 24
+        },
+        {
+          "name": "write_jsonl",
+          "kind": "function",
+          "signature": "(examples: list[dict[str, Any]], path: Path) -> None",
+          "summary": "",
+          "lineno": 37
+        },
+        {
+          "name": "build",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None, out_path: Optional[Path]=None, suite: Optional[list[dict[str, Any]]]=None) -> dict[str, Any]",
+          "summary": "Build, clean, and (optionally) write the gold SFT dataset",
+          "lineno": 44
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.dataset",
+        "learning.eval_harness",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "learning.finetune"
+      ]
+    },
+    "learning.eval_harness": {
+      "path": "learning/eval_harness.py",
+      "purpose": "Evaluation Harness -- the spine of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "aggregate",
+          "kind": "function",
+          "signature": "(results: list[dict[str, Any]], *, cost_cap: float=DEFAULT_COST_CAP) -> dict[str, float]",
+          "summary": "Reduce per-goal results into the normalized 0..1 metric dict ``compute_fitness`` wants.",
+          "lineno": 36
+        },
+        {
+          "name": "compute_fitness",
+          "kind": "function",
+          "signature": "(metrics: dict[str, Any], weights: Optional[dict[str, float]]=None) -> float",
+          "summary": "The single scalar gate",
+          "lineno": 66
+        },
+        {
+          "name": "load_suite",
+          "kind": "function",
+          "signature": "(suite_dir: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Load every golden goal (``*.json``) from the suite directory, sorted by filename",
+          "lineno": 83
+        },
+        {
+          "name": "score",
+          "kind": "function",
+          "signature": "(results: list[dict[str, Any]], *, weights: Optional[dict[str, float]]=None, cost_cap: float=DEFAULT_COST_CAP) -> dict[str, Any]",
+          "summary": "Full score payload: the aggregate metrics plus the fitness scalar.",
+          "lineno": 100
+        },
+        {
+          "name": "run_suite",
+          "kind": "function",
+          "signature": "(runner: Optional[Callable[[dict[str, Any]], dict[str, Any]]]=None, *, suite_dir: Optional[Path]=None, prompt_set_id: Optional[str]=None, adapter_id: Optional[str]=None, record: bool=True, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "Run every goal through ``runner`` (goal -> result), score, and (optionally) persist",
+          "lineno": 107
+        },
+        {
+          "name": "fitness_panel",
+          "kind": "function",
+          "signature": "(limit: int=30, db_path: Optional[Path]=None) -> str",
+          "summary": "Render the recent fitness series as a compact sparkline + delta for a dashboard",
+          "lineno": 146
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_eval_harness.py"
+      ],
+      "callers": [
+        "learning.dataset",
+        "learning.distill",
+        "learning.sie",
+        "orchestrator"
+      ]
+    },
+    "learning.eval_runner": {
+      "path": "learning/eval_runner.py",
+      "purpose": "Live eval runner -- closes the keystone gap so fitness is measured AUTOMATICALLY.",
+      "exports": [
+        {
+          "name": "register",
+          "kind": "function",
+          "signature": "(*, goal_runner: Optional[Callable[[dict], dict]]=None, fitness_under_tag: Optional[Callable[[str], float]]=None) -> None",
+          "summary": "Register richer runners (called by the orchestrator when a live brain exists).",
+          "lineno": 24
+        },
+        {
+          "name": "clear",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "",
+          "lineno": 34
+        },
+        {
+          "name": "fitness_under_tag",
+          "kind": "function",
+          "signature": "() -> Optional[Callable[[str], float]]",
+          "summary": "",
+          "lineno": 39
+        },
+        {
+          "name": "verify_runner",
+          "kind": "function",
+          "signature": "(goal: dict[str, Any]) -> dict[str, Any]",
+          "summary": "Deterministic, zero-API runner: run the goal's held-out verify command and score it.",
+          "lineno": 43
+        },
+        {
+          "name": "active_runner",
+          "kind": "function",
+          "signature": "() -> Callable[[dict], dict]",
+          "summary": "The runner the harness should use now: a registered brain runner if present, else",
+          "lineno": 61
+        }
+      ],
+      "depends_on": [
+        "agents.verifier",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_eval_runner.py"
+      ],
+      "callers": [
+        "learning.adapter_promotion",
+        "learning.sie",
+        "orchestrator"
+      ]
+    },
+    "learning.finetune": {
+      "path": "learning/finetune.py",
+      "purpose": "Local LoRA distillation -- Layer 5 of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "modelfile_text",
+          "kind": "function",
+          "signature": "(base_model: str, lora_path: str) -> str",
+          "summary": "An Ollama Modelfile that layers a LoRA adapter over the frozen base.",
+          "lineno": 70
+        },
+        {
+          "name": "write_modelfile",
+          "kind": "function",
+          "signature": "(path: Path, base_model: str, lora_path: str) -> Path",
+          "summary": "",
+          "lineno": 75
+        },
+        {
+          "name": "default_trainer",
+          "kind": "function",
+          "signature": "() -> Optional[Trainer]",
+          "summary": "A real local LoRA (SFT) trainer, routed through the compute router",
+          "lineno": 81
+        },
+        {
+          "name": "default_dpo_trainer",
+          "kind": "function",
+          "signature": "() -> Optional[Callable[[str, str, float], str]]",
+          "summary": "A real local DPO trainer (chosen/rejected pairs), routed through compute.",
+          "lineno": 96
+        },
+        {
+          "name": "default_ollama_runner",
+          "kind": "function",
+          "signature": "() -> Optional[OllamaRunner]",
+          "summary": "Build the new Ollama model from a Modelfile via the `ollama` CLI, if present.",
+          "lineno": 144
+        },
+        {
+          "name": "active_brain_tag",
+          "kind": "function",
+          "signature": "(role: str='all', db_path: Optional[Path]=None) -> str",
+          "summary": "The model tag the orchestrator should call NOW for a brain ``role`` (per-role MoE).",
+          "lineno": 157
+        },
+        {
+          "name": "rollback_to_base",
+          "kind": "function",
+          "signature": "(role: Optional[str]=None, db_path: Optional[Path]=None) -> bool",
+          "summary": "Retire the champion adapter (of ``role``, or all) -> active tag falls back to base.",
+          "lineno": 179
+        },
+        {
+          "name": "run_finetune_cycle",
+          "kind": "function",
+          "signature": "(*, trainer: Optional[Trainer]=None, ollama_runner: Optional[OllamaRunner]=None, out_dir: Optional[Path]=None, min_examples: Optional[int]=None, suite: Optional[list[dict[str, Any]]]=None, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "One automatic distillation cycle: build gold dataset -> (if enough) train LoRA ->",
+          "lineno": 188
+        },
+        {
+          "name": "run_dpo_cycle",
+          "kind": "function",
+          "signature": "(*, trainer: Optional[Callable[[str, str, float], str]]=None, ollama_runner: Optional[OllamaRunner]=None, out_dir: Optional[Path]=None, min_pairs: Optional[int]=None, suite: Optional[list[dict[str, Any]]]=None, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "One automatic DPO cycle: build preference pairs -> (if enough) train a DPO LoRA with",
+          "lineno": 226
+        },
+        {
+          "name": "consider_promotion",
+          "kind": "function",
+          "signature": "(adapter_id: int, *, challenger_fitness: float, champion_fitness: float, replay_ok: bool=True, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "Gate an adapter through the harness result + replay set (invariant I4: never promote",
+          "lineno": 264
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.compute",
+        "learning.distill",
+        "learning.preferences",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_finetune.py"
+      ],
+      "callers": [
+        "learning.adapter_promotion",
+        "learning.sie",
+        "orchestrator"
+      ]
+    },
+    "learning.human_feedback": {
+      "path": "learning/human_feedback.py",
+      "purpose": "Implicit human feedback (RLHF-lite) -- subsystem J of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "record",
+          "kind": "function",
+          "signature": "(kind: str, *, run_id: Optional[str]=None, subtask_id: Optional[str]=None, target: Optional[str]=None, before: Any=None, after: Any=None, db_path: Optional[Path]=None) -> bool",
+          "summary": "Capture one human control decision as a label",
+          "lineno": 26
+        },
+        {
+          "name": "correction_pairs",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Derive DPO chosen/rejected pairs from human EDITs (the before is rejected, the",
+          "lineno": 34
+        },
+        {
+          "name": "stats",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> dict[str, int]",
+          "summary": "",
+          "lineno": 55
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.commands"
+      ]
+    },
+    "learning.knowledge_graph": {
+      "path": "learning/knowledge_graph.py",
+      "purpose": "Project knowledge graph -- subsystem N of the SIE.",
+      "exports": [
+        {
+          "name": "build_from_ledger",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> dict[str, int]",
+          "summary": "Rebuild family + gotcha nodes from the ledger",
+          "lineno": 23
+        },
+        {
+          "name": "context_for",
+          "kind": "function",
+          "signature": "(title: str, *, db_path: Optional[Path]=None) -> str",
+          "summary": "Best-effort knowledge-graph context for a subtask's family (or \"\").",
+          "lineno": 45
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.lessons",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "learning.sie",
+        "orchestrator"
+      ]
+    },
+    "learning.lessons": {
+      "path": "learning/lessons.py",
+      "purpose": "Consolidation -- Layer 2 of the Self-Improvement Engine (\"sleep-time\" learning).",
+      "exports": [
+        {
+          "name": "family_of",
+          "kind": "function",
+          "signature": "(title: str, signature_tags: Optional[str]=None) -> str",
+          "summary": "Coarse task-family key",
+          "lineno": 26
+        },
+        {
+          "name": "consolidate",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None, write_digest: bool=True, digest_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "Rebuild the ``lessons`` table from the ledger and (optionally) write the digest.",
+          "lineno": 45
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_lessons.py"
+      ],
+      "callers": [
+        "learning.confidence",
+        "learning.curriculum",
+        "learning.knowledge_graph",
+        "learning.policy",
+        "learning.postmortem",
+        "learning.preferences",
+        "learning.sie"
+      ]
+    },
+    "learning.meta_opt": {
+      "path": "learning/meta_opt.py",
+      "purpose": "Meta-optimization -- subsystem Q of the SIE.",
+      "exports": [
+        {
+          "name": "suggest",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Heuristic knob suggestions from observed outcomes",
+          "lineno": 21
+        },
+        {
+          "name": "apply",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "Auto-apply suggestions within safe bounds (hands-off)",
+          "lineno": 49
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.curriculum",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "learning.sie"
+      ]
+    },
+    "learning.policy": {
+      "path": "learning/policy.py",
+      "purpose": "Policy Learning -- Layer 4 of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "compute_reward",
+          "kind": "function",
+          "signature": "(row: dict[str, Any]) -> float",
+          "summary": "Composite reward for one subtask outcome (higher is better).",
+          "lineno": 33
+        },
+        {
+          "name": "context_key",
+          "kind": "function",
+          "signature": "(title: str, signature_tags: Optional[str]=None) -> str",
+          "summary": "The bandit context",
+          "lineno": 53
+        },
+        {
+          "name": "action_of",
+          "kind": "function",
+          "signature": "(row: dict[str, Any]) -> dict[str, Any]",
+          "summary": "The action a past subtask took (what the policy chooses among).",
+          "lineno": 58
+        },
+        {
+          "name": "rebuild_from_ledger",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
+          "summary": "Recompute every arm's reward statistics from the full ledger (idempotent).",
+          "lineno": 67
+        },
+        {
+          "name": "select",
+          "kind": "function",
+          "signature": "(ck: str, actions: list[dict[str, Any]], *, rng: Optional[random.Random]=None, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "Thompson-pick the best action for context ``ck`` among ``actions``.",
+          "lineno": 100
+        },
+        {
+          "name": "hint",
+          "kind": "function",
+          "signature": "(goal: str, title: str, *, rng: Optional[random.Random]=None, db_path: Optional[Path]=None) -> str",
+          "summary": "Orchestrator-facing best-effort one-liner: the learned effort prior, or \"\".",
+          "lineno": 113
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.lessons",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_policy.py"
+      ],
+      "callers": [
+        "learning.sie",
+        "orchestrator"
+      ]
+    },
+    "learning.postmortem": {
+      "path": "learning/postmortem.py",
+      "purpose": "Blameless post-mortems -> failure-mode taxonomy -- subsystem L of the SIE.",
+      "exports": [
+        {
+          "name": "classify",
+          "kind": "function",
+          "signature": "(row: dict[str, Any]) -> Optional[str]",
+          "summary": "Map a subtask outcome to a taxonomy class (None == not a failure).",
+          "lineno": 21
+        },
+        {
+          "name": "run_postmortems",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> dict[str, int]",
+          "summary": "Scan failures, accrete the taxonomy",
+          "lineno": 36
+        },
+        {
+          "name": "guidance_for",
+          "kind": "function",
+          "signature": "(title: str, *, db_path: Optional[Path]=None) -> str",
+          "summary": "Best-effort pre-emptive guidance for a subtask's family (or \"\").",
+          "lineno": 55
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.lessons",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "learning.sie",
+        "orchestrator"
+      ]
+    },
+    "learning.preferences": {
+      "path": "learning/preferences.py",
+      "purpose": "DPO preference-pair builder -- Layer F of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "build_pairs",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None, suite: Optional[list[dict[str, Any]]]=None) -> list[dict[str, Any]]",
+          "summary": "Build cleaned chosen/rejected preference pairs from passing-vs-failing specs,",
+          "lineno": 36
+        },
+        {
+          "name": "write_jsonl",
+          "kind": "function",
+          "signature": "(pairs: list[dict[str, Any]], path: Path) -> None",
+          "summary": "",
+          "lineno": 80
+        },
+        {
+          "name": "build",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None, out_path: Optional[Path]=None, suite: Optional[list[dict[str, Any]]]=None) -> dict[str, Any]",
+          "summary": "Build + (optionally) write the DPO preference dataset",
+          "lineno": 87
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.dataset",
+        "learning.lessons",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_preferences.py"
+      ],
+      "callers": [
+        "learning.finetune"
+      ]
+    },
+    "learning.promotion": {
+      "path": "learning/promotion.py",
+      "purpose": "Champion/challenger promotion gate -- Layer 3 of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "proportion_z",
+          "kind": "function",
+          "signature": "(succ_a: int, n_a: int, succ_b: int, n_b: int) -> float",
+          "summary": "One-sided pooled two-proportion z for (A better than B)",
+          "lineno": 28
+        },
+        {
+          "name": "decide",
+          "kind": "function",
+          "signature": "(champ: dict[str, int], chall: dict[str, int], *, min_uses: Optional[int]=None, z_thresh: Optional[float]=None) -> dict",
+          "summary": "Gate decision from {n, first_pass} field stats",
+          "lineno": 43
+        },
+        {
+          "name": "pick_challenger",
+          "kind": "function",
+          "signature": "(role: str, *, rng: Optional[random.Random]=None, db_path: Optional[Path]=None) -> Optional[int]",
+          "summary": "Thompson-pick which challenger to evaluate next (favors promising + under-tried).",
+          "lineno": 69
+        },
+        {
+          "name": "run_promotions",
+          "kind": "function",
+          "signature": "(*, rng: Optional[random.Random]=None, db_path: Optional[Path]=None) -> dict",
+          "summary": "Auto-evaluate one challenger per role and promote it if the gate passes",
+          "lineno": 85
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.prompts",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_promotion.py"
+      ],
+      "callers": [
+        "learning.sie"
+      ]
+    },
+    "learning.prompts": {
+      "path": "learning/prompts.py",
+      "purpose": "Prompt registry -- Layer 3 substrate of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "get",
+          "kind": "function",
+          "signature": "(role: str, default: str, *, db_path: Optional[Path]=None) -> str",
+          "summary": "Return the champion body for ``role``, or ``default`` if none is promoted yet.",
+          "lineno": 33
+        },
+        {
+          "name": "champion_id",
+          "kind": "function",
+          "signature": "(role: str, default: Optional[str]=None, db_path: Optional[Path]=None) -> Optional[int]",
+          "summary": "The current champion variant id for ``role`` (seeding ``default`` if needed).",
+          "lineno": 62
+        },
+        {
+          "name": "propose",
+          "kind": "function",
+          "signature": "(role: str, body: str, *, db_path: Optional[Path]=None) -> Optional[int]",
+          "summary": "Register a new challenger variant (child of the current champion).",
+          "lineno": 76
+        },
+        {
+          "name": "promote",
+          "kind": "function",
+          "signature": "(role: str, variant_id: int, *, db_path: Optional[Path]=None) -> bool",
+          "summary": "Make a variant the champion (called only by the gated promotion path).",
+          "lineno": 84
+        },
+        {
+          "name": "challengers",
+          "kind": "function",
+          "signature": "(role: str, db_path: Optional[Path]=None) -> list[dict]",
+          "summary": "",
+          "lineno": 89
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience",
+        "provenance"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_prompts.py"
+      ],
+      "callers": [
+        "learning.promotion",
+        "learning.release",
+        "learning.safety",
+        "orchestrator"
+      ]
+    },
+    "learning.reflection": {
+      "path": "learning/reflection.py",
+      "purpose": "Teacher -> student distillation via executor self-reports -- subsystem I of the SIE.",
+      "exports": [
+        {
+          "name": "parse",
+          "kind": "function",
+          "signature": "(text: str) -> Optional[dict[str, Any]]",
+          "summary": "Extract the LEARNING_SUMMARY JSON object from executor output, or None.",
+          "lineno": 33
+        },
+        {
+          "name": "trust",
+          "kind": "function",
+          "signature": "(summary: dict[str, Any], *, verify_passed: Optional[bool], adversary_verdict: Optional[str], adversary_stub: bool=False) -> bool",
+          "summary": "A summary is trusted only if its claim is consistent with the REAL outcome.",
+          "lineno": 52
+        },
+        {
+          "name": "capture",
+          "kind": "function",
+          "signature": "(*, run_id: str, subtask_id: str, executor_output: str, verify_passed: Optional[bool]=None, adversary_verdict: Optional[str]=None, adversary_stub: bool=False, role: str='executor', teacher: str='claude', db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "Parse + trust-check + persist a learning summary",
+          "lineno": 74
+        },
+        {
+          "name": "recipes",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> list[str]",
+          "summary": "Trusted reusable recipes",
+          "lineno": 94
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_reflection_trust.py"
+      ],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "learning.release": {
+      "path": "learning/release.py",
+      "purpose": "Brain releases, model cards & attribution -- subsystem H of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "model_card",
+          "kind": "function",
+          "signature": "(kind: str, entity: dict[str, Any]) -> str",
+          "summary": "Render a markdown model card for a promoted prompt variant or adapter.",
+          "lineno": 22
+        },
+        {
+          "name": "attribution",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "Summarize the SIE's learned state + fitness trend (the attribution signal).",
+          "lineno": 39
+        },
+        {
+          "name": "render_report",
+          "kind": "function",
+          "signature": "(attr: dict[str, Any]) -> str",
+          "summary": "",
+          "lineno": 68
+        },
+        {
+          "name": "write_report",
+          "kind": "function",
+          "signature": "(path: Optional[Path]=None, *, db_path: Optional[Path]=None) -> Optional[Path]",
+          "summary": "Write the attribution report (best-effort)",
+          "lineno": 86
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.compute",
+        "learning.prompts",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_curriculum_release.py"
+      ],
+      "callers": [
+        "learning.sie"
+      ]
+    },
+    "learning.reward": {
+      "path": "learning/reward.py",
+      "purpose": "Reward modeling -- Layer F of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "signals",
+          "kind": "function",
+          "signature": "(row: dict[str, Any]) -> list[float]",
+          "summary": "Feature vector in [0,1] derived from a subtask outcome row.",
+          "lineno": 23
+        },
+        {
+          "name": "composite_reward",
+          "kind": "function",
+          "signature": "(row: dict[str, Any]) -> float",
+          "summary": "A single [0,1] reward used to weight gold examples (heavier = cleaner win).",
+          "lineno": 44
+        },
+        {
+          "name": "Calibrator",
+          "kind": "class",
+          "signature": "",
+          "summary": "A tiny logistic-regression head: signals(row) -> P(eventual success).",
+          "lineno": 59
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_reward.py"
+      ],
+      "callers": [
+        "learning.confidence"
+      ]
+    },
+    "learning.rollout": {
+      "path": "learning/rollout.py",
+      "purpose": "Shadow -> canary -> champion rollout -- subsystem E of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "next_stage",
+          "kind": "function",
+          "signature": "(stage: str, *, fitness: float, baseline: float, n: int, min_samples: int, tolerance: float=0.0) -> str",
+          "summary": "Advance one stage, hold, or roll back.",
+          "lineno": 24
+        },
+        {
+          "name": "should_use_candidate",
+          "kind": "function",
+          "signature": "(stage: str, *, rng: Optional[random.Random]=None, canary_fraction: float=0.1) -> bool",
+          "summary": "Whether a given run should actually USE the candidate's output.",
+          "lineno": 42
+        },
+        {
+          "name": "is_terminal",
+          "kind": "function",
+          "signature": "(stage: str) -> bool",
+          "summary": "",
+          "lineno": 56
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_rollout.py"
+      ],
+      "callers": []
+    },
+    "learning.safety": {
+      "path": "learning/safety.py",
+      "purpose": "Safety invariant enforcement -- X2 of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "SelfPromotionError",
+          "kind": "class",
+          "signature": "",
+          "summary": "Raised when a non-independent actor (the brain) tries to crown a champion (I2).",
+          "lineno": 28
+        },
+        {
+          "name": "guard_promotion",
+          "kind": "function",
+          "signature": "(actor: str) -> None",
+          "summary": "I2: only the independent gate may promote",
+          "lineno": 32
+        },
+        {
+          "name": "verify_invariants",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> list[str]",
+          "summary": "Return a list of invariant VIOLATIONS (empty == healthy).",
+          "lineno": 38
+        },
+        {
+          "name": "kill_switch_active",
+          "kind": "function",
+          "signature": "() -> bool",
+          "summary": "",
+          "lineno": 59
+        },
+        {
+          "name": "panic_to_stock",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> dict[str, int]",
+          "summary": "Hard rollback: retire EVERY champion adapter so the active tag falls back to the",
+          "lineno": 63
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.prompts",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_safety_gate_divergence.py",
+        "tests/test_verify_shell_safety.py"
+      ],
+      "callers": []
+    },
+    "learning.selfplay": {
+      "path": "learning/selfplay.py",
+      "purpose": "Autonomous self-play -- the system practices its own weaknesses without being asked.",
+      "exports": [
+        {
+          "name": "in_work_window",
+          "kind": "function",
+          "signature": "(now: Optional[datetime]=None) -> bool",
+          "summary": "Self-play only fires inside the configured work window (default 9-17, the 9-to-5).",
+          "lineno": 57
+        },
+        {
+          "name": "run",
+          "kind": "function",
+          "signature": "(*, launch_fn: Optional[LaunchFn]=None, is_busy: Optional[Callable[[], bool]]=None, db_path: Optional[Path]=None, now: Optional[datetime]=None) -> dict[str, Any]",
+          "summary": "Maybe launch one self-play run",
+          "lineno": 63
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.curriculum"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "learning.sie"
+      ]
+    },
+    "learning.sie": {
+      "path": "learning/sie.py",
+      "purpose": "Self-Improvement Orchestrator -- the component that runs the learning loop A->Z",
+      "exports": [
+        {
+          "name": "run_maintenance",
+          "kind": "function",
+          "signature": "(*, reason: str='post-run', force: bool=False, throttle_seconds: float=DEFAULT_THROTTLE_SECONDS, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "Run the throttled learning passes once (idempotent, best-effort, locked).",
+          "lineno": 110
+        },
+        {
+          "name": "run_maintenance_async",
+          "kind": "function",
+          "signature": "(**kwargs)",
+          "summary": "Start maintenance on a daemon thread and RETURN the thread so the caller can join it wi…",
+          "lineno": 276
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.adapter_promotion",
+        "learning.bootstrap",
+        "learning.curriculum",
+        "learning.eval_harness",
+        "learning.eval_runner",
+        "learning.finetune",
+        "learning.knowledge_graph",
+        "learning.lessons",
+        "learning.meta_opt",
+        "learning.policy",
+        "learning.postmortem",
+        "learning.promotion",
+        "learning.release",
+        "learning.selfplay",
+        "learning.solution_cache",
+        "memory.experience",
+        "memory.retrieval",
+        "notifications.work_launcher"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_sie.py"
+      ],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "learning.solution_cache": {
+      "path": "learning/solution_cache.py",
+      "purpose": "Solution memoization / warm-start -- subsystem O of the SIE.",
+      "exports": [
+        {
+          "name": "signature_of",
+          "kind": "function",
+          "signature": "(title: str) -> str",
+          "summary": "A coarse, normalized signature for matching near-duplicate subtasks.",
+          "lineno": 23
+        },
+        {
+          "name": "build_from_ledger",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> dict[str, int]",
+          "summary": "Populate the cache from gold (first-pass, approved) subtasks that carry a spec.",
+          "lineno": 31
+        },
+        {
+          "name": "warm_start",
+          "kind": "function",
+          "signature": "(title: str, *, db_path: Optional[Path]=None) -> Optional[str]",
+          "summary": "Return a cached PASSING spec for a near-duplicate subtask, or None.",
+          "lineno": 50
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience",
+        "provenance.Verdict",
+        "provenance.assertIngestible",
+        "provenance.coerce"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_solution_cache_provenance.py"
+      ],
+      "callers": [
+        "learning.sie",
+        "orchestrator"
+      ]
+    },
+    "learning.toolsmith": {
+      "path": "learning/toolsmith.py",
+      "purpose": "Self-authored tooling analysis -- subsystem P of the SIE (human-gated).",
+      "exports": [
+        {
+          "name": "rank_tools",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Per-skill {skill, support, pass_rate}, best first.",
+          "lineno": 34
+        },
+        {
+          "name": "prune_candidates",
+          "kind": "function",
+          "signature": "(*, min_support: int=3, max_rate: float=0.3, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Skills with enough support but a poor pass rate",
+          "lineno": 47
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "llm_io": {
+      "path": "llm_io.py",
+      "purpose": "Robust extraction from an Ollama chat response.",
+      "exports": [
+        {
+          "name": "responseText",
+          "kind": "function",
+          "signature": "(resp) -> str",
+          "summary": "``resp['message']['content']`` as text",
+          "lineno": 38
+        },
+        {
+          "name": "responseJson",
+          "kind": "function",
+          "signature": "(resp)",
+          "summary": "Parse the JSON body of a chat response",
+          "lineno": 81
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_llm_io_pydantic.py"
+      ],
+      "callers": [
+        "agents.adversary",
+        "agents.architect",
+        "agents.clarifier",
+        "agents.replanner",
+        "agents.vlm_healer",
+        "notifications.ask",
+        "orchestrator"
+      ]
+    },
+    "login_chatgpt": {
+      "path": "login_chatgpt.py",
+      "purpose": "Open ChatGPT in persistent profile for manual login. Stays open until you close it.",
+      "exports": [],
+      "depends_on": [
+        "agents.chatgpt_driver",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "main": {
+      "path": "main.py",
+      "purpose": "9TO5 entrypoint -- Step 0 / Step 0.5 + launch the autonomous run.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 163
+        }
+      ],
+      "depends_on": [
+        "agents.elaborator",
+        "config",
+        "control.ControlBus",
+        "doctor",
+        "health",
+        "memory.obsidian",
+        "orchestrator.Orchestrator",
+        "orchestrator.refreshClaudeKnowledge",
+        "resilience",
+        "simulation",
+        "state.task",
+        "testing.e2e"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "memory": {
+      "path": "memory/__init__.py",
+      "purpose": "Obsidian-backed memory layer (see memory.obsidian).",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "memory.experience": {
+      "path": "memory/experience.py",
+      "purpose": "Experience Ledger -- Layer 0 of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "close_pool",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Close every pooled connection across all threads (shutdown / test teardown).",
+          "lineno": 310
+        },
+        {
+          "name": "init",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> None",
+          "summary": "Create the database + schema if absent (idempotent).",
+          "lineno": 327
+        },
+        {
+          "name": "record_run",
+          "kind": "function",
+          "signature": "(run: dict[str, Any], db_path: Optional[Path]=None) -> bool",
+          "summary": "Upsert a run row keyed by ``run_id``",
+          "lineno": 358
+        },
+        {
+          "name": "record_subtask",
+          "kind": "function",
+          "signature": "(run_id: str, st: dict[str, Any], db_path: Optional[Path]=None) -> bool",
+          "summary": "Upsert a subtask row keyed by ``(run_id, st_id)``",
+          "lineno": 404
+        },
+        {
+          "name": "set_subtask_embedding",
+          "kind": "function",
+          "signature": "(run_id: str, st_id: str, blob: bytes, db_path: Optional[Path]=None) -> bool",
+          "summary": "Attach an embedding BLOB to an existing subtask row (Layer 1 retrieval)",
+          "lineno": 459
+        },
+        {
+          "name": "embedded_subtasks",
+          "kind": "function",
+          "signature": "(only_passed: bool=True, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Subtask rows that carry an embedding",
+          "lineno": 472
+        },
+        {
+          "name": "record_eval",
+          "kind": "function",
+          "signature": "(score: dict[str, Any], *, suite_version: str='v1', prompt_set_id: Optional[str]=None, adapter_id: Optional[str]=None, passed_gate: Optional[bool]=None, db_path: Optional[Path]=None) -> Optional[int]",
+          "summary": "Append an eval-harness result row",
+          "lineno": 486
+        },
+        {
+          "name": "sync_run",
+          "kind": "function",
+          "signature": "(state_data: dict[str, Any], db_path: Optional[Path]=None) -> bool",
+          "summary": "Best-effort upsert of the run row from a TaskState's lean ``data`` dict.",
+          "lineno": 546
+        },
+        {
+          "name": "sync_subtask",
+          "kind": "function",
+          "signature": "(state_data: dict[str, Any], st: dict[str, Any], db_path: Optional[Path]=None) -> bool",
+          "summary": "Best-effort upsert of one subtask, enriching it with position + the latest",
+          "lineno": 565
+        },
+        {
+          "name": "upsert_lesson",
+          "kind": "function",
+          "signature": "(scope: str, signature_tags: str, text: str, *, support_count: int, win_rate: float, db_path: Optional[Path]=None) -> bool",
+          "summary": "Insert/refresh a consolidated lesson (keyed by scope+tags+text)",
+          "lineno": 594
+        },
+        {
+          "name": "fetch_lessons",
+          "kind": "function",
+          "signature": "(scope: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 612
+        },
+        {
+          "name": "clear_lessons",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> None",
+          "summary": "",
+          "lineno": 623
+        },
+        {
+          "name": "set_arm",
+          "kind": "function",
+          "signature": "(context_key: str, action_json: str, *, pulls: int, reward_sum: float, reward_sq_sum: float, db_path: Optional[Path]=None) -> bool",
+          "summary": "Write a policy arm's accumulated stats (keyed by context+action)",
+          "lineno": 628
+        },
+        {
+          "name": "fetch_arms",
+          "kind": "function",
+          "signature": "(context_key: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 646
+        },
+        {
+          "name": "clear_arms",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> None",
+          "summary": "",
+          "lineno": 657
+        },
+        {
+          "name": "register_variant",
+          "kind": "function",
+          "signature": "(role: str, body: str, *, state: str='challenger', parent_id: Optional[int]=None, file_path: Optional[str]=None, provenance: Optional[str]=None, db_path: Optional[Path]=None) -> Optional[int]",
+          "summary": "Register a prompt variant (deduped by role+body hash)",
+          "lineno": 664
+        },
+        {
+          "name": "get_champion",
+          "kind": "function",
+          "signature": "(role: str, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]",
+          "summary": "",
+          "lineno": 695
+        },
+        {
+          "name": "get_champion_body",
+          "kind": "function",
+          "signature": "(role: str, db_path: Optional[Path]=None) -> Optional[str]",
+          "summary": "",
+          "lineno": 703
+        },
+        {
+          "name": "get_champion_provenance",
+          "kind": "function",
+          "signature": "(role: str, db_path: Optional[Path]=None) -> Optional[dict]",
+          "summary": "Return the provenance dict for the current champion of ``role``, or None.",
+          "lineno": 708
+        },
+        {
+          "name": "fetch_variants",
+          "kind": "function",
+          "signature": "(role: str, state: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 724
+        },
+        {
+          "name": "promote_variant",
+          "kind": "function",
+          "signature": "(role: str, variant_id: int, db_path: Optional[Path]=None) -> bool",
+          "summary": "Make ``variant_id`` the champion for ``role``",
+          "lineno": 737
+        },
+        {
+          "name": "tag_run_prompt",
+          "kind": "function",
+          "signature": "(run_id: str, prompt_set_id: str, db_path: Optional[Path]=None) -> bool",
+          "summary": "Record which prompt champion authored a run (so per-variant field metrics exist).",
+          "lineno": 757
+        },
+        {
+          "name": "prompt_field_stats",
+          "kind": "function",
+          "signature": "(prompt_set_id: str, db_path: Optional[Path]=None) -> dict[str, int]",
+          "summary": "First-pass field outcomes for subtasks of runs authored by ``prompt_set_id``:",
+          "lineno": 769
+        },
+        {
+          "name": "register_adapter",
+          "kind": "function",
+          "signature": "(*, base_model: str, tag: str, lora_path: str, role: str='all', modelfile_path: Optional[str]=None, n_train_examples: int=0, state: str='challenger', db_path: Optional[Path]=None) -> Optional[int]",
+          "summary": "Register a trained LoRA adapter (keyed by unique tag, scoped to a brain ``role``).",
+          "lineno": 785
+        },
+        {
+          "name": "get_champion_adapter",
+          "kind": "function",
+          "signature": "(role: str='all', db_path: Optional[Path]=None) -> Optional[dict[str, Any]]",
+          "summary": "Champion adapter for ``role`` (per-role MoE)",
+          "lineno": 807
+        },
+        {
+          "name": "fetch_adapters",
+          "kind": "function",
+          "signature": "(state: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 817
+        },
+        {
+          "name": "promote_adapter",
+          "kind": "function",
+          "signature": "(adapter_id: int, db_path: Optional[Path]=None) -> bool",
+          "summary": "Make ``adapter_id`` the champion for ITS role",
+          "lineno": 827
+        },
+        {
+          "name": "retire_champion_adapter",
+          "kind": "function",
+          "signature": "(role: Optional[str]=None, db_path: Optional[Path]=None) -> bool",
+          "summary": "Roll back: retire the champion adapter (of ``role``, or all roles if None).",
+          "lineno": 842
+        },
+        {
+          "name": "record_feedback",
+          "kind": "function",
+          "signature": "(*, kind: str, run_id: Optional[str]=None, subtask_id: Optional[str]=None, target: Optional[str]=None, before: Any=None, after: Any=None, db_path: Optional[Path]=None) -> bool",
+          "summary": "Capture a human control decision (approve/reject/skip/edit/...) as a label (J).",
+          "lineno": 860
+        },
+        {
+          "name": "fetch_feedback",
+          "kind": "function",
+          "signature": "(kind: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 877
+        },
+        {
+          "name": "upsert_failure_mode",
+          "kind": "function",
+          "signature": "(signature_tags: str, taxonomy_class: str, *, root_cause: str, mitigation: str='', db_path: Optional[Path]=None) -> bool",
+          "summary": "Accrete a failure into the taxonomy (occurrence-counted, keyed by family+class) (L).",
+          "lineno": 887
+        },
+        {
+          "name": "fetch_failure_modes",
+          "kind": "function",
+          "signature": "(signature_tags: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 909
+        },
+        {
+          "name": "upsert_solution",
+          "kind": "function",
+          "signature": "(signature: str, spec_json: str, *, verify_passed: bool, provenance: Optional[str]=None, db_path: Optional[Path]=None) -> bool",
+          "summary": "Cache a working solution keyed by signature (O).",
+          "lineno": 924
+        },
+        {
+          "name": "get_solution",
+          "kind": "function",
+          "signature": "(signature: str, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]",
+          "summary": "",
+          "lineno": 951
+        },
+        {
+          "name": "upsert_kg_node",
+          "kind": "function",
+          "signature": "(kind: str, key: str, summary: str, db_path: Optional[Path]=None) -> bool",
+          "summary": "Add/refresh a codebase knowledge-graph node (file/module/gotcha) (N).",
+          "lineno": 965
+        },
+        {
+          "name": "fetch_kg_nodes",
+          "kind": "function",
+          "signature": "(kind: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 979
+        },
+        {
+          "name": "record_reflection",
+          "kind": "function",
+          "signature": "(*, run_id: str, subtask_id: str, role: str='executor', teacher: str='claude', trusted: bool=False, db_path: Optional[Path]=None, **fields: Any) -> bool",
+          "summary": "Store an executor/teacher learning summary (I/M)",
+          "lineno": 989
+        },
+        {
+          "name": "fetch_reflections",
+          "kind": "function",
+          "signature": "(trusted_only: bool=False, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 1013
+        },
+        {
+          "name": "fetch_runs",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 1022
+        },
+        {
+          "name": "fetch_subtasks",
+          "kind": "function",
+          "signature": "(run_id: Optional[str]=None, *, limit: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 1027
+        },
+        {
+          "name": "gold_examples",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "First-attempt, verify-passing, **really** adversary-approved subtasks",
+          "lineno": 1042
+        },
+        {
+          "name": "fitness_series",
+          "kind": "function",
+          "signature": "(limit: int=90, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Recent eval-harness scores, oldest-first",
+          "lineno": 1055
+        },
+        {
+          "name": "counts",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
+          "summary": "Row counts per table",
+          "lineno": 1071
+        },
+        {
+          "name": "backfill_from_store",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
+          "summary": "Seed the ledger from the existing task-JSON store so months-long learning never",
+          "lineno": 1080
+        }
+      ],
+      "depends_on": [
+        "config",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_experience_ledger.py"
+      ],
+      "callers": [
+        "learning.adapter_ops",
+        "learning.adapter_promotion",
+        "learning.confidence",
+        "learning.counterfactual",
+        "learning.curriculum",
+        "learning.distill",
+        "learning.eval_harness",
+        "learning.finetune",
+        "learning.human_feedback",
+        "learning.knowledge_graph",
+        "learning.lessons",
+        "learning.meta_opt",
+        "learning.policy",
+        "learning.postmortem",
+        "learning.preferences",
+        "learning.promotion",
+        "learning.prompts",
+        "learning.reflection",
+        "learning.release",
+        "learning.safety",
+        "learning.sie",
+        "learning.solution_cache",
+        "learning.toolsmith",
+        "memory.retrieval",
+        "memory.subtask_manager",
+        "orchestrator",
+        "state.task"
+      ]
+    },
+    "memory.obsidian": {
+      "path": "memory/obsidian.py",
+      "purpose": "Obsidian memory layer: REST-first, disk-fallback note writer/reader.",
+      "exports": [
+        {
+          "name": "flushRest",
+          "kind": "function",
+          "signature": "(timeout: Optional[float]=None) -> None",
+          "summary": "Wait for queued REST syncs to drain (used on shutdown / before resume reads).",
+          "lineno": 60
+        },
+        {
+          "name": "writeClaudioMd",
+          "kind": "function",
+          "signature": "(task_state, subtask: Optional[dict], additional_context: str='', work_dir: Optional[str]=None, executor_playbook: str='') -> Path",
+          "summary": "Write a fresh per-subtask CLAUDE.md to the working directory.",
+          "lineno": 69
+        },
+        {
+          "name": "ObsidianClient",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 157
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_obsidian_atomic_claude_md.py",
+        "tests/test_obsidian_write.py"
+      ],
+      "callers": [
+        "agents.executor",
+        "agents.hooks",
+        "main",
+        "orchestrator"
+      ]
+    },
+    "memory.retrieval": {
+      "path": "memory/retrieval.py",
+      "purpose": "Retrieval-Augmented Brain -- Layer 1 of the Self-Improvement Engine.",
+      "exports": [
+        {
+          "name": "embed",
+          "kind": "function",
+          "signature": "(text: str) -> Optional[list[float]]",
+          "summary": "Best-effort embedding of ``text`` (returns None when unavailable).",
+          "lineno": 55
+        },
+        {
+          "name": "reset_embed_cache",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Clear the negative cache (used by tests, and after a known embedder restart).",
+          "lineno": 73
+        },
+        {
+          "name": "pack",
+          "kind": "function",
+          "signature": "(vec: list[float]) -> bytes",
+          "summary": "Pack a float vector into compact float32 bytes for the BLOB column.",
+          "lineno": 79
+        },
+        {
+          "name": "unpack",
+          "kind": "function",
+          "signature": "(blob: bytes) -> list[float]",
+          "summary": "Inverse of ``pack``",
+          "lineno": 86
+        },
+        {
+          "name": "cosine",
+          "kind": "function",
+          "signature": "(a: list[float], b: list[float]) -> float",
+          "summary": "Cosine similarity in [-1, 1]",
+          "lineno": 98
+        },
+        {
+          "name": "signature_text",
+          "kind": "function",
+          "signature": "(goal: str, title: str='') -> str",
+          "summary": "The text we embed for a subtask/goal",
+          "lineno": 112
+        },
+        {
+          "name": "embed_and_store",
+          "kind": "function",
+          "signature": "(run_id: str, st_id: str, goal: str, title: str='', db_path: Optional[Path]=None) -> bool",
+          "summary": "Compute + persist a subtask's embedding (called once the subtask has a signature).",
+          "lineno": 117
+        },
+        {
+          "name": "top_k_similar",
+          "kind": "function",
+          "signature": "(query_vec: list[float], k: int=5, *, only_passed: bool=True, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "The ``k`` most-similar embedded subtasks to ``query_vec``, each annotated with a",
+          "lineno": 129
+        },
+        {
+          "name": "retrieve",
+          "kind": "function",
+          "signature": "(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Embed the (goal, title) query and return the top-K similar past successes.",
+          "lineno": 147
+        },
+        {
+          "name": "render_lessons",
+          "kind": "function",
+          "signature": "(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str",
+          "summary": "Render neighbors into a compact lessons block, truncated to the token budget.",
+          "lineno": 163
+        },
+        {
+          "name": "backfill_embeddings",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
+          "summary": "Embed every verify-passing subtask that lacks an embedding (run off the hot path,",
+          "lineno": 197
+        },
+        {
+          "name": "lessons_block",
+          "kind": "function",
+          "signature": "(goal: str, title: str='', *, db_path: Optional[Path]=None) -> str",
+          "summary": "Orchestrator-facing one-call helper: retrieve + render, fully best-effort.",
+          "lineno": 219
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_retrieval.py"
+      ],
+      "callers": [
+        "learning.sie",
+        "orchestrator"
+      ]
+    },
+    "memory.subtask_manager": {
+      "path": "memory/subtask_manager.py",
+      "purpose": "Higher-level subtask management helpers built on the Experience Ledger.",
+      "exports": [
+        {
+          "name": "SubtaskStats",
+          "kind": "class",
+          "signature": "",
+          "summary": "Aggregated metrics for all subtasks belonging to a run.",
+          "lineno": 29
+        },
+        {
+          "name": "getRunStats",
+          "kind": "function",
+          "signature": "(run_id: str, *, db_path: Optional[Path]=None) -> Optional[SubtaskStats]",
+          "summary": "Compute aggregated stats for every subtask in *run_id*.",
+          "lineno": 54
+        },
+        {
+          "name": "getPassRate",
+          "kind": "function",
+          "signature": "(run_id: str, *, db_path: Optional[Path]=None) -> float",
+          "summary": "Shorthand: pass-rate for *run_id* (0.0 on error or no data).",
+          "lineno": 98
+        },
+        {
+          "name": "pendingSubtasks",
+          "kind": "function",
+          "signature": "(run_id: str, *, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Return subtasks for *run_id* whose status is not in TERMINAL_STATUSES.",
+          "lineno": 104
+        },
+        {
+          "name": "filterByStatus",
+          "kind": "function",
+          "signature": "(run_id: str, status: str, *, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Return subtasks for *run_id* whose status equals *status* (case-insensitive).",
+          "lineno": 124
+        },
+        {
+          "name": "markDone",
+          "kind": "function",
+          "signature": "(run_id: str, st_id: str, *, db_path: Optional[Path]=None) -> bool",
+          "summary": "Mark a subtask as done (verify_passed=1, status='done')",
+          "lineno": 145
+        },
+        {
+          "name": "markFailed",
+          "kind": "function",
+          "signature": "(run_id: str, st_id: str, *, db_path: Optional[Path]=None) -> bool",
+          "summary": "Mark a subtask as failed (verify_passed=0, status='failed')",
+          "lineno": 151
+        },
+        {
+          "name": "markSkipped",
+          "kind": "function",
+          "signature": "(run_id: str, st_id: str, *, db_path: Optional[Path]=None) -> bool",
+          "summary": "Mark a subtask as skipped",
+          "lineno": 157
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_memory_subtask_manager.py"
+      ],
+      "callers": []
+    },
+    "notifications": {
+      "path": "notifications/__init__.py",
+      "purpose": "Discord notifications + command bot (see notifications.discord_bot).",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "notifications.ask": {
+      "path": "notifications/ask.py",
+      "purpose": "Ask Nightclaw -- a natural-language interface to the live run, answered by the",
+      "exports": [
+        {
+          "name": "detectControlIntent",
+          "kind": "function",
+          "signature": "(text: str) -> Optional[str]",
+          "summary": "Return a control verb if ``text`` is a short imperative control command, else None.",
+          "lineno": 41
+        },
+        {
+          "name": "buildContext",
+          "kind": "function",
+          "signature": "(state, question: str) -> str",
+          "summary": "",
+          "lineno": 54
+        },
+        {
+          "name": "answer",
+          "kind": "function",
+          "signature": "(question: str, state, *, chat: Optional[Callable[[str, str], str]]=None) -> str",
+          "summary": "Answer ``question`` about ``state`` via the local brain",
+          "lineno": 98
+        }
+      ],
+      "depends_on": [
+        "config",
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_ask.py"
+      ],
+      "callers": [
+        "notifications.bot.cogs.ask_cog"
+      ]
+    },
+    "notifications.audit": {
+      "path": "notifications/audit.py",
+      "purpose": "File-backed audit log: who issued which control command. JSON-lines at",
+      "exports": [
+        {
+          "name": "record",
+          "kind": "function",
+          "signature": "(user_id, action: str, task_id: Optional[str]=None, detail: str='') -> None",
+          "summary": "Append one audit entry",
+          "lineno": 14
+        },
+        {
+          "name": "recent",
+          "kind": "function",
+          "signature": "(n: int=20) -> list[dict]",
+          "summary": "The last n audit entries (oldest-first within the window)",
+          "lineno": 34
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_audit.py"
+      ],
+      "callers": [
+        "notifications.bot.cogs.ask_cog",
+        "notifications.bot.cogs.plan_cog",
+        "notifications.bot.ui.dynamic",
+        "notifications.slash",
+        "notifications.views",
+        "orchestrator"
+      ]
+    },
+    "notifications.bot": {
+      "path": "notifications/bot/__init__.py",
+      "purpose": "9TO5 \"Nightclaw\" gateway bot package.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "notifications.bot.cogs": {
+      "path": "notifications/bot/cogs/__init__.py",
+      "purpose": "Hot-reloadable feature cogs for the Nightclaw gateway.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "notifications.bot.cogs.admin": {
+      "path": "notifications/bot/cogs/admin.py",
+      "purpose": "Admin cog: hot-reload extensions (/reload) + post a fresh live cockpit (/cockpit).",
+      "exports": [
+        {
+          "name": "AdminCog",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 22
+        },
+        {
+          "name": "setup",
+          "kind": "function",
+          "signature": "(bot: dpy_commands.Bot) -> None",
+          "summary": "",
+          "lineno": 62
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.commands",
+        "notifications.console_hud",
+        "notifications.cv2",
+        "notifications.discord_bot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "notifications.bot.cogs.ask_cog": {
+      "path": "notifications/bot/cogs/ask_cog.py",
+      "purpose": "/ask -- the conversational Ollama cockpit (Tier 6). A thin gateway shell over the",
+      "exports": [
+        {
+          "name": "AskCog",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 23
+        },
+        {
+          "name": "setup",
+          "kind": "function",
+          "signature": "(bot: dpy_commands.Bot) -> None",
+          "summary": "",
+          "lineno": 52
+        }
+      ],
+      "depends_on": [
+        "config",
+        "control.ControlBus",
+        "notifications.ask",
+        "notifications.audit",
+        "notifications.commands"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "notifications.bot.cogs.plan_cog": {
+      "path": "notifications/bot/cogs/plan_cog.py",
+      "purpose": "Tier 2 interactivity: the in-Discord plan editor, the event-timeline browser, and two",
+      "exports": [
+        {
+          "name": "timelineLines",
+          "kind": "function",
+          "signature": "(state) -> list",
+          "summary": "",
+          "lineno": 24
+        },
+        {
+          "name": "SubtaskEditModal",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 45
+        },
+        {
+          "name": "PlanEditView",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 84
+        },
+        {
+          "name": "PlanCog",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 98
+        },
+        {
+          "name": "setup",
+          "kind": "function",
+          "signature": "(bot: dpy_commands.Bot) -> None",
+          "summary": "",
+          "lineno": 161
+        }
+      ],
+      "depends_on": [
+        "config",
+        "control.ControlBus",
+        "notifications.audit",
+        "notifications.commands",
+        "notifications.views",
+        "notifications.work_launcher"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_plan_cog.py"
+      ],
+      "callers": []
+    },
+    "notifications.bot.core": {
+      "path": "notifications/bot/core.py",
+      "purpose": "NightclawBot -- the gateway ``commands.Bot`` harness.",
+      "exports": [
+        {
+          "name": "handleCommand",
+          "kind": "function",
+          "signature": "(content: str) -> str",
+          "summary": "Parse + apply a '!' command against the latest task",
+          "lineno": 36
+        },
+        {
+          "name": "buildBot",
+          "kind": "function",
+          "signature": "()",
+          "summary": "Construct (but do not run) the NightclawBot",
+          "lineno": 47
+        },
+        {
+          "name": "runBot",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "",
+          "lineno": 148
+        }
+      ],
+      "depends_on": [
+        "config",
+        "control.ControlBus",
+        "notifications.bot.ui.dynamic",
+        "notifications.commands",
+        "notifications.slash",
+        "notifications.views"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.command_bot"
+      ]
+    },
+    "notifications.bot.ui": {
+      "path": "notifications/bot/ui/__init__.py",
+      "purpose": "Reusable discord.py UI for the Nightclaw gateway.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "notifications.bot.ui.dynamic": {
+      "path": "notifications/bot/ui/dynamic.py",
+      "purpose": "DynamicItem per-subtask actions (Tier 2). A stateless, regex-custom_id button so any",
+      "exports": [
+        {
+          "name": "applySubtaskAction",
+          "kind": "function",
+          "signature": "(action: str, sid: str, user_id) -> str",
+          "summary": "Pure router: returns the human reply for a per-subtask action",
+          "lineno": 25
+        },
+        {
+          "name": "subtaskButton",
+          "kind": "function",
+          "signature": "(action: str, sid: str) -> 'SubtaskButton'",
+          "summary": "",
+          "lineno": 46
+        },
+        {
+          "name": "SubtaskButton",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 50
+        }
+      ],
+      "depends_on": [
+        "config",
+        "control.ControlBus",
+        "notifications.audit",
+        "notifications.commands"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_dynamic.py"
+      ],
+      "callers": [
+        "notifications.bot.core"
+      ]
+    },
+    "notifications.branding": {
+      "path": "notifications/branding.py",
+      "purpose": "9TO5 Discord design system + rich embed builders. Pure (no network, no discord.py).",
+      "exports": [
+        {
+          "name": "controlPanelRow",
+          "kind": "function",
+          "signature": "() -> list",
+          "summary": "Two action rows of control buttons (<=5/row)",
+          "lineno": 21
+        },
+        {
+          "name": "brandEmbed",
+          "kind": "function",
+          "signature": "(title: str, *, description: Optional[str]=None, color: Optional[int]=None, fields: Optional[list]=None, uptime: Optional[str]=None) -> dict",
+          "summary": "",
+          "lineno": 38
+        },
+        {
+          "name": "helpEmbed",
+          "kind": "function",
+          "signature": "() -> dict",
+          "summary": "",
+          "lineno": 75
+        },
+        {
+          "name": "statusEmbed",
+          "kind": "function",
+          "signature": "(state, bus, uptime: Optional[str]=None) -> dict",
+          "summary": "",
+          "lineno": 89
+        },
+        {
+          "name": "planEmbed",
+          "kind": "function",
+          "signature": "(state, page: int=0, per: int=10)",
+          "summary": "",
+          "lineno": 129
+        },
+        {
+          "name": "runsEmbed",
+          "kind": "function",
+          "signature": "(summaries, page: int=0, per: int=8)",
+          "summary": "",
+          "lineno": 139
+        },
+        {
+          "name": "runEmbed",
+          "kind": "function",
+          "signature": "(state) -> dict",
+          "summary": "",
+          "lineno": 149
+        },
+        {
+          "name": "diagnosticsEmbed",
+          "kind": "function",
+          "signature": "(checks) -> dict",
+          "summary": "",
+          "lineno": 166
+        },
+        {
+          "name": "metricsEmbed",
+          "kind": "function",
+          "signature": "(m) -> dict",
+          "summary": "",
+          "lineno": 180
+        },
+        {
+          "name": "pingEmbed",
+          "kind": "function",
+          "signature": "(latency_ms, uptime, version) -> dict",
+          "summary": "",
+          "lineno": 194
+        },
+        {
+          "name": "auditEmbed",
+          "kind": "function",
+          "signature": "(entries) -> dict",
+          "summary": "",
+          "lineno": 202
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.commands",
+        "notifications.discord_bot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_branding.py"
+      ],
+      "callers": [
+        "notifications.cv2",
+        "notifications.dashboard",
+        "notifications.slash"
+      ]
+    },
+    "notifications.bus": {
+      "path": "notifications/bus.py",
+      "purpose": "NotificationBus — fan-out event emitter for notification surfaces.",
+      "exports": [
+        {
+          "name": "NotificationSurface",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 17
+        },
+        {
+          "name": "NotificationBus",
+          "kind": "class",
+          "signature": "",
+          "summary": "Register surfaces once",
+          "lineno": 21
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_bus_documentation.py",
+        "tests/test_config_robust_env.py",
+        "tests/test_memory_robustness.py",
+        "tests/test_notification_bus.py",
+        "tests/test_notification_bus_docs.py"
+      ],
+      "callers": []
+    },
+    "notifications.cast": {
+      "path": "notifications/cast.py",
+      "purpose": "The Cast -- speak() routes an agent's voice through its webhook persona.",
+      "exports": [
+        {
+          "name": "enabled",
+          "kind": "function",
+          "signature": "() -> bool",
+          "summary": "",
+          "lineno": 20
+        },
+        {
+          "name": "speak",
+          "kind": "function",
+          "signature": "(role: str, text: Optional[str]=None, *, embed: Optional[dict]=None, components: Optional[list]=None, files: Optional[list]=None, thread_id: Optional[str]=None, milestone: bool=False) -> bool",
+          "summary": "Post AS the persona for ``role``",
+          "lineno": 24
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.discord_bot",
+        "notifications.personas"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_cast.py"
+      ],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "notifications.command_bot": {
+      "path": "notifications/command_bot.py",
+      "purpose": "Back-compat shim for the gateway command bot.",
+      "exports": [
+        {
+          "name": "runCommandBot",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Start the Nightclaw gateway (delegates to :func:`notifications.bot.core.runBot`).",
+          "lineno": 25
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.bot.core",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_command_bot.py"
+      ],
+      "callers": []
+    },
+    "notifications.commands": {
+      "path": "notifications/commands.py",
+      "purpose": "Pure, discord-free command layer -- the single source of truth for the '!' grammar,",
+      "exports": [
+        {
+          "name": "Command",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 39
+        },
+        {
+          "name": "parseCommand",
+          "kind": "function",
+          "signature": "(content: str) -> Optional[Command]",
+          "summary": "Exact-token parse of a '!' command",
+          "lineno": 44
+        },
+        {
+          "name": "isAuthorized",
+          "kind": "function",
+          "signature": "(user_id: Optional[object]) -> bool",
+          "summary": "True if no owner configured (dev), else only the configured owner",
+          "lineno": 59
+        },
+        {
+          "name": "decide",
+          "kind": "function",
+          "signature": "(author_id: Optional[object], is_bot: bool, content: str) -> Optional[Command]",
+          "summary": "Shared gate for BOTH the gateway and the in-run poller: returns the command to",
+          "lineno": 70
+        },
+        {
+          "name": "resolveTargetTask",
+          "kind": "function",
+          "signature": "() -> Optional[TaskState]",
+          "summary": "",
+          "lineno": 81
+        },
+        {
+          "name": "isRunActive",
+          "kind": "function",
+          "signature": "(state: Optional[TaskState]) -> bool",
+          "summary": "A run is 'active' iff its status is not terminal",
+          "lineno": 85
+        },
+        {
+          "name": "footerHelp",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "Short, never-stale command hint derived from the registry (used by the dashboard).",
+          "lineno": 93
+        },
+        {
+          "name": "applyCommand",
+          "kind": "function",
+          "signature": "(bus: ControlBus, state: TaskState, cmd: Command) -> str",
+          "summary": "Perform the bus mutation and return human markdown text ('' for silent control ops).",
+          "lineno": 136
+        }
+      ],
+      "depends_on": [
+        "config",
+        "control.ControlBus",
+        "learning.human_feedback",
+        "notifications.discord_bot",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_commands.py"
+      ],
+      "callers": [
+        "notifications.bot.cogs.admin",
+        "notifications.bot.cogs.ask_cog",
+        "notifications.bot.cogs.plan_cog",
+        "notifications.bot.core",
+        "notifications.bot.ui.dynamic",
+        "notifications.branding",
+        "notifications.dashboard",
+        "notifications.slash",
+        "notifications.views",
+        "notifications.work_launcher",
+        "orchestrator"
+      ]
+    },
+    "notifications.console_hud": {
+      "path": "notifications/console_hud.py",
+      "purpose": "ANSI mission-console HUD (T8 cinematic). A PURE renderer that turns live TaskState into",
+      "exports": [
+        {
+          "name": "render",
+          "kind": "function",
+          "signature": "(state, phase: str, *, events: Optional[list]=None, width: int=36) -> str",
+          "summary": "Return the full ```ansi HUD block for ``state``",
+          "lineno": 38
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.cv2"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_console_hud.py"
+      ],
+      "callers": [
+        "notifications.bot.cogs.admin"
+      ]
+    },
+    "notifications.cv2": {
+      "path": "notifications/cv2.py",
+      "purpose": "Components-V2 cockpit builders -- pure, no network, no discord.py.",
+      "exports": [
+        {
+          "name": "container",
+          "kind": "function",
+          "signature": "(children: list, accent: Optional[int]=None, spoiler: bool=False) -> dict",
+          "summary": "",
+          "lineno": 32
+        },
+        {
+          "name": "text",
+          "kind": "function",
+          "signature": "(content: str) -> dict",
+          "summary": "",
+          "lineno": 41
+        },
+        {
+          "name": "separator",
+          "kind": "function",
+          "signature": "(divider: bool=True, spacing: int=1) -> dict",
+          "summary": "",
+          "lineno": 45
+        },
+        {
+          "name": "section",
+          "kind": "function",
+          "signature": "(children: list, accessory: dict) -> dict",
+          "summary": "A Section: 1-3 text children + one accessory (Thumbnail or Button).",
+          "lineno": 49
+        },
+        {
+          "name": "thumbnail",
+          "kind": "function",
+          "signature": "(url: str, description: Optional[str]=None) -> dict",
+          "summary": "",
+          "lineno": 54
+        },
+        {
+          "name": "media_gallery",
+          "kind": "function",
+          "signature": "(urls: list) -> dict",
+          "summary": "",
+          "lineno": 61
+        },
+        {
+          "name": "action_row",
+          "kind": "function",
+          "signature": "(components: list) -> dict",
+          "summary": "",
+          "lineno": 65
+        },
+        {
+          "name": "elapsedStr",
+          "kind": "function",
+          "signature": "(started_at) -> str",
+          "summary": "",
+          "lineno": 70
+        },
+        {
+          "name": "etaStr",
+          "kind": "function",
+          "signature": "(started_at, done: int, total: int) -> str",
+          "summary": "",
+          "lineno": 88
+        },
+        {
+          "name": "buildCockpit",
+          "kind": "function",
+          "signature": "(state, phase: str, *, events: Optional[list]=None, model: Optional[str]=None, effort: str='default', image_url: Optional[str]=None) -> tuple[list, int]",
+          "summary": "Return ``(components, flags)`` for the live cockpit",
+          "lineno": 111
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.branding",
+        "notifications.discord_bot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_cv2.py"
+      ],
+      "callers": [
+        "notifications.bot.cogs.admin",
+        "notifications.console_hud",
+        "notifications.dashboard"
+      ]
+    },
+    "notifications.dashboard": {
+      "path": "notifications/dashboard.py",
+      "purpose": "DiscordDashboard -- ONE persistent, pinned embed that mirrors the whole run.",
+      "exports": [
+        {
+          "name": "DiscordDashboard",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 34
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.branding",
+        "notifications.commands",
+        "notifications.cv2",
+        "notifications.discord_bot",
+        "notifications.visuals",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_dashboard.py"
+      ],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "notifications.discord_bot": {
+      "path": "notifications/discord_bot.py",
+      "purpose": "Discord notifications -- professional, glass-box embeds + REST plumbing.",
+      "exports": [
+        {
+          "name": "humanPing",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "`<@id>` mention for the human, ONLY used on severe events",
+          "lineno": 40
+        },
+        {
+          "name": "progressBar",
+          "kind": "function",
+          "signature": "(done: int, total: int, width: int=16) -> str",
+          "summary": "",
+          "lineno": 47
+        },
+        {
+          "name": "subtaskTracker",
+          "kind": "function",
+          "signature": "(subtasks: list[dict], limit: int=12) -> str",
+          "summary": "",
+          "lineno": 56
+        },
+        {
+          "name": "effortBar",
+          "kind": "function",
+          "signature": "(effort: Optional[str]) -> str",
+          "summary": "",
+          "lineno": 66
+        },
+        {
+          "name": "statusColor",
+          "kind": "function",
+          "signature": "(status: Optional[str]) -> int",
+          "summary": "",
+          "lineno": 73
+        },
+        {
+          "name": "relTime",
+          "kind": "function",
+          "signature": "(value=None) -> str",
+          "summary": "Discord native relative timestamp: <t:UNIX:R>.",
+          "lineno": 77
+        },
+        {
+          "name": "formatVerdict",
+          "kind": "function",
+          "signature": "(verdict: Optional[str]) -> str",
+          "summary": "",
+          "lineno": 95
+        },
+        {
+          "name": "truncate",
+          "kind": "function",
+          "signature": "(text, n: int) -> str",
+          "summary": "Clamp to n chars, marking a clip with a trailing ellipsis.",
+          "lineno": 196
+        },
+        {
+          "name": "createComponentsV2",
+          "kind": "function",
+          "signature": "(components: list, files: Optional[list]=None) -> Optional[str]",
+          "summary": "POST a Components-V2 message (flag 32768; no content/embeds)",
+          "lineno": 318
+        },
+        {
+          "name": "editComponentsV2Result",
+          "kind": "function",
+          "signature": "(message_id: str, components: list, files: Optional[list]=None) -> str",
+          "summary": "Edit a CV2 message in place",
+          "lineno": 335
+        },
+        {
+          "name": "sendComponentsV2",
+          "kind": "function",
+          "signature": "(components: list, files: Optional[list]=None, milestone: bool=False) -> dict",
+          "summary": "Post a one-off CV2 message (e.g",
+          "lineno": 360
+        },
+        {
+          "name": "sendAs",
+          "kind": "function",
+          "signature": "(persona: dict, *, content: Optional[str]=None, embed: Optional[dict]=None, embeds: Optional[list]=None, components: Optional[list]=None, files: Optional[list]=None, thread_id: Optional[str]=None, components_v2: bool=False) -> bool",
+          "summary": "Post a message AS ``persona`` (a dict with 'name'/'avatar_url') through the Cast webhoo…",
+          "lineno": 406
+        },
+        {
+          "name": "createMessage",
+          "kind": "function",
+          "signature": "(embed: dict, content: Optional[str]=None, components: Optional[list]=None) -> Optional[str]",
+          "summary": "",
+          "lineno": 440
+        },
+        {
+          "name": "postContent",
+          "kind": "function",
+          "signature": "(content: str, components: Optional[list]=None) -> Optional[str]",
+          "summary": "Post a content-only message (no embed) -- e.g",
+          "lineno": 456
+        },
+        {
+          "name": "editContent",
+          "kind": "function",
+          "signature": "(message_id: str, content: str) -> str",
+          "summary": "PATCH a content-only message in place (HUD live-repaint)",
+          "lineno": 471
+        },
+        {
+          "name": "editMessageResult",
+          "kind": "function",
+          "signature": "(message_id: str, embed: dict, content: Optional[str]=None, components: Optional[list]=None) -> str",
+          "summary": "Edit a message, returning a status the caller can ACT on:",
+          "lineno": 486
+        },
+        {
+          "name": "editMessage",
+          "kind": "function",
+          "signature": "(message_id: str, embed: dict, content: Optional[str]=None, components: Optional[list]=None) -> bool",
+          "summary": "",
+          "lineno": 514
+        },
+        {
+          "name": "pinMessage",
+          "kind": "function",
+          "signature": "(message_id: Optional[str]) -> bool",
+          "summary": "",
+          "lineno": 519
+        },
+        {
+          "name": "unpinMessage",
+          "kind": "function",
+          "signature": "(message_id: Optional[str]) -> bool",
+          "summary": "Idempotent: 404 (already unpinned / message gone) counts as success.",
+          "lineno": 530
+        },
+        {
+          "name": "fetchMessagesAfter",
+          "kind": "function",
+          "signature": "(after_id: Optional[str], limit: int=25) -> tuple[list[dict], Optional[str]]",
+          "summary": "Control-poll path: retries=0 so a 429 returns immediately and never blocks the run loop.",
+          "lineno": 540
+        },
+        {
+          "name": "baselineLatestId",
+          "kind": "function",
+          "signature": "() -> Optional[str]",
+          "summary": "Newest message id (no messages returned)",
+          "lineno": 560
+        },
+        {
+          "name": "sendEmbed",
+          "kind": "function",
+          "signature": "(embed: dict, content: Optional[str]=None, components: Optional[list]=None, milestone: bool=False) -> dict",
+          "summary": "Post a new embed message",
+          "lineno": 574
+        },
+        {
+          "name": "planningStartEmbed",
+          "kind": "function",
+          "signature": "(goal: str, subtasks) -> dict",
+          "summary": "Structured plan embed",
+          "lineno": 608
+        },
+        {
+          "name": "architectDoneEmbed",
+          "kind": "function",
+          "signature": "(doc_path: str) -> dict",
+          "summary": "",
+          "lineno": 640
+        },
+        {
+          "name": "adversaryTriggeredEmbed",
+          "kind": "function",
+          "signature": "(subtask_title: str, reason: str, verdict: Optional[str]=None) -> dict",
+          "summary": "",
+          "lineno": 649
+        },
+        {
+          "name": "noticeEmbed",
+          "kind": "function",
+          "signature": "(reason: str, title: str='ℹ️ 9TO5 — notice') -> dict",
+          "summary": "An AUTONOMOUS, informational event the system already handled itself (a fallback was ta…",
+          "lineno": 673
+        },
+        {
+          "name": "blockedEmbed",
+          "kind": "function",
+          "signature": "(reason: str, question: Optional[str]=None) -> dict",
+          "summary": "",
+          "lineno": 686
+        },
+        {
+          "name": "blockedComponents",
+          "kind": "function",
+          "signature": "() -> list",
+          "summary": "Action row with Answer / Skip / Abort buttons (handled by the gateway bot).",
+          "lineno": 700
+        },
+        {
+          "name": "completeEmbed",
+          "kind": "function",
+          "signature": "(state, pr_link: str, elapsed: str) -> dict",
+          "summary": "",
+          "lineno": 709
+        },
+        {
+          "name": "sendBlocked",
+          "kind": "function",
+          "signature": "(reason: str, question: Optional[str]=None) -> dict",
+          "summary": "Severe: new message, owner ping only (allowed_mentions can't expand past owner), with",
+          "lineno": 744
+        },
+        {
+          "name": "gateNeededEmbed",
+          "kind": "function",
+          "signature": "(gate: str) -> dict",
+          "summary": "",
+          "lineno": 750
+        },
+        {
+          "name": "subtaskFailedEmbed",
+          "kind": "function",
+          "signature": "(subtask_id: str, title: str, verify_result: Optional[dict], attempts: int) -> dict",
+          "summary": "",
+          "lineno": 760
+        },
+        {
+          "name": "abortedEmbed",
+          "kind": "function",
+          "signature": "(reason: str, elapsed: str) -> dict",
+          "summary": "",
+          "lineno": 782
+        },
+        {
+          "name": "selfRefEmbed",
+          "kind": "function",
+          "signature": "(branch: str, protected: tuple) -> dict",
+          "summary": "",
+          "lineno": 794
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.executor",
+        "agents.hooks",
+        "notifications.bot.cogs.admin",
+        "notifications.branding",
+        "notifications.cast",
+        "notifications.commands",
+        "notifications.cv2",
+        "notifications.dashboard",
+        "orchestrator"
+      ]
+    },
+    "notifications.entry": {
+      "path": "notifications/entry.py",
+      "purpose": "NotificationEntry — typed schema for entries written to task.data['notifications'].",
+      "exports": [
+        {
+          "name": "makeEntry",
+          "kind": "function",
+          "signature": "(kind: str, detail: str, **extra: Any) -> dict[str, Any]",
+          "summary": "Build a well-formed notification entry with a UTC ISO-8601 timestamp,",
+          "lineno": 60
+        },
+        {
+          "name": "isValid",
+          "kind": "function",
+          "signature": "(entry: dict[str, Any]) -> bool",
+          "summary": "Return True iff validate() finds no errors.",
+          "lineno": 83
+        },
+        {
+          "name": "validate",
+          "kind": "function",
+          "signature": "(entry: dict[str, Any]) -> list[str]",
+          "summary": "Return a list of validation errors (empty means valid).",
+          "lineno": 88
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_entry_creation.py",
+        "tests/test_notification_entry.py",
+        "tests/test_notification_entry_schema.py"
+      ],
+      "callers": [
+        "state.task"
+      ]
+    },
+    "notifications.metrics": {
+      "path": "notifications/metrics.py",
+      "purpose": "Aggregate run metrics from the task-state JSON store. Pure (reads files only).",
+      "exports": [
+        {
+          "name": "compute",
+          "kind": "function",
+          "signature": "() -> dict",
+          "summary": "",
+          "lineno": 32
+        }
+      ],
+      "depends_on": [
+        "config",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_metrics.py"
+      ],
+      "callers": [
+        "notifications.slash"
+      ]
+    },
+    "notifications.personas": {
+      "path": "notifications/personas.py",
+      "purpose": "The Cast -- the 9to5 agent roster used for webhook identity overrides.",
+      "exports": [
+        {
+          "name": "persona",
+          "kind": "function",
+          "signature": "(role: str) -> dict",
+          "summary": "Resolve a role to its persona dict (falls back to Brain), with avatar_url filled in.",
+          "lineno": 34
+        },
+        {
+          "name": "roles",
+          "kind": "function",
+          "signature": "() -> tuple",
+          "summary": "",
+          "lineno": 44
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.cast"
+      ]
+    },
+    "notifications.slash": {
+      "path": "notifications/slash.py",
+      "purpose": "All 9TO5 slash commands, registered onto a CommandTree. Thin shells over the",
+      "exports": [
+        {
+          "name": "registerSlashCommands",
+          "kind": "function",
+          "signature": "(tree: 'app_commands.CommandTree', client: 'discord.Client', started_at: float) -> None",
+          "summary": "",
+          "lineno": 33
+        }
+      ],
+      "depends_on": [
+        "agents.browser_executor",
+        "config",
+        "control.ControlBus",
+        "health",
+        "notifications.audit",
+        "notifications.branding",
+        "notifications.commands",
+        "notifications.metrics",
+        "notifications.views",
+        "notifications.work_launcher",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_slash.py"
+      ],
+      "callers": [
+        "notifications.bot.core"
+      ]
+    },
+    "notifications.views": {
+      "path": "notifications/views.py",
+      "purpose": "discord.py UI components for the 9TO5 gateway: persistent control-panel + blocked",
+      "exports": [
+        {
+          "name": "ConfirmView",
+          "kind": "class",
+          "signature": "",
+          "summary": "Ephemeral Confirm/Cancel",
+          "lineno": 61
+        },
+        {
+          "name": "confirmDestructive",
+          "kind": "function",
+          "signature": "(interaction: 'discord.Interaction', label: str) -> bool",
+          "summary": "Send an ephemeral confirm dialog (this consumes the initial response)",
+          "lineno": 84
+        },
+        {
+          "name": "ControlPanelView",
+          "kind": "class",
+          "signature": "",
+          "summary": "Persistent (timeout=None)",
+          "lineno": 92
+        },
+        {
+          "name": "BlockedView",
+          "kind": "class",
+          "signature": "",
+          "summary": "Persistent view for the BLOCKED embed's Answer/Skip/Abort buttons (custom_ids sc_*).",
+          "lineno": 126
+        },
+        {
+          "name": "Paginator",
+          "kind": "class",
+          "signature": "",
+          "summary": "Prev/Next over pre-built discord.Embed pages, bound to the invoking user.",
+          "lineno": 148
+        },
+        {
+          "name": "WorkSetupView",
+          "kind": "class",
+          "signature": "",
+          "summary": "Dropdowns + Launch/Cancel for the /work guided setup (used after WorkModal).",
+          "lineno": 180
+        },
+        {
+          "name": "WipeSetupView",
+          "kind": "class",
+          "signature": "",
+          "summary": "Multi-select wipe config view",
+          "lineno": 270
+        },
+        {
+          "name": "WipeConfirmView",
+          "kind": "class",
+          "signature": "",
+          "summary": "Final confirm/cancel for a wipe",
+          "lineno": 348
+        },
+        {
+          "name": "WorkModal",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 381
+        }
+      ],
+      "depends_on": [
+        "agents.browser_executor",
+        "config",
+        "control.ControlBus",
+        "notifications.audit",
+        "notifications.commands",
+        "notifications.work_launcher",
+        "wipe.CATEGORIES",
+        "wipe.executeWipe",
+        "wipe.restartBot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_views.py"
+      ],
+      "callers": [
+        "notifications.bot.cogs.plan_cog",
+        "notifications.bot.core",
+        "notifications.slash"
+      ]
+    },
+    "notifications.visuals": {
+      "path": "notifications/visuals.py",
+      "purpose": "Generative visuals -- Pillow-rendered cockpit imagery (progress cards, burndown",
+      "exports": [
+        {
+          "name": "available",
+          "kind": "function",
+          "signature": "() -> bool",
+          "summary": "",
+          "lineno": 35
+        },
+        {
+          "name": "progressCard",
+          "kind": "function",
+          "signature": "(state, *, phase: str='executing', model: Optional[str]=None, effort: str='default') -> Optional[bytes]",
+          "summary": "A wide cockpit-hero PNG: phase, goal, progress bar, subtask grid, footer metrics.",
+          "lineno": 81
+        },
+        {
+          "name": "burndownChart",
+          "kind": "function",
+          "signature": "(state) -> Optional[bytes]",
+          "summary": "A simple status-breakdown bar chart (done/in_progress/failed/pending) as PNG.",
+          "lineno": 146
+        },
+        {
+          "name": "timelapseGif",
+          "kind": "function",
+          "signature": "(frames: list, *, duration_ms: int=700) -> Optional[bytes]",
+          "summary": "Stitch a list of PNG-byte frames into an animated GIF (end-of-run replay)",
+          "lineno": 179
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_visuals.py"
+      ],
+      "callers": [
+        "notifications.dashboard"
+      ]
+    },
+    "notifications.webdash": {
+      "path": "notifications/webdash.py",
+      "purpose": "webdash -- a zero-dependency local web dashboard for a running task.",
+      "exports": [
+        {
+          "name": "startWebDashboard",
+          "kind": "function",
+          "signature": "(task_id: str, port: Optional[int]=None) -> Optional[str]",
+          "summary": "Start the dashboard in a daemon thread",
+          "lineno": 230
+        },
+        {
+          "name": "stopWebDashboard",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Shut down the running dashboard server (frees the port)",
+          "lineno": 250
+        }
+      ],
+      "depends_on": [
+        "config",
+        "control.ControlBus",
+        "control.GATES",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_webdash_control.py"
+      ],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "notifications.work_launcher": {
+      "path": "notifications/work_launcher.py",
+      "purpose": "Pure launcher core for the Discord /work command. No discord import -> unit-testable.",
+      "exports": [
+        {
+          "name": "WorkRequest",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 53
+        },
+        {
+          "name": "parseHours",
+          "kind": "function",
+          "signature": "(raw) -> float",
+          "summary": "Tolerant parse ('2', '2h', '1.5')",
+          "lineno": 63
+        },
+        {
+          "name": "validate",
+          "kind": "function",
+          "signature": "(req: WorkRequest) -> list[str]",
+          "summary": "",
+          "lineno": 80
+        },
+        {
+          "name": "buildArgv",
+          "kind": "function",
+          "signature": "(req: WorkRequest) -> list[str]",
+          "summary": "",
+          "lineno": 97
+        },
+        {
+          "name": "activeRun",
+          "kind": "function",
+          "signature": "() -> Optional[TaskState]",
+          "summary": "The latest task iff it's still active",
+          "lineno": 115
+        },
+        {
+          "name": "newestTaskSince",
+          "kind": "function",
+          "signature": "(ts: float) -> Optional[str]",
+          "summary": "task_id of the newest state file created at/after `ts` (with ~2s mtime fuzz for filesys…",
+          "lineno": 176
+        },
+        {
+          "name": "spawn",
+          "kind": "function",
+          "signature": "(req: WorkRequest) -> int",
+          "summary": "",
+          "lineno": 214
+        },
+        {
+          "name": "buildResumeArgv",
+          "kind": "function",
+          "signature": "(task_id: str) -> list[str]",
+          "summary": "",
+          "lineno": 218
+        },
+        {
+          "name": "taskExists",
+          "kind": "function",
+          "signature": "(task_id: str) -> bool",
+          "summary": "",
+          "lineno": 222
+        },
+        {
+          "name": "spawnResume",
+          "kind": "function",
+          "signature": "(task_id: str) -> int",
+          "summary": "",
+          "lineno": 226
+        },
+        {
+          "name": "launchOrError",
+          "kind": "function",
+          "signature": "(req: WorkRequest) -> str",
+          "summary": "Validate -> block-if-active -> spawn -> confirm",
+          "lineno": 230
+        },
+        {
+          "name": "resumeOrError",
+          "kind": "function",
+          "signature": "(task_id: str) -> str",
+          "summary": "Resume an existing task by id (block if a run is active)",
+          "lineno": 260
+        }
+      ],
+      "depends_on": [
+        "config",
+        "control.ControlBus",
+        "notifications.commands",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_work_launcher.py"
+      ],
+      "callers": [
+        "learning.sie",
+        "notifications.bot.cogs.plan_cog",
+        "notifications.slash",
+        "notifications.views"
+      ]
+    },
+    "orchestrator": {
+      "path": "orchestrator.py",
+      "purpose": "Orchestrator -- the brain (Ollama qwen2.5:7b) + the core autonomous loop.",
+      "exports": [
+        {
+          "name": "refreshClaudeKnowledge",
+          "kind": "function",
+          "signature": "(obs: 'ObsidianClient | None'=None, *, fetch_web: bool | None=None, log_session: bool=True, force: bool=False) -> str",
+          "summary": "Living knowledge refresh",
+          "lineno": 85
+        },
+        {
+          "name": "Orchestrator",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 365
+        }
+      ],
+      "depends_on": [
+        "agents.adversary",
+        "agents.architect",
+        "agents.browser_executor",
+        "agents.clarifier",
+        "agents.executor",
+        "agents.replanner",
+        "agents.second_brain",
+        "agents.verifier",
+        "config",
+        "control.AbortRun",
+        "control.ControlBus",
+        "epoch",
+        "knowledge",
+        "learning.adversary_trust",
+        "learning.confidence",
+        "learning.eval_harness",
+        "learning.eval_runner",
+        "learning.finetune",
+        "learning.knowledge_graph",
+        "learning.policy",
+        "learning.postmortem",
+        "learning.prompts",
+        "learning.reflection",
+        "learning.sie",
+        "learning.solution_cache",
+        "llm_io",
+        "memory.experience",
+        "memory.obsidian",
+        "memory.retrieval",
+        "notifications.audit",
+        "notifications.cast",
+        "notifications.commands",
+        "notifications.dashboard",
+        "notifications.discord_bot",
+        "notifications.webdash",
+        "selfmod",
+        "state.task",
+        "surfaces"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_orchestrator_poll.py"
+      ],
+      "callers": []
+    },
+    "provenance": {
+      "path": "provenance.py",
+      "purpose": "Primitive 1 -- provenance. An origin tag carried on every ingested byte; provenance,",
+      "exports": [
+        {
+          "name": "Origin",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 11
+        },
+        {
+          "name": "Provenance",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 20
+        },
+        {
+          "name": "coerce",
+          "kind": "function",
+          "signature": "(d: Optional[dict]) -> Provenance",
+          "summary": "Best-effort parse",
+          "lineno": 36
+        },
+        {
+          "name": "Verdict",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 47
+        },
+        {
+          "name": "Decision",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 54
+        },
+        {
+          "name": "assertIngestible",
+          "kind": "function",
+          "signature": "(surface: str, intended_role: str, prov: Provenance) -> Decision",
+          "summary": "The single ingestion chokepoint",
+          "lineno": 63
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_provenance.py"
+      ],
+      "callers": [
+        "knowledge",
+        "learning.prompts"
+      ]
+    },
+    "resilience": {
+      "path": "resilience.py",
+      "purpose": "Run supervision & resilience -- the backbone of the 9am->5pm promise.",
+      "exports": [
+        {
+          "name": "remaining_seconds",
+          "kind": "function",
+          "signature": "(state: TaskState) -> Optional[float]",
+          "summary": "Seconds until the deadline (negative once passed)",
+          "lineno": 30
+        },
+        {
+          "name": "deadline_passed",
+          "kind": "function",
+          "signature": "(state: TaskState) -> bool",
+          "summary": "",
+          "lineno": 41
+        },
+        {
+          "name": "is_terminal",
+          "kind": "function",
+          "signature": "(state: TaskState) -> bool",
+          "summary": "",
+          "lineno": 46
+        },
+        {
+          "name": "last_progress_at",
+          "kind": "function",
+          "signature": "(state: TaskState) -> Optional[str]",
+          "summary": "ISO timestamp of the most recent subtask completion (progress heartbeat).",
+          "lineno": 50
+        },
+        {
+          "name": "is_stalled",
+          "kind": "function",
+          "signature": "(state: TaskState, *, max_idle_seconds: float) -> bool",
+          "summary": "True if no subtask has completed within ``max_idle_seconds`` (a hung run).",
+          "lineno": 56
+        },
+        {
+          "name": "pick_resume_task",
+          "kind": "function",
+          "signature": "() -> Optional[str]",
+          "summary": "The most-recent interrupted (non-terminal) task to auto-resume, or None.",
+          "lineno": 68
+        },
+        {
+          "name": "run_with_recovery",
+          "kind": "function",
+          "signature": "(run_fn: Callable[[TaskState], dict], state: TaskState, *, max_restarts: Optional[int]=None, backoff_base: float=2.0, sleep: Callable[[float], None]=time.sleep, reload_state: Optional[Callable[[str], TaskState]]=None) -> dict",
+          "summary": "Run ``run_fn(state)`` and auto-resume it on crash until the task is terminal, the",
+          "lineno": 76
+        }
+      ],
+      "depends_on": [
+        "config",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_resilience.py"
+      ],
+      "callers": [
+        "main"
+      ]
+    },
+    "selfmod": {
+      "path": "selfmod.py",
+      "purpose": "Safe self-modification gate -- lets 9to5 improve its OWN core loop without self-corruption.",
+      "exports": [
+        {
+          "name": "core_files_changed",
+          "kind": "function",
+          "signature": "(work_dir: str) -> list[str]",
+          "summary": "Core protected files with uncommitted changes in ``work_dir`` (or []).",
+          "lineno": 29
+        },
+        {
+          "name": "revert_core",
+          "kind": "function",
+          "signature": "(work_dir: str, files: list[str]) -> None",
+          "summary": "Revert the given core files to HEAD (discard the breaking self-edit).",
+          "lineno": 54
+        },
+        {
+          "name": "safety_gate",
+          "kind": "function",
+          "signature": "(work_dir: str, *, is_self_referential: bool, test_runner: Optional[Callable[[str], tuple[bool, str]]]=None, code_diverged: bool=False) -> dict[str, Any]",
+          "summary": "Run the post-run core-change safety gate",
+          "lineno": 87
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_selfmod.py"
+      ],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "sim_error_handling": {
+      "path": "sim_error_handling.py",
+      "purpose": "Error handling utilities for the simulation layer.",
+      "exports": [
+        {
+          "name": "safeParseJson",
+          "kind": "function",
+          "signature": "(text: str, fallback: Any=None) -> Any",
+          "summary": "Return parsed JSON or *fallback* on any parse / type error.",
+          "lineno": 18
+        },
+        {
+          "name": "safeWritePath",
+          "kind": "function",
+          "signature": "(path, content: str, encoding: str='utf-8') -> dict",
+          "summary": "Write *content* to *path*, creating parent dirs as needed.",
+          "lineno": 27
+        },
+        {
+          "name": "safeChatExtract",
+          "kind": "function",
+          "signature": "(messages, role: str='user') -> str",
+          "summary": "Return the last *role* message content, or \"\" on any error.",
+          "lineno": 43
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_sim_error_handling.py"
+      ],
+      "callers": []
+    },
+    "simulation": {
+      "path": "simulation.py",
+      "purpose": "Simulation doubles for a --dry-run: exercise the WHOLE 9TO5 pipeline",
+      "exports": [
+        {
+          "name": "SimBrain",
+          "kind": "class",
+          "signature": "",
+          "summary": "Stand-in for ``ollama.Client``",
+          "lineno": 34
+        },
+        {
+          "name": "simRunClaude",
+          "kind": "function",
+          "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw)",
+          "summary": "Fake executor",
+          "lineno": 64
+        },
+        {
+          "name": "simReplan",
+          "kind": "function",
+          "signature": "(*args, **kwargs)",
+          "summary": "",
+          "lineno": 76
+        },
+        {
+          "name": "simReview",
+          "kind": "function",
+          "signature": "(subtask_title, trigger_reason, executor_output, *, ollama_chat=None, goal='')",
+          "summary": "",
+          "lineno": 80
+        },
+        {
+          "name": "SimObs",
+          "kind": "class",
+          "signature": "",
+          "summary": "In-memory Obsidian double: records writes, never touches disk or REST.",
+          "lineno": 85
+        },
+        {
+          "name": "buildOrchestrator",
+          "kind": "function",
+          "signature": "(n_subtasks: int=3)",
+          "summary": "An Orchestrator wired entirely with simulation doubles (no external services).",
+          "lineno": 108
+        },
+        {
+          "name": "BuilderBrain",
+          "kind": "class",
+          "signature": "",
+          "summary": "Plans N subtasks, each producing a real file under ``work_dir`` with a REAL",
+          "lineno": 129
+        },
+        {
+          "name": "builderRunClaude",
+          "kind": "function",
+          "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw)",
+          "summary": "Fake hands that ACTUALLY write the target file parsed from the subtask's verify cmd,",
+          "lineno": 155
+        },
+        {
+          "name": "buildBuilderOrchestrator",
+          "kind": "function",
+          "signature": "(work_dir: str, n_subtasks: int=3)",
+          "summary": "An Orchestrator that produces real artifacts under work_dir and verifies them for real.",
+          "lineno": 182
+        }
+      ],
+      "depends_on": [
+        "config",
+        "orchestrator.Orchestrator"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_simulation_units.py"
+      ],
+      "callers": [
+        "main"
+      ]
+    },
+    "state": {
+      "path": "state/__init__.py",
+      "purpose": "Lean task-state model + JSON persistence (see state.task).",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "state.task": {
+      "path": "state/task.py",
+      "purpose": "Lean task-state model + JSON persistence.",
+      "exports": [
+        {
+          "name": "nowIso",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "Local-timezone ISO-8601 timestamp (second precision).",
+          "lineno": 49
+        },
+        {
+          "name": "TaskState",
+          "kind": "class",
+          "signature": "",
+          "summary": "Wraps the lean state dict and persists it to ``state/tasks/<id>.json``.",
+          "lineno": 54
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience",
+        "notifications.entry"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_memory_subtask_manager.py",
+        "tests/test_task_listrecent.py",
+        "tests/test_task_save_concurrent.py"
+      ],
+      "callers": [
+        "agents.hooks",
+        "main",
+        "memory.experience",
+        "notifications.command_bot",
+        "notifications.commands",
+        "notifications.dashboard",
+        "notifications.metrics",
+        "notifications.slash",
+        "notifications.webdash",
+        "notifications.work_launcher",
+        "orchestrator",
+        "resilience"
+      ]
+    },
+    "surfaces": {
+      "path": "surfaces.py",
+      "purpose": "Surface & tool catalog -- rich automation across EVERY reachable surface.",
+      "exports": [
+        {
+          "name": "reset_cache",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "",
+          "lineno": 29
+        },
+        {
+          "name": "available",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Everything the executor can reach right now, grouped by surface kind.",
+          "lineno": 34
+        },
+        {
+          "name": "catalog_block",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "A compact, injectable catalog + directive so the brain composes across surfaces.",
+          "lineno": 67
+        },
+        {
+          "name": "surfaces_used",
+          "kind": "function",
+          "signature": "(spec: dict[str, Any]) -> list[str]",
+          "summary": "Which surfaces a spec actually invokes -> tags stored for SIE learning.",
+          "lineno": 93
+        }
+      ],
+      "depends_on": [
+        "config",
+        "knowledge"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_surfaces.py"
+      ],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "test_health_probe": {
+      "path": "test_health_probe.py",
+      "purpose": "Test the exact health_probe flow.",
+      "exports": [],
+      "depends_on": [
+        "agents.chatgpt_driver",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "test_phase2_project": {
+      "path": "test_phase2_project.py",
+      "purpose": "VERIFY Phase 2 end-to-end: enter the 9to5 PROJECT, send a multiline adversary prompt,",
+      "exports": [],
+      "depends_on": [
+        "agents.chatgpt_driver",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.affected_tests": {
+      "path": "tools/affected_tests.py",
+      "purpose": "affected_tests -- map changed source files to the pytest targets that cover them.",
+      "exports": [
+        {
+          "name": "targets_for",
+          "kind": "function",
+          "signature": "(files: list[str]) -> list[str]",
+          "summary": "Union of covering tests for ``files`` (repo-relative or absolute), deterministic + dedu…",
+          "lineno": 42
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str]) -> int",
+          "summary": "",
+          "lineno": 61
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.codemod": {
+      "path": "tools/codemod.py",
+      "purpose": "codemod -- AST/libcst-based mechanical edits across the repo (formatting-preserving).",
+      "exports": [
+        {
+          "name": "cmd_usages",
+          "kind": "function",
+          "signature": "(symbol: str, only: str | None=None) -> int",
+          "summary": "Print file:line for every Name/Attribute reference to ``symbol``.",
+          "lineno": 43
+        },
+        {
+          "name": "cmd_rename",
+          "kind": "function",
+          "signature": "(old: str, new: str, apply: bool, only: str | None=None) -> int",
+          "summary": "Rename ``old`` -> ``new`` (Name + .attr) across files",
+          "lineno": 62
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str]) -> int",
+          "summary": "",
+          "lineno": 106
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.dev": {
+      "path": "tools/dev.py",
+      "purpose": "dev -- the one-command developer/agent task runner for 9to5 (cross-platform, no `make`).",
+      "exports": [
+        {
+          "name": "cmd_lint",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 86
+        },
+        {
+          "name": "cmd_typecheck",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 91
+        },
+        {
+          "name": "cmd_check",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "Fail-fast gate chain: ruff -> typecheck(changed) -> affected tests -> repo-map drift.",
+          "lineno": 99
+        },
+        {
+          "name": "cmd_test",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 144
+        },
+        {
+          "name": "cmd_fast",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 148
+        },
+        {
+          "name": "cmd_affected",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 152
+        },
+        {
+          "name": "cmd_watch",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "Poll .py mtimes; on any change, run the affected tests",
+          "lineno": 156
+        },
+        {
+          "name": "cmd_outline",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 192
+        },
+        {
+          "name": "cmd_where",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 220
+        },
+        {
+          "name": "cmd_map",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 249
+        },
+        {
+          "name": "cmd_run",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 253
+        },
+        {
+          "name": "cmd_dryrun",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 257
+        },
+        {
+          "name": "cmd_e2e",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 262
+        },
+        {
+          "name": "cmd_codemod",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 266
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str]) -> int",
+          "summary": "",
+          "lineno": 279
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.repo_map": {
+      "path": "tools/repo_map.py",
+      "purpose": "repo_map -- generate the 9to5 AI-navigation layer from the source AST.",
+      "exports": [
+        {
+          "name": "iter_py_files",
+          "kind": "function",
+          "signature": "(only: Optional[str]=None) -> list[Path]",
+          "summary": "All first-party .py files (sorted, deterministic), skipping EXCLUDE_DIRS",
+          "lineno": 78
+        },
+        {
+          "name": "module_dotted",
+          "kind": "function",
+          "signature": "(path: Path) -> str",
+          "summary": "agents/adversary.py -> 'agents.adversary'",
+          "lineno": 93
+        },
+        {
+          "name": "first_party_roots",
+          "kind": "function",
+          "signature": "() -> set[str]",
+          "summary": "Top-level importable names: every top-level .py stem + every dir holding an __init__.py.",
+          "lineno": 100
+        },
+        {
+          "name": "parse_module",
+          "kind": "function",
+          "signature": "(path: Path, roots: set[str]) -> dict",
+          "summary": "Extract the per-module record (sans callers, which are computed globally).",
+          "lineno": 226
+        },
+        {
+          "name": "find_tests",
+          "kind": "function",
+          "signature": "(dotted: str, name: str) -> list[str]",
+          "summary": "Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> glob -> [].",
+          "lineno": 244
+        },
+        {
+          "name": "build_map",
+          "kind": "function",
+          "signature": "(only: Optional[str]=None) -> dict",
+          "summary": "Full-repo machine index",
+          "lineno": 256
+        },
+        {
+          "name": "toplevel_import_graph",
+          "kind": "function",
+          "signature": "() -> dict[str, list[str]]",
+          "summary": "{dotted-module: [first-party modules imported at LOAD time]}",
+          "lineno": 289
+        },
+        {
+          "name": "render_header",
+          "kind": "function",
+          "signature": "(rec: dict) -> str",
+          "summary": "Render the @AI-MAP block (text only, no surrounding quotes).",
+          "lineno": 304
+        },
+        {
+          "name": "splice_header",
+          "kind": "function",
+          "signature": "(src: str, header: str) -> Optional[str]",
+          "summary": "Return ``src`` with ``header`` placed inside the module docstring (below the prose,",
+          "lineno": 321
+        },
+        {
+          "name": "render_root_agents_md",
+          "kind": "function",
+          "signature": "(m: dict) -> str",
+          "summary": "",
+          "lineno": 347
+        },
+        {
+          "name": "render_package_agents_md",
+          "kind": "function",
+          "signature": "(m: dict, pkg: str) -> str",
+          "summary": "",
+          "lineno": 396
+        },
+        {
+          "name": "write_outputs",
+          "kind": "function",
+          "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
+          "summary": "Write (or --check) all artifacts",
+          "lineno": 425
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: Optional[list[str]]=None) -> int",
+          "summary": "",
+          "lineno": 499
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_repo_map.py"
+      ],
+      "callers": []
+    },
+    "wipe": {
+      "path": "wipe.py",
+      "purpose": "Factory-reset module — granular deletion of 9to5 state, vault, and logs.",
+      "exports": [
+        {
+          "name": "backupState",
+          "kind": "function",
+          "signature": "(keys: list[str]) -> Optional[Path]",
+          "summary": "Tarball the paths about to be wiped",
+          "lineno": 64
+        },
+        {
+          "name": "deleteCategory",
+          "kind": "function",
+          "signature": "(key: str) -> tuple[bool, str]",
+          "summary": "Delete one category",
+          "lineno": 83
+        },
+        {
+          "name": "executeWipe",
+          "kind": "function",
+          "signature": "(keys: list[str], backup: bool=False) -> dict[str, str]",
+          "summary": "Run wipe on selected categories",
+          "lineno": 107
+        },
+        {
+          "name": "restartBot",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Spawn a FRESH detached bot process, then exit this one",
+          "lineno": 120
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    }
+  }
+}

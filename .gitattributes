@@ -1,0 +1,6 @@
+# Generated AI-navigation artifacts are written with LF newlines and byte-compared by the drift
+# test (tests/test_repo_map.py). Pin them to LF so Windows autocrlf can't rewrite them on
+# checkout/commit and make the committed bytes differ from what the generator produces.
+.repo-map.json text eol=lf
+AGENTS.md text eol=lf
+**/AGENTS.md text eol=lf
