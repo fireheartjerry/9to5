@@ -224,3 +224,33 @@ def duelCard(subtask_title: str, verdict: str, *, trust: Optional[float] = None)
     except Exception:  # noqa: BLE001
         LOG.warning("duelCard render failed", exc_info=True)
         return None
+
+
+class _Frame:
+    def __init__(self, meta, subtasks, data):
+        self.meta = meta
+        self.subtasks = subtasks
+        self.data = data
+
+
+def runReplayGif(state, *, max_frames: int = 8) -> Optional[bytes]:
+    """End-of-run cinematic: a GIF of the subtask grid igniting/clearing in order. Renders the
+    progress card at progressively-higher done-counts and stitches the frames. GIF bytes or None."""
+    if not available():
+        return None
+    try:
+        subs = [s for s in state.subtasks if s.get("status") != "removed"]
+        total = len(subs)
+        if total == 0:
+            return None
+        steps = list(range(0, total + 1))
+        if len(steps) > max_frames:
+            steps = sorted({round(i * total / (max_frames - 1)) for i in range(max_frames)})
+        frames = []
+        for k in steps:
+            fsubs = [dict(s, status=("done" if i < k else "pending")) for i, s in enumerate(subs)]
+            frames.append(progressCard(_Frame(dict(state.meta), fsubs, state.data), phase="replay"))
+        return timelapseGif([f for f in frames if f], duration_ms=450)
+    except Exception:  # noqa: BLE001
+        LOG.warning("runReplayGif failed", exc_info=True)
+        return None

@@ -2271,6 +2271,11 @@ class Orchestrator:
             discord.sendEmbed(discord.completeEmbed(state, pr_link, _fmtElapsed(elapsed)))
             cast.speak("brain", f"🧠 Run complete — **{final_status}**, {done}/{total} subtasks in "
                        f"{_fmtElapsed(elapsed)}. That's a wrap, team.", milestone=True)
+            if config.VISUALS_ENABLED and not config.NIGHT_MODE:
+                from notifications import visuals
+                gif = visuals.runReplayGif(state)        # end-of-run cinematic (T8)
+                if gif:
+                    discord.postFile("replay.gif", gif, "image/gif", content="🎬 Run replay")
             state.addNotification("complete", pr_link)
             dashboard.update(state, "complete", f"done {done}/{total} · {_fmtElapsed(elapsed)}")
             # Trust telemetry rollup: surface GPT<->Ollama agreement + challenge stats for the run.

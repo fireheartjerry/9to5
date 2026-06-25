@@ -468,6 +468,23 @@ def postContent(content: str, components: Optional[list] = None) -> Optional[str
     return None
 
 
+def postFile(filename: str, data: bytes, content_type: str,
+             content: Optional[str] = None) -> Optional[str]:
+    """Post a single attachment (e.g. the end-of-run replay GIF) via the shared multipart path."""
+    payload: dict = {}
+    if content:
+        payload["content"] = content[:config.DISCORD_MAX_CONTENT]
+        payload["allowed_mentions"] = _ownerMentions()
+    body, fdict = _multipartParts(payload, [(filename, data, content_type)])
+    r = _request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", data=body, files=fdict)
+    if r is not None and 200 <= r.status_code < 300:
+        try:
+            return str(r.json().get("id"))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
 def editContent(message_id: str, content: str) -> str:
     """PATCH a content-only message in place (HUD live-repaint). 'ok'/'not_found'/'transient'."""
     if not message_id:
