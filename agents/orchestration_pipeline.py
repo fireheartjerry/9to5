@@ -1,0 +1,298 @@
+"""Orchestration pipeline -- finer-grained step control.
+
+Exposes each major orchestration phase as a discrete, named, testable unit.
+Pure (dependency-light) steps are extracted here so tests can exercise them
+without requiring Ollama, Discord, or a live Claude Code subprocess.
+
+Each step returns a ``StepResult`` carrying the outcome, payload, and any
+error message.  The canonical step sequence is in ``PIPELINE_STEPS``.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Any, Callable, Optional
+
+
+# ---------------------------------------------------------------------------
+# Step result -- the return type of every pipeline step
+# ---------------------------------------------------------------------------
+
+@dataclass
+class StepResult:
+    step: str
+    ok: bool
+    payload: dict = field(default_factory=dict)
+    error: Optional[str] = None
+
+    def unwrap(self) -> dict:
+        """Return payload or raise RuntimeError when the step failed."""
+        if not self.ok:
+            raise RuntimeError(f"step '{self.step}' failed: {self.error}")
+        return self.payload
+
+
+# ---------------------------------------------------------------------------
+# Canonical pipeline step registry
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class PipelineStep:
+    """Metadata for one named orchestration step."""
+    name: str
+    description: str
+    depends_on: tuple[str, ...] = ()
+
+
+PIPELINE_STEPS: tuple[PipelineStep, ...] = (
+    PipelineStep("elaborate",  "Expand raw user goal into a structured specification"),
+    PipelineStep("architect",  "Produce architecture decisions for the elaborated goal",
+                 depends_on=("elaborate",)),
+    PipelineStep("plan",       "Break the spec into an ordered subtask list",
+                 depends_on=("elaborate", "architect")),
+    PipelineStep("critique",   "Self-check and fix the subtask plan",
+                 depends_on=("plan",)),
+    PipelineStep("gate_plan",  "Ollama / human plan-gate approval",
+                 depends_on=("critique",)),
+    PipelineStep("spec",       "Author per-subtask JSON invocation spec",
+                 depends_on=("gate_plan",)),
+    PipelineStep("execute",    "Run Claude Code CLI with the invocation spec",
+                 depends_on=("spec",)),
+    PipelineStep("verify",     "Run brain-authored acceptance check on the executor output",
+                 depends_on=("execute",)),
+    PipelineStep("review",     "Adversary second-opinion on the executor output",
+                 depends_on=("verify",)),
+    PipelineStep("replan",     "Replanner may mutate the remaining subtask list",
+                 depends_on=("review",)),
+    PipelineStep("gate_pr",    "Pre-PR gate before final commit",
+                 depends_on=("replan",)),
+    PipelineStep("complete",   "Create GitHub PR and post Discord embed",
+                 depends_on=("gate_pr",)),
+)
+
+STEP_NAMES: frozenset[str] = frozenset(s.name for s in PIPELINE_STEPS)
+
+
+def stepFor(name: str) -> PipelineStep:
+    """Return the PipelineStep for *name*, raising KeyError when unknown."""
+    for s in PIPELINE_STEPS:
+        if s.name == name:
+            return s
+    raise KeyError(f"unknown pipeline step: {name!r}")
+
+
+def executionOrder(steps: "list[PipelineStep] | None" = None) -> list[str]:
+    """Topological order of step names (respects ``depends_on`` edges).
+
+    When *steps* is None the full ``PIPELINE_STEPS`` list is used.  The
+    result is a list of step names in a safe execution order: every
+    dependency appears before the step that needs it.
+    """
+    src = list(steps or PIPELINE_STEPS)
+    in_set = {s.name for s in src}
+    order: list[str] = []
+    # Only track dependencies that are actually present in this subset.
+    remaining = {s.name: set(s.depends_on) & in_set for s in src}
+    while remaining:
+        ready = [n for n, deps in remaining.items() if not deps]
+        if not ready:
+            raise RuntimeError(f"pipeline dependency cycle detected: {sorted(remaining)}")
+        ready.sort(key=lambda n: [s.name for s in src].index(n))
+        for n in ready:
+            order.append(n)
+            del remaining[n]
+            for deps in remaining.values():
+                deps.discard(n)
+    return order
+
+
+# ---------------------------------------------------------------------------
+# Pure step implementations (no Ollama / Discord / subprocess required)
+# ---------------------------------------------------------------------------
+
+_EFFORT_LEVELS = frozenset({"low", "default", "medium", "high", "xhigh", "ultracode"})
+_AVAILABLE_SKILLS: frozenset[str] = frozenset()  # populated lazily from config
+_AVAILABLE_SUBAGENTS: frozenset[str] = frozenset()
+_AVAILABLE_PRE_HOOKS: frozenset[str] = frozenset()
+_AVAILABLE_POST_HOOKS: frozenset[str] = frozenset()
+
+
+def _lazyConfig() -> None:
+    """Prime the allowed-value sets from config on first call (best-effort)."""
+    global _AVAILABLE_SKILLS, _AVAILABLE_SUBAGENTS, _AVAILABLE_PRE_HOOKS, _AVAILABLE_POST_HOOKS
+    if _AVAILABLE_SKILLS:
+        return
+    try:
+        import config as _c
+        _AVAILABLE_SKILLS = frozenset(getattr(_c, "AVAILABLE_SKILLS", []))
+        _AVAILABLE_SUBAGENTS = frozenset(getattr(_c, "AVAILABLE_SUBAGENTS", []))
+        _AVAILABLE_PRE_HOOKS = frozenset(getattr(_c, "AVAILABLE_PRE_HOOKS", []))
+        _AVAILABLE_POST_HOOKS = frozenset(getattr(_c, "AVAILABLE_POST_HOOKS", []))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def sanitizeSpec(spec: Any, subtask: dict,
+                 available_skills: "frozenset[str] | None" = None,
+                 available_subagents: "frozenset[str] | None" = None,
+                 available_pre_hooks: "frozenset[str] | None" = None,
+                 available_post_hooks: "frozenset[str] | None" = None) -> StepResult:
+    """Pure spec-sanitize step: coerce, filter, and validate a brain-authored spec.
+
+    Extracted from ``Orchestrator._sanitizeSpec`` so it can be unit-tested
+    without instantiating the full Orchestrator class.
+
+    Parameters
+    ----------
+    spec:
+        Raw dict from the brain (may be malformed / None / non-dict).
+    subtask:
+        The subtask dict providing a fallback prompt and verify block.
+    available_*:
+        Allowed value sets.  When None, the sets are loaded from ``config``
+        on first call (lazily); pass explicit frozensets in tests to avoid
+        the import.
+    """
+    _lazyConfig()
+    skills_ok = available_skills if available_skills is not None else _AVAILABLE_SKILLS
+    agents_ok = available_subagents if available_subagents is not None else _AVAILABLE_SUBAGENTS
+    pre_ok = available_pre_hooks if available_pre_hooks is not None else _AVAILABLE_PRE_HOOKS
+    post_ok = available_post_hooks if available_post_hooks is not None else _AVAILABLE_POST_HOOKS
+
+    spec = spec if isinstance(spec, dict) else {}
+
+    def _text(v: Any) -> str:
+        return v if isinstance(v, str) else ""
+
+    def _lst(v: Any) -> list:
+        return v if isinstance(v, list) else []
+
+    eff = (_text(spec.get("effort_level")) or "default").lower()
+    eff = eff if eff in _EFFORT_LEVELS else "default"
+
+    skills = [s for s in _lst(spec.get("skills_to_invoke"))
+              if isinstance(s, str) and (not skills_ok or s in skills_ok)]
+    pre = [h for h in _lst(spec.get("pre_tool_hooks"))
+           if isinstance(h, str) and (not pre_ok or h in pre_ok)]
+    post = [h for h in _lst(spec.get("post_tool_hooks"))
+            if isinstance(h, str) and (not post_ok or h in post_ok)]
+    sub = spec.get("subagent")
+    sub = sub if (isinstance(sub, str) and (not agents_ok or sub in agents_ok)) else None
+
+    wf_def = spec.get("workflow_definition")
+    use_wf = bool(spec.get("use_workflow")) and isinstance(wf_def, dict) and bool(wf_def.get("phases"))
+
+    prompt = (_text(spec.get("prompt"))
+              or _text(subtask.get("description"))
+              or _text(subtask.get("title"))).strip()
+
+    return StepResult(
+        step="sanitize_spec",
+        ok=True,
+        payload={
+            "prompt": prompt,
+            "claude_md_inject": _text(spec.get("claude_md_inject")).strip(),
+            "effort_level": eff,
+            "skills_to_invoke": skills,
+            "subagent": sub,
+            "pre_tool_hooks": pre,
+            "post_tool_hooks": post,
+            "use_workflow": use_wf,
+            "workflow_definition": wf_def if use_wf else None,
+        },
+    )
+
+
+def validateSpec(spec: dict) -> StepResult:
+    """Validate a sanitized spec has the minimum required fields populated."""
+    missing = []
+    if not spec.get("prompt"):
+        missing.append("prompt")
+    if spec.get("effort_level") not in _EFFORT_LEVELS:
+        missing.append("effort_level")
+    if missing:
+        return StepResult(step="validate_spec", ok=False,
+                          error=f"spec missing required fields: {missing}")
+    return StepResult(step="validate_spec", ok=True, payload={"spec": spec})
+
+
+def fmtElapsed(seconds: float) -> str:
+    """Format elapsed seconds as ``Hh MMm SSs``."""
+    s = int(seconds)
+    h, rem = divmod(s, 3600)
+    m, sec = divmod(rem, 60)
+    return f"{h}h{m:02d}m{sec:02d}s"
+
+
+def singleDeliverable(goal: str) -> bool:
+    """True when the goal targets at most one file with no multi-deliverable phrasing.
+
+    A goal that ENUMERATES >=2 requirements (``(1)... (2)...``) is never single
+    even when all requirements live in one file.  Mirrors
+    ``Orchestrator._singleDeliverable`` so tests can call it without an
+    Orchestrator instance.
+    """
+    try:
+        from agents.verifier import extractRequirements
+        if len(extractRequirements(goal)) >= 2:
+            return False
+    except Exception:  # noqa: BLE001
+        pass
+    g = (goal or "").lower()
+    files = set(re.findall(
+        r"([A-Za-z0-9_.-]+\.(?:py|md|txt|json|js|ts|tsx|jsx|html|css|csv|ya?ml|cfg|ini|"
+        r"sh|bat|go|rs|java|c|cc|cpp|h|hpp|rb|php|swift|kt|sql|toml))\b", g))
+    multi_phrase = any(w in g for w in ("multiple files", "several files", "multiple deliverables",
+                                        "as well as", "separate "))
+    return len(files) <= 1 and not multi_phrase
+
+
+def verifyStep(verify: "Optional[dict]", work_dir: str, executor_result: dict) -> StepResult:
+    """Thin wrapper around ``verifier.runVerification`` returning a ``StepResult``.
+
+    Keeps the calling code uniform: all steps return ``StepResult``, so the
+    orchestration loop can handle success/failure without per-step isinstance
+    checks.
+    """
+    try:
+        from agents.verifier import runVerification
+        res = runVerification(verify, work_dir, executor_result)
+        return StepResult(
+            step="verify",
+            ok=bool(res.get("passed")),
+            payload=res,
+            error=None if res.get("passed") else f"verify FAILED (rc={res.get('returncode')})",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return StepResult(step="verify", ok=False, payload={}, error=str(exc))
+
+
+def runSteps(steps: "list[str]", context: dict,
+             handlers: "dict[str, Callable[[dict], StepResult]]") -> "list[StepResult]":
+    """Execute a named sequence of steps, stopping on first failure.
+
+    Parameters
+    ----------
+    steps:
+        Ordered list of step names to run.
+    context:
+        Shared mutable dict passed to every handler as its sole argument.
+    handlers:
+        Mapping from step name -> callable(context) -> StepResult.  Steps
+        without a handler are silently skipped (treated as no-op success).
+
+    Returns
+    -------
+    list of StepResult in execution order (including skipped steps).
+    """
+    results: list[StepResult] = []
+    for name in steps:
+        handler = handlers.get(name)
+        if handler is None:
+            results.append(StepResult(step=name, ok=True, payload={"skipped": True}))
+            continue
+        res = handler(context)
+        results.append(res)
+        if not res.ok:
+            break
+    return results

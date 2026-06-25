@@ -49,8 +49,9 @@ class TestTrainerRouting(unittest.TestCase):
         mock.patch.stopall()
 
     def test_default_trainer_none_without_gpu(self):
-        # No GPU in this container -> default trainer is None -> cycle skips, never crashes.
-        with mock.patch.object(finetune, "default_trainer", wraps=finetune.default_trainer):
+        # Simulate no-GPU environment: training enabled but GPU unavailable -> None returned.
+        with mock.patch("learning.compute.training_enabled", return_value=True), \
+             mock.patch("learning.compute.should_use_gpu", return_value=False):
             self.assertIsNone(finetune.default_trainer())
             self.assertIsNone(finetune.default_dpo_trainer())
 

@@ -64,12 +64,124 @@ into the caller.  Every surface error is logged:
 WARNING notifications.bus: surface <DiscordDashboard …> raised on event 'subtask_done' — suppressed
 ```
 
+### Error handling
+
+#### Surface isolation contract
+
+`emit()` wraps every `surface.handle()` call in a `try/except BaseException`
+block.  A surface that raises — for any reason — is logged and skipped; all
+remaining surfaces still receive the event, and the caller never sees the error.
+
+```python
+except BaseException:  # surface errors must never reach callers
+    _log.exception("surface %r raised on event %r — suppressed", surface, event_type)
+```
+
+The logger name is `notifications.bus`, level `WARNING`.  Error output follows
+the stdlib `logging.exception()` format so the full traceback is captured.
+
+#### KeyboardInterrupt and SystemExit inside a surface
+
+`BaseException` (not `Exception`) is caught deliberately.  This means
+`KeyboardInterrupt` and `SystemExit` raised *inside* a surface's `handle()`
+method are also suppressed per-surface.
+
+**Why:** a surface must never be able to kill the orchestrator run loop.  Doing
+`sys.exit()` or pressing Ctrl-C while a surface is executing cannot cause the
+run to abort.
+
+**Implication for surface authors:** do not rely on `KeyboardInterrupt` or
+`SystemExit` propagating out of `handle()` — they won't.  Graceful shutdown
+signals must flow through `ControlBus`, not through exceptions raised inside
+surfaces.
+
+#### What is NOT suppressed
+
+Errors raised **before** `emit()` reaches the per-surface loop — e.g. a
+`TypeError` from passing wrong argument types to `emit()` — propagate normally
+to the caller.  Only per-surface exceptions are swallowed.
+
+#### Logging behaviour
+
+| Condition | Log level | Logger |
+|-----------|-----------|--------|
+| Surface raises any `BaseException` | `WARNING` (with traceback via `exception()`) | `notifications.bus` |
+| Normal emission (no errors) | *(silent)* | — |
+
+To capture bus error output in tests or production:
+
+```python
+import logging
+logging.getLogger("notifications.bus").setLevel(logging.WARNING)
+```
+
+#### Expected tracebacks in test output
+
+When running `test_notification_bus.py`, you will see tracebacks printed to
+stderr for every test that intentionally raises inside a surface.  **This is
+correct behaviour**, not a failure signal.  Each traceback comes from
+`logging.exception()` inside `bus.py`'s `emit()` loop — it records the full
+stack of the suppressed exception.  The tests still pass (`OK`) because the
+exception never reaches the caller.
+
+Example (expected — not an error):
+
+```
+surface <_RaisingSurface …> raised on event 'replan' — suppressed
+Traceback (most recent call last):
+  …
+ValueError: bad surface
+```
+
+Tests that assert on logging (e.g. `test_error_logged_as_warning`) use
+`assertLogs("notifications.bus", …)` which temporarily captures and suppresses
+the handler, so those tests produce no visible traceback.
+
+To silence bus tracebacks globally during a test run, disable the logger before
+the suite starts:
+
+```python
+import logging
+logging.getLogger("notifications.bus").disabled = True
+```
+
+Re-enable it before any test that asserts on log output.
+
+#### Running the bus test suite
+
+The acceptance test can be invoked directly or via the standard test runner:
+
+```bash
+# Direct invocation (uses sys.path.insert in the test file to locate the package)
+python C:\9to5\tests\test_notification_bus.py
+
+# Via unittest runner (no sys.path manipulation needed — runner sets PYTHONPATH)
+python -m unittest tests.test_notification_bus
+```
+
+The `sys.path.insert(0, ...)` at the top of the test file is present solely to
+support the direct-invocation form used by the acceptance check.  When using
+`python -m unittest` or `pytest` from the project root, the package is already
+on `sys.path` and the insert is a no-op.
+
+#### surface_count helper
+
+`bus.surface_count` returns the number of registered surfaces.  Use it in
+tests or health checks to confirm surfaces were registered before emitting:
+
+```python
+assert bus.surface_count == 2, "expected discord + web surfaces"
+```
+
 ### Anti-patterns
 - Do **not** make `NotificationBus` a module-level singleton imported at run
   start.  Instantiate one per run so surfaces can be re-registered cleanly on
   restart.
 - Do **not** `bus.emit()` inside a surface's own `handle()` — recursive
   emission is not guarded.
+- Do **not** raise from `handle()` to signal failure — the exception is
+  suppressed; use an out-of-band mechanism (e.g. a shared flag, a `ControlBus`
+  write) if a surface needs to communicate a fatal condition.
 
 ---
 
@@ -102,7 +214,7 @@ Custom kinds are permitted — only the three required keys are enforced.
 ### API
 
 ```python
-from notifications.entry import makeEntry, validate, VALID_KINDS
+from notifications.entry import makeEntry, validate, isValid, VALID_KINDS
 
 # Create an entry
 entry = makeEntry("replan", "added 2 subtasks after verifier failure")
@@ -112,6 +224,7 @@ entry = makeEntry("subtask_done", "tests pass", subtask_id="st-003")
 
 # Validate an arbitrary dict
 errors = validate(entry)   # [] means valid
+ok = isValid(entry)        # True iff validate() returns []
 
 # Write to task state
 state.data.setdefault("notifications", []).append(entry)
@@ -440,6 +553,140 @@ whole embed.
 
 Clamp strategy: clamp each field individually first, then shrink the **largest**
 field value iteratively until the total is ≤ 6 000.
+
+---
+
+## Orchestration workflow integration
+
+This section maps each orchestrator phase to the notification events it emits,
+the surfaces that handle them, and the decision points that govern routing.
+
+### Phase-by-phase event map
+
+| Phase | Event emitted | Surfaces triggered |
+|-------|---------------|--------------------|
+| Planning start | `planning_start` | Dashboard (update), Milestone (new embed) |
+| Architect done | `architect_done` | Dashboard (update), Milestone (new embed) |
+| Subtask begin | `subtask_started` | Dashboard (update) |
+| Verifier pass | `subtask_done` | Dashboard (update), `NotificationEntry` appended |
+| Verifier fail + retry | `subtask_failed` | Dashboard (update), Milestone if attempts exhausted |
+| Adversary triggered | `adversary_triggered` | Dashboard (update), Milestone (new embed) |
+| Replan | `replan` | Dashboard (update), `NotificationEntry` appended |
+| Run complete | `complete` | Dashboard (update), Milestone (new embed) |
+| Run aborted | `aborted` | Dashboard (update), Milestone (new embed) |
+
+### Step-by-step: subtask execution with notification emissions
+
+```python
+# orchestrator.py — simplified subtask loop showing decision points
+
+for subtask in pending_subtasks:
+    # 1. Announce start
+    bus.emit("subtask_started", {"subtask_id": subtask["subtask_id"], "title": subtask["title"]})
+    dash.update(state, phase="executing", note=f"running {subtask['subtask_id']}")
+
+    attempt = 0
+    while attempt < MAX_SUBTASK_ATTEMPTS:
+        attempt += 1
+
+        # 2. Execute (Claude Code CLI subprocess)
+        output = executor.run(subtask, attempt)
+
+        # 3. Decision point: run the verifier
+        verify_result = verifier.check(subtask, work_dir)
+
+        if verify_result.passed:
+            # 4a. Success path — record entry, advance
+            entry = makeEntry("subtask_done", f"{subtask['subtask_id']} verified OK")
+            state.data.setdefault("notifications", []).append(entry)
+            state.save()
+            bus.emit("subtask_done", {"subtask_id": subtask["subtask_id"]})
+            break
+        else:
+            # 4b. Failure path — retry or exhaust
+            if attempt >= MAX_SUBTASK_ATTEMPTS:
+                bus.emit("subtask_failed", {
+                    "subtask_id": subtask["subtask_id"],
+                    "verify_result": verify_result.detail,
+                    "attempts": attempt,
+                })
+            # loop continues with re-authored prompt
+
+    # 5. Decision point: adversary trigger check
+    if adversary.shouldTrigger(output, attempt):
+        verdict = adversary.review(subtask, output)
+        bus.emit("adversary_triggered", {"verdict": verdict.status, "concerns": verdict.concerns})
+
+    # 6. Decision point: check ControlBus before next subtask
+    ctl = ControlBus.check(state.task_id)
+    if ctl.abort:
+        bus.emit("aborted", {"reason": ctl.reason})
+        break
+    if ctl.pause:
+        # block here until resume signal
+        ControlBus.waitForResume(state.task_id)
+```
+
+### Decision point reference
+
+| Decision | Condition | Action |
+|----------|-----------|--------|
+| Emit milestone vs. dashboard-only | `milestone=True` on `sendEmbed()` | New Discord message (suppressed in `NIGHT_MODE`) |
+| Retry subtask | `verify_result.passed == False` and `attempt < MAX_SUBTASK_ATTEMPTS` | Re-author prompt with failure detail; re-run executor |
+| Exhaust retries | `attempt >= MAX_SUBTASK_ATTEMPTS` | Emit `subtask_failed` milestone; mark subtask `failed`; continue to next |
+| Trigger adversary | Output contains trigger strings or heartbeat floor reached | Call `adversary.review()`; emit `adversary_triggered` |
+| Abort run | `ControlBus.check().abort == True` | Emit `aborted`; exit loop |
+| Resilience restart | `meta.dashboard_message_id` set | `dash.start()` edits existing embed; no duplicate pin |
+| Night mode suppression | `NIGHT_MODE=true` in `.env` | `sendEmbed(milestone=True)` is a no-op |
+
+### Wiring surfaces at run start
+
+```python
+# main.py / orchestrator.py — surface registration order matters for logging
+bus = NotificationBus()
+
+dash = DiscordDashboard()
+milestone = DiscordMilestone()
+webdash = WebdashSurface(state)
+
+bus.register(dash)       # live embed — registered first; highest priority
+bus.register(milestone)  # discrete embeds
+bus.register(webdash)    # 1-second TTL JSON snapshot
+
+# Start the web dashboard daemon thread
+webdash.start()
+
+# Kick off the live Discord embed (creates + pins)
+dash.start(state, phase="starting", state_lock=rw_lock)
+```
+
+After this block, every `bus.emit()` call fans out to all three surfaces in
+registration order.  A surface that raises is skipped; the others still receive
+the event.
+
+### Adding a custom surface
+
+Any object with `handle(event_type: str, payload: dict) -> None` qualifies:
+
+```python
+class SlackSurface:
+    def handle(self, event_type: str, payload: dict) -> None:
+        if event_type in ("subtask_failed", "aborted", "complete"):
+            slack_post(f"[9to5] {event_type}: {payload}")
+
+bus.register(SlackSurface())
+# from this point every emit() also calls SlackSurface.handle()
+```
+
+The `@runtime_checkable` `NotificationSurface` protocol means
+`isinstance(obj, NotificationSurface)` returns `True` for any object that
+implements `handle()`, which lets health checks confirm registration:
+
+```python
+from notifications.bus import NotificationSurface
+assert isinstance(my_surface, NotificationSurface), "surface missing handle()"
+assert bus.surface_count == 4, "expected 4 surfaces after adding Slack"
+```
 
 ---
 
