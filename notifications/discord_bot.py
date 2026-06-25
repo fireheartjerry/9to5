@@ -453,6 +453,36 @@ def createMessage(embed: dict, content: Optional[str] = None, components: Option
     return None
 
 
+def postContent(content: str, components: Optional[list] = None) -> Optional[str]:
+    """Post a content-only message (no embed) -- e.g. the ANSI mission-console HUD. Never pings."""
+    payload: dict = {"content": (content or "")[:config.DISCORD_MAX_CONTENT],
+                     "allowed_mentions": {"parse": []}}
+    if components is not None:
+        payload["components"] = components
+    r = _request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", json=payload)
+    if r is not None and 200 <= r.status_code < 300:
+        try:
+            return str(r.json().get("id"))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def editContent(message_id: str, content: str) -> str:
+    """PATCH a content-only message in place (HUD live-repaint). 'ok'/'not_found'/'transient'."""
+    if not message_id:
+        return "not_found"
+    payload = {"content": (content or "")[:config.DISCORD_MAX_CONTENT], "allowed_mentions": {"parse": []}}
+    r = _request("PATCH", f"/channels/{config.DISCORD_CHANNEL_ID}/messages/{message_id}", json=payload)
+    if r is None:
+        return "transient"
+    if 200 <= r.status_code < 300:
+        return "ok"
+    if r.status_code == 404:
+        return "not_found"
+    return "transient"
+
+
 def editMessageResult(message_id: str, embed: dict, content: Optional[str] = None,
                       components: Optional[list] = None) -> str:
     """Edit a message, returning a status the caller can ACT on:

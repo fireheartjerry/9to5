@@ -47,6 +47,17 @@ class AdminCog(dpy_commands.Cog):
         await interaction.response.send_message("🛰 posting cockpit…", ephemeral=True)
         await asyncio.to_thread(discord_bot.createComponentsV2, comps)
 
+    @app_commands.command(name="hud", description="Post the ANSI mission-console HUD (T8)")
+    async def hud(self, interaction: discord.Interaction) -> None:
+        state = spine.resolveTargetTask()
+        if state is None:
+            return await interaction.response.send_message(spine.NO_TASK, ephemeral=True)
+        from notifications import console_hud
+        from notifications import discord_bot
+        body = console_hud.render(state, state.meta.get("status", "executing"))
+        await interaction.response.send_message("🛰 posting HUD…", ephemeral=True)
+        await asyncio.to_thread(discord_bot.postContent, body)
+
 
 async def setup(bot: dpy_commands.Bot) -> None:
     await bot.add_cog(AdminCog(bot))
