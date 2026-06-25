@@ -91,6 +91,23 @@ def backupState(keys: list[str]) -> Optional[Path]:
         return None
 
 
+def _holdsPythonSource(path: Path) -> bool:
+    """True if `path` is (or contains) Python source. Hard stop for the data-only wipe invariant:
+    /wipe must NEVER delete source code (see the wipe-safety-constraint). The 'learning' category
+    pointed at the learning/ PACKAGE, whose deletion would erase the entire SIE source tree -- yet
+    the SIE's *data* lives under state/ (the 'experience' category), so a data-only wipe never needs
+    to remove a directory that holds .py files. This guard makes the invariant structural, immune to
+    a mis-scoped category."""
+    try:
+        if path.is_file():
+            return path.suffix == ".py"
+        if path.is_dir():
+            return next(path.rglob("*.py"), None) is not None
+    except OSError:
+        return False
+    return False
+
+
 def deleteCategory(key: str) -> tuple[bool, str]:
     """Delete one category. Returns (ok, human-readable status line)."""
     cat = CATEGORIES.get(key)
@@ -99,6 +116,10 @@ def deleteCategory(key: str) -> tuple[bool, str]:
     errors: list[str] = []
     for p in cat["paths"]:
         if not p.exists():
+            continue
+        # Data-only invariant: refuse to delete anything that is/holds Python source code.
+        if _holdsPythonSource(p):
+            errors.append(f"{p.name}: refused -- holds Python source (data-only wipe)")
             continue
         try:
             if p.is_dir() and cat.get("keep_dir"):
