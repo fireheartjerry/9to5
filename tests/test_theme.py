@@ -15,7 +15,10 @@ class ThemeSelection(unittest.TestCase):
     def test_default_dark(self):
         config.COCKPIT_THEME = "dark"
         self.assertEqual(theme.name(), "dark")
-        self.assertEqual(theme.pillowPalette()["bg"], (24, 26, 33))
+        self.assertEqual(theme.pillowPalette()["bg"], (13, 17, 23))
+        # back-compat aliases still present for the HUD/visuals
+        self.assertIn("panel", theme.pillowPalette())
+        self.assertIn("grid", theme.pillowPalette())
 
     def test_switch_terminal(self):
         config.COCKPIT_THEME = "terminal"
@@ -32,9 +35,18 @@ class ThemeSelection(unittest.TestCase):
         self.assertEqual(theme.ansiStatus("blocked"), "31")
         self.assertEqual(theme.ansiStatus("whatever"), "37")
 
-    def test_status_fill_and_accent(self):
-        self.assertEqual(theme.statusFill("done"), (46, 204, 113))
+    def test_status_fill_is_theme_aware(self):
+        config.COCKPIT_THEME = "dark"
+        self.assertEqual(theme.statusFill("done"), theme.pillowPalette()["success"])
+        self.assertEqual(theme.statusFill("failed"), theme.pillowPalette()["danger"])
         self.assertIsInstance(theme.accent("executing"), int)
+
+    def test_fonts_load(self):
+        f = theme.font(20, "semibold")
+        self.assertIsNotNone(f)
+        m = theme.font(16, "mono")
+        self.assertIsNotNone(m)
+        self.assertIs(theme.font(20, "semibold"), f)   # cached
 
     def test_phase_emoji(self):
         self.assertEqual(theme.phaseEmoji("executing"), "⚙️")
