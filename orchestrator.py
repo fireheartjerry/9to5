@@ -1371,6 +1371,7 @@ class Orchestrator:
             discord.sendEmbed(discord.adversaryTriggeredEmbed("Pre-PR review", reason, rv.get("verdict")))
             cast.speak("adversary", f"⚔️ Pre-PR review → **{discord.formatVerdict(rv.get('verdict'))}**. "
                        f"Trigger: {reason}")
+            cast.duel("Pre-PR review", rv.get("verdict"))   # VS-card on a CHALLENGE (T8)
             return rv
         except Exception as e:  # noqa: BLE001 -- never block a run on the reviewer itself
             LOG.warning("pre-PR adversary review failed (%s); approving", e)
@@ -1648,6 +1649,7 @@ class Orchestrator:
                 discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason, rv.get("verdict")))
                 cast.speak("adversary", f"⚔️ Reviewing `{sid}` ({subtask['title']}) → "
                            f"**{discord.formatVerdict(rv.get('verdict'))}**.")
+                cast.duel(subtask["title"], rv.get("verdict"))   # VS-card on a CHALLENGE (T8)
                 with self._state_lock:
                     state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
                     self.obs.writeNote(state.subtaskReviewNoteRel(sid), self._reviewNote(subtask, reason, rv, combined))

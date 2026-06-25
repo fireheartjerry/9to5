@@ -181,3 +181,46 @@ def timelapseGif(frames: list, *, duration_ms: int = 700) -> Optional[bytes]:
     except Exception:  # noqa: BLE001
         LOG.warning("timelapseGif render failed", exc_info=True)
         return None
+
+
+_CHALLENGED = {"challenged", "rejected", "reject", "blocked", "fail"}
+
+
+def duelCard(subtask_title: str, verdict: str, *, trust: Optional[float] = None) -> Optional[bytes]:
+    """Render the Adversary 'duel' VS-card (Executor ⚙️ vs Adversary ⚔️ over a contested subtask,
+    with a trust meter). Posted as the Adversary persona on a CHALLENGE. PNG bytes or None."""
+    if not available():
+        return None
+    try:
+        from PIL import Image, ImageDraw
+
+        th = _theme()
+        challenged = (verdict or "").lower().strip() in _CHALLENGED
+        accent = (231, 76, 60) if challenged else (46, 204, 113)
+        W, H = 800, 300
+        img = Image.new("RGB", (W, H), th["bg"])
+        d = ImageDraw.Draw(img)
+        d.rectangle([0, 0, W, 8], fill=accent)
+        d.text((40, 30), "⚙️ EXECUTOR", font=_font(32), fill=(46, 204, 113))
+        right = "⚔️ ADVERSARY"
+        d.text((W - 40 - int(d.textlength(right, font=_font(32))), 30), right, font=_font(32),
+               fill=(230, 126, 34))
+        vs = "VS"
+        d.text((W // 2 - int(d.textlength(vs, font=_font(60)) / 2), H // 2 - 60), vs,
+               font=_font(60), fill=th["text"])
+        for i, line in enumerate(_wrap(d, subtask_title, _font(22), W - 80, 2)):
+            d.text((40, 118 + i * 30), line, font=_font(22), fill=th["muted"])
+        if trust is not None:
+            tw = int(max(0.0, min(1.0, trust)) * (W - 80))
+            d.rounded_rectangle([40, H - 92, W - 40, H - 74], radius=6, fill=th["panel"])
+            if tw > 0:
+                d.rounded_rectangle([40, H - 92, 40 + tw, H - 74], radius=6, fill=accent)
+        d.text((40, H - 56), ("⚔️ CHALLENGED" if challenged else "✅ APPROVED"),
+               font=_font(30), fill=accent)
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:  # noqa: BLE001
+        LOG.warning("duelCard render failed", exc_info=True)
+        return None
