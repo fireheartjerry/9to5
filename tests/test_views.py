@@ -9,7 +9,10 @@ from notifications.views import ConfirmView, Paginator
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    # asyncio.run gives each call a FRESH event loop and closes it cleanly. The old
+    # get_event_loop().run_until_complete reused a shared loop -> once another test closed it,
+    # these tests flaked non-deterministically under xdist ordering.
+    return asyncio.run(coro)
 
 
 class TestLaunchRejectsActiveRunFirst(unittest.TestCase):
