@@ -113,9 +113,12 @@ def run_suite(runner: Optional[Callable[[dict[str, Any]], dict[str, Any]]] = Non
     container) it records a transparent ``no_runner`` marker so the absence is observable
     rather than silently producing a fake fitness."""
     goals = load_suite(suite_dir)
-    if runner is None:
-        payload = {"status": "no_runner", "suite_version": SUITE_VERSION,
-                   "suite_size": len(goals)}
+    # No runner OR no goals -> record a TRANSPARENT marker, never score([]). score([]) fabricates a
+    # neutral 'scored' fitness (~0.5) from zero signal, which then pollutes the SIE fitness series and
+    # can drive adapter promotion/rollback on noise. An empty/missing suite must be observably empty.
+    if runner is None or not goals:
+        status = "no_runner" if runner is None else "empty_suite"
+        payload = {"status": status, "suite_version": SUITE_VERSION, "suite_size": len(goals)}
         if record:
             experience.record_eval(payload, suite_version=SUITE_VERSION,
                                    prompt_set_id=prompt_set_id, adapter_id=adapter_id,

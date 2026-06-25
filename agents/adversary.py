@@ -46,10 +46,15 @@ def _loadJsonLoose(content: object):
         return json.loads(text)
     except Exception:  # noqa: BLE001
         pass
-    m = re.search(r"\{.*\}", text, re.DOTALL)   # salvage the first balanced-looking object
-    if m:
+    # Salvage the FIRST balanced object. The naive greedy r"\{.*\}" spans the first '{' to the LAST
+    # '}', so multi-object brain output (e.g. an explanatory '{...}' before the verdict '{...}', or a
+    # nested example) concatenates into an unparseable blob -> json.loads fails -> _parseVerdict treats
+    # it as junk -> a real 'challenged' silently degrades to the conservative 'approved'. The balanced
+    # walker closes at the correct depth-0 '}'.
+    chunk = llm_io._firstBalancedObject(text)
+    if chunk:
         try:
-            return json.loads(m.group(0))
+            return json.loads(chunk)
         except Exception:  # noqa: BLE001
             return None
     return None

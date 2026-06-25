@@ -267,6 +267,21 @@ def _boundarySetFor(state) -> set:
               else [".env", ".git", "venv", "state/tasks"]):
         if b not in base:
             base.append(b)
+    # Anchor the 9to5-internal task store to the install root. A bare ``state/tasks`` boundary
+    # matches ANY path ending in state/tasks (substring match in the guard), so an external target
+    # repo that happens to have its OWN state/tasks/ dir was falsely blocked. Replacing it with the
+    # absolute install path means it only protects 9to5's own run state, never the target's (#39).
+    # ``.env``/``.git``/``venv`` stay relative on purpose -- those are worth blocking in any repo.
+    try:
+        anchored = str((config.PROJECT_ROOT / "state" / "tasks")) if config else None
+    except Exception:  # noqa: BLE001 -- no config / odd PROJECT_ROOT -> leave boundary relative
+        anchored = None
+    if anchored:
+        out: set = set()
+        for b in base:
+            norm = str(b).replace("/", "\\").lower().strip("\\")
+            out.add(anchored if norm in ("state\\tasks", "state/tasks") else b)
+        return out
     return set(base)
 
 
@@ -299,11 +314,18 @@ def selfModificationGuard(data):
         if tool_name in ("Edit", "Write", "MultiEdit"):
             file_path = tool_input.get("file_path", "") or ""
         elif tool_name == "Bash":
-            # close the Bash write-hole: only inspect commands that WRITE (redirect/sed/mv/cp/tee/git)
+            # close the Bash write-hole: only inspect commands that WRITE (redirect/sed/mv/cp/tee/git).
+            # The write COMMANDS (mv/cp/rm/tee/del/ren/move/copy) must be matched at COMMAND POSITION
+            # -- start of line or right after a shell separator -- not as a space-padded substring: the
+            # old " mv "/" cp " tokens MISSED a command that STARTS with mv/cp (e.g. `mv .env x`), so a
+            # move/copy onto a hard-boundary file slipped past the guard entirely (fail-open).
             bash_cmd = tool_input.get("command", "") or ""
             low = bash_cmd.lower()
-            if not any(w in low for w in (">", "sed -i", "tee ", " mv ", "move ", " cp ", "copy ",
-                                          "git checkout", "git reset", "git restore", "rm ")):
+            redirect_or_git = (">" in bash_cmd or "sed -i" in low or "git checkout" in low
+                               or "git reset" in low or "git restore" in low)
+            write_cmd = re.search(r"(?:^|[\n;&|]\s*)\s*(mv|cp|rm|tee|del|ren|rename|move|copy)\b",
+                                  bash_cmd, re.IGNORECASE)
+            if not (redirect_or_git or write_cmd):
                 sys.exit(0)
         else:
             sys.exit(0)
@@ -351,6 +373,11 @@ def selfModificationGuard(data):
             bbase = bn.rsplit("\\", 1)[-1]
             # exact file, a file under a boundary dir, or a path ending in the boundary
             hit = norm == bn or norm.endswith("\\" + bn) or ("\\" + bn + "\\") in norm
+            # absolute boundary (e.g. the install-anchored task store): match files UNDER it. The
+            # endswith/substring clauses above assume a RELATIVE bn (leading-backslash sentinel), so
+            # an absolute bn like c:\9to5\state\tasks only matched the dir itself, not files in it.
+            if not hit and ":" in bn and norm.startswith(bn + "\\"):
+                hit = True
             # secret-family: a ".env" boundary also blocks .env.local / .env.production (NOT .envrc)
             if not hit and bbase.startswith(".") and (base == bbase or base.startswith(bbase + ".")):
                 hit = True

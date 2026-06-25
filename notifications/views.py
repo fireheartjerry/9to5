@@ -45,9 +45,13 @@ async def _skipCurrent(interaction: "discord.Interaction", source: str) -> None:
     state = commands.resolveTargetTask()
     if state is None:
         return await interaction.response.send_message(commands.NO_TASK, ephemeral=True)
-    cur = next((s for s in state.subtasks if s["status"] == "in_progress"), None)
+    # The backend only skips PENDING subtasks (an in_progress one has already started and cannot be
+    # yanked mid-flight -- orchestrator drops a skip of a non-pending subtask). Target the next pending
+    # subtask, mirroring the /skip autocomplete, so the button actually skips work instead of silently
+    # no-opping on the in_progress one.
+    cur = next((s for s in state.subtasks if s["status"] == "pending"), None)
     if not cur:
-        return await interaction.response.send_message("Nothing in progress to skip.", ephemeral=True)
+        return await interaction.response.send_message("No pending subtask to skip.", ephemeral=True)
     audit.record(interaction.user.id, "skip", state.task_id, source)
     msg = commands.applyCommand(ControlBus(state.task_id), state,
                                 commands.Command("skip", cur["subtask_id"]))
@@ -225,6 +229,16 @@ class WorkSetupView(discord.ui.View):
         for c in self.children:
             c.disabled = True
         await interaction.response.edit_message(content="🚀 Launching…", view=self)
+
+        # Reject a duplicate launch BEFORE the ChatGPT pre-flight (which opens the shared profile and
+        # kills the active run's second-brain browser). The active-run guard otherwise lives only in
+        # launchOrError, after the pre-flight has already disrupted the running run.
+        if work_launcher.activeRun() is not None:
+            await interaction.followup.send(
+                "⚠️ A run is already active. Abort it with `/abort` before starting another.",
+                ephemeral=True)
+            self.stop()
+            return
 
         if _cfg.BROWSER_LAYER_ENABLED:
             from agents import browser_executor

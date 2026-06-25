@@ -81,6 +81,37 @@ class TestConcurrentWrites(unittest.TestCase):
         # the file is still valid JSON after the storm
         self.assertIsInstance(bus.load(), dict)
 
+    def test_pushop_dedups_identical_ops(self):
+        """The gateway bot and the in-run poller both push the SAME op for one Discord message; an
+        identical op already queued must not be duplicated (one '!add' must not create two subtasks)."""
+        bus = ControlBus("op-dedup")
+        bus.pushOp({"op": "add", "title": "x"})
+        bus.pushOp({"op": "add", "title": "x"})   # duplicate of the same message
+        self.assertEqual(len(bus.drainOps()), 1)
+        # distinct ops are all kept
+        bus.pushOp({"op": "add", "title": "a"})
+        bus.pushOp({"op": "skip", "subtask_id": "st-003"})
+        self.assertEqual(len(bus.drainOps()), 2)
+
+    def test_clearForRunStart_preserves_user_control(self):
+        """A fresh run resets only the run cursor; an abort/pause/decision the user issued during the
+        pre-run elaboration window must survive (a full clear() silently dropped it)."""
+        bus = ControlBus("clear-start")
+        bus.requestAbort()
+        bus.requestPause()
+        bus.decide("plan", "approve")
+        bus.pushOp({"op": "add", "title": "x"})
+        bus.setSeen("999")
+        bus.setPendingGate("pre_pr")
+        bus.clearForRunStart()
+        d = bus.load()
+        self.assertTrue(d["abort"], "abort issued during elaboration was wiped")
+        self.assertTrue(d["pause"], "pause issued during elaboration was wiped")
+        self.assertEqual(d["decisions"]["plan"], "approve")
+        self.assertEqual(d["plan_ops"], [])          # run-cursor reset
+        self.assertIsNone(d["seen_discord_id"])       # run-cursor reset
+        self.assertIsNone(d["pending_gate"])          # run-cursor reset
+
     def test_corrupt_bus_rebuilds_so_abort_still_lands(self):
         """A persistently corrupt bus file must NOT permanently no-op mutations -- otherwise an
         aborting run could never stop. The mutation rebuilds from blank and lands."""

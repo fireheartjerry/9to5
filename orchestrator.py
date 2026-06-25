@@ -30,6 +30,7 @@ from learning import (confidence, knowledge_graph, policy, postmortem, prompts,
 from memory import experience, retrieval
 from memory.obsidian import ObsidianClient
 from notifications import audit
+from notifications import cast
 from notifications import commands
 from notifications import discord_bot as discord
 from notifications.dashboard import DiscordDashboard
@@ -348,10 +349,14 @@ def _chatJson(resp):
         return json.loads(text)
     except Exception:  # noqa: BLE001
         pass
-    m = _re.search(r"\{.*\}", text, _re.DOTALL)   # salvage: first balanced-looking JSON object
-    if m:
+    # Salvage the FIRST balanced object via the depth-0 walker. The old greedy r"\{.*\}" spanned the
+    # first '{' to the LAST '}', so any multi-object brain output (an example object + the real plan,
+    # or trailing prose with braces) concatenated into an unparseable blob -> the plan/replan/spec
+    # collapsed to the degenerate fallback instead of using the recoverable object.
+    chunk = llm_io._firstBalancedObject(text)
+    if chunk:
         try:
-            return json.loads(m.group(0))
+            return json.loads(chunk)
         except Exception:  # noqa: BLE001
             return None
     return None
@@ -424,8 +429,20 @@ class Orchestrator:
         try:
             state = TaskState.create(goal.get("goal", ""), 1.0)
             state.meta["goal_elaborated"] = goal.get("goal", "")
+            # Pin a baseline universe so the self_modification_guard protects secrets/VCS/venv/state +
+            # the core loop files: this eval runs Claude in PROJECT_ROOT, and WITHOUT a pinned task the
+            # guard has no boundaries and an eval goal's executor could edit core files unguarded.
+            state.setUniverse({
+                "description": "eval/fitness run", "allowed_paths": [], "allowed_to_expand_to": [],
+                "hard_boundaries": [".env", ".git", "venv", "state/tasks",
+                                    *getattr(config, "CORE_PROTECTED_FILES", ())]})
+            state.save()
             spec = self.authorInvocationSpec(state, subtask, "")
-            result = self._run_claude(spec, work_dir=str(config.PROJECT_ROOT))
+            # task_state=state so the executor exports the task pin (guard resolves THIS task's
+            # boundaries); deadline-only cancel (no run bus here) so an eval's session-token-limit
+            # pause still breaks at the 1h horizon instead of wedging the eval/fitness pass for hours.
+            result = self._run_claude(spec, work_dir=str(config.PROJECT_ROOT), task_state=state,
+                                      subtask=subtask, cancel_check=lambda: self._deadlinePassed(state))
             vres = verifier.runVerification(
                 verify, str(config.PROJECT_ROOT), result if isinstance(result, dict) else {})
             return {"passed": bool(vres.get("passed")), "attempts": 1,
@@ -908,6 +925,19 @@ class Orchestrator:
                     if cur:
                         state.updateSubtask(cur["subtask_id"], status="pending")
                         dashboard.event(f"retry {cur['subtask_id']}")
+                elif kind == "edit":
+                    # in-Discord plan editor: amend a subtask's title/description (Tier 2).
+                    sid = op.get("subtask_id")
+                    st = state.getSubtask(sid)
+                    if st is None:
+                        dashboard.event(f"edit ignored: {sid} not found")
+                    elif st["status"] in ("pending", "in_progress"):
+                        fields = {k: op[k] for k in ("title", "description") if op.get(k)}
+                        if fields:
+                            state.updateSubtask(sid, **fields)
+                            dashboard.event(f"edited {sid}")
+                    else:
+                        dashboard.event(f"edit ignored: {sid} is {st['status']} (only pending/in_progress)")
 
     def _waitWhilePaused(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard,
                          label: str = "paused") -> None:
@@ -1019,6 +1049,15 @@ class Orchestrator:
                 # pre-PR gate is to NOT auto-ship; either way finalize the run instead of hanging.
                 if self._deadlinePassed(state):
                     bus.setPendingGate(None)
+                    if gate == "pre_pr":
+                        # #41: at the pre_pr gate the work is ALREADY done -- only the human PR-approval
+                        # timed out. Raising AbortRun here finalized the whole run as 'aborted', wiping
+                        # the real done/partial status. Instead flag "skip the PR" and return so runFull
+                        # finalizes truthfully (PR shown as skipped; status reflects the completed work).
+                        self._pre_pr_gate_skipped = True
+                        LOG.warning("pre_pr gate timed out at deadline -- skipping PR, finalizing with real status")
+                        dashboard.event("pre_pr gate: deadline reached -> skipping PR, finalizing")
+                        return
                     LOG.warning("gate '%s' timed out at deadline -- aborting to finalize", gate)
                     raise AbortRun(f"gate '{gate}' timed out at deadline")
                 time.sleep(config.DISCORD_POLL_SECONDS)
@@ -1142,6 +1181,22 @@ class Orchestrator:
                     "using the Ollama brain for the rest of this run."))
             except Exception:  # noqa: BLE001
                 pass
+        elif self._chatgpt_session_ok and worth and rv.get("tier") != "gpt":
+            # SOFT-fail: GPT was attempted (worth + session live) but the verdict came from Ollama/stub
+            # with no hard session_dead -- a silent degradation. After a few consecutive soft-fails,
+            # stop re-paying the GPT round-trip for the rest of the run (mirrors the session_dead path).
+            self._gpt_soft_fails = getattr(self, "_gpt_soft_fails", 0) + 1
+            if self._gpt_soft_fails >= 3:
+                self._chatgpt_session_ok = False
+                LOG.warning("GPT second brain soft-failed %d consecutive reviews; disabling for run",
+                            self._gpt_soft_fails)
+                try:
+                    discord.sendEmbed(discord.noticeEmbed(
+                        "GPT-5.5 second brain repeatedly unusable — Ollama for the rest of this run."))
+                except Exception:  # noqa: BLE001
+                    pass
+        elif rv.get("tier") == "gpt":
+            self._gpt_soft_fails = 0   # a real GPT verdict resets the soft-fail streak
         try:
             from learning import adversary_trust
             adversary_trust.record(review_type, rv, tier=rv.get("tier"))
@@ -1215,8 +1270,11 @@ class Orchestrator:
                 discord.sendEmbed(discord.noticeEmbed(
                     "GPT-5.5 second brain unavailable (health probe failed) — Ollama for this run."))
                 return
-            browser_executor.startConversation(self._goalText(state), state.task_id)
+            # Assign the session handle BEFORE startConversation: probe() already opened the browser,
+            # so if startConversation raises, _closeChatGptSession (and the except below) must be able
+            # to tear it down -- otherwise the opened Chromium leaks as an orphan holding the profile.
             self._chatgpt_session = browser_executor
+            browser_executor.startConversation(self._goalText(state), state.task_id)
             self._chatgpt_ask = lambda message: browser_executor.sessionAsk(message, expect_json=True)
             self._chatgpt_session_ok = True
             LOG.info("GPT-5.5 second brain online for task %s", state.task_id)
@@ -1224,6 +1282,13 @@ class Orchestrator:
         except Exception as e:  # noqa: BLE001 -- never block a run on the second brain
             LOG.warning("could not start ChatGPT session (%s); Ollama only", e)
             self._chatgpt_session_ok = False
+            try:
+                from agents import browser_executor as _be
+                _be.closeSession()   # close the browser probe() opened, so it doesn't leak/orphan
+            except Exception:  # noqa: BLE001
+                pass
+            self._chatgpt_session = None
+            self._chatgpt_ask = None
 
     def _closeChatGptSession(self) -> None:
         try:
@@ -1238,21 +1303,17 @@ class Orchestrator:
     # ===================================================================
     # Adversary teeth -- bounded remediation LOOP + pre-PR hold
     # ===================================================================
-    def _remediationTreeShared(self, exec_cwd: str) -> bool:
-        """True when >1 subtask runs concurrently in a SHARED working tree -- the only case where the
-        remediation snapshot + whole-tree `git checkout <sha> -- .` would revert a peer worker's edits
-        (silent data loss, #1). Self-referential runs give each subtask its own .sc-ctx cwd (exec_cwd
-        != work_dir), so their tree is private and remediation stays safe; sequential runs have no
-        peers. Only a non-self-ref parallel run shares work_dir and is unsafe."""
-        if getattr(self, "_parallelism", 1) <= 1:
-            return False
-        try:
-            return os.path.abspath(exec_cwd) == os.path.abspath(getattr(self, "_work_dir", exec_cwd))
-        except Exception:  # noqa: BLE001
-            return False
+    def _remediationTreeShared(self, exec_cwd: str = "") -> bool:
+        """True when >1 subtask runs concurrently against the SHARED real edit tree -- the case where
+        the remediation snapshot + whole-tree `git checkout <sha> -- .` would revert a peer worker's
+        edits (silent data loss). The real edit tree is ALWAYS work_dir: non-self-ref subtasks run
+        directly in it, and self-ref subtasks edit it (== PROJECT_ROOT) via --add-dir even though their
+        cwd is an isolated .sc-ctx scratch. So ANY parallel run (self-ref OR not) shares the real tree;
+        only a sequential run (parallelism<=1) has no peers and can safely snapshot/revert it."""
+        return getattr(self, "_parallelism", 1) > 1
 
     def _remediate(self, state: TaskState, subtask: dict, architect_doc: str, exec_cwd: str,
-                   concerns: list[str]) -> dict:
+                   concerns: list[str], cancel_check=None) -> dict:
         """Bounded remediation LOOP (up to ADVERSARY_REMEDIATION_MAX_ATTEMPTS) on a subtask that
         ALREADY passed verification: feed the reviewer's concerns back to the executor, re-verify,
         then re-review with the second brain; stop when it approves (or attempts run out). Each
@@ -1262,19 +1323,25 @@ class Orchestrator:
         goal = self._goalText(state)
         vres: dict = {}
         attempts = max(1, config.ADVERSARY_REMEDIATION_MAX_ATTEMPTS)
+        # The REAL git edit tree to snapshot/restore. For a self-referential run exec_cwd is the
+        # gitignored .sc-ctx scratch, but the executor edits the project at work_dir via --add-dir --
+        # so snapshotting/restoring exec_cwd was a NO-OP and a broken remediation was never reverted.
+        # work_dir IS the real tree for both self-ref (== PROJECT_ROOT) and non-self-ref runs.
+        repo_tree = getattr(self, "_work_dir", None) or exec_cwd
         for i in range(1, attempts + 1):
             feedback = ("The work PASSED its acceptance check, but an adversarial reviewer raised "
                         "concerns. Address these WITHOUT breaking the passing verification:\n- "
                         + "\n- ".join(concerns))
-            snap = self._gitSnapshot(exec_cwd)
+            snap = self._gitSnapshot(repo_tree)
             spec = self.authorInvocationSpec(state, subtask, architect_doc, feedback)
-            result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask)
+            result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
+                                      cancel_check=cancel_check)
             vres = verifier.runVerification(subtask.get("verify"), exec_cwd, result)
             with self._state_lock:
                 if vres.get("passed"):
                     state.recordVerify(sid, vres)   # adopt the still-passing post-remediation evidence
                 else:
-                    self._gitRestore(exec_cwd, snap)   # revert broken edits so disk == kept pass
+                    self._gitRestore(repo_tree, snap)   # revert broken edits so disk == kept pass
                 state.addNotification(
                     "adversary_remediation",
                     f"{sid}: remediation {i}/{attempts} "
@@ -1350,6 +1417,8 @@ class Orchestrator:
             with self._state_lock:
                 state.addAdversaryReview("pre_pr", reason, rv["verdict"], None, stub=rv.get("stub", False))
             discord.sendEmbed(discord.adversaryTriggeredEmbed("Pre-PR review", reason, rv.get("verdict")))
+            cast.speak("adversary", f"⚔️ Pre-PR review → **{discord.formatVerdict(rv.get('verdict'))}**. "
+                       f"Trigger: {reason}")
             return rv
         except Exception as e:  # noqa: BLE001 -- never block a run on the reviewer itself
             LOG.warning("pre-PR adversary review failed (%s); approving", e)
@@ -1434,7 +1503,12 @@ class Orchestrator:
             if not state.meta.get("is_self_referential"):
                 tracked = git("ls-files", "--error-unmatch", "CLAUDE.md").returncode == 0
                 if tracked:
-                    git("checkout", "--", "CLAUDE.md")        # restore the user's version
+                    # restore from HEAD, not the index: `git add -A` above ALREADY staged 9to5's
+                    # modified CLAUDE.md, so a bare `checkout -- CLAUDE.md` restores the working tree
+                    # FROM that staged 9to5 version (a no-op) and the PR would commit/overwrite the
+                    # user's tracked CLAUDE.md. `checkout HEAD --` resets both index and working tree
+                    # to the user's committed version.
+                    git("checkout", "HEAD", "--", "CLAUDE.md")
                 else:
                     git("rm", "--cached", "--ignore-unmatch", "CLAUDE.md")   # drop 9to5's new file from the commit
             commit = git("commit", "-m", f"9TO5: {state.meta['goal_raw'][:60]}")
@@ -1469,11 +1543,14 @@ class Orchestrator:
         exec_cwd = exec_cwd or self._execCwd(state, sid, work_dir)
         dashboard.update(state, "executing", f"-> {sid} {subtask['title']}")
 
-        # Boundary divergence check (#12): observe-only, never blocks.
-        try:
-            _checkCodeDivergence(state)
-        except Exception:  # noqa: BLE001
-            pass
+        # Boundary divergence check (#12): observe-only, never blocks. Under _state_lock: it mutates
+        # state.meta + saves, and EVERY other meta mutation in this parallel execution path is guarded
+        # by _state_lock -- an unguarded save here races a peer worker's save (lost/torn meta update).
+        with self._state_lock:
+            try:
+                _checkCodeDivergence(state)
+            except Exception:  # noqa: BLE001
+                pass
 
         attempt = 0
         passed = False
@@ -1600,6 +1677,9 @@ class Orchestrator:
         if not passed:
             discord.sendEmbed(discord.subtaskFailedEmbed(sid, subtask["title"], vresult, attempt))
         dashboard.update(state, "executing", f"{sid} -> {final}")
+        cast.speak("verifier" if not passed else "executor",
+                   (f"❌ `{sid}` failed verification after {attempt} attempt(s)." if not passed
+                    else f"⚙️ `{sid}` {subtask['title']} — done ✅"))
 
         try:
             with self._state_lock:
@@ -1622,6 +1702,8 @@ class Orchestrator:
                 _adv_verdict = rv.get("verdict")
                 _adv_stub = rv.get("stub", False)
                 discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason, rv.get("verdict")))
+                cast.speak("adversary", f"⚔️ Reviewing `{sid}` ({subtask['title']}) → "
+                           f"**{discord.formatVerdict(rv.get('verdict'))}**.")
                 with self._state_lock:
                     state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
                     self.obs.writeNote(state.subtaskReviewNoteRel(sid), self._reviewNote(subtask, reason, rv, combined))
@@ -1641,7 +1723,8 @@ class Orchestrator:
                                                   f"{sid}: remediation skipped (shared tree, parallel run)")
                     else:
                         dashboard.update(state, "executing", f"{sid} adversary remediation (1 attempt)")
-                        self._remediate(state, subtask, architect_doc, exec_cwd, rv["concerns"])
+                        self._remediate(state, subtask, architect_doc, exec_cwd, rv["concerns"],
+                                        cancel_check=lambda: bus.isAbort() or self._deadlinePassed(state))
 
             # SIE subsystem I: capture the executor's learning summary (trust-checked against
             # the real verify + adversary verdict) and memoize a passing spec. Best-effort.
@@ -1998,10 +2081,13 @@ class Orchestrator:
     def _detectSelfReferential(self, state: TaskState, work_dir: str) -> bool:
         text = f"{state.meta.get('goal_raw', '')} {state.meta.get('goal_elaborated', '')}".lower()
         root = str(config.PROJECT_ROOT).lower()
-        # Explicit self-targeting keywords only -- NOT the bare install path, which
-        # appears in any goal that writes a file under C:\9to5\... .
-        markers = ["9to5", "itself", "self-referential", "self-modify", "self modify",
-                   "self-improve", "its own code"]
+        # Explicit self-targeting INTENT phrases only -- NOT the bare product/install name "9to5",
+        # which appears in any external goal that merely mentions the product (e.g. "clone the 9to5
+        # app for a client") and was misclassifying those as self-modification -> wrongly creating a
+        # self-ref branch + core-file protection on the target repo. Operating IN the install tree is
+        # covered by same_dir below; textual intent needs a real self-targeting phrase.
+        markers = ["itself", "self-referential", "self-modify", "self modify",
+                   "self-improve", "its own code", "9to5's own", "this orchestrator"]
         same_dir = os.path.abspath(work_dir).lower() == root
         return same_dir or any(m in text for m in markers)
 
@@ -2063,8 +2149,12 @@ class Orchestrator:
             state.setControlMode(control_mode)
         state.setWorkDir(work_dir)   # persist the target dir so resume + every surface remember it
         bus = ControlBus(state.task_id)
+        self._pre_pr_gate_skipped = False   # #41: reset per-run so a prior run's deadline-skip can't leak
         if not resume:
-            bus.clear()
+            # clearForRunStart (NOT clear): the terminal-control thread + the always-running gateway
+            # bot are live during the pre-run elaboration window, so a full clear() here wiped an
+            # abort/pause the user issued while Ollama was still elaborating. Preserve that intent.
+            bus.clearForRunStart()
         if bus.getSeen() is None:   # seed so a stale '!abort' from a prior run is never replayed
             try:
                 bus.setSeen(discord.baselineLatestId())
@@ -2106,9 +2196,13 @@ class Orchestrator:
                 arch_prompt = architect.authorArchitectPrompt(elaborated, chat=self._ollamaChat)
 
                 def _runArchitect(effort: str):
+                    # cancel_check: a session-token-limit pause inside the architect run can block for
+                    # HOURS; without this an abort/deadline during startup can't break it and the whole
+                    # run wedges before it ever plans. Mirrors the subtask path.
                     res = self._run_claude({"prompt": arch_prompt, "effort_level": effort},
                                            work_dir=self._execCwd(state, "architect", work_dir),
-                                           system_prompt=architect.ARCHITECT_SYSTEM_PROMPT, task_state=state)
+                                           system_prompt=architect.ARCHITECT_SYSTEM_PROMPT, task_state=state,
+                                           cancel_check=lambda: bus.isAbort() or self._deadlinePassed(state))
                     return res if isinstance(res, dict) else {}   # tolerate a junk hands result
 
                 arch_res = _runArchitect("default")
@@ -2131,6 +2225,8 @@ class Orchestrator:
                 self.obs.writeNote(state.architectNoteRel(), architect_doc)
                 state.setArchitectDoc(state.architectNoteRel())
                 discord.sendEmbed(discord.architectDoneEmbed(state.architectNoteRel()))
+                cast.speak("architect", f"📐 Architecture is ready — `{state.architectNoteRel()}`. "
+                           f"Handing the design to the Planner.", milestone=True)
                 state.addNotification("architect_done", state.architectNoteRel())
                 dashboard.update(state, "architecting", f"architecture done ({len(architect_doc)} chars)")
                 # Second brain: critique the architecture; concerns are folded into the doc.
@@ -2145,6 +2241,8 @@ class Orchestrator:
                     state.addSubtask(s.get("title", "untitled"), s.get("description", ""),
                                      layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))
                 discord.sendEmbed(discord.planningStartEmbed(state.meta["goal_raw"], state.subtasks))
+                cast.speak("planner", f"🗺️ Plan ready — {len(state.subtasks)} subtasks queued. "
+                           f"Executor, you're up.", milestone=True)
                 state.addNotification("planning_start", f"{len(state.subtasks)} subtasks")
                 self.writeIndex(state)
                 dashboard.update(state, "planning", f"planned {len(state.subtasks)} subtasks")
@@ -2191,8 +2289,13 @@ class Orchestrator:
 
             # --- Phase 4: PR + complete ---
             self._checkControl(state, bus, dashboard, gate="pre_pr")
-            pr_review = self._prePrAdversary(state, work_dir)
-            create_pr, skip_reason = self._prGate(pr_review, auto_pr, state)
+            if self._pre_pr_gate_skipped:
+                # #41: the pre_pr approval gate hit the deadline. Work is done; skip the PR (and the
+                # pre-PR adversary) entirely and fall through to finalize with the run's real status.
+                create_pr, skip_reason = False, "pre-PR gate not approved before deadline"
+            else:
+                pr_review = self._prePrAdversary(state, work_dir)
+                create_pr, skip_reason = self._prGate(pr_review, auto_pr, state)
             if create_pr:
                 # Final gate: never open a PR whose own test suite is red (a self-improvement run can
                 # otherwise ship structurally-broken work the weak per-subtask verify missed, e.g. a
@@ -2237,6 +2340,8 @@ class Orchestrator:
             self.writeIndex(state)
             pr_link = pr.get("url") or f"skipped: {pr.get('reason', '')}"
             discord.sendEmbed(discord.completeEmbed(state, pr_link, _fmtElapsed(elapsed)))
+            cast.speak("brain", f"🧠 Run complete — **{final_status}**, {done}/{total} subtasks in "
+                       f"{_fmtElapsed(elapsed)}. That's a wrap, team.", milestone=True)
             state.addNotification("complete", pr_link)
             dashboard.update(state, "complete", f"done {done}/{total} · {_fmtElapsed(elapsed)}")
             # Trust telemetry rollup: surface GPT<->Ollama agreement + challenge stats for the run.
@@ -2279,16 +2384,22 @@ class Orchestrator:
             elapsed = _elapsedSince(state.meta["started_at"])
             LOG.error("Run crashed: %s", e, exc_info=True)
             try:
-                state.setStatus("blocked", blocked_reason=str(e))
+                # Persist a NON-terminal 'crashed' status (NOT 'blocked'): resilience._TERMINAL includes
+                # 'blocked', so persisting 'blocked' here made is_terminal() True and the recovery
+                # supervisor returned immediately -- defeating the crash auto-recovery this handler's own
+                # message promises. 'crashed' is non-terminal, so run_with_recovery resumes the task
+                # (committed progress is the source of truth) until it finishes, the deadline passes, or
+                # the no-progress restart budget is exhausted (which THEN sets terminal 'blocked').
+                state.setStatus("crashed", blocked_reason=str(e))
                 self.writeIndex(state)
             except Exception:  # noqa: BLE001
                 pass
             try:
                 discord.sendEmbed(discord.noticeEmbed(f"9to5 run crashed: {e} — supervisor will auto-recover if time remains"))
-                dashboard.update(state, "blocked", f"crashed: {e}")
+                dashboard.update(state, "crashed", f"crashed: {e}")
             except Exception:  # noqa: BLE001
                 pass
-            return {"task_id": state.task_id, "status": "blocked", "reason": str(e),
+            return {"task_id": state.task_id, "status": "crashed", "reason": str(e),
                     "elapsed_seconds": round(elapsed, 1), "web_dashboard": web_url,
                     "subtasks": [{"subtask_id": s["subtask_id"], "status": s["status"]} for s in state.subtasks]}
         finally:

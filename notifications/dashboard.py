@@ -16,7 +16,9 @@ from typing import Optional
 import config
 from notifications import branding
 from notifications import commands
+from notifications import cv2
 from notifications import discord_bot as discord
+from notifications import visuals
 from state.task import TaskState
 
 LOG = config.getLogger("dashboard")
@@ -157,6 +159,27 @@ class DiscordDashboard:
             "footer": {"text": f"task {state.task_id[:8]} · web :{config.WEB_DASHBOARD_PORT} · {hint}"},
         }
 
+    def _cockpit(self, state: TaskState, phase: str) -> tuple:
+        """Build the Components-V2 cockpit tree (when DASHBOARD_CV2). Returns ``(components, files)``
+        where ``files`` is an optional multipart attachment list for the Pillow hero image.
+        Snapshots the event ring first (self._lock), then renders the image + tree under the run's
+        state_lock -- same lock discipline as _embed (the two locks are never held simultaneously)."""
+        events = self._eventsSnapshot()
+        lock = self._state_lock
+        if lock:
+            lock.acquire()
+        try:
+            img = (visuals.progressCard(state, phase=phase, model=self.model, effort=self.effort)
+                   if config.VISUALS_ENABLED else None)
+            image_url = "attachment://cockpit.png" if img else None
+            comps, _flags = cv2.buildCockpit(state, phase, events=events, model=self.model,
+                                             effort=self.effort, image_url=image_url)
+        finally:
+            if lock:
+                lock.release()
+        files = [("cockpit.png", img, "image/png")] if img else None
+        return comps, files
+
     # ---- lifecycle ------------------------------------------------------
     def start(self, state: TaskState, phase: str = "starting", state_lock=None) -> None:
         if not config.DISCORD_DASHBOARD:
@@ -171,13 +194,16 @@ class DiscordDashboard:
             state.saveDashboardEvents(self._eventsSnapshot())
         except Exception:  # noqa: BLE001 -- never fail a run over event persistence
             pass
-        embed = self._embed(state, phase)
+        cv2_mode = config.DASHBOARD_CV2
+        embed = None if cv2_mode else self._embed(state, phase)
+        comps, files = self._cockpit(state, phase) if cv2_mode else (None, None)
         with self._send_lock:
             # Reuse existing dashboard message when resilience restarts the same task — avoids
-            # creating a new pinned embed (and firing all its button components) on every restart.
+            # creating a new pinned cockpit (and firing all its button components) on every restart.
             existing_id = state.meta.get("dashboard_message_id")
             if existing_id:
-                res = discord.editMessageResult(existing_id, embed, components=branding.controlPanelRow())
+                res = (discord.editComponentsV2Result(existing_id, comps, files=files) if cv2_mode
+                       else discord.editMessageResult(existing_id, embed, components=branding.controlPanelRow()))
                 if res == "ok":
                     self.message_id = existing_id
                     self._recreated = True  # suppress further recreation attempts
@@ -191,7 +217,8 @@ class DiscordDashboard:
                     LOG.info("Dashboard message %s reused (Discord transient at start)", existing_id)
                     return
                 # res == "not_found": the old message is gone -> create a fresh one below
-            self.message_id = discord.createMessage(embed, components=branding.controlPanelRow())
+            self.message_id = (discord.createComponentsV2(comps, files=files) if cv2_mode
+                               else discord.createMessage(embed, components=branding.controlPanelRow()))
             if self.message_id:
                 discord.pinMessage(self.message_id)
                 LOG.info("Dashboard message %s created + pinned", self.message_id)
@@ -215,21 +242,32 @@ class DiscordDashboard:
             state.saveDashboardEvents(self._eventsSnapshot())
         except Exception:  # noqa: BLE001 -- never fail a run over event persistence
             pass
-        embed = self._embed(state, phase)
+        cv2_mode = config.DASHBOARD_CV2
+        embed = None if cv2_mode else self._embed(state, phase)
+        comps, files = self._cockpit(state, phase) if cv2_mode else (None, None)
         with self._send_lock:
             row = branding.controlPanelRow()
+
+            def _edit(mid):
+                return (discord.editComponentsV2Result(mid, comps, files=files) if cv2_mode
+                        else discord.editMessageResult(mid, embed, components=row))
+
+            def _create():
+                return (discord.createComponentsV2(comps, files=files) if cv2_mode
+                        else discord.createMessage(embed, components=row))
+
             if self.message_id:
-                res = discord.editMessageResult(self.message_id, embed, components=row)
+                res = _edit(self.message_id)
                 # ONLY recreate on a genuine 404. A 'transient' failure (429 breaker armed, timeout)
                 # must leave message_id + _recreated untouched and just retry the edit next tick --
                 # otherwise a Discord blip spawns a duplicate dashboard and burns the one-shot guard.
                 if res == "not_found" and not self._recreated:
                     self._recreated = True
-                    self.message_id = discord.createMessage(embed, components=row)
+                    self.message_id = _create()
                     if self.message_id:
                         discord.pinMessage(self.message_id)
             else:
-                self.message_id = discord.createMessage(embed, components=row)
+                self.message_id = _create()
                 if self.message_id:
                     discord.pinMessage(self.message_id)
 

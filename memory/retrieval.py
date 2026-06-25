@@ -130,6 +130,7 @@ def top_k_similar(query_vec: list[float], k: int = 5, *, only_passed: bool = Tru
                   db_path: Optional[Path] = None) -> list[dict[str, Any]]:
     """The ``k`` most-similar embedded subtasks to ``query_vec``, each annotated with a
     ``score``. Pulls only verify-passing rows by default (we learn from wins)."""
+    floor = float(getattr(config, "RETRIEVAL_MIN_SCORE", 0.0) or 0.0)
     out: list[dict[str, Any]] = []
     for row in experience.embedded_subtasks(only_passed=only_passed, db_path=db_path):
         blob = row.get("embedding")
@@ -138,6 +139,8 @@ def top_k_similar(query_vec: list[float], k: int = 5, *, only_passed: bool = Tru
         try:
             score = cosine(query_vec, unpack(blob))
         except Exception:  # noqa: BLE001 -- a corrupt blob just doesn't compete
+            continue
+        if score < floor:        # below the relevance floor -> irrelevant noise, don't inject it
             continue
         out.append({**row, "score": score})
     out.sort(key=lambda r: r["score"], reverse=True)

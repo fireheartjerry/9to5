@@ -1,0 +1,198 @@
+"""Generative visuals -- Pillow-rendered cockpit imagery (progress cards, burndown
+charts, end-of-run GIF timelapse). PURE-ish: every entry point returns ``bytes`` (a
+PNG/GIF) or ``None`` and NEVER raises, so a missing Pillow or a render error can never
+break a run. Wire the returned bytes into the cockpit via the shared multipart path
+(``discord_bot.createComponentsV2(..., files=[(name, bytes, "image/png")])``).
+
+Gated by ``config.VISUALS_ENABLED`` (auto-off when Pillow is unavailable).
+"""
+from __future__ import annotations
+
+import io
+from typing import Optional
+
+import config
+
+LOG = config.getLogger("visuals")
+
+# --- theme palettes (bg, panel, text, muted, grid) -- keyed by COCKPIT_THEME ----
+_THEMES = {
+    "dark":     {"bg": (24, 26, 33), "panel": (33, 37, 48), "text": (230, 233, 239),
+                 "muted": (138, 145, 160), "grid": (52, 58, 74)},
+    "neon":     {"bg": (10, 10, 18), "panel": (22, 18, 40), "text": (235, 240, 255),
+                 "muted": (150, 130, 200), "grid": (60, 40, 110)},
+    "minimal":  {"bg": (250, 250, 252), "panel": (238, 240, 244), "text": (28, 30, 36),
+                 "muted": (120, 126, 138), "grid": (210, 214, 222)},
+    "terminal": {"bg": (8, 12, 10), "panel": (12, 20, 14), "text": (120, 255, 140),
+                 "muted": (70, 150, 90), "grid": (24, 50, 30)},
+}
+_STATUS_FILL = {
+    "done": (46, 204, 113), "in_progress": (52, 152, 219), "failed": (231, 76, 60),
+    "pending": (90, 96, 110), "removed": (60, 64, 76),
+}
+
+
+def available() -> bool:
+    if not config.VISUALS_ENABLED:
+        return False
+    try:
+        import PIL  # noqa: F401
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _theme() -> dict:
+    return _THEMES.get(config.COCKPIT_THEME, _THEMES["dark"])
+
+
+def _rgb(value: int) -> tuple:
+    return ((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF)
+
+
+def _font(size: int):
+    from PIL import ImageFont
+    try:
+        return ImageFont.load_default(size=size)   # Pillow >=10.1 honours size
+    except Exception:  # noqa: BLE001
+        return ImageFont.load_default()
+
+
+def _wrap(draw, text: str, font, max_w: int, max_lines: int = 2) -> list:
+    words = (text or "").split()
+    lines, cur = [], ""
+    for w in words:
+        trial = (cur + " " + w).strip()
+        if draw.textlength(trial, font=font) <= max_w:
+            cur = trial
+        else:
+            if cur:
+                lines.append(cur)
+            cur = w
+            if len(lines) >= max_lines:
+                break
+    if cur and len(lines) < max_lines:
+        lines.append(cur)
+    if len(lines) >= max_lines and words:
+        lines[-1] = lines[-1][:60].rstrip() + "…"
+    return lines or ["—"]
+
+
+def progressCard(state, *, phase: str = "executing", model: Optional[str] = None,
+                 effort: str = "default") -> Optional[bytes]:
+    """A wide cockpit-hero PNG: phase, goal, progress bar, subtask grid, footer metrics.
+    Returns PNG bytes, or None if visuals are unavailable / rendering fails."""
+    if not available():
+        return None
+    try:
+        from PIL import Image, ImageDraw
+
+        th = _theme()
+        m = dict(state.meta)
+        subtasks = [s for s in state.subtasks if s.get("status") != "removed"]
+        done = sum(1 for s in subtasks if s.get("status") == "done")
+        total = max(len(subtasks), 1)
+        pct = done / total
+        accent = _rgb(config.STATUS_COLORS.get(m.get("status"), 0x5865F2))
+
+        W, H = 840, 360
+        img = Image.new("RGB", (W, H), th["bg"])
+        d = ImageDraw.Draw(img)
+
+        # header accent strip
+        d.rectangle([0, 0, W, 8], fill=accent)
+        d.text((28, 26), f"9TO5 · {phase}", font=_font(30), fill=th["text"])
+        d.text((28, 64), f"status: {m.get('status', '?')}   ·   mode: {m.get('control_mode', 'watch')}",
+               font=_font(18), fill=th["muted"])
+
+        # goal (wrapped, up to 2 lines)
+        for i, line in enumerate(_wrap(d, m.get("goal_raw", ""), _font(22), W - 56, 2)):
+            d.text((28, 100 + i * 30), line, font=_font(22), fill=th["text"])
+
+        # progress bar
+        bx, by, bw, bh = 28, 178, W - 56, 30
+        d.rounded_rectangle([bx, by, bx + bw, by + bh], radius=8, fill=th["panel"])
+        if pct > 0:
+            d.rounded_rectangle([bx, by, bx + int(bw * pct), by + bh], radius=8, fill=accent)
+        d.text((bx + bw - 96, by + 4), f"{int(round(pct * 100))}%  {done}/{total}",
+               font=_font(20), fill=th["text"])
+
+        # subtask grid
+        gx, gy, sq, gap = 28, 232, 22, 6
+        per_row = (W - 56) // (sq + gap)
+        for i, s in enumerate(subtasks[:per_row * 3]):
+            r, c = divmod(i, per_row)
+            x = gx + c * (sq + gap)
+            y = gy + r * (sq + gap)
+            d.rounded_rectangle([x, y, x + sq, y + sq], radius=4,
+                                fill=_STATUS_FILL.get(s.get("status"), _STATUS_FILL["pending"]))
+
+        # footer metrics
+        advs = len(state.data.get("adversary_reviews", []))
+        replans = sum(1 for n in state.data.get("notifications", []) if n.get("kind") == "replan")
+        d.text((28, H - 34),
+               f"model {model or config.PRIMARY_MODEL}   ·   effort {effort}   ·   "
+               f"replans {replans}   ·   adversary {advs}",
+               font=_font(16), fill=th["muted"])
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:  # noqa: BLE001 -- visuals are best-effort; never break a run
+        LOG.warning("progressCard render failed", exc_info=True)
+        return None
+
+
+def burndownChart(state) -> Optional[bytes]:
+    """A simple status-breakdown bar chart (done/in_progress/failed/pending) as PNG."""
+    if not available():
+        return None
+    try:
+        from PIL import Image, ImageDraw
+
+        th = _theme()
+        subtasks = [s for s in state.subtasks if s.get("status") != "removed"]
+        order = ["done", "in_progress", "failed", "pending"]
+        counts = {k: sum(1 for s in subtasks if s.get("status") == k) for k in order}
+        peak = max(max(counts.values()), 1)
+
+        W, H = 560, 300
+        img = Image.new("RGB", (W, H), th["bg"])
+        d = ImageDraw.Draw(img)
+        d.text((24, 18), "Subtask status", font=_font(22), fill=th["text"])
+        base_y, bar_w, gap = H - 50, 90, 40
+        for i, k in enumerate(order):
+            x = 40 + i * (bar_w + gap)
+            h = int((H - 110) * counts[k] / peak)
+            d.rectangle([x, base_y - h, x + bar_w, base_y], fill=_STATUS_FILL.get(k))
+            d.text((x, base_y + 6), k.replace("_", " "), font=_font(14), fill=th["muted"])
+            d.text((x + bar_w // 2 - 6, base_y - h - 22), str(counts[k]), font=_font(18), fill=th["text"])
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:  # noqa: BLE001
+        LOG.warning("burndownChart render failed", exc_info=True)
+        return None
+
+
+def timelapseGif(frames: list, *, duration_ms: int = 700) -> Optional[bytes]:
+    """Stitch a list of PNG-byte frames into an animated GIF (end-of-run replay). Returns GIF bytes."""
+    if not available() or not frames:
+        return None
+    try:
+        from PIL import Image
+
+        imgs = []
+        for fb in frames:
+            if fb:
+                imgs.append(Image.open(io.BytesIO(fb)).convert("P", palette=Image.ADAPTIVE))
+        if not imgs:
+            return None
+        buf = io.BytesIO()
+        imgs[0].save(buf, format="GIF", save_all=True, append_images=imgs[1:],
+                     duration=duration_ms, loop=0)
+        return buf.getvalue()
+    except Exception:  # noqa: BLE001
+        LOG.warning("timelapseGif render failed", exc_info=True)
+        return None
