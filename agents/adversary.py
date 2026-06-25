@@ -163,12 +163,24 @@ def shouldTrigger(executor_output: str, subtask_position: int,
     return False, ""
 
 
-def _normalizeVerdict(raw: object) -> str:
-    """Collapse any model phrasing into the two-valued contract."""
-    v = str(raw or "").strip().lower()
-    if any(w in v for w in _CHALLENGE_WORDS):
+_APPROVE_WORDS = {"approved", "approve", "pass", "passed", "ok", "okay", "accept", "accepted", "lgtm"}
+
+
+def _normalizeVerdict(raw: object) -> Optional[str]:
+    """Collapse model phrasing into the two-valued contract, or None when the value is ABSENT or
+    unrecognizable. A None MUST fail closed at the caller (conservative stub) and must NEVER be
+    treated as 'approved' -- otherwise a real 'challenged' the model expressed off-contract (a typo,
+    a missing 'verdict' key, prose) would silently neuter the PR-hold and remediation (FX-5)."""
+    if raw is None:
+        return None
+    v = str(raw).strip().lower()
+    if not v:
+        return None
+    if any(w in v for w in _CHALLENGE_WORDS):              # challenge wins (safety)
         return _CHALLENGED
-    return _APPROVED
+    if v in _APPROVE_WORDS or v.startswith(("approve", "pass", "accept")):
+        return _APPROVED
+    return None                                            # off-contract -> unknown -> fail closed
 
 
 def _stubReview(trigger_reason: str, *, note: Optional[str] = None) -> dict:
@@ -209,6 +221,10 @@ def _parseVerdict(raw_content: object, trigger_reason: str, *, surface: str,
     if not isinstance(data, dict):
         raise ValueError("non-object review payload")
     verdict = _normalizeVerdict(data.get("verdict"))
+    if verdict is None:
+        # missing/off-contract verdict -> fail CLOSED (raise -> caller's conservative stub),
+        # never silently 'approved'.
+        raise ValueError(f"missing or unrecognized verdict: {data.get('verdict')!r}")
     concerns = [str(c) for c in (data.get("concerns") or []) if str(c).strip()][:10]
     notes = str(data.get("notes") or "").strip()
     return {
@@ -303,6 +319,10 @@ def review(subtask_title: str, trigger_reason: str, executor_output: str, *,
         if not isinstance(data, dict):
             raise ValueError("non-object review payload")
         verdict = _normalizeVerdict(data.get("verdict"))
+        if verdict is None:
+            # missing/off-contract verdict -> fail CLOSED to the conservative stub (below), never a
+            # silent 'approved' that would neuter the PR-hold for a real off-contract challenge.
+            raise ValueError(f"missing or unrecognized verdict: {data.get('verdict')!r}")
         concerns = [str(c) for c in (data.get("concerns") or []) if str(c).strip()][:10]
         notes = str(data.get("notes") or "").strip()
         LOG.info("Adversary verdict for '%s' (%s) -> %s (%d concern(s))",
