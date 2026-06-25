@@ -141,7 +141,7 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
     @bot.tree.error
     async def _on_app_error(interaction, error):  # noqa: ANN001
         if isinstance(error, app_commands.CommandOnCooldown):
-            msg = f"⏳ Slow down — try again in {error.retry_after:.0f}s."
+            msg = f" Slow down — try again in {error.retry_after:.0f}s."
         else:
             LOG.exception("slash error: %s", error)
             msg = "internal error (see logs)"

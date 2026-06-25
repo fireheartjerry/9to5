@@ -55,7 +55,7 @@ async def _runControl(interaction, name: str, arg: str = "") -> None:  # noqa: A
 
 async def _guard(interaction) -> bool:  # noqa: ANN001
     if not _ownerOk(interaction):
-        await interaction.response.send_message("⛔ Not authorized to control runs.", ephemeral=True)
+        await interaction.response.send_message("Not authorized to control runs.", ephemeral=True)
         return False
     return True
 

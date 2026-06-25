@@ -102,7 +102,7 @@ def answer(question: str, state, *, chat: Optional[Callable[[str, str], str]] = 
     ctx = buildContext(state, question)
     try:
         out = (chat(SYSTEM, ctx) or "").strip()
-        return out or "🧠 The brain returned an empty answer — try rephrasing."
+        return out or "The brain returned an empty answer — try rephrasing."
     except Exception:  # noqa: BLE001
         LOG.warning("ask.answer failed", exc_info=True)
-        return "🧠 Brain offline (Ollama unreachable). Use `/status` for the raw run state."
+        return "Brain offline (Ollama unreachable). Use `/status` for the raw run state."

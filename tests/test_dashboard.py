@@ -166,7 +166,7 @@ class TestEmbedBuilding(unittest.TestCase):
         self.assertIn("fields", embed)
         self.assertIn("footer", embed)
 
-    def test_embed_title_uses_phase_emoji(self):
+    def test_embed_title_uses_phase(self):
         d = DiscordDashboard()
         st = _state()
         with mock.patch("notifications.discord_bot.statusColor", return_value=0), \
@@ -174,7 +174,8 @@ class TestEmbedBuilding(unittest.TestCase):
              mock.patch("notifications.discord_bot.subtaskTracker", return_value=""), \
              mock.patch("notifications.discord_bot.effortBar", return_value=""):
             embed = d._embed(st, "complete")
-        self.assertIn("✅", embed["title"])
+        self.assertIn("complete", embed["title"])     # clean phase title, no emoji
+        self.assertIn("9TO5", embed["title"])
 
     def test_update_stores_effort_and_model(self):
         d = DiscordDashboard()

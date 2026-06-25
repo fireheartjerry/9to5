@@ -59,9 +59,9 @@ ANSI_STATUS = {
 GLYPHS = {"dark": ("█", "░"), "neon": ("█", "░"), "minimal": ("█", "░"), "terminal": ("#", "-")}
 
 PHASE_EMOJI = {
-    "starting": "🚀", "resuming": "↻", "architecting": "📐", "planning": "🗺️",
-    "executing": "⚙️", "verifying": "🔎", "replanning": "🔁", "paused": "⏸️",
-    "blocked": "🚨", "complete": "✅", "aborted": "🛑", "failed": "❌",
+    "starting": "", "resuming": "↻", "architecting": "", "planning": "",
+    "executing": "", "verifying": "", "replanning": "", "paused": "",
+    "blocked": "", "complete": "", "aborted": "", "failed": "",
 }
 
 # ---- fonts (premium, real TTFs; lazy + cached; graceful fallback) ------------
@@ -187,4 +187,4 @@ def accent(status) -> int:
 
 
 def phaseEmoji(phase) -> str:
-    return PHASE_EMOJI.get(phase, "🛰")
+    return PHASE_EMOJI.get(phase, "")

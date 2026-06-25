@@ -48,9 +48,11 @@ class ThemeSelection(unittest.TestCase):
         self.assertIsNotNone(m)
         self.assertIs(theme.font(20, "semibold"), f)   # cached
 
-    def test_phase_emoji(self):
-        self.assertEqual(theme.phaseEmoji("executing"), "⚙️")
-        self.assertEqual(theme.phaseEmoji("???"), "🛰")
+    def test_phase_icon_concepts(self):
+        # legacy phase emoji are gone; phases now resolve to professional icon concepts
+        self.assertEqual(theme.PHASE_ICON["executing"], "active")
+        self.assertEqual(theme.PHASE_ICON["complete"], "complete")
+        self.assertTrue(theme.iconChar("active"))      # a real Segoe Fluent glyph
 
 
 if __name__ == "__main__":

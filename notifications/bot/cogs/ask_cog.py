@@ -39,10 +39,10 @@ class AskCog(dpy_commands.Cog):
         verb = ask_mod.detectControlIntent(question)
         if verb and config.ASK_NL_CONTROL:
             if not spine.isAuthorized(interaction.user.id):
-                return await interaction.followup.send("⛔ Not authorized for control.")
+                return await interaction.followup.send("Not authorized for control.")
             audit.record(interaction.user.id, verb, state.task_id, "ask-nl")
             msg = spine.applyCommand(ControlBus(state.task_id), state, spine.Command(verb, ""))
-            return await interaction.followup.send(f"🧠 (interpreted as `{verb}`) {msg}")
+            return await interaction.followup.send(f" (interpreted as `{verb}`) {msg}")
 
         reply = await asyncio.to_thread(ask_mod.answer, question, state)
         q = discord.utils.escape_markdown(question[:180])

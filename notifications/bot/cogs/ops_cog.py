@@ -31,7 +31,7 @@ class OpsCog(dpy_commands.Cog):
 
     @dpy_commands.Cog.listener()
     async def on_raw_reaction_add(self, payload) -> None:  # noqa: ANN001
-        """Owner reacts ✅/🔥 (or ⛔/🛑) on the gate notice -> resolve the pending gate.
+        """Owner reacts / (or /) on the gate notice -> resolve the pending gate.
         Works for normal AND super (burst) reactions -- same emoji."""
         if not config.REACTION_APPROVE:
             return
@@ -66,7 +66,7 @@ class OpsCog(dpy_commands.Cog):
                         discord.sendEmbed,
                         discord.noticeEmbed(
                             f"Run `{state.task_id[:8]}` has emitted no event for "
-                            f">{ops.STALE_SECONDS // 60}m — possible stall.", "🐶 Watchdog"))
+                            f">{ops.STALE_SECONDS // 60}m — possible stall.", "Watchdog"))
             else:
                 self._alerted.discard(state.task_id)
         except Exception:  # noqa: BLE001 -- the watchdog must never crash the gateway

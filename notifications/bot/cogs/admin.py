@@ -27,11 +27,11 @@ class AdminCog(dpy_commands.Cog):
     @app_commands.describe(extension="cog module name, e.g. ask_cog")
     async def reload(self, interaction: discord.Interaction, extension: str) -> None:
         if not spine.isAuthorized(interaction.user.id):
-            return await interaction.response.send_message("⛔ Not authorized.", ephemeral=True)
+            return await interaction.response.send_message("Not authorized.", ephemeral=True)
         name = extension if extension.startswith(_PREFIX) else _PREFIX + extension
         try:
             await self.bot.reload_extension(name)
-            await interaction.response.send_message(f"🔄 reloaded `{name}`", ephemeral=True)
+            await interaction.response.send_message(f" reloaded `{name}`", ephemeral=True)
         except Exception as e:  # noqa: BLE001
             LOG.warning("reload %s failed: %s", name, e)
             await interaction.response.send_message(f"reload failed: `{e}`", ephemeral=True)
@@ -44,7 +44,7 @@ class AdminCog(dpy_commands.Cog):
         from notifications import cv2
         from notifications import discord_bot
         comps, _flags = cv2.buildCockpit(state, state.meta.get("status", "executing"))
-        await interaction.response.send_message("🛰 posting cockpit…", ephemeral=True)
+        await interaction.response.send_message("posting cockpit…", ephemeral=True)
         await asyncio.to_thread(discord_bot.createComponentsV2, comps)
 
     @app_commands.command(name="hud", description="Post the ANSI mission-console HUD (T8)")
@@ -55,7 +55,7 @@ class AdminCog(dpy_commands.Cog):
         from notifications import console_hud
         from notifications import discord_bot
         body = console_hud.render(state, state.meta.get("status", "executing"))
-        await interaction.response.send_message("🛰 posting HUD…", ephemeral=True)
+        await interaction.response.send_message("posting HUD…", ephemeral=True)
         await asyncio.to_thread(discord_bot.postContent, body)
 
 

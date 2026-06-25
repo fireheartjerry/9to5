@@ -32,7 +32,7 @@ class RunsCog(dpy_commands.Cog):
                    no_pr: "bool | None" = None, work_dir: "str | None" = None,
                    night_mode: "bool | None" = None) -> None:  # noqa: ANN001
         if not slash._ownerOk(interaction):
-            return await interaction.response.send_message("⛔ Not authorized to launch runs.", ephemeral=True)
+            return await interaction.response.send_message("Not authorized to launch runs.", ephemeral=True)
         if not goal:
             from notifications.views import WorkModal
             return await interaction.response.send_modal(WorkModal())
@@ -41,15 +41,15 @@ class RunsCog(dpy_commands.Cog):
         if config.BROWSER_LAYER_ENABLED:
             from agents import browser_executor
             await interaction.followup.send(
-                "🔐 Checking ChatGPT login — if a browser opens, **log in** (I'll detect it). "
+                "Checking ChatGPT login — if a browser opens, **log in** (I'll detect it). "
                 "Waiting up to 5 minutes…", ephemeral=True)
             logged_in = await asyncio.to_thread(browser_executor.preflightLogin, 300, 3)
             if not logged_in:
                 await interaction.followup.send(
-                    "❌ ChatGPT login timed out (5 min). Run aborted — re-run `/work` after logging in.",
+                    "ChatGPT login timed out (5 min). Run aborted — re-run `/work` after logging in.",
                     ephemeral=True)
                 return
-            await interaction.followup.send("✅ ChatGPT logged in. Starting run…", ephemeral=True)
+            await interaction.followup.send("ChatGPT logged in. Starting run…", ephemeral=True)
 
         req = work_launcher.WorkRequest(
             goal=goal, hours=work_launcher.parseHours(hours),
@@ -63,7 +63,7 @@ class RunsCog(dpy_commands.Cog):
     @slash.COOLDOWN
     async def wipe(self, interaction) -> None:  # noqa: ANN001
         if not slash._ownerOk(interaction):
-            return await interaction.response.send_message("⛔ Not authorized.", ephemeral=True)
+            return await interaction.response.send_message("Not authorized.", ephemeral=True)
         from notifications.views import WipeSetupView
         audit.record(interaction.user.id, "wipe", None, "slash")
         await interaction.response.send_message(
@@ -89,11 +89,11 @@ class RunsCog(dpy_commands.Cog):
     async def run(self, interaction, task_id: str) -> None:  # noqa: ANN001
         await interaction.response.defer(ephemeral=True)
         if not work_launcher.taskExists(task_id):
-            return await interaction.followup.send(f"❌ No such task `{task_id}`.", ephemeral=True)
+            return await interaction.followup.send(f" No such task `{task_id}`.", ephemeral=True)
         state = TaskState.loadSafe(task_id)
         if state is None:
             return await interaction.followup.send(
-                f"❌ Task `{task_id}` exists but its state file is unreadable (corrupt JSON).", ephemeral=True)
+                f" Task `{task_id}` exists but its state file is unreadable (corrupt JSON).", ephemeral=True)
         await interaction.followup.send(embed=slash._embed(branding.runEmbed(state)), ephemeral=True)
 
     @app_commands.command(name="resume", description="Resume a paused run, or resume a prior run by id")
@@ -102,7 +102,7 @@ class RunsCog(dpy_commands.Cog):
     @slash.COOLDOWN
     async def resume(self, interaction, task_id: "str | None" = None) -> None:  # noqa: ANN001
         if not slash._ownerOk(interaction):
-            return await interaction.response.send_message("⛔ Not authorized.", ephemeral=True)
+            return await interaction.response.send_message("Not authorized.", ephemeral=True)
         if not task_id:
             return await slash._runControl(interaction, "resume")
         await interaction.response.defer(ephemeral=True)

@@ -15,14 +15,14 @@ from __future__ import annotations
 from typing import Optional
 
 # Canonical gate-poll answers. Order matters (Discord answer_ids are 1-based by order).
-GATE_ANSWERS = ("✅ Yes", "✏️ Revise", "🛑 Abort")
+GATE_ANSWERS = ("Yes", "Revise", "Abort")
 
 _APPROVE = {"yes", "approve", "approved", "lgtm", "ship", "ok"}
 _REJECT = {"revise", "reject", "rejected", "abort", "no", "deny", "stop"}
 
 
 def voteToVerdict(answer: str) -> Optional[str]:
-    """Map a poll answer label (e.g. '✅ Yes') to 'approve' | 'reject' | None."""
+    """Map a poll answer label (e.g. 'Yes') to 'approve' | 'reject' | None."""
     t = "".join(ch for ch in (answer or "").lower() if ch.isalnum() or ch.isspace()).strip()
     for w in t.split():
         if w in _APPROVE:

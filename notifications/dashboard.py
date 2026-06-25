@@ -26,9 +26,9 @@ LOG = config.getLogger("dashboard")
 
 # phase label -> emoji for the title
 _PHASE_EMOJI = {
-    "starting": "🚀", "resuming": "↻", "architecting": "📐", "planning": "🗺️",
-    "executing": "⚙️", "verifying": "🔎", "replanning": "🔁", "paused": "⏸️",
-    "blocked": "🚨", "complete": "✅", "aborted": "🛑", "failed": "❌",
+    "starting": "", "resuming": "↻", "architecting": "", "planning": "",
+    "executing": "", "verifying": "", "replanning": "", "paused": "",
+    "blocked": "", "complete": "", "aborted": "", "failed": "",
 }
 
 
@@ -128,16 +128,16 @@ class DiscordDashboard:
                 last_v = (s["subtask_id"], s["verify_result"])
         if last_v:
             sid, vr = last_v
-            mark = "✅" if vr.get("passed") else "❌"
+            mark = "" if vr.get("passed") else ""
             verify_txt = f"{mark} `{sid}` — `{str(vr.get('cmd') or vr.get('expect'))[:70]}`"
         else:
             verify_txt = "—"
 
-        emoji = _PHASE_EMOJI.get(phase, "🛰")
+        emoji = _PHASE_EMOJI.get(phase, "")
         paused = m.get("status") == "paused"
         hint = "!resume" if paused else commands.footerHelp()
         return {
-            "title": f"{emoji} 9TO5 · {phase}",
+            "title": f"9TO5 · {phase}",
             "color": discord.statusColor(m["status"]),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "description": (
@@ -150,8 +150,8 @@ class DiscordDashboard:
                 {"name": "Mode", "value": f"`{m.get('control_mode', 'watch')}`", "inline": True},
                 {"name": "Elapsed", "value": self._elapsed(m.get("started_at")), "inline": True},
                 {"name": "ETA", "value": self._eta(m.get("started_at"), done, total), "inline": True},
-                {"name": "🔁 Replans", "value": str(replans), "inline": True},
-                {"name": "⚔️ Adversary", "value": str(advs), "inline": True},
+                {"name": "Replans", "value": str(replans), "inline": True},
+                {"name": "Adversary", "value": str(advs), "inline": True},
                 {"name": "Effort", "value": discord.effortBar(self.effort), "inline": True},
                 {"name": "Current subtask", "value": cur_txt[:1000], "inline": False},
                 {"name": "Working dir", "value": f"`{(m.get('work_dir') or '—')[:200]}`", "inline": False},
