@@ -2324,16 +2324,22 @@ class Orchestrator:
             elapsed = _elapsedSince(state.meta["started_at"])
             LOG.error("Run crashed: %s", e, exc_info=True)
             try:
-                state.setStatus("blocked", blocked_reason=str(e))
+                # Persist a NON-terminal 'crashed' status (NOT 'blocked'): resilience._TERMINAL includes
+                # 'blocked', so persisting 'blocked' here made is_terminal() True and the recovery
+                # supervisor returned immediately -- defeating the crash auto-recovery this handler's own
+                # message promises. 'crashed' is non-terminal, so run_with_recovery resumes the task
+                # (committed progress is the source of truth) until it finishes, the deadline passes, or
+                # the no-progress restart budget is exhausted (which THEN sets terminal 'blocked').
+                state.setStatus("crashed", blocked_reason=str(e))
                 self.writeIndex(state)
             except Exception:  # noqa: BLE001
                 pass
             try:
                 discord.sendEmbed(discord.noticeEmbed(f"9to5 run crashed: {e} — supervisor will auto-recover if time remains"))
-                dashboard.update(state, "blocked", f"crashed: {e}")
+                dashboard.update(state, "crashed", f"crashed: {e}")
             except Exception:  # noqa: BLE001
                 pass
-            return {"task_id": state.task_id, "status": "blocked", "reason": str(e),
+            return {"task_id": state.task_id, "status": "crashed", "reason": str(e),
                     "elapsed_seconds": round(elapsed, 1), "web_dashboard": web_url,
                     "subtasks": [{"subtask_id": s["subtask_id"], "status": s["status"]} for s in state.subtasks]}
         finally:

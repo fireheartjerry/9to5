@@ -95,6 +95,41 @@ class TestRunWithRecovery(unittest.TestCase):
         self.assertEqual(out["status"], "done")
         self.assertEqual(calls["n"], 2)          # crashed once, auto-resumed, finished
 
+    def test_returned_crashed_status_is_retried(self):
+        # runFull catches its own crash and RETURNS a non-terminal 'crashed' status (it does not
+        # raise). The supervisor must treat that as recoverable and resume, not stop.
+        state = TaskState.create("g", 1.0)
+        calls = {"n": 0}
+
+        def run_fn(st):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                st.setStatus("crashed", blocked_reason="boom")   # persisted, NON-terminal
+                return {"status": "crashed"}
+            st.setStatus("done")
+            return {"status": "done"}
+
+        out = resilience.run_with_recovery(run_fn, state, reload_state=lambda t: state,
+                                           sleep=lambda s: None)
+        self.assertEqual(out["status"], "done")
+        self.assertEqual(calls["n"], 3, "a returned 'crashed' status was not auto-resumed")
+
+    def test_returned_blocked_status_is_terminal(self):
+        # 'blocked' is the give-up status (e.g. restart budget exhausted) and MUST stay terminal so
+        # the supervisor stops -- it must not be retried like 'crashed'.
+        state = TaskState.create("g", 1.0)
+        calls = {"n": 0}
+
+        def run_fn(st):
+            calls["n"] += 1
+            st.setStatus("blocked", blocked_reason="gave up")
+            return {"status": "blocked"}
+
+        out = resilience.run_with_recovery(run_fn, state, reload_state=lambda t: state,
+                                           sleep=lambda s: None)
+        self.assertEqual(out["status"], "blocked")
+        self.assertEqual(calls["n"], 1, "terminal 'blocked' was wrongly retried")
+
     def test_deadline_stops_restart_loop(self):
         state = TaskState.create("g", 1.0)
         state.meta["deadline_at"] = (datetime.now().astimezone() - timedelta(minutes=1)).isoformat()
