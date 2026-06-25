@@ -94,7 +94,7 @@ class TestBuildCockpit(unittest.TestCase):
         self.assertIn("%", blob)                          # progress bar percent
         self.assertIn("st-002", blob)                     # current subtask id
         self.assertIn("attempt 2", blob)                  # attempt hint
-        self.assertIn("✅ `st-001`", blob)                # last verify
+        self.assertIn("PASS `st-001`", blob)              # last verify (icon prefix '' unprovisioned)
 
     def test_control_buttons_inside_container(self):
         ids = _custom_ids(cv2.buildCockpit(_state(), "executing")[0])
