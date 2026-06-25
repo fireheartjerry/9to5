@@ -18,6 +18,8 @@ RUN/TEST: (no mapped test)
 """
 from __future__ import annotations
 
+import asyncio
+
 import config
 from control import ControlBus
 from notifications import audit
@@ -44,12 +46,21 @@ class EngagementCog(dpy_commands.Cog):
     async def on_raw_poll_vote_add(self, payload) -> None:  # noqa: ANN001
         if not config.POLL_GATES:
             return
+        # SECURITY: require the CONFIGURED owner (fail CLOSED if unset -- the old `owner.isdigit()
+        # and ...` let an empty DISCORD_HUMAN_USER_ID accept ANY voter), in the control channel.
         owner = (config.DISCORD_HUMAN_USER_ID or "").strip()
-        if owner.isdigit() and getattr(payload, "user_id", None) != int(owner):
+        if not owner.isdigit() or getattr(payload, "user_id", None) != int(owner):
+            return
+        chan = getattr(payload, "channel_id", None)
+        if config.DISCORD_CHANNEL_ID and chan is not None and chan != config.DISCORD_CHANNEL_ID:
             return
         verdict = verdictForAnswer(getattr(payload, "answer_id", None))
         if not verdict:
             return
+        # ControlBus/state IO is blocking -- offload off the event loop (heartbeat stays alive).
+        await asyncio.to_thread(self._resolveGate, getattr(payload, "user_id", None), verdict)
+
+    def _resolveGate(self, user_id, verdict: str) -> None:  # noqa: ANN001 -- runs in a worker thread
         state = spine.resolveTargetTask()
         if state is None:
             return
@@ -57,7 +68,7 @@ class EngagementCog(dpy_commands.Cog):
         gate = bus.getPendingGate()
         if not gate:
             return
-        audit.record(getattr(payload, "user_id", None), verdict, state.task_id, "poll-vote")
+        audit.record(user_id, verdict, state.task_id, "poll-vote")
         bus.decide(gate, verdict)
         LOG.info("poll vote resolved gate %s -> %s", gate, verdict)
 

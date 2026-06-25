@@ -259,13 +259,17 @@ def main() -> int:
             try:
                 _ostate = TaskState.load(orphan)
                 _pid = (_ostate.meta or {}).get("run_pid")
-                _dead = True
+                # Default to ALIVE: only auto-resume when the recorded pid is POSITIVELY confirmed
+                # dead. An absent/None/0/non-int pid, or a psutil that can't answer, must NOT count as
+                # dead -- otherwise a live concurrent run (whose JSON simply lacks a stamped pid) gets
+                # a SECOND orchestrator spawned over the same task_id + tree, racing state/git writes.
+                _dead = False
                 if isinstance(_pid, int) and _pid > 0:
                     try:
                         import psutil
                         _dead = not psutil.pid_exists(_pid)
-                    except Exception:  # noqa: BLE001
-                        _dead = True
+                    except Exception:  # noqa: BLE001 -- can't verify -> assume ALIVE, don't double-spawn
+                        _dead = False
                 if _dead:
                     LOG.info("auto-resuming orphaned run %s (recorded process is dead)", orphan)
                     print(f"Resuming orphaned run {orphan[:8]} (previous process died)…")

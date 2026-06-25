@@ -89,11 +89,20 @@ def _runShell(cmd: str, work_dir: str) -> subprocess.CompletedProcess:
 
 
 _VERIFY_STDLIB_OK = {
-    "os", "sys", "json", "re", "pathlib", "subprocess", "math", "io", "time", "datetime",
+    "os", "sys", "json", "re", "pathlib", "math", "io", "time", "datetime",
     "collections", "itertools", "functools", "typing", "string", "random", "statistics",
-    "textwrap", "shutil", "glob", "argparse", "csv", "hashlib", "base64", "unittest",
+    "textwrap", "glob", "argparse", "csv", "hashlib", "base64", "unittest",
     "decimal", "fractions", "ast",
 }
+# A verify exists to OBSERVE the subtask's output, never to mutate the tree or spawn processes.
+# `subprocess`/`shutil` are deliberately NOT allow-listed, and these destructive calls drop the
+# whole verify (-> safe "executor exited 0" fallback) so a confused brain can't author e.g.
+# `python -c "import os; os.system('rm -rf state/tasks')"` and have it run under shell=True.
+_VERIFY_DESTRUCTIVE_CALLS = {
+    "system", "popen", "remove", "unlink", "rmdir", "removedirs", "rename", "replace",
+    "truncate", "rmtree", "move", "chmod", "chown", "kill", "killpg", "execv", "execve",
+}
+_VERIFY_DESTRUCTIVE_NAMES = {"eval", "exec", "compile", "__import__"}
 
 
 def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
@@ -141,6 +150,16 @@ def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
             for mod in mods:
                 if mod not in _VERIFY_STDLIB_OK:
                     LOG.info("sanitizeVerify: dropping verify importing non-stdlib '%s': %s", mod, cmd)
+                    return None
+            # Destructive call guard: a verify must only OBSERVE. Drop on os.system/remove/rmtree/...
+            # or eval/exec so an allowed module (os) can't be turned into a filesystem/exec weapon.
+            if isinstance(node, ast.Call):
+                fn = node.func
+                if isinstance(fn, ast.Attribute) and fn.attr in _VERIFY_DESTRUCTIVE_CALLS:
+                    LOG.info("sanitizeVerify: dropping verify with destructive call '.%s': %s", fn.attr, cmd)
+                    return None
+                if isinstance(fn, ast.Name) and fn.id in _VERIFY_DESTRUCTIVE_NAMES:
+                    LOG.info("sanitizeVerify: dropping verify with destructive call '%s': %s", fn.id, cmd)
                     return None
     # Defense-in-depth: a verify that is NOT a validated `python -c` shape runs verbatim under
     # shell=True. A brain-authored cmd with shell-chaining metacharacters (; & | backtick $() or a

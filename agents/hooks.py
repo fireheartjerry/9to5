@@ -334,10 +334,20 @@ def selfModificationGuard(data):
             bash_cmd = tool_input.get("command", "") or ""
             low = bash_cmd.lower()
             redirect_or_git = (">" in bash_cmd or "sed -i" in low or "git checkout" in low
-                               or "git reset" in low or "git restore" in low)
-            write_cmd = re.search(r"(?:^|[\n;&|]\s*)\s*(mv|cp|rm|tee|del|ren|rename|move|copy)\b",
-                                  bash_cmd, re.IGNORECASE)
-            if not (redirect_or_git or write_cmd):
+                               or "git reset" in low or "git restore" in low
+                               or "git rm" in low or "git mv" in low)
+            # Write/destructive verbs as standalone TOKENS anywhere (word boundary), NOT only at
+            # command position: the old `(?:^|[\n;&|])` anchor missed a verb preceded by a wrapper
+            # word -- `git rm .env`, `sudo rm`, `xargs rm`, `(rm .env)`, `find . -delete` -- so a
+            # write onto a hard boundary slipped past the guard (fail-OPEN). Broad detection is safe
+            # because the boundary loop below only BLOCKS when the command actually targets a
+            # boundary path token, so a write that touches nothing protected still exits 0.
+            write_cmd = re.search(
+                r"\b(mv|cp|rm|tee|dd|truncate|del|erase|unlink|shred|ren|rename|move|copy)\b", low)
+            # Interpreters that can write a file inline (python -c / perl -e / node -e), plus append.
+            interp_write = re.search(r"\b(python3?|py|perl|node|ruby|pwsh|powershell)\b\s*-[ce]\b", low) \
+                or ">>" in bash_cmd or "-delete" in low
+            if not (redirect_or_git or write_cmd or interp_write):
                 sys.exit(0)
         else:
             sys.exit(0)

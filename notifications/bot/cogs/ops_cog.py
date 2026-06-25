@@ -43,13 +43,23 @@ class OpsCog(dpy_commands.Cog):
         Works for normal AND super (burst) reactions -- same emoji."""
         if not config.REACTION_APPROVE:
             return
+        # SECURITY: a gate decision is a human-authority action. Require the CONFIGURED owner,
+        # reacting in the CONTROL channel. An UNSET owner must fail CLOSED (the old `owner.isdigit()
+        # and ...` let an empty DISCORD_HUMAN_USER_ID fall through so ANY user's reaction approved).
         owner = (config.DISCORD_HUMAN_USER_ID or "").strip()
-        if owner.isdigit() and getattr(payload, "user_id", None) != int(owner):
+        if not owner.isdigit() or getattr(payload, "user_id", None) != int(owner):
+            return
+        if config.DISCORD_CHANNEL_ID and getattr(payload, "channel_id", None) != config.DISCORD_CHANNEL_ID:
             return
         emoji = getattr(getattr(payload, "emoji", None), "name", None) or getattr(payload, "emoji", None)
         verdict = ops.reactionToVerdict(emoji)
         if not verdict:
             return
+        # ControlBus + state IO is blocking (file locks/retries up to ~5s under contention) -- never
+        # run it on the event loop; offload so the gateway heartbeat stays responsive.
+        await asyncio.to_thread(self._resolveGate, getattr(payload, "user_id", None), verdict)
+
+    def _resolveGate(self, user_id, verdict: str) -> None:  # noqa: ANN001 -- runs in a worker thread
         state = spine.resolveTargetTask()
         if state is None:
             return
@@ -57,14 +67,14 @@ class OpsCog(dpy_commands.Cog):
         gate = bus.getPendingGate()
         if not gate:
             return
-        audit.record(getattr(payload, "user_id", None), verdict, state.task_id, "reaction")
+        audit.record(user_id, verdict, state.task_id, "reaction")
         bus.decide(gate, verdict)
         LOG.info("super-reaction resolved gate %s -> %s", gate, verdict)
 
     @tasks.loop(seconds=60)
     async def watchdog(self) -> None:
         try:
-            state = spine.resolveTargetTask()
+            state = await asyncio.to_thread(spine.resolveTargetTask)
             if state is None:
                 return
             if ops.runIsStale(state, time.time()):

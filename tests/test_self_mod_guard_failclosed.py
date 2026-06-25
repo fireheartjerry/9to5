@@ -55,6 +55,29 @@ class TestGuardFailClosed(unittest.TestCase):
             code = self._run(data)
         self.assertEqual(code, 2)
 
+    def _block_expected(self, command: str):
+        data = {"tool_name": "Bash", "tool_input": {"command": command}}
+        with mock.patch.object(hooks, "_resolveState", return_value=(self._state_with_env_boundary(), True)), \
+                mock.patch.object(hooks, "_envTaskRequested", return_value=True), \
+                mock.patch.object(hooks, "_coreLockFor", return_value=(False, ())):
+            return self._run(data)
+
+    def test_write_verbs_after_a_wrapper_word_are_blocked(self):
+        """Write verbs preceded by a wrapper word (git/sudo/xargs) or grouping were fail-open:
+        the old command-position anchor only matched start-of-line / after [\\n;&|]."""
+        for cmd in ("git rm .env", "sudo rm .env", "echo .env | xargs rm", "(rm .env)",
+                    "find . -name .env -delete"):
+            self.assertEqual(self._block_expected(cmd), 2, f"not blocked: {cmd!r}")
+
+    def test_inline_interpreter_write_to_boundary_is_blocked(self):
+        for cmd in ("python -c \"open('.env','w').write('x')\"",
+                    "dd if=/dev/zero of=.env", "truncate -s0 .env"):
+            self.assertEqual(self._block_expected(cmd), 2, f"not blocked: {cmd!r}")
+
+    def test_plain_read_of_boundary_still_allowed(self):
+        """Broadening write detection must NOT start blocking reads -- `cat .env` is not a write."""
+        self.assertEqual(self._block_expected("cat .env"), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
