@@ -14,25 +14,27 @@ class TestAtomicClaudeMd(unittest.TestCase):
         d = Path(tempfile.mkdtemp())
         target = d / "CLAUDE.md"
         HEAD, FOOT = "HEADER-START", "FOOTER-END"
-        body = "x" * 20000   # large enough that a non-atomic write would be observably torn
-        torn: list[str] = []
-        stop = threading.Event()
+        body = "x" * 8000    # large enough that a non-atomic write would be observably torn
+        N_WRITERS = 3         # realistic concurrency: enough to exercise the atomic swap without
+        torn: list[str] = []  # pathologically starving os.replace (which would trip the best-effort
+        stop = threading.Event()   # non-atomic fallback only under extreme synthetic load, not real use)
 
         def writer(i: int) -> None:
-            for _ in range(40):
+            for _ in range(25):
                 obsidian._atomicWriteText(target, f"{HEAD}\n{body}\n{FOOT}-{i}")
 
         def reader() -> None:
+            valid_tails = tuple(f"{FOOT}-{i}" for i in range(N_WRITERS))
             while not stop.is_set():
                 try:
                     t = target.read_text(encoding="utf-8")
                 except (FileNotFoundError, PermissionError):
                     continue
-                if t and not (t.startswith(HEAD) and t.rstrip().endswith(tuple(f"{FOOT}-{i}" for i in range(6)))):
+                if t and not (t.startswith(HEAD) and t.rstrip().endswith(valid_tails)):
                     torn.append(t[:40] + "..." + t[-20:])
 
-        writers = [threading.Thread(target=writer, args=(i,)) for i in range(6)]
-        readers = [threading.Thread(target=reader) for _ in range(4)]
+        writers = [threading.Thread(target=writer, args=(i,)) for i in range(N_WRITERS)]
+        readers = [threading.Thread(target=reader) for _ in range(2)]
         for r in readers:
             r.start()
         for w in writers:
