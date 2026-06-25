@@ -38,6 +38,18 @@ class TestStaleLiveness(unittest.TestCase):
         self._age(st)                       # file untouched for ~27h
         self.assertFalse(work_launcher._isStale(st), "a live run was misread as stale")
 
+    def test_created_status_live_pid_not_stale(self):
+        # A still-initializing run (status 'created') stamps run_pid BEFORE the slow Ollama
+        # elaboration, so even if elaboration outlasts the 300s 'created' mtime cutoff it is NOT
+        # mis-declared stale and double-spawned over.
+        st = self._task()
+        st.meta["status"] = "created"
+        st.meta["run_pid"] = os.getpid()
+        st.save()
+        self._age(st, seconds=1000)         # well past _STALE_CREATED_SECONDS (300s)
+        self.assertFalse(work_launcher._isStale(st),
+                         "a live still-elaborating run was misread as stale (double-spawn risk)")
+
     def test_dead_pid_is_stale(self):
         st = self._task()
         st.meta["run_pid"] = 999999999       # implausible -> definitely dead

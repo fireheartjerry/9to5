@@ -247,6 +247,11 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001
             print(f"Cannot resume {args.resume}: {e}")
             return 2
+        # Re-stamp the liveness beacon to THIS process up front: the loaded task still carries the
+        # prior (now-dead) run's run_pid, so until _run_resume re-stamps it a concurrent activeRun()
+        # could read a dead pid and mis-abort this live resume. Make it authoritative immediately.
+        state.meta["run_pid"] = os.getpid()
+        state.save()
         # remember the original working directory: explicit --work-dir overrides, else the one
         # the task was launched with, else the project root.
         resume_work_dir = args.work_dir or state.meta.get("work_dir") or str(config.PROJECT_ROOT)
@@ -284,6 +289,14 @@ def main() -> int:
         return 2
 
     state = TaskState.create(goal, args.hours)
+    # Stamp the liveness beacon BEFORE the first save -- and crucially before the slow Ollama
+    # elaboration/universe calls below. Otherwise the freshly-created task sits in status 'created'
+    # with NO run_pid for the whole elaboration window; under VRAM-pressure model reloads that window
+    # can exceed the _STALE_CREATED_SECONDS mtime cutoff, so a second activeRun() (a 2nd /work or SIE
+    # self_play) would mis-declare this LIVE, still-initializing run 'stale', abort it on the bus, and
+    # double-spawn a second orchestrator over the same repo. run_pid makes liveness authoritative for
+    # the entire process lifetime so that path is never reached.
+    state.meta["run_pid"] = os.getpid()
     state.save()
     LOG.info("Created task %s (horizon %sh, mode %s, parallel %s)",
              state.task_id, args.hours, args.mode, args.parallel)
