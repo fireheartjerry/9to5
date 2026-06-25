@@ -240,6 +240,32 @@ def main() -> int:
         print(f"Live web dashboard -> http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/  "
               f"(control: terminal / Discord !abort / web buttons)")
 
+    # ---- Orphan auto-resume ----
+    # A hard-killed prior run (process dead, task still non-terminal) is picked up on a fresh BARE
+    # invocation (no --goal / --resume). resilience.pick_resume_task() was documented for this but
+    # never wired into main(). Only resume an orphan whose recorded run_pid is confirmed DEAD, so a
+    # live concurrent run is never double-resumed.
+    if not args.resume and not args.goal:
+        import resilience as _res
+        orphan = _res.pick_resume_task()
+        if orphan:
+            try:
+                _ostate = TaskState.load(orphan)
+                _pid = (_ostate.meta or {}).get("run_pid")
+                _dead = True
+                if isinstance(_pid, int) and _pid > 0:
+                    try:
+                        import psutil
+                        _dead = not psutil.pid_exists(_pid)
+                    except Exception:  # noqa: BLE001
+                        _dead = True
+                if _dead:
+                    LOG.info("auto-resuming orphaned run %s (recorded process is dead)", orphan)
+                    print(f"Resuming orphaned run {orphan[:8]} (previous process died)…")
+                    args.resume = orphan
+            except Exception:  # noqa: BLE001
+                pass
+
     # ---- Resume path ----
     if args.resume:
         try:
@@ -256,7 +282,8 @@ def main() -> int:
         # the task was launched with, else the project root.
         resume_work_dir = args.work_dir or state.meta.get("work_dir") or str(config.PROJECT_ROOT)
         LOG.info("Resuming task %s in %s", state.task_id, resume_work_dir)
-        _startTerminalControl(state.task_id)
+        if sys.stdin.isatty():   # only on a real TTY (a detached resume gets EOF -> useless spin)
+            _startTerminalControl(state.task_id)
         # Wrap the resume in the SAME supervisor as a fresh run (CB-12): a crash in runFull's setup
         # or a non-terminal return must auto-recover, not exit 0 and strand the task for the day.
         import resilience
@@ -300,8 +327,9 @@ def main() -> int:
     state.save()
     LOG.info("Created task %s (horizon %sh, mode %s, parallel %s)",
              state.task_id, args.hours, args.mode, args.parallel)
-    # Start control thread BEFORE elaboration so abort/pause work even if Ollama hangs.
-    _startTerminalControl(state.task_id)
+    # NB: the stdin terminal-control thread is started LATER, after the interactive prompts below
+    # (goal/approval/spec-edit). Starting it here made TWO threads read sys.stdin at once on an
+    # interactive run -- the control thread stole the user's approval keystrokes (and vice versa).
     # Best-effort preflight: surface any hard blocker up front (don't abort -- degraded
     # mode + the elaboration fallback keep a run going; the user just sees what's missing).
     try:
@@ -336,6 +364,12 @@ def main() -> int:
             if edited:
                 state.setElaboratedGoal(edited)
                 print("Elaboration replaced.")
+
+    # Now that all interactive prompts are done, start the stdin control thread -- ONLY on a real
+    # TTY. A detached run (stdin=DEVNULL) gets immediate EOF so the thread is useless there (abort/
+    # pause arrive via Discord/web); starting it would just spin on EOF.
+    if sys.stdin.isatty():
+        _startTerminalControl(state.task_id)
 
     # Supervised run: send one sentence at 9am, return at 5pm to a finished job. If the
     # run crashes, the supervisor auto-resumes the SAME task (committed progress is the
