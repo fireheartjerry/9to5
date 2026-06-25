@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
+import json as _jsonlib   # aliased: the _request kwarg is named `json` (Discord body)
 import time
 
 import requests
@@ -117,6 +118,11 @@ def _authHeaders() -> dict:
     return {"Authorization": f"Bot {config.DISCORD_BOT_TOKEN}", "Content-Type": "application/json"}
 
 
+def _authHeadersMultipart() -> dict:
+    """Auth without Content-Type: requests sets the multipart boundary itself for file uploads."""
+    return {"Authorization": f"Bot {config.DISCORD_BOT_TOKEN}"}
+
+
 def _ownerMentions() -> dict:
     """allowed_mentions that can never expand past the configured owner."""
     oid = (config.DISCORD_HUMAN_USER_ID or "").strip()
@@ -124,10 +130,17 @@ def _ownerMentions() -> dict:
 
 
 def _request(method: str, path: str, *, json: Optional[dict] = None,
-             params: Optional[dict] = None, retries: int = config.DISCORD_RETRY_MAX):
+             params: Optional[dict] = None, data: Optional[dict] = None,
+             files: Optional[dict] = None, noauth: bool = False,
+             retries: int = config.DISCORD_RETRY_MAX):
     """Single REST chokepoint. 429 -> sleep(retry_after) up to `retries` (milestone sends);
     pass retries=0 on the control-poll path so it never blocks the run loop. A hard 401 latches
-    the whole surface off; 403/404 are logged but NEVER disable (a deleted message is normal)."""
+    the whole surface off; 403/404 are logged but NEVER disable (a deleted message is normal).
+
+    Multipart: pass ``files`` (+ ``data`` carrying ``payload_json``) to upload attachments
+    (Pillow cockpit images, GIF replays, persona cards). When ``files`` is set the JSON
+    Content-Type is dropped so requests can set the multipart boundary itself. Everything else
+    -- the 429 breaker, the 401 latch, the timeout -- is identical so no upload can bypass them."""
     global _DISABLED, _RATE_LIMITED_UNTIL
     if _DISABLED or not config.DISCORD_BOT_TOKEN or not config.DISCORD_CHANNEL_ID:
         return None
@@ -137,9 +150,20 @@ def _request(method: str, path: str, *, json: Optional[dict] = None,
     url = f"{_API}{path}"
     attempt = 0
     while True:
+        # Webhook-execute (noauth) is authorized by the token IN the URL, so it carries no Bot header.
+        if noauth:
+            headers: dict = {}
+        elif files is not None:
+            headers = _authHeadersMultipart()
+        else:
+            headers = _authHeaders()
         try:
-            r = _SESSION.request(method, url, headers=_authHeaders(), json=json, params=params,
-                                 timeout=config.DISCORD_REST_TIMEOUT)
+            if files is not None:
+                r = _SESSION.request(method, url, headers=headers, data=data,
+                                     files=files, params=params, timeout=config.DISCORD_REST_TIMEOUT)
+            else:
+                r = _SESSION.request(method, url, headers=headers, json=json, params=params,
+                                     timeout=config.DISCORD_REST_TIMEOUT)
         except Exception as e:  # noqa: BLE001
             LOG.warning("Discord %s %s failed: %s", method, path, e)
             return None
@@ -215,6 +239,202 @@ def _clampEmbed(embed: dict) -> dict:
             cur_len = len(str(biggest["value"]))
             biggest["value"] = truncate(biggest["value"], max(8, cur_len - over - 1))
     return e
+
+
+# =====================================================================
+# Components V2 -- the live cockpit transport. Raw REST so the loop-less
+# orchestrator renders the SAME cockpit the gateway renders with LayoutView.
+# A CV2 message carries the IS_COMPONENTS_V2 flag + a components tree and NO
+# content/embeds; attachments (Pillow charts) ride the shared multipart path.
+# =====================================================================
+def _cv2TextLen(components) -> int:
+    """Total text length across a CV2 tree (TextDisplay content + button labels)."""
+    total = 0
+
+    def walk(node):
+        nonlocal total
+        if isinstance(node, dict):
+            if node.get("type") == 10:        # TextDisplay
+                total += len(str(node.get("content", "")))
+            elif node.get("type") == 2:       # Button
+                total += len(str(node.get("label", "")))
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for it in node:
+                walk(it)
+
+    walk(components)
+    return total
+
+
+def _cv2Count(components) -> int:
+    """Total component nodes (anything carrying a numeric 'type') -- Discord caps a CV2 tree at 40."""
+    n = 0
+
+    def walk(node):
+        nonlocal n
+        if isinstance(node, dict):
+            if isinstance(node.get("type"), int):
+                n += 1
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for it in node:
+                walk(it)
+
+    walk(components)
+    return n
+
+
+def _clampComponents(components: list) -> list:
+    """Best-effort guard so a runaway cockpit can never 400 the whole message: trim top-level
+    components from the END (controls/events tail) until the tree is within Discord's
+    40-component / 4000-char CV2 budget, so the header + progress zones always survive."""
+    comps = list(components or [])
+    limit = len(comps) + 1   # at most one pop per top-level component -> always converges to budget
+    guard = 0
+    while comps and guard < limit and (
+            _cv2Count(comps) > config.DISCORD_CV2_MAX_COMPONENTS
+            or _cv2TextLen(comps) > config.DISCORD_CV2_MAX_CHARS):
+        guard += 1
+        comps.pop()
+    return comps
+
+
+def _multipartParts(payload: dict, files: list) -> tuple[dict, dict]:
+    """Wire Discord's multipart convention: payload_json + attachments[]. ``files`` is a list of
+    (filename, raw_bytes, content_type); returns (data, files) ready for requests."""
+    attachments = []
+    fdict: dict = {}
+    for i, (fname, fbytes, ctype) in enumerate(files):
+        attachments.append({"id": i, "filename": fname})
+        fdict[f"files[{i}]"] = (fname, fbytes, ctype or "application/octet-stream")
+    body = dict(payload)
+    body["attachments"] = attachments
+    return {"payload_json": _jsonlib.dumps(body)}, fdict
+
+
+def createComponentsV2(components: list, files: Optional[list] = None) -> Optional[str]:
+    """POST a Components-V2 message (flag 32768; no content/embeds). Returns the new message id."""
+    payload: dict = {"flags": config.DISCORD_MSGFLAG_COMPONENTS_V2,
+                     "components": _clampComponents(components)}
+    if files:
+        data, fdict = _multipartParts(payload, files)
+        r = _request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", data=data, files=fdict)
+    else:
+        r = _request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", json=payload)
+    if r is not None and 200 <= r.status_code < 300:
+        try:
+            return str(r.json().get("id"))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def editComponentsV2Result(message_id: str, components: list, files: Optional[list] = None) -> str:
+    """Edit a CV2 message in place; same 'ok'/'not_found'/'transient' contract as editMessageResult
+    so the dashboard's one-shot 404-recreate + transient-retry logic is reused verbatim. When
+    ``files`` is given the attachment set is REPLACED; otherwise attachments are cleared so a
+    text-only render can never 400 on a stale image reference."""
+    if not message_id:
+        return "not_found"
+    payload: dict = {"flags": config.DISCORD_MSGFLAG_COMPONENTS_V2,
+                     "components": _clampComponents(components)}
+    if files:
+        data, fdict = _multipartParts(payload, files)
+        r = _request("PATCH", f"/channels/{config.DISCORD_CHANNEL_ID}/messages/{message_id}",
+                     data=data, files=fdict)
+    else:
+        payload["attachments"] = []
+        r = _request("PATCH", f"/channels/{config.DISCORD_CHANNEL_ID}/messages/{message_id}", json=payload)
+    if r is None:
+        return "transient"
+    if 200 <= r.status_code < 300:
+        return "ok"
+    if r.status_code == 404:
+        return "not_found"
+    return "transient"
+
+
+def sendComponentsV2(components: list, files: Optional[list] = None, milestone: bool = False) -> dict:
+    """Post a one-off CV2 message (e.g. an Ask answer card). Suppressed in night mode when milestone."""
+    if milestone and config.NIGHT_MODE:
+        return {"ok": True, "status": None, "suppressed": True}
+    mid = createComponentsV2(components, files=files)
+    return {"ok": mid is not None, "id": mid}
+
+
+# =====================================================================
+# Webhook personas ("The Cast") -- each 9to5 agent posts AS ITSELF via a
+# channel webhook with a per-message username/avatar override, turning the run
+# into a live glass-box theater. REST-only so the loop-less orchestrator uses it.
+# =====================================================================
+_WEBHOOK_PATH: Optional[str] = None     # cached "/webhooks/{id}/{token}" for the control channel
+_WEBHOOK_NAME = "Nightclaw Cast"
+
+
+def _ensureWebhook() -> Optional[str]:
+    """Get-or-create the Cast webhook on the control channel; return its execute PATH
+    ('/webhooks/{id}/{token}'). Cached for the process. None if unavailable (no Manage Webhooks /
+    Discord disabled). Best-effort -- a failure simply means The Cast stays silent."""
+    global _WEBHOOK_PATH
+    if _WEBHOOK_PATH:
+        return _WEBHOOK_PATH
+    if _DISABLED or not config.DISCORD_BOT_TOKEN or not config.DISCORD_CHANNEL_ID:
+        return None
+    r = _request("GET", f"/channels/{config.DISCORD_CHANNEL_ID}/webhooks")
+    if r is not None and 200 <= r.status_code < 300:
+        try:
+            for wh in r.json():
+                if wh.get("name") == _WEBHOOK_NAME and wh.get("token"):
+                    _WEBHOOK_PATH = f"/webhooks/{wh['id']}/{wh['token']}"
+                    return _WEBHOOK_PATH
+        except Exception:  # noqa: BLE001
+            pass
+    r = _request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/webhooks", json={"name": _WEBHOOK_NAME})
+    if r is not None and 200 <= r.status_code < 300:
+        try:
+            wh = r.json()
+            _WEBHOOK_PATH = f"/webhooks/{wh['id']}/{wh['token']}"
+            return _WEBHOOK_PATH
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def sendAs(persona: dict, *, content: Optional[str] = None, embed: Optional[dict] = None,
+           embeds: Optional[list] = None, components: Optional[list] = None,
+           files: Optional[list] = None, thread_id: Optional[str] = None,
+           components_v2: bool = False) -> bool:
+    """Post a message AS ``persona`` (a dict with 'name'/'avatar_url') through the Cast webhook.
+    Personas never @-ping. Best-effort: returns False (silent) if the webhook is unavailable."""
+    path = _ensureWebhook()
+    if not path:
+        return False
+    payload: dict = {}
+    if persona.get("name"):
+        payload["username"] = str(persona["name"])[:80]
+    if persona.get("avatar_url"):
+        payload["avatar_url"] = persona["avatar_url"]
+    if content:
+        payload["content"] = truncate(content, config.DISCORD_MAX_CONTENT)
+        payload["allowed_mentions"] = {"parse": []}      # the Cast never pings
+    if embeds is None and embed is not None:
+        embeds = [embed]
+    if embeds:
+        payload["embeds"] = [_clampEmbed(e) for e in embeds]
+    if components is not None:
+        payload["components"] = components
+    if components_v2:
+        payload["flags"] = config.DISCORD_MSGFLAG_COMPONENTS_V2
+    params = {"thread_id": str(thread_id)} if thread_id else None
+    if files:
+        data, fdict = _multipartParts(payload, files)
+        r = _request("POST", path, data=data, files=fdict, params=params, noauth=True)
+    else:
+        r = _request("POST", path, json=payload, params=params, noauth=True)
+    return r is not None and 200 <= r.status_code < 300
 
 
 def createMessage(embed: dict, content: Optional[str] = None, components: Optional[list] = None) -> Optional[str]:

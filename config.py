@@ -404,6 +404,28 @@ WEB_DASHBOARD: bool = True
 WEB_DASHBOARD_PORT: int = 8787
 DEFAULT_PARALLELISM: int = 1          # >1 runs independent ready subtasks concurrently
 
+# --- Discord lab (frontier surface) --------------------------------------
+# Every frontier surface is independently flag-gated and defaults to today's
+# behaviour. The master switch DISCORD_LAB_MODE=on flips the whole suite on at
+# once; each flag can still be overridden individually in .env.
+DISCORD_LAB_MODE: bool = _envBool("DISCORD_LAB_MODE", False)
+DASHBOARD_CV2: bool = _envBool("DASHBOARD_CV2", DISCORD_LAB_MODE)      # Components V2 cockpit vs legacy embed
+CAST_MODE: bool = _envBool("CAST_MODE", DISCORD_LAB_MODE)             # multi-agent webhook personas ("The Cast")
+ASK_ENABLED: bool = _envBool("ASK_ENABLED", True)                    # /ask + war-room thread (local Ollama)
+ASK_NL_CONTROL: bool = _envBool("ASK_NL_CONTROL", DISCORD_LAB_MODE)   # natural-language control (guarded, audited)
+POLL_GATES: bool = _envBool("POLL_GATES", DISCORD_LAB_MODE)           # native Poll approvals in gated mode
+RUN_THREADS: bool = _envBool("RUN_THREADS", DISCORD_LAB_MODE)         # forum/thread-per-run
+SCHEDULED_EVENTS: bool = _envBool("SCHEDULED_EVENTS", DISCORD_LAB_MODE)  # Scheduled Event for the 9-5 window
+AUTOMOD_GUARD: bool = _envBool("AUTOMOD_GUARD", DISCORD_LAB_MODE)     # AutoMod safety rule on the control channel
+REACTION_APPROVE: bool = _envBool("REACTION_APPROVE", True)           # super-reaction quick-approve
+WATCHDOG_ENABLED: bool = _envBool("WATCHDOG_ENABLED", True)           # orchestrator-silence watchdog
+VISUALS_ENABLED: bool = _envBool("VISUALS_ENABLED", DISCORD_LAB_MODE)  # Pillow cards/charts/GIF (degrades if no Pillow)
+COCKPIT_THEME: str = os.getenv("COCKPIT_THEME", "dark")              # cockpit visual theme (dark|neon|minimal|terminal)
+# Components V2 transport limits (single source for cv2.py + discord_bot._clampComponents).
+DISCORD_MSGFLAG_COMPONENTS_V2: int = 1 << 15   # 32768 -- IS_COMPONENTS_V2 message flag
+DISCORD_CV2_MAX_COMPONENTS: int = 40           # total components across the whole CV2 message tree
+DISCORD_CV2_MAX_CHARS: int = 4000              # total text length across a CV2 message
+
 # --- Night mode (zero human interaction) ---------------------------------
 # Forces watch mode, disables adversary PR hold, auto-resumes any pause after a timeout,
 # and suppresses @-pings. Set via --night-mode CLI flag or NIGHT_MODE=true in .env.

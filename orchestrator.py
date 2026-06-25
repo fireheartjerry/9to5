@@ -30,6 +30,7 @@ from learning import (confidence, knowledge_graph, policy, postmortem, prompts,
 from memory import experience, retrieval
 from memory.obsidian import ObsidianClient
 from notifications import audit
+from notifications import cast
 from notifications import commands
 from notifications import discord_bot as discord
 from notifications.dashboard import DiscordDashboard
@@ -1350,6 +1351,8 @@ class Orchestrator:
             with self._state_lock:
                 state.addAdversaryReview("pre_pr", reason, rv["verdict"], None, stub=rv.get("stub", False))
             discord.sendEmbed(discord.adversaryTriggeredEmbed("Pre-PR review", reason, rv.get("verdict")))
+            cast.speak("adversary", f"⚔️ Pre-PR review → **{discord.formatVerdict(rv.get('verdict'))}**. "
+                       f"Trigger: {reason}")
             return rv
         except Exception as e:  # noqa: BLE001 -- never block a run on the reviewer itself
             LOG.warning("pre-PR adversary review failed (%s); approving", e)
@@ -1600,6 +1603,9 @@ class Orchestrator:
         if not passed:
             discord.sendEmbed(discord.subtaskFailedEmbed(sid, subtask["title"], vresult, attempt))
         dashboard.update(state, "executing", f"{sid} -> {final}")
+        cast.speak("verifier" if not passed else "executor",
+                   (f"❌ `{sid}` failed verification after {attempt} attempt(s)." if not passed
+                    else f"⚙️ `{sid}` {subtask['title']} — done ✅"))
 
         try:
             with self._state_lock:
@@ -1622,6 +1628,8 @@ class Orchestrator:
                 _adv_verdict = rv.get("verdict")
                 _adv_stub = rv.get("stub", False)
                 discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason, rv.get("verdict")))
+                cast.speak("adversary", f"⚔️ Reviewing `{sid}` ({subtask['title']}) → "
+                           f"**{discord.formatVerdict(rv.get('verdict'))}**.")
                 with self._state_lock:
                     state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
                     self.obs.writeNote(state.subtaskReviewNoteRel(sid), self._reviewNote(subtask, reason, rv, combined))
@@ -2131,6 +2139,8 @@ class Orchestrator:
                 self.obs.writeNote(state.architectNoteRel(), architect_doc)
                 state.setArchitectDoc(state.architectNoteRel())
                 discord.sendEmbed(discord.architectDoneEmbed(state.architectNoteRel()))
+                cast.speak("architect", f"📐 Architecture is ready — `{state.architectNoteRel()}`. "
+                           f"Handing the design to the Planner.", milestone=True)
                 state.addNotification("architect_done", state.architectNoteRel())
                 dashboard.update(state, "architecting", f"architecture done ({len(architect_doc)} chars)")
                 # Second brain: critique the architecture; concerns are folded into the doc.
@@ -2145,6 +2155,8 @@ class Orchestrator:
                     state.addSubtask(s.get("title", "untitled"), s.get("description", ""),
                                      layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))
                 discord.sendEmbed(discord.planningStartEmbed(state.meta["goal_raw"], state.subtasks))
+                cast.speak("planner", f"🗺️ Plan ready — {len(state.subtasks)} subtasks queued. "
+                           f"Executor, you're up.", milestone=True)
                 state.addNotification("planning_start", f"{len(state.subtasks)} subtasks")
                 self.writeIndex(state)
                 dashboard.update(state, "planning", f"planned {len(state.subtasks)} subtasks")
@@ -2237,6 +2249,8 @@ class Orchestrator:
             self.writeIndex(state)
             pr_link = pr.get("url") or f"skipped: {pr.get('reason', '')}"
             discord.sendEmbed(discord.completeEmbed(state, pr_link, _fmtElapsed(elapsed)))
+            cast.speak("brain", f"🧠 Run complete — **{final_status}**, {done}/{total} subtasks in "
+                       f"{_fmtElapsed(elapsed)}. That's a wrap, team.", milestone=True)
             state.addNotification("complete", pr_link)
             dashboard.update(state, "complete", f"done {done}/{total} · {_fmtElapsed(elapsed)}")
             # Trust telemetry rollup: surface GPT<->Ollama agreement + challenge stats for the run.
