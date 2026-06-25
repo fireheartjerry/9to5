@@ -4,6 +4,15 @@ From the `deep-audit` workflow on consolidated `integration/unify-all`. **47 uni
 
 _(File location is the first `file:line` cited in the verifier's reasoning.)_
 
+> **UPDATE (post code-review max):** The 1 CRITICAL, all 5 security/behavior, and the medium findings
+> below were FIXED on this branch (commits `5a79feb`, `7a3d286`, `c04f017`, `f8fc205`). Fixed:
+> wipe source-guard (fail-closed + precise), self-mod guard fail-open (git rm/python -c/dd bypass),
+> gate-resolution owner-bypass + off-loop, orphan double-resume, verify-cmd RCE, Cast 401 global-disable,
+> CV2 empty-components 400, blocking-IO on the asyncio loop (slash/views/cogs/core), poll-Abort→abort,
+> dashboard/dynamic verify marks, config/ops `_envInt`, icons `None`, footer spacing, webdash control
+> token, docstring SyntaxWarnings, audit.jsonl untracked. Remaining LOW items are cosmetic/quality.
+
+
 ## CRITICAL (1)
 
 1. **`wipe.py:58-61`**
