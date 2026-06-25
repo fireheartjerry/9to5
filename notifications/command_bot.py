@@ -1,4 +1,4 @@
-r"""Back-compat shim for the gateway command bot.
+"""Back-compat shim for the gateway command bot.
 
 The gateway now lives in :mod:`notifications.bot.core` -- a
 ``discord.ext.commands.Bot`` ("NightclawBot") organised into hot-reloadable

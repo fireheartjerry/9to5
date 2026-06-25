@@ -158,7 +158,7 @@ ANSI mission-console HUD (T8 cinematic). A PURE renderer that turns live TaskSta
 
 ## notifications/cv2.py
 Components-V2 cockpit builders -- pure, no network, no discord.py.
-- Exports: container, text, separator, section, thumbnail, media_gallery, action_row, elapsedStr, etaStr, buildCockpit
+- Exports: container, text, separator, media_gallery, elapsedStr, etaStr, buildCockpit
 - Depends on: config, notifications.branding, notifications.discord_bot, notifications.icons, notifications.theme
 - Side effects: unannotated
 - Test: pytest tests/test_cv2.py

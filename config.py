@@ -1,4 +1,4 @@
-r"""9TO5 -- central configuration.
+"""9TO5 -- central configuration.
 
 Loads environment from ``C:\9to5\.env`` and exposes typed, ALL_CAPS
 constants plus a few helper functions (camelCase). Nothing here hardcodes a

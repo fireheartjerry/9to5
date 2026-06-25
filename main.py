@@ -1,4 +1,4 @@
-r"""9TO5 entrypoint -- Step 0 / Step 0.5 + launch the autonomous run.
+"""9TO5 entrypoint -- Step 0 / Step 0.5 + launch the autonomous run.
 
 Usage:
     venv\Scripts\python main.py --goal "..." --hours 1
