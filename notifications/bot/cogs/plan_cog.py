@@ -32,11 +32,11 @@ def timelineLines(state) -> list:
 def _timelinePages(state, per: int = 12) -> list:
     lines = timelineLines(state)
     if not lines:
-        return [discord.Embed(title="🕰 Timeline", description="_no events yet_")]
+        return [discord.Embed(title="Timeline", description="_no events yet_")]
     pages = []
     total = (len(lines) + per - 1) // per
     for i in range(0, len(lines), per):
-        pages.append(discord.Embed(title=f"🕰 Timeline ({i // per + 1}/{total})",
+        pages.append(discord.Embed(title=f" Timeline ({i // per + 1}/{total})",
                                    description="\n".join(lines[i:i + per])))
     return pages
 
@@ -54,14 +54,14 @@ class SubtaskEditModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         if not spine.isAuthorized(interaction.user.id):
-            return await interaction.response.send_message("⛔ Not authorized.", ephemeral=True)
+            return await interaction.response.send_message("Not authorized.", ephemeral=True)
         state = spine.resolveTargetTask()
         if state is None:
             return await interaction.response.send_message(spine.NO_TASK, ephemeral=True)
         audit.record(interaction.user.id, "edit", state.task_id, "plan-editor")
         ControlBus(state.task_id).pushOp({"op": "edit", "subtask_id": self.sid,
                                           "title": str(self.t_title), "description": str(self.t_desc)})
-        await interaction.response.send_message(f"✏️ queued edit for `{self.sid}`", ephemeral=True)
+        await interaction.response.send_message(f" queued edit for `{self.sid}`", ephemeral=True)
 
 
 class _EditSelect(discord.ui.Select):
@@ -89,7 +89,7 @@ class PlanEditView(discord.ui.View):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if not spine.isAuthorized(interaction.user.id):
-            await interaction.response.send_message("⛔ Not authorized.", ephemeral=True)
+            await interaction.response.send_message("Not authorized.", ephemeral=True)
             return False
         return True
 
@@ -110,7 +110,7 @@ class PlanCog(dpy_commands.Cog):
     @app_commands.command(name="plan-edit", description="Edit the current plan's subtasks interactively")
     async def plan_edit(self, interaction: discord.Interaction) -> None:
         if not spine.isAuthorized(interaction.user.id):
-            return await interaction.response.send_message("⛔ Not authorized.", ephemeral=True)
+            return await interaction.response.send_message("Not authorized.", ephemeral=True)
         state = spine.resolveTargetTask()
         if state is None:
             return await interaction.response.send_message(spine.NO_TASK, ephemeral=True)
@@ -133,7 +133,7 @@ class PlanCog(dpy_commands.Cog):
 
     async def _goal(self, interaction: discord.Interaction, message: discord.Message) -> None:
         if not spine.isAuthorized(interaction.user.id):
-            return await interaction.response.send_message("⛔ Not authorized.", ephemeral=True)
+            return await interaction.response.send_message("Not authorized.", ephemeral=True)
         goal = (message.content or "").strip()
         if not goal:
             return await interaction.response.send_message("That message has no text.", ephemeral=True)
@@ -146,7 +146,7 @@ class PlanCog(dpy_commands.Cog):
 
     async def _addsub(self, interaction: discord.Interaction, message: discord.Message) -> None:
         if not spine.isAuthorized(interaction.user.id):
-            return await interaction.response.send_message("⛔ Not authorized.", ephemeral=True)
+            return await interaction.response.send_message("Not authorized.", ephemeral=True)
         state = spine.resolveTargetTask()
         if state is None:
             return await interaction.response.send_message(spine.NO_TASK, ephemeral=True)
@@ -155,7 +155,7 @@ class PlanCog(dpy_commands.Cog):
             return await interaction.response.send_message("That message has no text.", ephemeral=True)
         audit.record(interaction.user.id, "add", state.task_id, "ctx-menu")
         ControlBus(state.task_id).pushOp({"op": "add", "title": title, "description": message.content[:2000]})
-        await interaction.response.send_message(f"➕ queued subtask: {title}", ephemeral=True)
+        await interaction.response.send_message(f" queued subtask: {title}", ephemeral=True)
 
 
 async def setup(bot: dpy_commands.Bot) -> None:

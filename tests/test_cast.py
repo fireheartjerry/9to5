@@ -15,15 +15,15 @@ class _Resp:
 class PersonaRegistry(unittest.TestCase):
     def test_known_role(self):
         p = personas.persona("adversary")
-        self.assertIn("⚔️", p["name"])
-        self.assertEqual(p["emoji"], "⚔️")
+        self.assertEqual(p["name"], "Nightclaw · Adversary")   # clean text, no emoji
+        self.assertEqual(p["icon"], "adversary")
         self.assertIn("avatar_url", p)
 
     def test_unknown_falls_back_to_brain(self):
-        self.assertEqual(personas.persona("nobody")["emoji"], "🧠")
+        self.assertEqual(personas.persona("nobody")["icon"], "brain")
 
     def test_case_insensitive(self):
-        self.assertEqual(personas.persona("ARCHITECT")["emoji"], "📐")
+        self.assertEqual(personas.persona("ARCHITECT")["icon"], "architect")
 
 
 class CastGating(unittest.TestCase):
@@ -47,8 +47,8 @@ class CastGating(unittest.TestCase):
         self.assertTrue(cast.speak("adversary", "I challenge st-004"))
         self.assertEqual(len(self.sent), 1)
         persona, kw = self.sent[0]
-        self.assertEqual(persona["emoji"], "⚔️")
-        self.assertEqual(kw["content"], "I challenge st-004")
+        self.assertEqual(persona["icon"], "adversary")
+        self.assertEqual(kw["content"], "I challenge st-004")   # icon prefix '' unprovisioned
 
     def test_milestone_suppressed_in_night(self):
         config.CAST_MODE = True
@@ -80,7 +80,7 @@ class SendAsSemantics(unittest.TestCase):
         discord._request = self._orig_request
 
     def test_username_override_and_no_ping_and_noauth(self):
-        ok = discord.sendAs({"name": "Nightclaw · Adversary ⚔️", "avatar_url": ""},
+        ok = discord.sendAs({"name": "Nightclaw · Adversary", "avatar_url": ""},
                             content="hello <@everyone>")
         self.assertTrue(ok)
         method, path, kw = self.calls[0]
@@ -88,7 +88,7 @@ class SendAsSemantics(unittest.TestCase):
         self.assertEqual(path, "/webhooks/123/tok")
         self.assertTrue(kw.get("noauth"))
         body = kw["json"]
-        self.assertEqual(body["username"], "Nightclaw · Adversary ⚔️")
+        self.assertEqual(body["username"], "Nightclaw · Adversary")
         self.assertEqual(body["allowed_mentions"], {"parse": []})   # never pings
 
     def test_silent_when_no_webhook(self):

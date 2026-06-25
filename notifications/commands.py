@@ -92,7 +92,7 @@ def isRunActive(state: Optional[TaskState]) -> bool:
 
 def footerHelp() -> str:
     """Short, never-stale command hint derived from the registry (used by the dashboard)."""
-    return " ".join(f"!{n}" for n in ("status", "abort", "pause", "help"))
+    return "".join(f"!{n}" for n in ("status", "abort", "pause", "help"))
 
 
 def _fmtDelta(seconds: float) -> str:
@@ -115,10 +115,10 @@ def _statusText(bus: ControlBus, state: TaskState) -> str:
     cur = next((s for s in state.subtasks if s["status"] == "in_progress"), None) or state.nextActionable()
     cur_txt = f"`{cur['subtask_id']}` {cur['title']}" if cur else "—"
     gate = bus.getPendingGate()
-    gate_txt = f"\n⏳ awaiting gate **{gate}** — `!approve` / `!reject`" if gate else ""
+    gate_txt = f"\n awaiting gate **{gate}** — `!approve` / `!reject`" if gate else ""
     return (f"**`{state.meta['status']}`** · {discord.progressBar(done, total)} · "
             f"mode `{state.meta.get('control_mode', 'watch')}`\n"
-            f"Current: {cur_txt}\n📁 `{state.meta.get('work_dir') or '—'}`\n"
+            f"Current: {cur_txt}\n `{state.meta.get('work_dir') or '—'}`\n"
             f"Elapsed {elapsed} · ETA {eta}{gate_txt}")
 
 
@@ -159,10 +159,10 @@ def applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str:
         return _helpText()
     if n == "abort":
         bus.requestAbort()
-        return "🛑 Abort requested — run stops after the current step."
+        return "Abort requested — run stops after the current step."
     if n == "pause":
         bus.requestPause()
-        return "⏸ Paused."
+        return "Paused."
     if n == "resume":
         bus.clearPause()
         return "▶ Resumed."
@@ -177,13 +177,13 @@ def applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str:
         if not _SKIP_ID_RE.match(cmd.arg):
             return "usage: `!skip st-00N` (e.g. `!skip st-003`)"
         bus.pushOp({"op": "skip", "subtask_id": cmd.arg})
-        return f"⏭️ Queued skip of `{cmd.arg}`."
+        return f" Queued skip of `{cmd.arg}`."
     if n == "add":
         if not cmd.arg:
             return "usage: `!add <title>`"
         bus.pushOp({"op": "add", "title": cmd.arg, "description": cmd.arg})
-        return f"➕ Queued new subtask: {cmd.arg}"
+        return f" Queued new subtask: {cmd.arg}"
     if n == "retry":
         bus.pushOp({"op": "retry"})
-        return "🔁 Queued retry of the current subtask."
+        return "Queued retry of the current subtask."
     return _helpText()

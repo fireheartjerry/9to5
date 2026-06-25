@@ -60,8 +60,23 @@ agents/  __init__.py elaborator.py architect.py executor.py adversary.py replann
 state/   __init__.py task.py
 memory/  __init__.py obsidian.py
 notifications/ __init__.py discord_bot.py dashboard.py webdash.py command_bot.py
+               commands.py branding.py slash.py(helpers) views.py audit.py metrics.py
+               cv2.py visuals.py theme.py console_hud.py personas.py cast.py ask.py engagement.py ops.py
+               bot/  core.py(NightclawBot) cogs/{observe,control,runs,admin,ask_cog,plan_cog,engagement_cog,ops_cog}
+                     ui/{views,layouts,dynamic,modals}
 docs/superpowers/{specs,plans}/   # brainstorm spec + implementation plan
 ```
+
+> **Frontier Discord lab** (branch `feat/discord-frontier-lab`): the gateway is now a
+> `discord.ext.commands.Bot` (`bot/core.NightclawBot`) of hot-reloadable cogs. New surfaces
+> (all flag-gated off by default via `DISCORD_LAB_MODE` + per-feature flags): a Components-V2
+> mission-control **cockpit** (`cv2.py`, `dashboard.py`) with a Pillow hero (`visuals.py`) and
+> a `theme.py` keystone; an ANSI **HUD** (`console_hud.py`); **Ask Nightclaw** (`ask.py`, local
+> Ollama Q&A); **The Cast** webhook personas (`personas.py`/`cast.py`) incl. an Adversary
+> duel-card; native **Poll** gate approvals (`engagement.py`); super-reaction approve + a
+> silence **watchdog** (`ops.py`); an in-Discord plan editor + context menus + time-travel.
+> The two-process REST-poll/gateway split, the 429 breaker, owner-auth, and the `commands.py`
+> spine are all preserved.
 
 ## Task-state JSON (lean — long content lives in Obsidian)
 `state/tasks/<task_id>.json`. `task_id` = uuid4. `meta` {goal_raw,

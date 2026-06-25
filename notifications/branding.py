@@ -8,6 +8,7 @@ from typing import Optional
 import config
 from notifications import commands
 from notifications import discord_bot as discord
+from notifications import icons
 
 BRAND = config.BRAND_COLOR
 
@@ -21,16 +22,23 @@ CONTROL_PANEL_IDS = {
 def controlPanelRow() -> list:
     """Two action rows of control buttons (<=5/row). Handled by views.ControlPanelView.
     Row 1: positive/flow actions (Pause · Resume · Approve). Row 2: destructive/skip (Reject · Skip · Abort)."""
+    def _btn(style: int, label: str, cid: str, concept: str) -> dict:
+        b = {"type": 2, "style": style, "label": label, "custom_id": cid}
+        em = icons.buttonEmoji(concept)    # near-white icon so it reads on green/red/gray buttons
+        if em:
+            b["emoji"] = em
+        return b
+
     return [
         {"type": 1, "components": [
-            {"type": 2, "style": 2, "label": "Pause", "custom_id": "cp_pause", "emoji": {"name": "⏸️"}},
-            {"type": 2, "style": 3, "label": "Resume", "custom_id": "cp_resume", "emoji": {"name": "▶️"}},
-            {"type": 2, "style": 3, "label": "Approve", "custom_id": "cp_approve", "emoji": {"name": "✅"}},
+            _btn(2, "Pause", "cp_pause", "paused"),
+            _btn(3, "Resume", "cp_resume", "resume"),
+            _btn(3, "Approve", "cp_approve", "approve"),
         ]},
         {"type": 1, "components": [
-            {"type": 2, "style": 2, "label": "Reject", "custom_id": "cp_reject", "emoji": {"name": "⚔️"}},
-            {"type": 2, "style": 2, "label": "Skip", "custom_id": "cp_skip", "emoji": {"name": "⏭️"}},
-            {"type": 2, "style": 4, "label": "Abort", "custom_id": "cp_abort", "emoji": {"name": "🛑"}},
+            _btn(2, "Reject", "cp_reject", "reject"),
+            _btn(2, "Skip", "cp_skip", "skip"),
+            _btn(4, "Abort", "cp_abort", "abort"),
         ]},
     ]
 
@@ -81,7 +89,7 @@ def helpEmbed() -> dict:
                    "value": "\n".join(f"`/{n}` — {_EXTRA_HELP[n]}"
                                       for n in ("ping", "diagnostics", "metrics", "audit")),
                    "inline": False})
-    return brandEmbed("📖 9TO5 — commands",
+    return brandEmbed("9TO5 — Commands",
                       description="Slash-first. `!`-prefixed text commands also work.",
                       fields=fields)
 
@@ -101,28 +109,30 @@ def statusEmbed(state, bus, uptime: Optional[str] = None) -> dict:
         {"name": "Working dir", "value": f"`{discord.truncate(m.get('work_dir') or '—', 200)}`", "inline": False},
     ]
     if deadline:
-        fields.append({"name": "⏰ Deadline", "value": discord.relTime(deadline), "inline": True})
+        fields.append({"name": "Deadline", "value": discord.relTime(deadline), "inline": True})
     if gate:
-        fields.append({"name": "⏳ Gate", "value": f"`{gate}` — /approve or /reject", "inline": False})
-    return brandEmbed("📊 Run status",
+        fields.append({"name": "Gate", "value": f"`{gate}` — /approve or /reject", "inline": False})
+    return brandEmbed("Run Status",
                       description=f"**{discord.truncate(m.get('goal_raw', ''), 300)}**\n"
                                   f"{discord.progressBar(done, total)}\n"
                                   f"{discord.subtaskTracker(state.subtasks)}",
                       color=discord.statusColor(m.get("status")), fields=fields, uptime=uptime)
 
 
-_PLAN_ICON = {"done": "✅", "in_progress": "⚡", "failed": "❌", "pending": "⬜"}
+_PLAN_CONCEPT = {"done": "done", "in_progress": "active", "failed": "fail", "pending": "pending"}
+_PLAN_FALLBACK = {"done": "[x]", "in_progress": "[~]", "failed": "[!]", "pending": "[ ]"}
 
 
 def _planLines(subtasks) -> list[str]:
     lines = []
     for s in subtasks:
-        if s["status"] == "removed":
+        st = s["status"]
+        if st == "removed":
             continue
-        icon = _PLAN_ICON.get(s["status"], "⬜")
+        mark = icons.icon(_PLAN_CONCEPT.get(st, "pending")) or _PLAN_FALLBACK.get(st, "[ ]")
         attempts = s.get("attempts", 0)
         attempt_tag = f" ×{attempts}" if attempts and attempts > 1 else ""
-        lines.append(f"{icon} `{s['subtask_id']}` {s['title']}{attempt_tag}")
+        lines.append(f"{mark} `{s['subtask_id']}` {s['title']}{attempt_tag}")
     return lines
 
 
@@ -131,7 +141,7 @@ def planEmbed(state, page: int = 0, per: int = 10):
     total_pages = max(1, (len(lines) + per - 1) // per)
     page = max(0, min(page, total_pages - 1))
     chunk = lines[page * per:(page + 1) * per] or ["(no subtasks)"]
-    e = brandEmbed(f"🗺️ Plan ({page + 1}/{total_pages})", description="\n".join(chunk),
+    e = brandEmbed(f"Plan ({page + 1}/{total_pages})", description="\n".join(chunk),
                    color=discord.statusColor(state.meta.get("status")))
     return e, total_pages
 
@@ -142,7 +152,7 @@ def runsEmbed(summaries, page: int = 0, per: int = 8):
     chunk = summaries[page * per:(page + 1) * per]
     lines = [f"`{s['task_id'][:8]}` [{s['status']}] {s['done']}/{s['total']} — "
              f"{discord.truncate(s['goal'], 60)}" for s in chunk] or ["(no runs yet)"]
-    e = brandEmbed(f"🗂️ Recent runs ({page + 1}/{total_pages})", description="\n".join(lines))
+    e = brandEmbed(f"Recent Runs ({page + 1}/{total_pages})", description="\n".join(lines))
     return e, total_pages
 
 
@@ -157,7 +167,7 @@ def runEmbed(state) -> dict:
         {"name": "Mode", "value": f"`{m.get('control_mode', 'watch')}`", "inline": True},
         {"name": "Working dir", "value": f"`{discord.truncate(m.get('work_dir') or '—', 200)}`", "inline": False},
     ]
-    return brandEmbed("🔎 Run detail",
+    return brandEmbed("Run Detail",
                       description=f"**{discord.truncate(m.get('goal_raw', ''), 400)}**\n"
                                   f"{discord.progressBar(done, total)}",
                       color=discord.statusColor(m.get("status")), fields=fields)
@@ -166,14 +176,14 @@ def runEmbed(state) -> dict:
 def diagnosticsEmbed(checks) -> dict:
     lines = []
     for c in checks:
-        mark = "🟢" if c["ok"] else "🔴"
+        mark = (icons.icon("done") or "OK") if c["ok"] else (icons.icon("fail") or "FAIL")
         line = f"{mark} **{c['name']}** — {discord.truncate(c['detail'], 120)}"
         if not c["ok"] and c.get("fix"):
             line += f"\n  ↳ _{discord.truncate(c['fix'], 120)}_"
         lines.append(line)
     n_ok = sum(1 for c in checks if c["ok"])
     color = discord.statusColor("done") if n_ok == len(checks) else discord.statusColor("blocked")
-    return brandEmbed(f"🩺 Diagnostics — {n_ok}/{len(checks)} healthy",
+    return brandEmbed(f"Diagnostics — {n_ok}/{len(checks)} healthy",
                       description="\n".join(lines) or "—", color=color)
 
 
@@ -188,11 +198,11 @@ def metricsEmbed(m) -> dict:
         {"name": "By status",
          "value": (", ".join(f"{k}:{v}" for k, v in sorted(m["by_status"].items())) or "—"), "inline": False},
     ]
-    return brandEmbed("📈 Run metrics", fields=fields)
+    return brandEmbed("Run Metrics", fields=fields)
 
 
 def pingEmbed(latency_ms, uptime, version) -> dict:
-    return brandEmbed("🏓 Pong", uptime=uptime, fields=[
+    return brandEmbed("Pong", uptime=uptime, fields=[
         {"name": "Gateway latency", "value": f"{latency_ms} ms", "inline": True},
         {"name": "Uptime", "value": uptime, "inline": True},
         {"name": "Version", "value": f"v{version}", "inline": True},
@@ -201,10 +211,10 @@ def pingEmbed(latency_ms, uptime, version) -> dict:
 
 def auditEmbed(entries) -> dict:
     if not entries:
-        return brandEmbed("📋 Audit log", description="_no actions recorded yet_")
+        return brandEmbed("Audit Log", description="_no actions recorded yet_")
     lines = []
     for e in entries[-15:]:
         tid = f" · {e['task_id'][:8]}" if e.get("task_id") else ""
         lines.append(f"`{(e.get('at') or '')[:19]}` <@{e.get('user_id', '?')}> "
                      f"**{e.get('action', '?')}**{tid}")
-    return brandEmbed("📋 Audit log", description="\n".join(lines))
+    return brandEmbed("Audit Log", description="\n".join(lines))

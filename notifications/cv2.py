@@ -20,13 +20,8 @@ from typing import Optional
 import config
 from notifications import branding
 from notifications import discord_bot as discord
-
-# Canonical phase -> emoji (shared with the legacy dashboard title).
-PHASE_EMOJI = {
-    "starting": "🚀", "resuming": "↻", "architecting": "📐", "planning": "🗺️",
-    "executing": "⚙️", "verifying": "🔎", "replanning": "🔁", "paused": "⏸️",
-    "blocked": "🚨", "complete": "✅", "aborted": "🛑", "failed": "❌",
-}
+from notifications import icons
+from notifications import theme
 
 # ---- component constructors -------------------------------------------------
 def container(children: list, accent: Optional[int] = None, spoiler: bool = False) -> dict:
@@ -135,17 +130,17 @@ def buildCockpit(state, phase: str, *, events: Optional[list] = None,
             last_v = (s["subtask_id"], s["verify_result"])
     if last_v:
         sid, vr = last_v
-        mark = "✅" if vr.get("passed") else "❌"
+        mark = (icons.icon("done") or "PASS") if vr.get("passed") else (icons.icon("fail") or "FAIL")
         verify_txt = f"{mark} `{sid}` — `{str(vr.get('cmd') or vr.get('expect'))[:70]}`"
     else:
         verify_txt = "—"
 
-    emoji = PHASE_EMOJI.get(phase, "🛰")
+    phase_ic = icons.prefix(theme.PHASE_ICON.get(phase, "info"))
     accent = discord.statusColor(m.get("status"))
     goal = discord.truncate(m.get("goal_raw", ""), 280)
 
     children: list = [
-        text(f"## {emoji} 9TO5 · {phase}"),
+        text(f"## {phase_ic}9TO5 · {phase}"),
         text(f"**{goal}**"),
         separator(),
         text(f"{discord.progressBar(done, total)}\n{discord.subtaskTracker(subtasks)}"),
@@ -160,7 +155,7 @@ def buildCockpit(state, phase: str, *, events: Optional[list] = None,
         f"**Model** `{model or config.PRIMARY_MODEL}`  ·  **Mode** `{m.get('control_mode', 'watch')}`"
         f"  ·  **Effort** {discord.effortBar(effort)}\n"
         f"**Elapsed** {elapsedStr(m.get('started_at'))}  ·  **ETA** {etaStr(m.get('started_at'), done, total)}"
-        f"  ·  🔁 {replans}  ·  ⚔️ {advs}\n"
+        f"  ·  {icons.prefix('replan') or 'replans '}{replans}  ·  {icons.prefix('adversary') or 'adversary '}{advs}\n"
         f"**Last verify** {verify_txt}\n"
         f"**Working dir** `{discord.truncate(m.get('work_dir') or '—', 160)}`"
     ))

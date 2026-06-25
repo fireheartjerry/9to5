@@ -452,6 +452,10 @@ REACTION_APPROVE: bool = _envBool("REACTION_APPROVE", True)           # super-re
 WATCHDOG_ENABLED: bool = _envBool("WATCHDOG_ENABLED", True)           # orchestrator-silence watchdog
 VISUALS_ENABLED: bool = _envBool("VISUALS_ENABLED", DISCORD_LAB_MODE)  # Pillow cards/charts/GIF (degrades if no Pillow)
 COCKPIT_THEME: str = os.getenv("COCKPIT_THEME", "dark")              # cockpit visual theme (dark|neon|minimal|terminal)
+# Throttle the cockpit's Pillow hero-image upload: re-render+upload at most once per this many
+# seconds (text-CV2 edits still flow freely between). Caps multipart uploads during fast update
+# bursts (e.g. the every-4s pause loop) so the dashboard can never drive a rate-limit storm.
+COCKPIT_IMAGE_MIN_INTERVAL: int = int(os.getenv("COCKPIT_IMAGE_MIN_INTERVAL", "30"))
 # Components V2 transport limits (single source for cv2.py + discord_bot._clampComponents).
 DISCORD_MSGFLAG_COMPONENTS_V2: int = 1 << 15   # 32768 -- IS_COMPONENTS_V2 message flag
 DISCORD_CV2_MAX_COMPONENTS: int = 40           # total components across the whole CV2 message tree
@@ -561,19 +565,20 @@ EFFORT_LABELS: dict[str, str] = {
 }
 
 # --- Discord status palette (embed sidebar color by phase/status) ----------
+# "Nightclaw Ops Console" status palette (GitHub-dark semantics) — shared by embeds + CV2 accent.
 STATUS_COLORS: dict[str, int] = {
-    "created": 0x95A5A6, "starting": 0x95A5A6,
-    "architecting": 0x3498DB,           # blue  = architect phase
-    "planning": 0x3498DB,
-    "executing": 0x2ECC71, "running": 0x2ECC71,   # green = running
-    "verifying": 0x2ECC71,
-    "adversary": 0xE67E22,              # orange = adversary reviewing
-    "replanning": 0x9B59B6,             # purple = replanning
-    "paused": 0xF1C40F,                 # yellow = paused/awaiting
-    "blocked": 0xE74C3C,                # red   = blocked
-    "failed": 0xE74C3C,
-    "aborted": 0x992D22,
-    "done": 0x2ECC71, "complete": 0x2ECC71, "partial": 0xE67E22,
+    "created": 0x8B949E, "starting": 0x8B949E,       # muted gray
+    "architecting": 0x58A6FF,                        # info blue = architect/plan phase
+    "planning": 0x58A6FF,
+    "executing": 0x3FB950, "running": 0x3FB950,      # success green = running
+    "verifying": 0x3FB950,
+    "adversary": 0xDB6D28,                           # orange = adversary reviewing
+    "replanning": 0xBC8CFF,                          # purple = replanning
+    "paused": 0xD29922,                              # amber = paused/awaiting
+    "blocked": 0xF85149,                             # red = blocked
+    "failed": 0xF85149,
+    "aborted": 0xC93C37,                             # dark red
+    "done": 0x3FB950, "complete": 0x3FB950, "partial": 0xD29922,
 }
 
 # --- directories that must exist -----------------------------------------

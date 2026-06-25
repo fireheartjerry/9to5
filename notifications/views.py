@@ -22,7 +22,7 @@ async def _applyControl(interaction: "discord.Interaction", name: str, arg: str 
     """Shared path for control-panel + blocked buttons: authorize -> audit -> spine."""
     meta = commands.COMMAND_REGISTRY.get(name, {})
     if meta.get("mutating") and not _ownerOk(interaction):
-        return await _send(interaction, "⛔ Not authorized.", already_responded)
+        return await _send(interaction, "Not authorized.", already_responded)
     state = commands.resolveTargetTask()
     if state is None:
         return await _send(interaction, commands.NO_TASK, already_responded)
@@ -41,7 +41,7 @@ async def _send(interaction: "discord.Interaction", msg: str, already_responded:
 
 async def _skipCurrent(interaction: "discord.Interaction", source: str) -> None:
     if not _ownerOk(interaction):
-        return await interaction.response.send_message("⛔ Not authorized.", ephemeral=True)
+        return await interaction.response.send_message("Not authorized.", ephemeral=True)
     state = commands.resolveTargetTask()
     if state is None:
         return await interaction.response.send_message(commands.NO_TASK, ephemeral=True)
@@ -84,9 +84,25 @@ class ConfirmView(discord.ui.View):
 async def confirmDestructive(interaction: "discord.Interaction", label: str) -> bool:
     """Send an ephemeral confirm dialog (this consumes the initial response). True if confirmed."""
     view = ConfirmView(interaction.user.id)
-    await interaction.response.send_message(f"⚠️ Confirm **{label}**?", view=view, ephemeral=True)
+    await interaction.response.send_message(f"Confirm **{label}**?", view=view, ephemeral=True)
     await view.wait()
     return view.value
+
+
+# custom_id -> icon concept; applied dynamically so buttons carry the professional app-emoji icon.
+_BTN_ICON = {"cp_pause": "paused", "cp_resume": "resume", "cp_approve": "approve",
+             "cp_reject": "reject", "cp_skip": "skip", "cp_abort": "abort",
+             "sc_answer": "info", "sc_skip": "skip", "sc_abort": "abort"}
+
+
+def _applyButtonIcons(view) -> None:
+    """Set each button's emoji to the custom app-emoji icon (best-effort; no-op if unprovisioned)."""
+    from notifications import icons
+    for c in view.children:
+        cid = getattr(c, "custom_id", None)
+        em = icons.buttonEmoji(_BTN_ICON.get(cid, "")) if cid else None
+        if em:
+            c.emoji = discord.PartialEmoji(name=em["name"], id=int(em["id"]))
 
 
 class ControlPanelView(discord.ui.View):
@@ -94,31 +110,32 @@ class ControlPanelView(discord.ui.View):
     add_view'd on startup so clicks work across restarts and cross-process messages."""
     def __init__(self):
         super().__init__(timeout=None)
+        _applyButtonIcons(self)
 
-    @discord.ui.button(label="Pause", style=discord.ButtonStyle.primary, custom_id="cp_pause", emoji="⏸️")
+    @discord.ui.button(label="Pause", style=discord.ButtonStyle.primary, custom_id="cp_pause")
     async def pause(self, interaction, button):  # noqa: ANN001
         await _applyControl(interaction, "pause")
 
-    @discord.ui.button(label="Resume", style=discord.ButtonStyle.success, custom_id="cp_resume", emoji="▶️")
+    @discord.ui.button(label="Resume", style=discord.ButtonStyle.success, custom_id="cp_resume")
     async def resume(self, interaction, button):  # noqa: ANN001
         await _applyControl(interaction, "resume")
 
-    @discord.ui.button(label="Abort", style=discord.ButtonStyle.danger, custom_id="cp_abort", emoji="🛑")
+    @discord.ui.button(label="Abort", style=discord.ButtonStyle.danger, custom_id="cp_abort")
     async def abort(self, interaction, button):  # noqa: ANN001
         if not _ownerOk(interaction):
-            return await interaction.response.send_message("⛔ Not authorized.", ephemeral=True)
+            return await interaction.response.send_message("Not authorized.", ephemeral=True)
         if await confirmDestructive(interaction, "abort the run"):
             await _applyControl(interaction, "abort", already_responded=True)
 
-    @discord.ui.button(label="Approve", style=discord.ButtonStyle.success, custom_id="cp_approve", emoji="✅")
+    @discord.ui.button(label="Approve", style=discord.ButtonStyle.success, custom_id="cp_approve")
     async def approve(self, interaction, button):  # noqa: ANN001
         await _applyControl(interaction, "approve")
 
-    @discord.ui.button(label="Reject", style=discord.ButtonStyle.secondary, custom_id="cp_reject", emoji="⚔️")
+    @discord.ui.button(label="Reject", style=discord.ButtonStyle.secondary, custom_id="cp_reject")
     async def reject(self, interaction, button):  # noqa: ANN001
         await _applyControl(interaction, "reject")
 
-    @discord.ui.button(label="Skip", style=discord.ButtonStyle.secondary, custom_id="cp_skip", emoji="⏭️")
+    @discord.ui.button(label="Skip", style=discord.ButtonStyle.secondary, custom_id="cp_skip")
     async def skip(self, interaction, button):  # noqa: ANN001
         await _skipCurrent(interaction, "control-panel")
 
@@ -127,20 +144,21 @@ class BlockedView(discord.ui.View):
     """Persistent view for the BLOCKED embed's Answer/Skip/Abort buttons (custom_ids sc_*)."""
     def __init__(self):
         super().__init__(timeout=None)
+        _applyButtonIcons(self)
 
-    @discord.ui.button(label="Answer", style=discord.ButtonStyle.primary, custom_id="sc_answer", emoji="✍️")
+    @discord.ui.button(label="Answer", style=discord.ButtonStyle.primary, custom_id="sc_answer")
     async def answer(self, interaction, button):  # noqa: ANN001
         await interaction.response.send_message(
-            "✍️ Type your answer as a normal message; the orchestrator will pick it up.", ephemeral=True)
+            "Type your answer as a normal message; the orchestrator will pick it up.", ephemeral=True)
 
-    @discord.ui.button(label="Skip", style=discord.ButtonStyle.secondary, custom_id="sc_skip", emoji="⏭️")
+    @discord.ui.button(label="Skip", style=discord.ButtonStyle.secondary, custom_id="sc_skip")
     async def skip(self, interaction, button):  # noqa: ANN001
         await _skipCurrent(interaction, "blocked")
 
-    @discord.ui.button(label="Abort", style=discord.ButtonStyle.danger, custom_id="sc_abort", emoji="🛑")
+    @discord.ui.button(label="Abort", style=discord.ButtonStyle.danger, custom_id="sc_abort")
     async def abort(self, interaction, button):  # noqa: ANN001
         if not _ownerOk(interaction):
-            return await interaction.response.send_message("⛔ Not authorized.", ephemeral=True)
+            return await interaction.response.send_message("Not authorized.", ephemeral=True)
         if await confirmDestructive(interaction, "abort the run"):
             await _applyControl(interaction, "abort", already_responded=True)
 
@@ -164,13 +182,13 @@ class Paginator(discord.ui.View):
             return False
         return True
 
-    @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="‹ Prev", style=discord.ButtonStyle.secondary)
     async def prev(self, interaction, button):  # noqa: ANN001
         self.i = max(0, self.i - 1)
         self._sync()
         await interaction.response.edit_message(embed=self.pages[self.i], view=self)
 
-    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Next ›", style=discord.ButtonStyle.secondary)
     async def next(self, interaction, button):  # noqa: ANN001
         self.i = min(len(self.pages) - 1, self.i + 1)
         self._sync()
@@ -228,7 +246,7 @@ class WorkSetupView(discord.ui.View):
         import config as _cfg
         for c in self.children:
             c.disabled = True
-        await interaction.response.edit_message(content="🚀 Launching…", view=self)
+        await interaction.response.edit_message(content="Launching…", view=self)
 
         # Reject a duplicate launch BEFORE the ChatGPT pre-flight (which opens the shared profile and
         # kills the active run's second-brain browser). The active-run guard otherwise lives only in
@@ -243,16 +261,16 @@ class WorkSetupView(discord.ui.View):
         if _cfg.BROWSER_LAYER_ENABLED:
             from agents import browser_executor
             await interaction.followup.send(
-                "🔐 Checking ChatGPT login — if a browser opens, **log in** (I'll detect it). "
+                "Checking ChatGPT login — if a browser opens, **log in** (I'll detect it). "
                 "Waiting up to 5 minutes…", ephemeral=True)
             logged_in = await asyncio.to_thread(browser_executor.preflightLogin, 300, 3)
             if not logged_in:
                 await interaction.followup.send(
-                    "❌ ChatGPT login timed out (5 min). Run aborted — re-run `/work` after logging in.",
+                    "ChatGPT login timed out (5 min). Run aborted — re-run `/work` after logging in.",
                     ephemeral=True)
                 self.stop()
                 return
-            await interaction.followup.send("✅ ChatGPT logged in. Starting run…", ephemeral=True)
+            await interaction.followup.send("ChatGPT logged in. Starting run…", ephemeral=True)
 
         audit.record(interaction.user.id, "work", None, "modal")
         reply = await asyncio.to_thread(work_launcher.launchOrError, self.req)
@@ -321,7 +339,7 @@ class WipeSetupView(discord.ui.View):
         self.backup = (select.values[0] == "yes")
         await interaction.response.defer()
 
-    @discord.ui.button(label="Proceed to Confirm", style=discord.ButtonStyle.danger, emoji="⚠️")
+    @discord.ui.button(label="Proceed to Confirm", style=discord.ButtonStyle.danger)
     async def _proceed(self, interaction: "discord.Interaction", button: "discord.ui.Button"):  # noqa: ANN001
         if not self.selected_keys:
             return await interaction.response.send_message(
@@ -356,7 +374,7 @@ class WipeConfirmView(discord.ui.View):
     async def interaction_check(self, interaction: "discord.Interaction") -> bool:
         return interaction.user.id == self.owner_id
 
-    @discord.ui.button(label="Confirm Wipe", style=discord.ButtonStyle.danger, emoji="🗑️")
+    @discord.ui.button(label="Confirm Wipe", style=discord.ButtonStyle.danger)
     async def _confirm(self, interaction: "discord.Interaction", button: "discord.ui.Button"):  # noqa: ANN001
         import asyncio
         from wipe import executeWipe, restartBot
@@ -365,7 +383,7 @@ class WipeConfirmView(discord.ui.View):
         results = await asyncio.to_thread(executeWipe, self.keys, self.backup)
         lines = "\n".join(v for v in results.values())
         await interaction.followup.send(
-            f"**Wipe complete:**\n{lines}\n\n🔄 Restarting bot…", ephemeral=True)
+            f"**Wipe complete:**\n{lines}\n\nRestarting bot…", ephemeral=True)
         self.stop()
         await asyncio.sleep(1)
         restartBot()

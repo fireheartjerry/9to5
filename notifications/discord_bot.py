@@ -60,7 +60,13 @@ def subtaskTracker(subtasks: list[dict], limit: int = 12) -> str:
     n_pending = len(subtasks) - n_done - n_running - n_failed
     countable = n_done + n_failed
     pass_rate = f"  ·  {round(100 * n_done / countable)}% pass" if countable > 0 else ""
-    return f"✅ {n_done}  ⚡ {n_running}  ⬜ {max(n_pending, 0)}  ❌ {n_failed}{pass_rate}"
+    from notifications import icons   # lazy: avoids an import cycle (icons -> discord_bot)
+    if icons.icon("done"):           # professional app-emoji icons when provisioned
+        body = (f"{icons.icon('done')} {n_done}  {icons.icon('active')} {n_running}  "
+                f"{icons.icon('pending')} {max(n_pending, 0)}  {icons.icon('fail')} {n_failed}")
+    else:                            # clean typographic fallback (no emoji)
+        body = f"{n_done} done · {n_running} active · {max(n_pending, 0)} pending · {n_failed} failed"
+    return body + pass_rate
 
 
 def effortBar(effort: Optional[str]) -> str:
@@ -94,11 +100,12 @@ _CHALLENGED = {"challenged", "rejected", "reject", "blocked", "fail"}
 
 def formatVerdict(verdict: Optional[str]) -> str:
     v = (verdict or "").lower().strip()
+    from notifications import icons
     if v in _APPROVED:
-        return "✅ APPROVED"
+        return f"{icons.prefix('done')}APPROVED"
     if v in _CHALLENGED:
-        return "⚔️ CHALLENGED"
-    return "❔ UNKNOWN"
+        return f"{icons.prefix('warn')}CHALLENGED"
+    return f"{icons.prefix('help')}UNKNOWN"
 
 
 # =====================================================================
@@ -468,6 +475,23 @@ def postContent(content: str, components: Optional[list] = None) -> Optional[str
     return None
 
 
+def postFile(filename: str, data: bytes, content_type: str,
+             content: Optional[str] = None) -> Optional[str]:
+    """Post a single attachment (e.g. the end-of-run replay GIF) via the shared multipart path."""
+    payload: dict = {}
+    if content:
+        payload["content"] = content[:config.DISCORD_MAX_CONTENT]
+        payload["allowed_mentions"] = _ownerMentions()
+    body, fdict = _multipartParts(payload, [(filename, data, content_type)])
+    r = _request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", data=body, files=fdict)
+    if r is not None and 200 <= r.status_code < 300:
+        try:
+            return str(r.json().get("id"))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
 def editContent(message_id: str, content: str) -> str:
     """PATCH a content-only message in place (HUD live-repaint). 'ok'/'not_found'/'transient'."""
     if not message_id:
@@ -590,6 +614,45 @@ def sendEmbed(embed: dict, content: Optional[str] = None, components: Optional[l
 
 
 # =====================================================================
+# Native engagement (Tier 4): Polls + Scheduled Events
+# =====================================================================
+def createPoll(poll: dict, content: Optional[str] = None) -> Optional[str]:
+    """Post a native Discord Poll (engagement.gatePollPayload). Returns the message id."""
+    payload: dict = {"poll": poll}
+    if content:
+        payload["content"] = content
+        payload["allowed_mentions"] = _ownerMentions()
+    r = _request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", json=payload)
+    if r is not None and 200 <= r.status_code < 300:
+        try:
+            return str(r.json().get("id"))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def endPoll(message_id: str) -> bool:
+    """Finalize a poll early (the gate resolved). Idempotent-ish; best-effort."""
+    if not message_id:
+        return False
+    r = _request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/polls/{message_id}/expire")
+    return r is not None and 200 <= r.status_code < 300
+
+
+def createScheduledEvent(guild_id: int, body: dict) -> Optional[str]:
+    """Create a guild Scheduled Event (engagement.scheduledEventPayload). Returns its id."""
+    if not guild_id:
+        return None
+    r = _request("POST", f"/guilds/{guild_id}/scheduled-events", json=body)
+    if r is not None and 200 <= r.status_code < 300:
+        try:
+            return str(r.json().get("id"))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+# =====================================================================
 # Embed builders
 # =====================================================================
 def _goalSummary(goal: str, limit: int = 320) -> str:
@@ -622,11 +685,11 @@ def planningStartEmbed(goal: str, subtasks) -> dict:
     plan_block = "\n".join(lines) if lines else "_authoring subtasks…_"
     plural = "s" if count != 1 else ""
     description = (
-        f"**🎯 Goal**\n{_goalSummary(goal)}\n\n"
-        f"**🗺️ Plan — {count} subtask{plural}**\n{plan_block}"
+        f"**Goal**\n{_goalSummary(goal)}\n\n"
+        f"**Plan — {count} subtask{plural}**\n{plan_block}"
     )
     return {
-        "title": "🗺️ Plan ready",
+        "title": "Plan Ready",
         "color": statusColor("planning"),
         "description": description[:4000],
         "timestamp": _nowIso(),
@@ -639,7 +702,7 @@ def planningStartEmbed(goal: str, subtasks) -> dict:
 
 def architectDoneEmbed(doc_path: str) -> dict:
     return {
-        "title": "🔵 Architecture complete",
+        "title": "Architecture Complete",
         "color": statusColor("architecting"),
         "timestamp": _nowIso(),
         "fields": [{"name": "Design doc", "value": f"`{doc_path}`"}],
@@ -663,14 +726,14 @@ def adversaryTriggeredEmbed(subtask_title: str, reason: str, verdict: Optional[s
     if verdict is not None:
         fields.append({"name": "Verdict", "value": formatVerdict(verdict), "inline": True})
     return {
-        "title": "⚔️ Adversary review",
+        "title": "Adversary Review",
         "color": color,
         "timestamp": _nowIso(),
         "fields": fields,
     }
 
 
-def noticeEmbed(reason: str, title: str = "ℹ️ 9TO5 — notice") -> dict:
+def noticeEmbed(reason: str, title: str = "9TO5 — Notice") -> dict:
     """An AUTONOMOUS, informational event the system already handled itself (a fallback was taken, a
     pause auto-resumed, the horizon was reached, a transient failure recovered, the run aborted/crashed
     and the supervisor will recover). 9to5 runs hands-off, so this INFORMS without ever claiming a
@@ -690,7 +753,7 @@ def blockedEmbed(reason: str, question: Optional[str] = None) -> dict:
         quoted = "\n".join(f"> {line}" for line in q_lines)
         desc += f"\n\n━━━ Claude Code asks ━━━\n{quoted}"
     return {
-        "title": "🚨 BLOCKED — human decision required",
+        "title": "BLOCKED — Human Decision Required",
         "color": statusColor("blocked"),
         "description": desc[:4000],
         "timestamp": _nowIso(),
@@ -698,11 +761,21 @@ def blockedEmbed(reason: str, question: Optional[str] = None) -> dict:
 
 
 def blockedComponents() -> list:
-    """Action row with Answer / Skip / Abort buttons (handled by the gateway bot)."""
+    """Action row with Answer / Skip / Abort buttons (handled by the gateway bot).
+    Buttons carry the professional app-emoji icon when provisioned (clean text otherwise)."""
+    from notifications import icons
+
+    def _b(style, label, cid, concept):
+        b = {"type": 2, "style": style, "label": label, "custom_id": cid}
+        em = icons.buttonEmoji(concept)    # near-white button icon
+        if em:
+            b["emoji"] = em
+        return b
+
     return [{"type": 1, "components": [
-        {"type": 2, "style": 1, "label": "Answer", "custom_id": "sc_answer", "emoji": {"name": "✍️"}},
-        {"type": 2, "style": 2, "label": "Skip", "custom_id": "sc_skip", "emoji": {"name": "⏭️"}},
-        {"type": 2, "style": 4, "label": "Abort", "custom_id": "sc_abort", "emoji": {"name": "🛑"}},
+        _b(1, "Answer", "sc_answer", "info"),
+        _b(2, "Skip", "sc_skip", "skip"),
+        _b(4, "Abort", "sc_abort", "abort"),
     ]}]
 
 
@@ -724,7 +797,7 @@ def completeEmbed(state, pr_link: str, elapsed: str) -> dict:
         f"{progressBar(done, total)}"
     )
     return {
-        "title": "✅ 9TO5 — run complete",
+        "title": "9TO5 — Run Complete",
         "color": statusColor(state.meta.get("status")),
         "description": desc[:4000],
         "timestamp": _nowIso(),
@@ -749,7 +822,7 @@ def sendBlocked(reason: str, question: Optional[str] = None) -> dict:
 
 def gateNeededEmbed(gate: str) -> dict:
     return {
-        "title": f"⏳ Approval needed — {gate}",
+        "title": f"Approval Needed — {gate}",
         "color": statusColor("paused"),
         "description": "Reply `!approve` / `!reject`, or use the web dashboard.",
         "timestamp": _nowIso(),
@@ -771,7 +844,7 @@ def subtaskFailedEmbed(subtask_id: str, title: str, verify_result: Optional[dict
     if output:
         fields.append({"name": "Output", "value": f"```\n{output}\n```", "inline": False})
     return {
-        "title": "⚠️ Subtask failed verification",
+        "title": "Subtask Failed Verification",
         "color": statusColor("failed"),
         "timestamp": _nowIso(),
         "fields": fields,
@@ -781,7 +854,7 @@ def subtaskFailedEmbed(subtask_id: str, title: str, verify_result: Optional[dict
 
 def abortedEmbed(reason: str, elapsed: str) -> dict:
     return {
-        "title": "🛑 Run aborted",
+        "title": "Run Aborted",
         "color": statusColor("aborted"),
         "timestamp": _nowIso(),
         "fields": [
@@ -793,7 +866,7 @@ def abortedEmbed(reason: str, elapsed: str) -> dict:
 
 def selfRefEmbed(branch: str, protected: tuple) -> dict:
     return {
-        "title": "🧬 Self-referential run (9to5 editing 9to5)",
+        "title": "Self-Referential Run (9to5 editing 9to5)",
         "color": statusColor("replanning"),
         "timestamp": _nowIso(),
         "fields": [

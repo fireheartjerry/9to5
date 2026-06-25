@@ -690,6 +690,45 @@ assert bus.surface_count == 4, "expected 4 surfaces after adding Slack"
 
 ---
 
+## Frontier Discord lab (branch `feat/discord-frontier-lab`)
+
+An elevation of the surface above into a "frontier lab". Every new capability is
+**flag-gated and defaults OFF** (`DISCORD_LAB_MODE` master switch + per-feature flags:
+`DASHBOARD_CV2`, `CAST_MODE`, `ASK_ENABLED`, `POLL_GATES`, `RUN_THREADS`, `SCHEDULED_EVENTS`,
+`AUTOMOD_GUARD`, `REACTION_APPROVE`, `WATCHDOG_ENABLED`, `VISUALS_ENABLED`, `COCKPIT_THEME`),
+so default behaviour is byte-for-byte the legacy surface. The two-process split (loop-less
+orchestrator REST + 4s control-poll | gateway), the global 429 breaker, owner-auth, and the
+pure `commands.py` spine are all preserved.
+
+### Gateway = a cog package
+`notifications/command_bot.py` is now a back-compat shim over `notifications/bot/core.py`
+(`NightclawBot`, a `discord.ext.commands.Bot`). `setup_hook` loads hot-reloadable cogs
+(`/reload`), registers persistent views + a `DynamicItem`, and syncs the tree. Cogs:
+`observe_cog` (status/plan/log/help/ping/diagnostics/metrics/audit), `control_cog`
+(pause/approve/reject/retry/add/skip/abort), `runs_cog` (work/wipe/runs/run/resume),
+`admin` (/reload /cockpit /hud), `ask_cog` (/ask), `plan_cog` (/plan-edit /timeline +
+context menus), `engagement_cog` (Poll votes), `ops_cog` (reactions + watchdog).
+`notifications/slash.py` is reduced to the shared helpers the command cogs use.
+
+### Components V2 cockpit
+`notifications/cv2.py` builds the live cockpit as a Components-V2 tree (Container/Section/
+TextDisplay/MediaGallery/Separator + control buttons; flag `IS_COMPONENTS_V2 = 1<<15`).
+`dashboard.py` renders it dual-path behind `DASHBOARD_CV2` — raw REST
+(`discord_bot.createComponentsV2`/`editComponentsV2Result`, multipart via the extended
+`_request`) on the orchestrator side, `LayoutView` on the gateway. `visuals.py` (Pillow)
+draws the hero progress card / burndown / end-of-run replay GIF (throttled to ≤1 image
+upload per `COCKPIT_IMAGE_MIN_INTERVAL`); `theme.py` is the palette/glyph/accent keystone;
+`console_hud.py` renders an ANSI mission-console HUD.
+
+### The Cast, Ask, engagement, ops
+`personas.py` + `cast.py` route each agent's voice through a webhook identity
+(`discord_bot.sendAs`) — incl. an Adversary duel VS-card. `ask.py` answers run questions
+from the local Ollama brain (`/ask`). `engagement.py` maps native Poll votes
+(`on_raw_poll_vote_add`) to `ControlBus.decide` for gated approvals. `ops.py` resolves a
+gate from an owner super-reaction (`on_raw_reaction_add`) and runs a silence watchdog.
+
+---
+
 ## Conventions
 
 - `ALL_CAPS` — module constants (`VALID_KINDS`, `REQUIRED_KEYS`, `CONTROL_PANEL_IDS`)

@@ -1031,6 +1031,11 @@ class Orchestrator:
             bus.clearDecision(gate)
             bus.setPendingGate(gate)
             discord.sendEmbed(discord.gateNeededEmbed(gate), content=discord.humanPing())
+            if config.POLL_GATES:
+                # Native Poll approval (Tier 4): the gateway's on_raw_poll_vote_add maps the
+                # owner's vote -> ControlBus.decide. Buttons + !approve remain the fallback.
+                from notifications import engagement
+                discord.createPoll(engagement.gatePollPayload(gate), content=discord.humanPing())
             dashboard.update(state, f"awaiting {gate}", f"awaiting approval for gate: {gate}")
             while True:
                 self._translateDiscord(bus, state)
@@ -1419,6 +1424,7 @@ class Orchestrator:
             discord.sendEmbed(discord.adversaryTriggeredEmbed("Pre-PR review", reason, rv.get("verdict")))
             cast.speak("adversary", f"⚔️ Pre-PR review → **{discord.formatVerdict(rv.get('verdict'))}**. "
                        f"Trigger: {reason}")
+            cast.duel("Pre-PR review", rv.get("verdict"))   # VS-card on a CHALLENGE (T8)
             return rv
         except Exception as e:  # noqa: BLE001 -- never block a run on the reviewer itself
             LOG.warning("pre-PR adversary review failed (%s); approving", e)
@@ -1704,6 +1710,7 @@ class Orchestrator:
                 discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason, rv.get("verdict")))
                 cast.speak("adversary", f"⚔️ Reviewing `{sid}` ({subtask['title']}) → "
                            f"**{discord.formatVerdict(rv.get('verdict'))}**.")
+                cast.duel(subtask["title"], rv.get("verdict"))   # VS-card on a CHALLENGE (T8)
                 with self._state_lock:
                     state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
                     self.obs.writeNote(state.subtaskReviewNoteRel(sid), self._reviewNote(subtask, reason, rv, combined))
@@ -2160,6 +2167,11 @@ class Orchestrator:
                 bus.setSeen(discord.baselineLatestId())
             except Exception:  # noqa: BLE001
                 pass
+        try:                        # provision the professional app-emoji icon set (best-effort)
+            from notifications import icons
+            icons.ensureIcons()
+        except Exception:  # noqa: BLE001
+            pass
         dashboard = DiscordDashboard()
         web_url = startWebDashboard(state.task_id)
         dashboard.start(state, "resuming" if resume else "starting", state_lock=self._state_lock)
@@ -2342,6 +2354,11 @@ class Orchestrator:
             discord.sendEmbed(discord.completeEmbed(state, pr_link, _fmtElapsed(elapsed)))
             cast.speak("brain", f"🧠 Run complete — **{final_status}**, {done}/{total} subtasks in "
                        f"{_fmtElapsed(elapsed)}. That's a wrap, team.", milestone=True)
+            if config.VISUALS_ENABLED and not config.NIGHT_MODE:
+                from notifications import visuals
+                gif = visuals.runReplayGif(state)        # end-of-run cinematic (T8)
+                if gif:
+                    discord.postFile("replay.gif", gif, "image/gif", content="🎬 Run replay")
             state.addNotification("complete", pr_link)
             dashboard.update(state, "complete", f"done {done}/{total} · {_fmtElapsed(elapsed)}")
             # Trust telemetry rollup: surface GPT<->Ollama agreement + challenge stats for the run.

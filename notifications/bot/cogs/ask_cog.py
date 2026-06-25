@@ -54,7 +54,7 @@ class AskCog(dpy_commands.Cog):
                     return await interaction.followup.send("✋ Abort cancelled — run untouched.")
             audit.record(interaction.user.id, verb, state.task_id, "ask-nl")
             msg = spine.applyCommand(ControlBus(state.task_id), state, spine.Command(verb, ""))
-            return await interaction.followup.send(f"🧠 (interpreted as `{verb}`) {msg}")
+            return await interaction.followup.send(f" (interpreted as `{verb}`) {msg}")
 
         reply = await asyncio.to_thread(ask_mod.answer, question, state)
         q = discord.utils.escape_markdown(question[:180])

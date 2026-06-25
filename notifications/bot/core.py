@@ -27,9 +27,14 @@ MAX_REPLY_CHARS = config.DISCORD_MAX_CONTENT - 100
 # notifications.slash suite is still registered in setup_hook for parity; these cogs ADD
 # new frontier commands alongside it. A bad cog is logged and skipped, never killing the bot.
 EXTENSIONS: tuple[str, ...] = (
-    "notifications.bot.cogs.admin",     # /reload (hot-reload), /cockpit
-    "notifications.bot.cogs.ask_cog",   # /ask -- conversational Ollama cockpit (Tier 6)
-    "notifications.bot.cogs.plan_cog",  # /plan-edit, /timeline + context menus (Tier 2)
+    "notifications.bot.cogs.observe_cog",  # status/plan/log/help/ping/diagnostics/metrics/audit
+    "notifications.bot.cogs.control_cog",  # pause/approve/reject/retry/add/skip/abort
+    "notifications.bot.cogs.runs_cog",     # work/wipe/runs/run/resume
+    "notifications.bot.cogs.admin",        # /reload (hot-reload), /cockpit, /hud
+    "notifications.bot.cogs.ask_cog",      # /ask -- conversational Ollama cockpit (Tier 6)
+    "notifications.bot.cogs.plan_cog",     # /plan-edit, /timeline + context menus (Tier 2)
+    "notifications.bot.cogs.engagement_cog",  # native Poll gate resolution (Tier 4)
+    "notifications.bot.cogs.ops_cog",         # super-reaction approve + silence watchdog (Tier 5)
 )
 
 
@@ -68,14 +73,20 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
                     LOG.info("loaded extension %s", ext)
                 except Exception as e:  # noqa: BLE001 -- one bad cog must not kill the bot
                     LOG.exception("failed to load extension %s: %s", ext, e)
-            # 2) legacy slash suite + persistent views (parity until fully cog-ified)
-            from notifications import slash, views
+            # 2) provision the professional app-emoji icon set FIRST, so persistent views can put
+            #    the icons on their buttons when constructed below (best-effort, off the loop).
+            try:
+                from notifications import icons
+                await asyncio.to_thread(icons.ensureIcons)
+            except Exception:  # noqa: BLE001
+                pass
+            # 3) persistent views + dynamic items (all slash commands now live in cogs above)
+            from notifications import views
             from notifications.bot.ui.dynamic import SubtaskButton
-            slash.registerSlashCommands(self.tree, self, self.started_at)
             self.add_view(views.ControlPanelView())   # persistent: matches cp_* anywhere
             self.add_view(views.BlockedView())         # persistent: matches sc_*
             self.add_dynamic_items(SubtaskButton)      # stateless per-subtask skip/inspect (Tier 2)
-            # 3) sync the command tree (guild-scoped is instant; global ~1h)
+            # 4) sync the command tree (guild-scoped is instant; global ~1h)
             try:
                 if config.DISCORD_GUILD_ID:
                     guild = discord.Object(id=config.DISCORD_GUILD_ID)
@@ -133,7 +144,7 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
     @bot.tree.error
     async def _on_app_error(interaction, error):  # noqa: ANN001
         if isinstance(error, app_commands.CommandOnCooldown):
-            msg = f"⏳ Slow down — try again in {error.retry_after:.0f}s."
+            msg = f" Slow down — try again in {error.retry_after:.0f}s."
         else:
             LOG.exception("slash error: %s", error)
             msg = "internal error (see logs)"

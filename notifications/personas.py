@@ -1,9 +1,8 @@
-"""The Cast -- the 9to5 agent roster used for webhook identity overrides.
+"""The Cast -- the 9to5 agent roster for webhook identity overrides.
 
-Each agent role maps to a persona ``{name, emoji, color, avatar_url}`` so the run
-reads like a live writers'-room: the Adversary speaks under ⚔️, the Executor under
-⚙️, the Brain under 🧠. Per-message avatars require a hosted URL, so by default
-personas are distinguished by their emoji-bearing name + accent color; an optional
+Each role maps to a persona ``{name, icon, color, avatar_url}``. Names are clean text
+(no emoji -- webhook usernames can't render custom emoji anyway); the professional app-emoji
+icon (the ``icon`` concept) is prefixed onto the message CONTENT by cast.speak. An optional
 per-role avatar URL can be supplied via env (NIGHTCLAW_AVATAR_<ROLE>).
 
 Pure data + lookup; no network, no discord.py.
@@ -19,15 +18,17 @@ def _avatar(role: str) -> str:
     return os.getenv(f"NIGHTCLAW_AVATAR_{role.upper()}", config.BRAND_ICON_URL or "")
 
 
+# Clean text names (no emoji -- webhook usernames can't render custom emoji); the professional
+# app-emoji icon is the ``icon`` concept, prefixed onto the message CONTENT by cast.speak.
 CAST: dict[str, dict] = {
-    "brain":     {"name": "Nightclaw · Brain 🧠",     "emoji": "🧠", "color": 0x5865F2},
-    "orchestrator": {"name": "Nightclaw · Brain 🧠",  "emoji": "🧠", "color": 0x5865F2},
-    "architect": {"name": "Nightclaw · Architect 📐", "emoji": "📐", "color": 0x3498DB},
-    "planner":   {"name": "Nightclaw · Planner 🗺️",   "emoji": "🗺️", "color": 0x3498DB},
-    "executor":  {"name": "Nightclaw · Executor ⚙️",  "emoji": "⚙️", "color": 0x2ECC71},
-    "verifier":  {"name": "Nightclaw · Verifier 🔎",  "emoji": "🔎", "color": 0x1ABC9C},
-    "adversary": {"name": "Nightclaw · Adversary ⚔️", "emoji": "⚔️", "color": 0xE67E22},
-    "replanner": {"name": "Nightclaw · Replanner 🔁", "emoji": "🔁", "color": 0x9B59B6},
+    "brain":        {"name": "Nightclaw · Brain",     "icon": "brain",     "color": 0x5865F2},
+    "orchestrator": {"name": "Nightclaw · Brain",     "icon": "brain",     "color": 0x5865F2},
+    "architect":    {"name": "Nightclaw · Architect", "icon": "architect", "color": 0x58A6FF},
+    "planner":      {"name": "Nightclaw · Planner",   "icon": "plan",      "color": 0x58A6FF},
+    "executor":     {"name": "Nightclaw · Executor",  "icon": "mode",      "color": 0x3FB950},
+    "verifier":     {"name": "Nightclaw · Verifier",  "icon": "verify",    "color": 0x1ABC9C},
+    "adversary":    {"name": "Nightclaw · Adversary", "icon": "adversary", "color": 0xDB6D28},
+    "replanner":    {"name": "Nightclaw · Replanner", "icon": "replan",    "color": 0xBC8CFF},
 }
 
 

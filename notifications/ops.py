@@ -1,0 +1,53 @@
+"""Tier 5 realtime ops -- pure logic for super-reaction quick-approve + the run watchdog.
+No network, no discord.py. The gateway ops cog is a thin shell over these.
+"""
+from __future__ import annotations
+
+import os
+from datetime import datetime
+from typing import Optional
+
+# Owner reactions that resolve a pending gate (super-reactions count too -- same emoji).
+_APPROVE_EMOJI = {"✅", "👍", "🔥", "☑️", "✔️"}
+_REJECT_EMOJI = {"⛔", "🛑", "👎", "❌", "✖️"}
+
+# A run that emits no event for this long while still "active" is treated as silent/hung.
+STALE_SECONDS = int(os.getenv("WATCHDOG_STALE_SECONDS", "600"))
+
+_TERMINAL = {"done", "complete", "aborted", "failed", "partial", "blocked", "paused"}
+
+
+def reactionToVerdict(emoji) -> Optional[str]:
+    """Map an owner reaction emoji to 'approve' | 'reject' | None."""
+    e = str(emoji or "")
+    if e in _APPROVE_EMOJI:
+        return "approve"
+    if e in _REJECT_EMOJI:
+        return "reject"
+    return None
+
+
+def lastActivityTs(state) -> Optional[float]:
+    """Epoch seconds of the most recent notification, or None if there are none/all unparseable."""
+    best = None
+    for n in state.data.get("notifications", []) or []:
+        at = n.get("at")
+        if not at:
+            continue
+        try:
+            ts = datetime.fromisoformat(str(at).replace("Z", "+00:00")).timestamp()
+        except Exception:  # noqa: BLE001
+            continue
+        best = ts if best is None else max(best, ts)
+    return best
+
+
+def runIsStale(state, now_ts: float, threshold_s: int = STALE_SECONDS) -> bool:
+    """True only if the run is ACTIVE (non-terminal, non-paused) yet has emitted no event for
+    longer than ``threshold_s`` -- a likely silent/hung orchestrator worth alerting on."""
+    if state.meta.get("status", "") in _TERMINAL:
+        return False
+    last = lastActivityTs(state)
+    if last is None:
+        return False
+    return (now_ts - last) > threshold_s

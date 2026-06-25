@@ -33,8 +33,35 @@ def speak(role: str, text: Optional[str] = None, *, embed: Optional[dict] = None
     if not (text or embed or components):
         return False
     try:
-        return discord.sendAs(personas.persona(role), content=text, embed=embed,
+        p = personas.persona(role)
+        if text:                                    # prefix the persona's professional icon
+            from notifications import icons
+            text = icons.prefix(p.get("icon", "")) + text
+        return discord.sendAs(p, content=text, embed=embed,
                               components=components, files=files, thread_id=thread_id)
     except Exception:  # noqa: BLE001 -- a webhook hiccup must never break a run
         LOG.warning("cast.speak(%s) failed", role, exc_info=True)
+        return False
+
+
+_CHALLENGED = {"challenged", "rejected", "reject", "blocked", "fail"}
+
+
+def duel(subtask_title: str, verdict: str, *, trust: Optional[float] = None,
+         thread_id: Optional[str] = None) -> bool:
+    """On an adversary CHALLENGE, post a Pillow VS-card AS the Adversary persona (T8 cinematic).
+    Self-gated: no-op unless CAST_MODE and the verdict is a challenge. Never raises."""
+    if not config.CAST_MODE:
+        return False
+    if (verdict or "").lower().strip() not in _CHALLENGED:
+        return False
+    try:
+        from notifications import visuals
+        card = visuals.duelCard(subtask_title, verdict, trust=trust)
+        if not card:
+            return False
+        return discord.sendAs(personas.persona("adversary"),
+                              files=[("duel.png", card, "image/png")], thread_id=thread_id)
+    except Exception:  # noqa: BLE001
+        LOG.warning("cast.duel failed", exc_info=True)
         return False
