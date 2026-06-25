@@ -112,6 +112,7 @@ ICON = {
     "clock": 0xE823, "elapsed": 0xE916, "model": 0xE950, "effort": 0xEC4A,
     "brain": 0xE9F5, "flag": 0xE7C1, "history": 0xE81C, "help": 0xE9CE,
     "mode": 0xE713, "watchdog": 0xEB95, "metrics": 0xE9D9, "goal": 0xE7C1,
+    "reject": 0xE711, "skip": 0xE893, "resume": 0xE768, "approve": 0xEC61,
 }
 # phase -> concept; agent role -> concept
 PHASE_ICON = {

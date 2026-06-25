@@ -90,3 +90,13 @@ def prefix(concept: str, sep: str = " ") -> str:
     """``icon(concept) + sep`` when available, else '' -- convenient for prefixing a text line."""
     ic = icon(concept)
     return f"{ic}{sep}" if ic else ""
+
+
+import re as _re
+_REF = _re.compile(r"<:(?P<name>[A-Za-z0-9_]+):(?P<id>\d+)>")
+
+
+def emojiPartial(concept: str):
+    """{'id','name'} for putting the app-emoji icon ON a button (raw component dict), or None."""
+    m = _REF.match(icon(concept) or "")
+    return {"id": m.group("id"), "name": m.group("name")} if m else None

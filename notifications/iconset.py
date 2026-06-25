@@ -23,6 +23,8 @@ _COLOR = {
     "effort": (139, 148, 158),
     "paused": (210, 153, 34), "warn": (210, 153, 34), "adversary": (219, 109, 40),
     "replan": (188, 140, 255), "brain": (188, 140, 255), "flag": (201, 209, 217),
+    "reject": (248, 81, 73), "skip": (139, 148, 158), "resume": (63, 185, 80),
+    "approve": (63, 185, 80),
 }
 DEFAULT_COLOR = (201, 209, 217)
 
@@ -30,7 +32,7 @@ DEFAULT_COLOR = (201, 209, 217)
 EMOJI_CONCEPTS = (
     "done", "fail", "active", "pending", "paused", "run", "warn", "blocked", "adversary",
     "plan", "architect", "verify", "replan", "retry", "abort", "info", "clock", "model",
-    "effort", "brain", "complete", "flag",
+    "effort", "brain", "complete", "flag", "reject", "skip", "resume", "approve",
 )
 
 

@@ -22,16 +22,23 @@ CONTROL_PANEL_IDS = {
 def controlPanelRow() -> list:
     """Two action rows of control buttons (<=5/row). Handled by views.ControlPanelView.
     Row 1: positive/flow actions (Pause · Resume · Approve). Row 2: destructive/skip (Reject · Skip · Abort)."""
+    def _btn(style: int, label: str, cid: str, concept: str) -> dict:
+        b = {"type": 2, "style": style, "label": label, "custom_id": cid}
+        em = icons.emojiPartial(concept)   # professional app-emoji icon when provisioned
+        if em:
+            b["emoji"] = em
+        return b
+
     return [
         {"type": 1, "components": [
-            {"type": 2, "style": 2, "label": "Pause", "custom_id": "cp_pause"},
-            {"type": 2, "style": 3, "label": "Resume", "custom_id": "cp_resume"},
-            {"type": 2, "style": 3, "label": "Approve", "custom_id": "cp_approve"},
+            _btn(2, "Pause", "cp_pause", "paused"),
+            _btn(3, "Resume", "cp_resume", "resume"),
+            _btn(3, "Approve", "cp_approve", "approve"),
         ]},
         {"type": 1, "components": [
-            {"type": 2, "style": 2, "label": "Reject", "custom_id": "cp_reject"},
-            {"type": 2, "style": 2, "label": "Skip", "custom_id": "cp_skip"},
-            {"type": 2, "style": 4, "label": "Abort", "custom_id": "cp_abort"},
+            _btn(2, "Reject", "cp_reject", "reject"),
+            _btn(2, "Skip", "cp_skip", "skip"),
+            _btn(4, "Abort", "cp_abort", "abort"),
         ]},
     ]
 
