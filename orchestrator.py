@@ -1454,7 +1454,12 @@ class Orchestrator:
             if not state.meta.get("is_self_referential"):
                 tracked = git("ls-files", "--error-unmatch", "CLAUDE.md").returncode == 0
                 if tracked:
-                    git("checkout", "--", "CLAUDE.md")        # restore the user's version
+                    # restore from HEAD, not the index: `git add -A` above ALREADY staged 9to5's
+                    # modified CLAUDE.md, so a bare `checkout -- CLAUDE.md` restores the working tree
+                    # FROM that staged 9to5 version (a no-op) and the PR would commit/overwrite the
+                    # user's tracked CLAUDE.md. `checkout HEAD --` resets both index and working tree
+                    # to the user's committed version.
+                    git("checkout", "HEAD", "--", "CLAUDE.md")
                 else:
                     git("rm", "--cached", "--ignore-unmatch", "CLAUDE.md")   # drop 9to5's new file from the commit
             commit = git("commit", "-m", f"9TO5: {state.meta['goal_raw'][:60]}")
