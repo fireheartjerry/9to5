@@ -1,4 +1,5 @@
 """Unit tests for webdash._applyControl + _snapshot."""
+import re
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -63,6 +64,39 @@ class TestApplyControl(unittest.TestCase):
     def test_incomplete_skip_reports_error(self):
         res = webdash._applyControl(self.tid, "skip", None)
         self.assertFalse(res["ok"])
+
+
+class TestControlToken(unittest.TestCase):
+    """The /api/control POST endpoint must require the per-run token embedded in the served page,
+    so another local process / a cross-origin page can't drive a live run."""
+
+    def test_token_gates_post(self):
+        import urllib.request
+        import urllib.error
+        config_patch = mock.patch.object(config, "WEB_DASHBOARD", True)
+        config_patch.start()
+        self.addCleanup(config_patch.stop)
+        url = webdash.startWebDashboard("task-token", port=8791)
+        if not url:
+            self.skipTest("could not bind the dashboard port")
+        self.addCleanup(webdash.stopWebDashboard)
+        page = urllib.request.urlopen(url, timeout=3).read().decode()
+        m = re.search(r'const __T="([^"]+)"', page)
+        self.assertTrue(m and m.group(1) != "__WEBDASH_TOKEN__", "page did not embed a real token")
+        token = m.group(1)
+
+        def post(headers):
+            req = urllib.request.Request(
+                url + "api/control", data=b'{"action":"pause"}',
+                headers={"content-type": "application/json", **headers}, method="POST")
+            try:
+                return urllib.request.urlopen(req, timeout=3).status
+            except urllib.error.HTTPError as e:
+                return e.code
+
+        self.assertEqual(post({}), 403, "tokenless control POST was not forbidden")
+        self.assertEqual(post({"X-9to5-Token": "wrong"}), 403, "bad token was accepted")
+        self.assertEqual(post({"X-9to5-Token": token}), 200, "valid token was rejected")
 
 
 if __name__ == "__main__":

@@ -27,9 +27,11 @@ class TestRemediationTreeShared(unittest.TestCase):
         # non-self-ref parallel: all subtasks run in work_dir -> a revert would clobber peers
         self.assertTrue(self._shared(2, r"C:\repo", r"C:\repo"))
 
-    def test_parallel_isolated_cwd_is_safe(self):
-        # self-ref: each subtask gets its own .sc-ctx cwd (exec_cwd != work_dir) -> private tree
-        self.assertFalse(self._shared(2, r"C:\repo", os.path.join(r"C:\repo", ".sc-ctx", "st-001")))
+    def test_parallel_selfref_isolated_cwd_is_STILL_shared(self):
+        # self-ref parallel: each subtask's cwd is an isolated .sc-ctx scratch, BUT all of them edit
+        # the SAME real tree (work_dir == PROJECT_ROOT) via --add-dir, so a remediation revert there
+        # still clobbers peers. Must be flagged shared despite the per-subtask cwd.
+        self.assertTrue(self._shared(2, r"C:\repo", os.path.join(r"C:\repo", ".sc-ctx", "st-001")))
 
 
 if __name__ == "__main__":

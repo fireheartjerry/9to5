@@ -53,7 +53,9 @@ class TestSieMaintenance(unittest.TestCase):
                           "adapter_promotion", "meta_optimize", "self_play",
                           "curriculum_and_report"})
         self.assertTrue(sie._state_path().exists())
-        self.assertEqual(out["steps"]["evaluate"]["status"], "scored")  # real fitness, not a marker
+        # This run deliberately uses an EMPTY eval suite (EVAL_SUITE_DIR -> nosuite) to stay offline
+        # and fast; an empty suite is honestly reported as 'empty_suite', never falsely 'scored'.
+        self.assertEqual(out["steps"]["evaluate"]["status"], "empty_suite")
 
     def test_throttled_second_call_skips(self):
         sie.run_maintenance(force=True, db_path=self.db)

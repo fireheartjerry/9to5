@@ -15,9 +15,94 @@ ControlBus, not Discord. Tests that exercise the REST chokepoint itself
 (tests/test_discord_rest.py) set their own token via ``mock.patch`` inside each test and so are
 unaffected by this ambient default.
 """
+import os
+import time as _time
+
 import pytest
 
 import config
+
+
+@pytest.fixture(autouse=True)
+def _fast_sleep(monkeypatch):
+    """Cap real ``time.sleep`` so retry/backoff loops don't burn wall-clock in tests.
+
+    The single biggest test-speed lever for this codebase: e.g. orchestrator._ollamaChat retries a
+    failed/empty brain call with exponential backoff (2s -> 4s -> 8s); under the fuzz tests (150
+    seeds x a garbage brain) that compounds into >15 minutes / an apparent hang. Capping to 1ms
+    keeps thread-yield ordering intact while making backoffs instant. Opt out for a test that
+    genuinely measures elapsed time with ``NINE_TO_FIVE_REAL_SLEEP=1``."""
+    if os.getenv("NINE_TO_FIVE_REAL_SLEEP", "").strip().lower() in {"1", "true", "yes", "on"}:
+        yield
+        return
+    real = _time.sleep
+
+    def _capped(s, _r=real):
+        # Cap only LONG sleeps (>1s = retry/backoff territory, e.g. _ollamaChat's 2s->4s->8s).
+        # Short sleeps (TTL expiry, thread-yield interleaving) run for real so timing-dependent
+        # tests (cache-TTL, concurrency) keep working.
+        if isinstance(s, (int, float)) and s > 1.0:
+            return _r(0.01)
+        return _r(s)
+
+    monkeypatch.setattr(_time, "sleep", _capped)
+    yield
+
+# Heavyweight test files auto-marked `slow` (subprocess/e2e/integration/fuzz/sim) so the fast lane
+# `pytest -m "not slow"` skips them -- without editing 137 files. Filename-substring based.
+_SLOW_PATTERNS = ("e2e", "integration", "fuzz", "simulation", "full_autonomy",
+                  "phase2", "phase_3", "selfplay", "_loop")
+
+
+def pytest_collection_modifyitems(config, items):  # noqa: ARG001 -- pytest hook signature
+    for item in items:
+        name = str(getattr(item, "fspath", "")).replace("\\", "/").lower()
+        if any(p in name for p in _SLOW_PATTERNS):
+            item.add_marker(pytest.mark.slow)
+            # Slow tests (e.g. the 150-iteration fuzz property tests) legitimately exceed the
+            # 60s default; give them headroom while the fast lane keeps the tight hang-catching cap.
+            item.add_marker(pytest.mark.timeout(300))
+
+
+@pytest.fixture(autouse=True)
+def _no_real_ollama(monkeypatch):
+    """Never let a test hit the real local Ollama model (slow, non-deterministic, may hang on a
+    cold model load). Any code path that reaches a real ``ollama.Client.chat/embeddings/generate``
+    raises a clear error pointing at the fix -- mirrors the Discord/browser sandboxes. Tests that
+    want a brain inject a fake (see tests/factories.fake_brain) or mock the seam. Opt out for a
+    deliberate live test with ``NINE_TO_FIVE_ALLOW_OLLAMA=1``."""
+    if os.getenv("NINE_TO_FIVE_ALLOW_OLLAMA", "").strip().lower() in {"1", "true", "yes", "on"}:
+        yield
+        return
+    try:
+        import ollama
+    except Exception:  # noqa: BLE001 -- ollama not installed -> nothing to sandbox
+        yield
+        return
+
+    def _blocked(*_a, **_k):
+        raise RuntimeError("real Ollama call blocked in tests (set NINE_TO_FIVE_ALLOW_OLLAMA=1 to "
+                           "allow); inject a fake brain (tests/factories.fake_brain) instead.")
+
+    for meth in ("chat", "embeddings", "generate"):
+        if hasattr(ollama.Client, meth):
+            monkeypatch.setattr(f"ollama.Client.{meth}", _blocked, raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_state(monkeypatch, tmp_path):
+    """Give every test its own STATE_DIR / CONTROL_DIR so task + control files never leak between
+    tests. Stray task files in the shared state dir caused order-dependent flakiness -- e.g.
+    test_views' 'bail if a run is active' check seeing a run left behind by an earlier (slow) test.
+    Tests that need their own dirs still monkeypatch locally (this just makes the default safe)."""
+    sd = tmp_path / "state_tasks"
+    cd = tmp_path / "state_control"
+    sd.mkdir(parents=True, exist_ok=True)
+    cd.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(config, "STATE_DIR", sd, raising=False)
+    monkeypatch.setattr(config, "CONTROL_DIR", cd, raising=False)
+    yield
 
 
 @pytest.fixture(autouse=True)
@@ -25,4 +110,21 @@ def _no_real_discord(monkeypatch):
     """Run every test as if Discord is unconfigured -> no live REST calls, no 429 throttling."""
     monkeypatch.setattr(config, "DISCORD_BOT_TOKEN", "")
     monkeypatch.setattr(config, "DISCORD_CHANNEL_ID", 0)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _no_real_browser(monkeypatch, tmp_path):
+    """Never let a test drive the real Phase-2 browser layer or touch the live ChatGPT profile.
+
+    The repo's ``.env`` may set ``BROWSER_LAYER_ENABLED=True`` for real runs; with it on, the
+    orchestrator's run path probes a REAL Chromium on the single logged-in profile (and
+    ``profile_hygiene.sanitize()`` kills any other Chromium on it). So for the test process we
+    force the layer OFF and redirect the profile dir to a throwaway temp dir. The hard backstop
+    in ``agents.chatgpt_driver._realBrowserBlocked`` refuses a real launch under pytest even if a
+    test flips the flag back on. Tests that exercise the *routing* logic still
+    ``mock.patch`` ``BROWSER_LAYER_ENABLED=True`` locally and mock the browser calls -- unaffected,
+    because they never reach a real launch."""
+    monkeypatch.setattr(config, "BROWSER_LAYER_ENABLED", False)
+    monkeypatch.setattr(config, "CHATGPT_USER_DATA_DIR", tmp_path / "chatgpt_profile_test")
     yield

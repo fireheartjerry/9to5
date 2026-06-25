@@ -16,6 +16,7 @@ state/sie_state.json
 state/chatgpt_profile/
 state/chatgpt_selectors.json
 state/adversary_trust.jsonl
+state/audit.jsonl
 __pycache__/
 *.pyc
 .pytest_cache/

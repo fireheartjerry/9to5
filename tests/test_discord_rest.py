@@ -120,8 +120,8 @@ class TestUnpinAndVerdict(unittest.TestCase):
         self.assertFalse(d.unpinMessage(None))
 
     def test_formatVerdict_unknown(self):
-        self.assertEqual(d.formatVerdict("approved"), "✅ APPROVED")
-        self.assertEqual(d.formatVerdict("rejected"), "⚔️ CHALLENGED")
+        self.assertEqual(d.formatVerdict("approved"), "APPROVED")     # icon prefix '' unprovisioned
+        self.assertEqual(d.formatVerdict("rejected"), "CHALLENGED")
         self.assertIn("UNKNOWN", d.formatVerdict(""))
         self.assertIn("UNKNOWN", d.formatVerdict("pending"))
 

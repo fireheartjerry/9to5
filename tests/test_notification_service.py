@@ -81,11 +81,11 @@ class TestSubtaskTracker(unittest.TestCase):
             {"status": "failed"},
             {"status": "pending"},
         ]
-        result = d.subtaskTracker(subtasks)
-        self.assertIn("✅", result)
-        self.assertIn("⚡", result)
-        self.assertIn("❌", result)
-        self.assertIn("⬜", result)
+        result = d.subtaskTracker(subtasks)   # clean fallback (no app emoji provisioned in tests)
+        self.assertIn("2 done", result)
+        self.assertIn("1 active", result)
+        self.assertIn("1 failed", result)
+        self.assertIn("1 pending", result)
 
     def test_all_done(self):
         subtasks = [{"status": "done"} for _ in range(4)]
@@ -133,7 +133,7 @@ class TestRelTime(unittest.TestCase):
 class TestFormatVerdict(unittest.TestCase):
     def test_approved_variants(self):
         for v in ("approved", "approve", "pass", "ok"):
-            self.assertEqual(d.formatVerdict(v), "✅ APPROVED", msg=v)
+            self.assertIn("APPROVED", d.formatVerdict(v), msg=v)
 
     def test_challenged_variants(self):
         for v in ("challenged", "rejected", "reject", "blocked", "fail"):
@@ -175,7 +175,7 @@ class TestGoalSummary(unittest.TestCase):
 class TestPlanningStartEmbed(unittest.TestCase):
     def test_int_subtask_count(self):
         embed = d.planningStartEmbed("build a thing", 5)
-        self.assertEqual(embed["title"], "🗺️ Plan ready")
+        self.assertEqual(embed["title"], "Plan Ready")
         self.assertIn("5", embed["description"])
 
     def test_list_subtasks_renders_titles(self):

@@ -9,7 +9,53 @@ from notifications.views import ConfirmView, Paginator
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    # asyncio.run gives each call a FRESH event loop and closes it cleanly. The old
+    # get_event_loop().run_until_complete reused a shared loop -> once another test closed it,
+    # these tests flaked non-deterministically under xdist ordering.
+    return asyncio.run(coro)
+
+
+class TestLaunchRejectsActiveRunFirst(unittest.TestCase):
+    """A guided-setup Launch must reject a duplicate run BEFORE the ChatGPT pre-flight, so a second
+    /work can't kill the active run's second-brain browser only to then be rejected."""
+    def test_launch_bails_on_active_run_before_launch(self):
+        from notifications.views import WorkSetupView
+        from notifications import work_launcher
+        v = WorkSetupView(1, "goal", 1.0, None)
+        interaction = mock.AsyncMock()
+        # @discord.ui.button makes the instance attr a Button; call the raw class-dict coroutine.
+        raw_launch = WorkSetupView.__dict__["_launch"]
+        with mock.patch.object(work_launcher, "activeRun", return_value=mock.Mock()) as ar, \
+                mock.patch.object(work_launcher, "launchOrError") as launch:
+            _run(raw_launch(v, interaction, mock.Mock()))
+        ar.assert_called_once()
+        launch.assert_not_called()   # bailed before launch (and before the browser pre-flight)
+
+
+class TestSkipTargetsPending(unittest.TestCase):
+    """The dashboard Skip button must queue a skip of a PENDING subtask (what the backend honors),
+    not the in_progress one (which the orchestrator drops -> the button silently no-op'd)."""
+    def test_skip_targets_next_pending(self):
+        from notifications import views
+        state = mock.Mock()
+        state.task_id = "t1"
+        state.subtasks = [
+            {"subtask_id": "st-001", "status": "in_progress"},
+            {"subtask_id": "st-002", "status": "pending"},
+            {"subtask_id": "st-003", "status": "pending"},
+        ]
+        interaction = mock.AsyncMock()
+        interaction.user.id = 1
+        captured = {}
+        with mock.patch.object(views, "_ownerOk", return_value=True), \
+                mock.patch.object(views.commands, "resolveTargetTask", return_value=state), \
+                mock.patch.object(views.commands, "applyCommand",
+                                  side_effect=lambda bus, st, cmd: captured.setdefault("cmd", cmd) or "queued"), \
+                mock.patch.object(views.audit, "record"), \
+                mock.patch.object(views, "ControlBus"):
+            _run(views._skipCurrent(interaction, "test"))
+        self.assertEqual(captured["cmd"].arg, "st-002",
+                         "Skip targeted a non-pending subtask (backend would drop it)")
 
 
 class TestConfirmView(unittest.TestCase):

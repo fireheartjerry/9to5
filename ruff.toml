@@ -1,0 +1,13 @@
+# Ruff config for 9to5. Tuned for an AI dev loop: catch the genuine, high-signal mistakes fast
+# (undefined names, unused imports, redefinitions, syntax) while NOT fighting the codebase's
+# deliberate conventions.
+#
+# IMPORTANT: naming lints (N8xx / pep8-naming) are intentionally NOT selected -- 9to5 uses
+# camelCase function names by design (see CLAUDE.md). Selecting them would false-flag the entire
+# repo. E402 (import-not-at-top) is ignored because the `sys.path.insert(...)` then `import`
+# pattern is pervasive and intentional across tools/, tests/, and hooks.
+line-length = 110
+
+[lint]
+select = ["F", "E4", "E7", "E9", "W6"]
+ignore = ["E402"]
