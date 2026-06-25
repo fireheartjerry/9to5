@@ -26,3 +26,20 @@ def _no_real_discord(monkeypatch):
     monkeypatch.setattr(config, "DISCORD_BOT_TOKEN", "")
     monkeypatch.setattr(config, "DISCORD_CHANNEL_ID", 0)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _no_real_browser(monkeypatch, tmp_path):
+    """Never let a test drive the real Phase-2 browser layer or touch the live ChatGPT profile.
+
+    The repo's ``.env`` may set ``BROWSER_LAYER_ENABLED=True`` for real runs; with it on, the
+    orchestrator's run path probes a REAL Chromium on the single logged-in profile (and
+    ``profile_hygiene.sanitize()`` kills any other Chromium on it). So for the test process we
+    force the layer OFF and redirect the profile dir to a throwaway temp dir. The hard backstop
+    in ``agents.chatgpt_driver._realBrowserBlocked`` refuses a real launch under pytest even if a
+    test flips the flag back on. Tests that exercise the *routing* logic still
+    ``mock.patch`` ``BROWSER_LAYER_ENABLED=True`` locally and mock the browser calls -- unaffected,
+    because they never reach a real launch."""
+    monkeypatch.setattr(config, "BROWSER_LAYER_ENABLED", False)
+    monkeypatch.setattr(config, "CHATGPT_USER_DATA_DIR", tmp_path / "chatgpt_profile_test")
+    yield

@@ -15,6 +15,8 @@ Design rules:
 """
 from __future__ import annotations
 
+import os
+import sys
 import time
 from typing import Any, Optional
 
@@ -23,6 +25,28 @@ from agents import chatgpt_selectors as sel
 from agents import profile_hygiene
 
 LOG = config.getLogger("chatgpt_driver")
+
+
+def _realBrowserBlocked() -> bool:
+    """True when a REAL Chromium launch must be REFUSED (unit/CI context).
+
+    Launching a persistent context binds the single logged-in ChatGPT profile and -- via
+    ``profile_hygiene.sanitize()`` -- KILLS any other Chromium on that profile, so a test that
+    reaches this path would drive (and disrupt) the user's real ChatGPT account, slowly and
+    non-deterministically. Mirrors ``notifications.work_launcher._spawnBlocked``: production
+    never imports pytest/unittest and never sets the env var, so real runs are unaffected. A
+    deliberate live script (e.g. login_chatgpt.py, an E2E driver) opts in with
+    ``NINE_TO_FIVE_ALLOW_REAL_BROWSER=1``."""
+    allow = os.getenv("NINE_TO_FIVE_ALLOW_REAL_BROWSER", "").strip().lower()
+    if allow in {"1", "true", "yes", "on"}:
+        return False                       # explicit opt-in: a real, intentional live launch
+    env = os.getenv("NINE_TO_FIVE_TEST_MODE", "").strip().lower()
+    if env in {"0", "false", "no", "off"}:
+        return False
+    if env in {"1", "true", "yes", "on"}:
+        return True
+    # env unset -> auto-detect a live test runner so a forgotten mock never opens a real browser.
+    return "pytest" in sys.modules or "unittest" in sys.modules
 
 
 # --- typed failures -------------------------------------------------------------------------
@@ -99,6 +123,14 @@ class ChatGPTSession:
     def _launch(self):
         """Start Playwright + a persistent (logged-in) context. Lazy import so the module loads
         without playwright installed; raises ChatGPTError on absence so the caller degrades."""
+        if _realBrowserBlocked():
+            # Hard backstop: never launch a real Chromium on the live profile under a test runner.
+            # health_probe()/open() callers already treat a ChatGPTError as "GPT unavailable" and
+            # degrade to the Ollama brain, so this fails safe rather than crashing a run.
+            raise ChatGPTError(
+                "real browser launch blocked under a test runner (mock the session, or set "
+                "NINE_TO_FIVE_ALLOW_REAL_BROWSER=1 for a deliberate live run). This guard keeps "
+                "tests off the live ChatGPT profile/account.")
         try:
             from playwright.sync_api import sync_playwright  # type: ignore
         except Exception as e:  # noqa: BLE001
