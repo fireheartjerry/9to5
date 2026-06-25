@@ -909,6 +909,19 @@ class Orchestrator:
                     if cur:
                         state.updateSubtask(cur["subtask_id"], status="pending")
                         dashboard.event(f"retry {cur['subtask_id']}")
+                elif kind == "edit":
+                    # in-Discord plan editor: amend a subtask's title/description (Tier 2).
+                    sid = op.get("subtask_id")
+                    st = state.getSubtask(sid)
+                    if st is None:
+                        dashboard.event(f"edit ignored: {sid} not found")
+                    elif st["status"] in ("pending", "in_progress"):
+                        fields = {k: op[k] for k in ("title", "description") if op.get(k)}
+                        if fields:
+                            state.updateSubtask(sid, **fields)
+                            dashboard.event(f"edited {sid}")
+                    else:
+                        dashboard.event(f"edit ignored: {sid} is {st['status']} (only pending/in_progress)")
 
     def _waitWhilePaused(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard,
                          label: str = "paused") -> None:

@@ -29,6 +29,7 @@ MAX_REPLY_CHARS = config.DISCORD_MAX_CONTENT - 100
 EXTENSIONS: tuple[str, ...] = (
     "notifications.bot.cogs.admin",     # /reload (hot-reload), /cockpit
     "notifications.bot.cogs.ask_cog",   # /ask -- conversational Ollama cockpit (Tier 6)
+    "notifications.bot.cogs.plan_cog",  # /plan-edit, /timeline + context menus (Tier 2)
 )
 
 
