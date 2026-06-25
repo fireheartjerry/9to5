@@ -44,6 +44,33 @@ def _envBool(key: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _envInt(key: str, default: int) -> int:
+    """int(os.getenv(...)) that NEVER crashes config import. A blank/missing value -> default; a
+    malformed (non-numeric) value -> default with a stderr warning. Bare int(os.getenv()) on ~40
+    constants meant one typo'd numeric in .env (e.g. OLLAMA_TIMEOUT_SECONDS=) raised ValueError at
+    import and took down EVERY entry point -- the CLI, the gateway bot, even --health."""
+    raw = os.getenv(key)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        sys.stderr.write(f"[config] {key}={raw!r} is not an int; using default {default}\n")
+        return default
+
+
+def _envFloat(key: str, default: float) -> float:
+    """float(os.getenv(...)) that never crashes config import (see _envInt)."""
+    raw = os.getenv(key)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        return float(str(raw).strip())
+    except (TypeError, ValueError):
+        sys.stderr.write(f"[config] {key}={raw!r} is not a float; using default {default}\n")
+        return default
+
+
 # --- core paths ----------------------------------------------------------
 PROJECT_ROOT: Path = _envPath("PROJECT_ROOT", str(_THIS_DIR)) or _THIS_DIR
 LOG_PATH: Path = _envPath("LOG_PATH", str(PROJECT_ROOT / "logs")) or (PROJECT_ROOT / "logs")
@@ -65,17 +92,17 @@ CLAUDE_RECOMMENDATIONS_PATH: Path = KNOWLEDGE_DIR / "recommendations.md"
 CLAUDE_SCAN_ROOTS: tuple[Path, ...] = (INSTALL_ROOT / ".claude", PROJECT_ROOT / ".claude")
 # Best-effort live-docs fetch (Python has internet; Ollama does not -- exploit it).
 CLAUDE_DOC_FETCH: bool = _envBool("CLAUDE_DOC_FETCH", True)
-CLAUDE_DOC_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_DOC_TIMEOUT_SECONDS", "8"))
+CLAUDE_DOC_TIMEOUT_SECONDS: int = _envInt("CLAUDE_DOC_TIMEOUT_SECONDS", 8)
 # Parallel doc fetch (the 27-page scrape goes from ~10s sequential to ~2s).
-CLAUDE_DOC_FETCH_WORKERS: int = int(os.getenv("CLAUDE_DOC_FETCH_WORKERS", "10"))
+CLAUDE_DOC_FETCH_WORKERS: int = _envInt("CLAUDE_DOC_FETCH_WORKERS", 10)
 # Hard TOTAL budget for the whole doc scrape at run start. The per-socket timeout does not bound a
 # slow-trickle server, which could hang run start forever; this caps the entire fetch (CB-10).
-CLAUDE_DOC_FETCH_BUDGET_SECONDS: float = float(os.getenv("CLAUDE_DOC_FETCH_BUDGET_SECONDS", "30"))
+CLAUDE_DOC_FETCH_BUDGET_SECONDS: float = _envFloat("CLAUDE_DOC_FETCH_BUDGET_SECONDS", 30)
 # Freshness guard: if claude_code.md is younger than this, a (non-forced) refresh skips the
 # web re-scrape and just recompresses the cached doc -- so frequent restarts stay instant.
-CLAUDE_KNOWLEDGE_MAX_AGE_HOURS: float = float(os.getenv("CLAUDE_KNOWLEDGE_MAX_AGE_HOURS", "6"))
+CLAUDE_KNOWLEDGE_MAX_AGE_HOURS: float = _envFloat("CLAUDE_KNOWLEDGE_MAX_AGE_HOURS", 6)
 # Hard cap on the compressed injection so a 7B brain's context never overflows.
-CLAUDE_CAPABILITIES_MAX_CHARS: int = int(os.getenv("CLAUDE_CAPABILITIES_MAX_CHARS", "9000"))
+CLAUDE_CAPABILITIES_MAX_CHARS: int = _envInt("CLAUDE_CAPABILITIES_MAX_CHARS", 9000)
 
 # --- Discord -------------------------------------------------------------
 DISCORD_BOT_TOKEN: str = os.getenv("DISCORD_BOT_TOKEN", "")
@@ -113,7 +140,7 @@ AUDIT_MAX_BYTES: int = 1_000_000                  # rotate audit.jsonl past ~1 M
 
 # --- Obsidian Local REST API ---------------------------------------------
 OBSIDIAN_API_KEY: str = os.getenv("OBSIDIAN_API_KEY", "")
-OBSIDIAN_PORT: int = int(os.getenv("OBSIDIAN_PORT", "27124"))
+OBSIDIAN_PORT: int = _envInt("OBSIDIAN_PORT", 27124)
 OBSIDIAN_HTTPS: bool = _envBool("OBSIDIAN_HTTPS", True)
 OBSIDIAN_VAULT_PATH: Path = _envPath("OBSIDIAN_VAULT_PATH", str(PROJECT_ROOT / "vault")) or (PROJECT_ROOT / "vault")
 
@@ -137,7 +164,7 @@ EXPERIENCE_POOL: bool = _envBool("EXPERIENCE_POOL", True)
 # --- Ollama (Orchestrator brain) -----------------------------------------
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")  # code-specialized brain (fits 8GB VRAM)
 OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
-OLLAMA_TIMEOUT_SECONDS: int = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))  # prevent indefinite hangs
+OLLAMA_TIMEOUT_SECONDS: int = _envInt("OLLAMA_TIMEOUT_SECONDS", 180)  # prevent indefinite hangs
 # Context window for EVERY brain call. CRITICAL: this value MUST be identical on every ollama
 # .chat() across the whole orchestrator. Ollama tears down and RELOADS the entire model runner
 # whenever the requested num_ctx changes. A previous "size num_ctx to the prompt" scheme made it
@@ -148,8 +175,8 @@ OLLAMA_TIMEOUT_SECONDS: int = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))  #
 # constant; an over-long prompt is TRIMMED to fit (orchestrator._fitUserToCtx) instead of growing
 # the window. 8192 holds the caps block + typical payloads and is VRAM-safe on an 8GB card (a 7B at
 # 16384 is ~6.7GB and crowds out the co-resident embed model). Raise via env only if VRAM allows.
-OLLAMA_NUM_CTX: int = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
-OLLAMA_GEN_HEADROOM: int = int(os.getenv("OLLAMA_GEN_HEADROOM", "2048"))  # tokens reserved for reply / prompt-trim budget
+OLLAMA_NUM_CTX: int = _envInt("OLLAMA_NUM_CTX", 8192)
+OLLAMA_GEN_HEADROOM: int = _envInt("OLLAMA_GEN_HEADROOM", 2048)  # tokens reserved for reply / prompt-trim budget
 # Pin the runner resident BETWEEN calls. A subtask's Claude CLI run can take up to
 # CLAUDE_CLI_TIMEOUT_SECONDS (~10min) during which the brain sits idle; ollama's 5-min default
 # keep_alive would UNLOAD it mid-run, forcing a reload (another empty-completion window) on the
@@ -162,7 +189,7 @@ OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 # task ~500s true runtime. 300s clipped the heavy tail. 600s covers it with margin. NOTE: the real
 # bug was never this number -- it was that subprocess timeout on Windows left node grandchildren
 # orphaned (work continued + drain blocked ~200s); executor._killProcessTree now kills the tree.
-CLAUDE_CLI_TIMEOUT_SECONDS: int = int(os.getenv("CLAUDE_CLI_TIMEOUT_SECONDS", "600"))
+CLAUDE_CLI_TIMEOUT_SECONDS: int = _envInt("CLAUDE_CLI_TIMEOUT_SECONDS", 600)
 
 # --- Local task-state JSON store -----------------------------------------
 STATE_DIR: Path = PROJECT_ROOT / "state" / "tasks"
@@ -176,8 +203,8 @@ EXPERIENCE_DB_PATH: Path = PROJECT_ROOT / "state" / "experience.db"
 EXPERIENCE_LEDGER_ENABLED: bool = _envBool("EXPERIENCE_LEDGER_ENABLED", True)
 # Layer 1 retrieval (wired in a later phase): local embedding model + injection budget.
 EMBED_MODEL: str = os.getenv("EMBED_MODEL", "nomic-embed-text")
-RETRIEVAL_K: int = int(os.getenv("RETRIEVAL_K", "5"))
-RETRIEVAL_MAX_TOKENS: int = int(os.getenv("RETRIEVAL_MAX_TOKENS", "350"))
+RETRIEVAL_K: int = _envInt("RETRIEVAL_K", 5)
+RETRIEVAL_MAX_TOKENS: int = _envInt("RETRIEVAL_MAX_TOKENS", 350)
 # Eval harness (the spine): golden suite + the single fitness scalar's weights.
 EVAL_SUITE_DIR: Path = PROJECT_ROOT / "learning" / "eval_suite"
 EVAL_FITNESS_WEIGHTS: dict[str, float] = {
@@ -189,16 +216,16 @@ EVAL_FITNESS_WEIGHTS: dict[str, float] = {
 }
 # Layer 2 consolidation: a lesson needs this many samples, and arms must separate by
 # this win-rate gap, before it is emitted (keeps the digest high-signal, not noise).
-LESSONS_MIN_SUPPORT: int = int(os.getenv("LESSONS_MIN_SUPPORT", "3"))
-LESSONS_WIN_GAP: float = float(os.getenv("LESSONS_WIN_GAP", "0.2"))
+LESSONS_MIN_SUPPORT: int = _envInt("LESSONS_MIN_SUPPORT", 3)
+LESSONS_WIN_GAP: float = _envFloat("LESSONS_WIN_GAP", 0.2)
 # Layer 4 policy bandit reward weights (first-pass success minus cost/attempt penalties).
 POLICY_REWARD_WEIGHTS: dict[str, float] = {
     "first_pass": 1.0, "attempts": 0.3, "cost": 0.2, "wallclock": 0.1,
 }
 # Layer 3 prompt promotion gate: a challenger needs this many field uses and this z-score
 # (one-sided proportion test, 1.64 ~ 95%) on first-pass rate before it can become champion.
-PROMPT_PROMOTE_MIN_USES: int = int(os.getenv("PROMPT_PROMOTE_MIN_USES", "20"))
-PROMPT_PROMOTE_Z: float = float(os.getenv("PROMPT_PROMOTE_Z", "1.64"))
+PROMPT_PROMOTE_MIN_USES: int = _envInt("PROMPT_PROMOTE_MIN_USES", 20)
+PROMPT_PROMOTE_Z: float = _envFloat("PROMPT_PROMOTE_Z", 1.64)
 # Auto-maintenance: fire the throttled learning passes automatically after every run, so
 # the user only ever starts/aborts/checks. (The test package disables this to stay fast;
 # the runner itself is still exercised directly.)
@@ -206,21 +233,21 @@ SIE_AUTO_MAINTENANCE: bool = _envBool("SIE_AUTO_MAINTENANCE", True)
 # Bound how long run teardown waits for the post-run maintenance thread to finish. A daemon
 # thread would otherwise be killed mid-write at interpreter exit, so the throttle never advances
 # and the learning layer silently never progresses (CB-11). Joining makes it durable.
-SIE_MAINTENANCE_JOIN_SECONDS: float = float(os.getenv("SIE_MAINTENANCE_JOIN_SECONDS", "180"))
+SIE_MAINTENANCE_JOIN_SECONDS: float = _envFloat("SIE_MAINTENANCE_JOIN_SECONDS", 180)
 # Global kill switch: revert the brain to the frozen base model + freeze all promotions.
 SIE_KILL_SWITCH: bool = _envBool("SIE_KILL_SWITCH", False)
 # The frozen base model tag; champion adapters are served under BRAIN_MODEL_TAG:vN.
 BRAIN_MODEL_TAG: str = os.getenv("BRAIN_MODEL_TAG", "9to5-brain")
 # Layer 5 LoRA distillation: how many gold examples before a training cycle, and where
 # adapters/datasets land. Training itself is a local, queued job (host GPU).
-LORA_MIN_EXAMPLES: int = int(os.getenv("LORA_MIN_EXAMPLES", "50"))
+LORA_MIN_EXAMPLES: int = _envInt("LORA_MIN_EXAMPLES", 50)
 LORA_OUTPUT_DIR: Path = _envPath("LORA_OUTPUT_DIR", str(PROJECT_ROOT / "state" / "adapters")) \
     or (PROJECT_ROOT / "state" / "adapters")
 # DPO/ORPO preference training: KL anchor strength + minimum preference pairs to train.
-DPO_KL_BETA: float = float(os.getenv("DPO_KL_BETA", "0.1"))
-DPO_MIN_PAIRS: int = int(os.getenv("DPO_MIN_PAIRS", "30"))
+DPO_KL_BETA: float = _envFloat("DPO_KL_BETA", 0.1)
+DPO_MIN_PAIRS: int = _envInt("DPO_MIN_PAIRS", 30)
 # Next-wave knobs: confidence deferral threshold (escalate below this P(success)).
-CONFIDENCE_DEFER_THRESHOLD: float = float(os.getenv("CONFIDENCE_DEFER_THRESHOLD", "0.4"))
+CONFIDENCE_DEFER_THRESHOLD: float = _envFloat("CONFIDENCE_DEFER_THRESHOLD", 0.4)
 # Subsystem I: ask the executor for a learning summary (teacher->student distillation).
 SIE_REFLECTION_ENABLED: bool = _envBool("SIE_REFLECTION_ENABLED", True)
 # Inject the learned authoring context (lessons/policy/guidance/surfaces/...) into specs.
@@ -233,23 +260,23 @@ SELFMOD_ALLOW_CORE: bool = _envBool("SELFMOD_ALLOW_CORE", False)
 # Compute router for LoRA/DPO training: auto (GPU if present) | gpu (force) | cpu | off.
 SIE_COMPUTE: str = os.getenv("SIE_COMPUTE", "auto")
 # LoRA hyperparameters (used by the real local trainer on a GPU host).
-LORA_RANK: int = int(os.getenv("LORA_RANK", "16"))
-LORA_EPOCHS: int = int(os.getenv("LORA_EPOCHS", "2"))
+LORA_RANK: int = _envInt("LORA_RANK", 16)
+LORA_EPOCHS: int = _envInt("LORA_EPOCHS", 2)
 # Autonomous self-play: practice self-generated goals during the work window (hands-off).
 SELFPLAY_ENABLED: bool = _envBool("SELFPLAY_ENABLED", True)
-SELFPLAY_MAX_PER_DAY: int = int(os.getenv("SELFPLAY_MAX_PER_DAY", "3"))
-SELFPLAY_HOURS: float = float(os.getenv("SELFPLAY_HOURS", "1"))
-SELFPLAY_START_HOUR: int = int(os.getenv("SELFPLAY_START_HOUR", "9"))
-SELFPLAY_END_HOUR: int = int(os.getenv("SELFPLAY_END_HOUR", "17"))
+SELFPLAY_MAX_PER_DAY: int = _envInt("SELFPLAY_MAX_PER_DAY", 3)
+SELFPLAY_HOURS: float = _envFloat("SELFPLAY_HOURS", 1)
+SELFPLAY_START_HOUR: int = _envInt("SELFPLAY_START_HOUR", 9)
+SELFPLAY_END_HOUR: int = _envInt("SELFPLAY_END_HOUR", 17)
 # Auto-bootstrap the training stack + Ollama models (so the user only presses start).
 SIE_BOOTSTRAP: bool = _envBool("SIE_BOOTSTRAP", True)
 # Run supervision (the 9->5 promise): auto-resume a crashed run this many times before
 # giving up, with exponential backoff capped here. Keeps a long run alive unattended.
-RUN_MAX_RESTARTS: int = int(os.getenv("RUN_MAX_RESTARTS", "5"))
+RUN_MAX_RESTARTS: int = _envInt("RUN_MAX_RESTARTS", 5)
 # Backoff cap raised so a deterministic no-progress crash retries SLOWLY (minutes apart) across the
 # horizon instead of burning the whole budget in ~2 min of hot-spinning (CB-13).
-RUN_RESTART_MAX_BACKOFF: float = float(os.getenv("RUN_RESTART_MAX_BACKOFF", "300"))
-RUN_STALL_SECONDS: float = float(os.getenv("RUN_STALL_SECONDS", "1800"))  # 30m no-progress
+RUN_RESTART_MAX_BACKOFF: float = _envFloat("RUN_RESTART_MAX_BACKOFF", 300)
+RUN_STALL_SECONDS: float = _envFloat("RUN_STALL_SECONDS", 1800)  # 30m no-progress
 
 # Rich cross-surface automation: which non-terminal surfaces the executor can reach.
 # MCP servers it should compose across (comma-separated env), plus browser/native layers.
@@ -274,28 +301,28 @@ CHATGPT_PROJECT_URL: str = os.getenv(
     "CHATGPT_PROJECT_URL",
     "https://chatgpt.com/g/g-p-6a3b5bc2c1708191b67f1546ae6468d8/project",
 )  # the dedicated 9to5 ChatGPT project; every review conversation lives in here
-CHATGPT_NAV_TIMEOUT_MS: int = int(os.getenv("CHATGPT_NAV_TIMEOUT_MS", "45000"))
-CHATGPT_REPLY_TIMEOUT_MS: int = int(os.getenv("CHATGPT_REPLY_TIMEOUT_MS", "120000"))
-CHATGPT_REPLY_SETTLE_MS: int = int(os.getenv("CHATGPT_REPLY_SETTLE_MS", "900"))   # stable-text window
-CHATGPT_MAX_TURNS: int = int(os.getenv("CHATGPT_MAX_TURNS", "40"))   # rollover to a fresh chat
-CHATGPT_MIN_OUTPUT_CHARS: int = int(os.getenv("CHATGPT_MIN_OUTPUT_CHARS", "200"))   # cost guard
+CHATGPT_NAV_TIMEOUT_MS: int = _envInt("CHATGPT_NAV_TIMEOUT_MS", 45000)
+CHATGPT_REPLY_TIMEOUT_MS: int = _envInt("CHATGPT_REPLY_TIMEOUT_MS", 120000)
+CHATGPT_REPLY_SETTLE_MS: int = _envInt("CHATGPT_REPLY_SETTLE_MS", 900)   # stable-text window
+CHATGPT_MAX_TURNS: int = _envInt("CHATGPT_MAX_TURNS", 40)   # rollover to a fresh chat
+CHATGPT_MIN_OUTPUT_CHARS: int = _envInt("CHATGPT_MIN_OUTPUT_CHARS", 200)   # cost guard
 CHATGPT_SELECTOR_CACHE: Path = PROJECT_ROOT / "state" / "chatgpt_selectors.json"
-CHATGPT_JSON_REPAIR_RETRIES: int = int(os.getenv("CHATGPT_JSON_REPAIR_RETRIES", "1"))
+CHATGPT_JSON_REPAIR_RETRIES: int = _envInt("CHATGPT_JSON_REPAIR_RETRIES", 1)
 
 # Where GPT-5.5 acts as the second brain (each gated, all default on; require BROWSER_LAYER_ENABLED).
 ADVERSARY_REVIEW_PLAN: bool = _envBool("ADVERSARY_REVIEW_PLAN", True)
 ADVERSARY_REVIEW_ARCH: bool = _envBool("ADVERSARY_REVIEW_ARCH", True)
 ADVERSARY_REVIEW_PREPR_DIFF: bool = _envBool("ADVERSARY_REVIEW_PREPR_DIFF", True)
 ADVERSARY_LOWCONF_CONSULT: bool = _envBool("ADVERSARY_LOWCONF_CONSULT", True)
-ADVERSARY_PREPR_DIFF_MAX_CHARS: int = int(os.getenv("ADVERSARY_PREPR_DIFF_MAX_CHARS", "12000"))
+ADVERSARY_PREPR_DIFF_MAX_CHARS: int = _envInt("ADVERSARY_PREPR_DIFF_MAX_CHARS", 12000)
 # Teeth: severity at/above this holds the PR + drives the remediation loop.
 ADVERSARY_BLOCKING_SEVERITY: str = os.getenv("ADVERSARY_BLOCKING_SEVERITY", "high")
-ADVERSARY_REMEDIATION_MAX_ATTEMPTS: int = int(os.getenv("ADVERSARY_REMEDIATION_MAX_ATTEMPTS", "2"))
+ADVERSARY_REMEDIATION_MAX_ATTEMPTS: int = _envInt("ADVERSARY_REMEDIATION_MAX_ATTEMPTS", 2)
 
 # Local VLM self-heal (off the hot path; fires only on a selector miss / unknown page state).
 VLM_SELF_HEAL_ENABLED: bool = _envBool("VLM_SELF_HEAL_ENABLED", True)
 VLM_MODEL: str = os.getenv("VLM_MODEL", "qwen2.5vl:7b")   # local Ollama vision model
-VLM_SELF_HEAL_MAX_PER_RUN: int = int(os.getenv("VLM_SELF_HEAL_MAX_PER_RUN", "2"))
+VLM_SELF_HEAL_MAX_PER_RUN: int = _envInt("VLM_SELF_HEAL_MAX_PER_RUN", 2)
 
 # Trust telemetry: GPT<->Ollama agreement + upheld-challenge log.
 ADVERSARY_TRUST_LOG: Path = PROJECT_ROOT / "state" / "adversary_trust.jsonl"
@@ -397,7 +424,7 @@ CONTROL_MODE_DEFAULT: str = "watch"   # "watch" (autonomous + abort) | "gated" (
 # Plans AUTO-APPROVE through Ollama -- a human never approves plans. In gated mode the plan gate
 # waits this many seconds for an optional human !abort/!reject/!skip/!add, then the brain approves
 # and the run proceeds autonomously. (watch mode has no plan gate at all.)
-PLAN_GATE_AUTO_APPROVE_SECONDS: float = float(os.getenv("PLAN_GATE_AUTO_APPROVE_SECONDS", "8"))
+PLAN_GATE_AUTO_APPROVE_SECONDS: float = _envFloat("PLAN_GATE_AUTO_APPROVE_SECONDS", 8)
 DISCORD_POLL_SECONDS: int = 4         # poll the channel for control commands between steps
 DISCORD_DASHBOARD: bool = True        # one self-updating embed per run
 WEB_DASHBOARD: bool = True
@@ -430,7 +457,7 @@ DISCORD_CV2_MAX_CHARS: int = 4000              # total text length across a CV2 
 # Forces watch mode, disables adversary PR hold, auto-resumes any pause after a timeout,
 # and suppresses @-pings. Set via --night-mode CLI flag or NIGHT_MODE=true in .env.
 NIGHT_MODE: bool = _envBool("NIGHT_MODE", False)
-NIGHT_MODE_PAUSE_TIMEOUT: int = int(os.getenv("NIGHT_MODE_PAUSE_TIMEOUT", "600"))  # 10 min
+NIGHT_MODE_PAUSE_TIMEOUT: int = _envInt("NIGHT_MODE_PAUSE_TIMEOUT", 600)  # 10 min
 
 # --- Claude Code primitives (CLAUDE.md / skills / subagents / hooks / settings) ---
 CLAUDE_DIR: Path = PROJECT_ROOT / ".claude"
@@ -451,12 +478,12 @@ MODEL_BY_EFFORT: dict[str, str] = {
     "ultracode": os.getenv("MODEL_ULTRACODE", "claude-opus-4-8"),
 }
 # Session token limit (Claude Pro 5-hour window). When hit, pause until reset.
-SESSION_LIMIT_PAUSE_SECONDS: int = int(os.getenv("SESSION_LIMIT_PAUSE_SECONDS", str(5 * 3600)))
+SESSION_LIMIT_PAUSE_SECONDS: int = _envInt("SESSION_LIMIT_PAUSE_SECONDS", 5 * 3600)
 # Max times to wait-out-and-retry a still-rate-limited subtask before giving up (CB-4).
-SESSION_LIMIT_MAX_RETRIES: int = int(os.getenv("SESSION_LIMIT_MAX_RETRIES", "3"))
+SESSION_LIMIT_MAX_RETRIES: int = _envInt("SESSION_LIMIT_MAX_RETRIES", 3)
 # Hard timeout for git/gh subprocesses in PR creation so a credential/network prompt can't hang
 # the end of a run forever (CB-14).
-GIT_TIMEOUT_SECONDS: int = int(os.getenv("GIT_TIMEOUT_SECONDS", "120"))
+GIT_TIMEOUT_SECONDS: int = _envInt("GIT_TIMEOUT_SECONDS", 120)
 # Skills + subagents the Orchestrator (Ollama) is allowed to reference in a spec.
 AVAILABLE_SKILLS: tuple[str, ...] = ("/architect-review", "/write-obsidian-note", "/create-pr")
 AVAILABLE_SUBAGENTS: tuple[str, ...] = ("architect", "security-reviewer")
