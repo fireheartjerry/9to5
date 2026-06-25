@@ -537,21 +537,22 @@ class TestSubtaskTracker(unittest.TestCase):
 
 
 class TestFormatVerdict(unittest.TestCase):
+    # icon prefix is '' when app emojis are not provisioned (headless) -> clean text labels.
     def test_approved_verdict(self):
-        self.assertEqual(d.formatVerdict("approved"), "✅ APPROVED")
+        self.assertEqual(d.formatVerdict("approved"), "APPROVED")
 
     def test_challenged_verdict(self):
-        self.assertEqual(d.formatVerdict("challenged"), "⚔️ CHALLENGED")
+        self.assertEqual(d.formatVerdict("challenged"), "CHALLENGED")
 
     def test_unknown_verdict(self):
-        self.assertEqual(d.formatVerdict("maybe"), "❔ UNKNOWN")
+        self.assertEqual(d.formatVerdict("maybe"), "UNKNOWN")
 
     def test_none_verdict(self):
-        self.assertEqual(d.formatVerdict(None), "❔ UNKNOWN")
+        self.assertEqual(d.formatVerdict(None), "UNKNOWN")
 
     def test_case_insensitive(self):
-        self.assertEqual(d.formatVerdict("APPROVED"), "✅ APPROVED")
-        self.assertEqual(d.formatVerdict("Rejected"), "⚔️ CHALLENGED")
+        self.assertEqual(d.formatVerdict("APPROVED"), "APPROVED")
+        self.assertEqual(d.formatVerdict("Rejected"), "CHALLENGED")
 
 
 if __name__ == "__main__":
