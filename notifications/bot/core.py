@@ -73,13 +73,20 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
                     LOG.info("loaded extension %s", ext)
                 except Exception as e:  # noqa: BLE001 -- one bad cog must not kill the bot
                     LOG.exception("failed to load extension %s: %s", ext, e)
-            # 2) persistent views + dynamic items (all slash commands now live in cogs above)
+            # 2) provision the professional app-emoji icon set FIRST, so persistent views can put
+            #    the icons on their buttons when constructed below (best-effort, off the loop).
+            try:
+                from notifications import icons
+                await asyncio.to_thread(icons.ensureIcons)
+            except Exception:  # noqa: BLE001
+                pass
+            # 3) persistent views + dynamic items (all slash commands now live in cogs above)
             from notifications import views
             from notifications.bot.ui.dynamic import SubtaskButton
             self.add_view(views.ControlPanelView())   # persistent: matches cp_* anywhere
             self.add_view(views.BlockedView())         # persistent: matches sc_*
             self.add_dynamic_items(SubtaskButton)      # stateless per-subtask skip/inspect (Tier 2)
-            # 3) sync the command tree (guild-scoped is instant; global ~1h)
+            # 4) sync the command tree (guild-scoped is instant; global ~1h)
             try:
                 if config.DISCORD_GUILD_ID:
                     guild = discord.Object(id=config.DISCORD_GUILD_ID)
@@ -90,12 +97,6 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
                 LOG.info("synced %d slash command(s)", len(synced))
             except Exception as e:  # noqa: BLE001
                 LOG.warning("slash sync failed: %s", e)
-            # 4) provision the professional app-emoji icon set (best-effort, off the loop)
-            try:
-                from notifications import icons
-                await asyncio.to_thread(icons.ensureIcons)
-            except Exception:  # noqa: BLE001
-                pass
 
         async def on_ready(self) -> None:
             if not self._presence_started:

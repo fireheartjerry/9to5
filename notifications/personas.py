@@ -1,9 +1,8 @@
-"""The Cast -- the 9to5 agent roster used for webhook identity overrides.
+"""The Cast -- the 9to5 agent roster for webhook identity overrides.
 
-Each agent role maps to a persona ``{name, emoji, color, avatar_url}`` so the run
-reads like a live writers'-room: the Adversary speaks under ⚔️, the Executor under
-⚙️, the Brain under 🧠. Per-message avatars require a hosted URL, so by default
-personas are distinguished by their emoji-bearing name + accent color; an optional
+Each role maps to a persona ``{name, icon, color, avatar_url}``. Names are clean text
+(no emoji -- webhook usernames can't render custom emoji anyway); the professional app-emoji
+icon (the ``icon`` concept) is prefixed onto the message CONTENT by cast.speak. An optional
 per-role avatar URL can be supplied via env (NIGHTCLAW_AVATAR_<ROLE>).
 
 Pure data + lookup; no network, no discord.py.

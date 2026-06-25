@@ -733,7 +733,7 @@ def adversaryTriggeredEmbed(subtask_title: str, reason: str, verdict: Optional[s
     }
 
 
-def noticeEmbed(reason: str, title: str = "ℹ️ 9TO5 — notice") -> dict:
+def noticeEmbed(reason: str, title: str = "9TO5 — Notice") -> dict:
     """An AUTONOMOUS, informational event the system already handled itself (a fallback was taken, a
     pause auto-resumed, the horizon was reached, a transient failure recovered, the run aborted/crashed
     and the supervisor will recover). 9to5 runs hands-off, so this INFORMS without ever claiming a
@@ -761,11 +761,21 @@ def blockedEmbed(reason: str, question: Optional[str] = None) -> dict:
 
 
 def blockedComponents() -> list:
-    """Action row with Answer / Skip / Abort buttons (handled by the gateway bot)."""
+    """Action row with Answer / Skip / Abort buttons (handled by the gateway bot).
+    Buttons carry the professional app-emoji icon when provisioned (clean text otherwise)."""
+    from notifications import icons
+
+    def _b(style, label, cid, concept):
+        b = {"type": 2, "style": style, "label": label, "custom_id": cid}
+        em = icons.emojiPartial(concept)
+        if em:
+            b["emoji"] = em
+        return b
+
     return [{"type": 1, "components": [
-        {"type": 2, "style": 1, "label": "Answer", "custom_id": "sc_answer"},
-        {"type": 2, "style": 2, "label": "Skip", "custom_id": "sc_skip"},
-        {"type": 2, "style": 4, "label": "Abort", "custom_id": "sc_abort"},
+        _b(1, "Answer", "sc_answer", "info"),
+        _b(2, "Skip", "sc_skip", "skip"),
+        _b(4, "Abort", "sc_abort", "abort"),
     ]}]
 
 
