@@ -175,7 +175,7 @@ class TestGoalSummary(unittest.TestCase):
 class TestPlanningStartEmbed(unittest.TestCase):
     def test_int_subtask_count(self):
         embed = d.planningStartEmbed("build a thing", 5)
-        self.assertEqual(embed["title"], "🗺️ Plan ready")
+        self.assertEqual(embed["title"], "Plan Ready")
         self.assertIn("5", embed["description"])
 
     def test_list_subtasks_renders_titles(self):

@@ -685,11 +685,11 @@ def planningStartEmbed(goal: str, subtasks) -> dict:
     plan_block = "\n".join(lines) if lines else "_authoring subtasks…_"
     plural = "s" if count != 1 else ""
     description = (
-        f"**🎯 Goal**\n{_goalSummary(goal)}\n\n"
-        f"**🗺️ Plan — {count} subtask{plural}**\n{plan_block}"
+        f"**Goal**\n{_goalSummary(goal)}\n\n"
+        f"**Plan — {count} subtask{plural}**\n{plan_block}"
     )
     return {
-        "title": "🗺️ Plan ready",
+        "title": "Plan Ready",
         "color": statusColor("planning"),
         "description": description[:4000],
         "timestamp": _nowIso(),
@@ -702,7 +702,7 @@ def planningStartEmbed(goal: str, subtasks) -> dict:
 
 def architectDoneEmbed(doc_path: str) -> dict:
     return {
-        "title": "🔵 Architecture complete",
+        "title": "Architecture Complete",
         "color": statusColor("architecting"),
         "timestamp": _nowIso(),
         "fields": [{"name": "Design doc", "value": f"`{doc_path}`"}],
@@ -726,7 +726,7 @@ def adversaryTriggeredEmbed(subtask_title: str, reason: str, verdict: Optional[s
     if verdict is not None:
         fields.append({"name": "Verdict", "value": formatVerdict(verdict), "inline": True})
     return {
-        "title": "⚔️ Adversary review",
+        "title": "Adversary Review",
         "color": color,
         "timestamp": _nowIso(),
         "fields": fields,
@@ -753,7 +753,7 @@ def blockedEmbed(reason: str, question: Optional[str] = None) -> dict:
         quoted = "\n".join(f"> {line}" for line in q_lines)
         desc += f"\n\n━━━ Claude Code asks ━━━\n{quoted}"
     return {
-        "title": "🚨 BLOCKED — human decision required",
+        "title": "BLOCKED — Human Decision Required",
         "color": statusColor("blocked"),
         "description": desc[:4000],
         "timestamp": _nowIso(),
@@ -763,9 +763,9 @@ def blockedEmbed(reason: str, question: Optional[str] = None) -> dict:
 def blockedComponents() -> list:
     """Action row with Answer / Skip / Abort buttons (handled by the gateway bot)."""
     return [{"type": 1, "components": [
-        {"type": 2, "style": 1, "label": "Answer", "custom_id": "sc_answer", "emoji": {"name": "✍️"}},
-        {"type": 2, "style": 2, "label": "Skip", "custom_id": "sc_skip", "emoji": {"name": "⏭️"}},
-        {"type": 2, "style": 4, "label": "Abort", "custom_id": "sc_abort", "emoji": {"name": "🛑"}},
+        {"type": 2, "style": 1, "label": "Answer", "custom_id": "sc_answer"},
+        {"type": 2, "style": 2, "label": "Skip", "custom_id": "sc_skip"},
+        {"type": 2, "style": 4, "label": "Abort", "custom_id": "sc_abort"},
     ]}]
 
 
@@ -787,7 +787,7 @@ def completeEmbed(state, pr_link: str, elapsed: str) -> dict:
         f"{progressBar(done, total)}"
     )
     return {
-        "title": "✅ 9TO5 — run complete",
+        "title": "9TO5 — Run Complete",
         "color": statusColor(state.meta.get("status")),
         "description": desc[:4000],
         "timestamp": _nowIso(),
@@ -812,7 +812,7 @@ def sendBlocked(reason: str, question: Optional[str] = None) -> dict:
 
 def gateNeededEmbed(gate: str) -> dict:
     return {
-        "title": f"⏳ Approval needed — {gate}",
+        "title": f"Approval Needed — {gate}",
         "color": statusColor("paused"),
         "description": "Reply `!approve` / `!reject`, or use the web dashboard.",
         "timestamp": _nowIso(),
@@ -834,7 +834,7 @@ def subtaskFailedEmbed(subtask_id: str, title: str, verify_result: Optional[dict
     if output:
         fields.append({"name": "Output", "value": f"```\n{output}\n```", "inline": False})
     return {
-        "title": "⚠️ Subtask failed verification",
+        "title": "Subtask Failed Verification",
         "color": statusColor("failed"),
         "timestamp": _nowIso(),
         "fields": fields,
@@ -844,7 +844,7 @@ def subtaskFailedEmbed(subtask_id: str, title: str, verify_result: Optional[dict
 
 def abortedEmbed(reason: str, elapsed: str) -> dict:
     return {
-        "title": "🛑 Run aborted",
+        "title": "Run Aborted",
         "color": statusColor("aborted"),
         "timestamp": _nowIso(),
         "fields": [
@@ -856,7 +856,7 @@ def abortedEmbed(reason: str, elapsed: str) -> dict:
 
 def selfRefEmbed(branch: str, protected: tuple) -> dict:
     return {
-        "title": "🧬 Self-referential run (9to5 editing 9to5)",
+        "title": "Self-Referential Run (9to5 editing 9to5)",
         "color": statusColor("replanning"),
         "timestamp": _nowIso(),
         "fields": [
