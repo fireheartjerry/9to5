@@ -1236,8 +1236,11 @@ class Orchestrator:
                 discord.sendEmbed(discord.noticeEmbed(
                     "GPT-5.5 second brain unavailable (health probe failed) — Ollama for this run."))
                 return
-            browser_executor.startConversation(self._goalText(state), state.task_id)
+            # Assign the session handle BEFORE startConversation: probe() already opened the browser,
+            # so if startConversation raises, _closeChatGptSession (and the except below) must be able
+            # to tear it down -- otherwise the opened Chromium leaks as an orphan holding the profile.
             self._chatgpt_session = browser_executor
+            browser_executor.startConversation(self._goalText(state), state.task_id)
             self._chatgpt_ask = lambda message: browser_executor.sessionAsk(message, expect_json=True)
             self._chatgpt_session_ok = True
             LOG.info("GPT-5.5 second brain online for task %s", state.task_id)
@@ -1245,6 +1248,13 @@ class Orchestrator:
         except Exception as e:  # noqa: BLE001 -- never block a run on the second brain
             LOG.warning("could not start ChatGPT session (%s); Ollama only", e)
             self._chatgpt_session_ok = False
+            try:
+                from agents import browser_executor as _be
+                _be.closeSession()   # close the browser probe() opened, so it doesn't leak/orphan
+            except Exception:  # noqa: BLE001
+                pass
+            self._chatgpt_session = None
+            self._chatgpt_ask = None
 
     def _closeChatGptSession(self) -> None:
         try:

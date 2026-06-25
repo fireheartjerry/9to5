@@ -238,14 +238,24 @@ _all_conns: list[sqlite3.Connection] = []
 
 def _new_conn(key: str, first: bool) -> sqlite3.Connection:
     conn = sqlite3.connect(key, timeout=30.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA synchronous=NORMAL")    # per-connection, cheap
-    if first:
-        conn.execute("PRAGMA journal_mode=WAL")  # persists in the db file -> set once
-        for stmt in _SCHEMA:
-            conn.execute(stmt)
-        _applyMigrations(conn)
-        _schema_ready.add(key)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA synchronous=NORMAL")    # per-connection, cheap
+        if first:
+            conn.execute("PRAGMA journal_mode=WAL")  # persists in the db file -> set once
+            for stmt in _SCHEMA:
+                conn.execute(stmt)
+            _applyMigrations(conn)
+            _schema_ready.add(key)
+    except BaseException:
+        # schema/WAL setup raised (locked db, bad migration, disk error): the connection was opened
+        # but not yet registered in _all_conns, so close it here or it leaks (and _schema_ready was
+        # never marked, so the next call retries 'first' cleanly).
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+        raise
     with _pool_lock:
         _all_conns.append(conn)
     return conn

@@ -57,16 +57,29 @@ def _claudeCli() -> tuple[bool, str, str]:
     if not exe:
         return False, "claude not on PATH", "install Claude Code CLI and ensure `claude` is on PATH"
     try:
+        from agents.executor import _killProcessTree
         launcher = ["cmd", "/c", exe] if exe.lower().endswith((".cmd", ".bat")) else [exe]
-        proc = subprocess.run(launcher + ["--print", "--dangerously-skip-permissions"],
-                              input="Reply with exactly: OK", capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=40)
-        if proc.returncode == 0 and (proc.stdout or "").strip():
-            return True, f"authenticated; replied {proc.stdout.strip()[:20]!r}", ""
-        return False, f"ran but no output (rc={proc.returncode}): {(proc.stderr or '')[:120]}", \
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+        # Popen + tree-kill on timeout: subprocess.run's timeout kills only the cmd.exe/claude
+        # launcher, leaking the node.exe grandchildren that do the real work (the same Windows orphan
+        # bug the executor fixes). A 40s /health check shouldn't strand a multi-process claude agent.
+        proc = subprocess.Popen(launcher + ["--print", "--dangerously-skip-permissions"],
+                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, encoding="utf-8", errors="replace",
+                                creationflags=creationflags, start_new_session=(os.name != "nt"))
+        try:
+            out, err = proc.communicate(input="Reply with exactly: OK", timeout=40)
+        except subprocess.TimeoutExpired:
+            _killProcessTree(proc.pid)
+            try:
+                proc.communicate(timeout=10)
+            except Exception:  # noqa: BLE001
+                pass
+            return False, "timed out (40s)", "check Claude Code auth / network"
+        if proc.returncode == 0 and (out or "").strip():
+            return True, f"authenticated; replied {out.strip()[:20]!r}", ""
+        return False, f"ran but no output (rc={proc.returncode}): {(err or '')[:120]}", \
             "run `claude` once interactively to authenticate"
-    except subprocess.TimeoutExpired:
-        return False, "timed out (40s)", "check Claude Code auth / network"
     except Exception as e:  # noqa: BLE001
         return False, str(e), "run `claude` interactively to authenticate"
 
