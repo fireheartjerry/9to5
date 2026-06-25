@@ -9,6 +9,7 @@ Degrades to a silent no-op when Discord is unconfigured.
 from __future__ import annotations
 
 import threading
+import time
 from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
@@ -41,6 +42,7 @@ class DiscordDashboard:
         self._send_lock = threading.Lock()    # serialize network PATCH/POST across workers
         self._state_lock = None                # set by start(); used to snapshot TaskState safely
         self._recreated = False                # at most one 404 recovery (no pin spam)
+        self._last_image_ts = 0.0              # monotonic: throttle cockpit hero-image uploads
 
     def event(self, text: str) -> None:
         with self._lock:
@@ -165,18 +167,25 @@ class DiscordDashboard:
         Snapshots the event ring first (self._lock), then renders the image + tree under the run's
         state_lock -- same lock discipline as _embed (the two locks are never held simultaneously)."""
         events = self._eventsSnapshot()
+        # Throttle the hero-image upload: render+upload at most once per COCKPIT_IMAGE_MIN_INTERVAL.
+        # Text-CV2 edits still flow on every tick; this just caps the multipart uploads so the
+        # every-4s pause loop (and rapid subtask churn) can never drive a rate-limit storm.
+        now = time.monotonic()
+        want_image = config.VISUALS_ENABLED and (now - self._last_image_ts) >= config.COCKPIT_IMAGE_MIN_INTERVAL
         lock = self._state_lock
         if lock:
             lock.acquire()
         try:
-            img = (visuals.progressCard(state, phase=phase, model=self.model, effort=self.effort)
-                   if config.VISUALS_ENABLED else None)
+            img = visuals.progressCard(state, phase=phase, model=self.model, effort=self.effort) \
+                if want_image else None
             image_url = "attachment://cockpit.png" if img else None
             comps, _flags = cv2.buildCockpit(state, phase, events=events, model=self.model,
                                              effort=self.effort, image_url=image_url)
         finally:
             if lock:
                 lock.release()
+        if img:
+            self._last_image_ts = now
         files = [("cockpit.png", img, "image/png")] if img else None
         return comps, files
 
