@@ -31,6 +31,7 @@ EXTENSIONS: tuple[str, ...] = (
     "notifications.bot.cogs.ask_cog",      # /ask -- conversational Ollama cockpit (Tier 6)
     "notifications.bot.cogs.plan_cog",     # /plan-edit, /timeline + context menus (Tier 2)
     "notifications.bot.cogs.engagement_cog",  # native Poll gate resolution (Tier 4)
+    "notifications.bot.cogs.ops_cog",         # super-reaction approve + silence watchdog (Tier 5)
 )
 
 
