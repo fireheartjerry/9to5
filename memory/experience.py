@@ -949,7 +949,10 @@ def upsert_solution(signature: str, spec_json: str, *, verify_passed: bool,
 
 
 def get_solution(signature: str, db_path: Optional[Path] = None) -> Optional[dict[str, Any]]:
-    with _connect(db_path) as conn:
+    # Holds _WRITE_LOCK: this does an UPDATE (reuse_count bump), and EVERY other writer in this module
+    # serializes on _WRITE_LOCK. Without it this write raced concurrent writers (parallel subtask
+    # workers / the SIE maintenance thread), risking interleaved writes and 'database is locked'.
+    with _WRITE_LOCK, _connect(db_path) as conn:
         row = conn.execute(
             "SELECT * FROM solution_cache WHERE signature=? AND last_verify_passed=1",
             (signature,)).fetchone()

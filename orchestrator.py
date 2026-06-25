@@ -1498,11 +1498,14 @@ class Orchestrator:
         exec_cwd = exec_cwd or self._execCwd(state, sid, work_dir)
         dashboard.update(state, "executing", f"-> {sid} {subtask['title']}")
 
-        # Boundary divergence check (#12): observe-only, never blocks.
-        try:
-            _checkCodeDivergence(state)
-        except Exception:  # noqa: BLE001
-            pass
+        # Boundary divergence check (#12): observe-only, never blocks. Under _state_lock: it mutates
+        # state.meta + saves, and EVERY other meta mutation in this parallel execution path is guarded
+        # by _state_lock -- an unguarded save here races a peer worker's save (lost/torn meta update).
+        with self._state_lock:
+            try:
+                _checkCodeDivergence(state)
+            except Exception:  # noqa: BLE001
+                pass
 
         attempt = 0
         passed = False
