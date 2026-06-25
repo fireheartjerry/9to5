@@ -6194,49 +6194,49 @@
           "kind": "function",
           "signature": "() -> dict[str, list[str]]",
           "summary": "{dotted-module: [first-party modules imported at LOAD time]}",
-          "lineno": 289
+          "lineno": 292
         },
         {
           "name": "render_header",
           "kind": "function",
           "signature": "(rec: dict) -> str",
           "summary": "Render the @AI-MAP block (text only, no surrounding quotes).",
-          "lineno": 304
+          "lineno": 307
         },
         {
           "name": "splice_header",
           "kind": "function",
           "signature": "(src: str, header: str) -> Optional[str]",
           "summary": "Return ``src`` with ``header`` placed inside the module docstring (below the prose,",
-          "lineno": 321
+          "lineno": 324
         },
         {
           "name": "render_root_agents_md",
           "kind": "function",
           "signature": "(m: dict) -> str",
           "summary": "",
-          "lineno": 347
+          "lineno": 350
         },
         {
           "name": "render_package_agents_md",
           "kind": "function",
           "signature": "(m: dict, pkg: str) -> str",
           "summary": "",
-          "lineno": 396
+          "lineno": 399
         },
         {
           "name": "write_outputs",
           "kind": "function",
           "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 425
+          "lineno": 428
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: Optional[list[str]]=None) -> int",
           "summary": "",
-          "lineno": 499
+          "lineno": 502
         }
       ],
       "depends_on": [],

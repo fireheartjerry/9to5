@@ -280,7 +280,10 @@ def build_map(only: Optional[str] = None) -> dict:
     return {
         "schema": SCHEMA,
         "generated_by": "tools/repo_map.py",
-        "root": REPO_ROOT.name,
+        # Stable project identifier -- NOT REPO_ROOT.name, which is the checkout *directory*
+        # basename and varies across worktrees/clones/CI (e.g. "9to5-final"), making the
+        # byte-compared drift test fail anywhere the folder isn't literally "9to5".
+        "root": "9to5",
         "first_party_roots": sorted(roots),
         "modules": {k: modules[k] for k in sorted(modules)},
     }
