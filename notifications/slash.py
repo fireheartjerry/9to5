@@ -207,6 +207,15 @@ def registerSlashCommands(tree: "app_commands.CommandTree", client: "discord.Cli
             return await interaction.response.send_modal(WorkModal())
         await interaction.response.defer(ephemeral=True)
 
+        # Reject a duplicate launch BEFORE the ChatGPT pre-flight. The active-run guard otherwise lives
+        # only inside launchOrError (below), but the pre-flight opens the shared ChatGPT profile and --
+        # via profile_hygiene.sanitize() -- KILLS the active run's live second-brain browser. Checking
+        # first means a duplicate /work can't disrupt the running run before being rejected.
+        if work_launcher.activeRun() is not None:
+            return await interaction.followup.send(
+                "⚠️ A run is already active. Abort it with `/abort` before starting another.",
+                ephemeral=True)
+
         # Pre-flight: ensure ChatGPT is logged in before spawning the run. The whole open->poll->close
         # runs on browser_executor's ONE dedicated thread (sync Playwright is thread-affine and must
         # never be driven from the bot's asyncio loop), and the close releases the profile lock so the

@@ -12,6 +12,23 @@ def _run(coro):
     return asyncio.get_event_loop().run_until_complete(coro)
 
 
+class TestLaunchRejectsActiveRunFirst(unittest.TestCase):
+    """A guided-setup Launch must reject a duplicate run BEFORE the ChatGPT pre-flight, so a second
+    /work can't kill the active run's second-brain browser only to then be rejected."""
+    def test_launch_bails_on_active_run_before_launch(self):
+        from notifications.views import WorkSetupView
+        from notifications import work_launcher
+        v = WorkSetupView(1, "goal", 1.0, None)
+        interaction = mock.AsyncMock()
+        # @discord.ui.button makes the instance attr a Button; call the raw class-dict coroutine.
+        raw_launch = WorkSetupView.__dict__["_launch"]
+        with mock.patch.object(work_launcher, "activeRun", return_value=mock.Mock()) as ar, \
+                mock.patch.object(work_launcher, "launchOrError") as launch:
+            _run(raw_launch(v, interaction, mock.Mock()))
+        ar.assert_called_once()
+        launch.assert_not_called()   # bailed before launch (and before the browser pre-flight)
+
+
 class TestSkipTargetsPending(unittest.TestCase):
     """The dashboard Skip button must queue a skip of a PENDING subtask (what the backend honors),
     not the in_progress one (which the orchestrator drops -> the button silently no-op'd)."""

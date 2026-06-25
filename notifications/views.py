@@ -230,6 +230,16 @@ class WorkSetupView(discord.ui.View):
             c.disabled = True
         await interaction.response.edit_message(content="🚀 Launching…", view=self)
 
+        # Reject a duplicate launch BEFORE the ChatGPT pre-flight (which opens the shared profile and
+        # kills the active run's second-brain browser). The active-run guard otherwise lives only in
+        # launchOrError, after the pre-flight has already disrupted the running run.
+        if work_launcher.activeRun() is not None:
+            await interaction.followup.send(
+                "⚠️ A run is already active. Abort it with `/abort` before starting another.",
+                ephemeral=True)
+            self.stop()
+            return
+
         if _cfg.BROWSER_LAYER_ENABLED:
             from agents import browser_executor
             await interaction.followup.send(
