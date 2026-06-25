@@ -32,6 +32,29 @@ class TestGuardFailClosed(unittest.TestCase):
         code = self._run(data)
         self.assertEqual(code, 0)
 
+    def _state_with_env_boundary(self):
+        st = mock.Mock()
+        st.meta = {"universe": {"hard_boundaries": [".env"]}, "is_self_referential": False, "epoch": None}
+        return st
+
+    def test_mv_to_boundary_at_command_start_is_blocked(self):
+        """A Bash command STARTING with mv/cp onto a hard-boundary file must be inspected + blocked --
+        the old ' mv '/' cp ' substring tokens missed a command-initial mv/cp (fail-open)."""
+        data = {"tool_name": "Bash", "tool_input": {"command": "mv secrets.txt .env"}}
+        with mock.patch.object(hooks, "_resolveState", return_value=(self._state_with_env_boundary(), True)), \
+                mock.patch.object(hooks, "_envTaskRequested", return_value=True), \
+                mock.patch.object(hooks, "_coreLockFor", return_value=(False, ())):
+            code = self._run(data)
+        self.assertEqual(code, 2, "command-initial `mv` onto a boundary was not blocked (fail-open)")
+
+    def test_cp_at_command_start_is_inspected(self):
+        data = {"tool_name": "Bash", "tool_input": {"command": "cp config.py .env"}}
+        with mock.patch.object(hooks, "_resolveState", return_value=(self._state_with_env_boundary(), True)), \
+                mock.patch.object(hooks, "_envTaskRequested", return_value=True), \
+                mock.patch.object(hooks, "_coreLockFor", return_value=(False, ())):
+            code = self._run(data)
+        self.assertEqual(code, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

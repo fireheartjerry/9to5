@@ -299,11 +299,18 @@ def selfModificationGuard(data):
         if tool_name in ("Edit", "Write", "MultiEdit"):
             file_path = tool_input.get("file_path", "") or ""
         elif tool_name == "Bash":
-            # close the Bash write-hole: only inspect commands that WRITE (redirect/sed/mv/cp/tee/git)
+            # close the Bash write-hole: only inspect commands that WRITE (redirect/sed/mv/cp/tee/git).
+            # The write COMMANDS (mv/cp/rm/tee/del/ren/move/copy) must be matched at COMMAND POSITION
+            # -- start of line or right after a shell separator -- not as a space-padded substring: the
+            # old " mv "/" cp " tokens MISSED a command that STARTS with mv/cp (e.g. `mv .env x`), so a
+            # move/copy onto a hard-boundary file slipped past the guard entirely (fail-open).
             bash_cmd = tool_input.get("command", "") or ""
             low = bash_cmd.lower()
-            if not any(w in low for w in (">", "sed -i", "tee ", " mv ", "move ", " cp ", "copy ",
-                                          "git checkout", "git reset", "git restore", "rm ")):
+            redirect_or_git = (">" in bash_cmd or "sed -i" in low or "git checkout" in low
+                               or "git reset" in low or "git restore" in low)
+            write_cmd = re.search(r"(?:^|[\n;&|]\s*)\s*(mv|cp|rm|tee|del|ren|rename|move|copy)\b",
+                                  bash_cmd, re.IGNORECASE)
+            if not (redirect_or_git or write_cmd):
                 sys.exit(0)
         else:
             sys.exit(0)
