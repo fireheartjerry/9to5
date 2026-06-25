@@ -430,7 +430,10 @@ class Orchestrator:
             state = TaskState.create(goal.get("goal", ""), 1.0)
             state.meta["goal_elaborated"] = goal.get("goal", "")
             spec = self.authorInvocationSpec(state, subtask, "")
-            result = self._run_claude(spec, work_dir=str(config.PROJECT_ROOT))
+            # deadline-only cancel (no run bus here): an eval's session-token-limit pause must still
+            # break at the 1h horizon instead of wedging the eval/fitness pass for hours.
+            result = self._run_claude(spec, work_dir=str(config.PROJECT_ROOT),
+                                      cancel_check=lambda: self._deadlinePassed(state))
             vres = verifier.runVerification(
                 verify, str(config.PROJECT_ROOT), result if isinstance(result, dict) else {})
             return {"passed": bool(vres.get("passed")), "attempts": 1,
@@ -1270,7 +1273,7 @@ class Orchestrator:
             return False
 
     def _remediate(self, state: TaskState, subtask: dict, architect_doc: str, exec_cwd: str,
-                   concerns: list[str]) -> dict:
+                   concerns: list[str], cancel_check=None) -> dict:
         """Bounded remediation LOOP (up to ADVERSARY_REMEDIATION_MAX_ATTEMPTS) on a subtask that
         ALREADY passed verification: feed the reviewer's concerns back to the executor, re-verify,
         then re-review with the second brain; stop when it approves (or attempts run out). Each
@@ -1286,7 +1289,8 @@ class Orchestrator:
                         + "\n- ".join(concerns))
             snap = self._gitSnapshot(exec_cwd)
             spec = self.authorInvocationSpec(state, subtask, architect_doc, feedback)
-            result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask)
+            result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
+                                      cancel_check=cancel_check)
             vres = verifier.runVerification(subtask.get("verify"), exec_cwd, result)
             with self._state_lock:
                 if vres.get("passed"):
@@ -1671,7 +1675,8 @@ class Orchestrator:
                                                   f"{sid}: remediation skipped (shared tree, parallel run)")
                     else:
                         dashboard.update(state, "executing", f"{sid} adversary remediation (1 attempt)")
-                        self._remediate(state, subtask, architect_doc, exec_cwd, rv["concerns"])
+                        self._remediate(state, subtask, architect_doc, exec_cwd, rv["concerns"],
+                                        cancel_check=lambda: bus.isAbort() or self._deadlinePassed(state))
 
             # SIE subsystem I: capture the executor's learning summary (trust-checked against
             # the real verify + adversary verdict) and memoize a passing spec. Best-effort.
@@ -2136,9 +2141,13 @@ class Orchestrator:
                 arch_prompt = architect.authorArchitectPrompt(elaborated, chat=self._ollamaChat)
 
                 def _runArchitect(effort: str):
+                    # cancel_check: a session-token-limit pause inside the architect run can block for
+                    # HOURS; without this an abort/deadline during startup can't break it and the whole
+                    # run wedges before it ever plans. Mirrors the subtask path.
                     res = self._run_claude({"prompt": arch_prompt, "effort_level": effort},
                                            work_dir=self._execCwd(state, "architect", work_dir),
-                                           system_prompt=architect.ARCHITECT_SYSTEM_PROMPT, task_state=state)
+                                           system_prompt=architect.ARCHITECT_SYSTEM_PROMPT, task_state=state,
+                                           cancel_check=lambda: bus.isAbort() or self._deadlinePassed(state))
                     return res if isinstance(res, dict) else {}   # tolerate a junk hands result
 
                 arch_res = _runArchitect("default")
