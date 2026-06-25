@@ -1,10 +1,16 @@
-# Deferred audit findings (blocked on concurrent edits)
+# Deferred audit findings — ✅ ALL RESOLVED
 
-Two HIGH-severity bugs surfaced by the overnight deep audit (2026-06-24) could **not** be fixed in
-that session because the files had **uncommitted changes from a concurrent session** (an in-flight
-`orchestrator.py` / `adversary.py` / `llm_io.py` refactor). Editing/committing them would have
-swept up that unrelated WIP. Fix these once those files are clean (`git status` shows them
-unmodified), each with a reproduction + regression test.
+These bugs were deferred during the overnight audit (2026-06-24) because the files had uncommitted
+changes from a concurrent `orchestrator.py`/`adversary.py`/`llm_io.py` refactor. Once that refactor
+landed, all three were fixed against the current code, each with a regression test:
+
+- **#1 remediation git-clobber** → fixed in `7faab24` (`_remediationTreeShared` guard)
+- **#2 malformed-verdict→approved** → fixed in `54d0b72` (`_normalizeVerdict` fails closed)
+- **#3 knowledge-doc fixed-temp** → fixed in `7faab24` (unique per-writer temp)
+
+The original analysis is kept below for reference.
+
+---
 
 ---
 
