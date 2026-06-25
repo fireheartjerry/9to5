@@ -1,4 +1,4 @@
-"""9TO5 deterministic hook dispatcher.
+r"""9TO5 deterministic hook dispatcher.
 
 Claude Code invokes this as:  python agents\hooks.py <hook_name>
 with a JSON event object piped on STDIN.
