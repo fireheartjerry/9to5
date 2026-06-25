@@ -205,6 +205,10 @@ EXPERIENCE_LEDGER_ENABLED: bool = _envBool("EXPERIENCE_LEDGER_ENABLED", True)
 EMBED_MODEL: str = os.getenv("EMBED_MODEL", "nomic-embed-text")
 RETRIEVAL_K: int = _envInt("RETRIEVAL_K", 5)
 RETRIEVAL_MAX_TOKENS: int = _envInt("RETRIEVAL_MAX_TOKENS", 350)
+# Cosine-similarity floor: a retrieved "past success" below this is irrelevant noise; without a floor
+# every authoring prompt was force-fed up to K neighbors even when the best match was unrelated, which
+# injects misleading lessons into the brain. 0.0 disables the floor (legacy behavior).
+RETRIEVAL_MIN_SCORE: float = _envFloat("RETRIEVAL_MIN_SCORE", 0.35)
 # Eval harness (the spine): golden suite + the single fitness scalar's weights.
 EVAL_SUITE_DIR: Path = PROJECT_ROOT / "learning" / "eval_suite"
 EVAL_FITNESS_WEIGHTS: dict[str, float] = {

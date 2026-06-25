@@ -16,6 +16,7 @@ from control import ControlBus
 from notifications import ask as ask_mod
 from notifications import audit
 from notifications import commands as spine
+from notifications import views
 
 LOG = config.getLogger("cog.ask")
 
@@ -40,6 +41,17 @@ class AskCog(dpy_commands.Cog):
         if verb and config.ASK_NL_CONTROL:
             if not spine.isAuthorized(interaction.user.id):
                 return await interaction.followup.send("⛔ Not authorized for control.")
+            # #42: `abort` is irreversible -- it kills a live run immediately. It must NEVER fire from a
+            # loosely-parsed NL imperative (e.g. "stop worrying about X") without an explicit confirm.
+            # Other verbs (pause/resume/approve/reject/retry) are reversible or expected gate decisions,
+            # so they apply directly as before. A timed-out / cancelled confirm leaves the run untouched.
+            if verb == "abort":
+                view = views.ConfirmView(interaction.user.id)
+                await interaction.followup.send(
+                    "⚠️ (interpreted as `abort`) Confirm **aborting the run**?", view=view, ephemeral=True)
+                await view.wait()
+                if not view.value:
+                    return await interaction.followup.send("✋ Abort cancelled — run untouched.")
             audit.record(interaction.user.id, verb, state.task_id, "ask-nl")
             msg = spine.applyCommand(ControlBus(state.task_id), state, spine.Command(verb, ""))
             return await interaction.followup.send(f"🧠 (interpreted as `{verb}`) {msg}")

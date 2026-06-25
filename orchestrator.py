@@ -1049,6 +1049,15 @@ class Orchestrator:
                 # pre-PR gate is to NOT auto-ship; either way finalize the run instead of hanging.
                 if self._deadlinePassed(state):
                     bus.setPendingGate(None)
+                    if gate == "pre_pr":
+                        # #41: at the pre_pr gate the work is ALREADY done -- only the human PR-approval
+                        # timed out. Raising AbortRun here finalized the whole run as 'aborted', wiping
+                        # the real done/partial status. Instead flag "skip the PR" and return so runFull
+                        # finalizes truthfully (PR shown as skipped; status reflects the completed work).
+                        self._pre_pr_gate_skipped = True
+                        LOG.warning("pre_pr gate timed out at deadline -- skipping PR, finalizing with real status")
+                        dashboard.event("pre_pr gate: deadline reached -> skipping PR, finalizing")
+                        return
                     LOG.warning("gate '%s' timed out at deadline -- aborting to finalize", gate)
                     raise AbortRun(f"gate '{gate}' timed out at deadline")
                 time.sleep(config.DISCORD_POLL_SECONDS)
@@ -2140,6 +2149,7 @@ class Orchestrator:
             state.setControlMode(control_mode)
         state.setWorkDir(work_dir)   # persist the target dir so resume + every surface remember it
         bus = ControlBus(state.task_id)
+        self._pre_pr_gate_skipped = False   # #41: reset per-run so a prior run's deadline-skip can't leak
         if not resume:
             # clearForRunStart (NOT clear): the terminal-control thread + the always-running gateway
             # bot are live during the pre-run elaboration window, so a full clear() here wiped an
@@ -2279,8 +2289,13 @@ class Orchestrator:
 
             # --- Phase 4: PR + complete ---
             self._checkControl(state, bus, dashboard, gate="pre_pr")
-            pr_review = self._prePrAdversary(state, work_dir)
-            create_pr, skip_reason = self._prGate(pr_review, auto_pr, state)
+            if self._pre_pr_gate_skipped:
+                # #41: the pre_pr approval gate hit the deadline. Work is done; skip the PR (and the
+                # pre-PR adversary) entirely and fall through to finalize with the run's real status.
+                create_pr, skip_reason = False, "pre-PR gate not approved before deadline"
+            else:
+                pr_review = self._prePrAdversary(state, work_dir)
+                create_pr, skip_reason = self._prGate(pr_review, auto_pr, state)
             if create_pr:
                 # Final gate: never open a PR whose own test suite is red (a self-improvement run can
                 # otherwise ship structurally-broken work the weak per-subtask verify missed, e.g. a

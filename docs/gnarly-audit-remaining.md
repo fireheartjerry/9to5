@@ -1,9 +1,11 @@
 # Gnarly-audit: remaining MEDIUM/LOW findings
 
-The 30-agent systematic-debugging audit (2026-06-25) confirmed 42 real bugs. All **CRITICAL** and
-all **HIGH** findings are FIXED on this branch (audit/gnarly-bug-hunt) with regression tests. The
-MEDIUM/LOW findings below remain for follow-up (each adversarially verified). A handful of MEDIUMs
-were duplicates of a CRITICAL/HIGH cluster fix and are already resolved -- noted inline.
+The 30-agent systematic-debugging audit (2026-06-25) confirmed 42 real bugs. **All CRITICAL, HIGH,
+MEDIUM, and LOW findings are now FIXED** on this branch (audit/gnarly-bug-hunt) with regression
+tests. A handful of MEDIUMs were duplicates of a CRITICAL/HIGH cluster fix and were resolved as part
+of that cluster -- noted inline. The 18 net MEDIUM/LOW findings (#20-24, #26, #30-39, #41, #42) were
+fixed across several commits; the final batch (#34 retrieval floor, #39 boundary anchoring, #41
+pre_pr-deadline status, #42 /ask abort confirm) lands with tests in tests/test_audit_correctness.py.
 
 ## [20] MEDIUM — browser_executor.py 253-273 (_preflightLoginBlocki
 **Pre-flight reports 'login timed out' on any transient open/navigation error, aborting the whole /work launch**
@@ -103,7 +105,7 @@ were duplicates of a CRITICAL/HIGH cluster fix and are already resolved -- noted
 - **Impact:** Leaked SQLite connection = leaked OS file handle plus the WAL/SHM file handles it pins. On Windows those handles keep locks on experience.db-wal/-shm, which can block later os.replace/delete/cleanup of the DB or its sidecar files and accumulate acros
 - **Fix:** Guard the schema-setup block so the connection is closed if it raises before being registered: wrap lines 243-248 (and append to _all_conns first, or use try/except that closes conn on failure). E.g. `try: <schema block>; with _pool_lock: _all_conns.append(conn) except BaseException: conn.close(); raise`. Apply the same protection to the `elif firs
 
-## [34] MEDIUM — retrieval.py 129-153, 163-194
+## [34] MEDIUM — retrieval.py 129-153, 163-194 — ✅ FIXED
 **Retrieval applies NO similarity floor -- every authoring prompt is force-fed up to K 'past lessons' even when cosine ~ 0 (or all 0.0 after an embed-model change)**
 
 - **Root cause:** top_k_similar() sorts the candidate pool by cosine score and returns out[:k] with no minimum-score threshold. render_lessons() then ignores the per-neighbor 'score' field entirely and renders whatever rows it is handed under the header '## RELEVANT PAST LESSONS (from similar subtasks that PASSED)'. cosine() (line 100-101) returns 0.0 -- not an error -- when len(a) != len(b). So if config.EMBED_MODEL is ever changed (e.g. nomic-embed-text -> a model with a different embedding dimension), every pr
@@ -138,7 +140,7 @@ were duplicates of a CRITICAL/HIGH cluster fix and are already resolved -- noted
 - **Impact:** Each timed-out /health run leaks a detached claude/node agent that continues consuming CPU/tokens and may hold file handles in PROJECT_ROOT. Because collectHealth() is also callable from the gateway bot's /diagnostics, repeated diagnostics under a de
 - **Fix:** Kill the whole process tree on timeout the way the executor does: spawn with subprocess.Popen + CREATE_NEW_PROCESS_GROUP, and on TimeoutExpired call the existing executor._killProcessTree (or `taskkill /F /T /PID`) before returning, instead of relying on subprocess.run's single-child kill.
 
-## [39] LOW — hooks.py 344-353 (with config.py:485)
+## [39] LOW — hooks.py 344-353 (with config.py:485) — ✅ FIXED
 **Default 'state/tasks' hard boundary false-blocks a target project that has its own state/tasks directory**
 
 - **Root cause:** `UNIVERSE_DEFAULT_HARD_BOUNDARIES` (config.py:485) always injects `state/tasks` as a hard boundary for EVERY task (added in extractUniverse and re-enforced in _boundarySetFor), intended to protect 9to5's OWN task store. The guard's match (agents/hooks.py:344-353) blocks any edit whose normalized path contains `\state\tasks\` as a path segment. For a non-self-referential run whose --work-dir is an unrelated project that legitimately contains a `state/tasks/` directory (a common path), an Edit/Wri
@@ -152,14 +154,14 @@ were duplicates of a CRITICAL/HIGH cluster fix and are already resolved -- noted
 - **Impact:** When the 7B brain wraps or appends a second object around its JSON (a known qwen2.5 failure mode the surrounding code explicitly guards against elsewhere), the planner/replanner discards a recoverable plan and silently degrades to the fallback plan i
 - **Fix:** Delete orchestrator._chatJson's body and delegate to the fixed helper: `return llm_io.responseJson(resp)` (it already takes the raw response and runs responseText + fence-strip + _firstBalancedObject). This removes the duplicated greedy-regex line 352 and guarantees the loop's JSON salvage matches the hardened extractor. No other call-site changes 
 
-## [41] LOW — orchestrator.py 1014-1039; 2218
+## [41] LOW — orchestrator.py 1014-1039; 2218 — ✅ FIXED
 **Gated pre_pr gate at the deadline overwrites a fully-completed run's status with 'aborted'**
 
 - **Root cause:** In gated mode, after the execution loop finishes with ALL subtasks done, runFull calls _checkControl(..., gate='pre_pr') (line 2218). The gate wait loop (lines 1019-1039) blocks for a human approve/reject. If the deadline passes first, line 1034 raises AbortRun('gate timed out at deadline'). That propagates to runFull's AbortRun handler (line 2293) which calls state.setStatus('aborted'), overwriting the otherwise-'done' outcome. The completed, verified work is thus reported as 'aborted' with no 
 - **Impact:** A gated unattended run whose work fully succeeded is mislabeled 'aborted' and produces no completion record/PR if the human is absent at the deadline. The completed state is lost in the summary/dashboard/Discord embed (shows aborted, not done/partial
 - **Fix:** On the pre_pr-gate deadline timeout, do not raise AbortRun; instead break out of the gate wait, skip PR creation (conservative: don't auto-ship in gated mode), and let runFull finalize with the real done/partial status plus a 'PR held: gate not approved before deadline' notification. Reserve AbortRun for an explicit reject/abort.
 
-## [42] LOW — ask_cog.py 39-45
+## [42] LOW — ask_cog.py 39-45 — ✅ FIXED
 **/ask natural-language control can ABORT a run with no confirmation, unlike every other abort surface**
 
 - **Root cause:** detectControlIntent maps short imperatives like 'stop'/'kill'/'cancel'/'abort' to the 'abort' verb (ask.py:_INTENTS), and ask_cog applies it directly via applyCommand(... Command('abort','')) after only an isAuthorized check. Every other abort entry point (slash.py abort:166-178, views.ControlPanelView.abort:103-107, views.BlockedView.abort:136-141) routes through confirmDestructive() and requires an explicit Confirm click. The /ask path skips that confirmation entirely.

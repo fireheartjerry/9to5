@@ -267,6 +267,21 @@ def _boundarySetFor(state) -> set:
               else [".env", ".git", "venv", "state/tasks"]):
         if b not in base:
             base.append(b)
+    # Anchor the 9to5-internal task store to the install root. A bare ``state/tasks`` boundary
+    # matches ANY path ending in state/tasks (substring match in the guard), so an external target
+    # repo that happens to have its OWN state/tasks/ dir was falsely blocked. Replacing it with the
+    # absolute install path means it only protects 9to5's own run state, never the target's (#39).
+    # ``.env``/``.git``/``venv`` stay relative on purpose -- those are worth blocking in any repo.
+    try:
+        anchored = str((config.PROJECT_ROOT / "state" / "tasks")) if config else None
+    except Exception:  # noqa: BLE001 -- no config / odd PROJECT_ROOT -> leave boundary relative
+        anchored = None
+    if anchored:
+        out: set = set()
+        for b in base:
+            norm = str(b).replace("/", "\\").lower().strip("\\")
+            out.add(anchored if norm in ("state\\tasks", "state/tasks") else b)
+        return out
     return set(base)
 
 
@@ -358,6 +373,11 @@ def selfModificationGuard(data):
             bbase = bn.rsplit("\\", 1)[-1]
             # exact file, a file under a boundary dir, or a path ending in the boundary
             hit = norm == bn or norm.endswith("\\" + bn) or ("\\" + bn + "\\") in norm
+            # absolute boundary (e.g. the install-anchored task store): match files UNDER it. The
+            # endswith/substring clauses above assume a RELATIVE bn (leading-backslash sentinel), so
+            # an absolute bn like c:\9to5\state\tasks only matched the dir itself, not files in it.
+            if not hit and ":" in bn and norm.startswith(bn + "\\"):
+                hit = True
             # secret-family: a ".env" boundary also blocks .env.local / .env.production (NOT .envrc)
             if not hit and bbase.startswith(".") and (base == bbase or base.startswith(bbase + ".")):
                 hit = True
