@@ -81,6 +81,18 @@ class TestConcurrentWrites(unittest.TestCase):
         # the file is still valid JSON after the storm
         self.assertIsInstance(bus.load(), dict)
 
+    def test_pushop_dedups_identical_ops(self):
+        """The gateway bot and the in-run poller both push the SAME op for one Discord message; an
+        identical op already queued must not be duplicated (one '!add' must not create two subtasks)."""
+        bus = ControlBus("op-dedup")
+        bus.pushOp({"op": "add", "title": "x"})
+        bus.pushOp({"op": "add", "title": "x"})   # duplicate of the same message
+        self.assertEqual(len(bus.drainOps()), 1)
+        # distinct ops are all kept
+        bus.pushOp({"op": "add", "title": "a"})
+        bus.pushOp({"op": "skip", "subtask_id": "st-003"})
+        self.assertEqual(len(bus.drainOps()), 2)
+
     def test_clearForRunStart_preserves_user_control(self):
         """A fresh run resets only the run cursor; an abort/pause/decision the user issued during the
         pre-run elaboration window must survive (a full clear() silently dropped it)."""

@@ -253,7 +253,15 @@ class ControlBus:
 
     # ---- queued plan operations ----------------------------------------
     def pushOp(self, op: dict[str, Any]) -> None:
-        self._mutate(lambda d: d["plan_ops"].append(op))
+        # De-dup identical queued ops: the in-run REST poller AND the always-running gateway bot both
+        # parse the SAME Discord '!' message and each push the same plan op -- so without this one
+        # '!add'/'!skip'/'!retry' became TWO (a duplicate subtask, a double skip). The two pushes both
+        # land before the next drain (drainOps only runs inside the run's poll loop), so an identity
+        # check against the still-queued ops collapses them to one.
+        def _f(d: dict[str, Any]) -> None:
+            if op not in d["plan_ops"]:
+                d["plan_ops"].append(op)
+        self._mutate(_f)
 
     def drainOps(self) -> list[dict[str, Any]]:
         with _PROCESS_LOCK:              # serialize same-process writers even if the sidecar is bypassed

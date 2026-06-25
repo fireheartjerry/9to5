@@ -102,7 +102,10 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
             if config.DISCORD_CHANNEL_ID and message.channel.id != config.DISCORD_CHANNEL_ID:
                 return
             try:
-                reply = handleCommand(message.content)
+                # off the event loop: handleCommand does blocking ControlBus file IO (atomic temp +
+                # os.replace with backoff sleeps, the _fileLock sidecar). Running it inline froze the
+                # gateway's heartbeat/other handlers for the duration under contention.
+                reply = await asyncio.to_thread(handleCommand, message.content)
             except Exception:  # noqa: BLE001
                 LOG.exception("command error")
                 reply = "internal error (see logs)"
