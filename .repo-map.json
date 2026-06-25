@@ -6264,21 +6264,21 @@
           "kind": "function",
           "signature": "(key: str) -> tuple[bool, str]",
           "summary": "Delete one category",
-          "lineno": 94
+          "lineno": 111
         },
         {
           "name": "executeWipe",
           "kind": "function",
           "signature": "(keys: list[str], backup: bool=False) -> dict[str, str]",
           "summary": "Run wipe on selected categories",
-          "lineno": 118
+          "lineno": 139
         },
         {
           "name": "restartBot",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Spawn a FRESH detached bot process, then exit this one",
-          "lineno": 131
+          "lineno": 152
         }
       ],
       "depends_on": [
