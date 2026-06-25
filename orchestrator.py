@@ -1259,18 +1259,14 @@ class Orchestrator:
     # ===================================================================
     # Adversary teeth -- bounded remediation LOOP + pre-PR hold
     # ===================================================================
-    def _remediationTreeShared(self, exec_cwd: str) -> bool:
-        """True when >1 subtask runs concurrently in a SHARED working tree -- the only case where the
-        remediation snapshot + whole-tree `git checkout <sha> -- .` would revert a peer worker's edits
-        (silent data loss, #1). Self-referential runs give each subtask its own .sc-ctx cwd (exec_cwd
-        != work_dir), so their tree is private and remediation stays safe; sequential runs have no
-        peers. Only a non-self-ref parallel run shares work_dir and is unsafe."""
-        if getattr(self, "_parallelism", 1) <= 1:
-            return False
-        try:
-            return os.path.abspath(exec_cwd) == os.path.abspath(getattr(self, "_work_dir", exec_cwd))
-        except Exception:  # noqa: BLE001
-            return False
+    def _remediationTreeShared(self, exec_cwd: str = "") -> bool:
+        """True when >1 subtask runs concurrently against the SHARED real edit tree -- the case where
+        the remediation snapshot + whole-tree `git checkout <sha> -- .` would revert a peer worker's
+        edits (silent data loss). The real edit tree is ALWAYS work_dir: non-self-ref subtasks run
+        directly in it, and self-ref subtasks edit it (== PROJECT_ROOT) via --add-dir even though their
+        cwd is an isolated .sc-ctx scratch. So ANY parallel run (self-ref OR not) shares the real tree;
+        only a sequential run (parallelism<=1) has no peers and can safely snapshot/revert it."""
+        return getattr(self, "_parallelism", 1) > 1
 
     def _remediate(self, state: TaskState, subtask: dict, architect_doc: str, exec_cwd: str,
                    concerns: list[str], cancel_check=None) -> dict:
@@ -1283,11 +1279,16 @@ class Orchestrator:
         goal = self._goalText(state)
         vres: dict = {}
         attempts = max(1, config.ADVERSARY_REMEDIATION_MAX_ATTEMPTS)
+        # The REAL git edit tree to snapshot/restore. For a self-referential run exec_cwd is the
+        # gitignored .sc-ctx scratch, but the executor edits the project at work_dir via --add-dir --
+        # so snapshotting/restoring exec_cwd was a NO-OP and a broken remediation was never reverted.
+        # work_dir IS the real tree for both self-ref (== PROJECT_ROOT) and non-self-ref runs.
+        repo_tree = getattr(self, "_work_dir", None) or exec_cwd
         for i in range(1, attempts + 1):
             feedback = ("The work PASSED its acceptance check, but an adversarial reviewer raised "
                         "concerns. Address these WITHOUT breaking the passing verification:\n- "
                         + "\n- ".join(concerns))
-            snap = self._gitSnapshot(exec_cwd)
+            snap = self._gitSnapshot(repo_tree)
             spec = self.authorInvocationSpec(state, subtask, architect_doc, feedback)
             result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
                                       cancel_check=cancel_check)
@@ -1296,7 +1297,7 @@ class Orchestrator:
                 if vres.get("passed"):
                     state.recordVerify(sid, vres)   # adopt the still-passing post-remediation evidence
                 else:
-                    self._gitRestore(exec_cwd, snap)   # revert broken edits so disk == kept pass
+                    self._gitRestore(repo_tree, snap)   # revert broken edits so disk == kept pass
                 state.addNotification(
                     "adversary_remediation",
                     f"{sid}: remediation {i}/{attempts} "
