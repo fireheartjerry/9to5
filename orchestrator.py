@@ -349,10 +349,14 @@ def _chatJson(resp):
         return json.loads(text)
     except Exception:  # noqa: BLE001
         pass
-    m = _re.search(r"\{.*\}", text, _re.DOTALL)   # salvage: first balanced-looking JSON object
-    if m:
+    # Salvage the FIRST balanced object via the depth-0 walker. The old greedy r"\{.*\}" spanned the
+    # first '{' to the LAST '}', so any multi-object brain output (an example object + the real plan,
+    # or trailing prose with braces) concatenated into an unparseable blob -> the plan/replan/spec
+    # collapsed to the degenerate fallback instead of using the recoverable object.
+    chunk = llm_io._firstBalancedObject(text)
+    if chunk:
         try:
-            return json.loads(m.group(0))
+            return json.loads(chunk)
         except Exception:  # noqa: BLE001
             return None
     return None

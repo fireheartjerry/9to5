@@ -24,6 +24,22 @@ class TestNormalizeVerdict(unittest.TestCase):
         self.assertEqual(adv._normalizeVerdict("approved with a concern"), adv._CHALLENGED)
 
 
+class TestLoadJsonLooseBalanced(unittest.TestCase):
+    def test_recovers_verdict_despite_trailing_braces(self):
+        """A real 'challenged' verdict followed by trailing prose that contains braces must still be
+        recovered. The old greedy r'{.*}' spanned first-'{' to last-'}' (verdict + the trailing
+        braces) -> json.loads failed -> the challenge was lost to a stub-approve. The balanced walker
+        closes at the verdict object's depth-0 '}'."""
+        text = '{"verdict": "challenged", "concerns": ["real bug"]}\n\nNote: see {the diff} for details.'
+        out = adv._loadJsonLoose(text)
+        self.assertIsInstance(out, dict)
+        self.assertEqual(out.get("verdict"), "challenged")
+
+    def test_plain_object_with_leading_prose(self):
+        out = adv._loadJsonLoose('Here is my review: {"verdict": "approved", "concerns": []}')
+        self.assertEqual(out.get("verdict"), "approved")
+
+
 class TestParseVerdictFailsClosed(unittest.TestCase):
     def test_missing_verdict_raises(self):
         with self.assertRaises(ValueError):
