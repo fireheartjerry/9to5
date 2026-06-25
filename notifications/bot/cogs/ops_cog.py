@@ -68,8 +68,12 @@ class OpsCog(dpy_commands.Cog):
         if not gate:
             return
         audit.record(user_id, verdict, state.task_id, "reaction")
-        bus.decide(gate, verdict)
-        LOG.info("super-reaction resolved gate %s -> %s", gate, verdict)
+        if verdict == "abort":   # consistent with the poll path; reactions currently only emit approve/reject
+            bus.requestAbort()
+            LOG.info("super-reaction -> ABORT run (was at gate %s)", gate)
+        else:
+            bus.decide(gate, verdict)
+            LOG.info("super-reaction resolved gate %s -> %s", gate, verdict)
 
     @tasks.loop(seconds=60)
     async def watchdog(self) -> None:

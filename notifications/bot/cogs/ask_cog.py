@@ -40,7 +40,7 @@ class AskCog(dpy_commands.Cog):
         if not config.ASK_ENABLED:
             return await interaction.response.send_message("`/ask` is disabled.", ephemeral=True)
         await interaction.response.defer(thinking=True)
-        state = spine.resolveTargetTask()
+        state = await asyncio.to_thread(spine.resolveTargetTask)
         if state is None:
             return await interaction.followup.send(spine.NO_TASK)
 
@@ -60,8 +60,13 @@ class AskCog(dpy_commands.Cog):
                 await view.wait()
                 if not view.value:
                     return await interaction.followup.send("✋ Abort cancelled — run untouched.")
-            audit.record(interaction.user.id, verb, state.task_id, "ask-nl")
-            msg = spine.applyCommand(ControlBus(state.task_id), state, spine.Command(verb, ""))
+            def _applyControl() -> str:
+                # off the event loop: audit.record + applyCommand both do blocking file IO
+                # (audit append + ControlBus atomic temp/os.replace). Inline froze the heartbeat.
+                audit.record(interaction.user.id, verb, state.task_id, "ask-nl")
+                return spine.applyCommand(ControlBus(state.task_id), state, spine.Command(verb, ""))
+
+            msg = await asyncio.to_thread(_applyControl)
             return await interaction.followup.send(f" (interpreted as `{verb}`) {msg}")
 
         reply = await asyncio.to_thread(ask_mod.answer, question, state)

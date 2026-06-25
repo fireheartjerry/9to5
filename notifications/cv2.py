@@ -17,10 +17,7 @@ EXPORTS:
   container(children: list, accent: Optional[int]=None, spoiler: bool=False) -> dict
   text(content: str) -> dict
   separator(divider: bool=True, spacing: int=1) -> dict
-  section(children: list, accessory: dict) -> dict  -- A Section: 1-3 text children + one accessory (Thumbnail or Button).
-  thumbnail(url: str, description: Optional[str]=None) -> dict
   media_gallery(urls: list) -> dict
-  action_row(components: list) -> dict
   elapsedStr(started_at) -> str
   etaStr(started_at, done: int, total: int) -> str
   buildCockpit(state, phase: str, *, events: Optional[list]=None, model: Optional[str]=None, effort: str='default', image_url: Optional[str]=None) -> tuple[list, int]  -- Return ``(components, flags)`` for the live cockpit
@@ -57,24 +54,8 @@ def separator(divider: bool = True, spacing: int = 1) -> dict:
     return {"type": 14, "divider": divider, "spacing": spacing}
 
 
-def section(children: list, accessory: dict) -> dict:
-    """A Section: 1-3 text children + one accessory (Thumbnail or Button)."""
-    return {"type": 9, "components": children[:3], "accessory": accessory}
-
-
-def thumbnail(url: str, description: Optional[str] = None) -> dict:
-    t: dict = {"type": 11, "media": {"url": url}}
-    if description:
-        t["description"] = description
-    return t
-
-
 def media_gallery(urls: list) -> dict:
     return {"type": 12, "items": [{"media": {"url": u}} for u in urls]}
-
-
-def action_row(components: list) -> dict:
-    return {"type": 1, "components": components}
 
 
 # ---- duration helpers (pure; mirror dashboard's, kept local to avoid a cycle) ----
@@ -171,7 +152,8 @@ def buildCockpit(state, phase: str, *, events: Optional[list] = None,
         f"**Model** `{model or config.PRIMARY_MODEL}`  ·  **Mode** `{m.get('control_mode', 'watch')}`"
         f"  ·  **Effort** {discord.effortBar(effort)}\n"
         f"**Elapsed** {elapsedStr(m.get('started_at'))}  ·  **ETA** {etaStr(m.get('started_at'), done, total)}"
-        f"  ·  {icons.prefix('replan') or 'replans '}{replans}  ·  {icons.prefix('adversary') or 'adversary '}{advs}\n"
+        f"  ·  {icons.prefix('replan') or ('replan ' if replans == 1 else 'replans ')}{replans}"
+        f"  ·  {icons.prefix('adversary') or ('adversary ' if advs == 1 else 'adversaries ')}{advs}\n"
         f"**Last verify** {verify_txt}\n"
         f"**Working dir** `{discord.truncate(m.get('work_dir') or '—', 160)}`"
     ))

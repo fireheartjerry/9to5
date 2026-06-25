@@ -19,6 +19,8 @@ RUN/TEST: python -m pytest tests/test_views.py
 """
 from __future__ import annotations
 
+import asyncio
+
 import discord
 
 import config
@@ -35,17 +37,31 @@ def _ownerOk(interaction: "discord.Interaction") -> bool:
 
 async def _applyControl(interaction: "discord.Interaction", name: str, arg: str = "",
                         *, already_responded: bool = False) -> None:
-    """Shared path for control-panel + blocked buttons: authorize -> audit -> spine."""
+    """Shared path for control-panel + blocked buttons: authorize -> audit -> spine.
+
+    Defers (or, for the abort path, relies on the already-consumed response) BEFORE the blocking
+    ControlBus/TaskState/audit file IO is offloaded via asyncio.to_thread -- so a file-lock stall
+    can neither freeze the gateway heartbeat nor blow the 3s interaction-token deadline.
+    """
     meta = commands.COMMAND_REGISTRY.get(name, {})
     if meta.get("mutating") and not _ownerOk(interaction):
         return await _send(interaction, "Not authorized.", already_responded)
-    state = commands.resolveTargetTask()
-    if state is None:
-        return await _send(interaction, commands.NO_TASK, already_responded)
-    if meta.get("mutating"):
-        audit.record(interaction.user.id, name, state.task_id, "button")
-    msg = commands.applyCommand(ControlBus(state.task_id), state, commands.Command(name, arg))
-    await _send(interaction, msg[:MAX_REPLY], already_responded)
+    if not already_responded:
+        await interaction.response.defer(ephemeral=True)
+
+    def _blocking() -> "str | None":
+        state = commands.resolveTargetTask()
+        if state is None:
+            return None
+        if meta.get("mutating"):
+            audit.record(interaction.user.id, name, state.task_id, "button")
+        return commands.applyCommand(ControlBus(state.task_id), state, commands.Command(name, arg))
+
+    msg = await asyncio.to_thread(_blocking)
+    # The response is now consumed (deferred above, or by the abort confirm dialog) -> followup.
+    if msg is None:
+        return await interaction.followup.send(commands.NO_TASK, ephemeral=True)
+    await interaction.followup.send(msg[:MAX_REPLY], ephemeral=True)
 
 
 async def _send(interaction: "discord.Interaction", msg: str, already_responded: bool) -> None:
@@ -58,20 +74,27 @@ async def _send(interaction: "discord.Interaction", msg: str, already_responded:
 async def _skipCurrent(interaction: "discord.Interaction", source: str) -> None:
     if not _ownerOk(interaction):
         return await interaction.response.send_message("Not authorized.", ephemeral=True)
-    state = commands.resolveTargetTask()
-    if state is None:
-        return await interaction.response.send_message(commands.NO_TASK, ephemeral=True)
-    # The backend only skips PENDING subtasks (an in_progress one has already started and cannot be
-    # yanked mid-flight -- orchestrator drops a skip of a non-pending subtask). Target the next pending
-    # subtask, mirroring the /skip autocomplete, so the button actually skips work instead of silently
-    # no-opping on the in_progress one.
-    cur = next((s for s in state.subtasks if s["status"] == "pending"), None)
-    if not cur:
-        return await interaction.response.send_message("No pending subtask to skip.", ephemeral=True)
-    audit.record(interaction.user.id, "skip", state.task_id, source)
-    msg = commands.applyCommand(ControlBus(state.task_id), state,
-                                commands.Command("skip", cur["subtask_id"]))
-    await interaction.response.send_message(msg[:MAX_REPLY], ephemeral=True)
+    # Defer BEFORE the blocking ControlBus/TaskState/audit file IO so a file-lock stall can't freeze
+    # the gateway heartbeat or expire the 3s interaction token; the work runs via asyncio.to_thread.
+    await interaction.response.defer(ephemeral=True)
+
+    def _blocking() -> str:
+        state = commands.resolveTargetTask()
+        if state is None:
+            return commands.NO_TASK
+        # The backend only skips PENDING subtasks (an in_progress one has already started and cannot
+        # be yanked mid-flight -- orchestrator drops a skip of a non-pending subtask). Target the next
+        # pending subtask, mirroring the /skip autocomplete, so the button actually skips work instead
+        # of silently no-opping on the in_progress one.
+        cur = next((s for s in state.subtasks if s["status"] == "pending"), None)
+        if not cur:
+            return "No pending subtask to skip."
+        audit.record(interaction.user.id, "skip", state.task_id, source)
+        return commands.applyCommand(ControlBus(state.task_id), state,
+                                     commands.Command("skip", cur["subtask_id"]))
+
+    msg = await asyncio.to_thread(_blocking)
+    await interaction.followup.send(msg[:MAX_REPLY], ephemeral=True)
 
 
 class ConfirmView(discord.ui.View):

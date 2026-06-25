@@ -14,6 +14,7 @@ RUN/TEST: python -m pytest tests/test_slash.py
 """
 from __future__ import annotations
 
+import asyncio
 import time
 
 import discord
@@ -51,12 +52,20 @@ def _ownerOk(interaction) -> bool:  # noqa: ANN001
 async def _runControl(interaction, name: str, arg: str = "") -> None:  # noqa: ANN001
     """defer -> resolve task -> audit (mutating only) -> apply via the spine -> reply ephemerally."""
     await interaction.response.defer(ephemeral=True)
-    state = commands.resolveTargetTask()
-    if state is None:
+
+    def _blocking() -> "str | None":
+        # All ControlBus/TaskState/audit file IO runs off the event loop so a file-lock stall
+        # can't freeze the gateway heartbeat (mirrors notifications/bot/core.py's '!'-command path).
+        state = commands.resolveTargetTask()
+        if state is None:
+            return None
+        if commands.COMMAND_REGISTRY.get(name, {}).get("mutating"):
+            audit.record(interaction.user.id, name, state.task_id, "slash")
+        return commands.applyCommand(ControlBus(state.task_id), state, commands.Command(name, arg))
+
+    msg = await asyncio.to_thread(_blocking)
+    if msg is None:
         return await interaction.followup.send(commands.NO_TASK, ephemeral=True)
-    if commands.COMMAND_REGISTRY.get(name, {}).get("mutating"):
-        audit.record(interaction.user.id, name, state.task_id, "slash")
-    msg = commands.applyCommand(ControlBus(state.task_id), state, commands.Command(name, arg))
     await interaction.followup.send(msg[:MAX_REPLY], ephemeral=True)
 
 

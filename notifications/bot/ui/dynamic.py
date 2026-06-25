@@ -28,7 +28,7 @@ LOG = config.getLogger("ui.dynamic")
 # custom_id grammar: nc:st:<action>:<subtask_id>   e.g. "nc:st:skip:st-003"
 TEMPLATE = r"nc:st:(?P<action>skip|inspect):(?P<sid>st-\d+)"
 _STYLE = {"skip": discord.ButtonStyle.secondary, "inspect": discord.ButtonStyle.primary}
-_EMOJI = {"skip": "", "inspect": ""}
+_EMOJI = {"skip": "⏭️", "inspect": "🔍"}
 
 
 def applySubtaskAction(action: str, sid: str, user_id) -> str:
@@ -42,7 +42,7 @@ def applySubtaskAction(action: str, sid: str, user_id) -> str:
         if not s:
             return f"`{sid}` not found."
         vr = s.get("verify_result") or {}
-        mark = "" if vr.get("passed") else ("" if vr else "—")
+        mark = "✅" if vr.get("passed") else ("❌" if vr else "—")
         return (f"**`{sid}`** [{s.get('status')}] {s.get('title')}\n"
                 f"verify: {mark}  ·  attempts: {s.get('attempts', 0)}")
     # mutating (skip)

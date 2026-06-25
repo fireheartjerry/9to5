@@ -32,9 +32,9 @@ from notifications import commands as spine
 LOG = config.getLogger("bot.core")
 MAX_REPLY_CHARS = config.DISCORD_MAX_CONTENT - 100
 
-# Feature cogs loaded at startup (each exposes ``async def setup(bot)``). The legacy
-# notifications.slash suite is still registered in setup_hook for parity; these cogs ADD
-# new frontier commands alongside it. A bad cog is logged and skipped, never killing the bot.
+# Feature cogs loaded at startup (each exposes ``async def setup(bot)``). ALL slash commands now
+# live in these cogs -- there is no separate ``registerSlashCommands`` suite anymore; ``notifications.slash``
+# is just shared helpers (_embed/_fmtUptime/_ownerOk/...). A bad cog is logged and skipped, never killing the bot.
 EXTENSIONS: tuple[str, ...] = (
     "notifications.bot.cogs.observe_cog",  # status/plan/log/help/ping/diagnostics/metrics/audit
     "notifications.bot.cogs.control_cog",  # pause/approve/reject/retry/add/skip/abort
@@ -134,14 +134,19 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
 
         async def _presenceLoop(self) -> None:
             await self.wait_until_ready()
+
+            def _presenceName() -> str:
+                # off the event loop: resolveTargetTask is a glob + JSON read; running it (and
+                # state.progress) inline every tick stalled the heartbeat under disk contention.
+                state = spine.resolveTargetTask()
+                if state is not None and spine.isRunActive(state):
+                    done, total = state.progress()
+                    return f"{done}/{total} · {state.meta.get('status', 'run')}"
+                return "idle · /help"
+
             while not self.is_closed():
                 try:
-                    state = spine.resolveTargetTask()
-                    if state is not None and spine.isRunActive(state):
-                        done, total = state.progress()
-                        name = f"{done}/{total} · {state.meta.get('status', 'run')}"
-                    else:
-                        name = "idle · /help"
+                    name = await asyncio.to_thread(_presenceName)
                     await self.change_presence(
                         activity=discord.Activity(type=discord.ActivityType.watching, name=name))
                 except Exception:  # noqa: BLE001

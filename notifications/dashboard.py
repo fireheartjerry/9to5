@@ -135,7 +135,7 @@ class DiscordDashboard:
                 last_v = (s["subtask_id"], s["verify_result"])
         if last_v:
             sid, vr = last_v
-            mark = "" if vr.get("passed") else ""
+            mark = "✅" if vr.get("passed") else "❌"
             verify_txt = f"{mark} `{sid}` — `{str(vr.get('cmd') or vr.get('expect'))[:70]}`"
         else:
             verify_txt = "—"

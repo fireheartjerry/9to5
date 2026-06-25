@@ -237,6 +237,13 @@ def _request(method: str, path: str, *, json: Optional[dict] = None,
             LOG.warning("Discord %s %s -> 429; global backoff %.1fs", method, path, retry_after)
             return r
         if r.status_code == 401:
+            # Only the bot-token auth path may latch the whole surface off. A noauth webhook
+            # request (The Cast) is authed by the token IN its URL; a bad/rotated Cast token
+            # must fail just that one send, never disable the live dashboard / milestone /
+            # BLOCKED-decision pings that ride the bot token. The Cast "must never break a run".
+            if noauth:
+                LOG.warning("Discord webhook auth failed (401) -> Cast send dropped, surface left alive")
+                return r
             _DISABLED = True
             LOG.error("Discord auth failed (401) -> disabling Discord for this process")
         elif not (200 <= r.status_code < 300) and r.status_code != 404:
@@ -350,6 +357,11 @@ def _clampComponents(components: list) -> list:
             or _cv2TextLen(comps) > config.DISCORD_CV2_MAX_CHARS):
         guard += 1
         comps.pop()
+    # A CV2 message with zero components is rejected by Discord (HTTP 400), so the whole update
+    # would fail instead of degrading. If clamping emptied the tree (or it was empty to begin with),
+    # fall back to a minimal valid container so the message still sends.
+    if not comps:
+        comps = [{"type": 17, "components": [{"type": 10, "content": "…"}]}]
     return comps
 
 

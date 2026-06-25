@@ -66,13 +66,22 @@ class SubtaskEditModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         if not spine.isAuthorized(interaction.user.id):
             return await interaction.response.send_message("Not authorized.", ephemeral=True)
-        state = spine.resolveTargetTask()
-        if state is None:
-            return await interaction.response.send_message(spine.NO_TASK, ephemeral=True)
-        audit.record(interaction.user.id, "edit", state.task_id, "plan-editor")
-        ControlBus(state.task_id).pushOp({"op": "edit", "subtask_id": self.sid,
-                                          "title": str(self.t_title), "description": str(self.t_desc)})
-        await interaction.response.send_message(f" queued edit for `{self.sid}`", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        sid, title, desc = self.sid, str(self.t_title), str(self.t_desc)
+
+        def _queue() -> bool:
+            # off the event loop: resolveTargetTask (glob + JSON read) + audit.record + ControlBus.pushOp.
+            state = spine.resolveTargetTask()
+            if state is None:
+                return False
+            audit.record(interaction.user.id, "edit", state.task_id, "plan-editor")
+            ControlBus(state.task_id).pushOp({"op": "edit", "subtask_id": sid,
+                                              "title": title, "description": desc})
+            return True
+
+        if not await asyncio.to_thread(_queue):
+            return await interaction.followup.send(spine.NO_TASK, ephemeral=True)
+        await interaction.followup.send(f" queued edit for `{sid}`", ephemeral=True)
 
 
 class _EditSelect(discord.ui.Select):
@@ -122,25 +131,41 @@ class PlanCog(dpy_commands.Cog):
     async def plan_edit(self, interaction: discord.Interaction) -> None:
         if not spine.isAuthorized(interaction.user.id):
             return await interaction.response.send_message("Not authorized.", ephemeral=True)
-        state = spine.resolveTargetTask()
-        if state is None:
-            return await interaction.response.send_message(spine.NO_TASK, ephemeral=True)
-        editable = [s for s in state.subtasks if s["status"] in ("pending", "in_progress")]
+        await interaction.response.defer(ephemeral=True)
+
+        def _editable():
+            # off the event loop: resolveTargetTask (glob + JSON read) + subtask filter.
+            state = spine.resolveTargetTask()
+            if state is None:
+                return None
+            return [s for s in state.subtasks if s["status"] in ("pending", "in_progress")]
+
+        editable = await asyncio.to_thread(_editable)
+        if editable is None:
+            return await interaction.followup.send(spine.NO_TASK, ephemeral=True)
         if not editable:
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 "No editable (pending/in_progress) subtasks.", ephemeral=True)
-        await interaction.response.send_message(
+        await interaction.followup.send(
             "Pick a subtask to edit:", view=PlanEditView(interaction.user.id, editable), ephemeral=True)
 
     @app_commands.command(name="timeline", description="Browse the run's event timeline (time-travel)")
     async def timeline(self, interaction: discord.Interaction) -> None:
-        state = spine.resolveTargetTask()
-        if state is None:
-            return await interaction.response.send_message(spine.NO_TASK, ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+
+        def _pages():
+            # off the event loop: resolveTargetTask (glob + JSON read) + timeline page build.
+            state = spine.resolveTargetTask()
+            if state is None:
+                return None
+            return _timelinePages(state)
+
+        pages = await asyncio.to_thread(_pages)
+        if pages is None:
+            return await interaction.followup.send(spine.NO_TASK, ephemeral=True)
         from notifications import views
-        pages = _timelinePages(state)
         view = views.Paginator(interaction.user.id, pages) if len(pages) > 1 else None
-        await interaction.response.send_message(embed=pages[0], view=view, ephemeral=True)
+        await interaction.followup.send(embed=pages[0], view=view, ephemeral=True)
 
     async def _goal(self, interaction: discord.Interaction, message: discord.Message) -> None:
         if not spine.isAuthorized(interaction.user.id):
@@ -158,15 +183,24 @@ class PlanCog(dpy_commands.Cog):
     async def _addsub(self, interaction: discord.Interaction, message: discord.Message) -> None:
         if not spine.isAuthorized(interaction.user.id):
             return await interaction.response.send_message("Not authorized.", ephemeral=True)
-        state = spine.resolveTargetTask()
-        if state is None:
-            return await interaction.response.send_message(spine.NO_TASK, ephemeral=True)
         title = (message.content or "").strip()[:120]
         if not title:
             return await interaction.response.send_message("That message has no text.", ephemeral=True)
-        audit.record(interaction.user.id, "add", state.task_id, "ctx-menu")
-        ControlBus(state.task_id).pushOp({"op": "add", "title": title, "description": message.content[:2000]})
-        await interaction.response.send_message(f" queued subtask: {title}", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        description = message.content[:2000]
+
+        def _queue() -> bool:
+            # off the event loop: resolveTargetTask (glob + JSON read) + audit.record + ControlBus.pushOp.
+            state = spine.resolveTargetTask()
+            if state is None:
+                return False
+            audit.record(interaction.user.id, "add", state.task_id, "ctx-menu")
+            ControlBus(state.task_id).pushOp({"op": "add", "title": title, "description": description})
+            return True
+
+        if not await asyncio.to_thread(_queue):
+            return await interaction.followup.send(spine.NO_TASK, ephemeral=True)
+        await interaction.followup.send(f" queued subtask: {title}", ephemeral=True)
 
 
 async def setup(bot: dpy_commands.Bot) -> None:

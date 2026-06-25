@@ -69,8 +69,15 @@ class EngagementCog(dpy_commands.Cog):
         if not gate:
             return
         audit.record(user_id, verdict, state.task_id, "poll-vote")
-        bus.decide(gate, verdict)
-        LOG.info("poll vote resolved gate %s -> %s", gate, verdict)
+        if verdict == "abort":
+            # 'Abort' is the run kill-switch, NOT a gate decline -- route it to the abort flag the
+            # orchestrator's gate-wait loop polls (bus.isAbort()), never bus.decide(gate,'abort')
+            # which the loop doesn't recognize (it would park the gate until the deadline).
+            bus.requestAbort()
+            LOG.info("poll vote -> ABORT run (was at gate %s)", gate)
+        else:
+            bus.decide(gate, verdict)
+            LOG.info("poll vote resolved gate %s -> %s", gate, verdict)
 
 
 async def setup(bot: dpy_commands.Bot) -> None:

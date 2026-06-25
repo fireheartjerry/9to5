@@ -3,7 +3,8 @@
   * ``gatePollPayload(gate)`` -- the Discord Poll object for a gated approval
     ("Approve this <gate>?  Yes / Revise / Abort").
   * ``voteToVerdict(answer)`` -- map a poll answer label to a ControlBus verdict
-    (approve / reject), so the gateway's on_raw_poll_vote_add can resolve the gate.
+    (approve / reject / abort), so the gateway's on_raw_poll_vote_add can resolve the gate.
+    'abort' is distinct from 'reject' (decline-the-gate vs kill-the-run).
   * ``scheduledEventPayload(...)`` -- the body for a guild Scheduled Event covering
     the 9-5 run window.
 
@@ -27,15 +28,26 @@ from typing import Optional
 GATE_ANSWERS = ("Yes", "Revise", "Abort")
 
 _APPROVE = {"yes", "approve", "approved", "lgtm", "ship", "ok"}
-_REJECT = {"revise", "reject", "rejected", "abort", "no", "deny", "stop"}
+# 'Reject' DECLINES the gate (revise/no/deny); 'Abort' KILLS the run -- two distinct control
+# actions on the ControlBus (decide(gate,'reject') vs requestAbort()). Folding 'abort' into
+# _REJECT silently downgraded a kill-the-run vote to a plain gate decline, so they are split.
+_REJECT = {"revise", "reject", "rejected", "no", "deny"}
+_ABORT = {"abort", "stop", "kill", "cancel"}
 
 
 def voteToVerdict(answer: str) -> Optional[str]:
-    """Map a poll answer label (e.g. 'Yes') to 'approve' | 'reject' | None."""
+    """Map a poll answer label (e.g. 'Yes') to 'approve' | 'reject' | 'abort' | None.
+
+    'abort' is returned distinctly (never collapsed into 'reject') so the caller can route it to
+    the real kill-switch (ControlBus.requestAbort) rather than a gate decline -- they are different
+    control actions. Callers that only understand approve/reject MUST treat 'abort' as a run abort.
+    """
     t = "".join(ch for ch in (answer or "").lower() if ch.isalnum() or ch.isspace()).strip()
     for w in t.split():
         if w in _APPROVE:
             return "approve"
+        if w in _ABORT:
+            return "abort"
         if w in _REJECT:
             return "reject"
     return None

@@ -14,9 +14,11 @@ class VoteMapping(unittest.TestCase):
     def test_yes_is_approve(self):
         self.assertEqual(engagement.voteToVerdict("✅ Yes"), "approve")
 
-    def test_revise_and_abort_are_reject(self):
+    def test_revise_is_reject_abort_is_abort(self):
+        # 'Revise' declines the gate (reject); 'Abort' is the run kill-switch -- a DISTINCT verdict
+        # routed to ControlBus.requestAbort(), never folded into reject (see engagement_cog._resolveGate).
         self.assertEqual(engagement.voteToVerdict("✏️ Revise"), "reject")
-        self.assertEqual(engagement.voteToVerdict("🛑 Abort"), "reject")
+        self.assertEqual(engagement.voteToVerdict("🛑 Abort"), "abort")
 
     def test_unknown_is_none(self):
         self.assertIsNone(engagement.voteToVerdict("maybe later"))
@@ -45,7 +47,7 @@ class AnswerResolution(unittest.TestCase):
     def test_answer_ids(self):
         self.assertEqual(engagement_cog.verdictForAnswer(1), "approve")   # ✅ Yes
         self.assertEqual(engagement_cog.verdictForAnswer(2), "reject")    # ✏️ Revise
-        self.assertEqual(engagement_cog.verdictForAnswer(3), "reject")    # 🛑 Abort
+        self.assertEqual(engagement_cog.verdictForAnswer(3), "abort")     # 🛑 Abort -> run kill-switch
 
     def test_out_of_range(self):
         for bad in (0, 4, None, "x"):

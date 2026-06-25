@@ -35,20 +35,36 @@ class ObserveCog(dpy_commands.Cog):
     @app_commands.command(name="status", description="Current run status")
     async def status(self, interaction) -> None:  # noqa: ANN001
         await interaction.response.defer(ephemeral=True)
-        state = spine.resolveTargetTask()
-        if state is None:
+        uptime = self._uptime()
+
+        def _payload():
+            # off the event loop: resolveTargetTask (glob + JSON read) + statusEmbed (ControlBus.load).
+            state = spine.resolveTargetTask()
+            if state is None:
+                return None
+            return branding.statusEmbed(state, ControlBus(state.task_id), uptime=uptime)
+
+        e = await asyncio.to_thread(_payload)
+        if e is None:
             return await interaction.followup.send(spine.NO_TASK, ephemeral=True)
-        e = branding.statusEmbed(state, ControlBus(state.task_id), uptime=self._uptime())
         await interaction.followup.send(embed=slash._embed(e), ephemeral=True)
 
     @app_commands.command(name="plan", description="The subtask plan")
     async def plan(self, interaction) -> None:  # noqa: ANN001
         await interaction.response.defer(ephemeral=True)
-        state = spine.resolveTargetTask()
-        if state is None:
+
+        def _pages():
+            # off the event loop: resolveTargetTask (glob + JSON read) + planEmbed page build.
+            state = spine.resolveTargetTask()
+            if state is None:
+                return None
+            _, total = branding.planEmbed(state, 0)
+            return [slash._embed(branding.planEmbed(state, p)[0]) for p in range(total)]
+
+        pages = await asyncio.to_thread(_pages)
+        if pages is None:
             return await interaction.followup.send(spine.NO_TASK, ephemeral=True)
-        _, total = branding.planEmbed(state, 0)
-        pages = [slash._embed(branding.planEmbed(state, p)[0]) for p in range(total)]
+        total = len(pages)
         from notifications.views import Paginator
         if total > 1:
             await interaction.followup.send(embed=pages[0],
