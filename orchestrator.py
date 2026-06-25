@@ -429,11 +429,20 @@ class Orchestrator:
         try:
             state = TaskState.create(goal.get("goal", ""), 1.0)
             state.meta["goal_elaborated"] = goal.get("goal", "")
+            # Pin a baseline universe so the self_modification_guard protects secrets/VCS/venv/state +
+            # the core loop files: this eval runs Claude in PROJECT_ROOT, and WITHOUT a pinned task the
+            # guard has no boundaries and an eval goal's executor could edit core files unguarded.
+            state.setUniverse({
+                "description": "eval/fitness run", "allowed_paths": [], "allowed_to_expand_to": [],
+                "hard_boundaries": [".env", ".git", "venv", "state/tasks",
+                                    *getattr(config, "CORE_PROTECTED_FILES", ())]})
+            state.save()
             spec = self.authorInvocationSpec(state, subtask, "")
-            # deadline-only cancel (no run bus here): an eval's session-token-limit pause must still
-            # break at the 1h horizon instead of wedging the eval/fitness pass for hours.
-            result = self._run_claude(spec, work_dir=str(config.PROJECT_ROOT),
-                                      cancel_check=lambda: self._deadlinePassed(state))
+            # task_state=state so the executor exports the task pin (guard resolves THIS task's
+            # boundaries); deadline-only cancel (no run bus here) so an eval's session-token-limit
+            # pause still breaks at the 1h horizon instead of wedging the eval/fitness pass for hours.
+            result = self._run_claude(spec, work_dir=str(config.PROJECT_ROOT), task_state=state,
+                                      subtask=subtask, cancel_check=lambda: self._deadlinePassed(state))
             vres = verifier.runVerification(
                 verify, str(config.PROJECT_ROOT), result if isinstance(result, dict) else {})
             return {"passed": bool(vres.get("passed")), "attempts": 1,
@@ -1163,6 +1172,22 @@ class Orchestrator:
                     "using the Ollama brain for the rest of this run."))
             except Exception:  # noqa: BLE001
                 pass
+        elif self._chatgpt_session_ok and worth and rv.get("tier") != "gpt":
+            # SOFT-fail: GPT was attempted (worth + session live) but the verdict came from Ollama/stub
+            # with no hard session_dead -- a silent degradation. After a few consecutive soft-fails,
+            # stop re-paying the GPT round-trip for the rest of the run (mirrors the session_dead path).
+            self._gpt_soft_fails = getattr(self, "_gpt_soft_fails", 0) + 1
+            if self._gpt_soft_fails >= 3:
+                self._chatgpt_session_ok = False
+                LOG.warning("GPT second brain soft-failed %d consecutive reviews; disabling for run",
+                            self._gpt_soft_fails)
+                try:
+                    discord.sendEmbed(discord.noticeEmbed(
+                        "GPT-5.5 second brain repeatedly unusable — Ollama for the rest of this run."))
+                except Exception:  # noqa: BLE001
+                    pass
+        elif rv.get("tier") == "gpt":
+            self._gpt_soft_fails = 0   # a real GPT verdict resets the soft-fail streak
         try:
             from learning import adversary_trust
             adversary_trust.record(review_type, rv, tier=rv.get("tier"))
@@ -2047,10 +2072,13 @@ class Orchestrator:
     def _detectSelfReferential(self, state: TaskState, work_dir: str) -> bool:
         text = f"{state.meta.get('goal_raw', '')} {state.meta.get('goal_elaborated', '')}".lower()
         root = str(config.PROJECT_ROOT).lower()
-        # Explicit self-targeting keywords only -- NOT the bare install path, which
-        # appears in any goal that writes a file under C:\9to5\... .
-        markers = ["9to5", "itself", "self-referential", "self-modify", "self modify",
-                   "self-improve", "its own code"]
+        # Explicit self-targeting INTENT phrases only -- NOT the bare product/install name "9to5",
+        # which appears in any external goal that merely mentions the product (e.g. "clone the 9to5
+        # app for a client") and was misclassifying those as self-modification -> wrongly creating a
+        # self-ref branch + core-file protection on the target repo. Operating IN the install tree is
+        # covered by same_dir below; textual intent needs a real self-targeting phrase.
+        markers = ["itself", "self-referential", "self-modify", "self modify",
+                   "self-improve", "its own code", "9to5's own", "this orchestrator"]
         same_dir = os.path.abspath(work_dir).lower() == root
         return same_dir or any(m in text for m in markers)
 
