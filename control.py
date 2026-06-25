@@ -275,3 +275,17 @@ class ControlBus:
     # ---- lifecycle ------------------------------------------------------
     def clear(self) -> None:
         self._write(_blank())
+
+    def clearForRunStart(self) -> None:
+        """Reset only the run-execution cursor for a fresh run, PRESERVING any control the user
+        already issued (abort / pause / gate decisions) during the pre-run elaboration window. The
+        gateway command bot (a separate, always-running process) and the terminal-control thread are
+        both live before runFull, so a plain clear() here silently DROPPED an abort/pause the user
+        sent while Ollama was still elaborating. Only the Discord poll cursor, queued plan_ops, and
+        pending_gate -- pure run-execution state -- are reset."""
+        def _f(d: dict[str, Any]) -> None:
+            blank = _blank()
+            d["seen_discord_id"] = blank["seen_discord_id"]
+            d["plan_ops"] = blank["plan_ops"]
+            d["pending_gate"] = blank["pending_gate"]
+        self._mutate(_f)

@@ -2103,7 +2103,10 @@ class Orchestrator:
         state.setWorkDir(work_dir)   # persist the target dir so resume + every surface remember it
         bus = ControlBus(state.task_id)
         if not resume:
-            bus.clear()
+            # clearForRunStart (NOT clear): the terminal-control thread + the always-running gateway
+            # bot are live during the pre-run elaboration window, so a full clear() here wiped an
+            # abort/pause the user issued while Ollama was still elaborating. Preserve that intent.
+            bus.clearForRunStart()
         if bus.getSeen() is None:   # seed so a stale '!abort' from a prior run is never replayed
             try:
                 bus.setSeen(discord.baselineLatestId())
