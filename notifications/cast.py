@@ -33,7 +33,11 @@ def speak(role: str, text: Optional[str] = None, *, embed: Optional[dict] = None
     if not (text or embed or components):
         return False
     try:
-        return discord.sendAs(personas.persona(role), content=text, embed=embed,
+        p = personas.persona(role)
+        if text:                                    # prefix the persona's professional icon
+            from notifications import icons
+            text = icons.prefix(p.get("icon", "")) + text
+        return discord.sendAs(p, content=text, embed=embed,
                               components=components, files=files, thread_id=thread_id)
     except Exception:  # noqa: BLE001 -- a webhook hiccup must never break a run
         LOG.warning("cast.speak(%s) failed", role, exc_info=True)

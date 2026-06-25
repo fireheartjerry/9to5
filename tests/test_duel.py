@@ -55,7 +55,7 @@ class CastDuelGating(unittest.TestCase):
         self.assertTrue(cast.duel("st-004 parser", "challenged", trust=0.5))
         self.assertEqual(len(self.sent), 1)
         persona, kw = self.sent[0]
-        self.assertEqual(persona["emoji"], "⚔️")
+        self.assertEqual(persona["icon"], "adversary")
         self.assertTrue(kw["files"][0][0] == "duel.png")
 
 

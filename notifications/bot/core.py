@@ -90,6 +90,12 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
                 LOG.info("synced %d slash command(s)", len(synced))
             except Exception as e:  # noqa: BLE001
                 LOG.warning("slash sync failed: %s", e)
+            # 4) provision the professional app-emoji icon set (best-effort, off the loop)
+            try:
+                from notifications import icons
+                await asyncio.to_thread(icons.ensureIcons)
+            except Exception:  # noqa: BLE001
+                pass
 
         async def on_ready(self) -> None:
             if not self._presence_started:

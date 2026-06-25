@@ -60,7 +60,13 @@ def subtaskTracker(subtasks: list[dict], limit: int = 12) -> str:
     n_pending = len(subtasks) - n_done - n_running - n_failed
     countable = n_done + n_failed
     pass_rate = f"  ·  {round(100 * n_done / countable)}% pass" if countable > 0 else ""
-    return f"✅ {n_done}  ⚡ {n_running}  ⬜ {max(n_pending, 0)}  ❌ {n_failed}{pass_rate}"
+    from notifications import icons   # lazy: avoids an import cycle (icons -> discord_bot)
+    if icons.icon("done"):           # professional app-emoji icons when provisioned
+        body = (f"{icons.icon('done')} {n_done}  {icons.icon('active')} {n_running}  "
+                f"{icons.icon('pending')} {max(n_pending, 0)}  {icons.icon('fail')} {n_failed}")
+    else:                            # clean typographic fallback (no emoji)
+        body = f"{n_done} done · {n_running} active · {max(n_pending, 0)} pending · {n_failed} failed"
+    return body + pass_rate
 
 
 def effortBar(effort: Optional[str]) -> str:
@@ -94,11 +100,12 @@ _CHALLENGED = {"challenged", "rejected", "reject", "blocked", "fail"}
 
 def formatVerdict(verdict: Optional[str]) -> str:
     v = (verdict or "").lower().strip()
+    from notifications import icons
     if v in _APPROVED:
-        return "✅ APPROVED"
+        return f"{icons.prefix('done')}APPROVED"
     if v in _CHALLENGED:
-        return "⚔️ CHALLENGED"
-    return "❔ UNKNOWN"
+        return f"{icons.prefix('warn')}CHALLENGED"
+    return f"{icons.prefix('help')}UNKNOWN"
 
 
 # =====================================================================

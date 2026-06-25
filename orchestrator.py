@@ -2098,6 +2098,11 @@ class Orchestrator:
                 bus.setSeen(discord.baselineLatestId())
             except Exception:  # noqa: BLE001
                 pass
+        try:                        # provision the professional app-emoji icon set (best-effort)
+            from notifications import icons
+            icons.ensureIcons()
+        except Exception:  # noqa: BLE001
+            pass
         dashboard = DiscordDashboard()
         web_url = startWebDashboard(state.task_id)
         dashboard.start(state, "resuming" if resume else "starting", state_lock=self._state_lock)
