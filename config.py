@@ -465,7 +465,7 @@ COCKPIT_THEME: str = os.getenv("COCKPIT_THEME", "dark")              # cockpit v
 # Throttle the cockpit's Pillow hero-image upload: re-render+upload at most once per this many
 # seconds (text-CV2 edits still flow freely between). Caps multipart uploads during fast update
 # bursts (e.g. the every-4s pause loop) so the dashboard can never drive a rate-limit storm.
-COCKPIT_IMAGE_MIN_INTERVAL: int = int(os.getenv("COCKPIT_IMAGE_MIN_INTERVAL", "30"))
+COCKPIT_IMAGE_MIN_INTERVAL: int = _envInt("COCKPIT_IMAGE_MIN_INTERVAL", 30)
 # Components V2 transport limits (single source for cv2.py + discord_bot._clampComponents).
 DISCORD_MSGFLAG_COMPONENTS_V2: int = 1 << 15   # 32768 -- IS_COMPONENTS_V2 message flag
 DISCORD_CV2_MAX_COMPONENTS: int = 40           # total components across the whole CV2 message tree

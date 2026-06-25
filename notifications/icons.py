@@ -42,7 +42,11 @@ def _appId() -> Optional[str]:
     r = discord._request("GET", "/applications/@me")
     if r is not None and 200 <= r.status_code < 300:
         try:
-            _APP_ID = str(r.json().get("id"))
+            # Keep a missing id as None (don't str() it) -- str(None)=="None" is truthy, so the
+            # `if _APP_ID:` cache short-circuit would latch the literal "None" forever and every
+            # later call would hit /applications/None/emojis -> 404. None lets it retry next time.
+            _id = (r.json() or {}).get("id")
+            _APP_ID = str(_id) if _id else None
         except Exception:  # noqa: BLE001
             _APP_ID = None
     return _APP_ID

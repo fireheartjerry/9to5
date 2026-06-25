@@ -106,7 +106,7 @@ def isRunActive(state: Optional[TaskState]) -> bool:
 
 def footerHelp() -> str:
     """Short, never-stale command hint derived from the registry (used by the dashboard)."""
-    return "".join(f"!{n}" for n in ("status", "abort", "pause", "help"))
+    return " ".join(f"!{n}" for n in ("status", "abort", "pause", "help"))
 
 
 def _fmtDelta(seconds: float) -> str:

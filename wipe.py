@@ -92,19 +92,23 @@ def backupState(keys: list[str]) -> Optional[Path]:
 
 
 def _holdsPythonSource(path: Path) -> bool:
-    """True if `path` is (or contains) Python source. Hard stop for the data-only wipe invariant:
-    /wipe must NEVER delete source code (see the wipe-safety-constraint). The 'learning' category
-    pointed at the learning/ PACKAGE, whose deletion would erase the entire SIE source tree -- yet
+    """True if `path` is 9to5 SOURCE we must never delete (the wipe-safety-constraint): a .py file,
+    or a directory that is an importable Python PACKAGE (has __init__.py). The 'learning' category
+    pointed at the learning/ package, whose deletion would erase the entire SIE source tree -- yet
     the SIE's *data* lives under state/ (the 'experience' category), so a data-only wipe never needs
-    to remove a directory that holds .py files. This guard makes the invariant structural, immune to
-    a mis-scoped category."""
+    to remove a package. This makes the invariant structural, immune to a mis-scoped category.
+
+    Deliberately a PACKAGE check (`__init__.py`), NOT a recursive `*.py` scan: data categories
+    (vault, logs, knowledge) are not packages, so a stray user .py inside the Obsidian vault no
+    longer blocks a legitimate vault wipe. Fails CLOSED (refuses) if the path cannot be inspected --
+    a guard that exists to prevent source deletion must never green-light on an error."""
     try:
         if path.is_file():
             return path.suffix == ".py"
         if path.is_dir():
-            return next(path.rglob("*.py"), None) is not None
+            return (path / "__init__.py").exists()
     except OSError:
-        return False
+        return True   # cannot prove it is safe -> refuse
     return False
 
 

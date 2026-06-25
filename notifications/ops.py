@@ -21,7 +21,12 @@ _APPROVE_EMOJI = {"✅", "👍", "🔥", "☑️", "✔️"}
 _REJECT_EMOJI = {"⛔", "🛑", "👎", "❌", "✖️"}
 
 # A run that emits no event for this long while still "active" is treated as silent/hung.
-STALE_SECONDS = int(os.getenv("WATCHDOG_STALE_SECONDS", "600"))
+# Guarded parse: this module is deliberately stdlib-only (no `import config`, so no _envInt),
+# and a malformed WATCHDOG_STALE_SECONDS must NOT crash gateway startup at import time.
+try:
+    STALE_SECONDS = int(os.getenv("WATCHDOG_STALE_SECONDS", "600"))
+except ValueError:
+    STALE_SECONDS = 600
 
 _TERMINAL = {"done", "complete", "aborted", "failed", "partial", "blocked", "paused"}
 
