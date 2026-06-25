@@ -47,7 +47,35 @@ Admin cog: hot-reload extensions (/reload) + post a fresh live cockpit (/cockpit
 ## notifications/bot/cogs/ask_cog.py
 /ask -- the conversational Ollama cockpit (Tier 6). A thin gateway shell over the
 - Exports: AskCog, setup
-- Depends on: config, control.ControlBus, notifications.ask, notifications.audit, notifications.commands
+- Depends on: config, control.ControlBus, notifications.ask, notifications.audit, notifications.commands, notifications.views
+- Side effects: unannotated
+- Test: (none)
+
+## notifications/bot/cogs/control_cog.py
+Run-control slash commands (owner + cooldown): pause / approve / reject / retry / add / skip / abort.
+- Exports: ControlCog, setup
+- Depends on: control.ControlBus, notifications.audit, notifications.commands, notifications.slash, notifications.views
+- Side effects: unannotated
+- Test: (none)
+
+## notifications/bot/cogs/engagement_cog.py
+Tier 4 native engagement: resolve a gated approval from a native Poll vote.
+- Exports: verdictForAnswer, EngagementCog, setup
+- Depends on: config, control.ControlBus, notifications.audit, notifications.commands, notifications.engagement
+- Side effects: unannotated
+- Test: (none)
+
+## notifications/bot/cogs/observe_cog.py
+Observability slash commands (read-only, open to all):
+- Exports: ObserveCog, setup
+- Depends on: config, control.ControlBus, health, notifications.audit, notifications.branding, notifications.commands, notifications.metrics, notifications.slash, notifications.views
+- Side effects: unannotated
+- Test: (none)
+
+## notifications/bot/cogs/ops_cog.py
+Tier 5 realtime ops + safety: super-reaction quick-approve + a watchdog that alerts when
+- Exports: OpsCog, setup
+- Depends on: config, control.ControlBus, notifications.audit, notifications.commands, notifications.discord_bot, notifications.ops
 - Side effects: unannotated
 - Test: (none)
 
@@ -58,10 +86,17 @@ Tier 2 interactivity: the in-Discord plan editor, the event-timeline browser, an
 - Side effects: unannotated
 - Test: pytest tests/test_plan_cog.py
 
+## notifications/bot/cogs/runs_cog.py
+Run-lifecycle slash commands: work / wipe / runs / run / resume.
+- Exports: RunsCog, setup
+- Depends on: agents.browser_executor, config, notifications.audit, notifications.branding, notifications.commands, notifications.slash, notifications.views, notifications.work_launcher, state.task
+- Side effects: unannotated
+- Test: (none)
+
 ## notifications/bot/core.py
 NightclawBot -- the gateway ``commands.Bot`` harness.
 - Exports: handleCommand, buildBot, runBot
-- Depends on: config, control.ControlBus, notifications.bot.ui.dynamic, notifications.commands, notifications.slash, notifications.views
+- Depends on: config, control.ControlBus, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views
 - Side effects: unannotated
 - Test: (none)
 
@@ -82,7 +117,7 @@ DynamicItem per-subtask actions (Tier 2). A stateless, regex-custom_id button so
 ## notifications/branding.py
 9TO5 Discord design system + rich embed builders. Pure (no network, no discord.py).
 - Exports: controlPanelRow, brandEmbed, helpEmbed, statusEmbed, planEmbed, runsEmbed, runEmbed, diagnosticsEmbed, metricsEmbed, pingEmbed, auditEmbed
-- Depends on: config, notifications.commands, notifications.discord_bot
+- Depends on: config, notifications.commands, notifications.discord_bot, notifications.icons
 - Side effects: unannotated
 - Test: pytest tests/test_branding.py
 
@@ -95,8 +130,8 @@ NotificationBus — fan-out event emitter for notification surfaces.
 
 ## notifications/cast.py
 The Cast -- speak() routes an agent's voice through its webhook persona.
-- Exports: enabled, speak
-- Depends on: config, notifications.discord_bot, notifications.personas
+- Exports: enabled, speak, duel
+- Depends on: config, notifications.discord_bot, notifications.icons, notifications.personas, notifications.visuals
 - Side effects: unannotated
 - Test: pytest tests/test_cast.py
 
@@ -117,14 +152,14 @@ Pure, discord-free command layer -- the single source of truth for the '!' gramm
 ## notifications/console_hud.py
 ANSI mission-console HUD (T8 cinematic). A PURE renderer that turns live TaskState into
 - Exports: render
-- Depends on: config, notifications.cv2
+- Depends on: config, notifications.cv2, notifications.theme
 - Side effects: unannotated
 - Test: pytest tests/test_console_hud.py
 
 ## notifications/cv2.py
 Components-V2 cockpit builders -- pure, no network, no discord.py.
 - Exports: container, text, separator, section, thumbnail, media_gallery, action_row, elapsedStr, etaStr, buildCockpit
-- Depends on: config, notifications.branding, notifications.discord_bot
+- Depends on: config, notifications.branding, notifications.discord_bot, notifications.icons, notifications.theme
 - Side effects: unannotated
 - Test: pytest tests/test_cv2.py
 
@@ -137,10 +172,17 @@ DiscordDashboard -- ONE persistent, pinned embed that mirrors the whole run.
 
 ## notifications/discord_bot.py
 Discord notifications -- professional, glass-box embeds + REST plumbing.
-- Exports: humanPing, progressBar, subtaskTracker, effortBar, statusColor, relTime, formatVerdict, truncate, createComponentsV2, editComponentsV2Result, sendComponentsV2, sendAs, createMessage, postContent, editContent, editMessageResult, editMessage, pinMessage, unpinMessage, fetchMessagesAfter, baselineLatestId, sendEmbed, planningStartEmbed, architectDoneEmbed, adversaryTriggeredEmbed, noticeEmbed, blockedEmbed, blockedComponents, completeEmbed, sendBlocked, gateNeededEmbed, subtaskFailedEmbed, abortedEmbed, selfRefEmbed
-- Depends on: config
+- Exports: humanPing, progressBar, subtaskTracker, effortBar, statusColor, relTime, formatVerdict, truncate, createComponentsV2, editComponentsV2Result, sendComponentsV2, sendAs, createMessage, postContent, postFile, editContent, editMessageResult, editMessage, pinMessage, unpinMessage, fetchMessagesAfter, baselineLatestId, sendEmbed, createPoll, endPoll, createScheduledEvent, planningStartEmbed, architectDoneEmbed, adversaryTriggeredEmbed, noticeEmbed, blockedEmbed, blockedComponents, completeEmbed, sendBlocked, gateNeededEmbed, subtaskFailedEmbed, abortedEmbed, selfRefEmbed
+- Depends on: config, notifications.icons
 - Side effects: unannotated
 - Test: (none)
+
+## notifications/engagement.py
+Native engagement APIs (Tier 4) -- pure builders + mappers, no network, no discord.py.
+- Exports: voteToVerdict, gatePollPayload, scheduledEventPayload
+- Depends on: (stdlib only)
+- Side effects: unannotated
+- Test: pytest tests/test_engagement.py
 
 ## notifications/entry.py
 NotificationEntry — typed schema for entries written to task.data['notifications'].
@@ -149,6 +191,20 @@ NotificationEntry — typed schema for entries written to task.data['notificatio
 - Side effects: unannotated
 - Test: pytest tests/test_entry_creation.py tests/test_notification_entry.py tests/test_notification_entry_schema.py
 
+## notifications/icons.py
+Application-emoji icon registry -- professional icons for Discord TEXT surfaces.
+- Exports: ensureIcons, icon, prefix, emojiPartial, buttonEmoji
+- Depends on: config, notifications.discord_bot, notifications.iconset
+- Side effects: unannotated
+- Test: pytest tests/test_icons.py
+
+## notifications/iconset.py
+Render professional icon PNGs (Segoe Fluent Icons) for use as Discord APPLICATION emojis.
+- Exports: renderIcon
+- Depends on: config, notifications.theme
+- Side effects: unannotated
+- Test: (none)
+
 ## notifications/metrics.py
 Aggregate run metrics from the task-state JSON store. Pure (reads files only).
 - Exports: compute
@@ -156,31 +212,45 @@ Aggregate run metrics from the task-state JSON store. Pure (reads files only).
 - Side effects: unannotated
 - Test: pytest tests/test_metrics.py
 
+## notifications/ops.py
+Tier 5 realtime ops -- pure logic for super-reaction quick-approve + the run watchdog.
+- Exports: reactionToVerdict, lastActivityTs, runIsStale
+- Depends on: (stdlib only)
+- Side effects: unannotated
+- Test: pytest tests/test_ops.py
+
 ## notifications/personas.py
-The Cast -- the 9to5 agent roster used for webhook identity overrides.
+The Cast -- the 9to5 agent roster for webhook identity overrides.
 - Exports: persona, roles
 - Depends on: config
 - Side effects: unannotated
 - Test: (none)
 
 ## notifications/slash.py
-All 9TO5 slash commands, registered onto a CommandTree. Thin shells over the
-- Exports: registerSlashCommands
-- Depends on: agents.browser_executor, config, control.ControlBus, health, notifications.audit, notifications.branding, notifications.commands, notifications.metrics, notifications.views, notifications.work_launcher, state.task
+Shared helpers for the slash-command cogs.
+- Exports: (none)
+- Depends on: config, control.ControlBus, notifications.audit, notifications.commands, state.task
 - Side effects: unannotated
 - Test: pytest tests/test_slash.py
+
+## notifications/theme.py
+Theme engine (T8 keystone) -- the single source of visual identity for the whole frontier
+- Exports: font, iconFont, iconChar, phaseIcon, name, pillowPalette, ansiFrame, ansiStatus, glyphs, statusFill, accent, phaseEmoji
+- Depends on: config
+- Side effects: unannotated
+- Test: pytest tests/test_theme.py
 
 ## notifications/views.py
 discord.py UI components for the 9TO5 gateway: persistent control-panel + blocked
 - Exports: ConfirmView, confirmDestructive, ControlPanelView, BlockedView, Paginator, WorkSetupView, WipeSetupView, WipeConfirmView, WorkModal
-- Depends on: agents.browser_executor, config, control.ControlBus, notifications.audit, notifications.commands, notifications.work_launcher, wipe.CATEGORIES, wipe.executeWipe, wipe.restartBot
+- Depends on: agents.browser_executor, config, control.ControlBus, notifications.audit, notifications.commands, notifications.icons, notifications.work_launcher, wipe.CATEGORIES, wipe.executeWipe, wipe.restartBot
 - Side effects: unannotated
 - Test: pytest tests/test_views.py
 
 ## notifications/visuals.py
-Generative visuals -- Pillow-rendered cockpit imagery (progress cards, burndown
-- Exports: available, progressCard, burndownChart, timelapseGif
-- Depends on: config
+Generative visuals -- Pillow-rendered cockpit imagery in the "Nightclaw Ops Console" design
+- Exports: available, progressCard, burndownChart, duelCard, timelapseGif, runReplayGif
+- Depends on: config, notifications.theme
 - Side effects: unannotated
 - Test: pytest tests/test_visuals.py
 

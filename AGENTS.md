@@ -37,7 +37,7 @@
 | `agents/` | 18 | `agents/AGENTS.md` |
 | `learning/` | 32 | `learning/AGENTS.md` |
 | `memory/` | 5 | `memory/AGENTS.md` |
-| `notifications/` | 28 | `notifications/AGENTS.md` |
+| `notifications/` | 38 | `notifications/AGENTS.md` |
 | `state/` | 2 | `state/AGENTS.md` |
 | (top-level) | 21 | this file |
 
