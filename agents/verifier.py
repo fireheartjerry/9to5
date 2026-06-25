@@ -128,6 +128,15 @@ def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
                 if mod not in _VERIFY_STDLIB_OK:
                     LOG.info("sanitizeVerify: dropping verify importing non-stdlib '%s': %s", mod, cmd)
                     return None
+    # Defense-in-depth: a verify that is NOT a validated `python -c` shape runs verbatim under
+    # shell=True. A brain-authored cmd with shell-chaining metacharacters (; & | backtick $() or a
+    # newline) could chain an unintended command. Drop it -> fall back to "executor exited 0" (the
+    # same safe degradation sanitizeVerify already uses for unrunnable shapes). A MATCHED python -c is
+    # exempt: its body is ast-validated and the closing quote ends the command (`\1\s*$`), so trailing
+    # shell content can't ride along.
+    if m is None and re.search(r"[;&|`\n]|\$\(", cmd):
+        LOG.info("sanitizeVerify: dropping verify with shell-chaining metacharacters: %s", cmd)
+        return None
     return verify
 
 
