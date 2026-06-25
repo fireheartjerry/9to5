@@ -12,6 +12,32 @@ def _run(coro):
     return asyncio.get_event_loop().run_until_complete(coro)
 
 
+class TestSkipTargetsPending(unittest.TestCase):
+    """The dashboard Skip button must queue a skip of a PENDING subtask (what the backend honors),
+    not the in_progress one (which the orchestrator drops -> the button silently no-op'd)."""
+    def test_skip_targets_next_pending(self):
+        from notifications import views
+        state = mock.Mock()
+        state.task_id = "t1"
+        state.subtasks = [
+            {"subtask_id": "st-001", "status": "in_progress"},
+            {"subtask_id": "st-002", "status": "pending"},
+            {"subtask_id": "st-003", "status": "pending"},
+        ]
+        interaction = mock.AsyncMock()
+        interaction.user.id = 1
+        captured = {}
+        with mock.patch.object(views, "_ownerOk", return_value=True), \
+                mock.patch.object(views.commands, "resolveTargetTask", return_value=state), \
+                mock.patch.object(views.commands, "applyCommand",
+                                  side_effect=lambda bus, st, cmd: captured.setdefault("cmd", cmd) or "queued"), \
+                mock.patch.object(views.audit, "record"), \
+                mock.patch.object(views, "ControlBus"):
+            _run(views._skipCurrent(interaction, "test"))
+        self.assertEqual(captured["cmd"].arg, "st-002",
+                         "Skip targeted a non-pending subtask (backend would drop it)")
+
+
 class TestConfirmView(unittest.TestCase):
     def test_initial_value_is_false(self):
         v = ConfirmView(owner_id=42)
