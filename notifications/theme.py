@@ -100,6 +100,58 @@ def font(size: int, weight: str = "regular"):
     return fnt
 
 
+# ---- professional icon set (Segoe Fluent Icons) -----------------------------
+_ICON_FILES = ("SegoeIcons.ttf", "segmdl2.ttf")
+# concept -> Segoe Fluent Icons codepoint (verified by rendering a contact sheet)
+ICON = {
+    "done": 0xEC61, "complete": 0xEC61, "fail": 0xEA39, "failed": 0xEA39,
+    "active": 0xE945, "in_progress": 0xE945, "pending": 0xEA3A, "removed": 0xE711,
+    "paused": 0xE769, "run": 0xE768, "warn": 0xE7BA, "blocked": 0xE7BA,
+    "adversary": 0xEA18, "plan": 0xE707, "architect": 0xE90F, "verify": 0xE9D9,
+    "replan": 0xE895, "retry": 0xE72C, "abort": 0xE71A, "info": 0xE946,
+    "clock": 0xE823, "elapsed": 0xE916, "model": 0xE950, "effort": 0xEC4A,
+    "brain": 0xE9F5, "flag": 0xE7C1, "history": 0xE81C, "help": 0xE9CE,
+    "mode": 0xE713, "watchdog": 0xEB95, "metrics": 0xE9D9, "goal": 0xE7C1,
+}
+# phase -> concept; agent role -> concept
+PHASE_ICON = {
+    "starting": "run", "resuming": "retry", "architecting": "architect", "planning": "plan",
+    "executing": "active", "verifying": "verify", "replanning": "replan", "paused": "paused",
+    "blocked": "warn", "complete": "complete", "aborted": "abort", "failed": "fail",
+}
+ROLE_ICON = {
+    "brain": "brain", "orchestrator": "brain", "architect": "architect", "planner": "plan",
+    "executor": "mode", "verifier": "verify", "adversary": "adversary", "replanner": "replan",
+}
+
+
+def iconFont(size: int):
+    key = (size, "__icon__")
+    if key in _FONT_CACHE:
+        return _FONT_CACHE[key]
+    from PIL import ImageFont
+    fnt = None
+    for fn in _ICON_FILES:
+        try:
+            fnt = ImageFont.truetype(str(_FONT_DIR / fn), size)
+            break
+        except Exception:  # noqa: BLE001
+            continue
+    if fnt is None:
+        fnt = font(size)
+    _FONT_CACHE[key] = fnt
+    return fnt
+
+
+def iconChar(concept: str) -> str:
+    cp = ICON.get(concept)
+    return chr(cp) if cp else ""
+
+
+def phaseIcon(phase: str) -> str:
+    return iconChar(PHASE_ICON.get(phase, "info"))
+
+
 # ---- accessors --------------------------------------------------------------
 def name() -> str:
     return config.COCKPIT_THEME if config.COCKPIT_THEME in PALETTES else "dark"

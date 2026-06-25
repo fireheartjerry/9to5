@@ -126,18 +126,46 @@ def _status_cells(draw, x: int, y: int, statuses: list, pal: dict,
                                    fill=pal["surface"], outline=col, width=2)
 
 
+def _icon(draw, xy, concept: str, size: int, color, anchor: str = "lm") -> None:
+    """Draw a professional Segoe Fluent Icons glyph for ``concept``."""
+    ch = theme.iconChar(concept)
+    if ch:
+        draw.text(xy, ch, font=theme.iconFont(size), fill=color, anchor=anchor)
+
+
 def _metrics(draw, x: int, y: int, width: int, items: list, pal: dict) -> None:
-    """Evenly-spaced label/value columns with subtle dividers. items: [(label, value)]."""
+    """Evenly-spaced icon · label / value columns with dividers. items: [(concept, label, value)]."""
     lbl_f = _font(11, "mono")
-    val_f = _font(17, "mono-bold")
+    val_f = _font(18, "mono-bold")
     n = max(len(items), 1)
     col_w = width // n
-    for i, (label, value) in enumerate(items):
+    for i, (concept, label, value) in enumerate(items):
         cx = x + i * col_w
         if i:
-            draw.line([(cx - 12, y + 2), (cx - 12, y + 40)], fill=pal["border"])
-        draw.text((cx, y), label.upper(), font=lbl_f, fill=pal["muted"])
-        draw.text((cx, y + 18), str(value), font=val_f, fill=pal["text"])
+            draw.line([(cx - 14, y + 2), (cx - 14, y + 44)], fill=pal["border"])
+        ch = theme.iconChar(concept)
+        lx = cx
+        if ch:
+            _icon(draw, (cx + 1, y + 7), concept, 13, pal["muted"])
+            lx = cx + 20
+        draw.text((lx, y), label.upper(), font=lbl_f, fill=pal["muted"])
+        draw.text((cx, y + 20), str(value), font=val_f, fill=pal["text"])
+
+
+def _status_summary(draw, x: int, y: int, subs: list, pal: dict) -> int:
+    """Icon · count pairs for the subtask status mix. Returns the end x."""
+    mix = [("done", sum(1 for s in subs if s.get("status") == "done")),
+           ("active", sum(1 for s in subs if s.get("status") == "in_progress")),
+           ("fail", sum(1 for s in subs if s.get("status") == "failed")),
+           ("pending", sum(1 for s in subs if s.get("status") == "pending"))]
+    f = _font(15, "mono-bold")
+    cx = x
+    for concept, n in mix:
+        _icon(draw, (cx, y + 8), concept, 16, theme.statusFill(
+            {"done": "done", "active": "in_progress", "fail": "failed", "pending": "pending"}[concept]))
+        draw.text((cx + 22, y), str(n), font=f, fill=pal["text"])
+        cx += 22 + int(draw.textlength(str(n), font=f)) + 22
+    return cx
 
 
 def _logo(draw, x: int, y: int, pal: dict) -> None:
@@ -171,12 +199,18 @@ def progressCard(state, *, phase: str = "executing", model: Optional[str] = None
         d.rectangle([0, 0, W, 4], fill=acc)
 
         _logo(d, M, 30, pal)
-        # phase chip (right-aligned)
+        # phase chip with a professional phase icon (right-aligned)
         chip_f = _font(12, "mono-bold")
         chip_txt = phase.upper()
-        cw = d.textlength(chip_txt, font=chip_f) + 20 + 18
-        d.ellipse([W - M - cw - 16, 41, W - M - cw - 6, 51], fill=acc)   # status dot
-        _pill(d, int(W - M - cw), 36, chip_txt, chip_f, acc, _mix(acc, pal["surface"], 0.16))
+        ic = theme.phaseIcon(phase)
+        tw = d.textlength(chip_txt, font=chip_f)
+        pad, icw, h = 13, (20 if ic else 0), chip_f.size + 12
+        cw = int(tw + icw + pad * 2)
+        chx = W - M - cw
+        d.rounded_rectangle([chx, 36, chx + cw, 36 + h], radius=h // 2, fill=_mix(acc, pal["surface"], 0.16))
+        if ic:
+            d.text((chx + pad, 36 + h // 2), ic, font=theme.iconFont(14), fill=acc, anchor="lm")
+        d.text((chx + pad + icw, 36 + 6), chip_txt, font=chip_f, fill=acc)
 
         # goal
         for i, line in enumerate(_wrap(d, m.get("goal_raw", ""), _font(25, "semibold"), W - 2 * M, 2)):
@@ -188,18 +222,19 @@ def progressCard(state, *, phase: str = "executing", model: Optional[str] = None
         d.text((W - M - 132, by - 9), f"{int(round(pct * 100))}%", font=_font(28, "mono-bold"), fill=pal["text"])
         d.text((W - M - 132, by + 22), f"{done}/{total} done", font=_font(13, "mono"), fill=pal["muted"])
 
-        # subtask heatmap
-        d.text((M, 232), "SUBTASKS", font=_font(11, "mono"), fill=pal["muted"])
-        _status_cells(d, M, 254, [s.get("status") for s in subs[:60]], pal)
+        # subtask zone: label + icon status summary + colour heatmap
+        d.text((M, 230), "SUBTASKS", font=_font(11, "mono"), fill=pal["muted"])
+        _status_summary(d, M + 108, 224, subs, pal)
+        _status_cells(d, M, 258, [s.get("status") for s in subs[:60]], pal)
 
         # divider + metrics footer
         d.line([(M, 318), (W - M, 318)], fill=pal["border"])
         advs = len(state.data.get("adversary_reviews", []))
         replans = sum(1 for n in state.data.get("notifications", []) if n.get("kind") == "replan")
         _metrics(d, M, 338, W - 2 * M, [
-            ("model", (model or config.PRIMARY_MODEL).replace("claude-", "")),
-            ("effort", effort), ("mode", m.get("control_mode", "watch")),
-            ("replans", replans), ("adversary", advs),
+            ("model", "model", (model or config.PRIMARY_MODEL).replace("claude-", "")),
+            ("effort", "effort", effort), ("mode", "mode", m.get("control_mode", "watch")),
+            ("replan", "replans", replans), ("adversary", "adversary", advs),
         ], pal)
 
         buf = io.BytesIO()
@@ -287,13 +322,17 @@ def duelCard(subtask_title: str, verdict: str, *, trust: Optional[float] = None)
         if trust is not None:
             d.text((48, 214), "TRUST", font=_font(11, "mono"), fill=pal["muted"])
             _progress(img, d, [110, 214, W - 240, 228], max(0.0, min(1.0, trust)), pal)
-        # verdict chip (canvas stays emoji-free; a drawn dot marks it)
+        # verdict chip with a professional icon (warning vs check)
         chip = "CHALLENGED" if challenged else "APPROVED"
         cf = _font(15, "mono-bold")
-        cw = int(d.textlength(chip, font=cf)) + 36 + 16
-        _pill(d, W - 48 - cw, H - 56, chip, cf, acc, _mix(acc, pal["surface"], 0.18), pad_x=14, pad_y=7)
-        # small marker dot before the chip
-        d.ellipse([W - 48 - cw - 4, H - 50, W - 48 - cw + 6, H - 40], fill=acc)
+        tw = d.textlength(chip, font=cf)
+        pad, icw, h = 15, 24, cf.size + 14
+        cw = int(tw + icw + pad * 2)
+        cx = W - 48 - cw
+        d.rounded_rectangle([cx, H - 58, cx + cw, H - 58 + h], radius=h // 2, fill=_mix(acc, pal["surface"], 0.18))
+        d.text((cx + pad, H - 58 + h // 2), theme.iconChar("warn" if challenged else "done"),
+               font=theme.iconFont(17), fill=acc, anchor="lm")
+        d.text((cx + pad + icw, H - 58 + 7), chip, font=cf, fill=acc)
 
         buf = io.BytesIO()
         img.save(buf, format="PNG")
