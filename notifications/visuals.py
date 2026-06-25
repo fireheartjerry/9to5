@@ -12,26 +12,11 @@ import io
 from typing import Optional
 
 import config
+from notifications import theme
 
 LOG = config.getLogger("visuals")
 
 # --- theme palettes (bg, panel, text, muted, grid) -- keyed by COCKPIT_THEME ----
-_THEMES = {
-    "dark":     {"bg": (24, 26, 33), "panel": (33, 37, 48), "text": (230, 233, 239),
-                 "muted": (138, 145, 160), "grid": (52, 58, 74)},
-    "neon":     {"bg": (10, 10, 18), "panel": (22, 18, 40), "text": (235, 240, 255),
-                 "muted": (150, 130, 200), "grid": (60, 40, 110)},
-    "minimal":  {"bg": (250, 250, 252), "panel": (238, 240, 244), "text": (28, 30, 36),
-                 "muted": (120, 126, 138), "grid": (210, 214, 222)},
-    "terminal": {"bg": (8, 12, 10), "panel": (12, 20, 14), "text": (120, 255, 140),
-                 "muted": (70, 150, 90), "grid": (24, 50, 30)},
-}
-_STATUS_FILL = {
-    "done": (46, 204, 113), "in_progress": (52, 152, 219), "failed": (231, 76, 60),
-    "pending": (90, 96, 110), "removed": (60, 64, 76),
-}
-
-
 def available() -> bool:
     if not config.VISUALS_ENABLED:
         return False
@@ -43,7 +28,7 @@ def available() -> bool:
 
 
 def _theme() -> dict:
-    return _THEMES.get(config.COCKPIT_THEME, _THEMES["dark"])
+    return theme.pillowPalette()
 
 
 def _rgb(value: int) -> tuple:
@@ -125,7 +110,7 @@ def progressCard(state, *, phase: str = "executing", model: Optional[str] = None
             x = gx + c * (sq + gap)
             y = gy + r * (sq + gap)
             d.rounded_rectangle([x, y, x + sq, y + sq], radius=4,
-                                fill=_STATUS_FILL.get(s.get("status"), _STATUS_FILL["pending"]))
+                                fill=theme.statusFill(s.get("status")))
 
         # footer metrics
         advs = len(state.data.get("adversary_reviews", []))
@@ -164,7 +149,7 @@ def burndownChart(state) -> Optional[bytes]:
         for i, k in enumerate(order):
             x = 40 + i * (bar_w + gap)
             h = int((H - 110) * counts[k] / peak)
-            d.rectangle([x, base_y - h, x + bar_w, base_y], fill=_STATUS_FILL.get(k))
+            d.rectangle([x, base_y - h, x + bar_w, base_y], fill=theme.statusFill(k))
             d.text((x, base_y + 6), k.replace("_", " "), font=_font(14), fill=th["muted"])
             d.text((x + bar_w // 2 - 6, base_y - h - 22), str(counts[k]), font=_font(18), fill=th["text"])
 

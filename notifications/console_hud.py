@@ -13,6 +13,7 @@ from typing import Optional
 
 import config
 from notifications import cv2
+from notifications import theme
 
 ESC = "\x1b"
 
@@ -23,16 +24,6 @@ def _c(code: str) -> str:
 
 RESET = _c("0")
 BOLD = _c("1")
-FRAME = _c("36")   # cyan frame
-
-# status -> ANSI fg code
-_STATUS = {
-    "executing": "32", "running": "32", "verifying": "32", "done": "32", "complete": "32",
-    "architecting": "36", "planning": "36", "starting": "36", "resuming": "36",
-    "adversary": "33", "paused": "33",
-    "replanning": "35",
-    "blocked": "31", "failed": "31", "aborted": "31",
-}
 
 
 def render(state, phase: str, *, events: Optional[list] = None, width: int = 36) -> str:
@@ -45,7 +36,9 @@ def render(state, phase: str, *, events: Optional[list] = None, width: int = 36)
         total = max(len(subs), 1)
         pct = done / total
         status = str(m.get("status", "?"))
-        color = _c(_STATUS.get(status, "37"))
+        color = _c(theme.ansiStatus(status))
+        frame = _c(theme.ansiFrame())
+        fill_g, empty_g = theme.glyphs()
 
         cur = next((s for s in subs if s.get("status") == "in_progress"), None) \
             or next((s for s in subs if s.get("status") == "pending"), None)
@@ -58,20 +51,20 @@ def render(state, phase: str, *, events: Optional[list] = None, width: int = 36)
         verify = (("OK " if last_v[1].get("passed") else "FAIL ") + last_v[0]) if last_v else "—"
 
         filled = max(0, min(width, round(width * pct)))
-        bar = "█" * filled + "░" * (width - filled)
+        bar = fill_g * filled + empty_g * (width - filled)
         el = cv2.elapsedStr(m.get("started_at"))
         eta = cv2.etaStr(m.get("started_at"), done, total)
 
-        b = f"{FRAME}│{RESET}"
+        b = f"{frame}│{RESET}"
         lines = [
-            f"{BOLD}{FRAME}┌─ NIGHTCLAW · MISSION CONSOLE ─────────────────┐{RESET}",
+            f"{BOLD}{frame}┌─ NIGHTCLAW · MISSION CONSOLE ─────────────────┐{RESET}",
             f"{b} PHASE   {color}{BOLD}{phase.upper()}{RESET}",
             f"{b} STATUS  {color}{status}{RESET}",
             f"{b} [{color}{bar}{RESET}] {int(pct * 100):>3}%  {done}/{total}",
             f"{b} CURRENT {cur_txt[:40]}",
             f"{b} VERIFY  {verify[:40]}",
             f"{b} ELAPSED {el}   ETA {eta}",
-            f"{BOLD}{FRAME}└───────────────────────────────────────────────┘{RESET}",
+            f"{BOLD}{frame}└───────────────────────────────────────────────┘{RESET}",
         ]
         return "```ansi\n" + "\n".join(lines) + "\n```"
     except Exception:  # noqa: BLE001 -- HUD is best-effort
