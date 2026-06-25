@@ -152,14 +152,22 @@ def refreshClaudeKnowledge(obs: "ObsidianClient | None" = None, *, fetch_web: bo
 
         unified = knowledge.buildUnifiedDoc(prior_doc, fetched, local, psk,
                                             refreshed_at=refreshed_at, sources=sources, recs=recs)
+        # UNIQUE temp per writer (pid+thread+rand). refreshClaudeKnowledge runs at the start of EVERY
+        # process (each run AND the gateway bot), and _KNOWLEDGE_LOCK is only process-local -- a shared
+        # "claude_code.md.tmp" let two processes write the same temp and the second os.replace hit
+        # FileNotFoundError after the first moved it. A unique source makes each replace find its own
+        # temp; the swap stays atomic so an interrupt never leaves a half-written ~1MB doc. (Mirrors
+        # ControlBus._write / TaskState.save.)
+        tmp = kpath.with_suffix(f".{os.getpid()}-{threading.get_ident()}-{os.urandom(4).hex()}.md.tmp")
         try:
-            # atomic: write a temp then os.replace, so an interrupt (Ctrl-C / !abort / taskkill /T
-            # on timeout) can never leave a half-written ~1MB claude_code.md to be folded back in.
-            tmp = kpath.with_suffix(".md.tmp")
             tmp.write_text(unified, encoding="utf-8")
             os.replace(tmp, kpath)
             LOG.info("knowledge: wrote unified claude_code.md (%d chars) to %s", len(unified), kpath)
         except Exception as e:  # noqa: BLE001
+            try:
+                tmp.unlink()   # never leave a stray unique temp behind on a failed write
+            except OSError:
+                pass
             LOG.warning("knowledge write failed (%s); keeping in-memory only", e)
 
         summary = knowledge.compressForInjection(unified, local, fetched, recs=recs)
@@ -1230,6 +1238,19 @@ class Orchestrator:
     # ===================================================================
     # Adversary teeth -- bounded remediation LOOP + pre-PR hold
     # ===================================================================
+    def _remediationTreeShared(self, exec_cwd: str) -> bool:
+        """True when >1 subtask runs concurrently in a SHARED working tree -- the only case where the
+        remediation snapshot + whole-tree `git checkout <sha> -- .` would revert a peer worker's edits
+        (silent data loss, #1). Self-referential runs give each subtask its own .sc-ctx cwd (exec_cwd
+        != work_dir), so their tree is private and remediation stays safe; sequential runs have no
+        peers. Only a non-self-ref parallel run shares work_dir and is unsafe."""
+        if getattr(self, "_parallelism", 1) <= 1:
+            return False
+        try:
+            return os.path.abspath(exec_cwd) == os.path.abspath(getattr(self, "_work_dir", exec_cwd))
+        except Exception:  # noqa: BLE001
+            return False
+
     def _remediate(self, state: TaskState, subtask: dict, architect_doc: str, exec_cwd: str,
                    concerns: list[str]) -> dict:
         """Bounded remediation LOOP (up to ADVERSARY_REMEDIATION_MAX_ATTEMPTS) on a subtask that
@@ -1609,8 +1630,18 @@ class Orchestrator:
                 # attempt with the concerns injected. Never downgrades the passing result.
                 if (config.ADVERSARY_REMEDIATION_ENABLED and final == "done"
                         and rv.get("verdict") == "challenged" and rv.get("concerns")):
-                    dashboard.update(state, "executing", f"{sid} adversary remediation (1 attempt)")
-                    self._remediate(state, subtask, architect_doc, exec_cwd, rv["concerns"])
+                    if self._remediationTreeShared(exec_cwd):
+                        # Skip remediation: its snapshot + whole-tree `git checkout <sha> -- .` would
+                        # revert concurrent peer workers' edits in the shared tree (silent data loss).
+                        # Self-ref runs isolate each subtask in .sc-ctx, so they still remediate.
+                        LOG.warning("%s: skipping adversary remediation -- shared working tree under "
+                                    "parallelism>1 (a revert would clobber peer subtasks)", sid)
+                        with self._state_lock:
+                            state.addNotification("adversary_remediation",
+                                                  f"{sid}: remediation skipped (shared tree, parallel run)")
+                    else:
+                        dashboard.update(state, "executing", f"{sid} adversary remediation (1 attempt)")
+                        self._remediate(state, subtask, architect_doc, exec_cwd, rv["concerns"])
 
             # SIE subsystem I: capture the executor's learning summary (trust-checked against
             # the real verify + adversary verdict) and memoize a passing spec. Best-effort.
@@ -1797,6 +1828,10 @@ class Orchestrator:
 
     def runExecutionLoop(self, state: TaskState, architect_doc: str, work_dir: str,
                          bus: ControlBus, dashboard: DiscordDashboard, parallelism: int = 1) -> None:
+        # Record the run's concurrency + shared working tree so _remediationTreeShared can tell
+        # whether a remediation snapshot/restore would clobber concurrent peer workers (see #1).
+        self._parallelism = parallelism
+        self._work_dir = work_dir
         position = 0
         iters = 0
         no_progress = 0
