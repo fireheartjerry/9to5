@@ -1015,6 +1015,11 @@ class Orchestrator:
             bus.clearDecision(gate)
             bus.setPendingGate(gate)
             discord.sendEmbed(discord.gateNeededEmbed(gate), content=discord.humanPing())
+            if config.POLL_GATES:
+                # Native Poll approval (Tier 4): the gateway's on_raw_poll_vote_add maps the
+                # owner's vote -> ControlBus.decide. Buttons + !approve remain the fallback.
+                from notifications import engagement
+                discord.createPoll(engagement.gatePollPayload(gate), content=discord.humanPing())
             dashboard.update(state, f"awaiting {gate}", f"awaiting approval for gate: {gate}")
             while True:
                 self._translateDiscord(bus, state)

@@ -27,9 +27,10 @@ MAX_REPLY_CHARS = config.DISCORD_MAX_CONTENT - 100
 # notifications.slash suite is still registered in setup_hook for parity; these cogs ADD
 # new frontier commands alongside it. A bad cog is logged and skipped, never killing the bot.
 EXTENSIONS: tuple[str, ...] = (
-    "notifications.bot.cogs.admin",     # /reload (hot-reload), /cockpit
-    "notifications.bot.cogs.ask_cog",   # /ask -- conversational Ollama cockpit (Tier 6)
-    "notifications.bot.cogs.plan_cog",  # /plan-edit, /timeline + context menus (Tier 2)
+    "notifications.bot.cogs.admin",        # /reload (hot-reload), /cockpit, /hud
+    "notifications.bot.cogs.ask_cog",      # /ask -- conversational Ollama cockpit (Tier 6)
+    "notifications.bot.cogs.plan_cog",     # /plan-edit, /timeline + context menus (Tier 2)
+    "notifications.bot.cogs.engagement_cog",  # native Poll gate resolution (Tier 4)
 )
 
 

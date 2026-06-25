@@ -590,6 +590,45 @@ def sendEmbed(embed: dict, content: Optional[str] = None, components: Optional[l
 
 
 # =====================================================================
+# Native engagement (Tier 4): Polls + Scheduled Events
+# =====================================================================
+def createPoll(poll: dict, content: Optional[str] = None) -> Optional[str]:
+    """Post a native Discord Poll (engagement.gatePollPayload). Returns the message id."""
+    payload: dict = {"poll": poll}
+    if content:
+        payload["content"] = content
+        payload["allowed_mentions"] = _ownerMentions()
+    r = _request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", json=payload)
+    if r is not None and 200 <= r.status_code < 300:
+        try:
+            return str(r.json().get("id"))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def endPoll(message_id: str) -> bool:
+    """Finalize a poll early (the gate resolved). Idempotent-ish; best-effort."""
+    if not message_id:
+        return False
+    r = _request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/polls/{message_id}/expire")
+    return r is not None and 200 <= r.status_code < 300
+
+
+def createScheduledEvent(guild_id: int, body: dict) -> Optional[str]:
+    """Create a guild Scheduled Event (engagement.scheduledEventPayload). Returns its id."""
+    if not guild_id:
+        return None
+    r = _request("POST", f"/guilds/{guild_id}/scheduled-events", json=body)
+    if r is not None and 200 <= r.status_code < 300:
+        try:
+            return str(r.json().get("id"))
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+# =====================================================================
 # Embed builders
 # =====================================================================
 def _goalSummary(goal: str, limit: int = 320) -> str:
