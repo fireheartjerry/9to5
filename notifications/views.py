@@ -96,7 +96,7 @@ def _applyButtonIcons(view) -> None:
     from notifications import icons
     for c in view.children:
         cid = getattr(c, "custom_id", None)
-        em = icons.emojiPartial(_BTN_ICON.get(cid, "")) if cid else None
+        em = icons.buttonEmoji(_BTN_ICON.get(cid, "")) if cid else None
         if em:
             c.emoji = discord.PartialEmoji(name=em["name"], id=int(em["id"]))
 

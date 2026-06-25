@@ -35,18 +35,24 @@ EMOJI_CONCEPTS = (
     "effort", "brain", "complete", "flag", "reject", "skip", "resume", "approve",
 )
 
+# Icons placed ON Discord buttons must be near-white (button backgrounds are green/red/gray/
+# blurple and their labels are white) -- semantic colours wash out (green icon on green button).
+BUTTON_CONCEPTS = ("paused", "resume", "approve", "reject", "skip", "abort", "info")
+BUTTON_COLOR = (237, 240, 245)
 
-def renderIcon(concept: str, size: int = 128) -> "bytes | None":
-    """A square RGBA PNG of the concept's icon in its semantic colour, or None."""
+
+def renderIcon(concept: str, size: int = 128, color: "tuple | None" = None) -> "bytes | None":
+    """A square RGBA PNG of the concept's icon. ``color`` overrides the semantic colour
+    (used for the near-white button variants). None if unavailable."""
     if not theme.iconChar(concept):
         return None
     try:
         from PIL import Image, ImageDraw
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
-        color = _COLOR.get(concept, DEFAULT_COLOR) + (255,)
+        rgb = (color or _COLOR.get(concept, DEFAULT_COLOR)) + (255,)
         f = theme.iconFont(int(size * 0.74))
-        d.text((size // 2, size // 2 + 2), theme.iconChar(concept), font=f, fill=color, anchor="mm")
+        d.text((size // 2, size // 2 + 2), theme.iconChar(concept), font=f, fill=rgb, anchor="mm")
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         return buf.getvalue()

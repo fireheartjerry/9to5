@@ -767,7 +767,7 @@ def blockedComponents() -> list:
 
     def _b(style, label, cid, concept):
         b = {"type": 2, "style": style, "label": label, "custom_id": cid}
-        em = icons.emojiPartial(concept)
+        em = icons.buttonEmoji(concept)    # near-white button icon
         if em:
             b["emoji"] = em
         return b

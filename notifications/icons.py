@@ -61,23 +61,33 @@ def ensureIcons(force: bool = False) -> dict:
     if not app:
         return _MAP
     existing = _listExisting(app)
+
+    def _upload(name: str, png: bytes) -> "str | None":
+        eid = existing.get(name)
+        if eid or not png:
+            return eid
+        data = "data:image/png;base64," + base64.b64encode(png).decode()
+        r = discord._request("POST", f"/applications/{app}/emojis", json={"name": name, "image": data})
+        if r is not None and 200 <= r.status_code < 300:
+            try:
+                return str(r.json().get("id"))
+            except Exception:  # noqa: BLE001
+                return None
+        return None
+
+    # semantic-coloured icons (for inline text on the dark message background)
     for concept in iconset.EMOJI_CONCEPTS:
         name = PREFIX + concept
-        eid = existing.get(name)
-        if not eid:
-            png = iconset.renderIcon(concept)
-            if not png:
-                continue
-            data = "data:image/png;base64," + base64.b64encode(png).decode()
-            r = discord._request("POST", f"/applications/{app}/emojis", json={"name": name, "image": data})
-            if r is not None and 200 <= r.status_code < 300:
-                try:
-                    eid = str(r.json().get("id"))
-                except Exception:  # noqa: BLE001
-                    eid = None
+        eid = _upload(name, iconset.renderIcon(concept) or b"")
         if eid:
             _MAP[concept] = f"<:{name}:{eid}>"
-    LOG.info("app-emoji icons ready: %d/%d", len(_MAP), len(iconset.EMOJI_CONCEPTS))
+    # near-white variants (for icons placed ON coloured buttons)
+    for concept in iconset.BUTTON_CONCEPTS:
+        name = PREFIX + "w_" + concept
+        eid = _upload(name, iconset.renderIcon(concept, color=iconset.BUTTON_COLOR) or b"")
+        if eid:
+            _MAP["w_" + concept] = f"<:{name}:{eid}>"
+    LOG.info("app-emoji icons ready: %d", len(_MAP))
     return _MAP
 
 
@@ -97,6 +107,12 @@ _REF = _re.compile(r"<:(?P<name>[A-Za-z0-9_]+):(?P<id>\d+)>")
 
 
 def emojiPartial(concept: str):
-    """{'id','name'} for putting the app-emoji icon ON a button (raw component dict), or None."""
+    """{'id','name'} for the semantic-coloured icon (inline use), or None."""
     m = _REF.match(icon(concept) or "")
+    return {"id": m.group("id"), "name": m.group("name")} if m else None
+
+
+def buttonEmoji(concept: str):
+    """{'id','name'} for the NEAR-WHITE button variant (reads on green/red/gray buttons), or None."""
+    m = _REF.match((_MAP or {}).get("w_" + concept, ""))
     return {"id": m.group("id"), "name": m.group("name")} if m else None

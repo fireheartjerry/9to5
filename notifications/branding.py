@@ -24,7 +24,7 @@ def controlPanelRow() -> list:
     Row 1: positive/flow actions (Pause · Resume · Approve). Row 2: destructive/skip (Reject · Skip · Abort)."""
     def _btn(style: int, label: str, cid: str, concept: str) -> dict:
         b = {"type": 2, "style": style, "label": label, "custom_id": cid}
-        em = icons.emojiPartial(concept)   # professional app-emoji icon when provisioned
+        em = icons.buttonEmoji(concept)    # near-white icon so it reads on green/red/gray buttons
         if em:
             b["emoji"] = em
         return b
