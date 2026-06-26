@@ -2,7 +2,7 @@
 
 Checks:
 - architect and replanner do NOT create an Ollama client at import time (_OLLAMA is None)
-- clarifier and vlm_healer have no module-level Ollama client (by design)
+- clarifier has no module-level Ollama client (by design)
 - Key constants follow ALL_CAPS naming convention
 """
 from __future__ import annotations
@@ -43,11 +43,6 @@ def test_replanner_get_ollama_helper_exists():
     assert callable(getattr(rp, "_getOllama", None)), "_getOllama must be a callable in replanner"
 
 
-def test_vlm_healer_no_module_level_client():
-    import agents.vlm_healer as vh
-    assert not hasattr(vh, "_OLLAMA"), "vlm_healer must not have a module-level _OLLAMA"
-
-
 def test_clarifier_no_module_level_client():
     import agents.clarifier as cl
     assert not hasattr(cl, "_OLLAMA"), "clarifier must not have a module-level _OLLAMA"
@@ -71,7 +66,6 @@ if __name__ == "__main__":
         test_replanner_lazy_ollama,
         test_architect_get_ollama_helper_exists,
         test_replanner_get_ollama_helper_exists,
-        test_vlm_healer_no_module_level_client,
         test_clarifier_no_module_level_client,
         test_architect_constants_naming,
         test_replanner_constants_naming,

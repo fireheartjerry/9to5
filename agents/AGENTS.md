@@ -24,25 +24,11 @@ Architect (Step 1).
 - Test: pytest tests/test_phase_3_architecture.py
 
 ## agents/browser_executor.py
-Browser execution backend -- Layer 1 (CDP) "hands" for 9TO5.
-- Exports: BrowserUnavailable, runBrowser, chatgptActions, get_session, probe, startConversation, closeSession, preflightLogin, sessionAsk, askChatGPT
-- Depends on: agents.chatgpt_driver, agents.executor, config
+Browser execution backend -- Layer 1 (CDP) "hands" for 9TO5, plus the Gemini second-brain shim.
+- Exports: BrowserUnavailable, runBrowser, get_session, probe, startConversation, closeSession, preflightLogin, sessionAsk, askGemini
+- Depends on: agents.executor, agents.gemini_driver, config
 - Side effects: unannotated
 - Test: pytest tests/test_browser_executor.py tests/test_phase2_cdp_adversary.py
-
-## agents/chatgpt_driver.py
-ChatGPTSession -- the intelligent, DOM-aware hands that drive chatgpt.com for 9to5.
-- Exports: ChatGPTError, ChatGPTLoginRequired, ChatGPTBlocked, ChatGPTRateLimited, ChatGPTSelectorMiss, classify_state, extract_latest_reply, ChatGPTSession
-- Depends on: agents.chatgpt_selectors, agents.profile_hygiene, agents.vlm_healer, config
-- Side effects: unannotated
-- Test: pytest tests/test_chatgpt_driver.py tests/test_chatgpt_e2e_offline.py
-
-## agents/chatgpt_selectors.py
-chatgpt.com selectors -- centralized, fallback-listed, self-healable.
-- Exports: load, get, save_selector, cached_project_url, save_project_url, first_visible, visible_role
-- Depends on: config
-- Side effects: unannotated
-- Test: (none)
 
 ## agents/clarifier.py
 Clarifier -- the Orchestrator brain answers the Executor's questions, no human.
@@ -64,6 +50,13 @@ Executor (the hands) -- run Claude Code CLI from an Orchestrator invocation spec
 - Depends on: agents.playbook, config, memory.obsidian, notifications.discord_bot
 - Side effects: unannotated
 - Test: pytest tests/test_executor.py
+
+## agents/gemini_driver.py
+gemini_driver -- the second-brain transport: Google Gemini via the google-genai SDK.
+- Exports: GeminiError, GeminiAuthError, GeminiBlocked, GeminiRateLimited, GeminiUnavailable, GeminiSession
+- Depends on: config
+- Side effects: unannotated
+- Test: pytest tests/test_gemini_driver.py
 
 ## agents/hooks.py
 9TO5 deterministic hook dispatcher.
@@ -93,13 +86,6 @@ Executor playbook -- deterministic, role-scoped expertise for the HANDS.
 - Side effects: unannotated
 - Test: pytest tests/test_playbook.py
 
-## agents/profile_hygiene.py
-Chromium profile hygiene for the 9to5 ChatGPT second-brain profile.
-- Exports: killZombies, clearStaleLocks, markCleanExit, sanitize
-- Depends on: config
-- Side effects: unannotated
-- Test: (none)
-
 ## agents/replanner.py
 Replanner -- Ollama decides whether to mutate the subtask list.
 - Exports: replan
@@ -110,7 +96,7 @@ Replanner -- Ollama decides whether to mutate the subtask list.
 ## agents/second_brain.py
 second_brain -- the dual-brain consult router.
 - Exports: consult, is_blocking
-- Depends on: agents.adversary, agents.chatgpt_driver, config
+- Depends on: agents.adversary, agents.gemini_driver, config
 - Side effects: unannotated
 - Test: pytest tests/test_phase2_second_brain.py
 
@@ -118,13 +104,6 @@ second_brain -- the dual-brain consult router.
 Verifier -- run the brain-authored verification check for a subtask.
 - Exports: sanitizeVerify, extractRequirements, primaryTargetFile, requirementMarkers, buildContentScanVerify, buildRequirementsVerify, isStrictVerify, runVerification
 - Depends on: agents.executor, config
-- Side effects: unannotated
-- Test: (none)
-
-## agents/vlm_healer.py
-vlm_healer -- local-VLM perception for self-healing chatgpt.com selectors.
-- Exports: heal
-- Depends on: config, llm_io
 - Side effects: unannotated
 - Test: (none)
 

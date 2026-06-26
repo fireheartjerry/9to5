@@ -1,8 +1,9 @@
 """Resource-leak regressions from the gnarly audit:
 - experience._new_conn must close the connection if schema/WAL setup raises (it was opened before
   being registered in _all_conns, so a failure leaked it).
-- orchestrator._openChatGptSession must close the browser probe() opened if startConversation fails
-  (the session handle was assigned only AFTER startConversation, so a failure orphaned Chromium)."""
+- orchestrator._openGeminiSession must tear the session down if startConversation fails after a
+  successful probe() (the session handle was assigned only AFTER startConversation, so a failure
+  orphaned it)."""
 import tempfile
 import unittest
 from pathlib import Path
@@ -27,21 +28,21 @@ class TestNewConnNoLeakOnSchemaFailure(unittest.TestCase):
         self.assertNotIn(str(self.db), experience._schema_ready)   # not marked -> next call retries clean
 
 
-class TestChatGptSessionNoLeak(unittest.TestCase):
+class TestGeminiSessionNoLeak(unittest.TestCase):
     def test_session_closed_when_startconversation_fails(self):
         from orchestrator import Orchestrator
         orch = Orchestrator(brain=mock.Mock(), obs=mock.Mock())
         state = mock.Mock()
-        with mock.patch.object(config, "BROWSER_LAYER_ENABLED", True), \
+        with mock.patch.object(config, "GEMINI_ENABLED", True), \
                 mock.patch.object(orch, "_goalText", return_value="goal"), \
                 mock.patch("agents.browser_executor.probe", return_value=True), \
                 mock.patch("agents.browser_executor.startConversation", side_effect=RuntimeError("boom")), \
                 mock.patch("agents.browser_executor.closeSession") as close, \
                 mock.patch("orchestrator.discord"):
-            orch._openChatGptSession(state)
-        close.assert_called_once()              # the probe()-opened browser was torn down
-        self.assertIsNone(orch._chatgpt_session)
-        self.assertFalse(orch._chatgpt_session_ok)
+            orch._openGeminiSession(state)
+        close.assert_called_once()              # the probe()-opened session was torn down
+        self.assertIsNone(orch._gemini_session)
+        self.assertFalse(orch._gemini_session_ok)
 
 
 if __name__ == "__main__":

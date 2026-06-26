@@ -114,17 +114,20 @@ def _no_real_discord(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _no_real_browser(monkeypatch, tmp_path):
-    """Never let a test drive the real Phase-2 browser layer or touch the live ChatGPT profile.
+def _no_real_browser(monkeypatch):
+    """Never let a test drive the real generic browser (CDP) layer.
 
-    The repo's ``.env`` may set ``BROWSER_LAYER_ENABLED=True`` for real runs; with it on, the
-    orchestrator's run path probes a REAL Chromium on the single logged-in profile (and
-    ``profile_hygiene.sanitize()`` kills any other Chromium on it). So for the test process we
-    force the layer OFF and redirect the profile dir to a throwaway temp dir. The hard backstop
-    in ``agents.chatgpt_driver._realBrowserBlocked`` refuses a real launch under pytest even if a
-    test flips the flag back on. Tests that exercise the *routing* logic still
-    ``mock.patch`` ``BROWSER_LAYER_ENABLED=True`` locally and mock the browser calls -- unaffected,
-    because they never reach a real launch."""
+    The repo's ``.env`` may set ``BROWSER_LAYER_ENABLED=True`` for real runs; with it on the
+    orchestrator's dispatcher can route a subtask to a REAL Chromium via Playwright. Force the
+    layer OFF for the test process. Tests that exercise the *routing* logic still
+    ``mock.patch`` ``BROWSER_LAYER_ENABLED=True`` locally and mock ``_run_actions`` -- unaffected,
+    because they never reach a real launch.
+
+    Also force the Gemini second brain OFF: ``GEMINI_ENABLED`` defaults to ``bool(GEMINI_API_KEY)``,
+    so with a key in ``.env`` the orchestrator's run path would probe the second brain during
+    sim/e2e tests. ``agents.gemini_driver`` self-blocks the real API under any test runner, but the
+    deterministic test path is Ollama-only -- tests that exercise the Gemini path opt in explicitly
+    via ``mock.patch`` ``GEMINI_ENABLED=True`` (e.g. test_phase2_second_brain)."""
     monkeypatch.setattr(config, "BROWSER_LAYER_ENABLED", False)
-    monkeypatch.setattr(config, "CHATGPT_USER_DATA_DIR", tmp_path / "chatgpt_profile_test")
+    monkeypatch.setattr(config, "GEMINI_ENABLED", False)
     yield

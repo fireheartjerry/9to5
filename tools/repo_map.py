@@ -69,7 +69,6 @@ EXCLUDE_DIRS = {
 MANUAL_TEST_MAP: dict[str, list[str]] = {
     "agents.second_brain": ["tests/test_phase2_second_brain.py"],
     "agents.architect": ["tests/test_phase_3_architecture.py"],
-    "agents.chatgpt_driver": ["tests/test_chatgpt_driver.py", "tests/test_chatgpt_e2e_offline.py"],
     "agents.browser_executor": ["tests/test_browser_executor.py", "tests/test_phase2_cdp_adversary.py"],
 }
 

@@ -34,10 +34,10 @@
 
 | Package | Modules | Index |
 |---|---|---|
-| `agents/` | 18 | `agents/AGENTS.md` |
+| `agents/` | 15 | `agents/AGENTS.md` |
 | `learning/` | 32 | `learning/AGENTS.md` |
 | `memory/` | 5 | `memory/AGENTS.md` |
 | `notifications/` | 38 | `notifications/AGENTS.md` |
 | `state/` | 2 | `state/AGENTS.md` |
-| (top-level) | 24 | this file |
+| (top-level) | 21 | this file |
 

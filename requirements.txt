@@ -1,11 +1,12 @@
-# 9TO5 -- Phase 1 (Layer 3: Terminal/CLI) + Phase 2 (Layer 1: Browser/ChatGPT) dependencies.
+# 9TO5 -- Phase 1 (Layer 3: Terminal/CLI) + Phase 2 (Gemini second brain) dependencies.
 # Install into the project venv:  venv\Scripts\python -m pip install -r requirements.txt
-# Post-install Phase 2 browser: playwright install chromium
+# Post-install (only if the generic browser surface is used): playwright install chromium
 discord.py>=2.6        # Components V2 / LayoutView cockpit (notifications/cv2.py); 2.7+ adds RadioGroup modals
 Pillow>=10.0           # generative visuals: progress cards, burndown charts, GIF timelapse (notifications/visuals.py)
 ollama>=0.3
 python-dotenv>=1.0
 gitpython>=3.1
 requests>=2.31
-playwright>=1.40
-psutil>=5.9          # reap orphaned Chromium holding the ChatGPT profile (agents/profile_hygiene.py)
+google-genai>=1.0    # Gemini second brain transport (agents/gemini_driver.py)
+playwright>=1.40     # generic browser surface only (agents/browser_executor.py::_run_actions)
+psutil>=5.9          # process-liveness checks (main.py, notifications/work_launcher.py, learning/sie.py)

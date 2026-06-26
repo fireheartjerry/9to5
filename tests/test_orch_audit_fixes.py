@@ -39,8 +39,8 @@ class TestDetectSelfReferential(unittest.TestCase):
 class TestGptSoftFailDisable(unittest.TestCase):
     def test_disabled_after_consecutive_soft_fails(self):
         orch = _orch()
-        orch._chatgpt_session_ok = True
-        orch._chatgpt_ask = lambda m: "x"
+        orch._gemini_session_ok = True
+        orch._gemini_ask = lambda m: "x"
         soft = {"tier": "ollama", "verdict": "approved", "concerns": []}
         with mock.patch("agents.second_brain.consult", return_value=soft), \
                 mock.patch("orchestrator.discord"), \
@@ -48,14 +48,14 @@ class TestGptSoftFailDisable(unittest.TestCase):
                 mock.patch.object(orch, "_worthGptReview", return_value=True):
             for _ in range(2):
                 orch._adversaryReview("t", "r", "out", worth=True)
-            self.assertTrue(orch._chatgpt_session_ok)   # still on after 2
+            self.assertTrue(orch._gemini_session_ok)   # still on after 2
             orch._adversaryReview("t", "r", "out", worth=True)
-            self.assertFalse(orch._chatgpt_session_ok)  # disabled after the 3rd soft-fail
+            self.assertFalse(orch._gemini_session_ok)  # disabled after the 3rd soft-fail
 
     def test_real_gpt_verdict_resets_streak(self):
         orch = _orch()
-        orch._chatgpt_session_ok = True
-        orch._chatgpt_ask = lambda m: "x"
+        orch._gemini_session_ok = True
+        orch._gemini_ask = lambda m: "x"
         with mock.patch("orchestrator.discord"), \
                 mock.patch("learning.adversary_trust.record"), \
                 mock.patch.object(orch, "_worthGptReview", return_value=True):
@@ -69,7 +69,7 @@ class TestGptSoftFailDisable(unittest.TestCase):
             with mock.patch("agents.second_brain.consult",
                             return_value={"tier": "ollama", "verdict": "approved"}):
                 orch._adversaryReview("t", "r", "o", worth=True)
-        self.assertTrue(orch._chatgpt_session_ok)   # streak reset, only 1 soft-fail since
+        self.assertTrue(orch._gemini_session_ok)   # streak reset, only 1 soft-fail since
 
 
 if __name__ == "__main__":

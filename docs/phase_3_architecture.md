@@ -130,7 +130,7 @@ review, and the run continues rather than crashing.
 | Selector language | CSS / XPath | `control_type`, `title`, `auto_id` |
 | Headless capable | Yes (`headless=True`) | No — needs a display session (RDP or physical) |
 | Install | `playwright install chromium` | `pip install pywinauto` |
-| ChatGPT adversary brain | `askChatGPT` via CDP | N/A (Phase-2 feature stays on browser) |
+| External strong-critic brain | Gemini via `google-genai` SDK (stateless HTTPS, no browser) | N/A (second-brain feature is transport-independent) |
 
 ---
 

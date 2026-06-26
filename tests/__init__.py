@@ -24,10 +24,14 @@ _config.EXPERIENCE_DB_PATH = _pathlib.Path(_tempfile.mkdtemp(prefix="9to5_test_"
 _config.DISCORD_BOT_TOKEN = ""
 _config.DISCORD_CHANNEL_ID = 0
 
-# Same reasoning for the browser layer: conftest._no_real_browser (pytest-only) disables it and
-# redirects the Chrome profile to a temp dir, but `unittest discover` bypasses conftest -- so the
-# layer would stay at its config default under unittest. Disable it process-wide and point the
-# profile at a throwaway dir named "chatgpt_profile_test" (the marker tests assert on). No real
-# Chromium is ever launched; production never imports `tests`.
+# Same reasoning for the generic browser surface: conftest._no_real_browser (pytest-only) disables
+# it, but `unittest discover` bypasses conftest -- so the layer would stay at its config default
+# under unittest. Disable it process-wide so no real Chromium is launched; production never imports
+# `tests`.
 _config.BROWSER_LAYER_ENABLED = False
-_config.CHATGPT_USER_DATA_DIR = _pathlib.Path(_tempfile.mkdtemp(prefix="9to5_test_")) / "chatgpt_profile_test"
+# The Gemini second brain defaults ON whenever GEMINI_API_KEY is in .env (GEMINI_ENABLED ==
+# bool(key)), so the orchestrator's run path would activate the second-brain probe during sim/e2e
+# tests. gemini_driver self-blocks the real API under any test runner, but we still force the gate
+# OFF process-wide so e2e/sim runs take the deterministic Ollama-only path -- tests that exercise
+# the Gemini path opt in explicitly via `mock.patch(config, "GEMINI_ENABLED", True)`.
+_config.GEMINI_ENABLED = False

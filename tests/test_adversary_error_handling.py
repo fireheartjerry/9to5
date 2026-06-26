@@ -31,8 +31,10 @@ class TestIsCdpTransient(unittest.TestCase):
     def test_non_transient(self):
         self.assertFalse(adversary.isCdpTransient(ValueError("invalid JSON payload")))
 
-    def test_target_closed(self):
-        self.assertTrue(adversary.isCdpTransient(RuntimeError("target closed")))
+    def test_unavailable_5xx(self):
+        # Gemini/HTTPS transient signals: service unavailable + 5xx are retryable.
+        self.assertTrue(adversary.isCdpTransient(RuntimeError("503 Service Unavailable")))
+        self.assertTrue(adversary.isCdpTransient(RuntimeError("deadline exceeded")))
 
 
 class TestReviewViaBrowserEmptyReply(unittest.TestCase):
@@ -67,7 +69,7 @@ class TestReviewViaBrowserValidReply(unittest.TestCase):
         )
         self.assertEqual(result["verdict"], "approved")
         self.assertFalse(result.get("stub"))
-        self.assertEqual(result["surface"], "browser")
+        self.assertEqual(result["surface"], "gemini")
 
     def test_challenged_verdict(self):
         result = adversary.reviewViaBrowser(

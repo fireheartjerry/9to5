@@ -1,5 +1,7 @@
 # Gnarly-audit: remaining MEDIUM/LOW findings
 
+> **Historical record.** Findings referencing the ChatGPT/CDP second-brain layer (`chatgpt_driver`, `BROWSER_LAYER_ENABLED`, "GPT" second brain) are superseded by the 2026-06-26 migration to Google Gemini via the `google-genai` SDK (`agents/gemini_driver.py`). Kept as-is for provenance.
+
 The 30-agent systematic-debugging audit (2026-06-25) confirmed 42 real bugs. **All CRITICAL, HIGH,
 MEDIUM, and LOW findings are now FIXED** on this branch (audit/gnarly-bug-hunt) with regression
 tests. A handful of MEDIUMs were duplicates of a CRITICAL/HIGH cluster fix and were resolved as part

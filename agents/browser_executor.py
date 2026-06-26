@@ -22,12 +22,12 @@ EXPORTS:
   BrowserUnavailable  -- Raised when no browser backend (Playwright/Chromium) is installed.
   runBrowser(spec_or_prompt, *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, resume_session: Optional[str]=None, **_kw) -> dict  -- Execute a browser subtask
   get_session()  -- Lazily build the process-wide GeminiSession (does NOT open a client yet).
-  probe() -> bool  -- Health-probe the Gemini session; False on any failure (never raises).
+  probe() -> bool  -- Health-probe the Gemini session
   startConversation(goal: str, task_id: str) -> None  -- Start the single run conversation.
   closeSession() -> None  -- Close + tear down the Gemini session.
-  preflightLogin(timeout_s: int=300, poll_s: int=3) -> bool  -- Verify Gemini is reachable (no interactive login needed).
-  sessionAsk(message: str, *, expect_json: bool=False) -> Optional[str]  -- Ask Gemini one message through the run session.
-  askGemini(message: str, *, runner=None, expect_json: bool=False) -> Optional[str]  -- Send one message to Gemini and return the reply text.
+  preflightLogin(timeout_s: int=300, poll_s: int=3) -> bool  -- Verify Gemini is reachable before a run relies on it
+  sessionAsk(message: str, *, expect_json: bool=False) -> Optional[str]  -- Ask Gemini one message through the run session
+  askGemini(message: str, *, runner=None, expect_json: bool=False) -> Optional[str]  -- Send one ``message`` to Gemini and return the reply text.
 DEPENDS-ON: agents.executor, agents.gemini_driver, config
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_browser_executor.py tests/test_phase2_cdp_adversary.py

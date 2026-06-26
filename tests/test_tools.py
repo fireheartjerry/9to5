@@ -6,12 +6,9 @@ Covers:
 - adversary.review: stub path (no brain), rich-field defaults
 - adversary._loadJsonLoose: fence, prose, dict pass-through
 - adversary.systemFor: review-type guidance injection
-- vlm_healer._loadJson: all input shapes
-- vlm_healer.heal: clean degradation when ollama unavailable
 """
 import pathlib
 import sys
-import types
 import unittest
 
 # Allow `python tests/test_tools.py` from any working directory.
@@ -21,7 +18,6 @@ if str(_ROOT) not in sys.path:
 
 import llm_io
 from agents import adversary
-from agents import vlm_healer
 
 
 # ---------------------------------------------------------------------------
@@ -194,75 +190,6 @@ class TestSystemFor(unittest.TestCase):
         s = adversary.systemFor("nonexistent_type")
         subtask_s = adversary.systemFor("subtask")
         self.assertEqual(s, subtask_s)
-
-
-# ---------------------------------------------------------------------------
-# vlm_healer helpers
-# ---------------------------------------------------------------------------
-
-class TestVlmHealerLoadJson(unittest.TestCase):
-
-    def test_dict_passthrough(self):
-        d = {"state": "ready"}
-        self.assertIs(vlm_healer._loadJson(d), d)
-
-    def test_plain_json(self):
-        self.assertEqual(vlm_healer._loadJson('{"state": "login_wall"}'),
-                         {"state": "login_wall"})
-
-    def test_fenced(self):
-        self.assertEqual(vlm_healer._loadJson('```json\n{"state": "modal"}\n```'),
-                         {"state": "modal"})
-
-    def test_prose(self):
-        result = vlm_healer._loadJson('result: {"state": "ready"} end')
-        self.assertEqual(result, {"state": "ready"})
-
-    def test_none_returns_none(self):
-        self.assertIsNone(vlm_healer._loadJson(None))
-
-    def test_invalid_returns_none(self):
-        self.assertIsNone(vlm_healer._loadJson("not json"))
-
-
-class TestVlmHealDegrades(unittest.TestCase):
-    """heal() must return {} cleanly when ollama is unavailable — never crash a run."""
-
-    def _stub_no_ollama(self):
-        """Temporarily hide the ollama package so the import inside heal() fails."""
-        orig = sys.modules.get("ollama")
-        sys.modules["ollama"] = None  # type: ignore[assignment]  -- ImportError on import
-        return orig
-
-    def _restore_ollama(self, orig):
-        if orig is None:
-            sys.modules.pop("ollama", None)
-        else:
-            sys.modules["ollama"] = orig
-
-    def test_heal_returns_empty_when_ollama_missing(self):
-        orig = self._stub_no_ollama()
-        try:
-            result = vlm_healer.heal(b"png", "<html/>", want="composer")
-            self.assertEqual(result, {})
-        finally:
-            self._restore_ollama(orig)
-
-    def test_heal_returns_empty_on_client_error(self):
-        """Simulate a client that raises on chat() — must still degrade to {}."""
-        class _BadClient:
-            def chat(self, **kw):
-                raise ConnectionError("ollama unreachable")
-
-        fake_ollama = types.ModuleType("ollama")
-        fake_ollama.Client = lambda **kw: _BadClient()  # type: ignore[attr-defined]
-        orig = sys.modules.get("ollama")
-        sys.modules["ollama"] = fake_ollama
-        try:
-            result = vlm_healer.heal(b"png", "<html/>", want="composer")
-            self.assertEqual(result, {})
-        finally:
-            self._restore_ollama(orig)
 
 
 if __name__ == "__main__":

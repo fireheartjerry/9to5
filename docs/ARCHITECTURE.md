@@ -52,7 +52,7 @@ Only Layer 3 is built as the primary phase.
 
 | Layer | Status | Role |
 |---|---|---|
-| Layer 1 Browser | future/partial | CDP driving claude.ai / chatgpt.com |
+| Layer 1 Browser | future/partial | CDP/Playwright generic browser surface (gated by `BROWSER_LAYER_ENABLED`) |
 | Layer 2 Native | future/partial | UIA/pywinauto driving desktop apps |
 | Layer 3 Terminal/CLI | live | Claude Code CLI, gh, git |
 | Layer 4 Local model | live | Ollama brain |
