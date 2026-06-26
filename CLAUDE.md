@@ -1,158 +1,383 @@
-# 9TO5 — context for any Claude Code session
+# 9TO5 CLAUDE.md
 
-You may have been spawned by 9TO5 as the **Executor** (the hands). Read
-this so you understand the system you are part of.
+Behavioral and project-specific instructions for Claude Code sessions inside the 9TO5 repo.
 
-## What 9TO5 is
-A personal autonomous AI orchestrator that runs long-horizon tasks (≈9am–5pm) at
-**zero marginal API cost**. It never calls an AI API. Its *brain* is a local
-Ollama model; its *hands* are the Claude Code CLI, driven via subprocess.
+These rules bias toward caution, surgical edits, and fast verification. For trivial tasks, use judgment, but do not use "judgment" as an excuse for broad unrelated edits.
 
-## The mental model (two separate things)
-1. **Orchestrator brain** = Ollama `qwen2.5:7b`, running locally. It reads task
-   state JSON + Obsidian context and **authors every prompt** sent downstream. It
-   also does initial planning and replans after each subtask.
-2. **Executor hands** = Claude Code CLI subprocess. It **receives** Orchestrator-
-   authored prompts and does the actual work (code, file edits, bash, git). It
-   **never decides anything.**
+## 0. What 9TO5 is
 
-Python is pure plumbing: call Ollama → get prompt → fire at Claude Code CLI →
-capture output → save to Obsidian → feed back to Ollama → repeat.
+9TO5 is a personal autonomous AI orchestration system.
 
-## The 4 layers (only Layer 3 is built — Phase 1)
-- **Layer 1 Browser** — CDP driving claude.ai / chatgpt.com (Phase 2).
-- **Layer 2 Native** — UIA/pywinauto driving desktop apps (Phase 3).
-- **Layer 3 Terminal/CLI** — *PRIMARY, built now*: Claude Code CLI, gh, git.
-- **Layer 4 Local model** — Ollama `qwen2.5:7b` as the brain.
+Mental model:
 
-## Agent roster
-- **Orchestrator** — Ollama; authors prompts, plans, replans. (`orchestrator.py`)
-- **Executor** — Claude Code CLI subprocess. (`agents/executor.py`)
-- **Architect** — Claude Code CLI with a locked system prompt prepended; output
-  saved as `architect.md`. (`agents/architect.py`)
-- **Adversary** — Phase 1 runs a **real Ollama-backed critique**: given the
-  executor output + trigger reason it returns a verdict (`approved`/`challenged`)
-  with concrete concerns; degrades to a conservative auto-approve if no brain is
-  wired or the call fails. Phase 2 → GPT-5.5 via chatgpt.com CDP. (`agents/adversary.py`)
-- **Replanner** — Ollama, after every subtask; may mutate the subtask list.
-  (`agents/replanner.py`)
+- **Orchestrator brain**: local Ollama model. Plans, replans, authors prompts, owns decisions.
+- **Executor hands**: Claude Code CLI subprocess. Performs code edits, shell commands, git operations, and local tool work.
+- **Python plumbing**: routes model decisions, subprocess execution, verification, state, memory, dashboards, and control.
 
-## Core loop
-0. Human types goal + time horizon.
-0.5 **Elaborator** (Ollama) expands the goal → human approves/edits (last human input).
-1. **Architect** — Ollama authors an architecture prompt → Claude writes `architect.md`.
-2. **Planning** — Ollama turns spec + `architect.md` into a JSON subtask list.
-3. **Execution** — per subtask: Ollama authors the Claude prompt → fire subprocess →
-   **run the brain-authored verify cmd → retry-on-fail (≤3)** → save Obsidian note →
-   adversary check → replan → update state. Control (abort/pause/skip/gate) is
-   checked at every boundary.
-4. **Complete** — create GitHub PR via `gh` (best effort) → Discord complete embed.
+Claude Code may be spawned by 9TO5 as an Executor. In that role, do the requested work, but do not silently take ownership of orchestration/product decisions beyond the task.
 
-## Adversary trigger signals
-Strings in Claude output: "I'm not sure", "unclear", "multiple approaches",
-"could go either way"; ≥3 failed attempts on one subtask; every 3rd subtask
-(heartbeat floor); right before PR creation.
+For deeper architecture, read:
 
-## File structure
+- `LLM_MAP.md`
+- `docs/DOC_MAINTENANCE.md`
+- `docs/ARCHITECTURE.md`
+- `docs/DANGER_MAP.md`
+- `docs/TESTING.md`
+- `docs/NIGHTCLAW.md`
+- `docs/STATE.md`
+- `docs/MEMORY.md`
+- `docs/CUSTOM_SKILLS_AND_HOOKS.md`
+- `docs/edit_recipes/`
+
+## 1. Persistent session vocabulary
+
+Use these terms consistently:
+
+- **Terminal A** = a human-operated Claude Code terminal used to develop 9TO5 directly.
+- **9TO5 Executor** = a Claude Code subprocess spawned by 9TO5 to execute a subtask.
+- **Orchestrator** = the local Ollama-driven brain that plans, authors prompts, and replans.
+- **Nightclaw** = the Discord bot / orchestrator-facing bot surface inside 9TO5.
+- **Run** = one full 9TO5 work session.
+- **Subtask** = a meaningful unit of work within a run.
+- **ExecutionStep** = one concrete Claude/browser/native/local action.
+- **Verification** = proof that work succeeded.
+
+These instructions apply to both Terminal A sessions and 9TO5-spawned Executor subprocesses.
+
+Terminal A has more human context, but it must still follow the same repo discipline so future automated 9TO5 subprocesses inherit a coherent codebase instead of a pile of archaeological layers.
+
+## 2. Nightclaw terminology
+
+For now, **Nightclaw refers to the actual Discord bot / orchestrator-facing bot surface inside 9TO5**.
+
+If a task says:
+
+- "improve Nightclaw CI/CD"
+- "fix Nightclaw dashboard"
+- "improve Nightclaw command handling"
+- "make Nightclaw more reliable"
+
+interpret it as improving the internal 9TO5/Nightclaw bot/orchestrator infrastructure.
+
+Do not invent a separate human-controlled Nightclaw agent unless the task explicitly defines one.
+
+## 3. Think before coding
+
+Do not assume. Do not hide confusion. Surface tradeoffs.
+
+Before implementing:
+
+- State important assumptions when they matter.
+- If multiple interpretations exist, identify them.
+- If a simpler approach exists, say so.
+- Push back on overcomplicated, unsafe, or off-scope requests.
+- If a human is available and ambiguity blocks safe progress, ask.
+- If running autonomously and no human is available, choose the safest smallest interpretation, document the ambiguity, and avoid irreversible/broad changes.
+
+## 4. Simplicity first
+
+Minimum code that solves the problem. Nothing speculative.
+
+Rules:
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No configurability that was not requested.
+- No error handling for impossible scenarios.
+- Prefer boring explicit code over clever dynamic machinery.
+- If 200 lines could be 50, simplify.
+
+Ask:
+
+```txt
+Would a senior engineer say this is overcomplicated?
 ```
-main.py  orchestrator.py  config.py  control.py  requirements.txt  CLAUDE.md  README.md
-agents/  __init__.py elaborator.py architect.py executor.py adversary.py replanner.py verifier.py
-state/   __init__.py task.py
-memory/  __init__.py obsidian.py
-notifications/ __init__.py discord_bot.py dashboard.py webdash.py command_bot.py
-               commands.py branding.py slash.py(helpers) views.py audit.py metrics.py
-               cv2.py visuals.py theme.py console_hud.py personas.py cast.py ask.py engagement.py ops.py
-               bot/  core.py(NightclawBot) cogs/{observe,control,runs,admin,ask_cog,plan_cog,engagement_cog,ops_cog}
-                     ui/{views,layouts,dynamic,modals}
-docs/superpowers/{specs,plans}/   # brainstorm spec + implementation plan
+
+If yes, simplify.
+
+## 5. Surgical changes
+
+Touch only what you must. Clean up only your own mess.
+
+When editing existing code:
+
+- Do not improve adjacent code, comments, or formatting.
+- Do not refactor unrelated code.
+- Match existing style.
+- If you notice unrelated dead code, mention it instead of deleting it.
+- Every changed line should trace directly to the task.
+
+When your changes create orphans:
+
+- Remove imports, variables, functions, or tests made unused by your change.
+- Do not remove pre-existing dead code unless asked.
+
+## 6. Core editing loop
+
+For every coding task:
+
+1. Understand the requested change.
+2. Read `CLAUDE.md`.
+3. Read the smallest relevant subset of the docs listed in `docs/DOC_MAINTENANCE.md`.
+4. Locate the smallest relevant module/file.
+5. Identify involved contracts and source-of-truth ownership.
+6. Make the smallest safe patch.
+7. Run the narrowest useful test.
+8. If the test fails, inspect the failure and patch only the relevant cause.
+9. Rerun the same focused test.
+10. Escalate to broader tests only after focused tests pass.
+11. Update relevant Markdown docs in the same patch if behavior, structure, commands, interfaces, state, or workflow changed.
+12. Summarize files changed, behavior changed, docs updated, verification, and risks.
+
+When in doubt:
+
+```txt
+smaller patch
+narrower test
+clearer explanation
 ```
 
-> **Frontier Discord lab** (branch `feat/discord-frontier-lab`): the gateway is now a
-> `discord.ext.commands.Bot` (`bot/core.NightclawBot`) of hot-reloadable cogs. New surfaces
-> (all flag-gated off by default via `DISCORD_LAB_MODE` + per-feature flags): a Components-V2
-> mission-control **cockpit** (`cv2.py`, `dashboard.py`) with a Pillow hero (`visuals.py`) and
-> a `theme.py` keystone; an ANSI **HUD** (`console_hud.py`); **Ask Nightclaw** (`ask.py`, local
-> Ollama Q&A); **The Cast** webhook personas (`personas.py`/`cast.py`) incl. an Adversary
-> duel-card; native **Poll** gate approvals (`engagement.py`); super-reaction approve + a
-> silence **watchdog** (`ops.py`); an in-Discord plan editor + context menus + time-travel.
-> The two-process REST-poll/gateway split, the 429 breaker, owner-auth, and the `commands.py`
-> spine are all preserved.
+## 7. Documentation persistence protocol
 
-## Task-state JSON (lean — long content lives in Obsidian)
-`state/tasks/<task_id>.json`. `task_id` = uuid4. `meta` {goal_raw,
-goal_elaborated, time_horizon_hours, started_at, deadline_at, status,
-blocked_reason}. `plan` {architect_design_doc, subtasks[]}. Plus
-`adversary_reviews[]`, `notifications[]`, `context_handoffs[]`, `obsidian`
-{vault_root, vault_task_dir, index_note}. Each subtask: {subtask_id, title,
-description, assigned_to, layer, status, depends_on, started_at, completed_at,
-output_ref, github_pr, session}.
+Documentation is part of the system, not an afterthought.
 
-## Obsidian vault structure
-Notes written via Local REST API (`https://127.0.0.1:27124`, self-signed cert,
-`verify=False`, `Authorization: Bearer <OBSIDIAN_API_KEY>`), **with automatic
-disk-write fallback** under `C:\9to5\vault\9to5\`.
+Every code change must keep the relevant Markdown files synchronized with the new reality.
+
+When changing code, update docs in the same patch if the change affects any of:
+
+- module ownership
+- file structure
+- lifecycle/status values
+- source-of-truth ownership
+- agent roles
+- executor behavior
+- verifier behavior
+- ControlBus behavior
+- dashboard behavior
+- Nightclaw behavior
+- self-improvement behavior
+- universe/path policy behavior
+- config shape
+- test commands
+- testing strategy
+- generated/runtime artifact rules
+- external integration behavior
+- developer workflow
+
+Do not leave documentation stale with "todo update docs later."
+
+Use `docs/DOC_MAINTENANCE.md` as the canonical documentation protocol.
+
+## 8. Patch-size discipline
+
+Prefer:
+
+- one behavior change per patch
+- one module or tightly related module group per patch
+- one focused test target per patch
+- one clear verification command per patch
+
+Avoid:
+
+- broad unrelated refactors
+- changing architecture while fixing a small bug
+- formatting churn mixed with logic changes
+- touching generated/runtime artifacts
+- touching caches, logs, virtualenvs, secrets, or VCS internals
+- changing lifecycle/status names without updating tests/docs/dashboard consumers
+- modifying state schemas without migration notes
+- expanding universe boundaries without explicit approval
+
+## 9. Test-selection rules
+
+Run the narrowest useful test first.
+
+Suggested order:
+
+1. Syntax/import/config sanity check
+2. Focused module test
+3. Related fake-backend integration test
+4. Full suite
+5. Live/browser/native/manual checks only when required
+
+Prefer canonical commands from `docs/TESTING.md`, `Makefile`, `justfile`, or `scripts/check.py` if present.
+
+Do not run slow, live, Discord, browser, native UI, or destructive checks unless the changed area requires them.
+
+Do not claim tests passed unless they actually ran and passed.
+
+## 10. Failure handling
+
+When verification fails, do not rewrite broadly.
+
+Instead:
+
+1. Read the failure carefully.
+2. Identify the smallest likely cause.
+3. Inspect only relevant files.
+4. Patch the cause.
+5. Rerun the same focused test.
+6. Escalate only if repeated focused fixes fail.
+
+Good failure handling answers:
+
+- what failed?
+- what input caused it?
+- what was expected?
+- what happened instead?
+- where is the likely relevant code?
+- what command should be rerun?
+
+## 11. Source-of-truth rules
+
+Respect source-of-truth ownership.
+
+General rules:
+
+- Run state belongs to canonical task state / state store, not Discord or web UI.
+- Control commands belong to ControlBus.
+- Verification status belongs to verifier results.
+- Persistent notes/context belong to Obsidian + disk fallback.
+- Dashboard output is derived display state.
+- File safety boundaries belong to Universe + guard policy.
+
+Discord and web dashboards are windows into state. They are not the state machine.
+
+## 12. Architecture invariants
+
+Preserve these unless explicitly asked to redesign:
+
+- strict protocol, replaceable intelligence
+- deterministic lifecycle/state transitions
+- explicit contracts over unstructured dicts where practical
+- pure decision logic separated from side effects where practical
+- verification gates before marking work complete
+- retry-on-failure includes failure context
+- dashboard state is derived from canonical run state
+- learning/self-improvement consumes traces and proposes improvements, but does not bypass guards, verifier, adversary, or configured human gates
+- `allowed_paths` are precision hints, not hard allowlists
+- `hard_boundaries` are actual forbidden paths
+
+## 13. Boundary rules
+
+Do not touch:
+
+- secrets
+- credentials
+- `.env` files unless explicitly authorized
+- virtualenvs
+- VCS internals such as `.git/`
+- generated artifacts as if they were source
+- runtime logs as implementation
+- cache directories
+- task state files unless the task is explicitly about state handling
+- hard-boundary paths defined by Universe/path policy
+
+Never hardcode secrets.
+
+## 14. Naming discipline
+
+Use stable terms consistently:
+
+- **Goal** = human objective
+- **ElaboratedGoal** = approved clarified objective
+- **TaskGraph** = planned decomposition
+- **Subtask** = meaningful unit of work
+- **ExecutionStep** = one Claude/browser/native/local action
+- **Verification** = proof that work succeeded
+- **Review** = adversarial critique
+- **Replan** = task graph modification after failure or new info
+- **Run** = full work session
+- **Terminal A** = human-operated Claude Code terminal developing 9TO5
+- **Nightclaw** = Discord bot / orchestrator-facing bot surface inside 9TO5
+
+Do not casually introduce synonyms unless they map to explicit canonical meanings.
+
+## 15. File and module guidelines
+
+Prefer files with one reason to change.
+
+Ideal sizes:
+
+- 100-350 lines: ideal
+- 350-700 lines: acceptable
+- 700-1200 lines: acceptable only if conceptually coherent
+- 1200+ lines: refactor candidate
+
+Avoid vague dumping grounds like:
+
+- `utils.py`
+- `helpers.py`
+- `manager.py`
+- `misc.py`
+
+unless narrow and explicit.
+
+Prefer explicit contracts:
+
+- dataclasses
+- TypedDicts
+- Protocols
+- enums/Literals
+- small schema objects
+
+Avoid unstructured cross-module dicts when schemas are feasible.
+
+## 16. Documentation update rules
+
+Update docs when changing:
+
+- module ownership
+- lifecycle/status values
+- source-of-truth ownership
+- agent interfaces
+- verifier behavior
+- executor behavior
+- ControlBus behavior
+- dashboard behavior
+- self-improvement behavior
+- universe/path policy behavior
+- canonical commands
+- test strategy
+
+Use the appropriate doc:
+
+- `LLM_MAP.md` for repo navigation
+- `docs/DOC_MAINTENANCE.md` for documentation consistency rules
+- `docs/ARCHITECTURE.md` for system design
+- `docs/DANGER_MAP.md` for high-risk files/invariants
+- `docs/TESTING.md` for test commands/tiers
+- `docs/NIGHTCLAW.md` for Nightclaw-specific bot/dashboard details
+- `docs/STATE.md` for task/run/control state schemas
+- `docs/MEMORY.md` for Obsidian and persistent memory
+- `docs/CUSTOM_SKILLS_AND_HOOKS.md` for automation hooks/skills
+- `docs/edit_recipes/` for repeatable task playbooks
+
+## 17. Final response format after edits
+
+After making changes, respond with:
+
+```txt
+Changed:
+- <file path>: <short reason>
+
+Behavior:
+- <what changed externally, if anything>
+- <what stayed intentionally unchanged>
+
+Documentation:
+- <docs updated and why>
+- <docs checked but not changed>
+- <docs that may still need follow-up, if any>
+
+Verification:
+- <exact command run>: <pass/fail>
+- <skipped tests, if any, and why>
+
+Risks:
+- <remaining uncertainty>
+- <areas not touched>
+- <suggested next focused step>
 ```
-vault/9to5/tasks/<task_id>_<date>/
-  index.md  architect.md  replan-log.md
-  subtasks/st-001.md  subtasks/st-001-rv.md
-  handoffs/ho-001.md
-vault/9to5/sessions/
-```
-> NOTE: the REST API on :27124 serves whichever vault is *open* in Obsidian. If a
-> different vault is open, the 9to5 key is rejected (401) and the layer
-> falls back to disk — notes still land in the correct folder. Open the
-> `9to5` vault in Obsidian to use REST.
 
-## Discord + live dashboards (the glass box)
-- **Live Discord dashboard** (`notifications/dashboard.py`): ONE embed created at
-  run start and PATCH-edited every step (status, subtask X/Y, attempt, last
-  verify ✓/✗, elapsed/ETA, recent events). Primary "while away" surface.
-- **Milestone embeds** (`notifications/discord_bot.py`): planning_start, architect_done,
-  adversary_triggered, subtask_failed, complete, aborted.
-- **Web dashboard** (`notifications/webdash.py`): stdlib HTTP server on
-  `127.0.0.1:8787` — live view + Abort/Pause/Resume/Approve/Reject/Skip buttons.
-- **Gateway command bot** (`notifications/command_bot.py`, run
-  `python -m notifications.command_bot`): `!status !plan !log !abort !pause
-  !resume !approve !reject !skip <id> !add <title> !retry`.
-- The run **also polls the channel itself** (REST) between steps, so `!abort` etc.
-  work from the single `main.py` process without the gateway bot running.
-
-## Run control + verification
-- **ControlBus** (`control.py`) — one JSON per task under `state/control/`, shared
-  by the run, the command bot, and the web dashboard (abort/pause/decisions/plan-ops).
-- **Control modes** (`--mode`): `watch` (autonomous + abort, default) or `gated`
-  (approval gates at the `plan` and `pre_pr` boundaries — answer with `!approve`/
-  `!reject` or the web buttons).
-- **Verification gate** (`agents/verifier.py`) — the brain authors a `verify`
-  `{cmd, expect}` per subtask (`expect` ∈ `exit_zero | stdout_contains:<t> |
-  stdout_regex:<re>`). After the executor runs, the cmd runs in the work dir; a
-  subtask is `done` only if it passes, else the executor prompt is re-authored
-  with the failure output and retried up to `MAX_SUBTASK_ATTEMPTS` (3).
-
-## Current phase / what is stubbed
-Phase 1 (Layer 3 only). **LIVE:** verification gate + retry, live Discord
-dashboard, web dashboard, gateway command bot, watch/gated control modes,
-plan editing, **Ollama-backed Adversary critique** (advisory verdict +
-concerns; conservative auto-approve fallback). Phase 2 swaps the Adversary's
-brain for GPT-5.5 via chatgpt.com CDP. Layers 1/2 not built. Everything reads
-config from `C:\9to5\.env` — never hardcode secrets.
-
-## Self-Improvement Philosophy
-
-When 9to5 runs on itself, it operates with one principle: improve indiscriminately. No numerical targets. No fixed feature list. No "add 5 features" goals. Instead: hunt bugs, strengthen error handling, refactor weak areas, improve code quality, add missing tests, tighten the orchestration loop, improve Obsidian write reliability, make Discord embeds richer, improve Ollama prompt quality — whatever is most impactful at each moment based on what the codebase actually needs. Keep going instrumentally until the time horizon ends. The measure of success is not a checklist completed but a codebase that is meaningfully better than when the run started.
-
-## Universe-constrained execution
-The universe is about **surgical precision, not permission**. 9to5 may freely create or
-modify whatever files a goal needs — it is never restricted to an allowlist of operations.
-The universe simply keeps its edits **surgical and on-scope** so they don't sprawl goofily
-into unrelated code. Every task carries a **universe** in `meta.universe` (extracted during
-goal elaboration): `description`, `allowed_paths` (the area work is *expected* to focus on —
-a precision hint, **not** a hard allowlist), `allowed_to_expand_to` (related code/deps it may
-also touch), `hard_boundaries` (the **only** hard stop — files/dirs that must NEVER be touched:
-secrets, VCS internals, virtualenvs, task state). The `self_modification_guard` PreToolUse hook
-blocks edits **only** to `hard_boundaries` (read dynamically from task meta) — everything else is
-fair game. 9to5 operates with full indiscriminate intensity, precise rather than caged.
-
-## Conventions
-`ALL_CAPS` module constants, `snake_case` variables, `camelCase` functions,
-`pathlib.Path` everywhere (never `os.path`).
+Do not produce vague summaries like "updated the codebase." Name files, behavior, commands, docs, and risks.
