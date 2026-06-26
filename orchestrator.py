@@ -381,14 +381,14 @@ class Orchestrator:
         self.obs = obs if obs is not None else ObsidianClient()
         self._run_claude = run_claude or executor.runClaude
         self._replan = replan or replanner.replan
-        # Default reviewer = the dual-brain dispatcher (GPT-5.5 -> Ollama -> stub). Tests inject a
-        # plain `review` callable, which bypasses GPT and keeps the legacy single-brain contract.
+        # Default reviewer = the dual-brain dispatcher (Gemini -> Ollama -> stub). Tests inject a
+        # plain `review` callable, which bypasses Gemini and keeps the legacy single-brain contract.
         self._review = review or self._adversaryReview
-        # Phase 2 second-brain session state (only used when BROWSER_LAYER_ENABLED + probe passes).
-        self._chatgpt_session = None
-        self._chatgpt_session_ok = False
-        self._chatgpt_ask = None        # bound (message)->reply once the session is live
-        self._last_review_hash = None   # cost guard: skip GPT on near-duplicate output
+        # Phase 2 second-brain session state (only used when GEMINI_ENABLED + probe passes).
+        self._gemini_session = None
+        self._gemini_session_ok = False
+        self._gemini_ask = None        # bound (message)->reply once the session is live
+        self._last_review_hash = None   # cost guard: skip Gemini on near-duplicate output
         self._state_lock = threading.Lock()
         self._poll_lock = threading.Lock()      # serialize Discord poll cursor across parallel workers (CB-7)
         self._selfref_prompt_cache: dict = {}   # task_id -> self-ref system-prompt prefix (built once)
@@ -1164,7 +1164,7 @@ class Orchestrator:
         adversary fires many times per run; GPT quota is finite). Non-subtask touchpoints bypass."""
         import hashlib
         text = (output or "").strip()
-        if len(text) < config.CHATGPT_MIN_OUTPUT_CHARS:
+        if len(text) < config.GEMINI_MIN_OUTPUT_CHARS:
             return False
         h = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()
         if h == self._last_review_hash:
@@ -1175,8 +1175,8 @@ class Orchestrator:
     def _adversaryReview(self, subtask_title: str, trigger_reason: str, executor_output: str, *,
                          ollama_chat=None, goal: str = "", review_type: str = "subtask",
                          worth=None) -> dict:
-        """Default reviewer: route through second_brain (GPT-5.5 -> Ollama -> stub), apply the cost
-        guard, disable a dead GPT session for the rest of the run, and record trust telemetry.
+        """Default reviewer: route through second_brain (Gemini -> Ollama -> stub), apply the cost
+        guard, disable a dead Gemini session for the rest of the run, and record trust telemetry.
         Signature matches the legacy ``adversary.review`` so every existing call site is unchanged."""
         from agents import second_brain
         if worth is None:
@@ -1185,31 +1185,31 @@ class Orchestrator:
             review_type, title=subtask_title, trigger_reason=trigger_reason,
             content=executor_output, goal=goal,
             ollama_chat=ollama_chat or self._ollamaChat,
-            browser_ask=self._chatgpt_ask, session_ok=self._chatgpt_session_ok, worth=worth)
-        if rv.get("session_dead") and self._chatgpt_session_ok:
-            self._chatgpt_session_ok = False
+            browser_ask=self._gemini_ask, session_ok=self._gemini_session_ok, worth=worth)
+        if rv.get("session_dead") and self._gemini_session_ok:
+            self._gemini_session_ok = False
             try:
                 discord.sendEmbed(discord.noticeEmbed(
-                    "GPT-5.5 second brain unreachable (login / Cloudflare / rate-limit) — "
+                    "Gemini second brain unreachable (auth / safety block / rate-limit) — "
                     "using the Ollama brain for the rest of this run."))
             except Exception:  # noqa: BLE001
                 pass
-        elif self._chatgpt_session_ok and worth and rv.get("tier") != "gpt":
-            # SOFT-fail: GPT was attempted (worth + session live) but the verdict came from Ollama/stub
-            # with no hard session_dead -- a silent degradation. After a few consecutive soft-fails,
-            # stop re-paying the GPT round-trip for the rest of the run (mirrors the session_dead path).
+        elif self._gemini_session_ok and worth and rv.get("tier") != "gpt":
+            # SOFT-fail: Gemini was attempted (worth + session live) but the verdict came from
+            # Ollama/stub with no hard session_dead -- a silent degradation. After a few consecutive
+            # soft-fails, stop re-paying the Gemini round-trip for the run (mirrors session_dead).
             self._gpt_soft_fails = getattr(self, "_gpt_soft_fails", 0) + 1
             if self._gpt_soft_fails >= 3:
-                self._chatgpt_session_ok = False
-                LOG.warning("GPT second brain soft-failed %d consecutive reviews; disabling for run",
+                self._gemini_session_ok = False
+                LOG.warning("Gemini second brain soft-failed %d consecutive reviews; disabling for run",
                             self._gpt_soft_fails)
                 try:
                     discord.sendEmbed(discord.noticeEmbed(
-                        "GPT-5.5 second brain repeatedly unusable — Ollama for the rest of this run."))
+                        "Gemini second brain repeatedly unusable — Ollama for the rest of this run."))
                 except Exception:  # noqa: BLE001
                     pass
         elif rv.get("tier") == "gpt":
-            self._gpt_soft_fails = 0   # a real GPT verdict resets the soft-fail streak
+            self._gpt_soft_fails = 0   # a real Gemini verdict resets the soft-fail streak
         try:
             from learning import adversary_trust
             adversary_trust.record(review_type, rv, tier=rv.get("tier"))
@@ -1231,7 +1231,7 @@ class Orchestrator:
                                      review_type=review_type, worth=worth)
 
     def _planReview(self, state: TaskState, elaborated: str, dashboard) -> None:
-        """GPT-5.5 critiques the proposed plan BEFORE execution; a blocking challenge feeds the
+        """Gemini critiques the proposed plan BEFORE execution; a blocking challenge feeds the
         concerns back through ONE Ollama re-plan pass. Best-effort -- never blocks the run."""
         if not config.ADVERSARY_REVIEW_PLAN:
             return
@@ -1250,7 +1250,7 @@ class Orchestrator:
             LOG.warning("plan review failed (non-fatal): %s", e)
 
     def _architectureReview(self, state: TaskState, architect_doc: str, dashboard) -> str:
-        """GPT-5.5 second opinion on the architecture doc; concerns are appended to the doc so the
+        """Gemini second opinion on the architecture doc; concerns are appended to the doc so the
         planner sees them. Returns the (possibly annotated) doc. Best-effort."""
         if not config.ADVERSARY_REVIEW_ARCH:
             return architect_doc
@@ -1269,49 +1269,46 @@ class Orchestrator:
             LOG.warning("architecture review failed (non-fatal): %s", e)
         return architect_doc
 
-    def _openChatGptSession(self, state: TaskState, dashboard=None) -> None:
-        """Run-start: open the logged-in ChatGPT session, health-probe it, and start ONE run
-        conversation inside the 9to5 project. On any failure, GPT stays disabled and the run uses
-        the Ollama brain -- announced once, never fatal."""
-        if not config.BROWSER_LAYER_ENABLED:
+    def _openGeminiSession(self, state: TaskState, dashboard=None) -> None:
+        """Run-start: health-probe Gemini and start ONE run conversation. On any failure, Gemini
+        stays disabled and the run uses the Ollama brain -- announced once, never fatal."""
+        if not config.GEMINI_ENABLED:
             return
         try:
             from agents import browser_executor
-            # All session ops go through browser_executor's dedicated single thread so sync-Playwright
-            # thread affinity holds even though the second brain is later consulted from pool workers.
+            # The Gemini transport is stateless thread-safe HTTPS, so it can be consulted directly
+            # from the parallel pool workers later -- no dedicated session thread is needed.
             if not browser_executor.probe():
                 discord.sendEmbed(discord.noticeEmbed(
-                    "GPT-5.5 second brain unavailable (health probe failed) — Ollama for this run."))
+                    "Gemini second brain unavailable (health probe failed) — Ollama for this run."))
                 return
-            # Assign the session handle BEFORE startConversation: probe() already opened the browser,
-            # so if startConversation raises, _closeChatGptSession (and the except below) must be able
-            # to tear it down -- otherwise the opened Chromium leaks as an orphan holding the profile.
-            self._chatgpt_session = browser_executor
+            self._gemini_session = browser_executor
             browser_executor.startConversation(self._goalText(state), state.task_id)
-            self._chatgpt_ask = lambda message: browser_executor.sessionAsk(message, expect_json=True)
-            self._chatgpt_session_ok = True
-            LOG.info("GPT-5.5 second brain online for task %s", state.task_id)
-            discord.sendEmbed(discord.noticeEmbed("🧠 GPT-5.5 second brain online (chatgpt.com)."))
+            self._gemini_ask = lambda message: browser_executor.sessionAsk(message, expect_json=True)
+            self._gemini_session_ok = True
+            LOG.info("Gemini second brain online for task %s", state.task_id)
+            discord.sendEmbed(discord.noticeEmbed(
+                f"🧠 Gemini second brain online ({config.GEMINI_MODEL})."))
         except Exception as e:  # noqa: BLE001 -- never block a run on the second brain
-            LOG.warning("could not start ChatGPT session (%s); Ollama only", e)
-            self._chatgpt_session_ok = False
+            LOG.warning("could not start Gemini session (%s); Ollama only", e)
+            self._gemini_session_ok = False
             try:
                 from agents import browser_executor as _be
-                _be.closeSession()   # close the browser probe() opened, so it doesn't leak/orphan
+                _be.closeSession()
             except Exception:  # noqa: BLE001
                 pass
-            self._chatgpt_session = None
-            self._chatgpt_ask = None
+            self._gemini_session = None
+            self._gemini_ask = None
 
-    def _closeChatGptSession(self) -> None:
+    def _closeGeminiSession(self) -> None:
         try:
-            if self._chatgpt_session is not None:
-                self._chatgpt_session.closeSession()   # browser_executor: closes on the dedicated thread
+            if self._gemini_session is not None:
+                self._gemini_session.closeSession()
         except Exception:  # noqa: BLE001
             pass
-        self._chatgpt_session = None
-        self._chatgpt_session_ok = False
-        self._chatgpt_ask = None
+        self._gemini_session = None
+        self._gemini_session_ok = False
+        self._gemini_ask = None
 
     # ===================================================================
     # Adversary teeth -- bounded remediation LOOP + pre-PR hold
@@ -2186,9 +2183,9 @@ class Orchestrator:
         started = time.time()
         elaborated = state.meta["goal_elaborated"] or state.meta["goal_raw"]
         self.writeIndex(state)
-        # Phase 2: bring the GPT-5.5 second brain online for this run (probe + run conversation).
-        # No-op unless BROWSER_LAYER_ENABLED; failure leaves the Ollama brain in charge.
-        self._openChatGptSession(state, dashboard)
+        # Phase 2: bring the Gemini second brain online for this run (probe + run conversation).
+        # No-op unless GEMINI_ENABLED; failure leaves the Ollama brain in charge.
+        self._openGeminiSession(state, dashboard)
 
         try:
             if not resume and self._detectSelfReferential(state, work_dir):
@@ -2429,7 +2426,7 @@ class Orchestrator:
                     "subtasks": [{"subtask_id": s["subtask_id"], "status": s["status"]} for s in state.subtasks]}
         finally:
             bus.setPendingGate(None)
-            self._closeChatGptSession()   # tear down the GPT-5.5 browser session for this run
+            self._closeGeminiSession()   # tear down the Gemini second-brain session for this run
             try:
                 dashboard.unpin()
             except Exception:  # noqa: BLE001

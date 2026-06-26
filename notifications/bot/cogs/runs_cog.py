@@ -47,18 +47,16 @@ class RunsCog(dpy_commands.Cog):
             return await interaction.response.send_modal(WorkModal())
         await interaction.response.defer(ephemeral=True)
 
-        if config.BROWSER_LAYER_ENABLED:
+        if config.GEMINI_ENABLED:
             from agents import browser_executor
-            await interaction.followup.send(
-                "Checking ChatGPT login — if a browser opens, **log in** (I'll detect it). "
-                "Waiting up to 5 minutes…", ephemeral=True)
-            logged_in = await asyncio.to_thread(browser_executor.preflightLogin, 300, 3)
-            if not logged_in:
+            await interaction.followup.send("Checking Gemini reachability…", ephemeral=True)
+            reachable = await asyncio.to_thread(browser_executor.preflightLogin, 300, 3)
+            if not reachable:
                 await interaction.followup.send(
-                    "ChatGPT login timed out (5 min). Run aborted — re-run `/work` after logging in.",
-                    ephemeral=True)
-                return
-            await interaction.followup.send("ChatGPT logged in. Starting run…", ephemeral=True)
+                    "Gemini unreachable (check GEMINI_API_KEY / quota). Starting with the Ollama "
+                    "brain only.", ephemeral=True)
+            else:
+                await interaction.followup.send("Gemini reachable. Starting run…", ephemeral=True)
 
         req = work_launcher.WorkRequest(
             goal=goal, hours=work_launcher.parseHours(hours),

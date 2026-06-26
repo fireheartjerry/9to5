@@ -6,7 +6,7 @@ cost): given an executor output and *why* the review fired, it returns a verdict
 is supplied (or the call fails / returns junk), it degrades gracefully to a
 conservative auto-approve so a run is never blocked by the reviewer itself.
 
-In Phase 2 this becomes GPT-5.5 driven via chatgpt.com (CDP); the trigger and
+In Phase 2 this becomes Gemini driven via the google-genai SDK; the trigger and
 verdict contract stay identical so the call site never changes.
 
 Trigger signals (per the 9TO5 spec):
@@ -20,7 +20,7 @@ EXPORTS:
   systemFor(review_type: str='subtask') -> str  -- The system prompt for a given touchpoint: the one schema + a type-specific lead-in.
   isCdpTransient(exc: BaseException) -> bool  -- True when ``exc`` looks like a transient CDP/network hiccup worth retrying.
   shouldTrigger(executor_output: str, subtask_position: int, attempt_count: int=1, pre_pr: bool=False) -> tuple[bool, str]  -- Return ``(triggered, reason)``.
-  reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: str, *, browser_ask: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict  -- Phase-2 critique: route the review to GPT-5.5 on chatgpt.com over CDP.
+  reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: str, *, browser_ask: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict  -- Phase-2 critique: route the review to Gemini via the google-genai SDK.
   review(subtask_title: str, trigger_reason: str, executor_output: str, *, ollama_chat: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict  -- Critique the executor output and return a verdict dict.
 DEPENDS-ON: agents.browser_executor, config, llm_io
 SIDE-EFFECTS: unannotated
@@ -78,15 +78,17 @@ _CHALLENGE_WORDS = {"challenged", "rejected", "reject", "blocked", "fail", "conc
 # Cap how much executor output we hand the brain; the rest is noise for review.
 ADVERSARY_MAX_OUTPUT_CHARS = 6000
 
-# CDP retry knobs: up to CDP_MAX_RETRIES extra attempts on transient network errors,
-# with exponential backoff starting at CDP_RETRY_BACKOFF_BASE seconds.
+# Retry knobs: up to CDP_MAX_RETRIES extra attempts on transient transport errors, with
+# exponential backoff starting at CDP_RETRY_BACKOFF_BASE seconds. (Names kept for contract
+# stability; they now bound Gemini/HTTPS retries, not CDP ones.)
 CDP_MAX_RETRIES: int = 2
 CDP_RETRY_BACKOFF_BASE: float = 1.0
 
-# Error substrings that identify transient CDP/network failures worth retrying.
+# Error substrings that identify transient network/API failures worth retrying (timeouts, dropped
+# connections, 5xx). Auth/rate-limit/safety blocks are NOT here -- those are fatal, not retryable.
 _CDP_TRANSIENT_SIGNALS: tuple[str, ...] = (
     "timeout", "timed out", "net::", "connection", "socket", "reset", "disconnect",
-    "econnrefused", "unreachable", "navigation", "target closed",
+    "econnrefused", "unreachable", "unavailable", "503", "502", "500", "deadline",
 )
 
 _SYSTEM = (
@@ -109,11 +111,11 @@ _SYSTEM = (
     'each one precise and verifiable.'
 )
 
-# AI-to-AI preamble for the chatgpt.com path: tell GPT-5.5 it is talking to an autonomous agent,
+# AI-to-AI preamble for the Gemini path: tell the model it is talking to an autonomous agent,
 # not a human, so it drops social/hedging tokens and answers in the densest machine form.
-_CHATGPT_PREAMBLE = (
-    "SYSTEM CONTEXT: You are GPT-5.5 operating as an automated adversarial reviewer inside the "
-    "9to5 autonomous pipeline. Your counterpart is an AUTONOMOUS SOFTWARE AGENT, not a human. "
+_GEMINI_PREAMBLE = (
+    "SYSTEM CONTEXT: You are operating as an automated adversarial reviewer inside the 9to5 "
+    "autonomous pipeline. Your counterpart is an AUTONOMOUS SOFTWARE AGENT, not a human. "
     "Communicate machine-to-machine: NO greetings, apologies, hedging, praise, or restating the "
     "question. Emit ONLY the requested JSON object -- nothing before or after it. Be maximally "
     "information-dense; every token must carry signal."
@@ -207,7 +209,7 @@ def _stubReview(trigger_reason: str, *, note: Optional[str] = None) -> dict:
         "trigger_reason": trigger_reason,
         "concerns": [],
         "notes": note or ("Adversary brain unavailable; auto-approved without a real critique. "
-                          "Phase 2 -> GPT-5.5 via chatgpt.com CDP."),
+                          "Phase 2 -> Gemini via the google-genai SDK."),
         "stub": True,
         "severity": "none",
         "must_fix": [],
@@ -258,34 +260,35 @@ def _parseVerdict(raw_content: object, trigger_reason: str, *, surface: str,
 def reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: str, *,
                      browser_ask: Optional[Callable] = None, goal: str = "",
                      review_type: str = "subtask") -> dict:
-    """Phase-2 critique: route the review to GPT-5.5 on chatgpt.com over CDP.
+    """Phase-2 critique: route the review to Gemini via the google-genai SDK.
 
     ``browser_ask`` is a ``(message) -> reply_text | None`` callable; it defaults to
-    :func:`agents.browser_executor.askChatGPT`, which drives chatgpt.com through the L1
-    browser hands. The verdict contract is identical to :func:`review`, so the call site
-    never changes between phases.
+    :func:`agents.browser_executor.askGemini`, which sends the review to Gemini through the
+    second-brain session. The verdict contract is identical to :func:`review`, so the call site
+    never changes between phases. (The name ``browser_ask`` / ``reviewViaBrowser`` is retained
+    for call-site stability across the transport swap.)
 
-    Transient CDP/network errors (timeout, connection reset, etc.) are retried up to
-    ``CDP_MAX_RETRIES`` times with exponential backoff before falling back to a
-    conservative auto-approve. Non-transient errors (bad JSON, empty reply) skip retries
-    and degrade immediately. The reviewer never blocks a run by itself.
+    Transient network/API errors (timeout, dropped connection, 5xx) are retried up to
+    ``CDP_MAX_RETRIES`` times with exponential backoff before falling back to a conservative
+    auto-approve. Non-transient errors (bad JSON, empty reply, auth/rate-limit) skip retries and
+    degrade immediately. The reviewer never blocks a run by itself.
     """
     if browser_ask is None:
         from agents import browser_executor
-        browser_ask = browser_executor.askChatGPT
+        browser_ask = browser_executor.askGemini
 
     user = _buildReviewUser(subtask_title, trigger_reason, executor_output, goal)
-    message = f"{_CHATGPT_PREAMBLE}\n\n{systemFor(review_type)}\n\n{user}"
+    message = f"{_GEMINI_PREAMBLE}\n\n{systemFor(review_type)}\n\n{user}"
     last_exc: Optional[Exception] = None
 
     for attempt in range(CDP_MAX_RETRIES + 1):
         try:
             reply = browser_ask(message)
             if not reply:
-                raise ValueError("empty reply from chatgpt.com")
-            rv = _parseVerdict(reply, trigger_reason, surface="browser", review_type=review_type)
+                raise ValueError("empty reply from Gemini")
+            rv = _parseVerdict(reply, trigger_reason, surface="gemini", review_type=review_type)
             LOG.info(
-                "Adversary (browser/GPT) verdict for '%s' (%s) -> %s (%d concern(s))",
+                "Adversary (Gemini) verdict for '%s' (%s) -> %s (%d concern(s))",
                 subtask_title, trigger_reason, rv["verdict"], len(rv["concerns"]),
             )
             return rv
@@ -301,7 +304,7 @@ def reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: s
                 continue
             # Non-transient or retries exhausted -- log and fall through.
             LOG.warning(
-                "Adversary browser critique failed after %d attempt(s) (%s); "
+                "Adversary Gemini critique failed after %d attempt(s) (%s); "
                 "conservative auto-approve",
                 attempt + 1, e,
             )
@@ -309,7 +312,7 @@ def reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: s
 
     return _stubReview(
         trigger_reason,
-        note=f"Adversary chatgpt.com critique errored ({last_exc}); auto-approved conservatively.",
+        note=f"Adversary Gemini critique errored ({last_exc}); auto-approved conservatively.",
     )
 
 

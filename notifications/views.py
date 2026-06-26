@@ -287,9 +287,7 @@ class WorkSetupView(discord.ui.View):
             c.disabled = True
         await interaction.response.edit_message(content="Launching…", view=self)
 
-        # Reject a duplicate launch BEFORE the ChatGPT pre-flight (which opens the shared profile and
-        # kills the active run's second-brain browser). The active-run guard otherwise lives only in
-        # launchOrError, after the pre-flight has already disrupted the running run.
+        # Reject a duplicate launch before the Gemini pre-flight check.
         if work_launcher.activeRun() is not None:
             await interaction.followup.send(
                 "⚠️ A run is already active. Abort it with `/abort` before starting another.",
@@ -297,19 +295,16 @@ class WorkSetupView(discord.ui.View):
             self.stop()
             return
 
-        if _cfg.BROWSER_LAYER_ENABLED:
+        if _cfg.GEMINI_ENABLED:
             from agents import browser_executor
-            await interaction.followup.send(
-                "Checking ChatGPT login — if a browser opens, **log in** (I'll detect it). "
-                "Waiting up to 5 minutes…", ephemeral=True)
-            logged_in = await asyncio.to_thread(browser_executor.preflightLogin, 300, 3)
-            if not logged_in:
+            await interaction.followup.send("Checking Gemini reachability…", ephemeral=True)
+            reachable = await asyncio.to_thread(browser_executor.preflightLogin, 300, 3)
+            if not reachable:
                 await interaction.followup.send(
-                    "ChatGPT login timed out (5 min). Run aborted — re-run `/work` after logging in.",
-                    ephemeral=True)
-                self.stop()
-                return
-            await interaction.followup.send("ChatGPT logged in. Starting run…", ephemeral=True)
+                    "Gemini unreachable (check GEMINI_API_KEY / quota). Starting with the Ollama "
+                    "brain only.", ephemeral=True)
+            else:
+                await interaction.followup.send("Gemini reachable. Starting run…", ephemeral=True)
 
         audit.record(interaction.user.id, "work", None, "modal")
         reply = await asyncio.to_thread(work_launcher.launchOrError, self.req)
