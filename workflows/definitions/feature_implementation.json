@@ -1,0 +1,45 @@
+{
+  "name": "feature_implementation",
+  "description": "End-to-end feature delivery: interface design and test design in parallel, then implement, verify, and document.",
+  "phases": [
+    {
+      "title": "Design",
+      "parallel": true,
+      "agents": [
+        {
+          "label": "design",
+          "prompt": "Given the feature description in the task, produce a concise implementation design: (1) which files to create or modify, (2) the public interface or API surface, (3) any invariants or constraints to preserve, (4) the acceptance verification command. Keep it under 300 words. Do not write code yet.",
+          "effort": "high"
+        },
+        {
+          "label": "test-design",
+          "prompt": "Given the feature description in the task, identify the key acceptance test cases: (1) the happy-path scenario, (2) two to three edge cases or failure modes, (3) the test command or assertion structure. Keep it under 200 words. Do not write code yet.",
+          "effort": "default"
+        }
+      ]
+    },
+    {
+      "title": "Implement and test",
+      "parallel": false,
+      "agents": [
+        {
+          "label": "implement",
+          "prompt": "Using the design and test-design outputs from the previous phase, implement the feature with the smallest correct diff. Follow ALL_CAPS constants, snake_case variables, camelCase functions, pathlib.Path everywhere. Add only the error handling the task requires. After implementing, run the acceptance verification command from the design phase and report its output.",
+          "effort": "xhigh"
+        }
+      ]
+    },
+    {
+      "title": "Verify and document",
+      "parallel": false,
+      "agents": [
+        {
+          "label": "verify-doc",
+          "prompt": "Run the acceptance verification command and confirm it passes. Then check whether any Markdown docs in docs/ need updating to reflect the new behavior (module ownership, interface, commands, lifecycle). Apply any necessary doc updates. Report: verification output, docs updated (or 'none needed'), and any residual risk.",
+          "effort": "default"
+        }
+      ]
+    }
+  ],
+  "synthesis": "Produce the final delivery summary: files changed (with one-line reason each), behavior change, docs updated, verification command and result, and risks."
+}

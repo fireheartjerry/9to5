@@ -1,0 +1,137 @@
+"""Workflow registry — loads and validates WorkflowDefinition JSON files.
+
+Scans C:\9to5\workflows\definitions\*.json, validates each against the
+WorkflowDefinition TypedDict schema, and exposes a dict keyed by workflow name.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional
+
+# Ensure repo root is on sys.path so `contracts` is importable whether this
+# file is run directly (python workflows/registry.py) or imported as a module.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from contracts import WorkflowDefinition, WorkflowPhase, WorkflowAgent  # noqa: E402
+
+logger = logging.getLogger(__name__)
+
+DEFINITIONS_DIR = Path(__file__).parent / "definitions"
+
+# Allowed effort values for WorkflowAgent.effort
+_VALID_EFFORT_VALUES = {"default", "high", "xhigh", "ultracode"}
+
+
+def _validateAgent(agent: object, path: str) -> Optional[str]:
+    """Return error message or None if valid."""
+    if not isinstance(agent, dict):
+        return f"{path}: must be a dict, got {type(agent).__name__}"
+    for key in agent:
+        if key not in ("label", "prompt", "effort"):
+            return f"{path}: unknown key '{key}'"
+    for str_key in ("label", "prompt", "effort"):
+        if str_key in agent and not isinstance(agent[str_key], str):
+            return f"{path}.{str_key}: must be a string"
+    if "effort" in agent and agent["effort"] not in _VALID_EFFORT_VALUES:
+        return f"{path}.effort: invalid value '{agent['effort']}', expected one of {_VALID_EFFORT_VALUES}"
+    return None
+
+
+def _validatePhase(phase: object, path: str) -> Optional[str]:
+    """Return error message or None if valid."""
+    if not isinstance(phase, dict):
+        return f"{path}: must be a dict, got {type(phase).__name__}"
+    for key in phase:
+        if key not in ("title", "parallel", "agents"):
+            return f"{path}: unknown key '{key}'"
+    if "title" in phase and not isinstance(phase["title"], str):
+        return f"{path}.title: must be a string"
+    if "parallel" in phase and not isinstance(phase["parallel"], bool):
+        return f"{path}.parallel: must be a bool"
+    if "agents" in phase:
+        if not isinstance(phase["agents"], list):
+            return f"{path}.agents: must be a list"
+        for i, agent in enumerate(phase["agents"]):
+            err = _validateAgent(agent, f"{path}.agents[{i}]")
+            if err:
+                return err
+    return None
+
+
+def _validateWorkflowDefinition(data: object, source: str) -> Optional[str]:
+    """Return error message or None if valid WorkflowDefinition."""
+    if not isinstance(data, dict):
+        return f"{source}: root must be a dict, got {type(data).__name__}"
+    for key in data:
+        if key not in ("name", "description", "phases", "synthesis"):
+            return f"{source}: unknown key '{key}'"
+    for str_key in ("name", "description", "synthesis"):
+        if str_key in data and not isinstance(data[str_key], str):
+            return f"{source}.{str_key}: must be a string"
+    if "phases" in data:
+        if not isinstance(data["phases"], list):
+            return f"{source}.phases: must be a list"
+        for i, phase in enumerate(data["phases"]):
+            err = _validatePhase(phase, f"{source}.phases[{i}]")
+            if err:
+                return err
+    return None
+
+
+def loadRegistry(definitions_dir: Path = DEFINITIONS_DIR) -> Dict[str, WorkflowDefinition]:
+    """Load all *.json files from *definitions_dir*, validate, and return by name.
+
+    Skips invalid files with a warning; does not raise on partial failure so the
+    orchestrator can operate with whatever definitions are present.
+
+    Returns:
+        dict mapping workflow name (from JSON ``name`` field, falling back to
+        stem of the filename) to the validated WorkflowDefinition dict.
+    """
+    registry: Dict[str, WorkflowDefinition] = {}
+
+    if not definitions_dir.exists():
+        logger.warning("workflow definitions dir not found: %s", definitions_dir)
+        return registry
+
+    json_files: List[Path] = sorted(definitions_dir.glob("*.json"))
+    if not json_files:
+        logger.debug("no workflow definition files found in %s", definitions_dir)
+        return registry
+
+    for json_path in json_files:
+        source = json_path.name
+        try:
+            raw = json_path.read_text(encoding="utf-8")
+            data = json.loads(raw)
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("skipping %s: failed to read/parse: %s", source, exc)
+            continue
+
+        err = _validateWorkflowDefinition(data, source)
+        if err:
+            logger.warning("skipping %s: validation error: %s", source, err)
+            continue
+
+        name: str = data.get("name") or json_path.stem
+        if name in registry:
+            logger.warning(
+                "duplicate workflow name '%s' from %s; previous definition kept",
+                name, source,
+            )
+            continue
+
+        registry[name] = data  # type: ignore[assignment]  # validated above
+        logger.debug("loaded workflow '%s' from %s", name, source)
+
+    logger.info("workflow registry loaded: %d definition(s)", len(registry))
+    return registry
+
+
+# Module-level registry, populated on first import.
+REGISTRY: Dict[str, WorkflowDefinition] = loadRegistry()

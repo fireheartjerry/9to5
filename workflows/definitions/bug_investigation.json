@@ -1,0 +1,45 @@
+{
+  "name": "bug_investigation",
+  "description": "Systematic root-cause investigation: reproduce, trace, hypothesize in parallel, then confirm the root cause and author a minimal fix.",
+  "phases": [
+    {
+      "title": "Reproduce and trace",
+      "parallel": false,
+      "agents": [
+        {
+          "label": "reproduce",
+          "prompt": "Given the bug description in the task, write and run the smallest possible script or command that reliably reproduces the failure. Output: the exact command, the observed output, and whether reproduction succeeded. If it cannot be reproduced, explain why.",
+          "effort": "default"
+        }
+      ]
+    },
+    {
+      "title": "Parallel hypothesis",
+      "parallel": true,
+      "agents": [
+        {
+          "label": "trace-data-flow",
+          "prompt": "Trace the data flow from the entry point to the failure site. Identify every transformation the suspicious value undergoes and where it diverges from the expected value. Report the exact line and variable state where the invariant breaks.",
+          "effort": "high"
+        },
+        {
+          "label": "trace-control-flow",
+          "prompt": "Trace the control flow from the entry point to the failure site. Identify every branch, guard, and early-return that could be taken incorrectly. Report the branch condition and its actual vs expected value at the point the wrong path is taken.",
+          "effort": "high"
+        }
+      ]
+    },
+    {
+      "title": "Fix",
+      "parallel": false,
+      "agents": [
+        {
+          "label": "patch",
+          "prompt": "Using the reproduction result and the two trace reports, identify the root cause (one precise sentence). Author the smallest correct patch that fixes the root cause without changing unrelated code. Apply the patch and run the reproduction command to confirm the fix.",
+          "effort": "high"
+        }
+      ]
+    }
+  ],
+  "synthesis": "Summarize: (1) root cause in one sentence, (2) the file and line patched, (3) the verification command and its output confirming the fix, (4) any residual risk or follow-up needed."
+}

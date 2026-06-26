@@ -1,0 +1,28 @@
+{
+  "name": "code_review",
+  "description": "Multi-dimension code review: correctness, security, and style assessed in parallel, then synthesized into a ranked finding list.",
+  "phases": [
+    {
+      "title": "Parallel review",
+      "parallel": true,
+      "agents": [
+        {
+          "label": "correctness",
+          "prompt": "Review the diff or files listed in the task for correctness bugs: off-by-one errors, null dereferences, wrong assumptions about API contracts, missing error handling at real failure boundaries. List each finding as: FILE:LINE — severity (low/med/high) — description. Omit nits.",
+          "effort": "high"
+        },
+        {
+          "label": "security",
+          "prompt": "Review the diff or files listed in the task for security issues: injection (SQL, shell, XSS), insecure deserialization, secrets in code, overly broad permissions, missing input validation at system boundaries. List each finding as: FILE:LINE — severity (low/med/high) — description.",
+          "effort": "high"
+        },
+        {
+          "label": "simplification",
+          "prompt": "Review the diff or files listed in the task for reuse, simplification, and efficiency wins: dead code, duplicated logic, unnecessary abstractions, inefficient data structures. List each finding as: FILE:LINE — severity (low/med/high) — description. Omit style-only nits.",
+          "effort": "default"
+        }
+      ]
+    }
+  ],
+  "synthesis": "Merge the correctness, security, and simplification findings into a single ranked list ordered by severity (high first). De-duplicate overlapping findings. For each finding output: RANK. FILE:LINE — [correctness|security|simplification] — severity — description. End with a one-paragraph overall assessment."
+}

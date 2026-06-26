@@ -1,0 +1,149 @@
+"""src/workflow_registry.py -- Centralized mutable workflow registry.
+
+Wraps the read-only workflows.registry loader and adds runtime add/remove/execute
+so the orchestrator can register ad-hoc workflows without touching the definitions
+directory.
+
+Invariants:
+  - All mutations go through a lock (thread-safe for concurrent orchestrator tasks).
+  - addWorkflow validates before inserting; invalid definitions are rejected.
+  - executeWorkflow composes a human-readable multi-phase prompt from the definition.
+"""
+from __future__ import annotations
+
+import sys
+import threading
+from pathlib import Path
+from typing import Dict, List, Optional
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from contracts import WorkflowDefinition  # noqa: E402
+from workflows.registry import (  # noqa: E402
+    DEFINITIONS_DIR,
+    _validateWorkflowDefinition,
+    loadRegistry,
+)
+
+
+class WorkflowNotFoundError(KeyError):
+    """Raised when a workflow name is not present in the registry."""
+
+
+class WorkflowValidationError(ValueError):
+    """Raised when a workflow definition fails structural validation."""
+
+
+class WorkflowRegistry:
+    """Thread-safe mutable registry of WorkflowDefinition entries.
+
+    Initialized from the on-disk definitions directory; supports runtime
+    add/remove/execute without touching the filesystem.
+    """
+
+    def __init__(self, definitions_dir: Path = DEFINITIONS_DIR) -> None:
+        self._lock = threading.Lock()
+        self._store: Dict[str, WorkflowDefinition] = {}
+        loaded = loadRegistry(definitions_dir)
+        with self._lock:
+            self._store.update(loaded)
+
+    # ------------------------------------------------------------------
+    # Mutation
+    # ------------------------------------------------------------------
+
+    def addWorkflow(self, name: str, definition: WorkflowDefinition) -> None:
+        """Add or overwrite *name* with *definition*.
+
+        Raises WorkflowValidationError if the definition fails validation.
+        """
+        err = _validateWorkflowDefinition(definition, name)
+        if err:
+            raise WorkflowValidationError(err)
+        with self._lock:
+            self._store[name] = definition
+
+    def removeWorkflow(self, name: str) -> WorkflowDefinition:
+        """Remove *name* and return its definition.
+
+        Raises WorkflowNotFoundError if *name* is not registered.
+        """
+        with self._lock:
+            if name not in self._store:
+                raise WorkflowNotFoundError(name)
+            return self._store.pop(name)
+
+    # ------------------------------------------------------------------
+    # Query
+    # ------------------------------------------------------------------
+
+    def getWorkflow(self, name: str) -> WorkflowDefinition:
+        """Return the definition for *name*.
+
+        Raises WorkflowNotFoundError if not registered.
+        """
+        with self._lock:
+            if name not in self._store:
+                raise WorkflowNotFoundError(name)
+            return self._store[name]
+
+    def listWorkflows(self) -> List[str]:
+        """Return a snapshot list of all registered workflow names."""
+        with self._lock:
+            return list(self._store.keys())
+
+    # ------------------------------------------------------------------
+    # Execution
+    # ------------------------------------------------------------------
+
+    def executeWorkflow(self, name: str, context: str = "") -> dict:
+        """Compose a multi-phase execution plan for *name*.
+
+        Does not spawn agents; returns a dict suitable for handoff to the
+        orchestrator's executor loop:
+          - ``name``     workflow name
+          - ``workflow`` the raw WorkflowDefinition dict
+          - ``prompt``   fully-composed phase-by-phase instruction string
+          - ``context``  the caller-supplied context string
+          - ``ok``       True (raises on lookup failure, never returns ok=False)
+
+        Raises WorkflowNotFoundError if *name* is not registered.
+        """
+        defn = self.getWorkflow(name)
+        phases: list = defn.get("phases", [])
+
+        parts: List[str] = []
+        if context:
+            parts.append(f"Context: {context}")
+
+        for idx, phase in enumerate(phases, 1):
+            title = phase.get("title", f"Phase {idx}")
+            parallel: bool = phase.get("parallel", False)
+            mode = "parallel" if parallel else "sequential"
+            parts.append(f"\nPhase {idx} — {title} ({mode}):")
+            for agent in phase.get("agents", []):
+                label = agent.get("label", "agent")
+                effort = agent.get("effort", "default")
+                prompt = agent.get("prompt", "")
+                parts.append(f"  [{label}|{effort}] {prompt}")
+
+        synthesis: Optional[str] = defn.get("synthesis")
+        if synthesis:
+            parts.append(f"\nSynthesis: {synthesis}")
+
+        return {
+            "name": name,
+            "workflow": defn,
+            "prompt": "\n".join(parts),
+            "context": context,
+            "ok": True,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Module-level singleton — populated from the shipped definitions directory.
+# ---------------------------------------------------------------------------
+
+REGISTRY = WorkflowRegistry()
