@@ -8,6 +8,17 @@ from agents import hooks
 
 
 class TestGuardFailClosed(unittest.TestCase):
+    def setUp(self):
+        # Runner-agnostic safety: the guard's boundary-hit path posts a Discord embed
+        # (agents/hooks.py), and the conftest Discord mute is pytest-only -- under bare `unittest`
+        # it would hit the live channel. Patch the sink at its source so this file never posts.
+        import notifications.discord_bot as _discord
+        self._discord_patch = mock.patch.object(_discord, "sendEmbed", return_value=None)
+        self._discord_patch.start()
+
+    def tearDown(self):
+        self._discord_patch.stop()
+
     def _run(self, data):
         with self.assertRaises(SystemExit) as cm:
             hooks.selfModificationGuard(data)
@@ -74,9 +85,29 @@ class TestGuardFailClosed(unittest.TestCase):
                     "dd if=/dev/zero of=.env", "truncate -s0 .env"):
             self.assertEqual(self._block_expected(cmd), 2, f"not blocked: {cmd!r}")
 
-    def test_plain_read_of_boundary_still_allowed(self):
-        """Broadening write detection must NOT start blocking reads -- `cat .env` is not a write."""
-        self.assertEqual(self._block_expected("cat .env"), 0)
+    def test_plain_read_of_nonsecret_file_still_allowed(self):
+        """Reads of NON-secret files (even a core file) are not writes -- still allowed.
+        (The secret family is carved out separately; everything else reads freely.)"""
+        self.assertEqual(self._block_expected("cat config.py"), 0)
+        self.assertEqual(self._block_expected("head README.md"), 0)
+
+    def test_secret_read_via_bash_is_blocked(self):
+        """HIGH read-exfil: a Bash READ of the .env secret family is refused (exfiltration guard)."""
+        for cmd in ("cat .env", "type .env", "head .env.local", "grep SECRET .env",
+                    "less ./.env", "tail -n5 .env.production"):
+            self.assertEqual(self._block_expected(cmd), 2, f"secret read not blocked: {cmd!r}")
+
+    def test_secret_read_blocked_even_without_run_context(self):
+        """The secret-read block is state-independent / fail-closed -- no task context needed."""
+        data = {"tool_name": "Bash", "tool_input": {"command": "cat .env"}}
+        with self.assertRaises(SystemExit) as cm:
+            hooks.selfModificationGuard(data)
+        self.assertEqual(cm.exception.code, 2)
+
+    def test_envrc_and_lookalikes_are_not_secret_reads(self):
+        """.envrc is NOT the secret family; foo.env / .environment / unrelated reads must not block."""
+        for cmd in ("cat .envrc", "cat foo.env", "cat .environment", "grep x app.py"):
+            self.assertEqual(self._block_expected(cmd), 0, f"false-blocked: {cmd!r}")
 
 
 if __name__ == "__main__":

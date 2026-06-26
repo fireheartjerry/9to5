@@ -499,42 +499,42 @@
           "kind": "function",
           "signature": "(data)",
           "summary": "PreToolUse: block destructive Bash commands by exiting 2.",
-          "lineno": 122
+          "lineno": 140
         },
         {
           "name": "writeObsidian",
           "kind": "function",
           "signature": "(data)",
           "summary": "PostToolUse: log the edited file path to the in-progress subtask note.",
-          "lineno": 172
+          "lineno": 190
         },
         {
           "name": "discordNotify",
           "kind": "function",
           "signature": "(data)",
           "summary": "Notification: forward the message to Discord as a compact embed.",
-          "lineno": 223
+          "lineno": 241
         },
         {
           "name": "logAll",
           "kind": "function",
           "signature": "(data)",
           "summary": "PostToolUse / any: append one JSON line {time, tool_name} to the log.",
-          "lineno": 240
+          "lineno": 258
         },
         {
           "name": "selfModificationGuard",
           "kind": "function",
           "signature": "(data)",
           "summary": "PreToolUse: during a SELF-REFERENTIAL task, block edits to the core files",
-          "lineno": 317
+          "lineno": 335
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "()",
           "summary": "Dispatch to the requested handler based on argv[1].",
-          "lineno": 436
+          "lineno": 463
         }
       ],
       "depends_on": [
