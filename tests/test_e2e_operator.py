@@ -79,6 +79,30 @@ class TestE2EOperator(unittest.TestCase):
         failed = [r for r in results if not r.ok]
         self.assertEqual(failed, [], failed)
 
+    def test_sim_run_never_posts_to_live_discord(self):
+        """Regression: a simulated run must NOT hit the real channel even with live creds.
+        Milestone embeds gate on DISCORD_BOT_TOKEN+DISCORD_CHANNEL_ID, so runScenario's _FORCED must
+        blank both. Inject FAKE LIVE creds, spy on sendEmbed (so NO real post happens regardless),
+        and assert every milestone attempt during the run saw blanked creds. Deliberately decoupled
+        from r.ok / sim completion -- the no-live-post invariant must hold even if the sim is slow."""
+        import notifications.discord_bot as discord
+        seen = []
+
+        def _spy(*a, **k):
+            seen.append((config.DISCORD_BOT_TOKEN, config.DISCORD_CHANNEL_ID))
+            return None  # never touch the network
+
+        with mock.patch.object(config, "DISCORD_BOT_TOKEN", "FAKE-LIVE-TOKEN"), \
+                mock.patch.object(config, "DISCORD_CHANNEL_ID", 999999999), \
+                mock.patch.object(discord, "sendEmbed", side_effect=_spy):
+            # Short timeout: milestone embeds (architect_done / plan_ready) fire early, so we observe
+            # the cred state without needing the full gated run to finish.
+            e2e.runScenario("no-post", "build a calculator app", e2e._happy, surface="web", timeout=8)
+        self.assertTrue(seen, "expected the sim to attempt at least one milestone embed")
+        for tok, chan in seen:
+            self.assertEqual((tok, chan), ("", 0),
+                             "sim attempted a Discord post with LIVE creds -- _FORCED must blank them")
+
     def test_operator_rejects_bad_surface(self):
         with self.assertRaises(ValueError):
             VirtualOperator("tid", surface="telepathy")

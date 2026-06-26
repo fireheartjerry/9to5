@@ -9,7 +9,7 @@ EXPORTS:
   runHealthChecks() -> bool
 DEPENDS-ON: agents.executor, config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_health_collect.py
+RUN/TEST: python -m pytest tests/test_health_collect.py tests/test_repo_health.py
 """
 from __future__ import annotations
 

@@ -85,6 +85,24 @@ def _bashHitsBoundary(cmd_low, bbase):
     return bool(re.search(r"(^|[\s\"'=:;,()&|<>/\\])" + re.escape(bbase) + r"($|[\s\"'=:;,()&|<>])", cmd_low))
 
 
+# Read commands that print a file's contents to stdout -- the secret-exfil vector the write-only
+# destructive gate misses (sed/awk/grep READ+print; sed -i is also a write, caught either way).
+_READ_CMD_RE = re.compile(
+    r"\b(cat|tac|type|more|less|head|tail|strings|od|xxd|nl|bat|gc|get-content|grep|egrep|fgrep|rg|awk|sed)\b")
+# The secret family as a complete path TOKEN: .env / .env.local / .env.production (but NOT .envrc).
+_SECRET_TOKEN_RE = re.compile(r"(?:^|[\s\"'=/\\])\.env(?:\.[a-z0-9_]+)?(?=$|[\s\"'&|;)<>]|$)")
+
+
+def _bashReadsSecret(cmd_low):
+    """True when a Bash command READS a secret-family file (.env / .env.*, not .envrc) to stdout.
+
+    Closes the HIGH read-exfiltration hole the write-only gate leaves open (e.g. ``cat .env``):
+    the destructive gate only inspects WRITE commands, so a plain read slips through and can leak
+    secrets the ``Read(.env)`` deny rule blocks. Narrow to the secret family so legitimate reads of
+    other files (config.py, logs, ...) are unaffected."""
+    return bool(cmd_low and _READ_CMD_RE.search(cmd_low) and _SECRET_TOKEN_RE.search(cmd_low))
+
+
 def _resolveState():
     """Resolve ``(state, explicit)`` for this hook.
 
@@ -333,6 +351,15 @@ def selfModificationGuard(data):
             # move/copy onto a hard-boundary file slipped past the guard entirely (fail-open).
             bash_cmd = tool_input.get("command", "") or ""
             low = bash_cmd.lower()
+            # HIGH -- close the read-exfil hole. The write-only gate below lets `cat .env` through,
+            # so a brain / prompt-injection could leak secrets the Read(.env) deny rule blocks. A
+            # READ of the secret family is ALWAYS refused: state-independent, fail-closed, and narrow
+            # to .env* so legitimate reads of non-secret files are unaffected.
+            if _bashReadsSecret(low):
+                reason = ("self_modification_guard: BLOCKED read of a secret file (.env family) via Bash -- "
+                          "secrets are a hard boundary; read values through config.* at runtime instead.")
+                sys.stderr.write(reason + "\n")
+                sys.exit(2)
             redirect_or_git = (">" in bash_cmd or "sed -i" in low or "git checkout" in low
                                or "git reset" in low or "git restore" in low
                                or "git rm" in low or "git mv" in low)

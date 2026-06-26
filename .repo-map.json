@@ -13,12 +13,14 @@
     "identity",
     "knowledge",
     "learning",
+    "lifecycle",
     "llm_io",
     "login_chatgpt",
     "main",
     "memory",
     "notifications",
     "orchestrator",
+    "protocols",
     "provenance",
     "resilience",
     "selfmod",
@@ -30,6 +32,7 @@
     "test_phase2_project",
     "testing",
     "tests",
+    "tracing",
     "wipe"
   ],
   "modules": {
@@ -496,42 +499,42 @@
           "kind": "function",
           "signature": "(data)",
           "summary": "PreToolUse: block destructive Bash commands by exiting 2.",
-          "lineno": 122
+          "lineno": 140
         },
         {
           "name": "writeObsidian",
           "kind": "function",
           "signature": "(data)",
           "summary": "PostToolUse: log the edited file path to the in-progress subtask note.",
-          "lineno": 172
+          "lineno": 190
         },
         {
           "name": "discordNotify",
           "kind": "function",
           "signature": "(data)",
           "summary": "Notification: forward the message to Discord as a compact embed.",
-          "lineno": 223
+          "lineno": 241
         },
         {
           "name": "logAll",
           "kind": "function",
           "signature": "(data)",
           "summary": "PostToolUse / any: append one JSON line {time, tool_name} to the log.",
-          "lineno": 240
+          "lineno": 258
         },
         {
           "name": "selfModificationGuard",
           "kind": "function",
           "signature": "(data)",
           "summary": "PreToolUse: during a SELF-REFERENTIAL task, block edits to the core files",
-          "lineno": 317
+          "lineno": 335
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "()",
           "summary": "Dispatch to the requested handler based on argv[1].",
-          "lineno": 436
+          "lineno": 463
         }
       ],
       "depends_on": [
@@ -1049,12 +1052,14 @@
         "notifications.work_launcher",
         "orchestrator",
         "resilience",
+        "scripts.repo_health",
         "selfmod",
         "simulation",
         "state.task",
         "surfaces",
         "test_health_probe",
         "test_phase2_project",
+        "tracing",
         "wipe"
       ]
     },
@@ -1067,35 +1072,86 @@
           "kind": "class",
           "signature": "",
           "summary": "The brain-authored spec the executor turns into a Claude Code CLI invocation.",
-          "lineno": 35
+          "lineno": 43
         },
         {
           "name": "ExecutorResult",
           "kind": "class",
           "signature": "",
           "summary": "The uniform result dict every executor surface returns (terminal/browser/native).",
-          "lineno": 51
+          "lineno": 59
         },
         {
           "name": "Verdict",
           "kind": "class",
           "signature": "",
           "summary": "The adversary/second-brain review verdict (rich contract",
-          "lineno": 67
+          "lineno": 75
         },
         {
           "name": "Verify",
           "kind": "class",
           "signature": "",
           "summary": "A brain-authored verification check run after the executor.",
-          "lineno": 84
+          "lineno": 92
+        },
+        {
+          "name": "Universe",
+          "kind": "class",
+          "signature": "",
+          "summary": "``meta.universe`` -- surgical-precision scope",
+          "lineno": 110
+        },
+        {
+          "name": "Goal",
+          "kind": "class",
+          "signature": "",
+          "summary": "The raw human objective (``meta.goal_raw``) + its time horizon.",
+          "lineno": 130
+        },
+        {
+          "name": "ElaboratedGoal",
+          "kind": "class",
+          "signature": "",
+          "summary": "The approved, clarified objective (``meta.goal_elaborated``)",
+          "lineno": 137
+        },
+        {
+          "name": "SubtaskSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "One subtask (``state/task.py`` addSubtask)",
+          "lineno": 144
+        },
+        {
+          "name": "VerificationResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "``agents/verifier.py`` runVerification() output -- the proof gate's verdict",
+          "lineno": 179
+        },
+        {
+          "name": "ControlCommand",
+          "kind": "class",
+          "signature": "",
+          "summary": "A parsed human control command (``notifications/commands.py`` Command): name + arg.",
+          "lineno": 201
+        },
+        {
+          "name": "AgentDecision",
+          "kind": "class",
+          "signature": "",
+          "summary": "Confidence/risk metadata an intelligence may attach so the orchestrator can escalate.",
+          "lineno": 208
         }
       ],
       "depends_on": [],
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/test_contracts.py"
+      ],
       "callers": []
     },
     "control": {
@@ -1279,7 +1335,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_health_collect.py"
+        "tests/test_health_collect.py",
+        "tests/test_repo_health.py"
       ],
       "callers": [
         "main",
@@ -2882,6 +2939,55 @@
         "unannotated"
       ],
       "test": [],
+      "callers": []
+    },
+    "lifecycle": {
+      "path": "lifecycle.py",
+      "purpose": "lifecycle -- the ONE canonical status vocabulary for a 9to5 run and its subtasks.",
+      "exports": [
+        {
+          "name": "RunStatus",
+          "kind": "class",
+          "signature": "",
+          "summary": "Every value ``meta[\"status\"]`` may hold over a run's life",
+          "lineno": 34
+        },
+        {
+          "name": "SubtaskStatus",
+          "kind": "class",
+          "signature": "",
+          "summary": "Every value a subtask's ``status`` may hold (state/task.py addSubtask/updateSubtask).",
+          "lineno": 55
+        },
+        {
+          "name": "normalizeRunStatus",
+          "kind": "function",
+          "signature": "(raw: str) -> str",
+          "summary": "Fold any surface's status string to its canonical ``RunStatus`` value (returned as a st…",
+          "lineno": 98
+        },
+        {
+          "name": "isTerminalRun",
+          "kind": "function",
+          "signature": "(status: str) -> bool",
+          "summary": "True iff ``status`` (after normalization) is a run state with no further work.",
+          "lineno": 111
+        },
+        {
+          "name": "isTerminalSubtask",
+          "kind": "function",
+          "signature": "(status: str) -> bool",
+          "summary": "True iff a subtask in ``status`` is no longer actionable (done/failed/removed).",
+          "lineno": 116
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_lifecycle.py"
+      ],
       "callers": []
     },
     "llm_io": {
@@ -5529,6 +5635,48 @@
       ],
       "callers": []
     },
+    "protocols": {
+      "path": "protocols.py",
+      "purpose": "protocols -- the replaceable-intelligence seams of 9to5.",
+      "exports": [
+        {
+          "name": "Executor",
+          "kind": "class",
+          "signature": "",
+          "summary": "Runs ONE execution step (a brain-authored invocation spec) and returns a result dict.",
+          "lineno": 38
+        },
+        {
+          "name": "Verifier",
+          "kind": "class",
+          "signature": "",
+          "summary": "Decides whether an executed step actually succeeded",
+          "lineno": 60
+        },
+        {
+          "name": "Reviewer",
+          "kind": "class",
+          "signature": "",
+          "summary": "Adversarial critique of an executor's output",
+          "lineno": 73
+        },
+        {
+          "name": "Brain",
+          "kind": "class",
+          "signature": "",
+          "summary": "The authoring intelligence: given a system+user prompt, return the model's text/JSON.",
+          "lineno": 94
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_protocols.py"
+      ],
+      "callers": []
+    },
     "provenance": {
       "path": "provenance.py",
       "purpose": "Primitive 1 -- provenance. An origin tag carried on every ingested byte; provenance,",
@@ -5655,6 +5803,44 @@
       "callers": [
         "main"
       ]
+    },
+    "scripts.repo_health": {
+      "path": "scripts/repo_health.py",
+      "purpose": "repo_health -- a compact, cold-start status line for the 9to5 repo.",
+      "exports": [
+        {
+          "name": "gather",
+          "kind": "function",
+          "signature": "() -> dict",
+          "summary": "Collect the repo-health snapshot as a plain dict",
+          "lineno": 76
+        },
+        {
+          "name": "render",
+          "kind": "function",
+          "signature": "(snap: dict) -> str",
+          "summary": "",
+          "lineno": 103
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: 'list[str] | None'=None) -> int",
+          "summary": "",
+          "lineno": 122
+        }
+      ],
+      "depends_on": [
+        "config",
+        "tracing"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_repo_health.py"
+      ],
+      "callers": []
     },
     "selfmod": {
       "path": "selfmod.py",
@@ -6226,6 +6412,52 @@
         "tests/test_repo_map.py"
       ],
       "callers": []
+    },
+    "tracing": {
+      "path": "tracing.py",
+      "purpose": "tracing -- structured per-run JSONL event log.",
+      "exports": [
+        {
+          "name": "runDir",
+          "kind": "function",
+          "signature": "(run_id: str) -> Path",
+          "summary": "The directory holding one run's artifacts (events.jsonl, stdout.log, ...).",
+          "lineno": 43
+        },
+        {
+          "name": "emit",
+          "kind": "function",
+          "signature": "(run_id: str, event: str, *, subtask_id: Optional[str]=None, **fields: Any) -> None",
+          "summary": "Append one structured event to ``logs/runs/<run_id>/events.jsonl``",
+          "lineno": 52
+        },
+        {
+          "name": "readEvents",
+          "kind": "function",
+          "signature": "(run_id: str) -> list[dict]",
+          "summary": "Parse a run's events.jsonl into a list of dicts (skips blank/corrupt lines)",
+          "lineno": 74
+        },
+        {
+          "name": "recentRunIds",
+          "kind": "function",
+          "signature": "(limit: int=10) -> list[str]",
+          "summary": "The most-recently-modified run ids under RUNS_ROOT (newest first)",
+          "lineno": 93
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_tracing.py"
+      ],
+      "callers": [
+        "scripts.repo_health"
+      ]
     },
     "wipe": {
       "path": "wipe.py",

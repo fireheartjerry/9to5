@@ -37,9 +37,15 @@ class ScenarioResult:
     summary: dict = field(default_factory=dict)
 
 
-# Config knobs that must be forced offline/fast for an E2E sim; saved + restored around a run.
+# Config knobs forced offline/fast for an E2E sim; saved + restored around a run.
+# CRITICAL: blank the Discord CREDENTIALS, not just DISCORD_DASHBOARD. Milestone embeds
+# (architect_done / plan_ready / pre_pr approval / notices) gate on DISCORD_BOT_TOKEN +
+# DISCORD_CHANNEL_ID inside discord_bot._request -- NOT on DISCORD_DASHBOARD -- so without this a
+# sim run posts REAL embeds to the live channel under ANY runner (conftest's mute is pytest-only;
+# `unittest discover` bypasses it). Mirrors conftest._no_real_discord so the harness is hermetic.
 _FORCED = {"WEB_DASHBOARD": False, "DISCORD_DASHBOARD": False,
-           "CLAUDE_DOC_FETCH": False, "DISCORD_POLL_SECONDS": 0.02}
+           "CLAUDE_DOC_FETCH": False, "DISCORD_POLL_SECONDS": 0.02,
+           "DISCORD_BOT_TOKEN": "", "DISCORD_CHANNEL_ID": 0}
 
 
 def runScenario(name: str, goal: str, script: Callable[[VirtualOperator], None], *,

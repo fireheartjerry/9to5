@@ -23,12 +23,20 @@ EXPORTS:
   ExecutorResult  -- The uniform result dict every executor surface returns (terminal/browser/native).
   Verdict  -- The adversary/second-brain review verdict (rich contract
   Verify  -- A brain-authored verification check run after the executor.
+  Universe  -- ``meta.universe`` -- surgical-precision scope
+  Goal  -- The raw human objective (``meta.goal_raw``) + its time horizon.
+  ElaboratedGoal  -- The approved, clarified objective (``meta.goal_elaborated``)
+  SubtaskSpec  -- One subtask (``state/task.py`` addSubtask)
+  VerificationResult  -- ``agents/verifier.py`` runVerification() output -- the proof gate's verdict
+  ControlCommand  -- A parsed human control command (``notifications/commands.py`` Command): name + arg.
+  AgentDecision  -- Confidence/risk metadata an intelligence may attach so the orchestrator can escalate.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_contracts.py
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Optional, TypedDict
 
 
@@ -85,3 +93,126 @@ class Verify(TypedDict, total=False):
     """A brain-authored verification check run after the executor."""
     cmd: str
     expect: str                     # "exit_zero" | "stdout_contains:<t>" | "stdout_regex:<re>"
+
+
+# ===========================================================================
+# Frozen domain dataclasses -- the lifecycle spine, typed.
+# The TypedDicts above describe the legacy on-the-wire dicts; these are the
+# typed shapes new code should prefer. Each mirrors a REAL producer (cited) so
+# adoption is wrap-not-rewrite via .fromDict(). Spine objects that already have
+# a TypedDict above are NOT re-declared:
+#   StepResult       -> ExecutorResult        ReviewResult -> Verdict
+#   VerificationSpec -> Verify
+# ===========================================================================
+
+
+@dataclass(frozen=True)
+class Universe:
+    """``meta.universe`` -- surgical-precision scope. ``allowed_*`` are hints; only
+    ``hard_boundaries`` is a hard stop (enforced by the self-modification guard)."""
+    description: str = ""
+    allowed_paths: tuple[str, ...] = ()
+    allowed_to_expand_to: tuple[str, ...] = ()
+    hard_boundaries: tuple[str, ...] = ()
+
+    @classmethod
+    def fromDict(cls, d: Optional[dict]) -> "Universe":
+        d = d or {}
+        return cls(
+            description=d.get("description", ""),
+            allowed_paths=tuple(d.get("allowed_paths") or ()),
+            allowed_to_expand_to=tuple(d.get("allowed_to_expand_to") or ()),
+            hard_boundaries=tuple(d.get("hard_boundaries") or ()),
+        )
+
+
+@dataclass(frozen=True)
+class Goal:
+    """The raw human objective (``meta.goal_raw``) + its time horizon."""
+    raw: str
+    time_horizon_hours: float = 0.0
+
+
+@dataclass(frozen=True)
+class ElaboratedGoal:
+    """The approved, clarified objective (``meta.goal_elaborated``) -- the last human input."""
+    text: str
+    universe: Optional[Universe] = None
+
+
+@dataclass(frozen=True)
+class SubtaskSpec:
+    """One subtask (``state/task.py`` addSubtask). Mirrors the on-disk subtask dict exactly.
+    ``status`` is a ``lifecycle.SubtaskStatus`` value."""
+    subtask_id: str
+    title: str = ""
+    description: str = ""
+    assigned_to: str = ""
+    layer: str = ""
+    status: str = "pending"
+    depends_on: tuple[str, ...] = ()
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    output_ref: Optional[str] = None
+    github_pr: Optional[str] = None
+    session: Optional[str] = None
+
+    @classmethod
+    def fromDict(cls, d: dict) -> "SubtaskSpec":
+        return cls(
+            subtask_id=d.get("subtask_id", ""),
+            title=d.get("title", ""),
+            description=d.get("description", ""),
+            assigned_to=d.get("assigned_to", ""),
+            layer=d.get("layer", ""),
+            status=d.get("status", "pending"),
+            depends_on=tuple(d.get("depends_on") or ()),
+            started_at=d.get("started_at"),
+            completed_at=d.get("completed_at"),
+            output_ref=d.get("output_ref"),
+            github_pr=d.get("github_pr"),
+            session=d.get("session"),
+        )
+
+
+@dataclass(frozen=True)
+class VerificationResult:
+    """``agents/verifier.py`` runVerification() output -- the proof gate's verdict. Exact mirror."""
+    passed: bool
+    cmd: Optional[str]
+    expect: str
+    returncode: Optional[int]
+    stdout: str = ""
+    stderr: str = ""
+
+    @classmethod
+    def fromDict(cls, d: dict) -> "VerificationResult":
+        return cls(
+            passed=bool(d.get("passed")),
+            cmd=d.get("cmd"),
+            expect=d.get("expect", ""),
+            returncode=d.get("returncode"),
+            stdout=d.get("stdout", ""),
+            stderr=d.get("stderr", ""),
+        )
+
+
+@dataclass(frozen=True)
+class ControlCommand:
+    """A parsed human control command (``notifications/commands.py`` Command): name + arg."""
+    name: str
+    arg: str = ""
+
+
+@dataclass(frozen=True)
+class AgentDecision:
+    """Confidence/risk metadata an intelligence may attach so the orchestrator can escalate.
+
+    TARGET shape (not yet emitted) for confidence-based escalation: route to frontier/human
+    review when ``confidence`` is below threshold, a universe expansion is requested, or
+    verification keeps failing. Kept here so the escalation contract is visible before wiring."""
+    confidence: float = 1.0
+    risk: str = "low"                  # "low" | "medium" | "high"
+    needs_frontier_review: bool = False
+    needs_human_review: bool = False
+    reason: str = ""
