@@ -21,7 +21,7 @@ Python is pure plumbing: Ollama → prompt → Claude Code CLI → output → Ob
 feed back to Ollama → repeat.
 
 ## Architecture — the 4 layers (only Layer 3 is built, Phase 1)
-- **Layer 1 Browser** — CDP driving claude.ai / chatgpt.com (Phase 2).
+- **Layer 1 Browser** — CDP/Playwright generic browser surface, gated by `BROWSER_LAYER_ENABLED` (Phase 2).
 - **Layer 2 Native** — UIA/pywinauto driving desktop apps (Phase 3).
 - **Layer 3 Terminal/CLI** — *PRIMARY, built now*: Claude Code CLI, gh, git.
 - **Layer 4 Local model** — Ollama `qwen2.5:7b` as the brain.
@@ -34,7 +34,9 @@ feed back to Ollama → repeat.
 - **Adversary** — Phase 1 runs a **real Ollama-backed critique**: returns a
   verdict (`approved`/`challenged`) with concrete concerns over the executor
   output; conservative auto-approve fallback if no brain is wired or the call
-  fails. Phase 2 → GPT-5.5 via chatgpt.com CDP. (`agents/adversary.py`)
+  fails. The external strong critic (second brain) runs on Google Gemini via the
+  `google-genai` SDK (`agents/gemini_driver.py`), gated by `GEMINI_ENABLED`; the
+  fallback chain is Gemini → Ollama adversary → conservative stub. (`agents/adversary.py`)
 - **Replanner** — Ollama, after every subtask; may mutate the subtask list.
   (`agents/replanner.py`)
 
@@ -103,8 +105,9 @@ Phase 1 (Layer 3 only).
   gateway command bot, watch/gated control modes, plan editing, **Ollama-backed
   Adversary critique** (advisory verdict + concerns, conservative auto-approve
   fallback).
-- **STUBBED:** the **Adversary** brain is local Ollama in Phase 1; Phase 2 swaps
-  it for GPT-5.5 via chatgpt.com CDP. Layers 1 (Browser) and 2 (Native) are not built.
+- **STUBBED:** the **Adversary** local tier is Ollama; the external strong critic
+  is Google Gemini via the `google-genai` SDK (`agents/gemini_driver.py`), auto-enabled
+  when `GEMINI_API_KEY` is set (`GEMINI_ENABLED`). Layers 1 (Browser) and 2 (Native) are not built.
 - Everything reads config from `C:\9to5\.env` — never hardcode secrets.
 
 ## Conventions

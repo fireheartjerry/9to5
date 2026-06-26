@@ -5,8 +5,8 @@ draft* under the orchestrator's strict protocol. Module-by-module index: `agents
 
 ## What lives here
 - **Executor** — `executor.py` (Claude Code CLI subprocess; `Executor` protocol).
-- **Drivers** — `browser_executor.py`, `native_executor.py`, `chatgpt_driver.py`, `vlm_healer.py` (non-terminal surfaces).
-- **Reviewers** — `adversary.py`, `second_brain.py` (`Reviewer` protocol; advisory verdicts).
+- **Drivers** — `browser_executor.py`, `native_executor.py` (non-terminal surfaces), `gemini_driver.py` (`GeminiSession` over the `google-genai` SDK; the second-brain transport).
+- **Reviewers** — `adversary.py`, `second_brain.py` (`Reviewer` protocol; advisory verdicts). The external strong critic runs on Google Gemini via `gemini_driver.py`; fallback chain is Gemini → Ollama adversary → conservative stub.
 - **Verifier** — `verifier.py` (`Verifier` protocol; `{cmd, expect}` → pass/fail).
 - **Authoring** — `architect.py` (→ `architect.md`), `elaborator.py`, `clarifier.py`, `replanner.py`.
 - **Guard** — `hooks.py` (the PreToolUse self-modification guard; with `identity.py`/`provenance.py`/`epoch.py` it is the only hard stop).

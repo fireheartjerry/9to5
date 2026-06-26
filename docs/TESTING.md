@@ -71,7 +71,8 @@ Examples:
 
 - Discord live bot checks
 - web dashboard click flow
-- Playwright/CDP browser execution
+- Playwright/CDP generic browser execution (the `BROWSER_LAYER_ENABLED` surface)
+- real Gemini API call (second brain; gated by `NINE_TO_FIVE_ALLOW_REAL_API`)
 - UIA/pywinauto native execution
 - real Claude Code subprocess smoke
 - real Obsidian REST API write
@@ -98,7 +99,7 @@ These scenario tests should exist or be introduced over time:
 - `test_web_control_pause_resume`
 - `test_self_modification_guard_blocks_secrets`
 - `test_browser_executor_attaches_artifacts`
-- `test_vlm_healer_requires_screenshot_evidence`
+- `test_gemini_driver_degrades_to_ollama_when_unavailable`
 - `test_learning_consumes_trace_without_mutating_live_run`
 - `test_control_bus_pause_resume_cancel`
 
@@ -113,8 +114,7 @@ Prefer fake backends for integration tests:
 - `FakeObsidianStore`
 - `FakeBrowserExecutor`
 - `FakeNativeExecutor`
-- `FakeVLMHealer`
-- `FakeChatGPTDriver`
+- `FakeGeminiSession`
 
 Normal fast tests should not require:
 

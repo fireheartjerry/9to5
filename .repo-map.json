@@ -15,7 +15,6 @@
     "learning",
     "lifecycle",
     "llm_io",
-    "login_chatgpt",
     "main",
     "memory",
     "notifications",
@@ -28,8 +27,6 @@
     "simulation",
     "state",
     "surfaces",
-    "test_health_probe",
-    "test_phase2_project",
     "testing",
     "tests",
     "tracing",
@@ -56,35 +53,35 @@
           "kind": "function",
           "signature": "(review_type: str='subtask') -> str",
           "summary": "The system prompt for a given touchpoint: the one schema + a type-specific lead-in.",
-          "lineno": 136
+          "lineno": 138
         },
         {
           "name": "isCdpTransient",
           "kind": "function",
           "signature": "(exc: BaseException) -> bool",
           "summary": "True when ``exc`` looks like a transient CDP/network hiccup worth retrying.",
-          "lineno": 160
+          "lineno": 162
         },
         {
           "name": "shouldTrigger",
           "kind": "function",
           "signature": "(executor_output: str, subtask_position: int, attempt_count: int=1, pre_pr: bool=False) -> tuple[bool, str]",
           "summary": "Return ``(triggered, reason)``.",
-          "lineno": 166
+          "lineno": 168
         },
         {
           "name": "reviewViaBrowser",
           "kind": "function",
           "signature": "(subtask_title: str, trigger_reason: str, executor_output: str, *, browser_ask: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict",
-          "summary": "Phase-2 critique: route the review to GPT-5.5 on chatgpt.com over CDP.",
-          "lineno": 258
+          "summary": "Phase-2 critique: route the review to Gemini via the google-genai SDK.",
+          "lineno": 260
         },
         {
           "name": "review",
           "kind": "function",
           "signature": "(subtask_title: str, trigger_reason: str, executor_output: str, *, ollama_chat: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict",
           "summary": "Critique the executor output and return a verdict dict.",
-          "lineno": 316
+          "lineno": 319
         }
       ],
       "depends_on": [
@@ -132,82 +129,75 @@
     },
     "agents.browser_executor": {
       "path": "agents/browser_executor.py",
-      "purpose": "Browser execution backend -- Layer 1 (CDP) \"hands\" for 9TO5.",
+      "purpose": "Browser execution backend -- Layer 1 (CDP) \"hands\" for 9TO5, plus the Gemini second-brain shim.",
       "exports": [
         {
           "name": "BrowserUnavailable",
           "kind": "class",
           "signature": "",
           "summary": "Raised when no browser backend (Playwright/Chromium) is installed.",
-          "lineno": 60
+          "lineno": 49
         },
         {
           "name": "runBrowser",
           "kind": "function",
           "signature": "(spec_or_prompt, *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, resume_session: Optional[str]=None, **_kw) -> dict",
           "summary": "Execute a browser subtask",
-          "lineno": 150
-        },
-        {
-          "name": "chatgptActions",
-          "kind": "function",
-          "signature": "(message: str) -> list[dict[str, Any]]",
-          "summary": "Build the CDP action recipe that asks chatgpt.com one ``message`` and reads the reply:",
-          "lineno": 171
+          "lineno": 139
         },
         {
           "name": "get_session",
           "kind": "function",
           "signature": "()",
-          "summary": "Lazily build the process-wide ChatGPTSession (does NOT open the browser yet).",
-          "lineno": 236
+          "summary": "Lazily build the process-wide GeminiSession (does NOT open a client yet).",
+          "lineno": 168
         },
         {
           "name": "probe",
           "kind": "function",
           "signature": "() -> bool",
-          "summary": "Health-probe the session on the dedicated thread",
-          "lineno": 245
+          "summary": "Health-probe the Gemini session",
+          "lineno": 177
         },
         {
           "name": "startConversation",
           "kind": "function",
           "signature": "(goal: str, task_id: str) -> None",
-          "summary": "Start the single run conversation on the dedicated thread.",
-          "lineno": 250
+          "summary": "Start the single run conversation.",
+          "lineno": 182
         },
         {
           "name": "closeSession",
           "kind": "function",
           "signature": "() -> None",
-          "summary": "Close + tear down the session on the dedicated thread (where it was created).",
-          "lineno": 255
+          "summary": "Close + tear down the Gemini session.",
+          "lineno": 187
         },
         {
           "name": "preflightLogin",
           "kind": "function",
           "signature": "(timeout_s: int=300, poll_s: int=3) -> bool",
-          "summary": "Open the browser, poll until logged in (READY) or timeout, then close",
-          "lineno": 261
+          "summary": "Verify Gemini is reachable before a run relies on it",
+          "lineno": 193
         },
         {
           "name": "sessionAsk",
           "kind": "function",
           "signature": "(message: str, *, expect_json: bool=False) -> Optional[str]",
-          "summary": "Ask GPT-5.5 one message through the intelligent session, marshaled onto the dedicated",
-          "lineno": 301
+          "summary": "Ask Gemini one message through the run session",
+          "lineno": 201
         },
         {
-          "name": "askChatGPT",
+          "name": "askGemini",
           "kind": "function",
-          "signature": "(message: str, *, runner=None, work_dir: Optional[str]=None, expect_json: bool=False) -> Optional[str]",
-          "summary": "Send one ``message`` to chatgpt.com and return GPT's reply text.",
-          "lineno": 308
+          "signature": "(message: str, *, runner=None, expect_json: bool=False) -> Optional[str]",
+          "summary": "Send one ``message`` to Gemini and return the reply text.",
+          "lineno": 208
         }
       ],
       "depends_on": [
-        "agents.chatgpt_driver",
         "agents.executor",
+        "agents.gemini_driver",
         "config"
       ],
       "side_effects": [
@@ -222,153 +212,6 @@
         "notifications.bot.cogs.runs_cog",
         "notifications.views",
         "orchestrator"
-      ]
-    },
-    "agents.chatgpt_driver": {
-      "path": "agents/chatgpt_driver.py",
-      "purpose": "ChatGPTSession -- the intelligent, DOM-aware hands that drive chatgpt.com for 9to5.",
-      "exports": [
-        {
-          "name": "ChatGPTError",
-          "kind": "class",
-          "signature": "",
-          "summary": "Base for any chatgpt.com driving failure.",
-          "lineno": 67
-        },
-        {
-          "name": "ChatGPTLoginRequired",
-          "kind": "class",
-          "signature": "",
-          "summary": "The session is not logged in (login wall / redirect).",
-          "lineno": 71
-        },
-        {
-          "name": "ChatGPTBlocked",
-          "kind": "class",
-          "signature": "",
-          "summary": "A Cloudflare / bot-detection challenge is in the way.",
-          "lineno": 75
-        },
-        {
-          "name": "ChatGPTRateLimited",
-          "kind": "class",
-          "signature": "",
-          "summary": "ChatGPT reported a usage / rate limit.",
-          "lineno": 79
-        },
-        {
-          "name": "ChatGPTSelectorMiss",
-          "kind": "class",
-          "signature": "",
-          "summary": "A required element could not be located even after self-heal.",
-          "lineno": 83
-        },
-        {
-          "name": "classify_state",
-          "kind": "function",
-          "signature": "(page: Any) -> str",
-          "summary": "Cheap DOM-only triage of the current page",
-          "lineno": 94
-        },
-        {
-          "name": "extract_latest_reply",
-          "kind": "function",
-          "signature": "(page: Any) -> str",
-          "summary": "Text of the newest assistant message",
-          "lineno": 116
-        },
-        {
-          "name": "ChatGPTSession",
-          "kind": "class",
-          "signature": "",
-          "summary": "A long-lived, logged-in chatgpt.com session",
-          "lineno": 124
-        }
-      ],
-      "depends_on": [
-        "agents.chatgpt_selectors",
-        "agents.profile_hygiene",
-        "agents.vlm_healer",
-        "config"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/test_chatgpt_driver.py",
-        "tests/test_chatgpt_e2e_offline.py"
-      ],
-      "callers": [
-        "agents.browser_executor",
-        "agents.second_brain",
-        "login_chatgpt",
-        "test_health_probe",
-        "test_phase2_project"
-      ]
-    },
-    "agents.chatgpt_selectors": {
-      "path": "agents/chatgpt_selectors.py",
-      "purpose": "chatgpt.com selectors -- centralized, fallback-listed, self-healable.",
-      "exports": [
-        {
-          "name": "load",
-          "kind": "function",
-          "signature": "() -> dict[str, list[str]]",
-          "summary": "Return role -> ordered selector list, with any cached/self-healed selector prepended.",
-          "lineno": 120
-        },
-        {
-          "name": "get",
-          "kind": "function",
-          "signature": "(role: str) -> list[str]",
-          "summary": "Ordered selector list for one role (cached selector first).",
-          "lineno": 131
-        },
-        {
-          "name": "save_selector",
-          "kind": "function",
-          "signature": "(role: str, css: str) -> None",
-          "summary": "Persist a self-healed selector for ``role`` so it takes precedence next time.",
-          "lineno": 136
-        },
-        {
-          "name": "cached_project_url",
-          "kind": "function",
-          "signature": "() -> str",
-          "summary": "The 9to5 ChatGPT project URL discovered/created on a prior run (or '').",
-          "lineno": 146
-        },
-        {
-          "name": "save_project_url",
-          "kind": "function",
-          "signature": "(url: str) -> None",
-          "summary": "",
-          "lineno": 151
-        },
-        {
-          "name": "first_visible",
-          "kind": "function",
-          "signature": "(page: Any, role_or_names) -> Optional[Any]",
-          "summary": "Return the first locator (from a role name or an explicit selector list) that resolves",
-          "lineno": 158
-        },
-        {
-          "name": "visible_role",
-          "kind": "function",
-          "signature": "(page: Any, role: str) -> bool",
-          "summary": "True when any selector for ``role`` currently resolves on ``page``.",
-          "lineno": 173
-        }
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": [
-        "agents.chatgpt_driver"
       ]
     },
     "agents.clarifier": {
@@ -488,6 +331,67 @@
         "agents.verifier",
         "health",
         "orchestrator"
+      ]
+    },
+    "agents.gemini_driver": {
+      "path": "agents/gemini_driver.py",
+      "purpose": "gemini_driver -- the second-brain transport: Google Gemini via the google-genai SDK.",
+      "exports": [
+        {
+          "name": "GeminiError",
+          "kind": "class",
+          "signature": "",
+          "summary": "Base for any Gemini transport failure.",
+          "lineno": 67
+        },
+        {
+          "name": "GeminiAuthError",
+          "kind": "class",
+          "signature": "",
+          "summary": "Missing / invalid API key (analogue of the old login wall).",
+          "lineno": 71
+        },
+        {
+          "name": "GeminiBlocked",
+          "kind": "class",
+          "signature": "",
+          "summary": "A safety / permission block stopped the response (analogue of a Cloudflare wall).",
+          "lineno": 75
+        },
+        {
+          "name": "GeminiRateLimited",
+          "kind": "class",
+          "signature": "",
+          "summary": "Gemini reported a usage / rate / quota limit.",
+          "lineno": 79
+        },
+        {
+          "name": "GeminiUnavailable",
+          "kind": "class",
+          "signature": "",
+          "summary": "The SDK is not installed, blocked under a test runner, or a transient transport error.",
+          "lineno": 83
+        },
+        {
+          "name": "GeminiSession",
+          "kind": "class",
+          "signature": "",
+          "summary": "A long-lived Gemini chat session",
+          "lineno": 137
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_gemini_driver.py"
+      ],
+      "callers": [
+        "agents.browser_executor",
+        "agents.second_brain"
       ]
     },
     "agents.hooks": {
@@ -718,50 +622,6 @@
         "agents.executor"
       ]
     },
-    "agents.profile_hygiene": {
-      "path": "agents/profile_hygiene.py",
-      "purpose": "Chromium profile hygiene for the 9to5 ChatGPT second-brain profile.",
-      "exports": [
-        {
-          "name": "killZombies",
-          "kind": "function",
-          "signature": "(profile_dir: Optional[Path]=None) -> int",
-          "summary": "Kill every chrome/chromium process whose command line binds this profile",
-          "lineno": 47
-        },
-        {
-          "name": "clearStaleLocks",
-          "kind": "function",
-          "signature": "(profile_dir: Optional[Path]=None) -> None",
-          "summary": "Remove leftover single-instance lock artifacts",
-          "lineno": 76
-        },
-        {
-          "name": "markCleanExit",
-          "kind": "function",
-          "signature": "(profile_dir: Optional[Path]=None) -> None",
-          "summary": "Erase the crash-restore flag so Chromium never shows the 'didn't shut down correctly /",
-          "lineno": 90
-        },
-        {
-          "name": "sanitize",
-          "kind": "function",
-          "signature": "(profile_dir: Optional[Path]=None, *, kill: bool=True) -> int",
-          "summary": "Full pre-launch hygiene: reap zombies, clear stale locks, erase the crash-restore flag.",
-          "lineno": 110
-        }
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": [
-        "agents.chatgpt_driver"
-      ]
-    },
     "agents.replanner": {
       "path": "agents/replanner.py",
       "purpose": "Replanner -- Ollama decides whether to mutate the subtask list.",
@@ -795,20 +655,20 @@
           "name": "consult",
           "kind": "function",
           "signature": "(review_type: str, *, title: str, trigger_reason: str, content: str, goal: str='', ollama_chat: Optional[Callable]=None, browser_ask: Optional[Callable]=None, session_ok: bool=False, worth: bool=True) -> dict",
-          "summary": "Run one second-opinion review through the GPT -> Ollama -> stub chain",
-          "lineno": 69
+          "summary": "Run one second-opinion review through the Gemini -> Ollama -> stub chain",
+          "lineno": 70
         },
         {
           "name": "is_blocking",
           "kind": "function",
           "signature": "(verdict: dict) -> bool",
           "summary": "True when a verdict should hold a PR / drive remediation.",
-          "lineno": 99
+          "lineno": 100
         }
       ],
       "depends_on": [
         "agents.adversary",
-        "agents.chatgpt_driver",
+        "agents.gemini_driver",
         "config"
       ],
       "side_effects": [
@@ -896,30 +756,6 @@
         "orchestrator"
       ]
     },
-    "agents.vlm_healer": {
-      "path": "agents/vlm_healer.py",
-      "purpose": "vlm_healer -- local-VLM perception for self-healing chatgpt.com selectors.",
-      "exports": [
-        {
-          "name": "heal",
-          "kind": "function",
-          "signature": "(screenshot_png: bytes, dom_html: str, *, want: str) -> dict",
-          "summary": "Ask the local VLM to classify the page + propose a selector for role ``want``.",
-          "lineno": 68
-        }
-      ],
-      "depends_on": [
-        "config",
-        "llm_io"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": [
-        "agents.chatgpt_driver"
-      ]
-    },
     "config": {
       "path": "config.py",
       "purpose": "9TO5 -- central configuration.",
@@ -929,28 +765,28 @@
           "kind": "function",
           "signature": "(knob: str, value) -> bool",
           "summary": "Persist + live-apply a meta-optimizer knob change (whitelisted knobs only).",
-          "lineno": 373
+          "lineno": 366
         },
         {
           "name": "ensureDirs",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Create every directory 9TO5 needs (idempotent).",
-          "lineno": 606
+          "lineno": 599
         },
         {
           "name": "validateEnv",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Return the names of required-but-missing environment values.",
-          "lineno": 612
+          "lineno": 605
         },
         {
           "name": "getLogger",
           "kind": "function",
           "signature": "(name: str='9to5') -> logging.Logger",
           "summary": "Return a child of the configured ``9to5`` logger.",
-          "lineno": 645
+          "lineno": 638
         }
       ],
       "depends_on": [],
@@ -965,20 +801,17 @@
         "agents.adversary",
         "agents.architect",
         "agents.browser_executor",
-        "agents.chatgpt_driver",
-        "agents.chatgpt_selectors",
         "agents.clarifier",
         "agents.elaborator",
         "agents.executor",
+        "agents.gemini_driver",
         "agents.hooks",
         "agents.native_executor",
         "agents.orchestration_pipeline",
         "agents.playbook",
-        "agents.profile_hygiene",
         "agents.replanner",
         "agents.second_brain",
         "agents.verifier",
-        "agents.vlm_healer",
         "control",
         "doctor",
         "epoch",
@@ -1015,7 +848,6 @@
         "learning.sie",
         "learning.solution_cache",
         "learning.toolsmith",
-        "login_chatgpt",
         "main",
         "memory.experience",
         "memory.obsidian",
@@ -1057,8 +889,6 @@
         "simulation",
         "state.task",
         "surfaces",
-        "test_health_probe",
-        "test_phase2_project",
         "tracing",
         "wipe"
       ]
@@ -3021,24 +2851,9 @@
         "agents.architect",
         "agents.clarifier",
         "agents.replanner",
-        "agents.vlm_healer",
         "notifications.ask",
         "orchestrator"
       ]
-    },
-    "login_chatgpt": {
-      "path": "login_chatgpt.py",
-      "purpose": "Open ChatGPT in persistent profile for manual login. Stays open until you close it.",
-      "exports": [],
-      "depends_on": [
-        "agents.chatgpt_driver",
-        "config"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
     },
     "main": {
       "path": "main.py",
@@ -4048,7 +3863,7 @@
           "kind": "function",
           "signature": "(bot: dpy_commands.Bot) -> None",
           "summary": "",
-          "lineno": 123
+          "lineno": 121
         }
       ],
       "depends_on": [
@@ -5315,21 +5130,21 @@
           "kind": "class",
           "signature": "",
           "summary": "Multi-select wipe config view",
-          "lineno": 327
+          "lineno": 322
         },
         {
           "name": "WipeConfirmView",
           "kind": "class",
           "signature": "",
           "summary": "Final confirm/cancel for a wipe",
-          "lineno": 405
+          "lineno": 400
         },
         {
           "name": "WorkModal",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 438
+          "lineno": 433
         }
       ],
       "depends_on": [
@@ -6104,34 +5919,6 @@
         "orchestrator"
       ]
     },
-    "test_health_probe": {
-      "path": "test_health_probe.py",
-      "purpose": "Test the exact health_probe flow.",
-      "exports": [],
-      "depends_on": [
-        "agents.chatgpt_driver",
-        "config"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "test_phase2_project": {
-      "path": "test_phase2_project.py",
-      "purpose": "VERIFY Phase 2 end-to-end: enter the 9to5 PROJECT, send a multiline adversary prompt,",
-      "exports": [],
-      "depends_on": [
-        "agents.chatgpt_driver",
-        "config"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
     "tools.affected_tests": {
       "path": "tools/affected_tests.py",
       "purpose": "affected_tests -- map changed source files to the pytest targets that cover them.",
@@ -6317,91 +6104,91 @@
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> list[Path]",
           "summary": "All first-party .py files (sorted, deterministic), skipping EXCLUDE_DIRS",
-          "lineno": 78
+          "lineno": 77
         },
         {
           "name": "module_dotted",
           "kind": "function",
           "signature": "(path: Path) -> str",
           "summary": "agents/adversary.py -> 'agents.adversary'",
-          "lineno": 93
+          "lineno": 92
         },
         {
           "name": "first_party_roots",
           "kind": "function",
           "signature": "() -> set[str]",
           "summary": "Top-level importable names: every top-level .py stem + every dir holding an __init__.py.",
-          "lineno": 100
+          "lineno": 99
         },
         {
           "name": "parse_module",
           "kind": "function",
           "signature": "(path: Path, roots: set[str]) -> dict",
           "summary": "Extract the per-module record (sans callers, which are computed globally).",
-          "lineno": 226
+          "lineno": 225
         },
         {
           "name": "find_tests",
           "kind": "function",
           "signature": "(dotted: str, name: str) -> list[str]",
           "summary": "Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> glob -> [].",
-          "lineno": 244
+          "lineno": 243
         },
         {
           "name": "build_map",
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> dict",
           "summary": "Full-repo machine index",
-          "lineno": 256
+          "lineno": 255
         },
         {
           "name": "toplevel_import_graph",
           "kind": "function",
           "signature": "() -> dict[str, list[str]]",
           "summary": "{dotted-module: [first-party modules imported at LOAD time]}",
-          "lineno": 292
+          "lineno": 291
         },
         {
           "name": "render_header",
           "kind": "function",
           "signature": "(rec: dict) -> str",
           "summary": "Render the @AI-MAP block (text only, no surrounding quotes).",
-          "lineno": 307
+          "lineno": 306
         },
         {
           "name": "splice_header",
           "kind": "function",
           "signature": "(src: str, header: str) -> Optional[str]",
           "summary": "Return ``src`` with ``header`` placed inside the module docstring (below the prose,",
-          "lineno": 324
+          "lineno": 323
         },
         {
           "name": "render_root_agents_md",
           "kind": "function",
           "signature": "(m: dict) -> str",
           "summary": "",
-          "lineno": 350
+          "lineno": 349
         },
         {
           "name": "render_package_agents_md",
           "kind": "function",
           "signature": "(m: dict, pkg: str) -> str",
           "summary": "",
-          "lineno": 399
+          "lineno": 398
         },
         {
           "name": "write_outputs",
           "kind": "function",
           "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 428
+          "lineno": 427
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: Optional[list[str]]=None) -> int",
           "summary": "",
-          "lineno": 502
+          "lineno": 501
         }
       ],
       "depends_on": [],

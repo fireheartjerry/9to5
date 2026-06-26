@@ -205,8 +205,7 @@ guards/
 drivers/
   browser_executor.py
   native_executor.py
-  chatgpt_driver.py
-  vlm_healer.py
+  gemini_driver.py
 ```
 
 Do not force this structure in one giant patch. Use it as the target direction when refactors are justified.

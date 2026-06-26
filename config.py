@@ -300,30 +300,28 @@ MCP_SERVERS: tuple[str, ...] = tuple(
 BROWSER_LAYER_ENABLED: bool = _envBool("BROWSER_LAYER_ENABLED", False)   # L1 (CDP)
 NATIVE_LAYER_ENABLED: bool = _envBool("NATIVE_LAYER_ENABLED", False)     # L2 (UIA)
 
-# --- Phase 2: GPT-5.5 as the second brain (chatgpt.com via a logged-in browser) ----------
-# Dedicated persistent Chrome profile 9to5 owns -- user logs into ChatGPT once; cookies persist.
-CHATGPT_USER_DATA_DIR: Path = _envPath(
-    "CHATGPT_USER_DATA_DIR", str(PROJECT_ROOT / "state" / "chatgpt_profile")
-) or (PROJECT_ROOT / "state" / "chatgpt_profile")
-CHATGPT_HEADLESS: bool = _envBool("CHATGPT_HEADLESS", False)   # head-ful = less bot-detectable
-CHATGPT_PROJECT_NAME: str = os.getenv("CHATGPT_PROJECT_NAME", "9to5")
-CHATGPT_PROJECT_DESC: str = os.getenv(
-    "CHATGPT_PROJECT_DESC",
-    "Automated adversarial review + second-opinion for the 9to5 autonomous orchestrator. "
-    "Counterpart is an AI agent, not a human.")
-CHATGPT_PROJECT_URL: str = os.getenv(
-    "CHATGPT_PROJECT_URL",
-    "https://chatgpt.com/g/g-p-6a3b5bc2c1708191b67f1546ae6468d8/project",
-)  # the dedicated 9to5 ChatGPT project; every review conversation lives in here
-CHATGPT_NAV_TIMEOUT_MS: int = _envInt("CHATGPT_NAV_TIMEOUT_MS", 45000)
-CHATGPT_REPLY_TIMEOUT_MS: int = _envInt("CHATGPT_REPLY_TIMEOUT_MS", 120000)
-CHATGPT_REPLY_SETTLE_MS: int = _envInt("CHATGPT_REPLY_SETTLE_MS", 900)   # stable-text window
-CHATGPT_MAX_TURNS: int = _envInt("CHATGPT_MAX_TURNS", 40)   # rollover to a fresh chat
-CHATGPT_MIN_OUTPUT_CHARS: int = _envInt("CHATGPT_MIN_OUTPUT_CHARS", 200)   # cost guard
-CHATGPT_SELECTOR_CACHE: Path = PROJECT_ROOT / "state" / "chatgpt_selectors.json"
-CHATGPT_JSON_REPAIR_RETRIES: int = _envInt("CHATGPT_JSON_REPAIR_RETRIES", 1)
+# --- Phase 2: Gemini as the second brain (google-genai SDK) ------------------------------
+# The stronger critic/arbiter is Google Gemini reached through the official google-genai SDK
+# (agents/gemini_driver.py): a stateless HTTPS call, no browser/profile/DOM. Enabled whenever an
+# API key is present (override with GEMINI_ENABLED). gemini-2.5-flash is the free-tier default.
+GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_ENABLED: bool = _envBool("GEMINI_ENABLED", bool(GEMINI_API_KEY))
+GEMINI_TIMEOUT_MS: int = _envInt("GEMINI_TIMEOUT_MS", 120000)
+GEMINI_MAX_TURNS: int = _envInt("GEMINI_MAX_TURNS", 40)        # rollover to a fresh chat
+GEMINI_MIN_OUTPUT_CHARS: int = _envInt("GEMINI_MIN_OUTPUT_CHARS", 200)   # cost guard
+GEMINI_JSON_REPAIR_RETRIES: int = _envInt("GEMINI_JSON_REPAIR_RETRIES", 1)
+# System instruction applied to the run chat: tell Gemini it is talking to an autonomous agent,
+# not a human, so it drops social/hedging tokens and answers in the densest machine form.
+GEMINI_SYSTEM_PREAMBLE: str = os.getenv(
+    "GEMINI_SYSTEM_PREAMBLE",
+    "You are the second brain for the 9to5 autonomous orchestrator: a strict, independent "
+    "adversarial reviewer. Your counterpart is an AUTONOMOUS SOFTWARE AGENT, not a human. "
+    "Communicate machine-to-machine: no greetings, apologies, hedging, praise, or restating the "
+    "question. When asked for JSON, emit ONLY the requested JSON object -- nothing before or after "
+    "it. Be maximally information-dense; every token must carry signal.")
 
-# Where GPT-5.5 acts as the second brain (each gated, all default on; require BROWSER_LAYER_ENABLED).
+# Where Gemini acts as the second brain (each gated, all default on; require GEMINI_ENABLED).
 ADVERSARY_REVIEW_PLAN: bool = _envBool("ADVERSARY_REVIEW_PLAN", True)
 ADVERSARY_REVIEW_ARCH: bool = _envBool("ADVERSARY_REVIEW_ARCH", True)
 ADVERSARY_REVIEW_PREPR_DIFF: bool = _envBool("ADVERSARY_REVIEW_PREPR_DIFF", True)
@@ -333,12 +331,7 @@ ADVERSARY_PREPR_DIFF_MAX_CHARS: int = _envInt("ADVERSARY_PREPR_DIFF_MAX_CHARS", 
 ADVERSARY_BLOCKING_SEVERITY: str = os.getenv("ADVERSARY_BLOCKING_SEVERITY", "high")
 ADVERSARY_REMEDIATION_MAX_ATTEMPTS: int = _envInt("ADVERSARY_REMEDIATION_MAX_ATTEMPTS", 2)
 
-# Local VLM self-heal (off the hot path; fires only on a selector miss / unknown page state).
-VLM_SELF_HEAL_ENABLED: bool = _envBool("VLM_SELF_HEAL_ENABLED", True)
-VLM_MODEL: str = os.getenv("VLM_MODEL", "qwen2.5vl:7b")   # local Ollama vision model
-VLM_SELF_HEAL_MAX_PER_RUN: int = _envInt("VLM_SELF_HEAL_MAX_PER_RUN", 2)
-
-# Trust telemetry: GPT<->Ollama agreement + upheld-challenge log.
+# Trust telemetry: Gemini<->Ollama agreement + upheld-challenge log.
 ADVERSARY_TRUST_LOG: Path = PROJECT_ROOT / "state" / "adversary_trust.jsonl"
 # Meta-optimization may auto-apply tuning to these knobs (persisted across restarts).
 SIE_META_AUTOAPPLY: bool = _envBool("SIE_META_AUTOAPPLY", True)
