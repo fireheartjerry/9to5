@@ -169,4 +169,18 @@ class TestConstants(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    import argparse
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--verify-recurring-task-handling", action="store_true", default=False)
+    known, remaining = parser.parse_known_args()
+
+    if known.verify_recurring_task_handling:
+        # Run the full suite; exit 0 on success, 1 on any failure.
+        loader = unittest.TestLoader()
+        suite = loader.loadTestsFromModule(sys.modules[__name__])
+        runner = unittest.TextTestRunner(verbosity=2)
+        result = runner.run(suite)
+        sys.exit(0 if result.wasSuccessful() else 1)
+    else:
+        unittest.main(argv=[sys.argv[0]] + remaining)
