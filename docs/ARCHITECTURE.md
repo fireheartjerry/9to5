@@ -135,6 +135,8 @@ Supported expectation modes:
 exit_zero
 stdout_contains:<text>
 stdout_regex:<regex>
+stdout_contains_all:<t1>|||<t2>|||...   # all listed texts must be present
+stdout_regex_all:<p1>|||<p2>|||...      # all listed patterns must match
 ```
 
 A subtask is done only if verification passes.
@@ -169,6 +171,18 @@ Fields:
 - `hard_boundaries`: actual forbidden paths
 
 Hard boundaries should include secrets, VCS internals, venvs, generated/runtime state unless explicitly authorized, and other dangerous paths.
+
+## Workflow registry
+
+`workflows/registry.py` loads `WorkflowDefinition` JSON files from `workflows/definitions/` and
+exposes them as a dict keyed by workflow name. The orchestrator sets `InvocationSpec.use_workflow`
+and `workflow_definition` to run a multi-phase agent workflow instead of a single prompt.
+
+Built-in templates: `bug_investigation`, `code_review`, `feature_implementation`.
+
+See `docs/workflow.md` § *Workflow registry* for the full schema and template descriptions.
+
+---
 
 ## Learning subsystem boundary
 

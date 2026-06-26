@@ -443,7 +443,7 @@ DEFAULT_PARALLELISM: int = 1          # >1 runs independent ready subtasks concu
 # behaviour. The master switch DISCORD_LAB_MODE=on flips the whole suite on at
 # once; each flag can still be overridden individually in .env.
 DISCORD_LAB_MODE: bool = _envBool("DISCORD_LAB_MODE", False)
-DASHBOARD_CV2: bool = _envBool("DASHBOARD_CV2", DISCORD_LAB_MODE)      # Components V2 cockpit vs legacy embed
+DASHBOARD_CV2: bool = _envBool("DASHBOARD_CV2", True)      # Components V2 cockpit vs legacy embed
 CAST_MODE: bool = _envBool("CAST_MODE", DISCORD_LAB_MODE)             # multi-agent webhook personas ("The Cast")
 ASK_ENABLED: bool = _envBool("ASK_ENABLED", True)                    # /ask + war-room thread (local Ollama)
 ASK_NL_CONTROL: bool = _envBool("ASK_NL_CONTROL", DISCORD_LAB_MODE)   # natural-language control (guarded, audited)
@@ -453,7 +453,7 @@ SCHEDULED_EVENTS: bool = _envBool("SCHEDULED_EVENTS", DISCORD_LAB_MODE)  # Sched
 AUTOMOD_GUARD: bool = _envBool("AUTOMOD_GUARD", DISCORD_LAB_MODE)     # AutoMod safety rule on the control channel
 REACTION_APPROVE: bool = _envBool("REACTION_APPROVE", True)           # super-reaction quick-approve
 WATCHDOG_ENABLED: bool = _envBool("WATCHDOG_ENABLED", True)           # orchestrator-silence watchdog
-VISUALS_ENABLED: bool = _envBool("VISUALS_ENABLED", DISCORD_LAB_MODE)  # Pillow cards/charts/GIF (degrades if no Pillow)
+VISUALS_ENABLED: bool = _envBool("VISUALS_ENABLED", True)  # Pillow cards/charts/GIF (degrades if no Pillow)
 COCKPIT_THEME: str = os.getenv("COCKPIT_THEME", "dark")              # cockpit visual theme (dark|neon|minimal|terminal)
 # Throttle the cockpit's Pillow hero-image upload: re-render+upload at most once per this many
 # seconds (text-CV2 edits still flow freely between). Caps multipart uploads during fast update

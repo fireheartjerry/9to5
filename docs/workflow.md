@@ -266,6 +266,7 @@ in a single verify command. Introduced in `fix/multi-requirement-verify`.
 | `main.py` | Entry point — goal input, elaboration approval, subprocess launch |
 | `orchestrator.py` | Brain loop — plan → spec → execute → verify → replan → PR |
 | `config.py` | Env vars, constants, logging, UTF-8 stdio |
+| `contracts.py` | Central TypedDicts: `InvocationSpec`, `ExecutorResult`, `WorkflowDefinition`, etc. |
 | `control.py` | `ControlBus` — file-backed cross-process abort/pause/gate/ops |
 | `agents/elaborator.py` | Ollama goal expansion |
 | `agents/architect.py` | Ollama-authored architecture doc via Claude Code |
@@ -278,6 +279,71 @@ in a single verify command. Introduced in `fix/multi-requirement-verify`.
 | `notifications/dashboard.py` | Live self-updating Discord dashboard embed |
 | `notifications/webdash.py` | stdlib web dashboard — view + control buttons |
 | `notifications/command_bot.py` | discord.py gateway bot — `!` commands |
+| `nightclaw.py` | Repo-root entrypoint: `python nightclaw.py` starts the gateway bot |
+| `workflows/registry.py` | Loads and validates `WorkflowDefinition` JSON files from `workflows/definitions/` |
+| `workflows/definitions/*.json` | Built-in workflow templates (see below) |
+
+---
+
+## Workflow registry
+
+The `workflows/` module lets the orchestrator execute pre-defined, multi-phase agent workflows instead of (or in addition to) the normal single-prompt executor path.
+
+### How it works
+
+1. `workflows/registry.py :: loadRegistry()` scans `workflows/definitions/*.json` at import time and validates each file against the `WorkflowDefinition` schema from `contracts.py`.
+2. The orchestrator (or Ollama brain) sets `InvocationSpec.use_workflow = True` and provides a `WorkflowDefinition` in `InvocationSpec.workflow_definition`.
+3. `agents/executor.py :: _composeWorkflowPrompt()` expands the phases into a structured prompt handed to Claude Code.
+
+### `WorkflowDefinition` schema
+
+```json
+{
+  "name": "string",
+  "description": "string",
+  "phases": [
+    {
+      "title": "string",
+      "parallel": false,
+      "agents": [
+        { "label": "string", "prompt": "string", "effort": "default|high|xhigh|ultracode" }
+      ]
+    }
+  ],
+  "synthesis": "string — instruction merging all phase outputs into the final deliverable"
+}
+```
+
+- `parallel: true` → all agents in the phase are dispatched concurrently.
+- `parallel: false` → agents run sequentially; each may reference the previous output.
+- `effort` maps to the same effort levels as `InvocationSpec.effort_level`.
+- Unknown keys are rejected by `loadRegistry()` — the file is skipped with a warning rather than crashing the registry.
+
+### Built-in workflow templates
+
+| File | Name | Phases |
+|------|------|--------|
+| `bug_investigation.json` | `bug_investigation` | Reproduce and trace → Parallel hypothesis (data-flow + control-flow) → Fix |
+| `code_review.json` | `code_review` | Parallel review (correctness + security + simplification) |
+| `feature_implementation.json` | `feature_implementation` | Design → Implement and test → Verify and document |
+
+#### `bug_investigation`
+
+Systematic root-cause investigation. The two parallel hypothesis agents trace data-flow and control-flow independently; the patch agent reconciles both to author the minimal fix.
+
+#### `code_review`
+
+Three reviewers run in parallel across correctness, security, and simplification dimensions. The `synthesis` instruction merges findings into a single severity-ranked list.
+
+#### `feature_implementation`
+
+End-to-end feature delivery. The design agent produces the interface + verification command before any code is written; the implement agent runs that command to confirm the fix; the verify-doc agent applies doc updates.
+
+### Adding a new workflow
+
+1. Create `workflows/definitions/<name>.json` following the schema above.
+2. The registry picks it up automatically on the next import — no code change needed.
+3. Reference it by `name` in Ollama brain prompts or in `InvocationSpec.workflow_definition`.
 
 ---
 

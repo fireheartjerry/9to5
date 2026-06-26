@@ -13,9 +13,18 @@ Examples:
 - "improve Nightclaw command handling" means modify command bot/cogs/control command wiring.
 - "make Nightclaw more reliable" means improve 9TO5 bot reliability, state sync, error handling, dashboard consistency, or control behavior.
 
+## Entrypoint
+
+`nightclaw.py` (repo root) — thin entrypoint that calls `notifications/command_bot.runCommandBot()`.
+
+```bash
+python nightclaw.py    # start the gateway bot
+```
+
 ## Likely files
 
 ```txt
+nightclaw.py
 notifications/dashboard.py
 notifications/discord_bot.py
 notifications/webdash.py
