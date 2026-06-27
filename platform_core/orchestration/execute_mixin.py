@@ -291,11 +291,18 @@ class OrchestratorExecuteMixin:
                            dashboard: "DiscordDashboard", attempt: int) -> None:
         """Persist Obsidian note, run adversary review, capture SIE learning, and replan.
 
+        Also posts a feedback embed (Subsystem C) to invite human approval/rejection/skip/retry.
+
         Best-effort: AbortRun re-raises; all other exceptions are swallowed so the committed
         subtask status is never rolled back by enrichment failures.
         """
         sid = subtask["subtask_id"]
         try:
+            # POST FEEDBACK EMBED (Subsystem C): invite human feedback on the completed subtask.
+            # Post for both done and failed; the FeedbackView will handle control actions.
+            goal = subtask.get("title", f"subtask {sid}")
+            discord.sendEmbed(discord.feedbackEmbed(sid, goal, final),
+                             components=discord.feedbackComponents())
             with self._state_lock:
                 note = self._subtaskNote(state, subtask, spec, result, vresult)
                 written = self.obs.writeNote(state.subtaskNoteRel(sid), note)

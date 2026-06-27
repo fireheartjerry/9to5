@@ -39,6 +39,32 @@ python -m pytest tests/test_dashboard.py -q
 python tools/affected_tests.py $(git diff --name-only)   # auto-pick tests for changed files
 ```
 
+#### PR feedback learning loop
+
+```bash
+# Core PR capture + ledger write (mocked gh CLI)
+python -m pytest tests/test_learning_loop.py -v
+
+# experience_pr SQLite round-trip (record/fetch/upsert/filter)
+python -m pytest tests/test_experience_pr.py tests/test_memory_experience_pr.py -v
+
+# SIE pr_consolidate: failure-mode + lesson emission
+python -m pytest tests/test_learning_sie.py -v
+
+# Adaptive curriculum trigger (>=5 new feedback records)
+python -m pytest tests/test_curriculum_adaptive_trigger.py -v
+
+# Discord feedback embed + FeedbackView buttons
+python -m pytest tests/test_feedback_flow.py -v
+
+# Run all PR-feedback focused tests together
+python -m pytest tests/test_learning_loop.py tests/test_experience_pr.py \
+    tests/test_memory_experience_pr.py tests/test_learning_sie.py \
+    tests/test_curriculum_adaptive_trigger.py tests/test_feedback_flow.py -v
+```
+
+These tests use temp SQLite databases and a mocked `gh` CLI — no live GitHub access required.
+
 ### Tier 2: integration fake-run tests
 
 Target runtime: under 60 seconds.

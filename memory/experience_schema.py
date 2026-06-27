@@ -178,6 +178,20 @@ _SCHEMA: tuple[str, ...] = (
         at            TEXT,
         UNIQUE(run_id, subtask_id, teacher)
     )""",
+    """CREATE TABLE IF NOT EXISTS pr_outcomes (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id               TEXT,
+        subtask_id           TEXT,
+        pr_url               TEXT,
+        ci_status            TEXT,
+        ci_summary           TEXT,
+        review_state         TEXT,
+        review_feedback_json TEXT,
+        promote_safe         INTEGER,
+        provenance_json      TEXT,
+        recorded_at          TEXT,
+        UNIQUE(run_id, pr_url)
+    )""",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_run ON subtasks(run_id)",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_passed ON subtasks(verify_passed)",
     "CREATE INDEX IF NOT EXISTS idx_arms_ctx ON policy_arms(context_key)",

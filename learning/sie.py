@@ -24,6 +24,14 @@ RUN/TEST: python -m pytest tests/test_sie.py
 """
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _Path
+
+# Ensure repo root is on sys.path whether run directly or imported as a package.
+_repo_root = str(_Path(__file__).resolve().parent.parent)
+if _repo_root not in _sys.path:
+    _sys.path.insert(0, _repo_root)
+
 import json
 import os
 import time
@@ -171,12 +179,68 @@ def run_maintenance(*, reason: str = "post-run", force: bool = False,
             pass
 
 
+def _pr_consolidate(db_path: Optional[Path] = None) -> dict[str, Any]:
+    """Read pr_outcomes from ledger; emit failure-mode records + lessons for each failed PR.
+
+    A PR is considered unsafe-to-promote when promote_safe != 1 (i.e. 0 or NULL).
+    This gates auto-promotion: no failed CI / rejected review result leaks into the
+    promotion path. Each failure also accretes the taxonomy so the brain can avoid
+    the same class of mistake again.
+    """
+    outcomes = experience.fetch_pr_outcomes(db_path=db_path)
+    gated = 0
+    modes_written = 0
+    lessons_emitted = 0
+
+    for row in outcomes:
+        if row.get("promote_safe") == 1:
+            continue  # safe -> nothing to record
+        gated += 1
+
+        ci_status = (row.get("ci_status") or "unknown").lower()
+        review_state = (row.get("review_state") or "").lower()
+        pr_url = row.get("pr_url") or ""
+        prov: dict[str, Any] = {}
+        try:
+            prov = json.loads(row.get("provenance_json") or "{}")
+        except Exception:  # noqa: BLE001
+            pass
+        fam = row.get("subtask_id") or prov.get("subtask_id") or pr_url or "misc"
+
+        if review_state in ("changes_requested", "dismissed"):
+            cls = "review_rejected"
+            root_cause = f"PR review rejected (state={review_state}) for {pr_url}"
+            mitigation = "address reviewer feedback before re-submitting"
+        else:
+            cls = "ci_failure"
+            root_cause = f"CI failed (ci_status={ci_status}) for {pr_url}"
+            mitigation = "fix failing CI checks before promoting"
+
+        if experience.upsert_failure_mode(fam, cls, root_cause=root_cause,
+                                          mitigation=mitigation, db_path=db_path):
+            modes_written += 1
+
+        lesson_text = (f"PR {pr_url or '(unknown)'} blocked from promotion: {cls}. "
+                       f"CI={ci_status}, review={review_state or 'n/a'}. {mitigation}.")
+        if experience.upsert_lesson("pr_feedback", fam, lesson_text,
+                                    support_count=1, win_rate=0.0, db_path=db_path):
+            lessons_emitted += 1
+
+    LOG.info("pr_consolidate: %d outcomes, %d gated, %d modes, %d lessons",
+             len(outcomes), gated, modes_written, lessons_emitted)
+    return {"outcomes": len(outcomes), "gated": gated,
+            "failure_modes_written": modes_written, "lessons_emitted": lessons_emitted}
+
+
 def _maintenance_steps(db_path: Optional[Path]):
     """The ordered learning passes. Imported lazily so a heavy/broken submodule can't
     taint module load, and so future phases (promotion, LoRA) append here cleanly."""
     def embeddings():
         from memory import retrieval
         return retrieval.backfill_embeddings(db_path=db_path)
+
+    def pr_consolidate():
+        return _pr_consolidate(db_path=db_path)
 
     def consolidate():
         from learning import lessons
@@ -203,6 +267,7 @@ def _maintenance_steps(db_path: Optional[Path]):
 
     return [
         ("embeddings", embeddings),
+        ("pr_consolidate", pr_consolidate),
         ("consolidate", consolidate),
         ("policy_rebuild", policy_rebuild),
         ("mine", mine),
@@ -221,64 +286,116 @@ def _weekly_due(state: dict[str, Any]) -> bool:
     return elapsed >= WEEKLY_THROTTLE_SECONDS
 
 
+def _count_new_feedback_since_last_consolidation(state: dict[str, Any],
+                                                  db_path: Optional[Path] = None) -> int:
+    """Count feedback records created since the last consolidation run. Adaptive trigger for
+    curriculum auto-queue: if >=5 new feedback appear, consolidation should run to learn from them."""
+    try:
+        last_consolidation = state.get("last_full_at")
+        if not last_consolidation:
+            return 0  # no prior consolidation -> no "new" feedback relative to baseline
+        last_ts = datetime.fromisoformat(last_consolidation)
+        # Fetch all feedback and filter by timestamp after last consolidation.
+        from memory import experience
+        feedback = experience.fetch_feedback(db_path=db_path)
+        count = 0
+        for fb in feedback:
+            fb_ts_str = fb.get("at") or ""
+            try:
+                fb_ts = datetime.fromisoformat(fb_ts_str)
+                if fb_ts > last_ts:
+                    count += 1
+            except (ValueError, TypeError):
+                pass  # skip malformed timestamps
+        return count
+    except Exception as e:  # noqa: BLE001
+        LOG.debug("feedback count failed (ignored): %s", e)
+        return 0
+
+
+def _prompt_promotion(db_path: Optional[Path]):
+    from learning import promotion
+    return promotion.run_promotions(db_path=db_path)
+
+
+def _lora_distillation(db_path: Optional[Path]):
+    # Automatic LoRA cycle; skips cleanly ("not_enough"/"no_trainer") until a host
+    # with enough gold examples + a GPU/backend is available. Never promotes here.
+    from learning import finetune
+    return finetune.run_finetune_cycle(db_path=db_path)
+
+
+def _dpo_distillation(db_path: Optional[Path]):
+    # Preference-optimization cycle (learn what NOT to do); same skip-clean contract.
+    from learning import finetune
+    return finetune.run_dpo_cycle(db_path=db_path)
+
+
+def _adapter_promotion(db_path: Optional[Path]):
+    # Evaluate challenger adapters vs champion and promote winners (I4 no-regression).
+    # Skips ("no_evaluator") until a brain can serve per-tag fitness.
+    from learning import adapter_promotion as ap
+    return ap.run(db_path=db_path)
+
+
+def _meta_optimize(db_path: Optional[Path]):
+    # Auto-tune the engine's own knobs within safe bounds (persisted across restarts).
+    from learning import meta_opt
+    return meta_opt.apply(db_path=db_path)
+
+
+def _self_play(db_path: Optional[Path]):
+    # Actually PRACTICE the weakest families: launch a self-generated goal as a normal
+    # run when idle + in the work window + under the daily cap. Fully hands-off.
+    from learning import selfplay
+    from notifications import work_launcher
+
+    def launch(goal: str, hours: float):
+        return work_launcher.spawn(work_launcher.WorkRequest(goal=goal, hours=hours))
+
+    return selfplay.run(launch_fn=launch,
+                        is_busy=lambda: work_launcher.activeRun() is not None,
+                        db_path=db_path)
+
+
+def _curriculum_and_report(db_path: Optional[Path]):
+    # Author practice goals for the weakest families + write the "what did I learn"
+    # report. Both best-effort and human-facing -- the system narrates its own progress.
+    # ADAPTIVE TRIGGER: if >=5 new feedback records appeared since last consolidation,
+    # auto-queue generated curriculum goals directly into the work queue (bypass human approval).
+    from learning import curriculum, release
+    goals = curriculum.generate_goals(db_path=db_path)
+    curriculum.write_suggestions(goals)
+    release.write_report(db_path=db_path)
+    result: dict[str, Any] = {"curriculum_goals": len(goals), "auto_queued": 0}
+
+    # Check adaptive trigger: >=5 new feedback since last consolidation?
+    state = _read_state()
+    new_feedback_count = _count_new_feedback_since_last_consolidation(state, db_path=db_path)
+    if new_feedback_count >= 5 and goals:
+        try:
+            from notifications import work_launcher
+            for goal_dict in goals:
+                req = work_launcher.WorkRequest(goal=goal_dict["goal"], hours=1.0)
+                work_launcher.spawn(req)
+                result["auto_queued"] += 1
+            LOG.info("curriculum: auto-queued %d goals (%d new feedback)", result["auto_queued"], new_feedback_count)
+        except Exception as e:  # noqa: BLE001
+            LOG.debug("curriculum auto-queue failed (ignored): %s", e)
+
+    return result
+
+
 def _weekly_steps(db_path: Optional[Path]):
     """Slower tier: prompt (and later adapter) promotion -- gated by the eval harness +
     field metrics, never premature. Runs automatically; the human only start/abort/checks."""
-    def prompt_promotion():
-        from learning import promotion
-        return promotion.run_promotions(db_path=db_path)
-
-    def lora_distillation():
-        # Automatic LoRA cycle; skips cleanly ("not_enough"/"no_trainer") until a host
-        # with enough gold examples + a GPU/backend is available. Never promotes here.
-        from learning import finetune
-        return finetune.run_finetune_cycle(db_path=db_path)
-
-    def dpo_distillation():
-        # Preference-optimization cycle (learn what NOT to do); same skip-clean contract.
-        from learning import finetune
-        return finetune.run_dpo_cycle(db_path=db_path)
-
-    def adapter_promotion():
-        # Evaluate challenger adapters vs champion and promote winners (I4 no-regression).
-        # Skips ("no_evaluator") until a brain can serve per-tag fitness.
-        from learning import adapter_promotion as ap
-        return ap.run(db_path=db_path)
-
-    def meta_optimize():
-        # Auto-tune the engine's own knobs within safe bounds (persisted across restarts).
-        from learning import meta_opt
-        return meta_opt.apply(db_path=db_path)
-
-    def self_play():
-        # Actually PRACTICE the weakest families: launch a self-generated goal as a normal
-        # run when idle + in the work window + under the daily cap. Fully hands-off.
-        from learning import selfplay
-        from notifications import work_launcher
-
-        def launch(goal: str, hours: float):
-            return work_launcher.spawn(work_launcher.WorkRequest(goal=goal, hours=hours))
-
-        return selfplay.run(launch_fn=launch,
-                            is_busy=lambda: work_launcher.activeRun() is not None,
-                            db_path=db_path)
-
-    def curriculum_and_report():
-        # Author practice goals for the weakest families + write the "what did I learn"
-        # report. Both best-effort and human-facing -- the system narrates its own progress.
-        from learning import curriculum, release
-        goals = curriculum.generate_goals(db_path=db_path)
-        curriculum.write_suggestions(goals)
-        release.write_report(db_path=db_path)
-        return {"curriculum_goals": len(goals)}
-
-    return [("prompt_promotion", prompt_promotion),
-            ("lora_distillation", lora_distillation),
-            ("dpo_distillation", dpo_distillation),
-            ("adapter_promotion", adapter_promotion),
-            ("meta_optimize", meta_optimize),
-            ("self_play", self_play),
-            ("curriculum_and_report", curriculum_and_report)]
+    return [("prompt_promotion", lambda: _prompt_promotion(db_path)),
+            ("lora_distillation", lambda: _lora_distillation(db_path)),
+            ("dpo_distillation", lambda: _dpo_distillation(db_path)),
+            ("adapter_promotion", lambda: _adapter_promotion(db_path)),
+            ("meta_optimize", lambda: _meta_optimize(db_path)),
+            ("self_play", lambda: _self_play(db_path)),
+            ("curriculum_and_report", lambda: _curriculum_and_report(db_path))]
 
 
 def run_maintenance_async(**kwargs):
@@ -298,5 +415,55 @@ def run_maintenance_async(**kwargs):
     return t
 
 
-if __name__ == "__main__":  # pragma: no cover -- manual full pass
+def _test_pr_consolidate() -> None:
+    """Acceptance test: seed a temp DB, run pr_consolidate, assert invariants."""
+    import sys
+    import tempfile
+
+    tmp = Path(tempfile.mktemp(suffix="_sie_test.db"))
+    try:
+        experience.init(tmp)
+        experience.record_pr_outcome(
+            "run-t1", "https://github.com/org/repo/pull/1",
+            {"ci_status": "failure", "ci_summary": "2 checks failed",
+             "review_state": "", "promote_safe": False,
+             "provenance": {"subtask_id": "st-001"}},
+            db_path=tmp,
+        )
+        experience.record_pr_outcome(
+            "run-t2", "https://github.com/org/repo/pull/2",
+            {"ci_status": "success", "ci_summary": "all passed",
+             "review_state": "approved", "promote_safe": True,
+             "provenance": {"subtask_id": "st-002"}},
+            db_path=tmp,
+        )
+        experience.record_pr_outcome(
+            "run-t3", "https://github.com/org/repo/pull/3",
+            {"ci_status": "success", "ci_summary": "all passed",
+             "review_state": "changes_requested", "promote_safe": False,
+             "provenance": {"subtask_id": "st-003"}},
+            db_path=tmp,
+        )
+        result = _pr_consolidate(db_path=tmp)
+        assert result["outcomes"] == 3, f"expected 3 outcomes, got {result}"
+        assert result["gated"] == 2, f"expected 2 gated, got {result}"
+        assert result["failure_modes_written"] == 2, f"expected 2 modes, got {result}"
+        assert result["lessons_emitted"] == 2, f"expected 2 lessons, got {result}"
+        modes = experience.fetch_failure_modes(db_path=tmp)
+        classes = {m["taxonomy_class"] for m in modes}
+        assert "ci_failure" in classes, f"expected ci_failure in modes: {classes}"
+        assert "review_rejected" in classes, f"expected review_rejected in modes: {classes}"
+        print("success")
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+if __name__ == "__main__":  # pragma: no cover
+    import sys
+    if sys.argv[1:] == ["--test", "pr_consolidate"]:
+        _test_pr_consolidate()
+        sys.exit(0)
     print(run_maintenance(reason="manual", force=True))

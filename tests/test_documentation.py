@@ -78,6 +78,60 @@ class TestNotificationSystemDoc(unittest.TestCase):
         print("New error handling mechanism is documented with examples")
 
 
+class TestPRFeedbackDoc(unittest.TestCase):
+    """Validates that docs/pr_feedback.md exists and covers required sections."""
+
+    DOC = pathlib.Path(__file__).parent.parent / "docs" / "pr_feedback.md"
+
+    _REQUIRED_SECTIONS = [
+        "## Deployment Instructions",
+        "## Architecture overview",
+        "## Public API",
+        "## Promotion Gate",
+        "## Learning Loop Integration",
+        "## Tests",
+    ]
+
+    _REQUIRED_TERMS = [
+        "capturePRFeedback",
+        "record_pr_outcome",
+        "fetch_pr_outcomes",
+        "promote_safe",
+        "EXPERIENCE_LEDGER_ENABLED",
+        "pr_outcomes",
+        "record_reflection",
+        "record_feedback",
+    ]
+
+    def setUp(self):
+        self.assertTrue(self.DOC.exists(), f"docs/pr_feedback.md not found at {self.DOC}")
+        self.text = self.DOC.read_text(encoding="utf-8")
+
+    def test_required_sections_present(self):
+        missing = [s for s in self._REQUIRED_SECTIONS if s not in self.text]
+        self.assertEqual(missing, [], f"Missing sections: {missing}")
+
+    def test_required_terms_documented(self):
+        missing = [t for t in self._REQUIRED_TERMS if t not in self.text]
+        self.assertEqual(missing, [], f"Missing terms: {missing}")
+
+    def test_non_empty(self):
+        self.assertGreater(len(self.text.strip()), 500, "pr_feedback.md is too short")
+
+    def test_deployment_instructions_present(self):
+        self.assertIn("## Deployment Instructions", self.text)
+        self.assertIn("Step 1", self.text)
+        self.assertIn("Step 2", self.text)
+        self.assertIn("Step 3", self.text)
+        print("Deployment Instructions")
+
+    def test_learning_loop_integration_documented(self):
+        self.assertIn("## Learning Loop Integration", self.text)
+        self.assertIn("record_reflection", self.text)
+        self.assertIn("promote_safe", self.text)
+        print("PR feedback integration documented")
+
+
 def _runPathNormalizationCheck() -> bool:
     """Verify that the verifier normalizes work_dir to the repo root for repo-script commands."""
     repo_root = pathlib.Path(__file__).parent.parent
