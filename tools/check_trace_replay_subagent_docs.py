@@ -15,7 +15,7 @@ RUN/TEST: (no mapped test)
 import pathlib
 import sys
 
-DOCS_ROOT = pathlib.Path(__file__).resolve().parent
+DOCS_ROOT = pathlib.Path(__file__).resolve().parent.parent / "docs"
 
 SUBAGENT_MD = DOCS_ROOT / "trace_replay_subagent.md"
 

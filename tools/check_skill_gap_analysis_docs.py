@@ -15,7 +15,7 @@ RUN/TEST: (no mapped test)
 import pathlib
 import sys
 
-DOCS_ROOT = pathlib.Path(__file__).resolve().parent
+DOCS_ROOT = pathlib.Path(__file__).resolve().parent.parent / "docs"
 SKILLS_ROOT = DOCS_ROOT.parent / ".claude" / "skills"
 
 DOCS_MD = DOCS_ROOT / "skill_gap_analysis.md"
