@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 import config
-from control import ControlBus
+from platform_core.runtime.control import ControlBus
 
 
 class TestConcurrentWrites(unittest.TestCase):
@@ -50,7 +50,7 @@ class TestConcurrentWrites(unittest.TestCase):
         lock must STILL serialize same-process writers so no field update is silently clobbered --
         otherwise a queued Abort or approve/reject decision can be lost and the run never stops."""
         import contextlib
-        import control
+        import platform_core.runtime.control as control
 
         @contextlib.contextmanager
         def _bypassed(*_a, **_k):

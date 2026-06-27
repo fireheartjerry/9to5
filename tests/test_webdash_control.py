@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 import config
-from control import ControlBus
+from platform_core.runtime.control import ControlBus
 from notifications import webdash
 from state.task import TaskState
 

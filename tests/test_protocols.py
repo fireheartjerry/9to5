@@ -1,7 +1,7 @@
 """The replaceable-intelligence seams (protocols.py) are structural and fake-satisfiable."""
 import unittest
 
-import protocols
+import platform_core.core.protocols as protocols
 
 
 class _FakeExecutor:

@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from error_handling import MAX_RETRIES, RETRY_DELAY_SECONDS, RetryExhausted, retryTask
+from platform_core.runtime.error_handling import MAX_RETRIES, RETRY_DELAY_SECONDS, RetryExhausted, retryTask
 
 
 class TestRetryTaskSuccess(unittest.TestCase):
@@ -26,7 +26,7 @@ class TestRetryTaskSuccess(unittest.TestCase):
 
     def test_succeeds_on_second_try(self):
         fn = MagicMock(side_effect=[RuntimeError("fail"), "recovered"])
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             result = retryTask(fn, max_retries=3, delay=0.1)
         self.assertTrue(result["ok"])
         self.assertEqual(result["attempts"], 2)
@@ -48,21 +48,21 @@ class TestRetryTaskSuccess(unittest.TestCase):
 class TestRetryTaskExhaustion(unittest.TestCase):
     def test_raises_retry_exhausted_without_on_alert(self):
         fn = MagicMock(side_effect=RuntimeError("boom"))
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             with self.assertRaises(RetryExhausted):
                 retryTask(fn, max_retries=MAX_RETRIES)
         self.assertEqual(fn.call_count, MAX_RETRIES)
 
     def test_retry_exhausted_is_runtime_error(self):
         fn = MagicMock(side_effect=ValueError("bad"))
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             with self.assertRaises(RuntimeError):
                 retryTask(fn, max_retries=1)
 
     def test_calls_on_alert_instead_of_raising(self):
         fn = MagicMock(side_effect=IOError("disk full"))
         alert = MagicMock()
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             result = retryTask(fn, max_retries=3, on_alert=alert)
         self.assertFalse(result["ok"])
         self.assertEqual(result["attempts"], 3)
@@ -76,14 +76,14 @@ class TestRetryTaskExhaustion(unittest.TestCase):
             captured["err"] = err_msg
             captured["attempts"] = attempts
 
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             retryTask(fn, max_retries=2, on_alert=capture)
         self.assertIn("ValueError", captured["err"])
         self.assertEqual(captured["attempts"], 2)
 
     def test_error_dict_contains_last_exception_type(self):
         fn = MagicMock(side_effect=KeyError("missing"))
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             result = retryTask(fn, max_retries=1, on_alert=lambda *a: None)
         self.assertFalse(result["ok"])
         self.assertIn("KeyError", result["error"])
@@ -92,7 +92,7 @@ class TestRetryTaskExhaustion(unittest.TestCase):
         """Core requirement: exactly MAX_RETRIES=3 attempts, then alert fires once."""
         fn = MagicMock(side_effect=RuntimeError("fail"))
         alert = MagicMock()
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             retryTask(fn, max_retries=3, on_alert=alert)
         self.assertEqual(fn.call_count, 3)
         alert.assert_called_once()
@@ -102,20 +102,20 @@ class TestRetryTaskSleep(unittest.TestCase):
     def test_sleeps_between_attempts_not_after_last(self):
         """sleep must fire max_retries-1 times (between attempts, never after the last)."""
         fn = MagicMock(side_effect=RuntimeError("fail"))
-        with patch("error_handling.time.sleep") as mock_sleep:
+        with patch("platform_core.runtime.error_handling.time.sleep") as mock_sleep:
             with self.assertRaises(RetryExhausted):
                 retryTask(fn, max_retries=3, delay=0.5)
         self.assertEqual(mock_sleep.call_count, 2)
 
     def test_sleep_uses_configured_delay(self):
         fn = MagicMock(side_effect=[RuntimeError("once"), "ok"])
-        with patch("error_handling.time.sleep") as mock_sleep:
+        with patch("platform_core.runtime.error_handling.time.sleep") as mock_sleep:
             retryTask(fn, max_retries=3, delay=2.5)
         mock_sleep.assert_called_once_with(2.5)
 
     def test_no_sleep_on_single_attempt_failure(self):
         fn = MagicMock(side_effect=RuntimeError("instant"))
-        with patch("error_handling.time.sleep") as mock_sleep:
+        with patch("platform_core.runtime.error_handling.time.sleep") as mock_sleep:
             with self.assertRaises(RetryExhausted):
                 retryTask(fn, max_retries=1)
         mock_sleep.assert_not_called()
@@ -124,7 +124,7 @@ class TestRetryTaskSleep(unittest.TestCase):
 class TestRetryTaskLogging(unittest.TestCase):
     def test_warning_logged_on_each_failure(self):
         fn = MagicMock(side_effect=[RuntimeError("e1"), RuntimeError("e2"), "ok"])
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             with self.assertLogs("9to5.error_handling", level=logging.WARNING) as cm:
                 retryTask(fn, max_retries=3, delay=0)
         warnings = [m for m in cm.output if "WARNING" in m]
@@ -132,7 +132,7 @@ class TestRetryTaskLogging(unittest.TestCase):
 
     def test_critical_logged_on_exhaustion(self):
         fn = MagicMock(side_effect=RuntimeError("fatal"))
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             with self.assertLogs("9to5.error_handling", level=logging.CRITICAL) as cm:
                 retryTask(fn, max_retries=2, on_alert=lambda *a: None)
         criticals = [m for m in cm.output if "CRITICAL" in m]
@@ -140,21 +140,21 @@ class TestRetryTaskLogging(unittest.TestCase):
 
     def test_info_logged_on_recovery(self):
         fn = MagicMock(side_effect=[RuntimeError("first"), "recovered"])
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             with self.assertLogs("9to5.error_handling", level=logging.INFO) as cm:
                 retryTask(fn, max_retries=3, delay=0)
         self.assertTrue(any("succeeded" in m for m in cm.output))
 
     def test_warning_includes_attempt_number(self):
         fn = MagicMock(side_effect=RuntimeError("boom"))
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             with self.assertLogs("9to5.error_handling", level=logging.WARNING) as cm:
                 retryTask(fn, max_retries=1, on_alert=lambda *a: None)
         self.assertTrue(any("1/1" in m for m in cm.output))
 
     def test_critical_includes_error_detail(self):
         fn = MagicMock(side_effect=ValueError("specific error detail"))
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             with self.assertLogs("9to5.error_handling", level=logging.CRITICAL) as cm:
                 retryTask(fn, max_retries=1, on_alert=lambda *a: None)
         self.assertTrue(any("specific error detail" in m for m in cm.output))

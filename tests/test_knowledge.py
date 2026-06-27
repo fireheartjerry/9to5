@@ -4,7 +4,7 @@ import unittest
 from unittest import mock
 
 import knowledge
-import knowledge_compress
+import platform_core.knowledge_base.compress as knowledge_compress
 
 
 class TestPureHelpers(unittest.TestCase):

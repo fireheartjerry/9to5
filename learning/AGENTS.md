@@ -159,7 +159,7 @@ Champion/challenger promotion gate -- Layer 3 of the Self-Improvement Engine.
 ## learning/prompts.py
 Prompt registry -- Layer 3 substrate of the Self-Improvement Engine.
 - Exports: get, champion_id, propose, promote, challengers
-- Depends on: config, memory.experience, provenance
+- Depends on: config, memory.experience, platform_core.core.provenance
 - Side effects: unannotated
 - Test: pytest tests/test_prompts.py
 
@@ -215,7 +215,7 @@ Self-Improvement Orchestrator -- the component that runs the learning loop A->Z
 ## learning/solution_cache.py
 Solution memoization / warm-start -- subsystem O of the SIE.
 - Exports: signature_of, build_from_ledger, warm_start
-- Depends on: config, memory.experience, provenance.Verdict, provenance.assertIngestible, provenance.coerce
+- Depends on: config, memory.experience, platform_core.core.provenance
 - Side effects: unannotated
 - Test: pytest tests/test_solution_cache_provenance.py
 

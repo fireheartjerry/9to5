@@ -5,7 +5,7 @@ EXPORTS:
   BlockedView  -- Persistent view for the BLOCKED embed's Answer/Skip/Abort buttons (custom_ids sc_*).
   WipeSetupView  -- Multi-select wipe config view
   WipeConfirmView  -- Final confirm/cancel for a wipe
-DEPENDS-ON: notifications.views_control, wipe.CATEGORIES, wipe.executeWipe, wipe.restartBot
+DEPENDS-ON: notifications.views_control, platform_core.ops.wipe
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -101,7 +101,7 @@ class WipeSetupView(discord.ui.View):
         if not self.selected_keys:
             return await interaction.response.send_message(
                 "No categories selected — pick at least one.", ephemeral=True)
-        from wipe import CATEGORIES
+        from platform_core.ops.wipe import CATEGORIES
         items = [CATEGORIES[k]["label"] for k in self.selected_keys if k in CATEGORIES]
         backup_note = " + backup" if self.backup else ""
         summary = "\n".join(f"• {i}" for i in items)
@@ -134,7 +134,7 @@ class WipeConfirmView(discord.ui.View):
     @discord.ui.button(label="Confirm Wipe", style=discord.ButtonStyle.danger)
     async def _confirm(self, interaction: "discord.Interaction", button: "discord.ui.Button"):  # noqa: ANN001
         import asyncio
-        from wipe import executeWipe, restartBot
+        from platform_core.ops.wipe import executeWipe, restartBot
 
         await interaction.response.defer(ephemeral=True)
         results = await asyncio.to_thread(executeWipe, self.keys, self.backup)

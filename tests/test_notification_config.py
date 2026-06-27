@@ -197,7 +197,7 @@ class TestNotificationBusContract(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Module import health
+# Module import platform_core.ops.health as health
 # ---------------------------------------------------------------------------
 
 class TestNotificationImports(unittest.TestCase):

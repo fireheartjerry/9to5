@@ -18,7 +18,7 @@ EXPORTS:
   runWorkflow(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict  -- Execute the trace-replay script and return parsed results.
   buildStepSpec(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict  -- Return an invocation spec for step-by-step decision-point replay.
   getDecisionPoints(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict  -- Run trace-replay and return structured decision points with surrounding context.
-DEPENDS-ON: config, tracing
+DEPENDS-ON: config, platform_core.core.tracing
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_trace_replay.py
 """
@@ -36,7 +36,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 import config  # noqa: E402
-import tracing  # noqa: E402
+import platform_core.core.tracing as tracing  # noqa: E402
 
 LOG = config.getLogger("trace_replay_workflow")
 

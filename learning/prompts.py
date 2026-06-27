@@ -18,7 +18,7 @@ EXPORTS:
   propose(role: str, body: str, *, db_path: Optional[Path]=None) -> Optional[int]  -- Register a new challenger variant (child of the current champion).
   promote(role: str, variant_id: int, *, db_path: Optional[Path]=None) -> bool  -- Make a variant the champion (called only by the gated promotion path).
   challengers(role: str, db_path: Optional[Path]=None) -> list[dict]
-DEPENDS-ON: config, memory.experience, provenance
+DEPENDS-ON: config, memory.experience, platform_core.core.provenance
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_prompts.py
 """
@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Optional
 
 import config
-import provenance as _prov
+import platform_core.core.provenance as _prov
 from memory import experience
 
 LOG = config.getLogger("sie.prompts")

@@ -5,7 +5,7 @@ EXPORTS:
   ConfirmView  -- Ephemeral Confirm/Cancel
   confirmDestructive(interaction: 'discord.Interaction', label: str) -> bool  -- Send an ephemeral confirm dialog (this consumes the initial response)
   ControlPanelView  -- Persistent (timeout=None)
-DEPENDS-ON: config, control.ControlBus, notifications.audit, notifications.commands, notifications.icons
+DEPENDS-ON: config, notifications.audit, notifications.commands, notifications.icons, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -16,7 +16,7 @@ import asyncio
 import discord
 
 import config
-from control import ControlBus
+from platform_core.runtime.control import ControlBus
 from notifications import audit, commands
 
 LOG = config.getLogger("views")

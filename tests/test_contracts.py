@@ -1,8 +1,8 @@
 """The frozen domain dataclasses mirror their real producers (contracts.py)."""
 import unittest
 
-import contracts
-from contracts import (AgentDecision, ControlCommand, SubtaskSpec, Universe,
+import platform_core.core.contracts as contracts
+from platform_core.core.contracts import (AgentDecision, ControlCommand, SubtaskSpec, Universe,
                        VerificationResult, WorkflowAgent, WorkflowDefinition, WorkflowPhase)
 
 try:
@@ -82,7 +82,7 @@ class TestWorkflowDefinition(unittest.TestCase):
         self.assertEqual(phase["agents"][0]["label"], "find-bugs")
 
     def test_definition_nested_in_invocation_spec(self):
-        from contracts import InvocationSpec
+        from platform_core.core.contracts import InvocationSpec
         spec: InvocationSpec = {
             "use_workflow": True,
             "workflow_definition": {

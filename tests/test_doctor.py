@@ -2,7 +2,7 @@
 import unittest
 from unittest import mock
 
-import doctor
+import platform_core.ops.doctor as doctor
 
 
 class TestDoctor(unittest.TestCase):

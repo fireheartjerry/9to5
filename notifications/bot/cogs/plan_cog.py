@@ -10,7 +10,7 @@ EXPORTS:
   PlanEditView
   PlanCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: config, control.ControlBus, notifications.audit, notifications.commands, notifications.views, notifications.work_launcher
+DEPENDS-ON: config, notifications.audit, notifications.commands, notifications.views, notifications.work_launcher, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_plan_cog.py
 """
@@ -22,7 +22,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands as dpy_commands
 
-from control import ControlBus
+from platform_core.runtime.control import ControlBus
 from notifications import audit
 from notifications import commands as spine
 

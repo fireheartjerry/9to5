@@ -39,7 +39,7 @@ class TestGeminiSessionNoLeak(unittest.TestCase):
                 mock.patch("agents.browser_executor.probe", return_value=True), \
                 mock.patch("agents.browser_executor.startConversation", side_effect=RuntimeError("boom")), \
                 mock.patch("agents.browser_executor.closeSession") as close, \
-                mock.patch("orchestrator_review_mixin.discord"):
+                mock.patch("platform_core.orchestration.review_mixin.discord"):
             orch._openGeminiSession(state)
         close.assert_called_once()              # the probe()-opened session was torn down
         self.assertIsNone(orch._gemini_session)

@@ -47,42 +47,42 @@ Admin cog: hot-reload extensions (/reload) + post a fresh live cockpit (/cockpit
 ## notifications/bot/cogs/ask_cog.py
 /ask -- the conversational Ollama cockpit (Tier 6). A thin gateway shell over the
 - Exports: AskCog, setup
-- Depends on: config, control.ControlBus, notifications.ask, notifications.audit, notifications.commands, notifications.views
+- Depends on: config, notifications.ask, notifications.audit, notifications.commands, notifications.views, platform_core.runtime.control
 - Side effects: unannotated
 - Test: (none)
 
 ## notifications/bot/cogs/control_cog.py
 Run-control slash commands (owner + cooldown): pause / approve / reject / retry / add / skip / abort.
 - Exports: ControlCog, setup
-- Depends on: control.ControlBus, notifications.audit, notifications.commands, notifications.slash, notifications.views
+- Depends on: notifications.audit, notifications.commands, notifications.slash, notifications.views, platform_core.runtime.control
 - Side effects: unannotated
 - Test: (none)
 
 ## notifications/bot/cogs/engagement_cog.py
 Tier 4 native engagement: resolve a gated approval from a native Poll vote.
 - Exports: verdictForAnswer, EngagementCog, setup
-- Depends on: config, control.ControlBus, notifications.audit, notifications.commands, notifications.engagement
+- Depends on: config, notifications.audit, notifications.commands, notifications.engagement, platform_core.runtime.control
 - Side effects: unannotated
 - Test: (none)
 
 ## notifications/bot/cogs/observe_cog.py
 Observability slash commands (read-only, open to all):
 - Exports: ObserveCog, setup
-- Depends on: config, control.ControlBus, health, notifications.audit, notifications.branding, notifications.commands, notifications.metrics, notifications.slash, notifications.views
+- Depends on: config, notifications.audit, notifications.branding, notifications.commands, notifications.metrics, notifications.slash, notifications.views, platform_core.ops.health, platform_core.runtime.control
 - Side effects: unannotated
 - Test: (none)
 
 ## notifications/bot/cogs/ops_cog.py
 Tier 5 realtime ops + safety: super-reaction quick-approve + a watchdog that alerts when
 - Exports: OpsCog, setup
-- Depends on: config, control.ControlBus, notifications.audit, notifications.commands, notifications.discord_bot, notifications.ops
+- Depends on: config, notifications.audit, notifications.commands, notifications.discord_bot, notifications.ops, platform_core.runtime.control
 - Side effects: unannotated
 - Test: (none)
 
 ## notifications/bot/cogs/plan_cog.py
 Tier 2 interactivity: the in-Discord plan editor, the event-timeline browser, and two
 - Exports: timelineLines, SubtaskEditModal, PlanEditView, PlanCog, setup
-- Depends on: config, control.ControlBus, notifications.audit, notifications.commands, notifications.views, notifications.work_launcher
+- Depends on: config, notifications.audit, notifications.commands, notifications.views, notifications.work_launcher, platform_core.runtime.control
 - Side effects: unannotated
 - Test: pytest tests/test_plan_cog.py
 
@@ -96,7 +96,7 @@ Run-lifecycle slash commands: work / wipe / runs / run / resume / create-pr.
 ## notifications/bot/core.py
 NightclawBot -- the gateway ``commands.Bot`` harness.
 - Exports: handleCommand, buildBot, runBot
-- Depends on: config, control.ControlBus, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views
+- Depends on: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, platform_core.runtime.control
 - Side effects: unannotated
 - Test: pytest tests/test_simulation_core.py tests/test_skill_gap_analysis_core.py
 
@@ -110,7 +110,7 @@ Reusable discord.py UI for the Nightclaw gateway.
 ## notifications/bot/ui/dynamic.py
 DynamicItem per-subtask actions (Tier 2). A stateless, regex-custom_id button so any
 - Exports: applySubtaskAction, subtaskButton, SubtaskButton
-- Depends on: config, control.ControlBus, notifications.audit, notifications.commands
+- Depends on: config, notifications.audit, notifications.commands, platform_core.runtime.control
 - Side effects: unannotated
 - Test: pytest tests/test_dynamic.py
 
@@ -145,7 +145,7 @@ Back-compat shim for the gateway command bot.
 ## notifications/commands.py
 Pure, discord-free command layer -- the single source of truth for the '!' grammar,
 - Exports: Command, parseCommand, isAuthorized, decide, resolveTargetTask, isRunActive, footerHelp, applyCommand
-- Depends on: config, control.ControlBus, learning.human_feedback, notifications.discord_bot, state.task
+- Depends on: config, learning.human_feedback, notifications.discord_bot, platform_core.runtime.control, state.task
 - Side effects: unannotated
 - Test: pytest tests/test_commands.py
 
@@ -250,7 +250,7 @@ The Cast -- the 9to5 agent roster for webhook identity overrides.
 ## notifications/slash.py
 Shared helpers for the slash-command cogs.
 - Exports: (none)
-- Depends on: config, control.ControlBus, notifications.audit, notifications.commands, state.task
+- Depends on: config, notifications.audit, notifications.commands, platform_core.runtime.control, state.task
 - Side effects: unannotated
 - Test: pytest tests/test_slash.py
 
@@ -271,7 +271,7 @@ discord.py UI components for the 9TO5 gateway — re-export facade.
 ## notifications/views_control.py
 Shared control helpers, ConfirmView/confirmDestructive, and ControlPanelView.
 - Exports: ConfirmView, confirmDestructive, ControlPanelView
-- Depends on: config, control.ControlBus, notifications.audit, notifications.commands, notifications.icons
+- Depends on: config, notifications.audit, notifications.commands, notifications.icons, platform_core.runtime.control
 - Side effects: unannotated
 - Test: (none)
 
@@ -285,7 +285,7 @@ Run-launching views: Paginator, WorkSetupView, WorkModal.
 ## notifications/views_subtask.py
 Subtask-state and wipe-operation views: BlockedView, WipeSetupView, WipeConfirmView.
 - Exports: BlockedView, WipeSetupView, WipeConfirmView
-- Depends on: notifications.views_control, wipe.CATEGORIES, wipe.executeWipe, wipe.restartBot
+- Depends on: notifications.views_control, platform_core.ops.wipe
 - Side effects: unannotated
 - Test: (none)
 
@@ -313,14 +313,14 @@ Drawing primitives and component helpers for the Nightclaw Ops Console visuals.
 ## notifications/webdash.py
 webdash -- a zero-dependency local web dashboard for a running task.
 - Exports: startWebDashboard, stopWebDashboard
-- Depends on: config, control.ControlBus, control.GATES, state.task
+- Depends on: config, platform_core.runtime.control, state.task
 - Side effects: unannotated
 - Test: pytest tests/test_webdash_control.py
 
 ## notifications/work_launcher.py
 Pure launcher core for the Discord /work command. No discord import -> unit-testable.
 - Exports: WorkRequest, parseHours, validate, buildArgv, activeRun, newestTaskSince, spawn, buildResumeArgv, taskExists, spawnResume, launchOrError, resumeOrError
-- Depends on: config, control.ControlBus, notifications.commands, state.task
+- Depends on: config, notifications.commands, platform_core.runtime.control, state.task
 - Side effects: unannotated
 - Test: pytest tests/test_work_launcher.py
 

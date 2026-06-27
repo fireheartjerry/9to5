@@ -13,7 +13,7 @@ from unittest import mock
 
 import config
 import orchestrator as O
-import simulation
+import platform_core.simulator.simulation as simulation
 from orchestrator import Orchestrator
 from state.task import TaskState
 

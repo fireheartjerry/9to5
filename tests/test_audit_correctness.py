@@ -15,7 +15,7 @@ from unittest import mock
 
 import config
 import orchestrator
-import orchestrator_control_mixin
+import platform_core.orchestration.control_mixin as orchestrator_control_mixin
 from agents import hooks
 from agents import hooks_selfmod
 from agents.verifier import _evaluate

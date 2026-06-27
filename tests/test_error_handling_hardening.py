@@ -35,49 +35,49 @@ class TestOllamaHealthRobustness(unittest.TestCase):
         return r
 
     def test_non_dict_response_returns_fail(self):
-        import health
+        import platform_core.ops.health as health
         r = self._make_response(200, ["unexpected", "list"])
-        with mock.patch("health.requests.get", return_value=r):
+        with mock.patch("platform_core.ops.health.requests.get", return_value=r):
             ok, detail, _ = health._ollama()
         self.assertFalse(ok)
         self.assertIn("unexpected shape", detail)
 
     def test_non_200_triggers_raise_for_status(self):
-        import health
+        import platform_core.ops.health as health
         r = mock.Mock()
         r.raise_for_status = mock.Mock(side_effect=Exception("503"))
-        with mock.patch("health.requests.get", return_value=r):
+        with mock.patch("platform_core.ops.health.requests.get", return_value=r):
             ok, detail, _ = health._ollama()
         self.assertFalse(ok)
 
     def test_valid_response_with_model_returns_ok(self):
-        import health
+        import platform_core.ops.health as health
         models_list = [{"name": config.OLLAMA_MODEL}]
         r = self._make_response(200, {"models": models_list})
-        with mock.patch("health.requests.get", return_value=r), \
-             mock.patch("health.requests.get", return_value=r):
+        with mock.patch("platform_core.ops.health.requests.get", return_value=r), \
+             mock.patch("platform_core.ops.health.requests.get", return_value=r):
             # patch both the tags and ps calls
             ok, detail, _ = health._ollama()
         # should at least not crash; may fail if OLLAMA_MODEL not in list for other reasons
         self.assertIsInstance(ok, bool)
 
     def test_model_missing_from_list(self):
-        import health
+        import platform_core.ops.health as health
         r = self._make_response(200, {"models": [{"name": "other-model"}]})
         ps_r = self._make_response(200, {"models": []})
         calls = [r, ps_r]
-        with mock.patch("health.requests.get", side_effect=calls):
+        with mock.patch("platform_core.ops.health.requests.get", side_effect=calls):
             ok, detail, fix = health._ollama()
         self.assertFalse(ok)
         self.assertIn("not pulled", detail)
 
     def test_ps_non_dict_does_not_crash(self):
-        import health
+        import platform_core.ops.health as health
         tags_r = self._make_response(200, {"models": [{"name": config.OLLAMA_MODEL}]})
         ps_r = mock.Mock()
         ps_r.json = mock.Mock(return_value=["not", "a", "dict"])
         calls = [tags_r, ps_r]
-        with mock.patch("health.requests.get", side_effect=calls):
+        with mock.patch("platform_core.ops.health.requests.get", side_effect=calls):
             ok, detail, _ = health._ollama()
         self.assertTrue(ok)
 
@@ -86,33 +86,33 @@ class TestDiscordHealthRobustness(unittest.TestCase):
     """_discord() must not crash when response body is not valid JSON."""
 
     def test_non_json_200_response_returns_ok_with_unknown_username(self):
-        import health
+        import platform_core.ops.health as health
         r = mock.Mock()
         r.status_code = 200
         r.json = mock.Mock(side_effect=ValueError("not json"))
         with mock.patch.object(config, "DISCORD_BOT_TOKEN", "fake-token"), \
-             mock.patch("health.requests.get", return_value=r):
+             mock.patch("platform_core.ops.health.requests.get", return_value=r):
             ok, detail, _ = health._discord()
         self.assertTrue(ok)
         self.assertIn("unknown", detail)
 
     def test_200_with_valid_json_returns_username(self):
-        import health
+        import platform_core.ops.health as health
         r = mock.Mock()
         r.status_code = 200
         r.json = mock.Mock(return_value={"username": "mybot"})
         with mock.patch.object(config, "DISCORD_BOT_TOKEN", "fake-token"), \
-             mock.patch("health.requests.get", return_value=r):
+             mock.patch("platform_core.ops.health.requests.get", return_value=r):
             ok, detail, _ = health._discord()
         self.assertTrue(ok)
         self.assertIn("mybot", detail)
 
     def test_401_returns_fail(self):
-        import health
+        import platform_core.ops.health as health
         r = mock.Mock()
         r.status_code = 401
         with mock.patch.object(config, "DISCORD_BOT_TOKEN", "bad-token"), \
-             mock.patch("health.requests.get", return_value=r):
+             mock.patch("platform_core.ops.health.requests.get", return_value=r):
             ok, detail, _ = health._discord()
         self.assertFalse(ok)
         self.assertIn("401", detail)
@@ -137,12 +137,12 @@ class TestControlBusNonDictJson(unittest.TestCase):
         self.tmpdir.rmdir()
 
     def _bus(self, task_id: str = "t-robustness"):
-        from control import ControlBus
+        from platform_core.runtime.control import ControlBus
         return ControlBus(task_id)
 
     def test_json_array_treated_as_corrupt_returns_blank(self):
         """If the control file contains a JSON array, load() must return a safe blank state."""
-        from control import ControlBus, _blank
+        from platform_core.runtime.control import ControlBus, _blank
         task_id = "t-array"
         path = self.tmpdir / f"{task_id}.json"
         path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
@@ -156,7 +156,7 @@ class TestControlBusNonDictJson(unittest.TestCase):
 
     def test_json_null_treated_as_corrupt_returns_blank(self):
         """A null JSON value must not propagate to callers."""
-        from control import ControlBus, _blank
+        from platform_core.runtime.control import ControlBus, _blank
         task_id = "t-null"
         path = self.tmpdir / f"{task_id}.json"
         path.write_text("null", encoding="utf-8")
@@ -265,14 +265,14 @@ class TestWebdashPostActionNormalization(unittest.TestCase):
     def test_integer_arg_is_coerced_to_string_for_skip(self):
         result = self._post("t-web", {"action": "skip", "arg": 123})
         self.assertTrue(result["ok"])
-        from control import ControlBus
+        from platform_core.runtime.control import ControlBus
         ops = ControlBus("t-web").drainOps()
         self.assertEqual(ops[0]["subtask_id"], "123")
 
     def test_abort_with_null_arg_works(self):
         result = self._post("t-web", {"action": "abort", "arg": None})
         self.assertTrue(result["ok"])
-        from control import ControlBus
+        from platform_core.runtime.control import ControlBus
         self.assertTrue(ControlBus("t-web").isAbort())
 
 

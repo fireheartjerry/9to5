@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import tracing
+import platform_core.core.tracing as tracing
 
 
 class TestTracing(unittest.TestCase):

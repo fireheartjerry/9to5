@@ -5,12 +5,11 @@ call that omits `state` raises TypeError at runtime; because the per-subtask
 body is wrapped in `try/except Exception`, that TypeError is swallowed and the
 subtask is force-marked crashed/failed *even when verification passed*. The bug
 is invisible to ordinary tests (it lives deep in the live run loop), so we guard
-it statically: parse all orchestrator*.py files and assert every
+it statically: parse orchestrator source files and assert every
 `self._translateDiscord` call passes exactly two positional args.
 
-NOTE: After the mixin split the definition and call sites live in
-orchestrator_control_mixin.py / orchestrator_run_mixin.py / orchestrator_execute_mixin.py;
-we scan all orchestrator*.py files to cover the full surface.
+NOTE: After the package split the definition and call sites live under
+platform_core/orchestration/; we scan the facade plus package modules.
 """
 import ast
 import pathlib
@@ -18,7 +17,10 @@ import unittest
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Scan all orchestrator source files (main + all mixin modules).
-_SRCS = sorted(_ROOT.glob("orchestrator*.py"))
+_SRCS = sorted([
+    *_ROOT.glob("orchestrator*.py"),
+    *(_ROOT / "platform_core" / "orchestration").glob("*.py"),
+])
 
 
 def _trees():

@@ -12,8 +12,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import simulation  # noqa: F401 — ensure module is loaded
-from simulation import (
+import platform_core.simulator.simulation as simulation  # noqa: F401 — ensure module is loaded
+from platform_core.simulator.simulation import (
     SimBrain,
     SimObs,
     simReplan,

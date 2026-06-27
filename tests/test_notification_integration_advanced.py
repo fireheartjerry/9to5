@@ -23,7 +23,7 @@ from unittest import mock
 
 import config
 import notifications.discord_bot as d
-from control import ControlBus
+from platform_core.runtime.control import ControlBus
 from notifications import dashboard as dash
 from notifications import webdash
 from state.task import TaskState

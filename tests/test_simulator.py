@@ -15,8 +15,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sim_error_handling import safeChatExtract, safeParseJson, safeWritePath
-from simulation import (
+from platform_core.simulator.error_handling import safeChatExtract, safeParseJson, safeWritePath
+from platform_core.simulator.simulation import (
     BuilderBrain,
     SimBrain,
     SimObs,

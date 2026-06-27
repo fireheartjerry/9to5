@@ -11,7 +11,7 @@ EXPORTS:
   signature_of(title: str) -> str  -- A coarse, normalized signature for matching near-duplicate subtasks.
   build_from_ledger(*, db_path: Optional[Path]=None) -> dict[str, int]  -- Populate the cache from gold (first-pass, approved) subtasks that carry a spec.
   warm_start(title: str, *, db_path: Optional[Path]=None) -> Optional[str]  -- Return a cached PASSING spec for a near-duplicate subtask, or None.
-DEPENDS-ON: config, memory.experience, provenance.Verdict, provenance.assertIngestible, provenance.coerce
+DEPENDS-ON: config, memory.experience, platform_core.core.provenance
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_solution_cache_provenance.py
 """
@@ -24,7 +24,7 @@ from typing import Any, Optional
 
 import config
 from memory import experience
-from provenance import Verdict, assertIngestible, coerce
+from platform_core.core.provenance import Verdict, assertIngestible, coerce
 
 LOG = config.getLogger("sie.solution_cache")
 

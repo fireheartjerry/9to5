@@ -2,7 +2,8 @@ import tempfile, unittest
 from pathlib import Path
 from unittest import mock
 
-import config, epoch
+import config
+import platform_core.core.epoch as epoch
 from state.task import TaskState
 from agents import hooks
 

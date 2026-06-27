@@ -26,26 +26,26 @@ if str(_REPO_ROOT) not in sys.path:
 
 class TestErrorHandlingImports(unittest.TestCase):
     def test_error_handling_imports(self):
-        import error_handling
+        import platform_core.runtime.error_handling as error_handling
         self.assertEqual(error_handling.MAX_RETRIES, 3)
         self.assertIsNotNone(error_handling.retryTask)
 
     def test_enhanced_error_handling_re_exports(self):
-        import enhanced_error_handling as eeh
+        import platform_core.runtime.enhanced_error_handling as eeh
         self.assertEqual(eeh.MAX_RETRIES, 3)
         self.assertIsNotNone(eeh.retryTask)
 
 
 class TestRetryTaskBehavior(unittest.TestCase):
     def test_succeeds_on_first_try(self):
-        from error_handling import retryTask
+        from platform_core.runtime.error_handling import retryTask
         result = retryTask(lambda: 42, delay=0)
         self.assertTrue(result["ok"])
         self.assertEqual(result["result"], 42)
         self.assertEqual(result["attempts"], 1)
 
     def test_retries_up_to_max_then_raises(self):
-        from error_handling import retryTask, RetryExhausted, MAX_RETRIES
+        from platform_core.runtime.error_handling import retryTask, RetryExhausted, MAX_RETRIES
         calls = [0]
 
         def _always_fail():
@@ -57,7 +57,7 @@ class TestRetryTaskBehavior(unittest.TestCase):
         self.assertEqual(calls[0], MAX_RETRIES)
 
     def test_retries_and_recovers(self):
-        from error_handling import retryTask
+        from platform_core.runtime.error_handling import retryTask
         calls = [0]
 
         def _fail_twice():
@@ -72,7 +72,7 @@ class TestRetryTaskBehavior(unittest.TestCase):
         self.assertEqual(result["attempts"], 3)
 
     def test_on_alert_callback_called_on_exhaustion(self):
-        from error_handling import retryTask
+        from platform_core.runtime.error_handling import retryTask
         alerted = []
         retryTask(
             lambda: (_ for _ in ()).throw(RuntimeError("x")),
@@ -84,15 +84,15 @@ class TestRetryTaskBehavior(unittest.TestCase):
 
     def test_no_sleep_after_final_attempt(self):
         """retryTask must not sleep after the last attempt."""
-        from error_handling import retryTask
+        from platform_core.runtime.error_handling import retryTask
         sleep_calls = []
-        with mock.patch("error_handling.time.sleep", side_effect=lambda s: sleep_calls.append(s)):
+        with mock.patch("platform_core.runtime.error_handling.time.sleep", side_effect=lambda s: sleep_calls.append(s)):
             try:
                 retryTask(lambda: (_ for _ in ()).throw(RuntimeError("x")), delay=0.5)
             except Exception:
                 pass
         # With MAX_RETRIES=3, sleeps fire between attempts 1→2 and 2→3 only (2 sleeps).
-        from error_handling import MAX_RETRIES
+        from platform_core.runtime.error_handling import MAX_RETRIES
         self.assertEqual(len(sleep_calls), MAX_RETRIES - 1)
 
 
@@ -286,7 +286,7 @@ class TestMonitoringTrackerThresholds(unittest.TestCase):
 
 class TestStagingValidatorGate(unittest.TestCase):
     def test_staging_validator_passes(self):
-        import staging_validator
+        import platform_core.ops.staging_validator as staging_validator
         result = staging_validator.main(quiet=True)
         self.assertEqual(result, 0, "staging_validator reported gate failures")
 

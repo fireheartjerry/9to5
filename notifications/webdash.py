@@ -14,7 +14,7 @@ Routes:
 EXPORTS:
   startWebDashboard(task_id: str, port: Optional[int]=None) -> Optional[str]  -- Start the dashboard in a daemon thread
   stopWebDashboard() -> None  -- Shut down the running dashboard server (frees the port)
-DEPENDS-ON: config, control.ControlBus, control.GATES, state.task
+DEPENDS-ON: config, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_webdash_control.py
 """
@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
 import config
-from control import GATES, ControlBus
+from platform_core.runtime.control import GATES, ControlBus
 from state.task import TaskState
 
 LOG = config.getLogger("webdash")

@@ -3,7 +3,7 @@ import unittest
 from unittest import mock
 
 import config
-import surfaces
+import platform_core.core.surfaces as surfaces
 
 
 class TestCatalog(unittest.TestCase):

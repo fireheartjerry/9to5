@@ -30,7 +30,7 @@ class TestHandleCommand(unittest.TestCase):
         st = _state()
         bus_mock = mock.Mock()
         with mock.patch.object(commands, "resolveTargetTask", return_value=st), \
-             mock.patch("control.ControlBus", return_value=bus_mock), \
+             mock.patch("platform_core.runtime.control.ControlBus", return_value=bus_mock), \
              mock.patch.object(commands, "applyCommand", return_value="aborted") as apply_mock:
             result = cb.handleCommand("!abort")
         self.assertEqual(result, "aborted")
@@ -42,7 +42,7 @@ class TestHandleCommand(unittest.TestCase):
         st = _state()
         bus_mock = mock.Mock()
         with mock.patch.object(commands, "resolveTargetTask", return_value=st), \
-             mock.patch("control.ControlBus", return_value=bus_mock), \
+             mock.patch("platform_core.runtime.control.ControlBus", return_value=bus_mock), \
              mock.patch.object(commands, "applyCommand", return_value="added") as apply_mock:
             cb.handleCommand("!add write a parser")
         call_cmd = apply_mock.call_args[0][2]

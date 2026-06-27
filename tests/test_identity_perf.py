@@ -5,7 +5,7 @@ include files under the non-self trees (.git/.claude/venv) and must still find t
 orchestrator's core modules. These invariants let us replace rglob-then-filter with a pruned
 os.walk without changing the fingerprint set.
 """
-import identity
+import platform_core.core.identity as identity
 
 
 def test_excludes_non_self_and_vcs_trees():

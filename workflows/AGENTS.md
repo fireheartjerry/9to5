@@ -12,7 +12,7 @@
 ## workflows/registry.py
 Workflow registry — loads and validates WorkflowDefinition JSON files.
 - Exports: loadRegistry
-- Depends on: contracts.WorkflowAgent, contracts.WorkflowDefinition, contracts.WorkflowPhase
+- Depends on: platform_core.core.contracts
 - Side effects: unannotated
 - Test: pytest tests/test_registry.py
 

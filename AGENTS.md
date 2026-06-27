@@ -39,9 +39,10 @@
 | `memory/` | 11 | `memory/AGENTS.md` |
 | `monitoring/` | 3 | `monitoring/AGENTS.md` |
 | `notifications/` | 46 | `notifications/AGENTS.md` |
+| `platform_core/` | 49 | `platform_core/AGENTS.md` |
 | `scheduling/` | 2 | `scheduling/AGENTS.md` |
 | `src/` | 2 | `src/AGENTS.md` |
 | `state/` | 4 | `state/AGENTS.md` |
 | `workflows/` | 4 | `workflows/AGENTS.md` |
-| (top-level) | 49 | this file |
+| (top-level) | 10 | this file |
 

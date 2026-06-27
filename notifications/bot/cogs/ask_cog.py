@@ -7,7 +7,7 @@ action via the same ``commands`` spine every other surface uses.
 EXPORTS:
   AskCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: config, control.ControlBus, notifications.ask, notifications.audit, notifications.commands, notifications.views
+DEPENDS-ON: config, notifications.ask, notifications.audit, notifications.commands, notifications.views, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -20,7 +20,7 @@ from discord import app_commands
 from discord.ext import commands as dpy_commands
 
 import config
-from control import ControlBus
+from platform_core.runtime.control import ControlBus
 from notifications import ask as ask_mod
 from notifications import audit
 from notifications import commands as spine

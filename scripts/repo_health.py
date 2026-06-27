@@ -17,7 +17,7 @@ EXPORTS:
   gather() -> dict  -- Collect the repo-health snapshot as a plain dict
   render(snap: dict) -> str
   main(argv: 'list[str] | None'=None) -> int
-DEPENDS-ON: config, tracing
+DEPENDS-ON: config, platform_core.core.tracing
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_repo_health.py
 """
@@ -52,7 +52,7 @@ def _testCount() -> int:
 
 def _recentTraceCount() -> int:
     try:
-        import tracing
+        import platform_core.core.tracing as tracing
         return len(tracing.recentRunIds(limit=50))
     except Exception:
         return 0

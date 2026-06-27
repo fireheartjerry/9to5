@@ -14,7 +14,7 @@ EXPORTS:
   WorkflowNotFoundError  -- Raised when a workflow name is not present in the registry.
   WorkflowValidationError  -- Raised when a workflow definition fails structural validation.
   WorkflowRegistry  -- Thread-safe mutable registry of WorkflowDefinition entries.
-DEPENDS-ON: (stdlib only)
+DEPENDS-ON: platform_core.core.contracts
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_workflow_registry.py
 """
@@ -25,6 +25,8 @@ import sys
 import threading
 from pathlib import Path
 from typing import Dict, List, Optional
+
+from platform_core.core.contracts import WorkflowDefinition
 
 _REPO_ROOT: Path = Path(__file__).resolve().parent.parent
 
@@ -45,14 +47,12 @@ def _load_module(module_name: str, file_path: Path):
     return module
 
 
-# Load dependencies by absolute resolved path — no sys.path mutation.
-_contracts_mod = _load_module("contracts", _REPO_ROOT / "contracts.py")
+# Load dependency by absolute resolved path — no sys.path mutation.
 _workflows_pkg = _load_module("workflows", _REPO_ROOT / "workflows" / "__init__.py")
 _registry_mod = _load_module(
     "workflows.registry", _REPO_ROOT / "workflows" / "registry.py"
 )
 
-WorkflowDefinition = _contracts_mod.WorkflowDefinition
 DEFINITIONS_DIR: Path = _registry_mod.DEFINITIONS_DIR
 _validateWorkflowDefinition = _registry_mod._validateWorkflowDefinition
 loadRegistry = _registry_mod.loadRegistry

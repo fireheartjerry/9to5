@@ -5,7 +5,7 @@ Thin shells over the commands spine (see notifications.slash helpers).
 EXPORTS:
   ControlCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: control.ControlBus, notifications.audit, notifications.commands, notifications.slash, notifications.views
+DEPENDS-ON: notifications.audit, notifications.commands, notifications.slash, notifications.views, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -14,7 +14,7 @@ from __future__ import annotations
 from discord import app_commands
 from discord.ext import commands as dpy_commands
 
-from control import ControlBus
+from platform_core.runtime.control import ControlBus
 from notifications import audit
 from notifications import commands as spine
 from notifications import slash

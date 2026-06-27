@@ -1,7 +1,7 @@
 """Acceptance test: staging environment validation.
 
 Verifies that:
-1. staging_validator.py is importable and exposes validate() / main().
+1. ops.staging_validator is importable and exposes validate() / main().
 2. All staging gates pass (imports, CI workflow, validate_workflows.py script).
 3. main() exits 0 when run from CLI.
 
@@ -21,18 +21,18 @@ if str(REPO_ROOT) not in sys.path:
 
 
 class TestStagingValidatorModule(unittest.TestCase):
-    """staging_validator.py exists and exposes the required API."""
+    """platform_core.ops.staging_validator exists and exposes the required API."""
 
     def test_module_importable(self):
-        mod = importlib.import_module("staging_validator")
+        mod = importlib.import_module("platform_core.ops.staging_validator")
         self.assertIsNotNone(mod)
 
     def test_validate_callable(self):
-        from staging_validator import validate
+        from platform_core.ops.staging_validator import validate
         self.assertTrue(callable(validate))
 
     def test_main_callable(self):
-        from staging_validator import main
+        from platform_core.ops.staging_validator import main
         self.assertTrue(callable(main))
 
 
@@ -40,7 +40,7 @@ class TestStagingGates(unittest.TestCase):
     """All staging gates defined in staging_validator must pass."""
 
     def setUp(self):
-        from staging_validator import validate
+        from platform_core.ops.staging_validator import validate
         self._results = validate()
 
     def test_gates_non_empty(self):
@@ -61,7 +61,7 @@ class TestStagingGates(unittest.TestCase):
     def test_import_gates_present(self):
         gate_names = {r["gate"] for r in self._results}
         self.assertIn("import:config", gate_names)
-        self.assertIn("import:health", gate_names)
+        self.assertIn("import:platform_core.ops.health", gate_names)
         self.assertIn("import:agents.verifier", gate_names)
 
     def test_ci_workflow_gate_present(self):
@@ -77,7 +77,7 @@ class TestStagingMainExitCode(unittest.TestCase):
     """main() returns 0 when all gates pass."""
 
     def test_main_returns_zero(self):
-        from staging_validator import main
+        from platform_core.ops.staging_validator import main
         exit_code = main(quiet=True)
         self.assertEqual(exit_code, 0, "staging_validator.main() must return 0 in a healthy repo")
 

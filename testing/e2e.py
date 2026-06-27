@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 import config
-import simulation
+import platform_core.simulator.simulation as simulation
 from state.task import TaskState
 from testing.operator import VirtualOperator
 

@@ -14,8 +14,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import simulation  # noqa: F401 — ensure module is loaded
-from simulation import (
+import platform_core.simulator.simulation as simulation  # noqa: F401 — ensure module is loaded
+from platform_core.simulator.simulation import (
     BuilderBrain,
     SimBrain,
     SimObs,
@@ -294,7 +294,7 @@ class TestBuildOrchestratorImportError(unittest.TestCase):
 class TestSimErrorHandling(unittest.TestCase):
     def setUp(self):
         try:
-            from sim_error_handling import safeChatExtract, safeParseJson, safeWritePath
+            from platform_core.simulator.error_handling import safeChatExtract, safeParseJson, safeWritePath
             self.safeChatExtract = safeChatExtract
             self.safeParseJson = safeParseJson
             self.safeWritePath = safeWritePath

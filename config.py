@@ -23,7 +23,7 @@ EXPORTS:
   set_override(knob: str, value) -> bool  -- Persist + live-apply a meta-optimizer knob change (whitelisted knobs only).
   validateEnv() -> list[str]  -- Return the names of required-but-missing environment values.
   getLogger(name: str='9to5') -> logging.Logger  -- Return a child of the configured ``9to5`` logger.
-DEPENDS-ON: config_discord.*, config_llm.*, config_llm.SIE_TUNABLE_KNOBS, config_llm._SIE_BOUNDS, config_llm._envFloat, config_llm._envInt, config_paths.*, config_paths.SIE_OVERRIDES_PATH
+DEPENDS-ON: platform_core.app_config.discord, platform_core.app_config.llm, platform_core.app_config.paths
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_config_robust_env.py tests/test_notification_config.py
 """
@@ -50,23 +50,23 @@ _THIS_DIR = Path(__file__).resolve().parent
 load_dotenv(dotenv_path=_THIS_DIR / ".env")
 
 # --- Re-export all domain constants so ``import config; config.X`` works ---
-from config_paths import *    # noqa: E402, F401, F403
-from config_discord import *  # noqa: E402, F401, F403
-from config_llm import *      # noqa: E402, F401, F403
+from platform_core.app_config.paths import *    # noqa: E402, F401, F403
+from platform_core.app_config.discord import *  # noqa: E402, F401, F403
+from platform_core.app_config.llm import *      # noqa: E402, F401, F403
 
 # _SIE_BOUNDS starts with _ so it is excluded from star imports; import it
 # explicitly because set_override / _load_overrides (below) need it.
-from config_llm import _SIE_BOUNDS  # noqa: E402
+from platform_core.app_config.llm import _SIE_BOUNDS  # noqa: E402
 
 # _envInt / _envFloat are private helpers tested directly via ``config._envInt``
 # in test_config_robust_env.py -- import them explicitly so they remain accessible.
-from config_llm import _envInt, _envFloat  # noqa: E402
+from platform_core.app_config.llm import _envInt, _envFloat  # noqa: E402
 
 # Pull in the public names that are referenced by the functions below but
 # are defined in sub-modules (the star imports put them in this module's
 # globals() already, but we name them here for static-analysis legibility).
-from config_llm import SIE_TUNABLE_KNOBS  # noqa: E402  # re-exported by *
-from config_paths import SIE_OVERRIDES_PATH  # noqa: E402  # re-exported by *
+from platform_core.app_config.llm import SIE_TUNABLE_KNOBS  # noqa: E402  # re-exported by *
+from platform_core.app_config.paths import SIE_OVERRIDES_PATH  # noqa: E402  # re-exported by *
 
 # ---------------------------------------------------------------------------
 # Override system (must live here: globals() refers to this module's namespace,

@@ -10,7 +10,7 @@ EXPORTS:
   applySubtaskAction(action: str, sid: str, user_id) -> str  -- Pure router: returns the human reply for a per-subtask action
   subtaskButton(action: str, sid: str) -> 'SubtaskButton'
   SubtaskButton
-DEPENDS-ON: config, control.ControlBus, notifications.audit, notifications.commands
+DEPENDS-ON: config, notifications.audit, notifications.commands, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_dynamic.py
 """
@@ -19,7 +19,7 @@ from __future__ import annotations
 import discord
 
 import config
-from control import ControlBus
+from platform_core.runtime.control import ControlBus
 from notifications import audit
 from notifications import commands as spine
 

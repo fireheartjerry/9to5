@@ -3,7 +3,7 @@
 import os, tempfile, unittest
 from pathlib import Path
 
-import identity
+import platform_core.core.identity as identity
 
 
 class TestCanonical(unittest.TestCase):

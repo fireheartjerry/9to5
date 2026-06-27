@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 import config
-from control import ControlBus
+from platform_core.runtime.control import ControlBus
 from orchestrator import Orchestrator
 from state.task import TaskState
 
@@ -142,7 +142,7 @@ class TestExecutionLoop(unittest.TestCase):
         orch = self._orch()
         bus = ControlBus(st.task_id)
         bus.requestAbort()
-        from control import AbortRun
+        from platform_core.runtime.control import AbortRun
         with self.assertRaises(AbortRun):
             orch.runExecutionLoop(st, "doc", str(self.dir), bus, mock.Mock(), parallelism=1)
         # aborted before doing any work

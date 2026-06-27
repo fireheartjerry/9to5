@@ -12,7 +12,7 @@
 ## src/workflow_registry.py
 src/workflow_registry.py -- Centralized mutable workflow registry.
 - Exports: WorkflowNotFoundError, WorkflowValidationError, WorkflowRegistry
-- Depends on: (stdlib only)
+- Depends on: platform_core.core.contracts
 - Side effects: unannotated
 - Test: pytest tests/test_workflow_registry.py
 

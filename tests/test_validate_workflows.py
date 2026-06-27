@@ -25,7 +25,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-import validate_workflows  # noqa: E402
+import platform_core.ops.validate_workflows as validate_workflows  # noqa: E402
 
 
 def _write_json(directory: Path, filename: str, data: object) -> Path:
@@ -53,7 +53,7 @@ class TestValidateWorkflowsMain(unittest.TestCase):
     def test_returns_zero_for_shipped_definitions(self):
         """main() must exit 0 against the real shipped definitions directory."""
         exit_code = validate_workflows.main()
-        self.assertEqual(exit_code, 0, "validate_workflows.main() must return 0 for all shipped definitions")
+        self.assertEqual(exit_code, 0, "platform_core.ops.validate_workflows.main() must return 0 for all shipped definitions")
 
     def test_returns_one_when_directory_is_empty(self):
         with tempfile.TemporaryDirectory() as tmp:

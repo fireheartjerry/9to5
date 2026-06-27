@@ -1,8 +1,8 @@
 """The canonical run/subtask status vocabulary (lifecycle.py)."""
 import unittest
 
-import lifecycle
-from lifecycle import RunStatus, SubtaskStatus
+import platform_core.core.lifecycle as lifecycle
+from platform_core.core.lifecycle import RunStatus, SubtaskStatus
 
 
 class TestEnumValuesAreOnDiskStrings(unittest.TestCase):

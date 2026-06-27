@@ -27,7 +27,7 @@ EXPORTS:
   setColor(enabled: bool) -> None  -- Toggle ANSI output for both this module and trace_replay_output.
   replayTrace(run_id: str, threshold: int) -> int  -- Load and replay one run's event trace
   main() -> int
-DEPENDS-ON: agents.trace_replay_events, agents.trace_replay_output, agents.trace_replay_selftest, config, tracing
+DEPENDS-ON: agents.trace_replay_events, agents.trace_replay_output, agents.trace_replay_selftest, config, platform_core.core.tracing
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -44,7 +44,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 import config  # noqa: E402
-import tracing  # noqa: E402
+import platform_core.core.tracing as tracing  # noqa: E402
 
 from agents.trace_replay_events import (  # noqa: E402
     _calibrateThreshold,

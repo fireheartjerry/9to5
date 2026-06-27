@@ -5,63 +5,25 @@
   "first_party_roots": [
     "agents",
     "config",
-    "config_discord",
-    "config_llm",
-    "config_paths",
     "conftest",
-    "contracts",
-    "control",
-    "doctor",
-    "enhanced_error_handling",
-    "epoch",
-    "error_handling",
-    "health",
-    "identity",
     "knowledge",
-    "knowledge_builder",
-    "knowledge_compress",
-    "knowledge_scraper",
     "learning",
-    "lifecycle",
     "llm_io",
     "main",
-    "main_cli",
     "memory",
     "monitoring",
     "nightclaw",
     "notifications",
     "orchestrator",
-    "orchestrator_brain_io",
-    "orchestrator_control_mixin",
-    "orchestrator_execute_mixin",
-    "orchestrator_github",
-    "orchestrator_knowledge",
-    "orchestrator_llm_mixin",
-    "orchestrator_plan_mixin",
-    "orchestrator_review_mixin",
-    "orchestrator_run_loop",
-    "orchestrator_run_loop_mixin",
-    "orchestrator_run_phase_mixin",
-    "orchestrator_subtask",
-    "orchestrator_time",
-    "protocols",
-    "provenance",
-    "resilience",
-    "retry_policy",
+    "platform_core",
     "run_all_tests",
     "scheduling",
     "selfmod",
-    "sim_error_handling",
-    "simulation",
     "src",
-    "staging_validator",
     "state",
-    "surfaces",
     "testing",
     "tests",
-    "tracing",
     "validate_workflows",
-    "wipe",
     "workflows"
   ],
   "modules": {
@@ -103,8 +65,8 @@
       "callers": [
         "agents.second_brain",
         "orchestrator",
-        "orchestrator_execute_mixin",
-        "orchestrator_review_mixin"
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.review_mixin"
       ]
     },
     "agents.adversary_browser": {
@@ -189,7 +151,7 @@
         "tests/test_phase_3_architecture.py"
       ],
       "callers": [
-        "orchestrator_run_phase_mixin"
+        "platform_core.orchestration.run_phase_mixin"
       ]
     },
     "agents.browser_executor": {
@@ -276,8 +238,8 @@
         "agents.adversary",
         "notifications.bot.cogs.runs_cog",
         "notifications.views_run",
-        "orchestrator_llm_mixin",
-        "orchestrator_review_mixin"
+        "platform_core.orchestration.llm_mixin",
+        "platform_core.orchestration.review_mixin"
       ]
     },
     "agents.clarifier": {
@@ -310,7 +272,7 @@
         "tests/test_clarifier.py"
       ],
       "callers": [
-        "orchestrator_llm_mixin"
+        "platform_core.orchestration.llm_mixin"
       ]
     },
     "agents.debugging_workflow": {
@@ -406,8 +368,8 @@
         "agents.browser_executor",
         "agents.native_executor",
         "agents.verifier_runner",
-        "health",
-        "orchestrator"
+        "orchestrator",
+        "platform_core.ops.health"
       ]
     },
     "agents.executor_env": {
@@ -918,9 +880,9 @@
         "tests/test_phase2_second_brain.py"
       ],
       "callers": [
-        "orchestrator_control_mixin",
-        "orchestrator_execute_mixin",
-        "orchestrator_review_mixin"
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.review_mixin"
       ]
     },
     "agents.timing_harness": {
@@ -989,7 +951,7 @@
         "agents.trace_replay_output",
         "agents.trace_replay_selftest",
         "config",
-        "tracing"
+        "platform_core.core.tracing"
       ],
       "side_effects": [
         "unannotated"
@@ -1032,7 +994,7 @@
       ],
       "depends_on": [
         "config",
-        "tracing"
+        "platform_core.core.tracing"
       ],
       "side_effects": [
         "unannotated"
@@ -1050,7 +1012,7 @@
       "exports": [],
       "depends_on": [
         "config",
-        "tracing"
+        "platform_core.core.tracing"
       ],
       "side_effects": [
         "unannotated"
@@ -1159,12 +1121,13 @@
       "callers": [
         "agents.orchestration_pipeline",
         "learning.eval_runner",
-        "orchestrator_execute_mixin",
-        "orchestrator_llm_mixin",
-        "orchestrator_plan_mixin",
-        "orchestrator_run_loop_mixin",
-        "orchestrator_run_phase_mixin",
-        "orchestrator_subtask"
+        "orchestrator",
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.llm_mixin",
+        "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.run_loop_mixin",
+        "platform_core.orchestration.run_phase_mixin",
+        "platform_core.orchestration.subtask"
       ]
     },
     "agents.verifier_runner": {
@@ -1264,14 +1227,9 @@
         }
       ],
       "depends_on": [
-        "config_discord.*",
-        "config_llm.*",
-        "config_llm.SIE_TUNABLE_KNOBS",
-        "config_llm._SIE_BOUNDS",
-        "config_llm._envFloat",
-        "config_llm._envInt",
-        "config_paths.*",
-        "config_paths.SIE_OVERRIDES_PATH"
+        "platform_core.app_config.discord",
+        "platform_core.app_config.llm",
+        "platform_core.app_config.paths"
       ],
       "side_effects": [
         "unannotated"
@@ -1304,14 +1262,6 @@
         "agents.verifier",
         "agents.verifier_runner",
         "agents.verifier_sanitize",
-        "control",
-        "doctor",
-        "epoch",
-        "health",
-        "identity",
-        "knowledge_builder",
-        "knowledge_compress",
-        "knowledge_scraper",
         "learning.adapter_ops",
         "learning.adapter_promotion",
         "learning.adversary_trust",
@@ -1343,7 +1293,6 @@
         "learning.solution_cache",
         "learning.toolsmith",
         "main",
-        "main_cli",
         "memory.experience_runs",
         "memory.experience_schema",
         "memory.experience_subtasks",
@@ -1385,69 +1334,37 @@
         "notifications.webdash",
         "notifications.work_launcher",
         "orchestrator",
-        "orchestrator_control_mixin",
-        "orchestrator_execute_mixin",
-        "orchestrator_github",
-        "orchestrator_knowledge",
-        "orchestrator_llm_mixin",
-        "orchestrator_plan_mixin",
-        "orchestrator_review_mixin",
-        "orchestrator_run_loop",
-        "orchestrator_run_loop_mixin",
-        "orchestrator_run_phase_mixin",
-        "orchestrator_subtask",
-        "resilience",
+        "platform_core.cli.main_cli",
+        "platform_core.core.epoch",
+        "platform_core.core.identity",
+        "platform_core.core.surfaces",
+        "platform_core.core.tracing",
+        "platform_core.knowledge_base.builder",
+        "platform_core.knowledge_base.compress",
+        "platform_core.knowledge_base.scraper",
+        "platform_core.ops.doctor",
+        "platform_core.ops.health",
+        "platform_core.ops.staging_validator",
+        "platform_core.ops.wipe",
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.github",
+        "platform_core.orchestration.knowledge_refresh",
+        "platform_core.orchestration.llm_mixin",
+        "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.review_mixin",
+        "platform_core.orchestration.run_loop",
+        "platform_core.orchestration.run_loop_mixin",
+        "platform_core.orchestration.run_phase_mixin",
+        "platform_core.orchestration.subtask",
+        "platform_core.runtime.control",
+        "platform_core.runtime.resilience",
+        "platform_core.simulator.simulation",
         "scripts.repo_health",
         "selfmod",
-        "simulation",
-        "staging_validator",
         "state.task_io",
-        "state.task_schema",
-        "surfaces",
-        "tracing",
-        "wipe"
+        "state.task_schema"
       ]
-    },
-    "config_discord": {
-      "path": "config_discord.py",
-      "purpose": "9TO5 Discord bot credentials, limits, branding, and surface flags.",
-      "exports": [],
-      "depends_on": [],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "config_llm": {
-      "path": "config_llm.py",
-      "purpose": "9TO5 LLM / orchestration / SIE / adversary / executor constants.",
-      "exports": [],
-      "depends_on": [],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "config_paths": {
-      "path": "config_paths.py",
-      "purpose": "9TO5 file-system paths and directory helpers.",
-      "exports": [
-        {
-          "name": "ensureDirs",
-          "kind": "function",
-          "signature": "() -> None",
-          "summary": "Create every directory 9TO5 needs (idempotent).",
-          "lineno": 109
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
     },
     "conftest": {
       "path": "conftest.py",
@@ -1468,434 +1385,14 @@
       "test": [],
       "callers": []
     },
-    "contracts": {
-      "path": "contracts.py",
-      "purpose": "contracts -- the central 9to5 data contracts as TypedDicts.",
-      "exports": [
-        {
-          "name": "InvocationSpec",
-          "kind": "class",
-          "signature": "",
-          "summary": "The brain-authored spec the executor turns into a Claude Code CLI invocation.",
-          "lineno": 47
-        },
-        {
-          "name": "ExecutorResult",
-          "kind": "class",
-          "signature": "",
-          "summary": "The uniform result dict every executor surface returns (terminal/browser/native).",
-          "lineno": 63
-        },
-        {
-          "name": "Verdict",
-          "kind": "class",
-          "signature": "",
-          "summary": "The adversary/second-brain review verdict (rich contract",
-          "lineno": 79
-        },
-        {
-          "name": "Verify",
-          "kind": "class",
-          "signature": "",
-          "summary": "A brain-authored verification check run after the executor.",
-          "lineno": 96
-        },
-        {
-          "name": "WorkflowAgent",
-          "kind": "class",
-          "signature": "",
-          "summary": "One agent entry inside a WorkflowPhase.",
-          "lineno": 102
-        },
-        {
-          "name": "WorkflowPhase",
-          "kind": "class",
-          "signature": "",
-          "summary": "One phase inside a WorkflowDefinition.",
-          "lineno": 109
-        },
-        {
-          "name": "WorkflowDefinition",
-          "kind": "class",
-          "signature": "",
-          "summary": "Brain-authored dynamic workflow spec carried in InvocationSpec.workflow_definition.",
-          "lineno": 116
-        },
-        {
-          "name": "Universe",
-          "kind": "class",
-          "signature": "",
-          "summary": "``meta.universe`` -- surgical-precision scope",
-          "lineno": 140
-        },
-        {
-          "name": "Goal",
-          "kind": "class",
-          "signature": "",
-          "summary": "The raw human objective (``meta.goal_raw``) + its time horizon.",
-          "lineno": 160
-        },
-        {
-          "name": "ElaboratedGoal",
-          "kind": "class",
-          "signature": "",
-          "summary": "The approved, clarified objective (``meta.goal_elaborated``)",
-          "lineno": 167
-        },
-        {
-          "name": "SubtaskSpec",
-          "kind": "class",
-          "signature": "",
-          "summary": "One subtask (``state/task.py`` addSubtask)",
-          "lineno": 174
-        },
-        {
-          "name": "VerificationResult",
-          "kind": "class",
-          "signature": "",
-          "summary": "``agents/verifier.py`` runVerification() output -- the proof gate's verdict",
-          "lineno": 209
-        },
-        {
-          "name": "ControlCommand",
-          "kind": "class",
-          "signature": "",
-          "summary": "A parsed human control command (``notifications/commands.py`` Command): name + arg.",
-          "lineno": 231
-        },
-        {
-          "name": "AgentDecision",
-          "kind": "class",
-          "signature": "",
-          "summary": "Confidence/risk metadata an intelligence may attach so the orchestrator can escalate.",
-          "lineno": 238
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/test_contracts.py"
-      ],
-      "callers": []
-    },
-    "control": {
-      "path": "control.py",
-      "purpose": "ControlBus -- file-backed, cross-process run control.",
-      "exports": [
-        {
-          "name": "AbortRun",
-          "kind": "class",
-          "signature": "",
-          "summary": "Raised inside the orchestrator when an abort has been requested.",
-          "lineno": 117
-        },
-        {
-          "name": "ControlBus",
-          "kind": "class",
-          "signature": "",
-          "summary": "",
-          "lineno": 136
-        }
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/test_control_concurrency.py",
-        "tests/test_fuzz_control.py",
-        "tests/test_webdash_control.py"
-      ],
-      "callers": []
-    },
-    "doctor": {
-      "path": "doctor.py",
-      "purpose": "Preflight doctor -- tells the user (in one command) exactly what 'start' needs.",
-      "exports": [
-        {
-          "name": "check_ollama",
-          "kind": "function",
-          "signature": "() -> dict[str, Any]",
-          "summary": "The local brain",
-          "lineno": 37
-        },
-        {
-          "name": "check_claude_cli",
-          "kind": "function",
-          "signature": "() -> dict[str, Any]",
-          "summary": "The Claude Code hands",
-          "lineno": 55
-        },
-        {
-          "name": "check_embedder",
-          "kind": "function",
-          "signature": "() -> dict[str, Any]",
-          "summary": "Local embedder for retrieval (degraded feature: no retrieval until present).",
-          "lineno": 64
-        },
-        {
-          "name": "check_git",
-          "kind": "function",
-          "signature": "() -> dict[str, Any]",
-          "summary": "Git repo",
-          "lineno": 83
-        },
-        {
-          "name": "check_gh",
-          "kind": "function",
-          "signature": "() -> dict[str, Any]",
-          "summary": "GitHub CLI",
-          "lineno": 98
-        },
-        {
-          "name": "check_gpu",
-          "kind": "function",
-          "signature": "() -> dict[str, Any]",
-          "summary": "GPU",
-          "lineno": 106
-        },
-        {
-          "name": "run",
-          "kind": "function",
-          "signature": "() -> dict[str, Any]",
-          "summary": "Run every preflight check",
-          "lineno": 114
-        },
-        {
-          "name": "render",
-          "kind": "function",
-          "signature": "(report: dict[str, Any]) -> str",
-          "summary": "",
-          "lineno": 122
-        }
-      ],
-      "depends_on": [
-        "config",
-        "learning.compute"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/test_doctor.py"
-      ],
-      "callers": [
-        "main"
-      ]
-    },
-    "enhanced_error_handling": {
-      "path": "enhanced_error_handling.py",
-      "purpose": "Enhanced error handling -- re-exports the canonical error_handling module.",
-      "exports": [],
-      "depends_on": [
-        "error_handling.LOG",
-        "error_handling.MAX_RETRIES",
-        "error_handling.RETRY_DELAY_SECONDS",
-        "error_handling.RetryExhausted",
-        "error_handling.retryTask"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "epoch": {
-      "path": "epoch.py",
-      "purpose": "Primitive 2 -- the epoch pin. An immutable per-run snapshot of governing config +",
-      "exports": [
-        {
-          "name": "fingerprint",
-          "kind": "function",
-          "signature": "() -> dict[str, Any]",
-          "summary": "A content hash of every self.code module + the git SHA",
-          "lineno": 36
-        },
-        {
-          "name": "Epoch",
-          "kind": "class",
-          "signature": "",
-          "summary": "",
-          "lineno": 61
-        },
-        {
-          "name": "snapshot",
-          "kind": "function",
-          "signature": "(*, universe: Optional[dict]=None, brain_tag: Optional[str]=None) -> Epoch",
-          "summary": "Freeze governing state at process/run start",
-          "lineno": 83
-        },
-        {
-          "name": "diverged",
-          "kind": "function",
-          "signature": "(pinned: Epoch) -> bool",
-          "summary": "True iff the on-disk self.code differs from what was pinned at snapshot time.",
-          "lineno": 94
-        }
-      ],
-      "depends_on": [
-        "config",
-        "identity"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/test_epoch.py"
-      ],
-      "callers": [
-        "orchestrator",
-        "orchestrator_subtask"
-      ]
-    },
-    "error_handling": {
-      "path": "error_handling.py",
-      "purpose": "Error handling utilities -- retry-before-alert and diagnostic logging.",
-      "exports": [
-        {
-          "name": "RetryExhausted",
-          "kind": "class",
-          "signature": "",
-          "summary": "Raised by retryTask when all attempts fail and no on_alert is provided.",
-          "lineno": 31
-        },
-        {
-          "name": "retryTask",
-          "kind": "function",
-          "signature": "(fn: Callable, *, args: tuple=(), kwargs: Optional[dict]=None, max_retries: int=MAX_RETRIES, delay: float=RETRY_DELAY_SECONDS, on_alert: Optional[Callable[[str, int], None]]=None) -> dict[str, Any]",
-          "summary": "Call fn(*args, **kwargs), retrying up to max_retries times on any Exception.",
-          "lineno": 35
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/test_error_handling.py"
-      ],
-      "callers": []
-    },
-    "health": {
-      "path": "health.py",
-      "purpose": "9to5 /health -- environment readiness checks.",
-      "exports": [
-        {
-          "name": "collectHealth",
-          "kind": "function",
-          "signature": "() -> list[dict]",
-          "summary": "Run every check and return structured results (used by the bot's /diagnostics).",
-          "lineno": 193
-        },
-        {
-          "name": "runHealthChecks",
-          "kind": "function",
-          "signature": "() -> bool",
-          "summary": "",
-          "lineno": 206
-        }
-      ],
-      "depends_on": [
-        "agents.executor",
-        "config"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/test_health_collect.py",
-        "tests/test_repo_health.py"
-      ],
-      "callers": [
-        "main",
-        "notifications.bot.cogs.observe_cog"
-      ]
-    },
-    "identity": {
-      "path": "identity.py",
-      "purpose": "The SELF manifest -- 9to5's positive notion of identity.",
-      "exports": [
-        {
-          "name": "Role",
-          "kind": "class",
-          "signature": "",
-          "summary": "",
-          "lineno": 57
-        },
-        {
-          "name": "roleOf",
-          "kind": "function",
-          "signature": "(path: str | os.PathLike) -> Role",
-          "summary": "Classify ``path`` into exactly one Role",
-          "lineno": 105
-        },
-        {
-          "name": "isObeyable",
-          "kind": "function",
-          "signature": "(path: str | os.PathLike) -> bool",
-          "summary": "True only for directives 9to5 may treat as its OWN instructions.",
-          "lineno": 120
-        },
-        {
-          "name": "isEditable",
-          "kind": "function",
-          "signature": "(path: str | os.PathLike) -> bool",
-          "summary": "Editing is unrestricted EXCEPT the narrow hard_boundary set.",
-          "lineno": 125
-        },
-        {
-          "name": "isCodeSelf",
-          "kind": "function",
-          "signature": "(path: str | os.PathLike) -> bool",
-          "summary": "",
-          "lineno": 130
-        },
-        {
-          "name": "selfCodeFiles",
-          "kind": "function",
-          "signature": "() -> list[str]",
-          "summary": "Every *.py under the project tree that the RUNNING orchestrator could import --",
-          "lineno": 134
-        }
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/test_identity.py"
-      ],
-      "callers": [
-        "epoch"
-      ]
-    },
     "knowledge": {
       "path": "knowledge.py",
       "purpose": "Living Claude Code knowledge base -- mechanics for ``refreshClaudeKnowledge()``.",
       "exports": [],
       "depends_on": [
-        "knowledge_builder._topHeadings",
-        "knowledge_builder.buildUnifiedDoc",
-        "knowledge_builder.diffHeadings",
-        "knowledge_compress._executiveExcerpt",
-        "knowledge_compress.compressForInjection",
-        "knowledge_compress.ensureCapabilities",
-        "knowledge_compress.getCapabilities",
-        "knowledge_compress.injectCapabilities",
-        "knowledge_compress.setCapabilities",
-        "knowledge_scraper._htmlToText",
-        "knowledge_scraper._parseFrontmatter",
-        "knowledge_scraper.fetchClaudeDocs",
-        "knowledge_scraper.injectableDoc",
-        "knowledge_scraper.readProductSelfKnowledge",
-        "knowledge_scraper.readRecommendations",
-        "knowledge_scraper.scanLocalClaude"
+        "platform_core.knowledge_base.builder",
+        "platform_core.knowledge_base.compress",
+        "platform_core.knowledge_base.scraper"
       ],
       "side_effects": [
         "unannotated"
@@ -1907,142 +1404,9 @@
         "agents.architect",
         "agents.elaborator",
         "agents.replanner",
-        "orchestrator_knowledge",
-        "surfaces"
+        "platform_core.core.surfaces",
+        "platform_core.orchestration.knowledge_refresh"
       ]
-    },
-    "knowledge_builder": {
-      "path": "knowledge_builder.py",
-      "purpose": "Unified knowledge-doc assembly: folds prior analysis, live docs, local surface, and recs.",
-      "exports": [
-        {
-          "name": "buildUnifiedDoc",
-          "kind": "function",
-          "signature": "(prior_doc: str, fetched: dict, local: dict, psk: dict, *, refreshed_at: str, sources: list[str], recs: Optional[dict]=None) -> str",
-          "summary": "Fold prior self-analysis + live docs + local capability surface +",
-          "lineno": 150
-        },
-        {
-          "name": "diffHeadings",
-          "kind": "function",
-          "signature": "(prior_doc: str, new_doc: str) -> dict",
-          "summary": "Naive 'what changed' delta on top-level headings (for the refresh log).",
-          "lineno": 164
-        }
-      ],
-      "depends_on": [
-        "config",
-        "knowledge_scraper._SCRAPE_PROVENANCE_HEADER"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "knowledge_compress": {
-      "path": "knowledge_compress.py",
-      "purpose": "Compression and injection of the CLAUDE CODE CAPABILITIES summary for Ollama prompts.",
-      "exports": [
-        {
-          "name": "compressForInjection",
-          "kind": "function",
-          "signature": "(unified_doc: str, local: dict, fetched: dict, max_chars: Optional[int]=None, recs: Optional[dict]=None) -> str",
-          "summary": "Distill the unified reference into the structured ``CLAUDE CODE CAPABILITIES``",
-          "lineno": 132
-        },
-        {
-          "name": "setCapabilities",
-          "kind": "function",
-          "signature": "(summary: str) -> None",
-          "summary": "Cache the compressed CLAUDE CODE CAPABILITIES summary (called by the full refresh).",
-          "lineno": 179
-        },
-        {
-          "name": "getCapabilities",
-          "kind": "function",
-          "signature": "() -> str",
-          "summary": "",
-          "lineno": 185
-        },
-        {
-          "name": "ensureCapabilities",
-          "kind": "function",
-          "signature": "() -> str",
-          "summary": "Lazily build the capabilities summary OFFLINE (no web fetch) from the on-disk",
-          "lineno": 189
-        },
-        {
-          "name": "injectCapabilities",
-          "kind": "function",
-          "signature": "(system_prompt: str) -> str",
-          "summary": "Prepend the cached CLAUDE CODE CAPABILITIES block to ANY brain system prompt.",
-          "lineno": 214
-        }
-      ],
-      "depends_on": [
-        "config",
-        "knowledge_builder._topHeadings",
-        "knowledge_scraper._readText",
-        "knowledge_scraper.injectableDoc",
-        "knowledge_scraper.readRecommendations",
-        "knowledge_scraper.scanLocalClaude"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "knowledge_scraper": {
-      "path": "knowledge_scraper.py",
-      "purpose": "Web doc fetching, local .claude surface scanning, and provenance gating.",
-      "exports": [
-        {
-          "name": "fetchClaudeDocs",
-          "kind": "function",
-          "signature": "(enabled: bool=True, timeout: Optional[int]=None) -> dict",
-          "summary": "Scrape current Claude Code docs + changelog IN PARALLEL",
-          "lineno": 118
-        },
-        {
-          "name": "injectableDoc",
-          "kind": "function",
-          "signature": "(text: str, *, name: str) -> str",
-          "summary": "Gate a knowledge-doc for injection into the brain prompt.",
-          "lineno": 224
-        },
-        {
-          "name": "scanLocalClaude",
-          "kind": "function",
-          "signature": "(roots: Optional[tuple]=None) -> dict",
-          "summary": "Recursively read every installed ``.claude`` surface",
-          "lineno": 344
-        },
-        {
-          "name": "readProductSelfKnowledge",
-          "kind": "function",
-          "signature": "(roots: Optional[tuple]=None) -> dict",
-          "summary": "Locate + read the product-self-knowledge skill (Claude Code's own current",
-          "lineno": 375
-        },
-        {
-          "name": "readRecommendations",
-          "kind": "function",
-          "signature": "(path: Optional[Path]=None) -> dict",
-          "summary": "Read the expert recommendations doc (how 9to5 should wield Claude Code)",
-          "lineno": 395
-        }
-      ],
-      "depends_on": [
-        "config",
-        "provenance"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
     },
     "learning": {
       "path": "learning/__init__.py",
@@ -2151,8 +1515,8 @@
       ],
       "test": [],
       "callers": [
-        "orchestrator_review_mixin",
-        "orchestrator_run_phase_mixin"
+        "platform_core.orchestration.review_mixin",
+        "platform_core.orchestration.run_phase_mixin"
       ]
     },
     "learning.bootstrap": {
@@ -2257,10 +1621,10 @@
         "tests/test_compute.py"
       ],
       "callers": [
-        "doctor",
         "learning.bootstrap",
         "learning.finetune",
-        "learning.release"
+        "learning.release",
+        "platform_core.ops.doctor"
       ]
     },
     "learning.confidence": {
@@ -2314,7 +1678,7 @@
       ],
       "test": [],
       "callers": [
-        "orchestrator_run_loop"
+        "platform_core.orchestration.run_loop"
       ]
     },
     "learning.counterfactual": {
@@ -2552,7 +1916,7 @@
         "learning.dataset",
         "learning.distill",
         "learning.sie",
-        "orchestrator_llm_mixin"
+        "platform_core.orchestration.llm_mixin"
       ]
     },
     "learning.eval_runner": {
@@ -2702,7 +2066,7 @@
       "callers": [
         "learning.adapter_promotion",
         "learning.sie",
-        "orchestrator_llm_mixin"
+        "platform_core.orchestration.llm_mixin"
       ]
     },
     "learning.human_feedback": {
@@ -2773,7 +2137,7 @@
       "test": [],
       "callers": [
         "learning.sie",
-        "orchestrator_plan_mixin"
+        "platform_core.orchestration.plan_mixin"
       ]
     },
     "learning.lessons": {
@@ -2907,7 +2271,7 @@
       ],
       "callers": [
         "learning.sie",
-        "orchestrator_plan_mixin"
+        "platform_core.orchestration.plan_mixin"
       ]
     },
     "learning.postmortem": {
@@ -2947,7 +2311,7 @@
       "test": [],
       "callers": [
         "learning.sie",
-        "orchestrator_plan_mixin"
+        "platform_core.orchestration.plan_mixin"
       ]
     },
     "learning.preferences": {
@@ -3083,7 +2447,7 @@
       "depends_on": [
         "config",
         "memory.experience",
-        "provenance"
+        "platform_core.core.provenance"
       ],
       "side_effects": [
         "unannotated"
@@ -3095,7 +2459,7 @@
         "learning.promotion",
         "learning.release",
         "learning.safety",
-        "orchestrator_plan_mixin"
+        "platform_core.orchestration.plan_mixin"
       ]
     },
     "learning.reflection": {
@@ -3142,8 +2506,8 @@
         "tests/test_reflection_trust.py"
       ],
       "callers": [
-        "orchestrator_execute_mixin",
-        "orchestrator_plan_mixin"
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.plan_mixin"
       ]
     },
     "learning.release": {
@@ -3401,7 +2765,7 @@
         "tests/test_sie.py"
       ],
       "callers": [
-        "orchestrator_run_phase_mixin"
+        "platform_core.orchestration.run_phase_mixin"
       ]
     },
     "learning.solution_cache": {
@@ -3433,9 +2797,7 @@
       "depends_on": [
         "config",
         "memory.experience",
-        "provenance.Verdict",
-        "provenance.assertIngestible",
-        "provenance.coerce"
+        "platform_core.core.provenance"
       ],
       "side_effects": [
         "unannotated"
@@ -3445,9 +2807,9 @@
       ],
       "callers": [
         "learning.sie",
-        "orchestrator_execute_mixin",
-        "orchestrator_plan_mixin",
-        "orchestrator_run_loop"
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.run_loop"
       ]
     },
     "learning.toolsmith": {
@@ -3477,55 +2839,6 @@
         "unannotated"
       ],
       "test": [],
-      "callers": []
-    },
-    "lifecycle": {
-      "path": "lifecycle.py",
-      "purpose": "lifecycle -- the ONE canonical status vocabulary for a 9to5 run and its subtasks.",
-      "exports": [
-        {
-          "name": "RunStatus",
-          "kind": "class",
-          "signature": "",
-          "summary": "Every value ``meta[\"status\"]`` may hold over a run's life",
-          "lineno": 34
-        },
-        {
-          "name": "SubtaskStatus",
-          "kind": "class",
-          "signature": "",
-          "summary": "Every value a subtask's ``status`` may hold (state/task.py addSubtask/updateSubtask).",
-          "lineno": 55
-        },
-        {
-          "name": "normalizeRunStatus",
-          "kind": "function",
-          "signature": "(raw: str) -> str",
-          "summary": "Fold any surface's status string to its canonical ``RunStatus`` value (returned as a st…",
-          "lineno": 98
-        },
-        {
-          "name": "isTerminalRun",
-          "kind": "function",
-          "signature": "(status: str) -> bool",
-          "summary": "True iff ``status`` (after normalization) is a run state with no further work.",
-          "lineno": 111
-        },
-        {
-          "name": "isTerminalSubtask",
-          "kind": "function",
-          "signature": "(status: str) -> bool",
-          "summary": "True iff a subtask in ``status`` is no longer actionable (done/failed/removed).",
-          "lineno": 116
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/test_lifecycle.py"
-      ],
       "callers": []
     },
     "llm_io": {
@@ -3561,7 +2874,7 @@
         "agents.clarifier",
         "agents.replanner",
         "notifications.ask",
-        "orchestrator_brain_io"
+        "platform_core.orchestration.brain_io"
       ]
     },
     "main": {
@@ -3579,34 +2892,20 @@
       "depends_on": [
         "agents.elaborator",
         "config",
-        "control.ControlBus",
-        "doctor",
-        "health",
-        "main_cli._applyMentionShorthand",
-        "main_cli._parseArgs",
         "memory.obsidian",
         "orchestrator.Orchestrator",
         "orchestrator.refreshClaudeKnowledge",
-        "resilience",
-        "simulation",
+        "platform_core.cli.main_cli",
+        "platform_core.ops.doctor",
+        "platform_core.ops.health",
+        "platform_core.runtime.control",
+        "platform_core.runtime.resilience",
+        "platform_core.simulator.simulation",
         "state.task",
         "testing.e2e"
       ],
       "side_effects": [
         "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "main_cli": {
-      "path": "main_cli.py",
-      "purpose": "CLI argument helpers for main.py.",
-      "exports": [],
-      "depends_on": [
-        "config"
-      ],
-      "side_effects": [
-        "none"
       ],
       "test": [],
       "callers": []
@@ -3666,9 +2965,9 @@
         "learning.toolsmith",
         "memory.retrieval",
         "memory.subtask_manager",
-        "orchestrator_execute_mixin",
-        "orchestrator_plan_mixin",
-        "orchestrator_run_loop_mixin",
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.run_loop_mixin",
         "state.task_schema"
       ]
     },
@@ -4127,7 +3426,7 @@
         "agents.hooks_obsidian",
         "main",
         "orchestrator",
-        "orchestrator_knowledge"
+        "platform_core.orchestration.knowledge_refresh"
       ]
     },
     "memory.retrieval": {
@@ -4231,7 +3530,7 @@
       ],
       "callers": [
         "learning.sie",
-        "orchestrator_plan_mixin"
+        "platform_core.orchestration.plan_mixin"
       ]
     },
     "memory.subtask_manager": {
@@ -4544,7 +3843,7 @@
         "notifications.slash",
         "notifications.views_control",
         "notifications.views_run",
-        "orchestrator_control_mixin"
+        "platform_core.orchestration.control_mixin"
       ]
     },
     "notifications.bot": {
@@ -4622,11 +3921,11 @@
       ],
       "depends_on": [
         "config",
-        "control.ControlBus",
         "notifications.ask",
         "notifications.audit",
         "notifications.commands",
-        "notifications.views"
+        "notifications.views",
+        "platform_core.runtime.control"
       ],
       "side_effects": [
         "unannotated"
@@ -4654,11 +3953,11 @@
         }
       ],
       "depends_on": [
-        "control.ControlBus",
         "notifications.audit",
         "notifications.commands",
         "notifications.slash",
-        "notifications.views"
+        "notifications.views",
+        "platform_core.runtime.control"
       ],
       "side_effects": [
         "unannotated"
@@ -4694,10 +3993,10 @@
       ],
       "depends_on": [
         "config",
-        "control.ControlBus",
         "notifications.audit",
         "notifications.commands",
-        "notifications.engagement"
+        "notifications.engagement",
+        "platform_core.runtime.control"
       ],
       "side_effects": [
         "unannotated"
@@ -4726,14 +4025,14 @@
       ],
       "depends_on": [
         "config",
-        "control.ControlBus",
-        "health",
         "notifications.audit",
         "notifications.branding",
         "notifications.commands",
         "notifications.metrics",
         "notifications.slash",
-        "notifications.views"
+        "notifications.views",
+        "platform_core.ops.health",
+        "platform_core.runtime.control"
       ],
       "side_effects": [
         "unannotated"
@@ -4762,11 +4061,11 @@
       ],
       "depends_on": [
         "config",
-        "control.ControlBus",
         "notifications.audit",
         "notifications.commands",
         "notifications.discord_bot",
-        "notifications.ops"
+        "notifications.ops",
+        "platform_core.runtime.control"
       ],
       "side_effects": [
         "unannotated"
@@ -4816,11 +4115,11 @@
       ],
       "depends_on": [
         "config",
-        "control.ControlBus",
         "notifications.audit",
         "notifications.commands",
         "notifications.views",
-        "notifications.work_launcher"
+        "notifications.work_launcher",
+        "platform_core.runtime.control"
       ],
       "side_effects": [
         "unannotated"
@@ -4896,11 +4195,11 @@
       ],
       "depends_on": [
         "config",
-        "control.ControlBus",
         "notifications.bot.ui.dynamic",
         "notifications.commands",
         "notifications.icons",
-        "notifications.views"
+        "notifications.views",
+        "platform_core.runtime.control"
       ],
       "side_effects": [
         "unannotated"
@@ -4952,9 +4251,9 @@
       ],
       "depends_on": [
         "config",
-        "control.ControlBus",
         "notifications.audit",
-        "notifications.commands"
+        "notifications.commands",
+        "platform_core.runtime.control"
       ],
       "side_effects": [
         "unannotated"
@@ -5139,9 +4438,9 @@
         "tests/test_cast.py"
       ],
       "callers": [
-        "orchestrator_execute_mixin",
-        "orchestrator_review_mixin",
-        "orchestrator_run_phase_mixin"
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.review_mixin",
+        "platform_core.orchestration.run_phase_mixin"
       ]
     },
     "notifications.command_bot": {
@@ -5234,9 +4533,9 @@
       ],
       "depends_on": [
         "config",
-        "control.ControlBus",
         "learning.human_feedback",
         "notifications.discord_bot",
+        "platform_core.runtime.control",
         "state.task"
       ],
       "side_effects": [
@@ -5262,7 +4561,7 @@
         "notifications.views_control",
         "notifications.views_run",
         "notifications.work_launcher",
-        "orchestrator_control_mixin"
+        "platform_core.orchestration.control_mixin"
       ]
     },
     "notifications.console_hud": {
@@ -5394,11 +4693,11 @@
       ],
       "callers": [
         "orchestrator",
-        "orchestrator_control_mixin",
-        "orchestrator_execute_mixin",
-        "orchestrator_llm_mixin",
-        "orchestrator_run_loop_mixin",
-        "orchestrator_run_phase_mixin"
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.llm_mixin",
+        "platform_core.orchestration.run_loop_mixin",
+        "platform_core.orchestration.run_phase_mixin"
       ]
     },
     "notifications.discord_bot": {
@@ -5430,14 +4729,14 @@
         "notifications.cv2",
         "notifications.dashboard",
         "notifications.icons",
-        "orchestrator_control_mixin",
-        "orchestrator_execute_mixin",
-        "orchestrator_llm_mixin",
-        "orchestrator_plan_mixin",
-        "orchestrator_review_mixin",
-        "orchestrator_run_loop",
-        "orchestrator_run_loop_mixin",
-        "orchestrator_run_phase_mixin"
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.llm_mixin",
+        "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.review_mixin",
+        "platform_core.orchestration.run_loop",
+        "platform_core.orchestration.run_loop_mixin",
+        "platform_core.orchestration.run_phase_mixin"
       ]
     },
     "notifications.discord_channels": {
@@ -5796,7 +5095,7 @@
       ],
       "callers": [
         "notifications.bot.cogs.engagement_cog",
-        "orchestrator_control_mixin"
+        "platform_core.orchestration.control_mixin"
       ]
     },
     "notifications.entry": {
@@ -5897,7 +5196,7 @@
         "notifications.cv2",
         "notifications.discord_embeds",
         "notifications.views_control",
-        "orchestrator_run_phase_mixin"
+        "platform_core.orchestration.run_phase_mixin"
       ]
     },
     "notifications.iconset": {
@@ -6023,9 +5322,9 @@
       "exports": [],
       "depends_on": [
         "config",
-        "control.ControlBus",
         "notifications.audit",
         "notifications.commands",
+        "platform_core.runtime.control",
         "state.task"
       ],
       "side_effects": [
@@ -6198,10 +5497,10 @@
       ],
       "depends_on": [
         "config",
-        "control.ControlBus",
         "notifications.audit",
         "notifications.commands",
-        "notifications.icons"
+        "notifications.icons",
+        "platform_core.runtime.control"
       ],
       "side_effects": [
         "unannotated"
@@ -6281,9 +5580,7 @@
       ],
       "depends_on": [
         "notifications.views_control",
-        "wipe.CATEGORIES",
-        "wipe.executeWipe",
-        "wipe.restartBot"
+        "platform_core.ops.wipe"
       ],
       "side_effects": [
         "unannotated"
@@ -6310,7 +5607,7 @@
       "callers": [
         "notifications.cast",
         "notifications.dashboard",
-        "orchestrator_run_phase_mixin"
+        "platform_core.orchestration.run_phase_mixin"
       ]
     },
     "notifications.visuals_cards": {
@@ -6412,8 +5709,7 @@
       ],
       "depends_on": [
         "config",
-        "control.ControlBus",
-        "control.GATES",
+        "platform_core.runtime.control",
         "state.task"
       ],
       "side_effects": [
@@ -6424,7 +5720,7 @@
       ],
       "callers": [
         "orchestrator",
-        "orchestrator_run_phase_mixin"
+        "platform_core.orchestration.run_phase_mixin"
       ]
     },
     "notifications.work_launcher": {
@@ -6518,8 +5814,8 @@
       ],
       "depends_on": [
         "config",
-        "control.ControlBus",
         "notifications.commands",
+        "platform_core.runtime.control",
         "state.task"
       ],
       "side_effects": [
@@ -6551,29 +5847,25 @@
         "agents.adversary",
         "agents.executor",
         "agents.replanner",
+        "agents.verifier",
         "config",
-        "control.AbortRun",
-        "control.ControlBus",
-        "epoch",
         "learning.eval_runner",
         "memory.obsidian",
         "notifications.dashboard",
         "notifications.webdash",
-        "orchestrator_brain_io",
-        "orchestrator_control_mixin.OrchestratorControlMixin",
-        "orchestrator_execute_mixin.OrchestratorExecuteMixin",
-        "orchestrator_knowledge.injectCapabilities",
-        "orchestrator_knowledge.refreshClaudeKnowledge",
-        "orchestrator_llm_mixin.OrchestratorLlmMixin",
-        "orchestrator_plan_mixin.ORCHESTRATOR_CONSTITUTION",
-        "orchestrator_plan_mixin.OrchestratorPlanMixin",
-        "orchestrator_plan_mixin._VERIFY_EXAMPLE_PATH",
-        "orchestrator_review_mixin.OrchestratorReviewMixin",
-        "orchestrator_run_loop._asList",
-        "orchestrator_run_loop._asText",
-        "orchestrator_run_loop_mixin.OrchestratorRunLoopMixin",
-        "orchestrator_run_phase_mixin.OrchestratorRunPhaseMixin",
-        "orchestrator_subtask._checkCodeDivergence",
+        "platform_core.core.epoch",
+        "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.knowledge_refresh",
+        "platform_core.orchestration.llm_mixin",
+        "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.review_mixin",
+        "platform_core.orchestration.run_loop",
+        "platform_core.orchestration.run_loop_mixin",
+        "platform_core.orchestration.run_phase_mixin",
+        "platform_core.orchestration.subtask",
+        "platform_core.runtime.control",
         "state.task"
       ],
       "side_effects": [
@@ -6584,363 +5876,12 @@
         "tests/test_orchestrator_with_registry.py"
       ],
       "callers": [
-        "orchestrator_run_phase_mixin"
+        "platform_core.orchestration.run_phase_mixin"
       ]
     },
-    "orchestrator_brain_io": {
-      "path": "orchestrator_brain_io.py",
-      "purpose": "Brain response parsing and prompt sizing helpers for the orchestrator.",
-      "exports": [
-        {
-          "name": "parseJsonText",
-          "kind": "function",
-          "signature": "(text: str)",
-          "summary": "Parse JSON text, tolerating fences and leading/trailing prose.",
-          "lineno": 49
-        }
-      ],
-      "depends_on": [
-        "llm_io"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": [
-        "orchestrator"
-      ]
-    },
-    "orchestrator_control_mixin": {
-      "path": "orchestrator_control_mixin.py",
-      "purpose": "Control-plane mixin for the Orchestrator – Discord polling, gates, Obsidian notes, reviews.",
-      "exports": [
-        {
-          "name": "OrchestratorControlMixin",
-          "kind": "class",
-          "signature": "",
-          "summary": "Handles Discord control polling, approval gates, Obsidian index, and second-opinion rev…",
-          "lineno": 34
-        }
-      ],
-      "depends_on": [
-        "agents.second_brain",
-        "config",
-        "control.AbortRun",
-        "control.ControlBus",
-        "notifications.audit",
-        "notifications.commands",
-        "notifications.dashboard",
-        "notifications.discord_bot",
-        "notifications.engagement",
-        "orchestrator_brain_io._chatJson",
-        "orchestrator_github",
-        "orchestrator_run_loop",
-        "orchestrator_subtask",
-        "selfmod",
-        "state.task"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "orchestrator_execute_mixin": {
-      "path": "orchestrator_execute_mixin.py",
-      "purpose": "Core execution mixin – attempt loop, verify, adversary remediation, SIE capture, enrichment.",
-      "exports": [
-        {
-          "name": "OrchestratorExecuteMixin",
-          "kind": "class",
-          "signature": "",
-          "summary": "Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment.",
-          "lineno": 34
-        }
-      ],
-      "depends_on": [
-        "agents.adversary",
-        "agents.second_brain",
-        "agents.verifier",
-        "config",
-        "control.AbortRun",
-        "control.ControlBus",
-        "learning.reflection",
-        "learning.solution_cache",
-        "memory.experience",
-        "notifications.cast",
-        "notifications.dashboard",
-        "notifications.discord_bot",
-        "orchestrator_brain_io._resultText",
-        "orchestrator_subtask._checkCodeDivergence",
-        "state.task",
-        "surfaces"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "orchestrator_github": {
-      "path": "orchestrator_github.py",
-      "purpose": "Git and GitHub operations for the orchestrator (PR creation, repo helpers).",
-      "exports": [
-        {
-          "name": "createPullRequest",
-          "kind": "function",
-          "signature": "(state, work_dir: str) -> dict",
-          "summary": "Create a PR for the completed run",
-          "lineno": 20
-        }
-      ],
-      "depends_on": [
-        "config",
-        "selfmod"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": [
-        "orchestrator_control_mixin",
-        "orchestrator_review_mixin"
-      ]
-    },
-    "orchestrator_knowledge": {
-      "path": "orchestrator_knowledge.py",
-      "purpose": "Claude Code knowledge refresh plumbing for the orchestrator.",
-      "exports": [
-        {
-          "name": "refreshClaudeKnowledge",
-          "kind": "function",
-          "signature": "(obs: 'ObsidianClient | None'=None, *, fetch_web: bool | None=None, log_session: bool=True, force: bool=False) -> str",
-          "summary": "Refresh and cache Claude Code capabilities for Ollama brain prompts.",
-          "lineno": 42
-        }
-      ],
-      "depends_on": [
-        "config",
-        "knowledge",
-        "memory.obsidian",
-        "state.task"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "orchestrator_llm_mixin": {
-      "path": "orchestrator_llm_mixin.py",
-      "purpose": "LLM/brain interaction mixin for the Orchestrator (Ollama calls, goal eval, executor routing).",
-      "exports": [
-        {
-          "name": "OrchestratorLlmMixin",
-          "kind": "class",
-          "signature": "",
-          "summary": "Handles all LLM/brain interaction: Ollama calls, goal evaluation, executor routing.",
-          "lineno": 28
-        }
-      ],
-      "depends_on": [
-        "agents.browser_executor",
-        "agents.clarifier",
-        "agents.verifier",
-        "config",
-        "learning.eval_harness",
-        "learning.finetune",
-        "notifications.dashboard",
-        "notifications.discord_bot",
-        "orchestrator_brain_io._chatJson",
-        "orchestrator_brain_io._chatText",
-        "orchestrator_brain_io._fitUserToCtx",
-        "orchestrator_knowledge.injectCapabilities",
-        "state.task"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "orchestrator_plan_mixin": {
-      "path": "orchestrator_plan_mixin.py",
-      "purpose": "Planning mixin for the Orchestrator – subtask plan authoring, spec construction, SIE context.",
-      "exports": [
-        {
-          "name": "OrchestratorPlanMixin",
-          "kind": "class",
-          "signature": "",
-          "summary": "Handles subtask plan authoring, invocation spec construction, and SIE authoring context.",
-          "lineno": 88
-        }
-      ],
-      "depends_on": [
-        "agents.verifier",
-        "config",
-        "learning.knowledge_graph",
-        "learning.policy",
-        "learning.postmortem",
-        "learning.prompts",
-        "learning.reflection",
-        "learning.solution_cache",
-        "memory.experience",
-        "memory.retrieval",
-        "notifications.discord_bot",
-        "orchestrator_brain_io._chatJson",
-        "orchestrator_run_loop._asList",
-        "orchestrator_run_loop._asText",
-        "orchestrator_run_loop._confidenceNudge",
-        "orchestrator_run_loop._warmStartHint",
-        "orchestrator_subtask._repairVerify",
-        "orchestrator_subtask._singleDeliverable",
-        "orchestrator_subtask._strengthenPlanVerifies",
-        "state.task",
-        "surfaces"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "orchestrator_review_mixin": {
-      "path": "orchestrator_review_mixin.py",
-      "purpose": "Adversary review and PR mixin – second brain routing, Gemini session, git helpers, PR gate.",
-      "exports": [
-        {
-          "name": "OrchestratorReviewMixin",
-          "kind": "class",
-          "signature": "",
-          "summary": "Handles adversary review routing, Gemini session lifecycle, git helpers, and the PR gat…",
-          "lineno": 23
-        }
-      ],
-      "depends_on": [
-        "agents.adversary",
-        "agents.browser_executor",
-        "agents.second_brain",
-        "config",
-        "learning.adversary_trust",
-        "notifications.cast",
-        "notifications.discord_bot",
-        "orchestrator_github",
-        "state.task"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "orchestrator_run_loop": {
-      "path": "orchestrator_run_loop.py",
-      "purpose": "Execution-loop helpers for the orchestrator – timing, scaffolding, SIE context, type coercions.",
-      "exports": [],
-      "depends_on": [
-        "config",
-        "learning.confidence",
-        "learning.solution_cache",
-        "notifications.discord_bot"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": [
-        "orchestrator_control_mixin"
-      ]
-    },
-    "orchestrator_run_loop_mixin": {
-      "path": "orchestrator_run_loop_mixin.py",
-      "purpose": "Run-loop execution mixin – execution loop, backfill, livelock guard, replan application.",
-      "exports": [
-        {
-          "name": "OrchestratorRunLoopMixin",
-          "kind": "class",
-          "signature": "",
-          "summary": "Handles the execution loop, backfill, livelock guard, and replan application.",
-          "lineno": 31
-        }
-      ],
-      "depends_on": [
-        "agents.verifier",
-        "config",
-        "control.AbortRun",
-        "control.ControlBus",
-        "memory.experience",
-        "notifications.dashboard",
-        "notifications.discord_bot",
-        "orchestrator_run_loop._deadlinePassed",
-        "orchestrator_run_loop._remainingHours",
-        "orchestrator_subtask._pendingCount",
-        "orchestrator_subtask._readySet",
-        "state.task"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "orchestrator_run_phase_mixin": {
-      "path": "orchestrator_run_phase_mixin.py",
-      "purpose": "Run phase mixin – startup phases, preamble, phase 4 PR completion, teardown.",
-      "exports": [
-        {
-          "name": "OrchestratorRunPhaseMixin",
-          "kind": "class",
-          "signature": "",
-          "summary": "Handles run lifecycle phases: resume, fresh run, preamble, phase 4, teardown.",
-          "lineno": 31
-        }
-      ],
-      "depends_on": [
-        "agents.architect",
-        "agents.verifier",
-        "config",
-        "control.ControlBus",
-        "learning.adversary_trust",
-        "learning.sie",
-        "notifications.cast",
-        "notifications.dashboard",
-        "notifications.discord_bot",
-        "notifications.icons",
-        "notifications.visuals",
-        "notifications.webdash",
-        "orchestrator",
-        "orchestrator_brain_io._resultText",
-        "orchestrator_knowledge.refreshClaudeKnowledge",
-        "orchestrator_time._elapsedSince",
-        "orchestrator_time._fmtElapsed",
-        "state.task"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "orchestrator_subtask": {
-      "path": "orchestrator_subtask.py",
-      "purpose": "Subtask planning helpers and verification utilities for the orchestrator.",
-      "exports": [],
-      "depends_on": [
-        "agents.verifier",
-        "config",
-        "epoch"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": [
-        "orchestrator_control_mixin"
-      ]
-    },
-    "orchestrator_time": {
-      "path": "orchestrator_time.py",
-      "purpose": "Small wall-clock formatting helpers for orchestrator status output.",
+    "platform_core": {
+      "path": "platform_core/__init__.py",
+      "purpose": "Internal implementation packages for 9TO5.",
       "exports": [],
       "depends_on": [],
       "side_effects": [
@@ -6949,8 +5890,379 @@
       "test": [],
       "callers": []
     },
-    "protocols": {
-      "path": "protocols.py",
+    "platform_core.app_config": {
+      "path": "platform_core/app_config/__init__.py",
+      "purpose": "Configuration domain modules re-exported by the public :mod:`config` facade.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "platform_core.app_config.discord": {
+      "path": "platform_core/app_config/discord.py",
+      "purpose": "9TO5 Discord bot credentials, limits, branding, and surface flags.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_discord_rest.py"
+      ],
+      "callers": [
+        "config"
+      ]
+    },
+    "platform_core.app_config.llm": {
+      "path": "platform_core/app_config/llm.py",
+      "purpose": "9TO5 LLM / orchestration / SIE / adversary / executor constants.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_llm_io_pydantic.py"
+      ],
+      "callers": [
+        "config"
+      ]
+    },
+    "platform_core.app_config.paths": {
+      "path": "platform_core/app_config/paths.py",
+      "purpose": "9TO5 file-system paths and directory helpers.",
+      "exports": [
+        {
+          "name": "ensureDirs",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Create every directory 9TO5 needs (idempotent).",
+          "lineno": 109
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "config"
+      ]
+    },
+    "platform_core.cli": {
+      "path": "platform_core/cli/__init__.py",
+      "purpose": "Command-line helpers for top-level scripts.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "platform_core.cli.main_cli": {
+      "path": "platform_core/cli/main_cli.py",
+      "purpose": "CLI argument helpers for main.py.",
+      "exports": [],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [],
+      "callers": [
+        "main"
+      ]
+    },
+    "platform_core.core": {
+      "path": "platform_core/core/__init__.py",
+      "purpose": "Core contracts, identity, provenance, tracing, and shared surfaces.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "platform_core.core.contracts": {
+      "path": "platform_core/core/contracts.py",
+      "purpose": "contracts -- the central 9to5 data contracts as TypedDicts.",
+      "exports": [
+        {
+          "name": "InvocationSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "The brain-authored spec the executor turns into a Claude Code CLI invocation.",
+          "lineno": 47
+        },
+        {
+          "name": "ExecutorResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "The uniform result dict every executor surface returns (terminal/browser/native).",
+          "lineno": 63
+        },
+        {
+          "name": "Verdict",
+          "kind": "class",
+          "signature": "",
+          "summary": "The adversary/second-brain review verdict (rich contract",
+          "lineno": 79
+        },
+        {
+          "name": "Verify",
+          "kind": "class",
+          "signature": "",
+          "summary": "A brain-authored verification check run after the executor.",
+          "lineno": 96
+        },
+        {
+          "name": "WorkflowAgent",
+          "kind": "class",
+          "signature": "",
+          "summary": "One agent entry inside a WorkflowPhase.",
+          "lineno": 102
+        },
+        {
+          "name": "WorkflowPhase",
+          "kind": "class",
+          "signature": "",
+          "summary": "One phase inside a WorkflowDefinition.",
+          "lineno": 109
+        },
+        {
+          "name": "WorkflowDefinition",
+          "kind": "class",
+          "signature": "",
+          "summary": "Brain-authored dynamic workflow spec carried in InvocationSpec.workflow_definition.",
+          "lineno": 116
+        },
+        {
+          "name": "Universe",
+          "kind": "class",
+          "signature": "",
+          "summary": "``meta.universe`` -- surgical-precision scope",
+          "lineno": 140
+        },
+        {
+          "name": "Goal",
+          "kind": "class",
+          "signature": "",
+          "summary": "The raw human objective (``meta.goal_raw``) + its time horizon.",
+          "lineno": 160
+        },
+        {
+          "name": "ElaboratedGoal",
+          "kind": "class",
+          "signature": "",
+          "summary": "The approved, clarified objective (``meta.goal_elaborated``)",
+          "lineno": 167
+        },
+        {
+          "name": "SubtaskSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "One subtask (``state/task.py`` addSubtask)",
+          "lineno": 174
+        },
+        {
+          "name": "VerificationResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "``agents/verifier.py`` runVerification() output -- the proof gate's verdict",
+          "lineno": 209
+        },
+        {
+          "name": "ControlCommand",
+          "kind": "class",
+          "signature": "",
+          "summary": "A parsed human control command (``notifications/commands.py`` Command): name + arg.",
+          "lineno": 231
+        },
+        {
+          "name": "AgentDecision",
+          "kind": "class",
+          "signature": "",
+          "summary": "Confidence/risk metadata an intelligence may attach so the orchestrator can escalate.",
+          "lineno": 238
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_contracts.py"
+      ],
+      "callers": [
+        "src.workflow_registry",
+        "workflows.registry"
+      ]
+    },
+    "platform_core.core.epoch": {
+      "path": "platform_core/core/epoch.py",
+      "purpose": "Primitive 2 -- the epoch pin. An immutable per-run snapshot of governing config +",
+      "exports": [
+        {
+          "name": "fingerprint",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "A content hash of every self.code module + the git SHA",
+          "lineno": 36
+        },
+        {
+          "name": "Epoch",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 61
+        },
+        {
+          "name": "snapshot",
+          "kind": "function",
+          "signature": "(*, universe: Optional[dict]=None, brain_tag: Optional[str]=None) -> Epoch",
+          "summary": "Freeze governing state at process/run start",
+          "lineno": 83
+        },
+        {
+          "name": "diverged",
+          "kind": "function",
+          "signature": "(pinned: Epoch) -> bool",
+          "summary": "True iff the on-disk self.code differs from what was pinned at snapshot time.",
+          "lineno": 94
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.core.identity"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_epoch.py"
+      ],
+      "callers": [
+        "orchestrator",
+        "platform_core.orchestration.subtask"
+      ]
+    },
+    "platform_core.core.identity": {
+      "path": "platform_core/core/identity.py",
+      "purpose": "The SELF manifest -- 9to5's positive notion of identity.",
+      "exports": [
+        {
+          "name": "Role",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 57
+        },
+        {
+          "name": "roleOf",
+          "kind": "function",
+          "signature": "(path: str | os.PathLike) -> Role",
+          "summary": "Classify ``path`` into exactly one Role",
+          "lineno": 105
+        },
+        {
+          "name": "isObeyable",
+          "kind": "function",
+          "signature": "(path: str | os.PathLike) -> bool",
+          "summary": "True only for directives 9to5 may treat as its OWN instructions.",
+          "lineno": 120
+        },
+        {
+          "name": "isEditable",
+          "kind": "function",
+          "signature": "(path: str | os.PathLike) -> bool",
+          "summary": "Editing is unrestricted EXCEPT the narrow hard_boundary set.",
+          "lineno": 125
+        },
+        {
+          "name": "isCodeSelf",
+          "kind": "function",
+          "signature": "(path: str | os.PathLike) -> bool",
+          "summary": "",
+          "lineno": 130
+        },
+        {
+          "name": "selfCodeFiles",
+          "kind": "function",
+          "signature": "() -> list[str]",
+          "summary": "Every *.py under the project tree that the RUNNING orchestrator could import --",
+          "lineno": 134
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_identity.py"
+      ],
+      "callers": [
+        "platform_core.core.epoch"
+      ]
+    },
+    "platform_core.core.lifecycle": {
+      "path": "platform_core/core/lifecycle.py",
+      "purpose": "lifecycle -- the ONE canonical status vocabulary for a 9to5 run and its subtasks.",
+      "exports": [
+        {
+          "name": "RunStatus",
+          "kind": "class",
+          "signature": "",
+          "summary": "Every value ``meta[\"status\"]`` may hold over a run's life",
+          "lineno": 34
+        },
+        {
+          "name": "SubtaskStatus",
+          "kind": "class",
+          "signature": "",
+          "summary": "Every value a subtask's ``status`` may hold (state/task.py addSubtask/updateSubtask).",
+          "lineno": 55
+        },
+        {
+          "name": "normalizeRunStatus",
+          "kind": "function",
+          "signature": "(raw: str) -> str",
+          "summary": "Fold any surface's status string to its canonical ``RunStatus`` value (returned as a st…",
+          "lineno": 98
+        },
+        {
+          "name": "isTerminalRun",
+          "kind": "function",
+          "signature": "(status: str) -> bool",
+          "summary": "True iff ``status`` (after normalization) is a run state with no further work.",
+          "lineno": 111
+        },
+        {
+          "name": "isTerminalSubtask",
+          "kind": "function",
+          "signature": "(status: str) -> bool",
+          "summary": "True iff a subtask in ``status`` is no longer actionable (done/failed/removed).",
+          "lineno": 116
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_lifecycle.py"
+      ],
+      "callers": []
+    },
+    "platform_core.core.protocols": {
+      "path": "platform_core/core/protocols.py",
       "purpose": "protocols -- the replaceable-intelligence seams of 9to5.",
       "exports": [
         {
@@ -6991,8 +6303,8 @@
       ],
       "callers": []
     },
-    "provenance": {
-      "path": "provenance.py",
+    "platform_core.core.provenance": {
+      "path": "platform_core/core/provenance.py",
       "purpose": "Primitive 1 -- provenance. An origin tag carried on every ingested byte; provenance,",
       "exports": [
         {
@@ -7046,12 +6358,981 @@
         "tests/test_provenance.py"
       ],
       "callers": [
-        "knowledge_scraper",
-        "learning.prompts"
+        "learning.prompts",
+        "learning.solution_cache",
+        "platform_core.knowledge_base.scraper"
       ]
     },
-    "resilience": {
-      "path": "resilience.py",
+    "platform_core.core.surfaces": {
+      "path": "platform_core/core/surfaces.py",
+      "purpose": "Surface & tool catalog -- rich automation across EVERY reachable surface.",
+      "exports": [
+        {
+          "name": "reset_cache",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "",
+          "lineno": 39
+        },
+        {
+          "name": "available",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Everything the executor can reach right now, grouped by surface kind.",
+          "lineno": 44
+        },
+        {
+          "name": "catalog_block",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "A compact, injectable catalog + directive so the brain composes across surfaces.",
+          "lineno": 77
+        },
+        {
+          "name": "surfaces_used",
+          "kind": "function",
+          "signature": "(spec: dict[str, Any]) -> list[str]",
+          "summary": "Which surfaces a spec actually invokes -> tags stored for SIE learning.",
+          "lineno": 103
+        }
+      ],
+      "depends_on": [
+        "config",
+        "knowledge"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_surfaces.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.plan_mixin"
+      ]
+    },
+    "platform_core.core.tracing": {
+      "path": "platform_core/core/tracing.py",
+      "purpose": "tracing -- structured per-run JSONL event log.",
+      "exports": [
+        {
+          "name": "runDir",
+          "kind": "function",
+          "signature": "(run_id: str) -> Path",
+          "summary": "The directory holding one run's artifacts (events.jsonl, stdout.log, ...).",
+          "lineno": 43
+        },
+        {
+          "name": "emit",
+          "kind": "function",
+          "signature": "(run_id: str, event: str, *, subtask_id: Optional[str]=None, **fields: Any) -> None",
+          "summary": "Append one structured event to ``logs/runs/<run_id>/events.jsonl``",
+          "lineno": 52
+        },
+        {
+          "name": "readEvents",
+          "kind": "function",
+          "signature": "(run_id: str) -> list[dict]",
+          "summary": "Parse a run's events.jsonl into a list of dicts (skips blank/corrupt lines)",
+          "lineno": 74
+        },
+        {
+          "name": "recentRunIds",
+          "kind": "function",
+          "signature": "(limit: int=10) -> list[str]",
+          "summary": "The most-recently-modified run ids under RUNS_ROOT (newest first)",
+          "lineno": 93
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_tracing.py"
+      ],
+      "callers": [
+        "agents.trace-replay",
+        "agents.trace_replay",
+        "agents.trace_replay_events",
+        "scripts.repo_health"
+      ]
+    },
+    "platform_core.knowledge_base": {
+      "path": "platform_core/knowledge_base/__init__.py",
+      "purpose": "Claude knowledge-base implementation modules re-exported by :mod:`knowledge`.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "platform_core.knowledge_base.builder": {
+      "path": "platform_core/knowledge_base/builder.py",
+      "purpose": "Unified knowledge-doc assembly: folds prior analysis, live docs, local surface, and recs.",
+      "exports": [
+        {
+          "name": "buildUnifiedDoc",
+          "kind": "function",
+          "signature": "(prior_doc: str, fetched: dict, local: dict, psk: dict, *, refreshed_at: str, sources: list[str], recs: Optional[dict]=None) -> str",
+          "summary": "Fold prior self-analysis + live docs + local capability surface +",
+          "lineno": 150
+        },
+        {
+          "name": "diffHeadings",
+          "kind": "function",
+          "signature": "(prior_doc: str, new_doc: str) -> dict",
+          "summary": "Naive 'what changed' delta on top-level headings (for the refresh log).",
+          "lineno": 164
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.knowledge_base.scraper"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_builder_sim.py"
+      ],
+      "callers": [
+        "knowledge",
+        "platform_core.knowledge_base.compress"
+      ]
+    },
+    "platform_core.knowledge_base.compress": {
+      "path": "platform_core/knowledge_base/compress.py",
+      "purpose": "Compression and injection of the CLAUDE CODE CAPABILITIES summary for Ollama prompts.",
+      "exports": [
+        {
+          "name": "compressForInjection",
+          "kind": "function",
+          "signature": "(unified_doc: str, local: dict, fetched: dict, max_chars: Optional[int]=None, recs: Optional[dict]=None) -> str",
+          "summary": "Distill the unified reference into the structured ``CLAUDE CODE CAPABILITIES``",
+          "lineno": 132
+        },
+        {
+          "name": "setCapabilities",
+          "kind": "function",
+          "signature": "(summary: str) -> None",
+          "summary": "Cache the compressed CLAUDE CODE CAPABILITIES summary (called by the full refresh).",
+          "lineno": 179
+        },
+        {
+          "name": "getCapabilities",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "",
+          "lineno": 185
+        },
+        {
+          "name": "ensureCapabilities",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "Lazily build the capabilities summary OFFLINE (no web fetch) from the on-disk",
+          "lineno": 189
+        },
+        {
+          "name": "injectCapabilities",
+          "kind": "function",
+          "signature": "(system_prompt: str) -> str",
+          "summary": "Prepend the cached CLAUDE CODE CAPABILITIES block to ANY brain system prompt.",
+          "lineno": 214
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.knowledge_base.builder",
+        "platform_core.knowledge_base.scraper"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "knowledge"
+      ]
+    },
+    "platform_core.knowledge_base.scraper": {
+      "path": "platform_core/knowledge_base/scraper.py",
+      "purpose": "Web doc fetching, local .claude surface scanning, and provenance gating.",
+      "exports": [
+        {
+          "name": "fetchClaudeDocs",
+          "kind": "function",
+          "signature": "(enabled: bool=True, timeout: Optional[int]=None) -> dict",
+          "summary": "Scrape current Claude Code docs + changelog IN PARALLEL",
+          "lineno": 118
+        },
+        {
+          "name": "injectableDoc",
+          "kind": "function",
+          "signature": "(text: str, *, name: str) -> str",
+          "summary": "Gate a knowledge-doc for injection into the brain prompt.",
+          "lineno": 224
+        },
+        {
+          "name": "scanLocalClaude",
+          "kind": "function",
+          "signature": "(roots: Optional[tuple]=None) -> dict",
+          "summary": "Recursively read every installed ``.claude`` surface",
+          "lineno": 344
+        },
+        {
+          "name": "readProductSelfKnowledge",
+          "kind": "function",
+          "signature": "(roots: Optional[tuple]=None) -> dict",
+          "summary": "Locate + read the product-self-knowledge skill (Claude Code's own current",
+          "lineno": 375
+        },
+        {
+          "name": "readRecommendations",
+          "kind": "function",
+          "signature": "(path: Optional[Path]=None) -> dict",
+          "summary": "Read the expert recommendations doc (how 9to5 should wield Claude Code)",
+          "lineno": 395
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.core.provenance"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "knowledge",
+        "platform_core.knowledge_base.builder",
+        "platform_core.knowledge_base.compress"
+      ]
+    },
+    "platform_core.ops": {
+      "path": "platform_core/ops/__init__.py",
+      "purpose": "Operational diagnostics, health checks, validation, and maintenance tools.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "platform_core.ops.doctor": {
+      "path": "platform_core/ops/doctor.py",
+      "purpose": "Preflight doctor -- tells the user (in one command) exactly what 'start' needs.",
+      "exports": [
+        {
+          "name": "check_ollama",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "The local brain",
+          "lineno": 37
+        },
+        {
+          "name": "check_claude_cli",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "The Claude Code hands",
+          "lineno": 55
+        },
+        {
+          "name": "check_embedder",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Local embedder for retrieval (degraded feature: no retrieval until present).",
+          "lineno": 64
+        },
+        {
+          "name": "check_git",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Git repo",
+          "lineno": 83
+        },
+        {
+          "name": "check_gh",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "GitHub CLI",
+          "lineno": 98
+        },
+        {
+          "name": "check_gpu",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "GPU",
+          "lineno": 106
+        },
+        {
+          "name": "run",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Run every preflight check",
+          "lineno": 114
+        },
+        {
+          "name": "render",
+          "kind": "function",
+          "signature": "(report: dict[str, Any]) -> str",
+          "summary": "",
+          "lineno": 122
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.compute"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_doctor.py"
+      ],
+      "callers": [
+        "main"
+      ]
+    },
+    "platform_core.ops.health": {
+      "path": "platform_core/ops/health.py",
+      "purpose": "9to5 /health -- environment readiness checks.",
+      "exports": [
+        {
+          "name": "collectHealth",
+          "kind": "function",
+          "signature": "() -> list[dict]",
+          "summary": "Run every check and return structured results (used by the bot's /diagnostics).",
+          "lineno": 193
+        },
+        {
+          "name": "runHealthChecks",
+          "kind": "function",
+          "signature": "() -> bool",
+          "summary": "",
+          "lineno": 206
+        }
+      ],
+      "depends_on": [
+        "agents.executor",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_health_collect.py",
+        "tests/test_repo_health.py"
+      ],
+      "callers": [
+        "main",
+        "notifications.bot.cogs.observe_cog"
+      ]
+    },
+    "platform_core.ops.staging_validator": {
+      "path": "platform_core/ops/staging_validator.py",
+      "purpose": "Staging environment validator — runs pre-deployment checks automatically.",
+      "exports": [
+        {
+          "name": "validate",
+          "kind": "function",
+          "signature": "() -> list[dict]",
+          "summary": "Run all staging gates",
+          "lineno": 98
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(quiet: bool=False) -> int",
+          "summary": "",
+          "lineno": 108
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "stdout"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "platform_core.ops.validate_workflows": {
+      "path": "platform_core/ops/validate_workflows.py",
+      "purpose": "validate_workflows.py -- one-shot script to validate all workflow definitions.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 33
+        }
+      ],
+      "depends_on": [
+        "workflows.registry"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_validate_workflows.py"
+      ],
+      "callers": [
+        "validate_workflows"
+      ]
+    },
+    "platform_core.ops.wipe": {
+      "path": "platform_core/ops/wipe.py",
+      "purpose": "Factory-reset module — granular deletion of 9to5 state, vault, and logs.",
+      "exports": [
+        {
+          "name": "backupState",
+          "kind": "function",
+          "signature": "(keys: list[str]) -> Optional[Path]",
+          "summary": "Tarball the paths about to be wiped",
+          "lineno": 75
+        },
+        {
+          "name": "deleteCategory",
+          "kind": "function",
+          "signature": "(key: str) -> tuple[bool, str]",
+          "summary": "Delete one category",
+          "lineno": 115
+        },
+        {
+          "name": "executeWipe",
+          "kind": "function",
+          "signature": "(keys: list[str], backup: bool=False) -> dict[str, str]",
+          "summary": "Run wipe on selected categories",
+          "lineno": 143
+        },
+        {
+          "name": "restartBot",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Spawn a FRESH detached bot process, then exit this one",
+          "lineno": 156
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.views_subtask"
+      ]
+    },
+    "platform_core.orchestration": {
+      "path": "platform_core/orchestration/__init__.py",
+      "purpose": "Orchestration internals for the public :mod:`orchestrator` facade.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "platform_core.orchestration.brain_io": {
+      "path": "platform_core/orchestration/brain_io.py",
+      "purpose": "Brain response parsing and prompt sizing helpers for the orchestrator.",
+      "exports": [
+        {
+          "name": "parseJsonText",
+          "kind": "function",
+          "signature": "(text: str)",
+          "summary": "Parse JSON text, tolerating fences and leading/trailing prose.",
+          "lineno": 49
+        }
+      ],
+      "depends_on": [
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator",
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.llm_mixin",
+        "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "platform_core.orchestration.control_mixin": {
+      "path": "platform_core/orchestration/control_mixin.py",
+      "purpose": "Control-plane mixin for the Orchestrator – Discord polling, gates, Obsidian notes, reviews.",
+      "exports": [
+        {
+          "name": "OrchestratorControlMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handles Discord control polling, approval gates, Obsidian index, and second-opinion rev…",
+          "lineno": 34
+        }
+      ],
+      "depends_on": [
+        "agents.second_brain",
+        "config",
+        "notifications.audit",
+        "notifications.commands",
+        "notifications.dashboard",
+        "notifications.discord_bot",
+        "notifications.engagement",
+        "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.github",
+        "platform_core.orchestration.run_loop",
+        "platform_core.orchestration.subtask",
+        "platform_core.runtime.control",
+        "selfmod",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "platform_core.orchestration.execute_mixin": {
+      "path": "platform_core/orchestration/execute_mixin.py",
+      "purpose": "Core execution mixin – attempt loop, verify, adversary remediation, SIE capture, enrichment.",
+      "exports": [
+        {
+          "name": "OrchestratorExecuteMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment.",
+          "lineno": 34
+        }
+      ],
+      "depends_on": [
+        "agents.adversary",
+        "agents.second_brain",
+        "agents.verifier",
+        "config",
+        "learning.reflection",
+        "learning.solution_cache",
+        "memory.experience",
+        "notifications.cast",
+        "notifications.dashboard",
+        "notifications.discord_bot",
+        "platform_core.core.surfaces",
+        "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.subtask",
+        "platform_core.runtime.control",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "platform_core.orchestration.github": {
+      "path": "platform_core/orchestration/github.py",
+      "purpose": "Git and GitHub operations for the orchestrator (PR creation, repo helpers).",
+      "exports": [
+        {
+          "name": "createPullRequest",
+          "kind": "function",
+          "signature": "(state, work_dir: str) -> dict",
+          "summary": "Create a PR for the completed run",
+          "lineno": 20
+        }
+      ],
+      "depends_on": [
+        "config",
+        "selfmod"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.review_mixin"
+      ]
+    },
+    "platform_core.orchestration.knowledge_refresh": {
+      "path": "platform_core/orchestration/knowledge_refresh.py",
+      "purpose": "Claude Code knowledge refresh plumbing for the orchestrator.",
+      "exports": [
+        {
+          "name": "refreshClaudeKnowledge",
+          "kind": "function",
+          "signature": "(obs: 'ObsidianClient | None'=None, *, fetch_web: bool | None=None, log_session: bool=True, force: bool=False) -> str",
+          "summary": "Refresh and cache Claude Code capabilities for Ollama brain prompts.",
+          "lineno": 42
+        }
+      ],
+      "depends_on": [
+        "config",
+        "knowledge",
+        "memory.obsidian",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator",
+        "platform_core.orchestration.llm_mixin",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "platform_core.orchestration.llm_mixin": {
+      "path": "platform_core/orchestration/llm_mixin.py",
+      "purpose": "LLM/brain interaction mixin for the Orchestrator (Ollama calls, goal eval, executor routing).",
+      "exports": [
+        {
+          "name": "OrchestratorLlmMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handles all LLM/brain interaction: Ollama calls, goal evaluation, executor routing.",
+          "lineno": 28
+        }
+      ],
+      "depends_on": [
+        "agents.browser_executor",
+        "agents.clarifier",
+        "agents.verifier",
+        "config",
+        "learning.eval_harness",
+        "learning.finetune",
+        "notifications.dashboard",
+        "notifications.discord_bot",
+        "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.knowledge_refresh",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "platform_core.orchestration.plan_mixin": {
+      "path": "platform_core/orchestration/plan_mixin.py",
+      "purpose": "Planning mixin for the Orchestrator – subtask plan authoring, spec construction, SIE context.",
+      "exports": [
+        {
+          "name": "OrchestratorPlanMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handles subtask plan authoring, invocation spec construction, and SIE authoring context.",
+          "lineno": 88
+        }
+      ],
+      "depends_on": [
+        "agents.verifier",
+        "config",
+        "learning.knowledge_graph",
+        "learning.policy",
+        "learning.postmortem",
+        "learning.prompts",
+        "learning.reflection",
+        "learning.solution_cache",
+        "memory.experience",
+        "memory.retrieval",
+        "notifications.discord_bot",
+        "platform_core.core.surfaces",
+        "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.run_loop",
+        "platform_core.orchestration.subtask",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "platform_core.orchestration.review_mixin": {
+      "path": "platform_core/orchestration/review_mixin.py",
+      "purpose": "Adversary review and PR mixin – second brain routing, Gemini session, git helpers, PR gate.",
+      "exports": [
+        {
+          "name": "OrchestratorReviewMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handles adversary review routing, Gemini session lifecycle, git helpers, and the PR gat…",
+          "lineno": 23
+        }
+      ],
+      "depends_on": [
+        "agents.adversary",
+        "agents.browser_executor",
+        "agents.second_brain",
+        "config",
+        "learning.adversary_trust",
+        "notifications.cast",
+        "notifications.discord_bot",
+        "platform_core.orchestration.github",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "platform_core.orchestration.run_loop": {
+      "path": "platform_core/orchestration/run_loop.py",
+      "purpose": "Execution-loop helpers for the orchestrator – timing, scaffolding, SIE context, type coercions.",
+      "exports": [],
+      "depends_on": [
+        "config",
+        "learning.confidence",
+        "learning.solution_cache",
+        "notifications.discord_bot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator",
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.run_loop_mixin"
+      ]
+    },
+    "platform_core.orchestration.run_loop_mixin": {
+      "path": "platform_core/orchestration/run_loop_mixin.py",
+      "purpose": "Run-loop execution mixin – execution loop, backfill, livelock guard, replan application.",
+      "exports": [
+        {
+          "name": "OrchestratorRunLoopMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handles the execution loop, backfill, livelock guard, and replan application.",
+          "lineno": 31
+        }
+      ],
+      "depends_on": [
+        "agents.verifier",
+        "config",
+        "memory.experience",
+        "notifications.dashboard",
+        "notifications.discord_bot",
+        "platform_core.orchestration.run_loop",
+        "platform_core.orchestration.subtask",
+        "platform_core.runtime.control",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "platform_core.orchestration.run_phase_mixin": {
+      "path": "platform_core/orchestration/run_phase_mixin.py",
+      "purpose": "Run phase mixin – startup phases, preamble, phase 4 PR completion, teardown.",
+      "exports": [
+        {
+          "name": "OrchestratorRunPhaseMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handles run lifecycle phases: resume, fresh run, preamble, phase 4, teardown.",
+          "lineno": 31
+        }
+      ],
+      "depends_on": [
+        "agents.architect",
+        "agents.verifier",
+        "config",
+        "learning.adversary_trust",
+        "learning.sie",
+        "notifications.cast",
+        "notifications.dashboard",
+        "notifications.discord_bot",
+        "notifications.icons",
+        "notifications.visuals",
+        "notifications.webdash",
+        "orchestrator",
+        "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.knowledge_refresh",
+        "platform_core.orchestration.time_utils",
+        "platform_core.runtime.control",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "platform_core.orchestration.subtask": {
+      "path": "platform_core/orchestration/subtask.py",
+      "purpose": "Subtask planning helpers and verification utilities for the orchestrator.",
+      "exports": [],
+      "depends_on": [
+        "agents.verifier",
+        "config",
+        "platform_core.core.epoch"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_memory_subtask_manager.py"
+      ],
+      "callers": [
+        "orchestrator",
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.run_loop_mixin"
+      ]
+    },
+    "platform_core.orchestration.time_utils": {
+      "path": "platform_core/orchestration/time_utils.py",
+      "purpose": "Small wall-clock formatting helpers for orchestrator status output.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "platform_core.runtime": {
+      "path": "platform_core/runtime/__init__.py",
+      "purpose": "Runtime control, retry, recovery, and error-handling infrastructure.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "platform_core.runtime.control": {
+      "path": "platform_core/runtime/control.py",
+      "purpose": "ControlBus -- file-backed, cross-process run control.",
+      "exports": [
+        {
+          "name": "AbortRun",
+          "kind": "class",
+          "signature": "",
+          "summary": "Raised inside the orchestrator when an abort has been requested.",
+          "lineno": 117
+        },
+        {
+          "name": "ControlBus",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 136
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_control_concurrency.py",
+        "tests/test_fuzz_control.py",
+        "tests/test_webdash_control.py"
+      ],
+      "callers": [
+        "main",
+        "notifications.bot.cogs.ask_cog",
+        "notifications.bot.cogs.control_cog",
+        "notifications.bot.cogs.engagement_cog",
+        "notifications.bot.cogs.observe_cog",
+        "notifications.bot.cogs.ops_cog",
+        "notifications.bot.cogs.plan_cog",
+        "notifications.bot.core",
+        "notifications.bot.ui.dynamic",
+        "notifications.commands",
+        "notifications.slash",
+        "notifications.views_control",
+        "notifications.webdash",
+        "notifications.work_launcher",
+        "orchestrator",
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.run_loop_mixin",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "platform_core.runtime.enhanced_error_handling": {
+      "path": "platform_core/runtime/enhanced_error_handling.py",
+      "purpose": "Enhanced error handling -- re-exports the canonical error_handling module.",
+      "exports": [],
+      "depends_on": [
+        "platform_core.runtime.error_handling"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "platform_core.runtime.error_handling": {
+      "path": "platform_core/runtime/error_handling.py",
+      "purpose": "Error handling utilities -- retry-before-alert and diagnostic logging.",
+      "exports": [
+        {
+          "name": "RetryExhausted",
+          "kind": "class",
+          "signature": "",
+          "summary": "Raised by retryTask when all attempts fail and no on_alert is provided.",
+          "lineno": 31
+        },
+        {
+          "name": "retryTask",
+          "kind": "function",
+          "signature": "(fn: Callable, *, args: tuple=(), kwargs: Optional[dict]=None, max_retries: int=MAX_RETRIES, delay: float=RETRY_DELAY_SECONDS, on_alert: Optional[Callable[[str, int], None]]=None) -> dict[str, Any]",
+          "summary": "Call fn(*args, **kwargs), retrying up to max_retries times on any Exception.",
+          "lineno": 35
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_error_handling.py"
+      ],
+      "callers": [
+        "platform_core.runtime.enhanced_error_handling",
+        "platform_core.runtime.retry_policy"
+      ]
+    },
+    "platform_core.runtime.resilience": {
+      "path": "platform_core/runtime/resilience.py",
       "purpose": "Run supervision & resilience -- the backbone of the 9am->5pm promise.",
       "exports": [
         {
@@ -7118,8 +7399,8 @@
         "main"
       ]
     },
-    "retry_policy": {
-      "path": "retry_policy.py",
+    "platform_core.runtime.retry_policy": {
+      "path": "platform_core/runtime/retry_policy.py",
       "purpose": "Structured retry policy object for the 9to5 error-handling layer.",
       "exports": [
         {
@@ -7131,9 +7412,7 @@
         }
       ],
       "depends_on": [
-        "error_handling.MAX_RETRIES",
-        "error_handling.RETRY_DELAY_SECONDS",
-        "error_handling.retryTask"
+        "platform_core.runtime.error_handling"
       ],
       "side_effects": [
         "unannotated"
@@ -7142,6 +7421,135 @@
         "tests/test_retry_policy.py"
       ],
       "callers": []
+    },
+    "platform_core.simulator": {
+      "path": "platform_core/simulator/__init__.py",
+      "purpose": "Dry-run simulation helpers and error-safe parsing utilities.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "platform_core.simulator.error_handling": {
+      "path": "platform_core/simulator/error_handling.py",
+      "purpose": "Error handling utilities for the simulation layer.",
+      "exports": [
+        {
+          "name": "safeParseJson",
+          "kind": "function",
+          "signature": "(text: str, fallback: Any=None) -> Any",
+          "summary": "Return parsed JSON or *fallback* on any parse / type error.",
+          "lineno": 27
+        },
+        {
+          "name": "safeWritePath",
+          "kind": "function",
+          "signature": "(path, content: str, encoding: str='utf-8') -> dict",
+          "summary": "Write *content* to *path*, creating parent dirs as needed.",
+          "lineno": 36
+        },
+        {
+          "name": "safeChatExtract",
+          "kind": "function",
+          "signature": "(messages, role: str='user') -> str",
+          "summary": "Return the last *role* message content, or \"\" on any error.",
+          "lineno": 52
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_error_handling.py"
+      ],
+      "callers": []
+    },
+    "platform_core.simulator.simulation": {
+      "path": "platform_core/simulator/simulation.py",
+      "purpose": "Simulation doubles for a --dry-run: exercise the WHOLE 9TO5 pipeline",
+      "exports": [
+        {
+          "name": "SimBrain",
+          "kind": "class",
+          "signature": "",
+          "summary": "Stand-in for ``ollama.Client``",
+          "lineno": 49
+        },
+        {
+          "name": "simRunClaude",
+          "kind": "function",
+          "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw)",
+          "summary": "Fake executor",
+          "lineno": 79
+        },
+        {
+          "name": "simReplan",
+          "kind": "function",
+          "signature": "(*args, **kwargs)",
+          "summary": "",
+          "lineno": 91
+        },
+        {
+          "name": "simReview",
+          "kind": "function",
+          "signature": "(subtask_title, trigger_reason, executor_output, *, ollama_chat=None, goal='')",
+          "summary": "",
+          "lineno": 95
+        },
+        {
+          "name": "SimObs",
+          "kind": "class",
+          "signature": "",
+          "summary": "In-memory Obsidian double: records writes, never touches disk or REST.",
+          "lineno": 100
+        },
+        {
+          "name": "buildOrchestrator",
+          "kind": "function",
+          "signature": "(n_subtasks: int=3)",
+          "summary": "An Orchestrator wired entirely with simulation doubles (no external services).",
+          "lineno": 123
+        },
+        {
+          "name": "BuilderBrain",
+          "kind": "class",
+          "signature": "",
+          "summary": "Plans N subtasks, each producing a real file under ``work_dir`` with a REAL",
+          "lineno": 144
+        },
+        {
+          "name": "builderRunClaude",
+          "kind": "function",
+          "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw)",
+          "summary": "Fake hands that ACTUALLY write the target file parsed from the subtask's verify cmd,",
+          "lineno": 170
+        },
+        {
+          "name": "buildBuilderOrchestrator",
+          "kind": "function",
+          "signature": "(work_dir: str, n_subtasks: int=3)",
+          "summary": "An Orchestrator that produces real artifacts under work_dir and verifies them for real.",
+          "lineno": 197
+        }
+      ],
+      "depends_on": [
+        "config",
+        "orchestrator.Orchestrator"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_simulation_advanced.py",
+        "tests/test_simulation_core.py"
+      ],
+      "callers": [
+        "main"
+      ]
     },
     "run_all_tests": {
       "path": "run_all_tests.py",
@@ -7243,7 +7651,7 @@
       ],
       "depends_on": [
         "config",
-        "tracing"
+        "platform_core.core.tracing"
       ],
       "side_effects": [
         "unannotated"
@@ -7289,126 +7697,8 @@
         "tests/test_selfmod.py"
       ],
       "callers": [
-        "orchestrator_control_mixin",
-        "orchestrator_github"
-      ]
-    },
-    "sim_error_handling": {
-      "path": "sim_error_handling.py",
-      "purpose": "Error handling utilities for the simulation layer.",
-      "exports": [
-        {
-          "name": "safeParseJson",
-          "kind": "function",
-          "signature": "(text: str, fallback: Any=None) -> Any",
-          "summary": "Return parsed JSON or *fallback* on any parse / type error.",
-          "lineno": 27
-        },
-        {
-          "name": "safeWritePath",
-          "kind": "function",
-          "signature": "(path, content: str, encoding: str='utf-8') -> dict",
-          "summary": "Write *content* to *path*, creating parent dirs as needed.",
-          "lineno": 36
-        },
-        {
-          "name": "safeChatExtract",
-          "kind": "function",
-          "signature": "(messages, role: str='user') -> str",
-          "summary": "Return the last *role* message content, or \"\" on any error.",
-          "lineno": 52
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/test_sim_error_handling.py"
-      ],
-      "callers": []
-    },
-    "simulation": {
-      "path": "simulation.py",
-      "purpose": "Simulation doubles for a --dry-run: exercise the WHOLE 9TO5 pipeline",
-      "exports": [
-        {
-          "name": "SimBrain",
-          "kind": "class",
-          "signature": "",
-          "summary": "Stand-in for ``ollama.Client``",
-          "lineno": 49
-        },
-        {
-          "name": "simRunClaude",
-          "kind": "function",
-          "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw)",
-          "summary": "Fake executor",
-          "lineno": 79
-        },
-        {
-          "name": "simReplan",
-          "kind": "function",
-          "signature": "(*args, **kwargs)",
-          "summary": "",
-          "lineno": 91
-        },
-        {
-          "name": "simReview",
-          "kind": "function",
-          "signature": "(subtask_title, trigger_reason, executor_output, *, ollama_chat=None, goal='')",
-          "summary": "",
-          "lineno": 95
-        },
-        {
-          "name": "SimObs",
-          "kind": "class",
-          "signature": "",
-          "summary": "In-memory Obsidian double: records writes, never touches disk or REST.",
-          "lineno": 100
-        },
-        {
-          "name": "buildOrchestrator",
-          "kind": "function",
-          "signature": "(n_subtasks: int=3)",
-          "summary": "An Orchestrator wired entirely with simulation doubles (no external services).",
-          "lineno": 123
-        },
-        {
-          "name": "BuilderBrain",
-          "kind": "class",
-          "signature": "",
-          "summary": "Plans N subtasks, each producing a real file under ``work_dir`` with a REAL",
-          "lineno": 144
-        },
-        {
-          "name": "builderRunClaude",
-          "kind": "function",
-          "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw)",
-          "summary": "Fake hands that ACTUALLY write the target file parsed from the subtask's verify cmd,",
-          "lineno": 170
-        },
-        {
-          "name": "buildBuilderOrchestrator",
-          "kind": "function",
-          "signature": "(work_dir: str, n_subtasks: int=3)",
-          "summary": "An Orchestrator that produces real artifacts under work_dir and verifies them for real.",
-          "lineno": 197
-        }
-      ],
-      "depends_on": [
-        "config",
-        "orchestrator.Orchestrator"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/test_simulation_advanced.py",
-        "tests/test_simulation_core.py"
-      ],
-      "callers": [
-        "main"
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.github"
       ]
     },
     "src": {
@@ -7448,7 +7738,9 @@
           "lineno": 69
         }
       ],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.core.contracts"
+      ],
       "side_effects": [
         "unannotated"
       ],
@@ -7459,34 +7751,6 @@
         "agents.orchestration_pipeline",
         "agents.workflow_resolver"
       ]
-    },
-    "staging_validator": {
-      "path": "staging_validator.py",
-      "purpose": "Staging environment validator — runs pre-deployment checks automatically.",
-      "exports": [
-        {
-          "name": "validate",
-          "kind": "function",
-          "signature": "() -> list[dict]",
-          "summary": "Run all staging gates",
-          "lineno": 98
-        },
-        {
-          "name": "main",
-          "kind": "function",
-          "signature": "(quiet: bool=False) -> int",
-          "summary": "",
-          "lineno": 108
-        }
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "side_effects": [
-        "stdout"
-      ],
-      "test": [],
-      "callers": []
     },
     "state": {
       "path": "state/__init__.py",
@@ -7527,15 +7791,15 @@
         "notifications.webdash",
         "notifications.work_launcher",
         "orchestrator",
-        "orchestrator_control_mixin",
-        "orchestrator_execute_mixin",
-        "orchestrator_knowledge",
-        "orchestrator_llm_mixin",
-        "orchestrator_plan_mixin",
-        "orchestrator_review_mixin",
-        "orchestrator_run_loop_mixin",
-        "orchestrator_run_phase_mixin",
-        "resilience"
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.knowledge_refresh",
+        "platform_core.orchestration.llm_mixin",
+        "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.review_mixin",
+        "platform_core.orchestration.run_loop_mixin",
+        "platform_core.orchestration.run_phase_mixin",
+        "platform_core.runtime.resilience"
       ]
     },
     "state.task_io": {
@@ -7629,54 +7893,6 @@
       "callers": [
         "state.task",
         "state.task_io"
-      ]
-    },
-    "surfaces": {
-      "path": "surfaces.py",
-      "purpose": "Surface & tool catalog -- rich automation across EVERY reachable surface.",
-      "exports": [
-        {
-          "name": "reset_cache",
-          "kind": "function",
-          "signature": "() -> None",
-          "summary": "",
-          "lineno": 39
-        },
-        {
-          "name": "available",
-          "kind": "function",
-          "signature": "() -> dict[str, Any]",
-          "summary": "Everything the executor can reach right now, grouped by surface kind.",
-          "lineno": 44
-        },
-        {
-          "name": "catalog_block",
-          "kind": "function",
-          "signature": "() -> str",
-          "summary": "A compact, injectable catalog + directive so the brain composes across surfaces.",
-          "lineno": 77
-        },
-        {
-          "name": "surfaces_used",
-          "kind": "function",
-          "signature": "(spec: dict[str, Any]) -> list[str]",
-          "summary": "Which surfaces a spec actually invokes -> tags stored for SIE learning.",
-          "lineno": 103
-        }
-      ],
-      "depends_on": [
-        "config",
-        "knowledge"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/test_surfaces.py"
-      ],
-      "callers": [
-        "orchestrator_execute_mixin",
-        "orchestrator_plan_mixin"
       ]
     },
     "tools.affected_tests": {
@@ -8219,69 +8435,12 @@
       "test": [],
       "callers": []
     },
-    "tracing": {
-      "path": "tracing.py",
-      "purpose": "tracing -- structured per-run JSONL event log.",
-      "exports": [
-        {
-          "name": "runDir",
-          "kind": "function",
-          "signature": "(run_id: str) -> Path",
-          "summary": "The directory holding one run's artifacts (events.jsonl, stdout.log, ...).",
-          "lineno": 43
-        },
-        {
-          "name": "emit",
-          "kind": "function",
-          "signature": "(run_id: str, event: str, *, subtask_id: Optional[str]=None, **fields: Any) -> None",
-          "summary": "Append one structured event to ``logs/runs/<run_id>/events.jsonl``",
-          "lineno": 52
-        },
-        {
-          "name": "readEvents",
-          "kind": "function",
-          "signature": "(run_id: str) -> list[dict]",
-          "summary": "Parse a run's events.jsonl into a list of dicts (skips blank/corrupt lines)",
-          "lineno": 74
-        },
-        {
-          "name": "recentRunIds",
-          "kind": "function",
-          "signature": "(limit: int=10) -> list[str]",
-          "summary": "The most-recently-modified run ids under RUNS_ROOT (newest first)",
-          "lineno": 93
-        }
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/test_tracing.py"
-      ],
-      "callers": [
-        "agents.trace-replay",
-        "agents.trace_replay",
-        "agents.trace_replay_events",
-        "scripts.repo_health"
-      ]
-    },
     "validate_workflows": {
       "path": "validate_workflows.py",
-      "purpose": "validate_workflows.py -- one-shot script to validate all workflow definitions.",
-      "exports": [
-        {
-          "name": "main",
-          "kind": "function",
-          "signature": "() -> int",
-          "summary": "",
-          "lineno": 33
-        }
-      ],
+      "purpose": "Compatibility script for CI workflow validation.",
+      "exports": [],
       "depends_on": [
-        "workflows.registry"
+        "platform_core.ops.validate_workflows"
       ],
       "side_effects": [
         "unannotated"
@@ -8289,48 +8448,6 @@
       "test": [
         "tests/test_validate_workflows.py"
       ],
-      "callers": []
-    },
-    "wipe": {
-      "path": "wipe.py",
-      "purpose": "Factory-reset module — granular deletion of 9to5 state, vault, and logs.",
-      "exports": [
-        {
-          "name": "backupState",
-          "kind": "function",
-          "signature": "(keys: list[str]) -> Optional[Path]",
-          "summary": "Tarball the paths about to be wiped",
-          "lineno": 75
-        },
-        {
-          "name": "deleteCategory",
-          "kind": "function",
-          "signature": "(key: str) -> tuple[bool, str]",
-          "summary": "Delete one category",
-          "lineno": 115
-        },
-        {
-          "name": "executeWipe",
-          "kind": "function",
-          "signature": "(keys: list[str], backup: bool=False) -> dict[str, str]",
-          "summary": "Run wipe on selected categories",
-          "lineno": 143
-        },
-        {
-          "name": "restartBot",
-          "kind": "function",
-          "signature": "() -> None",
-          "summary": "Spawn a FRESH detached bot process, then exit this one",
-          "lineno": 156
-        }
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
       "callers": []
     },
     "workflows": {
@@ -8357,9 +8474,7 @@
         }
       ],
       "depends_on": [
-        "contracts.WorkflowAgent",
-        "contracts.WorkflowDefinition",
-        "contracts.WorkflowPhase"
+        "platform_core.core.contracts"
       ],
       "side_effects": [
         "unannotated"
@@ -8368,7 +8483,7 @@
         "tests/test_registry.py"
       ],
       "callers": [
-        "validate_workflows"
+        "platform_core.ops.validate_workflows"
       ]
     },
     "workflows.scheduler": {

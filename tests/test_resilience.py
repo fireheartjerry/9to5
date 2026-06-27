@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 import config
-import resilience
+import platform_core.runtime.resilience as resilience
 from state.task import TaskState
 
 

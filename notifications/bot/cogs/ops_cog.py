@@ -5,7 +5,7 @@ the orchestrator goes silent. Thin gateway shell over the pure ``notifications.o
 EXPORTS:
   OpsCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: config, control.ControlBus, notifications.audit, notifications.commands, notifications.discord_bot, notifications.ops
+DEPENDS-ON: config, notifications.audit, notifications.commands, notifications.discord_bot, notifications.ops, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -18,7 +18,7 @@ from discord.ext import commands as dpy_commands
 from discord.ext import tasks
 
 import config
-from control import ControlBus
+from platform_core.runtime.control import ControlBus
 from notifications import audit
 from notifications import commands as spine
 from notifications import discord_bot as discord

@@ -2,7 +2,7 @@
 
 Covers:
   - Config notification flags / constants completeness
-  - Module import health
+  - Module import platform_core.ops.health as health
   - Error handling robustness across surface types
   - Bus + entry pipeline health check
 
@@ -95,7 +95,7 @@ class TestConfigNotificationConstants(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 6. Module import health
+# 6. Module import platform_core.ops.health as health
 # ---------------------------------------------------------------------------
 
 class TestModuleImportHealth(unittest.TestCase):

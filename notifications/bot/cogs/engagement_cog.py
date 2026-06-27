@@ -12,7 +12,7 @@ EXPORTS:
   verdictForAnswer(answer_id) -> 'str | None'  -- answer_id (1-based, in GATE_ANSWERS order) -> 'approve'|'reject'|None
   EngagementCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: config, control.ControlBus, notifications.audit, notifications.commands, notifications.engagement
+DEPENDS-ON: config, notifications.audit, notifications.commands, notifications.engagement, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 
 import config
-from control import ControlBus
+from platform_core.runtime.control import ControlBus
 from notifications import audit
 from notifications import commands as spine
 from notifications import engagement

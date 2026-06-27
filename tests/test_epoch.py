@@ -4,14 +4,14 @@ import tempfile, unittest
 from pathlib import Path
 from unittest import mock
 
-import epoch
+import platform_core.core.epoch as epoch
 
 
 class TestFingerprint(unittest.TestCase):
     def test_fingerprint_changes_when_a_self_code_file_changes(self):
         f = Path(tempfile.mkdtemp()) / "m.py"
         f.write_text("x = 1", encoding="utf-8")
-        with mock.patch("identity.selfCodeFiles", return_value=[str(f)]):
+        with mock.patch("platform_core.core.identity.selfCodeFiles", return_value=[str(f)]):
             before = epoch.fingerprint()
             f.write_text("x = 2", encoding="utf-8")
             after = epoch.fingerprint()
@@ -49,7 +49,7 @@ class TestDiverged(unittest.TestCase):
     def test_diverged_true_after_a_self_code_edit(self):
         f = Path(tempfile.mkdtemp()) / "m.py"
         f.write_text("x = 1", encoding="utf-8")
-        with mock.patch("identity.selfCodeFiles", return_value=[str(f)]):
+        with mock.patch("platform_core.core.identity.selfCodeFiles", return_value=[str(f)]):
             snap = epoch.snapshot(universe={})
             self.assertFalse(epoch.diverged(snap))
             f.write_text("x = 2", encoding="utf-8")

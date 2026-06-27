@@ -180,21 +180,21 @@ agents/timing_harness.py -- Wall-clock timing harness for parallel workflow phas
 ## agents/trace-replay.py
 trace-replay -- loads archived execution traces and surfaces brain divergence points.
 - Exports: setColor, replayTrace, main
-- Depends on: agents.trace_replay_events, agents.trace_replay_output, agents.trace_replay_selftest, config, tracing
+- Depends on: agents.trace_replay_events, agents.trace_replay_output, agents.trace_replay_selftest, config, platform_core.core.tracing
 - Side effects: unannotated
 - Test: (none)
 
 ## agents/trace_replay.py
 trace_replay -- optimized workflow for invoking the trace-replay subagent.
 - Exports: buildSpec, runWorkflow, buildStepSpec, getDecisionPoints
-- Depends on: config, tracing
+- Depends on: config, platform_core.core.tracing
 - Side effects: unannotated
 - Test: pytest tests/test_trace_replay.py
 
 ## agents/trace_replay_events.py
 Event classification constants, pure functions, and JSON replay sub-helper.
 - Exports: (none)
-- Depends on: config, tracing
+- Depends on: config, platform_core.core.tracing
 - Side effects: unannotated
 - Test: (none)
 

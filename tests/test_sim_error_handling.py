@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sim_error_handling import safeChatExtract, safeParseJson, safeWritePath
+from platform_core.simulator.error_handling import safeChatExtract, safeParseJson, safeWritePath
 
 
 class TestSafeParseJson(unittest.TestCase):

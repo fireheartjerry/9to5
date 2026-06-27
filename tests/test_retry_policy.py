@@ -11,8 +11,8 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from error_handling import MAX_RETRIES, RETRY_DELAY_SECONDS, RetryExhausted
-from retry_policy import RetryPolicy
+from platform_core.runtime.error_handling import MAX_RETRIES, RETRY_DELAY_SECONDS, RetryExhausted
+from platform_core.runtime.retry_policy import RetryPolicy
 
 
 class TestRetryPolicyDefaults(unittest.TestCase):
@@ -57,7 +57,7 @@ class TestRetryPolicyExecuteSuccess(unittest.TestCase):
 
     def test_succeeds_on_retry(self):
         fn = MagicMock(side_effect=[RuntimeError("first"), "recovered"])
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             result = RetryPolicy(max_retries=3, delay=0).execute(fn)
         self.assertTrue(result["ok"])
         self.assertEqual(result["attempts"], 2)
@@ -67,7 +67,7 @@ class TestRetryPolicyExhaustion(unittest.TestCase):
     def test_raises_retry_exhausted_without_alert(self):
         fn = MagicMock(side_effect=RuntimeError("boom"))
         policy = RetryPolicy(max_retries=3)
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             with self.assertRaises(RetryExhausted):
                 policy.execute(fn)
         self.assertEqual(fn.call_count, 3)
@@ -76,7 +76,7 @@ class TestRetryPolicyExhaustion(unittest.TestCase):
         fn = MagicMock(side_effect=RuntimeError("fail"))
         alert = MagicMock()
         policy = RetryPolicy(max_retries=3, on_alert=alert)
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             result = policy.execute(fn)
         self.assertEqual(fn.call_count, 3)
         alert.assert_called_once()
@@ -91,7 +91,7 @@ class TestRetryPolicyExhaustion(unittest.TestCase):
 
         fn = MagicMock(side_effect=ValueError("bad value"))
         policy = RetryPolicy(max_retries=2, on_alert=capture)
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             policy.execute(fn)
         self.assertIn("ValueError", captured["msg"])
         self.assertEqual(captured["attempts"], 2)
@@ -99,7 +99,7 @@ class TestRetryPolicyExhaustion(unittest.TestCase):
     def test_error_result_contains_exception_type(self):
         fn = MagicMock(side_effect=KeyError("missing"))
         policy = RetryPolicy(max_retries=1, on_alert=lambda *a: None)
-        with patch("error_handling.time.sleep"):
+        with patch("platform_core.runtime.error_handling.time.sleep"):
             result = policy.execute(fn)
         self.assertIn("KeyError", result["error"])
 
@@ -108,7 +108,7 @@ class TestRetryPolicySleepBehaviour(unittest.TestCase):
     def test_sleeps_between_attempts_not_after_last(self):
         fn = MagicMock(side_effect=RuntimeError("fail"))
         policy = RetryPolicy(max_retries=3, delay=0.1, on_alert=lambda *a: None)
-        with patch("error_handling.time.sleep") as mock_sleep:
+        with patch("platform_core.runtime.error_handling.time.sleep") as mock_sleep:
             policy.execute(fn)
         # max_retries-1 sleeps: between attempt 1-2 and 2-3, none after 3
         self.assertEqual(mock_sleep.call_count, 2)
@@ -116,7 +116,7 @@ class TestRetryPolicySleepBehaviour(unittest.TestCase):
     def test_sleep_uses_configured_delay(self):
         fn = MagicMock(side_effect=[RuntimeError("once"), "ok"])
         policy = RetryPolicy(max_retries=3, delay=7.5)
-        with patch("error_handling.time.sleep") as mock_sleep:
+        with patch("platform_core.runtime.error_handling.time.sleep") as mock_sleep:
             policy.execute(fn)
         mock_sleep.assert_called_once_with(7.5)
 

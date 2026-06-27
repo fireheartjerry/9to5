@@ -2,8 +2,8 @@
 """The provenance tag + the assertIngestible chokepoint."""
 import unittest
 
-import provenance
-from provenance import Provenance, Origin, Verdict
+import platform_core.core.provenance as provenance
+from platform_core.core.provenance import Provenance, Origin, Verdict
 
 
 class TestProvenanceValue(unittest.TestCase):

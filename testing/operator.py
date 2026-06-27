@@ -16,7 +16,7 @@ import time
 from typing import Callable, Optional
 
 import config
-from control import ControlBus
+from platform_core.runtime.control import ControlBus
 from notifications import commands
 from notifications import webdash
 from state.task import TaskState

@@ -16,7 +16,7 @@ EXPORTS:
   handleCommand(content: str) -> str  -- Parse + apply a '!' command against the latest task
   buildBot()  -- Construct (but do not run) the NightclawBot
   runBot() -> None
-DEPENDS-ON: config, control.ControlBus, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views
+DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_simulation_core.py tests/test_skill_gap_analysis_core.py
 """
@@ -26,7 +26,7 @@ import asyncio
 import time
 
 import config
-from control import ControlBus
+from platform_core.runtime.control import ControlBus
 from notifications import commands as spine
 
 LOG = config.getLogger("bot.core")

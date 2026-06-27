@@ -16,7 +16,7 @@ EXPORTS:
   spawnResume(task_id: str) -> int
   launchOrError(req: WorkRequest) -> str  -- Validate -> block-if-active -> spawn -> confirm
   resumeOrError(task_id: str) -> str  -- Resume an existing task by id (block if a run is active)
-DEPENDS-ON: config, control.ControlBus, notifications.commands, state.task
+DEPENDS-ON: config, notifications.commands, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_work_launcher.py
 """
@@ -140,7 +140,7 @@ def activeRun() -> Optional[TaskState]:
         try:
             # The orchestrator process is gone -> also request a real abort on the bus (belt and
             # suspenders) before marking the JSON aborted, then let a fresh run take over.
-            from control import ControlBus
+            from platform_core.runtime.control import ControlBus
             ControlBus(state.task_id).requestAbort()
             state.setStatus("aborted")
             LOG.warning("auto-aborted stale task %s (process dead / no heartbeat)", state.task_id[:8])

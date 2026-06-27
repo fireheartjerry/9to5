@@ -2,7 +2,7 @@
 import unittest
 from unittest import mock
 
-import health
+import platform_core.ops.health as health
 
 
 class TestCollectHealth(unittest.TestCase):
