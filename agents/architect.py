@@ -18,19 +18,18 @@ RUN/TEST: python -m pytest tests/test_phase_3_architecture.py
 """
 from __future__ import annotations
 
-import ollama
-
 import config
 import knowledge
 import llm_io
 
 LOG = config.getLogger("architect")
-_OLLAMA: "ollama.Client | None" = None
+_OLLAMA: "ollama.Client | None" = None  # noqa: F821  (string annotation; ollama imported lazily)
 
 
-def _getOllama() -> "ollama.Client":
+def _getOllama() -> "ollama.Client":  # noqa: F821
     global _OLLAMA
     if _OLLAMA is None:
+        import ollama  # deferred: ~0.3s SDK import paid only when a real brain call happens
         _OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
     return _OLLAMA
 

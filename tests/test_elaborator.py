@@ -7,13 +7,13 @@ from agents import elaborator
 
 class TestElaborate(unittest.TestCase):
     def test_success_returns_content(self):
-        with mock.patch.object(elaborator._OLLAMA, "chat",
-                               return_value={"message": {"content": "  the spec  "}}):
+        with mock.patch.object(elaborator, "_getOllama", return_value=mock.Mock(
+                chat=mock.Mock(return_value={"message": {"content": "  the spec  "}}))):
             self.assertEqual(elaborator.elaborate("do a thing"), "the spec")
 
     def test_falls_back_when_ollama_down(self):
-        with mock.patch.object(elaborator._OLLAMA, "chat",
-                               side_effect=ConnectionError("refused")), \
+        with mock.patch.object(elaborator, "_getOllama", return_value=mock.Mock(
+                chat=mock.Mock(side_effect=ConnectionError("refused")))), \
              mock.patch("time.sleep"):
             spec = elaborator.elaborate("fix the bug in foo.py")
         self.assertIn("Objective", spec)
@@ -28,7 +28,8 @@ class TestElaborate(unittest.TestCase):
                 raise TimeoutError("slow")
             return {"message": {"content": "recovered spec"}}
 
-        with mock.patch.object(elaborator._OLLAMA, "chat", side_effect=flaky), \
+        with mock.patch.object(elaborator, "_getOllama",
+                               return_value=mock.Mock(chat=mock.Mock(side_effect=flaky))), \
              mock.patch("time.sleep"):
             self.assertEqual(elaborator.elaborate("g"), "recovered spec")
         self.assertEqual(calls["n"], 2)
@@ -36,8 +37,8 @@ class TestElaborate(unittest.TestCase):
 
 class TestUniverse(unittest.TestCase):
     def test_defaults_when_brain_unavailable(self):
-        with mock.patch.object(elaborator._OLLAMA, "chat",
-                               side_effect=RuntimeError("down")), \
+        with mock.patch.object(elaborator, "_getOllama", return_value=mock.Mock(
+                chat=mock.Mock(side_effect=RuntimeError("down")))), \
              mock.patch("time.sleep"):
             u = elaborator.extractUniverse("g", "spec", "/work/dir")
         self.assertEqual(u["allowed_paths"], ["/work/dir"])
@@ -47,8 +48,8 @@ class TestUniverse(unittest.TestCase):
 
     def test_parses_brain_json(self):
         payload = '{"description":"d","allowed_paths":["a.py"],"allowed_to_expand_to":[],"hard_boundaries":["secret"]}'
-        with mock.patch.object(elaborator._OLLAMA, "chat",
-                               return_value={"message": {"content": payload}}):
+        with mock.patch.object(elaborator, "_getOllama", return_value=mock.Mock(
+                chat=mock.Mock(return_value={"message": {"content": payload}}))):
             u = elaborator.extractUniverse("g", "spec", "/w")
         self.assertEqual(u["allowed_paths"], ["a.py"])
         self.assertIn("secret", u["hard_boundaries"])

@@ -16,13 +16,21 @@ from __future__ import annotations
 import json
 import time
 
-import ollama
-
 import config
 import knowledge
 
 LOG = config.getLogger("elaborator")
-_OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
+_OLLAMA = None
+
+
+def _getOllama():
+    """Lazily build (and cache) the Ollama client. Deferring the import keeps the ~0.3s
+    `import ollama` cost off every process that imports the elaborator (tests, CLI startup)."""
+    global _OLLAMA
+    if _OLLAMA is None:
+        import ollama
+        _OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
+    return _OLLAMA
 
 
 def _chat(system: str, user: str, *, want_json: bool = False, retries: int = 3) -> str:
@@ -36,7 +44,7 @@ def _chat(system: str, user: str, *, want_json: bool = False, retries: int = 3) 
                       "keep_alive": config.OLLAMA_KEEP_ALIVE}
             if want_json:
                 kwargs["format"] = "json"
-            resp = _OLLAMA.chat(model=config.OLLAMA_MODEL,
+            resp = _getOllama().chat(model=config.OLLAMA_MODEL,
                                 messages=[{"role": "system", "content": system},
                                           {"role": "user", "content": user}], **kwargs)
             return ((resp.get("message") or {}).get("content") or "").strip()
