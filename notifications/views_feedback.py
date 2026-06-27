@@ -45,7 +45,7 @@ class FeedbackView(discord.ui.View):
                 "Feedback failed to save. Check logs.", ephemeral=True
             )
 
-    @discord.ui.button(label="Reject", style=discord.ButtonStyle.secondary, custom_id="fb_reject")
+    @discord.ui.button(label="Reject", style=discord.ButtonStyle.danger, custom_id="fb_reject")
     async def reject(self, interaction, button):  # noqa: ANN001
         """Reject the subtask completion."""
         try:
