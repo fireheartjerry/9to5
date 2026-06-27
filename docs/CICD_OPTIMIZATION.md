@@ -58,7 +58,7 @@ out of sync with committed repo-map/AGENTS.md headers (24 files). Fix before com
 
 ### GitHub Actions structural fixes (audit 2026-06-26)
 
-> **Status:** P0s shipped on `perf/cicd-iteration` — concurrency cancel-in-progress + `push.branches:[main]` (`tests.yml`), `ci.yml` deleted. P1/P2 in Task 3.
+> **Status:** Shipped on `perf/cicd-iteration` — P0s (concurrency cancel-in-progress, `push.branches:[main]`, `ci.yml` deleted) + P1/P2 (pytest fast/slow lanes with `-n auto --dist loadscope`, conditional matrix 3.12-on-push/both-on-PR, `uv` installs, PR-gated smoke).
 
 Worst case **8 runner jobs per push** to a PR branch: `tests.yml` fires on `push` AND
 `pull_request` for `["**"]` (2 unittest matrix + 1 smoke = 3 each) + `ci.yml` (1 each).

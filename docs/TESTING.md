@@ -55,13 +55,27 @@ python -m pytest tests/test_webdash_control.py -q
 
 ### Tier 3: full suite
 
-Use after focused tests pass or before merging large changes. The CI-canonical
-form is unittest discovery; pytest also works (a `pytest.ini` is committed).
+Use after focused tests pass or before merging large changes.
 
 ```bash
-python -m unittest discover -s tests -v      # CI-canonical
-python -m pytest -q                          # equivalent via pytest.ini
+python -m pytest -n auto --dist loadscope -q   # full suite, parallel (CI form)
+python tools/dev.py fast                         # fast lane only, parallel
+python -m pytest --lf -q                         # re-run only last-failed
 ```
+
+> Run tests via **pytest**, not bare `unittest`: the per-test sandbox (offline Discord/Ollama/
+> browser) lives in `tests/conftest.py`, which `unittest` does not load — so bare `unittest` can
+> fire real side effects from a live local `.env`.
+
+#### CI lanes (`.github/workflows/tests.yml`)
+
+| Trigger | Jobs |
+|---|---|
+| Push to `main` | `tests` job, py3.12: fast lane (`-m "not slow" -n auto`) |
+| PR → any branch | `tests` matrix py3.11+3.12: fast lane + slow lane (`-m slow`); `smoke` job (`--dry-run`, `--e2e`) |
+
+`concurrency: cancel-in-progress` kills superseded runs; installs use `uv`. Dev/test deps
+(`pytest`, `pytest-xdist`, `pytest-timeout`) live in `requirements-dev.txt`.
 
 ### Tier 4: live/manual/browser/native checks
 
