@@ -176,3 +176,35 @@ pytest collection 1.22s (healthy); bytecode cache on.
 - **Tier 2 — deeper, touches core (DANGER_MAP):** `identity.py` walk + canonical memoization +
   `selfCodeFiles` caching; retrieval mock/isolation + experience-db fixture; `ollama` lazy imports;
   re-tag/make-fast the heavy tests. Speeds tests **and** production `runFull`.
+
+---
+
+## Results — shipped on `perf/cicd-iteration` (2026-06-26)
+
+| Metric | Before | After |
+|---|---|---|
+| Fast lane wall-time | 183s serial | **18.6s** (`-n auto --dist loadscope`, this 8-core box) |
+| `identity.selfCodeFiles()` walk | 4.26s (14,337 files enumerated) | **0.03s** (pruned os.walk + `lru_cache`) |
+| `epoch.fingerprint()` | 3.85s | **0.057s** |
+| `import orchestrator` | 0.44s | **0.165s** (lazy `ollama`) |
+| Slowest pipeline test (`test_full_simulated_run_completes`) | 16.0s | 0.34s |
+| Obsidian concurrency test | 10.8s | 0.34s |
+| CI jobs per feature push | up to 8 | ~1 (fast lane, py3.12) |
+
+**Commits:** CI structural (Task 1), local-loop unbreak (Task 2), CI lanes (Task 3), identity walk
+(Task 4), experience-db isolation (Task 6), lazy ollama (Task 7), obsidian throttle (Task 8),
+regression fixes (staging gate + ollama harness invariant).
+
+**Task 5 (per-run `selfCodeFiles` cache / mtime divergence) — SKIPPED.** Task 4 already collapsed
+the fingerprint walk to 0.057s, making the "4 walks/run" cost ~0.2s. Adding cache machinery to
+`epoch.py`/`orchestrator.py` (DANGER_MAP core) for ~0.2s failed the simplicity-first bar.
+
+**Pre-existing failures (NOT from this work; reproduce on the branch base):**
+- `test_repo_map.py::test_no_drift` — 24 stale `@AI-MAP`/`AGENTS.md` headers from the inherited
+  dirty branch. Fix when consolidating: `python tools/repo_map.py`.
+- `test_notification_integration.py::...test_start_creates_message_and_records_id` — from other
+  uncommitted `notifications/*` work on this branch (fails identically with this work reverted).
+
+**Follow-ups (not done, out of surgical scope):** stale `unittest discover` references in
+`scripts/repo_health.py:96` and `tools/repo_map.py:368` should move to the pytest command when the
+repo-map is next regenerated.
