@@ -9,6 +9,12 @@ Subcommands:
   check [files] [--json] ruff + typecheck + affected tests + repo-map drift, fail-fast
   test [pytest-args]    run tests (default: full suite)
   fast                  run the fast lane: pytest -m "not slow"
+  ci-local              local CI gate: repo-map, workflows, affected tests, fast fallback
+  slow-report           run slow lane with heartbeat + durations; write logs/slow-test-report.md
+  heartbeat-test        prove pytest heartbeat output with an explicit slow fixture
+  context-check         validate Claude-facing context budgets
+  iteration-health      summarize recent iteration metrics and next validation hints
+  bench-iteration       run/list the iteration benchmark suite
   affected              print pytest targets for `git diff` (delegates to affected_tests.py)
   watch [files]         re-run affected tests whenever a .py file changes (Ctrl-C to stop)
   outline <file>        signatures + docstring-first-lines + anchors only (grok a big file cheap)
@@ -27,6 +33,12 @@ EXPORTS:
   cmd_check(args: list[str]) -> int  -- Fail-fast gate chain: ruff -> typecheck(changed) -> affected tests -> repo-map drift.
   cmd_test(args: list[str]) -> int
   cmd_fast(args: list[str]) -> int
+  cmd_ci_local(args: list[str]) -> int  -- Run the local CI gates in cheapest useful order.
+  cmd_slow_report(args: list[str]) -> int
+  cmd_heartbeat_test(args: list[str]) -> int
+  cmd_context_check(args: list[str]) -> int
+  cmd_iteration_health(args: list[str]) -> int
+  cmd_bench_iteration(args: list[str]) -> int
   cmd_affected(args: list[str]) -> int
   cmd_watch(args: list[str]) -> int  -- Poll .py mtimes; on any change, run the affected tests
   cmd_outline(args: list[str]) -> int
@@ -39,13 +51,14 @@ EXPORTS:
   main(argv: list[str]) -> int
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_dev_commands.py
 """
 from __future__ import annotations
 
 # ==== IMPORTS ====
 import ast
 import json
+import os
 import subprocess
 import sys
 import time
@@ -53,6 +66,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import affected_tests  # noqa: E402
+import claude_metrics  # noqa: E402
+import context_budget  # noqa: E402
+import iteration_bench  # noqa: E402
 import repo_map  # noqa: E402
 
 # ==== CONSTANTS ====
@@ -75,6 +91,53 @@ def _ruff() -> list[str]:
 def _run(cmd: list[str], capture: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, cwd=REPO_ROOT, text=True,
                           capture_output=capture)
+
+
+def _progress_env(interval: str = "30") -> dict[str, str]:
+    env = dict(os.environ)
+    env.setdefault("NINE_TO_FIVE_TEST_PROGRESS", "1")
+    env.setdefault("NINE_TO_FIVE_TEST_HEARTBEAT_SECONDS", interval)
+    return env
+
+
+def _run_env(cmd: list[str], *, env: dict[str, str] | None = None,
+             capture: bool = False) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, cwd=REPO_ROOT, text=True, env=env,
+                          capture_output=capture)
+
+
+def _run_tee(cmd: list[str], out_path: Path, *, env: dict[str, str] | None = None,
+             pass_no_tests: bool = False) -> int:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    lines: list[str] = []
+    proc = subprocess.Popen(cmd, cwd=REPO_ROOT, text=True, env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        print(line, end="")
+        lines.append(line)
+    rc = proc.wait()
+    raw = "".join(lines)
+    tail = "\n".join(raw.strip().splitlines()[-80:])
+    out_path.write_text(
+        "# Slow Test Report\n\n"
+        f"- Command: `{' '.join(cmd)}`\n"
+        f"- Exit code: `{rc}`\n"
+        f"- Generated: `{time.strftime('%Y-%m-%d %H:%M:%S')}`\n\n"
+        "## Tail\n\n"
+        "```text\n"
+        f"{tail}\n"
+        "```\n",
+        encoding="utf-8",
+    )
+    try:
+        display = out_path.relative_to(REPO_ROOT)
+    except ValueError:
+        display = out_path
+    print(f"[dev] wrote {display}")
+    if pass_no_tests and rc != 0 and "no tests ran" in raw.lower():
+        return 0
+    return rc
 
 
 # ==== GATES ====
@@ -159,6 +222,81 @@ def cmd_test(args: list[str]) -> int:
 
 def cmd_fast(args: list[str]) -> int:
     return _run([PY, "-m", "pytest", *_xdist(["-m", "not slow", "-q", *args])]).returncode
+
+
+def cmd_ci_local(args: list[str]) -> int:  # noqa: ARG001
+    """Run the local CI gates in cheapest useful order."""
+    gates = [
+        ("repo-map", [PY, str(REPO_ROOT / "tools" / "repo_map.py"), "--check"]),
+        ("workflows", [PY, str(REPO_ROOT / "validate_workflows.py")]),
+    ]
+    for name, cmd in gates:
+        print(f"[dev] {name}")
+        rc = _run(cmd).returncode
+        if rc != 0:
+            return rc
+    files = affected_tests._git_changed()
+    targets = affected_tests.targets_for(files)
+    if targets:
+        print(f"[dev] affected tests: {len(targets)} target(s)")
+        rc = _run([PY, "-m", "pytest", "-q", *targets]).returncode
+        if rc != 0:
+            return rc
+    else:
+        print("[dev] affected tests: none")
+    if not targets or any(Path(f).suffix in {".yml", ".yaml", ".toml", ".txt", ".md"}
+                         for f in subprocess.run(["git", "diff", "--name-only", "HEAD"],
+                                                 cwd=REPO_ROOT, capture_output=True,
+                                                 text=True).stdout.splitlines()):
+        print("[dev] fast lane")
+        return cmd_fast([])
+    return 0
+
+
+def cmd_slow_report(args: list[str]) -> int:
+    cmd = [PY, "-m", "pytest", "-m", "slow", *_xdist(["--durations=30", "-vv", *args])]
+    return _run_tee(cmd, REPO_ROOT / "logs" / "slow-test-report.md",
+                    env=_progress_env(), pass_no_tests=True)
+
+
+def cmd_heartbeat_test(args: list[str]) -> int:
+    target = REPO_ROOT / "tests" / "fixtures" / "heartbeat_progress_test.py"
+    cmd = [PY, "-m", "pytest", str(target), "-q", *args]
+    env = _progress_env("1")
+    env["NINE_TO_FIVE_REAL_SLEEP"] = "1"
+    return _run_env(cmd, env=env).returncode
+
+
+def cmd_context_check(args: list[str]) -> int:
+    return context_budget.main(args)
+
+
+def cmd_iteration_health(args: list[str]) -> int:  # noqa: ARG001
+    git = claude_metrics.git_state()
+    print(f"[iteration-health] branch={git['branch']} dirty={git['dirty']} changed={git['changed_files']}")
+    rows = context_budget.measure()
+    for row in rows:
+        state = "ok" if row["ok"] else "WARN"
+        print(f"[iteration-health] context {state}: {row['label']} {row['lines']}/{row['max_lines']} lines")
+    hooks = claude_metrics.read_recent(claude_metrics.TURN_LOG, limit=5)
+    execs = claude_metrics.read_recent(claude_metrics.EXECUTOR_LOG, limit=5)
+    print(f"[iteration-health] recent hook events={len(hooks)} executor runs={len(execs)}")
+    if execs:
+        latest = execs[-1]
+        print("[iteration-health] latest executor: "
+              f"ok={latest.get('ok')} rc={latest.get('returncode')} "
+              f"duration={latest.get('duration_seconds')}s prompt={latest.get('prompt_chars')}ch")
+    files = affected_tests._git_changed()
+    targets = affected_tests.targets_for(files)
+    if targets:
+        print("[iteration-health] next: python -m pytest -q " + " ".join(targets[:8]))
+    else:
+        print("[iteration-health] next: python tools/dev.py fast")
+    return 0
+
+
+def cmd_bench_iteration(args: list[str]) -> int:
+    return iteration_bench.main(args)
 
 
 def cmd_affected(args: list[str]) -> int:
@@ -282,9 +420,12 @@ def cmd_codemod(args: list[str]) -> int:
 # ==== CLI ====
 COMMANDS = {
     "map": cmd_map, "check": cmd_check, "test": cmd_test, "fast": cmd_fast,
-    "affected": cmd_affected, "watch": cmd_watch, "outline": cmd_outline, "where": cmd_where,
-    "lint": cmd_lint, "typecheck": cmd_typecheck, "run": cmd_run, "dryrun": cmd_dryrun,
-    "e2e": cmd_e2e, "codemod": cmd_codemod,
+    "ci-local": cmd_ci_local, "slow-report": cmd_slow_report,
+    "heartbeat-test": cmd_heartbeat_test, "context-check": cmd_context_check,
+    "iteration-health": cmd_iteration_health, "bench-iteration": cmd_bench_iteration,
+    "affected": cmd_affected, "watch": cmd_watch,
+    "outline": cmd_outline, "where": cmd_where, "lint": cmd_lint, "typecheck": cmd_typecheck,
+    "run": cmd_run, "dryrun": cmd_dryrun, "e2e": cmd_e2e, "codemod": cmd_codemod,
 }
 
 

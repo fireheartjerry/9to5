@@ -208,3 +208,43 @@ the fingerprint walk to 0.057s, making the "4 walks/run" cost ~0.2s. Adding cach
 **Follow-ups (not done, out of surgical scope):** stale `unittest discover` references in
 `scripts/repo_health.py:96` and `tools/repo_map.py:368` should move to the pytest command when the
 repo-map is next regenerated.
+
+---
+
+## Iteration observability pass (2026-06-26)
+
+Slow/full runs now emit periodic pytest heartbeats so an LLM or human watching CI can distinguish
+"still making progress" from "stalled." The heartbeat is first-party (`tests/progress_reporter.py`)
+and enabled in CI via:
+
+```txt
+NINE_TO_FIVE_TEST_PROGRESS=1
+NINE_TO_FIVE_TEST_HEARTBEAT_SECONDS=30
+```
+
+Local commands added for agents:
+
+| Command | Purpose |
+|---|---|
+| `python tools/dev.py ci-local` | Repo-map + workflow validation + affected tests + fast fallback |
+| `python tools/dev.py slow-report` | Slow lane with heartbeat and `--durations=30`; writes `logs/slow-test-report.md` |
+| `python tools/dev.py heartbeat-test` | Explicit tiny slow fixture proving heartbeat output |
+| `python tools/dev.py context-check` | Check Claude-facing context surfaces stay within budget |
+| `python tools/dev.py iteration-health` | Summarize recent hook/executor telemetry and suggest the next validation |
+| `python tools/dev.py bench-iteration` | Run the validated iteration benchmark harness |
+
+CI is split into path-aware lanes: docs-only, workflow-only, tooling-only, core fast, PR slow, PR
+dry-run smoke, PR E2E smoke, and nightly/manual exhaustive slow+smoke.
+
+## Claude Iteration OS v2 (2026-06-26)
+
+The second observability pass measures the LLM loop itself, not just pytest:
+
+- Claude hooks write compact, non-blocking JSONL telemetry under `logs/claude_metrics/`.
+- `.claude/settings.json` includes a compact status line and telemetry hooks for prompt/tool/stop events.
+- `agents/executor.py` records prompt/context size, runtime, result, session, usage, and cost when available.
+- `CLAUDE.md` is a short entrypoint; detailed procedures live in `.claude/rules/` and `.claude/skills/`.
+- `tools/iteration_bench.py` records validated task-time benchmarks with Markdown and JSON reports.
+
+Runtime logs remain ignored. The initial context budget is advisory by default; use
+`python tools/dev.py context-check --strict` when turning it into a hard gate.

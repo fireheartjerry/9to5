@@ -198,6 +198,15 @@ Prints relevant danger map section for changed files.
 
 Custom skills are useful only if they reduce repeated reasoning. Do not create ceremonial skills that nobody uses.
 
+Implemented local skills:
+
+| Skill | Purpose |
+|---|---|
+| `9to5-fast-fix` | Smallest safe edit + focused validation loop |
+| `9to5-ci-debug` | CI lane triage, heartbeat checks, and slow-report workflow |
+| `9to5-doc-sync` | Keep docs, repo-map, rules, and skills synchronized |
+| `9to5-iteration-bench` | Run and interpret validated iteration-speed benchmarks |
+
 Recommended:
 
 ### 1. 9TO5 Docs Maintainer
@@ -278,6 +287,14 @@ Do not add:
 - live learning/adapter promotion without eval gates
 
 ## Hook acceptance criteria
+
+Implemented telemetry hooks must stay best-effort:
+
+- malformed stdin exits 0
+- logging failures exit 0
+- safety guards still exit 2 only for intentional blocks
+- status-line rendering works outside Claude Code
+- metrics are written only under ignored `logs/claude_metrics/`
 
 A hook is worth keeping if it:
 

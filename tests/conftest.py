@@ -22,6 +22,8 @@ import pytest
 
 import config
 
+pytest_plugins = ("tests.progress_reporter",)
+
 # Load the real ollama SDK once, before any test module is collected. Production modules now
 # import ollama lazily (perf: keeps the ~0.3s SDK import off CLI startup), so without this a
 # test module that stubs `sys.modules["ollama"]` when it is absent (e.g. test_living_knowledge)

@@ -14,7 +14,22 @@
       "Read(.env)"
     ]
   },
+  "statusLine": {
+    "type": "command",
+    "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\tools\\claude_statusline.py"
+  },
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py user_prompt_telemetry"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -55,6 +70,21 @@
           {
             "type": "command",
             "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py log_all"
+          },
+          {
+            "type": "command",
+            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py log_telemetry"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py stop_telemetry"
           }
         ]
       }

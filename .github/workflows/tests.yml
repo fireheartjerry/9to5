@@ -5,71 +5,222 @@ on:
     branches: [main]
   pull_request:
     branches: ["**"]
+  workflow_dispatch:
+  schedule:
+    - cron: "17 8 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NINE_TO_FIVE_TEST_PROGRESS: "1"
+  NINE_TO_FIVE_TEST_HEARTBEAT_SECONDS: "30"
+
 jobs:
-  tests:
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.paths.outputs.docs_only }}
+      workflow_only: ${{ steps.paths.outputs.workflow_only }}
+      tooling_only: ${{ steps.paths.outputs.tooling_only }}
+      core: ${{ steps.paths.outputs.core }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: paths
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          elif [[ -n "${{ github.event.before }}" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
+            base="${{ github.event.before }}"
+          else
+            base="HEAD~1"
+          fi
+          git diff --name-only "$base"...HEAD > /tmp/changed.txt || git diff --name-only HEAD~1 HEAD > /tmp/changed.txt || true
+          if [[ ! -s /tmp/changed.txt ]]; then
+            echo "." > /tmp/changed.txt
+          fi
+
+          docs_only=true
+          workflow_only=true
+          tooling_only=true
+          core=false
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            if [[ ! "$f" =~ ^(docs/|.*\.md$|AGENTS\.md$|LLM_MAP\.md$|CAPABILITIES\.md$|README\.md$) ]]; then
+              docs_only=false
+            fi
+            if [[ ! "$f" =~ ^(\.github/workflows/|workflows/|src/workflow_registry\.py|validate_workflows\.py|tests/test_.*workflow.*\.py|tests/test_validate_workflows\.py) ]]; then
+              workflow_only=false
+            fi
+            if [[ ! "$f" =~ ^(tools/|tests/test_(repo_map|tools)\.py|\.repo-map\.json|.*AGENTS\.md$) ]]; then
+              tooling_only=false
+            fi
+            if [[ ! "$f" =~ ^(docs/|.*\.md$|\.github/workflows/|tools/|\.repo-map\.json|.*AGENTS\.md$) ]]; then
+              core=true
+            fi
+          done < /tmp/changed.txt
+
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            docs_only=false
+            workflow_only=false
+            tooling_only=false
+            core=true
+          fi
+
+          {
+            echo "docs_only=$docs_only"
+            echo "workflow_only=$workflow_only"
+            echo "tooling_only=$tooling_only"
+            echo "core=$core"
+          } >> "$GITHUB_OUTPUT"
+
+  docs:
+    needs: classify
+    if: needs.classify.outputs.docs_only == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Repo-map drift
+        run: python tools/repo_map.py --check
+
+  workflow-validation:
+    needs: classify
+    if: needs.classify.outputs.workflow_only == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
+      - name: Validate workflow definitions
+        run: python validate_workflows.py
+      - name: Workflow tests
+        run: python -m pytest tests/test_validate_workflows.py tests/test_workflows.py tests/test_workflows_registry.py tests/test_workflow_registry.py -q
+
+  tooling:
+    needs: classify
+    if: needs.classify.outputs.tooling_only == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
+      - name: Tooling tests
+        run: python -m pytest tests/test_repo_map.py tests/test_tools.py -q
+
+  fast:
+    needs: classify
+    if: needs.classify.outputs.core == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # Both Python versions only on PRs; pushes to main run just 3.12.
         python-version: >-
           ${{ (github.event_name == 'pull_request')
               && fromJSON('["3.11","3.12"]') || fromJSON('["3.12"]') }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: uv pip install --system -r requirements.txt -r requirements-dev.txt
-
-      - name: Fast lane (parallel)
+      - name: Fast lane
         run: python -m pytest -m "not slow" -n auto --dist loadscope -q
-
-      - name: Slow lane (PR only)
-        if: github.event_name == 'pull_request'
-        run: python -m pytest -m slow -n auto --dist loadscope -q
-
       - name: Validate workflow definitions
         run: python validate_workflows.py
 
-  smoke:
-    # Exercises the real entrypoints (main.py arg handling) that test discovery does not cover:
-    # the offline full-pipeline dry-run and the virtual-operator E2E suite. PR-gated -- the
-    # --e2e step is the most expensive in the file, so it does not run on every push.
-    if: github.event_name == 'pull_request'
+  slow:
+    needs: [classify, fast]
+    if: github.event_name == 'pull_request' && needs.classify.outputs.core == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Install dependencies
         run: uv pip install --system -r requirements.txt -r requirements-dev.txt
+      - name: Slow lane
+        run: python -m pytest -m slow -n auto --dist loadscope --durations=30 -q
 
-      - name: Dry-run smoke (full pipeline, offline)
+  dry-run-smoke:
+    needs: [classify, fast]
+    if: github.event_name == 'pull_request' && needs.classify.outputs.core == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
+      - name: Dry-run smoke
         run: python main.py --dry-run --goal "ci smoke build a thing" --hours 1 --no-web
 
+  e2e-smoke:
+    needs: [classify, fast]
+    if: github.event_name == 'pull_request' && needs.classify.outputs.core == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
+      - name: Virtual-operator E2E suite
+        run: python main.py --e2e
+
+  exhaustive:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
+      - name: Exhaustive slow lane
+        env:
+          NINE_TO_FIVE_FUZZ_SEEDS: "150"
+        run: python -m pytest -m slow -n auto --dist loadscope --durations=50 -vv
+      - name: Dry-run smoke
+        run: python main.py --dry-run --goal "nightly exhaustive smoke" --hours 1 --no-web
       - name: Virtual-operator E2E suite
         run: python main.py --e2e

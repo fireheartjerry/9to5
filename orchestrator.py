@@ -14,7 +14,7 @@ EXPORTS:
   Orchestrator
 DEPENDS-ON: agents.adversary, agents.architect, agents.browser_executor, agents.clarifier, agents.executor, agents.replanner, agents.second_brain, agents.verifier, config, control.AbortRun, control.ControlBus, epoch, knowledge, learning.adversary_trust, learning.confidence, learning.eval_harness, learning.eval_runner, learning.finetune, learning.knowledge_graph, learning.policy, learning.postmortem, learning.prompts, learning.reflection, learning.sie, learning.solution_cache, llm_io, memory.experience, memory.obsidian, memory.retrieval, notifications.audit, notifications.cast, notifications.commands, notifications.dashboard, notifications.discord_bot, notifications.engagement, notifications.icons, notifications.visuals, notifications.webdash, selfmod, state.task, surfaces
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_orchestrator_poll.py
+RUN/TEST: python -m pytest tests/test_orchestrator_poll.py tests/test_orchestrator_with_registry.py
 """
 from __future__ import annotations
 

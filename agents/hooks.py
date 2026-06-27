@@ -13,6 +13,7 @@ EXPORTS:
   writeObsidian(data)  -- PostToolUse: log the edited file path to the in-progress subtask note.
   discordNotify(data)  -- Notification: forward the message to Discord as a compact embed.
   logAll(data)  -- PostToolUse / any: append one JSON line {time, tool_name} to the log.
+  logTelemetry(data)  -- Any Claude hook: append compact non-blocking iteration telemetry.
   selfModificationGuard(data)  -- PreToolUse: during a SELF-REFERENTIAL task, block edits to the core files
   main()  -- Dispatch to the requested handler based on argv[1].
 DEPENDS-ON: config, memory.obsidian, notifications.discord_bot, state.task
@@ -275,6 +276,19 @@ def logAll(data):
     sys.exit(0)
 
 
+def logTelemetry(data):
+    """Any Claude hook: append compact non-blocking iteration telemetry."""
+    try:
+        sys.path.insert(0, str(_Path(__file__).resolve().parent.parent / "tools"))
+        import claude_metrics
+
+        hook_name = sys.argv[1] if len(sys.argv) > 1 else "log_telemetry"
+        claude_metrics.record_hook_event(hook_name, data if isinstance(data, dict) else {})
+    except Exception:
+        pass
+    sys.exit(0)
+
+
 def _boundarySetFor(state) -> set:
     """The universe/baseline boundary set the guard enforces.
 
@@ -473,6 +487,8 @@ def main():
         discordNotify(data)
     elif hook_name == "log_all":
         logAll(data)
+    elif hook_name in ("log_telemetry", "user_prompt_telemetry", "stop_telemetry"):
+        logTelemetry(data)
     elif hook_name == "self_modification_guard":
         selfModificationGuard(data)
     else:
