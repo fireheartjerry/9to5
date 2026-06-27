@@ -12,10 +12,13 @@ state/experience.db-shm
 # SIE runtime artifacts (LoRA adapters, datasets, sie state)
 state/adapters/
 state/sie_state.json
-# Phase 2 second brain (chatgpt.com): logged-in profile, self-heal cache, trust log
-state/chatgpt_profile/
-state/chatgpt_selectors.json
+# Phase 2 second brain (Gemini): trust telemetry log
 state/adversary_trust.jsonl
+state/audit.jsonl
+# Leftover ChatGPT Chromium profile from the pre-Gemini browser layer (runtime data; safe to delete)
+state/chatgpt_profile/
+# Scratch dumps
+layer_dump.txt
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -27,3 +30,4 @@ CLAUDE.md.bak
 # stray dir created when run on non-Windows (config paths default to C:\supercritical);
 # the backslash is escaped so the literal directory name matches on Linux
 C:\\supercritical/
+.superpowers/

@@ -1,14 +1,12 @@
-"""Additional tests for Phase-2 CDP adversary + browser executor edge cases.
+"""Additional tests for the Phase-2 adversary + browser executor edge cases.
 
 Covers gaps not addressed in test_adversary.py and test_browser_executor.py:
  - output/goal truncation in _buildReviewUser
- - _replyFromTranscript edge cases (empty, no-newline, multi-block)
  - runBrowser generic exception path
  - multiple URLs in prompt expand to multiple goto+extract pairs
- - result dict 'surface' key is always 'browser'
+ - result dict 'surface' key is always 'browser' (generic browser surface)
  - _parseVerdict with non-dict payload raises ValueError
- - chatgptActions selector constants are used correctly
- - askChatGPT passes work_dir through to runner
+ - the second-brain stub note mentions the Gemini escalation path
 """
 import json
 import unittest
@@ -70,37 +68,6 @@ class TestParseVerdict(unittest.TestCase):
         self.assertEqual(rv["concerns"], ["real concern"])
 
 
-class TestReplyFromTranscript(unittest.TestCase):
-    """_replyFromTranscript edge cases."""
-
-    def test_empty_transcript_returns_empty_string(self):
-        self.assertEqual(browser_executor._replyFromTranscript(""), "")
-
-    def test_no_extract_block_returns_empty_string(self):
-        transcript = "goto https://chatgpt.com/ -> 'ChatGPT'\ntype into #prompt-textarea"
-        self.assertEqual(browser_executor._replyFromTranscript(transcript), "")
-
-    def test_extract_block_with_no_newline_returns_empty_string(self):
-        # "extract sel:" with no newline after it
-        self.assertEqual(browser_executor._replyFromTranscript("extract sel:"), "")
-
-    def test_multiple_extract_blocks_returns_last(self):
-        transcript = (
-            "extract body:\nfirst response\n"
-            "extract [data-message-author-role='assistant']:\nsecond response"
-        )
-        result = browser_executor._replyFromTranscript(transcript)
-        self.assertEqual(result, "second response")
-
-    def test_multiline_reply_preserved(self):
-        transcript = (
-            "extract [data-message-author-role='assistant']:\n"
-            "line one\nline two\nline three"
-        )
-        result = browser_executor._replyFromTranscript(transcript)
-        self.assertEqual(result, "line one\nline two\nline three")
-
-
 class TestRunBrowserGenericException(unittest.TestCase):
     """runBrowser must treat any non-BrowserUnavailable exception as a failed subtask."""
 
@@ -147,50 +114,12 @@ class TestMultipleUrlsInPrompt(unittest.TestCase):
         self.assertIn("https://b.com", urls)
 
 
-class TestChatGPTActionsConstants(unittest.TestCase):
-    """chatgptActions must use the module-level selector/URL constants."""
+class TestAdversaryFallbackNote(unittest.TestCase):
+    """Stub notes must mention the Phase-2 Gemini escalation path on the no-second-brain path."""
 
-    def test_goto_uses_chatgpt_url_constant(self):
-        actions = browser_executor.chatgptActions("hi")
-        goto = next(a for a in actions if a["action"] == "goto")
-        self.assertEqual(goto["url"], browser_executor.CHATGPT_URL)
-
-    def test_type_uses_input_selector_constant(self):
-        actions = browser_executor.chatgptActions("hi")
-        type_action = next(a for a in actions if a["action"] == "type")
-        self.assertEqual(type_action["selector"], browser_executor.CHATGPT_INPUT_SELECTOR)
-
-    def test_press_uses_send_key_constant(self):
-        actions = browser_executor.chatgptActions("hi")
-        press = next(a for a in actions if a["action"] == "press")
-        self.assertEqual(press["key"], browser_executor.CHATGPT_SEND_KEY)
-
-    def test_extract_uses_reply_selector_constant(self):
-        actions = browser_executor.chatgptActions("hi")
-        extract = next(a for a in actions if a["action"] == "extract")
-        self.assertEqual(extract["selector"], browser_executor.CHATGPT_REPLY_SELECTOR)
-
-
-class TestAskChatGPTWorkDir(unittest.TestCase):
-    """askChatGPT must forward work_dir to the runner."""
-
-    def test_work_dir_forwarded(self):
-        captured = {}
-
-        def fake_runner(spec, **k):
-            captured["kw"] = k
-            return {"ok": True, "stdout": "extract sel:\nreply"}
-
-        browser_executor.askChatGPT("q", runner=fake_runner, work_dir="/tmp/wd")
-        self.assertEqual(captured["kw"].get("work_dir"), "/tmp/wd")
-
-
-class TestAdversaryBrowserFallbackNote(unittest.TestCase):
-    """Stub notes must mention the Phase-2 escalation path on no-browser path."""
-
-    def test_stub_note_mentions_chatgpt(self):
+    def test_stub_note_mentions_gemini(self):
         rv = adversary._stubReview("reason")
-        self.assertIn("chatgpt.com", rv["notes"].lower())
+        self.assertIn("gemini", rv["notes"].lower())
 
     def test_stub_has_empty_concerns(self):
         rv = adversary._stubReview("any reason")

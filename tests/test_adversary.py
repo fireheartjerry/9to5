@@ -84,10 +84,10 @@ class TestReview(unittest.TestCase):
 
 
 class TestReviewViaBrowser(unittest.TestCase):
-    """Phase-2 routing: Adversary -> GPT-5.5 on chatgpt.com via the browser (CDP) layer."""
+    """Phase-2 routing: Adversary -> Gemini via the google-genai SDK second-brain shim."""
 
     def _ask(self, payload):
-        """A browser_ask stand-in returning ``payload`` JSON as the chatgpt.com reply."""
+        """A browser_ask stand-in returning ``payload`` JSON as the Gemini reply."""
         return lambda message: json.dumps(payload)
 
     def test_approved_via_browser(self):
@@ -96,7 +96,7 @@ class TestReviewViaBrowser(unittest.TestCase):
                                         browser_ask=ask, goal="g")
         self.assertEqual(rv["verdict"], "approved")
         self.assertFalse(rv["stub"])
-        self.assertEqual(rv["surface"], "browser")
+        self.assertEqual(rv["surface"], "gemini")
         self.assertEqual(rv["trigger_reason"], "pre-PR safety review")
 
     def test_challenged_via_browser_normalizes(self):
@@ -144,9 +144,9 @@ class TestReviewViaBrowser(unittest.TestCase):
         self.assertIn("build parser", seen["message"])
 
     def test_default_browser_ask_is_browser_executor(self):
-        """With no injected callable it must route through the real CDP helper (patched)."""
+        """With no injected callable it must route through the real Gemini helper (patched)."""
         from agents import browser_executor
-        with mock.patch.object(browser_executor, "askChatGPT",
+        with mock.patch.object(browser_executor, "askGemini",
                                return_value=json.dumps({"verdict": "approved", "concerns": []})) as m:
             rv = adversary.reviewViaBrowser("do x", "heartbeat", "output")
         m.assert_called_once()

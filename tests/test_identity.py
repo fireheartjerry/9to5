@@ -8,8 +8,11 @@ import identity
 
 class TestCanonical(unittest.TestCase):
     def test_collapses_dotdot_and_normalizes_case(self):
-        raw = r"C:\9to5\agents\..\config.py"
-        self.assertEqual(identity._canonical(raw), identity._canonical(r"C:\9to5\config.py"))
+        # Use the real project root so the `..` collapse is exercised cross-platform (the old
+        # hardcoded `C:\9to5\...` literal only collapsed on Windows -> failed on Linux CI).
+        base = identity.PROJECT_ROOT
+        raw = str(base / "agents" / ".." / "config.py")
+        self.assertEqual(identity._canonical(raw), identity._canonical(str(base / "config.py")))
 
     def test_absolute_and_relative_to_root_match(self):
         # A bare 'config.py' resolved against the project root equals the absolute form.
@@ -52,6 +55,39 @@ class TestRoleOf(unittest.TestCase):
     def test_outside_tree_is_other_content(self):
         import tempfile
         self.assertEqual(identity.roleOf(tempfile.gettempdir()), identity.Role.OTHER_CONTENT)
+
+
+class TestPredicates(unittest.TestCase):
+    def test_object_meta_is_editable_but_not_obeyable(self):
+        p = str(identity.PROJECT_ROOT / "CLAUDE.md")
+        self.assertTrue(identity.isEditable(p))
+        self.assertFalse(identity.isObeyable(p))
+
+    def test_env_is_not_editable(self):
+        self.assertFalse(identity.isEditable(str(identity.PROJECT_ROOT / ".env")))
+
+    def test_user_global_claude_md_is_obeyable(self):
+        self.assertTrue(identity.isObeyable(str(identity._USER_GLOBAL_CLAUDE_MD)))
+
+    def test_self_code_files_lists_loop_modules(self):
+        files = identity.selfCodeFiles()
+        names = {Path(f).name for f in files}
+        self.assertIn("orchestrator.py", names)
+        self.assertIn("identity.py", names)
+        self.assertNotIn("CLAUDE.md", names)  # object_meta, not code
+
+    def test_self_code_files_excludes_test_dirs(self):
+        files = identity.selfCodeFiles()
+        # Test/harness files are SELF_CODE by role but must NOT be in the fingerprint set:
+        # the running orchestrator never imports them, so editing a test must not look like
+        # the running self diverging.
+        self.assertFalse(any((os.sep + "tests" + os.sep) in f for f in files),
+                         "tests/ files must be excluded from the fingerprint set")
+        self.assertFalse(any((os.sep + "testing" + os.sep) in f for f in files),
+                         "testing/ files must be excluded from the fingerprint set")
+        # But real loop modules remain present:
+        names = {Path(f).name for f in files}
+        self.assertIn("orchestrator.py", names)
 
 
 if __name__ == "__main__":

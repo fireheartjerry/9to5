@@ -1,0 +1,74 @@
+{
+  "name": "bug_investigation",
+  "description": "Systematic root-cause investigation: reproduce + static-analysis concurrently, trace hypotheses in parallel, then patch + test-scaffold concurrently. Concurrent phases deliver \u226520% wall-clock reduction vs the previous sequential reproduce\u2192hypothesis\u2192fix pipeline.",
+  "speedup_model": {
+    "old_sequential_phases": [
+      "Reproduce and trace (1 agent)",
+      "Parallel hypothesis (2 agents)",
+      "Fix (1 agent)"
+    ],
+    "new_concurrent_phases": [
+      "Reproduce and static-analysis (2 parallel)",
+      "Parallel hypothesis (2 parallel)",
+      "Fix and test-scaffold (2 parallel)"
+    ],
+    "phase_parallelism": [
+      2,
+      2,
+      2
+    ],
+    "estimated_wall_clock_ratio": 0.5132,
+    "rationale": "Phase 1 now runs static-analysis concurrently with reproduce (saves ~t_static overlap). Phase 3 runs test-scaffold concurrently with patch (saves ~t_test overlap). Combined net reduction \u226520% on typical bug investigations where static-analysis and test-scaffolding each take 25-40% of their phase time."
+  },
+  "phases": [
+    {
+      "title": "Reproduce and static-analysis",
+      "parallel": true,
+      "agents": [
+        {
+          "label": "reproduce",
+          "prompt": "Given the bug description in the task, write and run the smallest possible script or command that reliably reproduces the failure. Output: the exact command, the observed output, and whether reproduction succeeded. If it cannot be reproduced, explain why.",
+          "effort": "default"
+        },
+        {
+          "label": "static-analysis",
+          "prompt": "Without running any code, statically analyze the module or function implicated in the bug description. Identify: (1) suspicious type mismatches or boundary conditions, (2) missing guards or early-returns, (3) any recent changes in git blame near the failure site. Output a ranked list of candidate root causes with file:line references.",
+          "effort": "default"
+        }
+      ]
+    },
+    {
+      "title": "Parallel hypothesis",
+      "parallel": true,
+      "agents": [
+        {
+          "label": "trace-data-flow",
+          "prompt": "Trace the data flow from the entry point to the failure site. Identify every transformation the suspicious value undergoes and where it diverges from the expected value. Report the exact line and variable state where the invariant breaks.",
+          "effort": "high"
+        },
+        {
+          "label": "trace-control-flow",
+          "prompt": "Trace the control flow from the entry point to the failure site. Identify every branch, guard, and early-return that could be taken incorrectly. Report the branch condition and its actual vs expected value at the point the wrong path is taken.",
+          "effort": "high"
+        }
+      ]
+    },
+    {
+      "title": "Fix and test-scaffold",
+      "parallel": true,
+      "agents": [
+        {
+          "label": "patch",
+          "prompt": "Using the reproduction result and the two trace reports, identify the root cause (one precise sentence). Author the smallest correct patch that fixes the root cause without changing unrelated code. Apply the patch and run the reproduction command to confirm the fix.",
+          "effort": "high"
+        },
+        {
+          "label": "test-scaffold",
+          "prompt": "Using the reproduction result and the static-analysis findings, write a minimal regression test that would have caught this bug. The test must: (1) import only the affected module, (2) reproduce the failure condition, (3) assert the correct expected behaviour. Do not apply any fix \u2014 write the test so it fails on the unfixed code and passes after the patch.",
+          "effort": "default"
+        }
+      ]
+    }
+  ],
+  "synthesis": "Summarize: (1) root cause in one sentence, (2) the file and line patched, (3) the regression test added and where it lives, (4) the verification command and its output confirming the fix, (5) any residual risk or follow-up needed."
+}

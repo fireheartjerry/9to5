@@ -111,10 +111,12 @@ class TestExperienceLedger(unittest.TestCase):
         self.assertEqual(runs[0]["status"], "done")  # last write wins
 
     def test_record_subtask_and_gold_filter(self):
-        # A clean first-pass success -> gold. A retried/failed one -> not gold.
+        # Gold = first-pass, verify-passing, AND really adversary-approved (non-stub).
+        # NULL verdict (never reviewed) and stub approvals no longer count as gold.
         experience.record_subtask("r1", {
             "subtask_id": "st-001", "title": "good", "status": "done",
             "verify_result": {"passed": True}, "session": {"attempts": 1, "effort": "high"},
+            "_adversary_verdict": "approved", "_adversary_stub": 0,
         }, db_path=self.db)
         experience.record_subtask("r1", {
             "subtask_id": "st-002", "title": "messy", "status": "done",

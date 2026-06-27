@@ -64,6 +64,11 @@ class TestPerRoleAdapters(unittest.TestCase):
         self.db = self.dir / "experience.db"
         mock.patch.object(config, "SIE_KILL_SWITCH", False).start()
         mock.patch.object(config, "OLLAMA_MODEL", "qwen2.5-coder:7b").start()
+        # This suite verifies per-role adapter ROUTING, not Ollama servability (covered in
+        # test_finetune_routing). Treat every promoted tag as servable so active_brain_tag routes to
+        # it instead of falling back to base on the liveness check.
+        from learning import finetune
+        mock.patch.object(finetune, "_servable", lambda tag: True).start()
 
     def tearDown(self):
         mock.patch.stopall()
