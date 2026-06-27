@@ -17,10 +17,10 @@ EXPORTS:
   validateSpec(spec: dict) -> StepResult  -- Validate a sanitized spec has the minimum required fields populated.
   fmtElapsed(seconds: float) -> str  -- Format elapsed seconds as ``Hh MMm SSs``.
   singleDeliverable(goal: str) -> bool  -- True when the goal targets at most one file with no multi-deliverable phrasing.
-  resolveWorkflow(name_or_def: Any) -> StepResult  -- Resolve a workflow by name from the central registry or accept an inline dict.
+  resolveWorkflow(name_or_def: 'Any') -> StepResult  -- Resolve a workflow by name from the central registry or accept an inline dict.
   verifyStep(verify: 'Optional[dict]', work_dir: str, executor_result: dict) -> StepResult  -- Thin wrapper around ``verifier.runVerification`` returning a ``StepResult``.
   runSteps(steps: 'list[str]', context: dict, handlers: 'dict[str, Callable[[dict], StepResult]]') -> 'list[StepResult]'  -- Execute a named sequence of steps, stopping on first failure.
-DEPENDS-ON: agents.verifier, config
+DEPENDS-ON: agents.verifier, config, src.workflow_registry
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """

@@ -22,6 +22,19 @@ import pytest
 
 import config
 
+pytest_plugins = ("tests.progress_reporter",)
+
+# Load the real ollama SDK once, before any test module is collected. Production modules now
+# import ollama lazily (perf: keeps the ~0.3s SDK import off CLI startup), so without this a
+# test module that stubs `sys.modules["ollama"]` when it is absent (e.g. test_living_knowledge)
+# could inject a bare ModuleType with __spec__=None and poison ollama for sibling tests on the
+# same xdist worker -> "ValueError: ollama.__spec__ is None". Keeping the real module resident
+# makes those "ollama missing" stub branches dead, exactly as eager imports used to.
+try:  # pragma: no cover - ollama is a hard dep in CI; guard only for stripped-down envs
+    import ollama as _ollama  # noqa: F401
+except Exception:  # noqa: BLE001
+    pass
+
 
 @pytest.fixture(autouse=True)
 def _fast_sleep(monkeypatch):
@@ -110,6 +123,16 @@ def _no_real_discord(monkeypatch):
     """Run every test as if Discord is unconfigured -> no live REST calls, no 429 throttling."""
     monkeypatch.setattr(config, "DISCORD_BOT_TOKEN", "")
     monkeypatch.setattr(config, "DISCORD_CHANNEL_ID", 0)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_experience_db(monkeypatch, tmp_path):
+    """Point the experience ledger at a per-test tmp DB so tests never read the real 33 MB
+    state/experience.db and -- critically under `pytest -n auto` -- never have two workers write
+    the same SQLite file concurrently. Mirrors _isolate_state. Tests that need their own ledger
+    still pass an explicit db_path or patch this locally (unaffected)."""
+    monkeypatch.setattr(config, "EXPERIENCE_DB_PATH", tmp_path / "experience.db", raising=False)
     yield
 
 

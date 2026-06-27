@@ -5,10 +5,13 @@
   "first_party_roots": [
     "agents",
     "config",
+    "conftest",
     "contracts",
     "control",
     "doctor",
+    "enhanced_error_handling",
     "epoch",
+    "error_handling",
     "health",
     "identity",
     "knowledge",
@@ -17,20 +20,29 @@
     "llm_io",
     "main",
     "memory",
+    "monitoring",
+    "nightclaw",
     "notifications",
     "orchestrator",
     "protocols",
     "provenance",
     "resilience",
+    "retry_policy",
+    "run_all_tests",
+    "scheduling",
     "selfmod",
     "sim_error_handling",
     "simulation",
+    "src",
+    "staging_validator",
     "state",
     "surfaces",
     "testing",
     "tests",
     "tracing",
-    "wipe"
+    "validate_workflows",
+    "wipe",
+    "workflows"
   ],
   "modules": {
     "agents": {
@@ -109,7 +121,7 @@
           "kind": "function",
           "signature": "(goal_elaborated: str, chat=None) -> str",
           "summary": "Ollama authors the prompt that will be sent to Claude Code CLI.",
-          "lineno": 54
+          "lineno": 53
         }
       ],
       "depends_on": [
@@ -247,6 +259,36 @@
         "orchestrator"
       ]
     },
+    "agents.debugging_workflow": {
+      "path": "agents/debugging_workflow.py",
+      "purpose": "debugging_workflow -- integrated skill-gap + trace-replay diagnostic.",
+      "exports": [
+        {
+          "name": "buildReport",
+          "kind": "function",
+          "signature": "(gap_rows: list, trace_result: dict, inventory: dict) -> dict",
+          "summary": "Correlate gap_rows with trace_result and return a unified report dict.",
+          "lineno": 49
+        },
+        {
+          "name": "run",
+          "kind": "function",
+          "signature": "(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict",
+          "summary": "Execute the integrated debugging workflow.",
+          "lineno": 121
+        }
+      ],
+      "depends_on": [
+        "agents.trace_replay"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_debugging_workflow.py"
+      ],
+      "callers": []
+    },
     "agents.elaborator": {
       "path": "agents/elaborator.py",
       "purpose": "Elaborator (Step 0.5) -- Ollama expands the raw goal into a buildable spec.",
@@ -256,14 +298,14 @@
           "kind": "function",
           "signature": "(goal_raw: str) -> str",
           "summary": "Return the elaborated specification for ``goal_raw`` (never raises",
-          "lineno": 69
+          "lineno": 77
         },
         {
           "name": "extractUniverse",
           "kind": "function",
           "signature": "(goal_raw: str, goal_elaborated: str, work_dir: str) -> dict",
           "summary": "Extract the operating universe (scope boundary) from the goal (with safe defaults).",
-          "lineno": 96
+          "lineno": 104
         }
       ],
       "depends_on": [
@@ -289,32 +331,33 @@
           "kind": "function",
           "signature": "(spec_or_prompt: Union[dict, str, None]) -> dict",
           "summary": "Accept a full invocation spec dict OR a bare prompt string",
-          "lineno": 162
+          "lineno": 163
         },
         {
           "name": "effortFlag",
           "kind": "function",
           "signature": "(effort_level: str) -> Optional[str]",
           "summary": "",
-          "lineno": 251
+          "lineno": 260
         },
         {
           "name": "scanDestructive",
           "kind": "function",
           "signature": "(text: str) -> list[str]",
           "summary": "",
-          "lineno": 269
+          "lineno": 278
         },
         {
           "name": "runClaude",
           "kind": "function",
           "signature": "(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, system_prompt: Optional[str]=None, extra: Optional[str]=None, timeout: Optional[int]=None, resume_session: Optional[str]=None, cancel_check=None) -> dict",
           "summary": "Prepare the environment from the invocation spec, then fire one Claude run.",
-          "lineno": 325
+          "lineno": 347
         }
       ],
       "depends_on": [
         "agents.playbook",
+        "agents.workflow_resolver",
         "config",
         "memory.obsidian",
         "notifications.discord_bot"
@@ -403,42 +446,49 @@
           "kind": "function",
           "signature": "(data)",
           "summary": "PreToolUse: block destructive Bash commands by exiting 2.",
-          "lineno": 140
+          "lineno": 141
         },
         {
           "name": "writeObsidian",
           "kind": "function",
           "signature": "(data)",
           "summary": "PostToolUse: log the edited file path to the in-progress subtask note.",
-          "lineno": 190
+          "lineno": 191
         },
         {
           "name": "discordNotify",
           "kind": "function",
           "signature": "(data)",
           "summary": "Notification: forward the message to Discord as a compact embed.",
-          "lineno": 241
+          "lineno": 242
         },
         {
           "name": "logAll",
           "kind": "function",
           "signature": "(data)",
           "summary": "PostToolUse / any: append one JSON line {time, tool_name} to the log.",
-          "lineno": 258
+          "lineno": 259
+        },
+        {
+          "name": "logTelemetry",
+          "kind": "function",
+          "signature": "(data)",
+          "summary": "Any Claude hook: append compact non-blocking iteration telemetry.",
+          "lineno": 279
         },
         {
           "name": "selfModificationGuard",
           "kind": "function",
           "signature": "(data)",
           "summary": "PreToolUse: during a SELF-REFERENTIAL task, block edits to the core files",
-          "lineno": 335
+          "lineno": 349
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "()",
           "summary": "Dispatch to the requested handler based on argv[1].",
-          "lineno": 463
+          "lineno": 477
         }
       ],
       "depends_on": [
@@ -507,75 +557,83 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 38
+          "lineno": 39
         },
         {
           "name": "PipelineStep",
           "kind": "class",
           "signature": "",
           "summary": "Metadata for one named orchestration step.",
-          "lineno": 56
+          "lineno": 57
         },
         {
           "name": "stepFor",
           "kind": "function",
           "signature": "(name: str) -> PipelineStep",
           "summary": "Return the PipelineStep for *name*, raising KeyError when unknown.",
-          "lineno": 92
+          "lineno": 93
         },
         {
           "name": "executionOrder",
           "kind": "function",
           "signature": "(steps: 'list[PipelineStep] | None'=None) -> list[str]",
           "summary": "Topological order of step names (respects ``depends_on`` edges).",
-          "lineno": 100
+          "lineno": 101
         },
         {
           "name": "sanitizeSpec",
           "kind": "function",
           "signature": "(spec: Any, subtask: dict, available_skills: 'frozenset[str] | None'=None, available_subagents: 'frozenset[str] | None'=None, available_pre_hooks: 'frozenset[str] | None'=None, available_post_hooks: 'frozenset[str] | None'=None) -> StepResult",
           "summary": "Pure spec-sanitize step: coerce, filter, and validate a brain-authored spec.",
-          "lineno": 151
+          "lineno": 152
         },
         {
           "name": "validateSpec",
           "kind": "function",
           "signature": "(spec: dict) -> StepResult",
           "summary": "Validate a sanitized spec has the minimum required fields populated.",
-          "lineno": 222
+          "lineno": 223
         },
         {
           "name": "fmtElapsed",
           "kind": "function",
           "signature": "(seconds: float) -> str",
           "summary": "Format elapsed seconds as ``Hh MMm SSs``.",
-          "lineno": 235
+          "lineno": 236
         },
         {
           "name": "singleDeliverable",
           "kind": "function",
           "signature": "(goal: str) -> bool",
           "summary": "True when the goal targets at most one file with no multi-deliverable phrasing.",
-          "lineno": 243
+          "lineno": 244
+        },
+        {
+          "name": "resolveWorkflow",
+          "kind": "function",
+          "signature": "(name_or_def: 'Any') -> StepResult",
+          "summary": "Resolve a workflow by name from the central registry or accept an inline dict.",
+          "lineno": 267
         },
         {
           "name": "verifyStep",
           "kind": "function",
           "signature": "(verify: 'Optional[dict]', work_dir: str, executor_result: dict) -> StepResult",
           "summary": "Thin wrapper around ``verifier.runVerification`` returning a ``StepResult``.",
-          "lineno": 266
+          "lineno": 300
         },
         {
           "name": "runSteps",
           "kind": "function",
           "signature": "(steps: 'list[str]', context: dict, handlers: 'dict[str, Callable[[dict], StepResult]]') -> 'list[StepResult]'",
           "summary": "Execute a named sequence of steps, stopping on first failure.",
-          "lineno": 286
+          "lineno": 320
         }
       ],
       "depends_on": [
         "agents.verifier",
-        "config"
+        "config",
+        "src.workflow_registry"
       ],
       "side_effects": [
         "unannotated"
@@ -631,7 +689,7 @@
           "kind": "function",
           "signature": "(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, executor_output: str, self_referential: bool=False, remaining_hours: 'float | None'=None) -> dict",
           "summary": "Return the replan decision dict (always well-formed).",
-          "lineno": 55
+          "lineno": 54
         }
       ],
       "depends_on": [
@@ -679,6 +737,117 @@
       ],
       "callers": [
         "orchestrator"
+      ]
+    },
+    "agents.timing_harness": {
+      "path": "agents/timing_harness.py",
+      "purpose": "agents/timing_harness.py -- Wall-clock timing harness for parallel workflow phases.",
+      "exports": [
+        {
+          "name": "TimingResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 31
+        },
+        {
+          "name": "measureWorkflow",
+          "kind": "function",
+          "signature": "(definition: dict, agent_duration: float=AGENT_DURATION_SECS) -> TimingResult",
+          "summary": "Measure wall-clock time for sequential vs concurrent execution of *definition*.",
+          "lineno": 45
+        },
+        {
+          "name": "updateSpeedupRatio",
+          "kind": "function",
+          "signature": "(workflow_path: Path, result: TimingResult) -> None",
+          "summary": "Update speedup_model.estimated_wall_clock_ratio in *workflow_path* with measured ratio.",
+          "lineno": 91
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_timing_harness.py"
+      ],
+      "callers": []
+    },
+    "agents.trace-replay": {
+      "path": "agents/trace-replay.py",
+      "purpose": "trace-replay -- loads archived execution traces and surfaces brain divergence points.",
+      "exports": [
+        {
+          "name": "replayTrace",
+          "kind": "function",
+          "signature": "(run_id: str, threshold: int) -> int",
+          "summary": "Load and replay one run's event trace",
+          "lineno": 406
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 505
+        }
+      ],
+      "depends_on": [
+        "config",
+        "tracing"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "agents.trace_replay": {
+      "path": "agents/trace_replay.py",
+      "purpose": "trace_replay -- optimized workflow for invoking the trace-replay subagent.",
+      "exports": [
+        {
+          "name": "buildSpec",
+          "kind": "function",
+          "signature": "(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict",
+          "summary": "Return an invocation spec dict tuned for this run.",
+          "lineno": 76
+        },
+        {
+          "name": "runWorkflow",
+          "kind": "function",
+          "signature": "(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict",
+          "summary": "Execute the trace-replay script and return parsed results.",
+          "lineno": 112
+        },
+        {
+          "name": "buildStepSpec",
+          "kind": "function",
+          "signature": "(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict",
+          "summary": "Return an invocation spec for step-by-step decision-point replay.",
+          "lineno": 228
+        },
+        {
+          "name": "getDecisionPoints",
+          "kind": "function",
+          "signature": "(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict",
+          "summary": "Run trace-replay and return structured decision points with surrounding context.",
+          "lineno": 268
+        }
+      ],
+      "depends_on": [
+        "config",
+        "tracing"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_trace_replay.py"
+      ],
+      "callers": [
+        "agents.debugging_workflow"
       ]
     },
     "agents.verifier": {
@@ -739,7 +908,7 @@
           "kind": "function",
           "signature": "(verify: Optional[dict], work_dir: str, executor_result: dict) -> dict",
           "summary": "Return a verify_result dict: {passed, cmd, expect, returncode, stdout, stderr}.",
-          "lineno": 369
+          "lineno": 440
         }
       ],
       "depends_on": [
@@ -754,6 +923,29 @@
         "agents.orchestration_pipeline",
         "learning.eval_runner",
         "orchestrator"
+      ]
+    },
+    "agents.workflow_resolver": {
+      "path": "agents/workflow_resolver.py",
+      "purpose": "agents/workflow_resolver.py -- Bridge invocation specs to the centralized WorkflowRegistry.",
+      "exports": [
+        {
+          "name": "resolveWorkflowDefinition",
+          "kind": "function",
+          "signature": "(spec: dict) -> Optional[dict]",
+          "summary": "Return the WorkflowDefinition dict for this spec via the centralized registry.",
+          "lineno": 39
+        }
+      ],
+      "depends_on": [
+        "src.workflow_registry"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.executor"
       ]
     },
     "config": {
@@ -811,6 +1003,8 @@
         "agents.playbook",
         "agents.replanner",
         "agents.second_brain",
+        "agents.trace-replay",
+        "agents.trace_replay",
         "agents.verifier",
         "control",
         "doctor",
@@ -853,6 +1047,7 @@
         "memory.obsidian",
         "memory.retrieval",
         "memory.subtask_manager",
+        "monitoring.alerter",
         "notifications.ask",
         "notifications.audit",
         "notifications.bot.cogs.admin",
@@ -887,11 +1082,31 @@
         "scripts.repo_health",
         "selfmod",
         "simulation",
+        "staging_validator",
         "state.task",
         "surfaces",
         "tracing",
         "wipe"
       ]
+    },
+    "conftest": {
+      "path": "conftest.py",
+      "purpose": "Root conftest.py — minimal bootstrap.",
+      "exports": [
+        {
+          "name": "pytest_configure",
+          "kind": "function",
+          "signature": "(config)",
+          "summary": "Expand shell-unresolved glob patterns in pytest's path arguments.",
+          "lineno": 35
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
     },
     "contracts": {
       "path": "contracts.py",
@@ -902,77 +1117,98 @@
           "kind": "class",
           "signature": "",
           "summary": "The brain-authored spec the executor turns into a Claude Code CLI invocation.",
-          "lineno": 43
+          "lineno": 47
         },
         {
           "name": "ExecutorResult",
           "kind": "class",
           "signature": "",
           "summary": "The uniform result dict every executor surface returns (terminal/browser/native).",
-          "lineno": 59
+          "lineno": 63
         },
         {
           "name": "Verdict",
           "kind": "class",
           "signature": "",
           "summary": "The adversary/second-brain review verdict (rich contract",
-          "lineno": 75
+          "lineno": 79
         },
         {
           "name": "Verify",
           "kind": "class",
           "signature": "",
           "summary": "A brain-authored verification check run after the executor.",
-          "lineno": 92
+          "lineno": 96
+        },
+        {
+          "name": "WorkflowAgent",
+          "kind": "class",
+          "signature": "",
+          "summary": "One agent entry inside a WorkflowPhase.",
+          "lineno": 102
+        },
+        {
+          "name": "WorkflowPhase",
+          "kind": "class",
+          "signature": "",
+          "summary": "One phase inside a WorkflowDefinition.",
+          "lineno": 109
+        },
+        {
+          "name": "WorkflowDefinition",
+          "kind": "class",
+          "signature": "",
+          "summary": "Brain-authored dynamic workflow spec carried in InvocationSpec.workflow_definition.",
+          "lineno": 116
         },
         {
           "name": "Universe",
           "kind": "class",
           "signature": "",
           "summary": "``meta.universe`` -- surgical-precision scope",
-          "lineno": 110
+          "lineno": 140
         },
         {
           "name": "Goal",
           "kind": "class",
           "signature": "",
           "summary": "The raw human objective (``meta.goal_raw``) + its time horizon.",
-          "lineno": 130
+          "lineno": 160
         },
         {
           "name": "ElaboratedGoal",
           "kind": "class",
           "signature": "",
           "summary": "The approved, clarified objective (``meta.goal_elaborated``)",
-          "lineno": 137
+          "lineno": 167
         },
         {
           "name": "SubtaskSpec",
           "kind": "class",
           "signature": "",
           "summary": "One subtask (``state/task.py`` addSubtask)",
-          "lineno": 144
+          "lineno": 174
         },
         {
           "name": "VerificationResult",
           "kind": "class",
           "signature": "",
           "summary": "``agents/verifier.py`` runVerification() output -- the proof gate's verdict",
-          "lineno": 179
+          "lineno": 209
         },
         {
           "name": "ControlCommand",
           "kind": "class",
           "signature": "",
           "summary": "A parsed human control command (``notifications/commands.py`` Command): name + arg.",
-          "lineno": 201
+          "lineno": 231
         },
         {
           "name": "AgentDecision",
           "kind": "class",
           "signature": "",
           "summary": "Confidence/risk metadata an intelligence may attach so the orchestrator can escalate.",
-          "lineno": 208
+          "lineno": 238
         }
       ],
       "depends_on": [],
@@ -1091,6 +1327,23 @@
         "main"
       ]
     },
+    "enhanced_error_handling": {
+      "path": "enhanced_error_handling.py",
+      "purpose": "Enhanced error handling -- re-exports the canonical error_handling module.",
+      "exports": [],
+      "depends_on": [
+        "error_handling.LOG",
+        "error_handling.MAX_RETRIES",
+        "error_handling.RETRY_DELAY_SECONDS",
+        "error_handling.RetryExhausted",
+        "error_handling.retryTask"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "epoch": {
       "path": "epoch.py",
       "purpose": "Primitive 2 -- the epoch pin. An immutable per-run snapshot of governing config +",
@@ -1138,6 +1391,34 @@
         "orchestrator"
       ]
     },
+    "error_handling": {
+      "path": "error_handling.py",
+      "purpose": "Error handling utilities -- retry-before-alert and diagnostic logging.",
+      "exports": [
+        {
+          "name": "RetryExhausted",
+          "kind": "class",
+          "signature": "",
+          "summary": "Raised by retryTask when all attempts fail and no on_alert is provided.",
+          "lineno": 31
+        },
+        {
+          "name": "retryTask",
+          "kind": "function",
+          "signature": "(fn: Callable, *, args: tuple=(), kwargs: Optional[dict]=None, max_retries: int=MAX_RETRIES, delay: float=RETRY_DELAY_SECONDS, on_alert: Optional[Callable[[str, int], None]]=None) -> dict[str, Any]",
+          "summary": "Call fn(*args, **kwargs), retrying up to max_retries times on any Exception.",
+          "lineno": 35
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_error_handling.py"
+      ],
+      "callers": []
+    },
     "health": {
       "path": "health.py",
       "purpose": "9to5 /health -- environment readiness checks.",
@@ -1182,42 +1463,42 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 47
+          "lineno": 57
         },
         {
           "name": "roleOf",
           "kind": "function",
           "signature": "(path: str | os.PathLike) -> Role",
           "summary": "Classify ``path`` into exactly one Role",
-          "lineno": 95
+          "lineno": 105
         },
         {
           "name": "isObeyable",
           "kind": "function",
           "signature": "(path: str | os.PathLike) -> bool",
           "summary": "True only for directives 9to5 may treat as its OWN instructions.",
-          "lineno": 110
+          "lineno": 120
         },
         {
           "name": "isEditable",
           "kind": "function",
           "signature": "(path: str | os.PathLike) -> bool",
           "summary": "Editing is unrestricted EXCEPT the narrow hard_boundary set.",
-          "lineno": 115
+          "lineno": 125
         },
         {
           "name": "isCodeSelf",
           "kind": "function",
           "signature": "(path: str | os.PathLike) -> bool",
           "summary": "",
-          "lineno": 120
+          "lineno": 130
         },
         {
           "name": "selfCodeFiles",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Every *.py under the project tree that the RUNNING orchestrator could import --",
-          "lineno": 124
+          "lineno": 134
         }
       ],
       "depends_on": [
@@ -3471,6 +3752,152 @@
       ],
       "callers": []
     },
+    "monitoring": {
+      "path": "monitoring/__init__.py",
+      "purpose": "monitoring -- workflow execution monitoring for 9to5.",
+      "exports": [],
+      "depends_on": [
+        "monitoring.tracker"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "monitoring.alerter",
+        "scripts.monitoring_check"
+      ]
+    },
+    "monitoring.alerter": {
+      "path": "monitoring/alerter.py",
+      "purpose": "monitoring.alerter -- active alerting: polls monitoring.tracker and pushes",
+      "exports": [
+        {
+          "name": "startAlertLoop",
+          "kind": "function",
+          "signature": "(interval_seconds: float=30.0) -> None",
+          "summary": "Start a background daemon thread that calls ``checkAndNotify`` on an",
+          "lineno": 50
+        },
+        {
+          "name": "stopAlertLoop",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Signal the background loop to exit",
+          "lineno": 68
+        },
+        {
+          "name": "checkAndNotify",
+          "kind": "function",
+          "signature": "() -> list[str]",
+          "summary": "Single synchronous poll: read current alerts from tracker, fire Discord",
+          "lineno": 75
+        },
+        {
+          "name": "getNotifiedKeys",
+          "kind": "function",
+          "signature": "() -> dict[str, float]",
+          "summary": "Return a snapshot of the dedup map (test helper).",
+          "lineno": 104
+        },
+        {
+          "name": "resetState",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Clear dedup state and stop the loop",
+          "lineno": 110
+        }
+      ],
+      "depends_on": [
+        "config",
+        "monitoring",
+        "monitoring.tracker",
+        "notifications.discord_bot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "monitoring.tracker": {
+      "path": "monitoring/tracker.py",
+      "purpose": "monitoring.tracker -- in-memory execution tracking and threshold alerting.",
+      "exports": [
+        {
+          "name": "record_execution",
+          "kind": "function",
+          "signature": "(workflow_id: str, success: bool, delay_seconds: float, retries: int=0) -> None",
+          "summary": "Record one workflow execution and refresh alerts.",
+          "lineno": 42
+        },
+        {
+          "name": "get_success_rate",
+          "kind": "function",
+          "signature": "(workflow_id: Optional[str]=None) -> Optional[float]",
+          "summary": "Return fraction of successful executions, or None if no records.",
+          "lineno": 59
+        },
+        {
+          "name": "get_avg_delay",
+          "kind": "function",
+          "signature": "(workflow_id: Optional[str]=None) -> Optional[float]",
+          "summary": "Return mean delay in seconds, or None if no records.",
+          "lineno": 68
+        },
+        {
+          "name": "record_critical_event",
+          "kind": "function",
+          "signature": "(event_id: str, event_type: str, occurred_at: Optional[float]=None) -> None",
+          "summary": "Record a critical event and fire a late-detection alert if lag > 2 min.",
+          "lineno": 77
+        },
+        {
+          "name": "get_alerts",
+          "kind": "function",
+          "signature": "() -> list[dict]",
+          "summary": "Return a snapshot of current active alerts.",
+          "lineno": 111
+        },
+        {
+          "name": "get_critical_events",
+          "kind": "function",
+          "signature": "() -> list[dict]",
+          "summary": "Return a snapshot of all recorded critical events.",
+          "lineno": 117
+        },
+        {
+          "name": "reset",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Clear all state",
+          "lineno": 123
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "monitoring",
+        "monitoring.alerter",
+        "scripts.monitoring_check"
+      ]
+    },
+    "nightclaw": {
+      "path": "nightclaw.py",
+      "purpose": "Nightclaw — Discord bot entrypoint.",
+      "exports": [],
+      "depends_on": [
+        "notifications.command_bot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "notifications": {
       "path": "notifications/__init__.py",
       "purpose": "Discord notifications + command bot (see notifications.discord_bot).",
@@ -3849,7 +4276,7 @@
     },
     "notifications.bot.cogs.runs_cog": {
       "path": "notifications/bot/cogs/runs_cog.py",
-      "purpose": "Run-lifecycle slash commands: work / wipe / runs / run / resume.",
+      "purpose": "Run-lifecycle slash commands: work / wipe / runs / run / resume / create-pr.",
       "exports": [
         {
           "name": "RunsCog",
@@ -3863,7 +4290,7 @@
           "kind": "function",
           "signature": "(bot: dpy_commands.Bot) -> None",
           "summary": "",
-          "lineno": 121
+          "lineno": 198
         }
       ],
       "depends_on": [
@@ -3872,9 +4299,11 @@
         "notifications.audit",
         "notifications.branding",
         "notifications.commands",
+        "notifications.discord_bot",
         "notifications.slash",
         "notifications.views",
         "notifications.work_launcher",
+        "orchestrator.Orchestrator",
         "state.task"
       ],
       "side_effects": [
@@ -4001,63 +4430,63 @@
           "kind": "function",
           "signature": "() -> dict",
           "summary": "",
-          "lineno": 101
+          "lineno": 102
         },
         {
           "name": "statusEmbed",
           "kind": "function",
           "signature": "(state, bus, uptime: Optional[str]=None) -> dict",
           "summary": "",
-          "lineno": 115
+          "lineno": 116
         },
         {
           "name": "planEmbed",
           "kind": "function",
           "signature": "(state, page: int=0, per: int=10)",
           "summary": "",
-          "lineno": 157
+          "lineno": 158
         },
         {
           "name": "runsEmbed",
           "kind": "function",
           "signature": "(summaries, page: int=0, per: int=8)",
           "summary": "",
-          "lineno": 167
+          "lineno": 168
         },
         {
           "name": "runEmbed",
           "kind": "function",
           "signature": "(state) -> dict",
           "summary": "",
-          "lineno": 177
+          "lineno": 178
         },
         {
           "name": "diagnosticsEmbed",
           "kind": "function",
           "signature": "(checks) -> dict",
           "summary": "",
-          "lineno": 194
+          "lineno": 195
         },
         {
           "name": "metricsEmbed",
           "kind": "function",
           "signature": "(m) -> dict",
           "summary": "",
-          "lineno": 208
+          "lineno": 209
         },
         {
           "name": "pingEmbed",
           "kind": "function",
           "signature": "(latency_ms, uptime, version) -> dict",
           "summary": "",
-          "lineno": 222
+          "lineno": 223
         },
         {
           "name": "auditEmbed",
           "kind": "function",
           "signature": "(entries) -> dict",
           "summary": "",
-          "lineno": 230
+          "lineno": 231
         }
       ],
       "depends_on": [
@@ -4177,7 +4606,9 @@
       "test": [
         "tests/test_command_bot.py"
       ],
-      "callers": []
+      "callers": [
+        "nightclaw"
+      ]
     },
     "notifications.commands": {
       "path": "notifications/commands.py",
@@ -4685,8 +5116,10 @@
       "callers": [
         "agents.executor",
         "agents.hooks",
+        "monitoring.alerter",
         "notifications.bot.cogs.admin",
         "notifications.bot.cogs.ops_cog",
+        "notifications.bot.cogs.runs_cog",
         "notifications.branding",
         "notifications.cast",
         "notifications.commands",
@@ -5389,14 +5822,14 @@
           "kind": "function",
           "signature": "(obs: 'ObsidianClient | None'=None, *, fetch_web: bool | None=None, log_session: bool=True, force: bool=False) -> str",
           "summary": "Living knowledge refresh",
-          "lineno": 93
+          "lineno": 91
         },
         {
           "name": "Orchestrator",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 373
+          "lineno": 371
         }
       ],
       "depends_on": [
@@ -5446,7 +5879,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_orchestrator_poll.py"
+        "tests/test_orchestrator_poll.py",
+        "tests/test_orchestrator_with_registry.py"
       ],
       "callers": []
     },
@@ -5618,6 +6052,103 @@
       "callers": [
         "main"
       ]
+    },
+    "retry_policy": {
+      "path": "retry_policy.py",
+      "purpose": "Structured retry policy object for the 9to5 error-handling layer.",
+      "exports": [
+        {
+          "name": "RetryPolicy",
+          "kind": "class",
+          "signature": "",
+          "summary": "Configuration object for retry-before-alert behaviour.",
+          "lineno": 38
+        }
+      ],
+      "depends_on": [
+        "error_handling.MAX_RETRIES",
+        "error_handling.RETRY_DELAY_SECONDS",
+        "error_handling.retryTask"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_retry_policy.py"
+      ],
+      "callers": []
+    },
+    "run_all_tests": {
+      "path": "run_all_tests.py",
+      "purpose": "Run all error-handling-related tests via pytest and exit with the aggregate result.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 38
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "scheduling": {
+      "path": "scheduling/__init__.py",
+      "purpose": "scheduling -- recurring task scheduling patterns for 9to5.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "scheduling.recurring": {
+      "path": "scheduling/recurring.py",
+      "purpose": "scheduling.recurring -- recurring task scheduling with priority queue + deadline-aware slots.",
+      "exports": [
+        {
+          "name": "RecurringTask",
+          "kind": "class",
+          "signature": "",
+          "summary": "Definition of a repeating workflow task.",
+          "lineno": 30
+        },
+        {
+          "name": "RecurringScheduler",
+          "kind": "class",
+          "signature": "",
+          "summary": "Schedules recurring tasks through a priority + deadline-aware queue.",
+          "lineno": 39
+        }
+      ],
+      "depends_on": [
+        "workflows.scheduler"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "scripts.monitoring_check": {
+      "path": "scripts/monitoring_check.py",
+      "purpose": "monitoring_check.py -- acceptance check for enhanced monitoring.",
+      "exports": [],
+      "depends_on": [
+        "monitoring",
+        "monitoring.tracker"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
     },
     "scripts.repo_health": {
       "path": "scripts/repo_health.py",
@@ -5813,6 +6344,83 @@
         "main"
       ]
     },
+    "src": {
+      "path": "src/__init__.py",
+      "purpose": "",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "src.workflow_registry": {
+      "path": "src/workflow_registry.py",
+      "purpose": "src/workflow_registry.py -- Centralized mutable workflow registry.",
+      "exports": [
+        {
+          "name": "WorkflowNotFoundError",
+          "kind": "class",
+          "signature": "",
+          "summary": "Raised when a workflow name is not present in the registry.",
+          "lineno": 61
+        },
+        {
+          "name": "WorkflowValidationError",
+          "kind": "class",
+          "signature": "",
+          "summary": "Raised when a workflow definition fails structural validation.",
+          "lineno": 65
+        },
+        {
+          "name": "WorkflowRegistry",
+          "kind": "class",
+          "signature": "",
+          "summary": "Thread-safe mutable registry of WorkflowDefinition entries.",
+          "lineno": 69
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_workflow_registry.py"
+      ],
+      "callers": [
+        "agents.orchestration_pipeline",
+        "agents.workflow_resolver"
+      ]
+    },
+    "staging_validator": {
+      "path": "staging_validator.py",
+      "purpose": "Staging environment validator — runs pre-deployment checks automatically.",
+      "exports": [
+        {
+          "name": "validate",
+          "kind": "function",
+          "signature": "() -> list[dict]",
+          "summary": "Run all staging gates",
+          "lineno": 98
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(quiet: bool=False) -> int",
+          "summary": "",
+          "lineno": 108
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "stdout"
+      ],
+      "test": [],
+      "callers": []
+    },
     "state": {
       "path": "state/__init__.py",
       "purpose": "Lean task-state model + JSON persistence (see state.task).",
@@ -5945,6 +6553,79 @@
       "test": [],
       "callers": []
     },
+    "tools.claude_metrics": {
+      "path": "tools/claude_metrics.py",
+      "purpose": "Small JSONL telemetry helpers for Claude/agent iteration speed.",
+      "exports": [
+        {
+          "name": "git_state",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "",
+          "lineno": 42
+        },
+        {
+          "name": "append_jsonl",
+          "kind": "function",
+          "signature": "(path: Path, entry: dict[str, Any]) -> None",
+          "summary": "",
+          "lineno": 51
+        },
+        {
+          "name": "compact_payload",
+          "kind": "function",
+          "signature": "(data: dict[str, Any]) -> dict[str, Any]",
+          "summary": "",
+          "lineno": 57
+        },
+        {
+          "name": "record_hook_event",
+          "kind": "function",
+          "signature": "(hook_name: str, data: dict[str, Any]) -> None",
+          "summary": "",
+          "lineno": 76
+        },
+        {
+          "name": "record_executor_event",
+          "kind": "function",
+          "signature": "(entry: dict[str, Any]) -> None",
+          "summary": "",
+          "lineno": 87
+        },
+        {
+          "name": "read_recent",
+          "kind": "function",
+          "signature": "(path: Path, limit: int=20) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 97
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.claude_statusline": {
+      "path": "tools/claude_statusline.py",
+      "purpose": "Claude Code status line for 9TO5.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 32
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "tools.codemod": {
       "path": "tools/codemod.py",
       "purpose": "codemod -- AST/libcst-based mechanical edits across the repo (formatting-preserving).",
@@ -5978,6 +6659,41 @@
       "test": [],
       "callers": []
     },
+    "tools.context_budget": {
+      "path": "tools/context_budget.py",
+      "purpose": "Context-budget checks for Claude-facing repo surfaces.",
+      "exports": [
+        {
+          "name": "Budget",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 23
+        },
+        {
+          "name": "measure",
+          "kind": "function",
+          "signature": "() -> list[dict]",
+          "summary": "",
+          "lineno": 47
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 72
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_context_budget.py"
+      ],
+      "callers": []
+    },
     "tools.dev": {
       "path": "tools/dev.py",
       "purpose": "dev -- the one-command developer/agent task runner for 9to5 (cross-platform, no `make`).",
@@ -5987,105 +6703,168 @@
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 86
+          "lineno": 149
         },
         {
           "name": "cmd_typecheck",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 91
+          "lineno": 154
         },
         {
           "name": "cmd_check",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "Fail-fast gate chain: ruff -> typecheck(changed) -> affected tests -> repo-map drift.",
-          "lineno": 99
+          "lineno": 162
         },
         {
           "name": "cmd_test",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 144
+          "lineno": 219
         },
         {
           "name": "cmd_fast",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 148
+          "lineno": 223
         },
         {
-          "name": "cmd_affected",
+          "name": "cmd_ci_local",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "Run the local CI gates in cheapest useful order.",
+          "lineno": 227
+        },
+        {
+          "name": "cmd_slow_report",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 152
+          "lineno": 256
         },
         {
-          "name": "cmd_watch",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "Poll .py mtimes; on any change, run the affected tests",
-          "lineno": 156
-        },
-        {
-          "name": "cmd_outline",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 192
-        },
-        {
-          "name": "cmd_where",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 220
-        },
-        {
-          "name": "cmd_map",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 249
-        },
-        {
-          "name": "cmd_run",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 253
-        },
-        {
-          "name": "cmd_dryrun",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 257
-        },
-        {
-          "name": "cmd_e2e",
+          "name": "cmd_heartbeat_test",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
           "lineno": 262
         },
         {
+          "name": "cmd_context_check",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 270
+        },
+        {
+          "name": "cmd_iteration_health",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 274
+        },
+        {
+          "name": "cmd_bench_iteration",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 298
+        },
+        {
+          "name": "cmd_affected",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 302
+        },
+        {
+          "name": "cmd_watch",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "Poll .py mtimes; on any change, run the affected tests",
+          "lineno": 306
+        },
+        {
+          "name": "cmd_outline",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 342
+        },
+        {
+          "name": "cmd_where",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 370
+        },
+        {
+          "name": "cmd_map",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 399
+        },
+        {
+          "name": "cmd_run",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 403
+        },
+        {
+          "name": "cmd_dryrun",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 407
+        },
+        {
+          "name": "cmd_e2e",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 412
+        },
+        {
           "name": "cmd_codemod",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 266
+          "lineno": 416
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: list[str]) -> int",
           "summary": "",
-          "lineno": 279
+          "lineno": 432
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_dev_commands.py"
+      ],
+      "callers": []
+    },
+    "tools.iteration_bench": {
+      "path": "tools/iteration_bench.py",
+      "purpose": "Benchmark harness for validated Claude/agent iteration speed.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 82
         }
       ],
       "depends_on": [],
@@ -6243,8 +7022,33 @@
         "tests/test_tracing.py"
       ],
       "callers": [
+        "agents.trace-replay",
+        "agents.trace_replay",
         "scripts.repo_health"
       ]
+    },
+    "validate_workflows": {
+      "path": "validate_workflows.py",
+      "purpose": "validate_workflows.py -- one-shot script to validate all workflow definitions.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 33
+        }
+      ],
+      "depends_on": [
+        "workflows.registry"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_validate_workflows.py"
+      ],
+      "callers": []
     },
     "wipe": {
       "path": "wipe.py",
@@ -6282,6 +7086,129 @@
       "depends_on": [
         "config"
       ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "workflows": {
+      "path": "workflows/__init__.py",
+      "purpose": "",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "workflows.registry": {
+      "path": "workflows/registry.py",
+      "purpose": "Workflow registry — loads and validates WorkflowDefinition JSON files.",
+      "exports": [
+        {
+          "name": "loadRegistry",
+          "kind": "function",
+          "signature": "(definitions_dir: Path=DEFINITIONS_DIR) -> Dict[str, WorkflowDefinition]",
+          "summary": "Load all *.json files from *definitions_dir*, validate, and return by name.",
+          "lineno": 93
+        }
+      ],
+      "depends_on": [
+        "contracts.WorkflowAgent",
+        "contracts.WorkflowDefinition",
+        "contracts.WorkflowPhase"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_registry.py"
+      ],
+      "callers": [
+        "validate_workflows"
+      ]
+    },
+    "workflows.scheduler": {
+      "path": "workflows/scheduler.py",
+      "purpose": "workflows.scheduler -- priority queue with deadline-aware slot allocation.",
+      "exports": [
+        {
+          "name": "WorkflowJob",
+          "kind": "class",
+          "signature": "",
+          "summary": "One queued workflow execution.",
+          "lineno": 38
+        },
+        {
+          "name": "WorkflowScheduler",
+          "kind": "class",
+          "signature": "",
+          "summary": "Deadline-aware priority queue for workflow slot allocation.",
+          "lineno": 52
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_priority_scheduler.py",
+        "tests/test_scheduler_priority.py"
+      ],
+      "callers": [
+        "scheduling.recurring"
+      ]
+    },
+    "workflows.skill-gap-analysis": {
+      "path": "workflows/skill-gap-analysis.py",
+      "purpose": "workflows/skill-gap-analysis.py",
+      "exports": [
+        {
+          "name": "loadSkillInventory",
+          "kind": "function",
+          "signature": "() -> dict",
+          "summary": "",
+          "lineno": 62
+        },
+        {
+          "name": "loadTaskHistory",
+          "kind": "function",
+          "signature": "() -> list",
+          "summary": "Load task JSON files in parallel for faster I/O on large task stores.",
+          "lineno": 99
+        },
+        {
+          "name": "buildDemandCounter",
+          "kind": "function",
+          "signature": "(tasks: list) -> Counter",
+          "summary": "",
+          "lineno": 116
+        },
+        {
+          "name": "scoreDomains",
+          "kind": "function",
+          "signature": "(demand: Counter, inventory: dict) -> list",
+          "summary": "",
+          "lineno": 132
+        },
+        {
+          "name": "printReport",
+          "kind": "function",
+          "signature": "(rows: list, inventory: dict, task_count: int) -> None",
+          "summary": "",
+          "lineno": 160
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 204
+        }
+      ],
+      "depends_on": [],
       "side_effects": [
         "unannotated"
       ],

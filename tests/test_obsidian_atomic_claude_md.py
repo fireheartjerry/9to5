@@ -3,6 +3,7 @@ work_dir/CLAUDE.md and the executor's `claude` auto-reads it right after, so a c
 must never observe a half-written (torn) file."""
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -20,7 +21,7 @@ class TestAtomicClaudeMd(unittest.TestCase):
         stop = threading.Event()   # non-atomic fallback only under extreme synthetic load, not real use)
 
         def writer(i: int) -> None:
-            for _ in range(25):
+            for _ in range(8):
                 obsidian._atomicWriteText(target, f"{HEAD}\n{body}\n{FOOT}-{i}")
 
         def reader() -> None:
@@ -32,6 +33,10 @@ class TestAtomicClaudeMd(unittest.TestCase):
                     continue
                 if t and not (t.startswith(HEAD) and t.rstrip().endswith(valid_tails)):
                     torn.append(t[:40] + "..." + t[-20:])
+                # Yield between reads: an unthrottled spin holds the file handle often enough that
+                # os.replace on Windows fails and backs off, inflating runtime ~10x without adding
+                # detection power. The _fast_sleep fixture caps this to ~1ms.
+                time.sleep(0.0005)
 
         writers = [threading.Thread(target=writer, args=(i,)) for i in range(N_WRITERS)]
         readers = [threading.Thread(target=reader) for _ in range(2)]

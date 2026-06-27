@@ -30,7 +30,7 @@ EXPORTS:
   effortFlag(effort_level: str) -> Optional[str]
   scanDestructive(text: str) -> list[str]
   runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, system_prompt: Optional[str]=None, extra: Optional[str]=None, timeout: Optional[int]=None, resume_session: Optional[str]=None, cancel_check=None) -> dict  -- Prepare the environment from the invocation spec, then fire one Claude run.
-DEPENDS-ON: agents.playbook, config, memory.obsidian, notifications.discord_bot
+DEPENDS-ON: agents.playbook, agents.workflow_resolver, config, memory.obsidian, notifications.discord_bot
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_executor.py
 """
@@ -49,6 +49,7 @@ from agents import playbook
 from memory.obsidian import writeClaudioMd
 
 LOG = config.getLogger("executor")
+TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
 
 # --- session token limit tracker (module-level, shared across concurrent calls) ---
 # When Claude Pro's 5-hour token budget is exhausted, all calls fail with rate_limit.
@@ -278,6 +279,19 @@ def scanDestructive(text: str) -> list[str]:
     return [m.group(1).strip() for m in _DESTRUCTIVE_RE.finditer(text or "")]
 
 
+def _recordIterationMetric(entry: dict) -> None:
+    try:
+        if getattr(subprocess.Popen, "__module__", "subprocess") != "subprocess":
+            return
+        import sys
+        sys.path.insert(0, str(TOOLS_DIR))
+        import claude_metrics
+
+        claude_metrics.record_executor_event(entry)
+    except Exception as e:  # noqa: BLE001
+        LOG.debug("iteration metric write failed: %s", e)
+
+
 def _alertBlocked(reason: str) -> None:
     # An AUTO-REFUSED safety event (a destructive command was blocked): inform, don't summon. No
     # "human decision required" framing and no @-ping -- 9to5 already handled it autonomously.
@@ -448,6 +462,13 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
 
     def _run(run_cmd, run_prompt) -> dict:
         wf = spec.get("use_workflow") and isinstance(spec.get("workflow_definition"), dict)
+        run_started = time.perf_counter()
+        inject_chars = len(spec.get("claude_md_inject") or "")
+        playbook_chars = len(playbook_md or "")
+        context_chars = len(run_prompt or "") + inject_chars + playbook_chars
+        if context_chars > 60000:
+            LOG.warning("Claude context payload is large: %d chars (prompt=%d inject=%d playbook=%d)",
+                        context_chars, len(run_prompt or ""), inject_chars, playbook_chars)
         LOG.info("Claude run (cwd=%s effort=%s role=%s resume=%s skills=%s subagent=%s hooks=%s/%s workflow=%s prompt=%dch)",
                  work, flag or "default", profile or "-", "--resume" in run_cmd,
                  spec.get("skills_to_invoke"), spec.get("subagent"),
@@ -464,8 +485,16 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
                                     start_new_session=(os.name != "nt"))
         except Exception as e:  # noqa: BLE001
             LOG.error("Claude launch failed: %s", e)
-            return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
-                    "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+            result = {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
+                      "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+            _recordIterationMetric({
+                "event": "launch_failed", "cwd": work, "model": model, "effort": effort,
+                "effort_flag": flag, "resume": "--resume" in run_cmd,
+                "prompt_chars": len(run_prompt or ""), "inject_chars": inject_chars,
+                "playbook_chars": playbook_chars, "duration_seconds": round(time.perf_counter() - run_started, 3),
+                "returncode": -1, "ok": False,
+            })
+            return result
         try:
             out, err = proc.communicate(input=run_prompt, timeout=timeout)
             out = out or ""
@@ -483,11 +512,24 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
             # success signal: is_error from the envelope when present (the exit code is unreliable --
             # headless claude exits nonzero for benign reasons like a fallback-model switch).
             ok = (not fields["is_error"]) if "is_error" in fields else (proc.returncode == 0)
-            return {"ok": ok, "returncode": proc.returncode, "stdout": text, "stderr": err or "",
-                    "profile": profile, "session_id": fields.get("session_id"), "is_error": fields.get("is_error"),
-                    "subtype": fields.get("subtype"),
-                    "cost_usd": fields.get("cost_usd"), "usage": fields.get("usage"), "num_turns": fields.get("num_turns"),
-                    "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+            result = {"ok": ok, "returncode": proc.returncode, "stdout": text, "stderr": err or "",
+                      "profile": profile, "session_id": fields.get("session_id"), "is_error": fields.get("is_error"),
+                      "subtype": fields.get("subtype"),
+                      "cost_usd": fields.get("cost_usd"), "usage": fields.get("usage"), "num_turns": fields.get("num_turns"),
+                      "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+            _recordIterationMetric({
+                "event": "completed", "cwd": work, "model": model, "effort": effort,
+                "effort_flag": flag, "resume": "--resume" in run_cmd,
+                "skills": spec.get("skills_to_invoke"), "subagent": spec.get("subagent"),
+                "workflow": (spec["workflow_definition"].get("name") if wf else False),
+                "prompt_chars": len(run_prompt or ""), "inject_chars": inject_chars,
+                "playbook_chars": playbook_chars, "context_chars": context_chars,
+                "duration_seconds": round(time.perf_counter() - run_started, 3),
+                "returncode": proc.returncode, "ok": ok, "session_id": fields.get("session_id"),
+                "cost_usd": fields.get("cost_usd"), "usage": fields.get("usage"),
+                "num_turns": fields.get("num_turns"),
+            })
+            return result
         except subprocess.TimeoutExpired:
             _killProcessTree(proc.pid)   # stop the work, no orphan leak, drain returns immediately
             try:
@@ -496,17 +538,35 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
                 out, err = "", ""
             LOG.error("Claude timed out after %ss -- process tree killed (captured %d stdout chars)",
                       timeout, len(out or ""))
-            return {"ok": False, "returncode": -1, "stdout": out or "",
-                    "stderr": (err or "") + f"\nTIMEOUT after {timeout}s",
-                    "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+            result = {"ok": False, "returncode": -1, "stdout": out or "",
+                      "stderr": (err or "") + f"\nTIMEOUT after {timeout}s",
+                      "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+            _recordIterationMetric({
+                "event": "timeout", "cwd": work, "model": model, "effort": effort,
+                "effort_flag": flag, "resume": "--resume" in run_cmd,
+                "prompt_chars": len(run_prompt or ""), "inject_chars": inject_chars,
+                "playbook_chars": playbook_chars, "context_chars": context_chars,
+                "duration_seconds": round(time.perf_counter() - run_started, 3),
+                "returncode": -1, "ok": False,
+            })
+            return result
         except Exception as e:  # noqa: BLE001
             try:
                 _killProcessTree(proc.pid)
             except Exception:  # noqa: BLE001
                 pass
             LOG.error("Claude failed: %s", e)
-            return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
-                    "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+            result = {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
+                      "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+            _recordIterationMetric({
+                "event": "failed", "cwd": work, "model": model, "effort": effort,
+                "effort_flag": flag, "resume": "--resume" in run_cmd,
+                "prompt_chars": len(run_prompt or ""), "inject_chars": inject_chars,
+                "playbook_chars": playbook_chars, "context_chars": context_chars,
+                "duration_seconds": round(time.perf_counter() - run_started, 3),
+                "returncode": -1, "ok": False,
+            })
+            return result
 
     if not is_resume:
         result = _run(fresh_cmd, full_prompt)

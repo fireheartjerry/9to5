@@ -5,7 +5,7 @@ Thin shells over work_launcher + branding (see notifications.slash helpers).
 EXPORTS:
   RunsCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.branding, notifications.commands, notifications.discord_bot, notifications.slash, notifications.views, notifications.work_launcher, orchestrator, state.task
+DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.branding, notifications.commands, notifications.discord_bot, notifications.slash, notifications.views, notifications.work_launcher, orchestrator.Orchestrator, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """

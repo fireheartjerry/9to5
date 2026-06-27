@@ -14,7 +14,7 @@ EXPORTS:
   Orchestrator
 DEPENDS-ON: agents.adversary, agents.architect, agents.browser_executor, agents.clarifier, agents.executor, agents.replanner, agents.second_brain, agents.verifier, config, control.AbortRun, control.ControlBus, epoch, knowledge, learning.adversary_trust, learning.confidence, learning.eval_harness, learning.eval_runner, learning.finetune, learning.knowledge_graph, learning.policy, learning.postmortem, learning.prompts, learning.reflection, learning.sie, learning.solution_cache, llm_io, memory.experience, memory.obsidian, memory.retrieval, notifications.audit, notifications.cast, notifications.commands, notifications.dashboard, notifications.discord_bot, notifications.engagement, notifications.icons, notifications.visuals, notifications.webdash, selfmod, state.task, surfaces
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_orchestrator_poll.py
+RUN/TEST: python -m pytest tests/test_orchestrator_poll.py tests/test_orchestrator_with_registry.py
 """
 from __future__ import annotations
 
@@ -24,8 +24,6 @@ import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-import ollama
 
 import config
 import knowledge
@@ -376,8 +374,11 @@ class Orchestrator:
         # the whole orchestration loop run with NO Ollama / Claude CLI / Obsidian -- which is what
         # the integration tests and the --dry-run simulation mode use. replanner.replan MUST be
         # seamed because it owns a separate module-level Ollama client of its own.
-        self.ollama = brain if brain is not None else ollama.Client(
-            host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
+        if brain is not None:
+            self.ollama = brain
+        else:
+            import ollama  # deferred: the ~0.3s SDK import is paid only on a real (non-injected) run
+            self.ollama = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
         self.obs = obs if obs is not None else ObsidianClient()
         self._run_claude = run_claude or executor.runClaude
         self._replan = replan or replanner.replan

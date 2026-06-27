@@ -1,0 +1,5 @@
+# Dev/test-only dependencies (not needed at runtime). CI installs these alongside
+# requirements.txt for the pytest-based fast/slow lanes; runtime never imports them.
+pytest>=9
+pytest-xdist>=3.6
+pytest-timeout>=2.3

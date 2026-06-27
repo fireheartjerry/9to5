@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py block_destructive"
+          },
+          {
+            "type": "command",
+            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py self_modification_guard"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py self_modification_guard"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py write_obsidian"
+          }
+        ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py log_all"
+          }
+        ]
+      }
+    ]
+  }
+}

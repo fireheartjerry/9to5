@@ -37,6 +37,13 @@ Clarifier -- the Orchestrator brain answers the Executor's questions, no human.
 - Side effects: unannotated
 - Test: pytest tests/test_clarifier.py
 
+## agents/debugging_workflow.py
+debugging_workflow -- integrated skill-gap + trace-replay diagnostic.
+- Exports: buildReport, run
+- Depends on: agents.trace_replay
+- Side effects: unannotated
+- Test: pytest tests/test_debugging_workflow.py
+
 ## agents/elaborator.py
 Elaborator (Step 0.5) -- Ollama expands the raw goal into a buildable spec.
 - Exports: elaborate, extractUniverse
@@ -47,7 +54,7 @@ Elaborator (Step 0.5) -- Ollama expands the raw goal into a buildable spec.
 ## agents/executor.py
 Executor (the hands) -- run Claude Code CLI from an Orchestrator invocation spec.
 - Exports: normalizeSpec, effortFlag, scanDestructive, runClaude
-- Depends on: agents.playbook, config, memory.obsidian, notifications.discord_bot
+- Depends on: agents.playbook, agents.workflow_resolver, config, memory.obsidian, notifications.discord_bot
 - Side effects: unannotated
 - Test: pytest tests/test_executor.py
 
@@ -60,7 +67,7 @@ gemini_driver -- the second-brain transport: Google Gemini via the google-genai 
 
 ## agents/hooks.py
 9TO5 deterministic hook dispatcher.
-- Exports: blockDestructive, writeObsidian, discordNotify, logAll, selfModificationGuard, main
+- Exports: blockDestructive, writeObsidian, discordNotify, logAll, logTelemetry, selfModificationGuard, main
 - Depends on: config, memory.obsidian, notifications.discord_bot, state.task
 - Side effects: unannotated
 - Test: pytest tests/test_hooks_self_path.py
@@ -74,8 +81,8 @@ Native UI execution backend -- Layer 2 (UIA/pywinauto) "hands" for 9TO5.
 
 ## agents/orchestration_pipeline.py
 Orchestration pipeline -- finer-grained step control.
-- Exports: StepResult, PipelineStep, stepFor, executionOrder, sanitizeSpec, validateSpec, fmtElapsed, singleDeliverable, verifyStep, runSteps
-- Depends on: agents.verifier, config
+- Exports: StepResult, PipelineStep, stepFor, executionOrder, sanitizeSpec, validateSpec, fmtElapsed, singleDeliverable, resolveWorkflow, verifyStep, runSteps
+- Depends on: agents.verifier, config, src.workflow_registry
 - Side effects: unannotated
 - Test: (none)
 
@@ -100,10 +107,38 @@ second_brain -- the dual-brain consult router.
 - Side effects: unannotated
 - Test: pytest tests/test_phase2_second_brain.py
 
+## agents/timing_harness.py
+agents/timing_harness.py -- Wall-clock timing harness for parallel workflow phases.
+- Exports: TimingResult, measureWorkflow, updateSpeedupRatio
+- Depends on: (stdlib only)
+- Side effects: unannotated
+- Test: pytest tests/test_timing_harness.py
+
+## agents/trace-replay.py
+trace-replay -- loads archived execution traces and surfaces brain divergence points.
+- Exports: replayTrace, main
+- Depends on: config, tracing
+- Side effects: unannotated
+- Test: (none)
+
+## agents/trace_replay.py
+trace_replay -- optimized workflow for invoking the trace-replay subagent.
+- Exports: buildSpec, runWorkflow, buildStepSpec, getDecisionPoints
+- Depends on: config, tracing
+- Side effects: unannotated
+- Test: pytest tests/test_trace_replay.py
+
 ## agents/verifier.py
 Verifier -- run the brain-authored verification check for a subtask.
 - Exports: sanitizeVerify, extractRequirements, primaryTargetFile, requirementMarkers, buildContentScanVerify, buildRequirementsVerify, isStrictVerify, runVerification
 - Depends on: agents.executor, config
+- Side effects: unannotated
+- Test: (none)
+
+## agents/workflow_resolver.py
+agents/workflow_resolver.py -- Bridge invocation specs to the centralized WorkflowRegistry.
+- Exports: resolveWorkflowDefinition
+- Depends on: src.workflow_registry
 - Side effects: unannotated
 - Test: (none)
 

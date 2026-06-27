@@ -87,9 +87,9 @@ Tier 2 interactivity: the in-Discord plan editor, the event-timeline browser, an
 - Test: pytest tests/test_plan_cog.py
 
 ## notifications/bot/cogs/runs_cog.py
-Run-lifecycle slash commands: work / wipe / runs / run / resume.
+Run-lifecycle slash commands: work / wipe / runs / run / resume / create-pr.
 - Exports: RunsCog, setup
-- Depends on: agents.browser_executor, config, notifications.audit, notifications.branding, notifications.commands, notifications.slash, notifications.views, notifications.work_launcher, state.task
+- Depends on: agents.browser_executor, config, notifications.audit, notifications.branding, notifications.commands, notifications.discord_bot, notifications.slash, notifications.views, notifications.work_launcher, orchestrator.Orchestrator, state.task
 - Side effects: unannotated
 - Test: (none)
 

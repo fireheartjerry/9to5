@@ -24,6 +24,9 @@ EXPORTS:
   ExecutorResult  -- The uniform result dict every executor surface returns (terminal/browser/native).
   Verdict  -- The adversary/second-brain review verdict (rich contract
   Verify  -- A brain-authored verification check run after the executor.
+  WorkflowAgent  -- One agent entry inside a WorkflowPhase.
+  WorkflowPhase  -- One phase inside a WorkflowDefinition.
+  WorkflowDefinition  -- Brain-authored dynamic workflow spec carried in InvocationSpec.workflow_definition.
   Universe  -- ``meta.universe`` -- surgical-precision scope
   Goal  -- The raw human objective (``meta.goal_raw``) + its time horizon.
   ElaboratedGoal  -- The approved, clarified objective (``meta.goal_elaborated``)
@@ -31,9 +34,6 @@ EXPORTS:
   VerificationResult  -- ``agents/verifier.py`` runVerification() output -- the proof gate's verdict
   ControlCommand  -- A parsed human control command (``notifications/commands.py`` Command): name + arg.
   AgentDecision  -- Confidence/risk metadata an intelligence may attach so the orchestrator can escalate.
-  WorkflowAgent  -- One agent entry inside a WorkflowPhase.
-  WorkflowPhase  -- One phase inside a WorkflowDefinition (title, parallel flag, agent list).
-  WorkflowDefinition  -- Brain-authored dynamic workflow spec (name, description, phases, synthesis).
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_contracts.py

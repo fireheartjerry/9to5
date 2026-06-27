@@ -55,13 +55,48 @@ python -m pytest tests/test_webdash_control.py -q
 
 ### Tier 3: full suite
 
-Use after focused tests pass or before merging large changes. The CI-canonical
-form is unittest discovery; pytest also works (a `pytest.ini` is committed).
+Use after focused tests pass or before merging large changes.
 
 ```bash
-python -m unittest discover -s tests -v      # CI-canonical
-python -m pytest -q                          # equivalent via pytest.ini
+python -m pytest -n auto --dist loadscope -q   # full suite, parallel (CI form)
+python tools/dev.py fast                         # fast lane only, parallel
+python -m pytest --lf -q                         # re-run only last-failed
+python tools/dev.py ci-local                     # local CI-shaped gate
+python tools/dev.py slow-report                  # slow lane + heartbeat + duration report
+python tools/dev.py context-check                # Claude-facing context budget warning
+python tools/dev.py iteration-health             # recent LLM/test-loop health summary
+python tools/dev.py bench-iteration --dry-run    # list validated iteration benchmark tasks
 ```
+
+> Run tests via **pytest**, not bare `unittest`: the per-test sandbox (offline Discord/Ollama/
+> browser) lives in `tests/conftest.py`, which `unittest` does not load — so bare `unittest` can
+> fire real side effects from a live local `.env`.
+
+#### CI lanes (`.github/workflows/tests.yml`)
+
+| Trigger | Jobs |
+|---|---|
+| Docs-only | repo-map drift check only |
+| Workflow-only | workflow validation + workflow registry tests |
+| Tooling-only | repo-map/tooling tests |
+| Push to `main` with core changes | fast lane, py3.12 |
+| PR with core changes | fast lane py3.11+3.12, slow lane py3.12, dry-run smoke, E2E smoke |
+| Nightly/manual | exhaustive slow lane + smoke commands |
+
+`concurrency: cancel-in-progress` kills superseded runs; installs use `uv`. Dev/test deps
+(`pytest`, `pytest-xdist`, `pytest-timeout`) live in `requirements-dev.txt`.
+
+Long CI pytest jobs enable the first-party heartbeat reporter by default:
+
+```txt
+[pytest-progress] elapsed=90s completed=412/2793 failed=0 skipped=1 active=gw0 tests/test_x.py::test_y
+```
+
+Controls:
+
+- `NINE_TO_FIVE_TEST_HEARTBEAT_SECONDS=30` changes the interval.
+- `NINE_TO_FIVE_TEST_PROGRESS=0` disables heartbeat output.
+- Focused local test files stay quiet unless progress is explicitly enabled.
 
 ### Tier 4: live/manual/browser/native checks
 
