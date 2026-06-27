@@ -132,6 +132,13 @@ verify.expect  ∈  exit_zero
                |  stdout_contains_all:<t1>|||<t2>|||...   (multi-requirement)
                |  stdout_regex_all:<p1>|||<p2>|||...      (multi-requirement)
 ```
+**Work-dir normalization:** self-referential runs set the subtask `--work-dir` to a
+`.sc-ctx/<sid>` scratch dir, but verify commands are authored relative to the repo root.
+Before running, the verifier re-roots to `INSTALL_ROOT` when the command's referenced path
+(absolute *or* relative, including `pytest <dir>/*_test.py` globs) resolves under the repo
+root but not under the scratch dir. Without this, `python tests/foo.py` / `pytest tests/...`
+fail with "No such file or directory" or pytest usage-error (exit 4) from the scratch cwd.
+
 **Decision point — pass / fail:**
 - **Pass** → subtask is marked `done`; flow continues to step 4d.
 - **Fail** → the failure output is appended to the next Ollama prompt and the
@@ -243,6 +250,13 @@ subtasks done/total, success rate %, elapsed time, replan count, adversary count
 Multi-requirement types (`_all`) assert every deliverable of a multi-goal subtask
 in a single verify command. Introduced in `fix/multi-requirement-verify`.
 
+**Test-runner override:** when the verify command is a self-asserting test suite
+(`pytest`, `python -m unittest`, or a `test_*.py` / `*_test.py` script — but **not**
+`python -c` inline snippets) and it exits 0, the subtask **passes regardless of a
+content `expect`**. A green suite's own assertions are the verification; a brain-guessed
+`stdout_contains` needle must not false-FAIL correct work whose runner reports success to
+stderr (e.g. unittest's `OK`).
+
 ---
 
 ## Error handling and resilience
@@ -282,6 +296,25 @@ in a single verify command. Introduced in `fix/multi-requirement-verify`.
 | `nightclaw.py` | Repo-root entrypoint: `python nightclaw.py` starts the gateway bot |
 | `workflows/registry.py` | Loads and validates `WorkflowDefinition` JSON files from `workflows/definitions/` |
 | `workflows/definitions/*.json` | Built-in workflow templates (see below) |
+| `scheduling/recurring.py` | Recurring task scheduler — priority queue + EDF, 5-minute SLA tracking |
+| `workflows/scheduler.py` | Priority min-heap with deadline-aware slot allocation (used by `scheduling/`) |
+
+---
+
+## Recurring task scheduling
+
+9TO5 includes a scheduling layer that fires recurring tasks (health checks, alert
+scans, metrics flushes) on fixed intervals and guarantees an average start delay of
+< 5 minutes.
+
+Key design points:
+- **Priority + EDF**: higher-priority tasks dispatch first; earliest-deadline breaks ties.
+- **Fixed-interval re-enqueue**: only one fire per missed interval on restart — no thundering herd.
+- **Slot-cap concurrency**: `max_concurrent` limits simultaneous executions.
+- **SLA tracking**: `average_delay_seconds()` exposes the running mean; > 300 s means slot starvation.
+- **Overdue detection**: `overdue_jobs()` surfaces tasks that missed their deadline window.
+
+See **`docs/scheduling.md`** for the full pattern reference and operating parameters.
 
 ---
 

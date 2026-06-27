@@ -381,3 +381,56 @@ Risks:
 ```
 
 Do not produce vague summaries like "updated the codebase." Name files, behavior, commands, docs, and risks.
+
+## 18. Active alerting system
+
+9to5 includes a proactive alerting layer that detects threshold breaches and late-detected critical events, then sends Discord embeds.
+
+### Modules
+
+| File | Role |
+|---|---|
+| `monitoring/tracker.py` | In-memory execution records + critical events; computes alert list on each record |
+| `monitoring/alerter.py` | Polls tracker, deduplicates by key+TTL, fires Discord embeds; runs as daemon thread |
+| `monitoring/__init__.py` | Public facade re-exporting tracker API |
+
+### Alert types and thresholds
+
+| Alert key | Condition | Threshold constant |
+|---|---|---|
+| `low_success_rate` | global success rate < 90% | `SUCCESS_RATE_MIN = 0.90` |
+| `high_avg_delay` | avg delay > 300 s | `MAX_DELAY_SECONDS = 300.0` |
+| `max_retries_exceeded:<workflow_id>` | any workflow hits ≥ 3 retries | `MAX_RETRIES = 3` |
+| `critical_late:<event_id>` | critical event detected > 120 s after occurrence | `CRITICAL_DETECTION_WINDOW_SECS = 120.0` |
+
+Deduplication TTL: `DEDUP_TTL_SECONDS = 300.0` (alerter re-fires after 5 min).
+
+### Public API (monitoring package)
+
+```python
+monitoring.record_execution(workflow_id, success, delay_seconds, retries=0)
+monitoring.record_critical_event(event_id, event_type, occurred_at=None)
+monitoring.get_alerts() -> list[dict]          # alert dicts with type/message/threshold
+monitoring.get_critical_events() -> list[dict] # event dicts with lag_seconds
+monitoring.reset()                             # wipe state (tests only)
+```
+
+### Starting the alert loop
+
+```python
+from monitoring import alerter
+alerter.startAlertLoop(interval_seconds=30)  # idempotent; daemon thread
+alerter.stopAlertLoop()
+```
+
+### Acceptance criteria and verification
+
+```
+python C:\9to5\tests\test_alerting_system.py   # alias; runs 45 tests, expects exit 0
+```
+
+Tests split across:
+- `tests/test_active_alerting.py` — unit tests (checkAndNotify, dedup, loop lifecycle, embed structure)
+- `tests/test_event_alerting.py` — integration tests (real-time detection, threshold alerts, field integrity)
+
+Discord send is a no-op when bot token/channel are blank — all tests run fully offline.

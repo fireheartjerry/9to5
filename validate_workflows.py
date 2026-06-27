@@ -1,0 +1,63 @@
+"""validate_workflows.py -- one-shot script to validate all workflow definitions.
+
+Run: python validate_workflows.py
+Exit 0 if all definitions are valid, 1 if any fail.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import sys
+from pathlib import Path
+
+# Repo root on path
+_REPO_ROOT = Path(__file__).resolve().parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from workflows.registry import DEFINITIONS_DIR, _validateWorkflowDefinition  # noqa: E402
+
+logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(message)s")
+
+PASS = "PASS"
+FAIL = "FAIL"
+
+
+def main() -> int:
+    json_files = sorted(DEFINITIONS_DIR.glob("*.json"))
+    if not json_files:
+        print(f"No JSON files found in {DEFINITIONS_DIR}")
+        return 1
+
+    results: list[tuple[str, bool, str]] = []
+
+    for json_path in json_files:
+        source = json_path.name
+        try:
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            results.append((source, False, f"read/parse error: {exc}"))
+            continue
+
+        err = _validateWorkflowDefinition(data, source)
+        if err:
+            results.append((source, False, err))
+        else:
+            wf_name = data.get("name") or json_path.stem
+            results.append((source, True, f"name={wf_name!r}"))
+
+    any_fail = False
+    for source, ok, detail in results:
+        icon = PASS if ok else FAIL
+        print(f"  {icon}  {source}: {detail}")
+        if not ok:
+            any_fail = True
+
+    total = len(results)
+    passed = sum(1 for _, ok, _ in results if ok)
+    print(f"\n{passed}/{total} workflow definition(s) valid.")
+    return 1 if any_fail else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

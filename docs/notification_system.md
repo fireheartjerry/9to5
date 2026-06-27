@@ -370,7 +370,77 @@ builders used by slash commands and the status surface.
 
 ---
 
+## `/loop` command — correct usage and best practices
+
+`/loop is a CC slash command` (Claude Code native).  It is handled entirely by
+the Claude Code CLI process — **not** by the 9TO5 Python orchestrator.
+
+### What `/loop` does
+
+Runs a prompt or slash command on a recurring interval.  When no interval is
+given the model self-paces via `ScheduleWakeup`.
+
+```
+/loop 5m /babysit-prs           # every 5 minutes
+/loop /check-deploy             # self-paced (model chooses the interval)
+```
+
+### Error handling inside a loop body
+
+Loop bodies execute in a standard Claude Code turn.  Transient errors do not
+stop the loop — the next interval fires regardless.  For hard failures you want
+to surface, emit a notification from inside the loop task:
+
+```python
+# inside a loop-triggered orchestrator task
+try:
+    result = execute_step()
+except Exception as exc:
+    bus.emit("subtask_failed", {"error": str(exc), "attempts": 1})
+    raise   # re-raise so the loop body's exit code is non-zero
+```
+
+### Retry mechanisms with `retryTask`
+
+Use `retryTask` (see [Orchestrator error handling](#orchestrator-error-handling))
+to auto-retry unstable operations before the failure bubbles up:
+
+```python
+from error_handling import retryTask, MAX_RETRIES
+
+# Up to MAX_RETRIES (default 3) attempts; raises RetryExhausted on exhaustion
+result = retryTask(fetch_external_data, args=(url,))
+
+# With an alert callback — returns {"ok": False} instead of raising
+result = retryTask(
+    fetch_external_data,
+    args=(url,),
+    max_retries=MAX_RETRIES,
+    on_alert=lambda msg, n: bus.emit("subtask_failed", {"error": msg, "attempts": n}),
+)
+if not result["ok"]:
+    # handle gracefully — alert already fired
+    ...
+```
+
+### Anti-patterns
+
+| Wrong | Right |
+|-------|-------|
+| `subprocess.run(["claude", "/loop", ...])` | Type `/loop` directly in Claude Code |
+| Calling `/loop` from a 9TO5 orchestrator Python function | `/loop` is a CLI-level feature; use `retryTask` for programmatic retry |
+| Swallowing all exceptions in a loop body | Re-raise or emit `subtask_failed` so the orchestrator can track failures |
+
+---
+
 ## Slash commands (`notifications/slash.py`)
+
+> **Important:** `/loop is a CC slash command` (Claude Code native) — do not
+> invoke it via subprocess or shell script.  It is handled by the Claude Code
+> CLI process itself, not by the 9TO5 Python orchestrator, and calling it via
+> `subprocess.run(["claude", "/loop", ...])` or similar will not work as
+> intended.  All other slash commands below are Discord application commands
+> registered in the gateway bot.
 
 Registered onto a `discord.app_commands.CommandTree` by
 `slash.registerSlashCommands(tree, client, started_at)`.  All read commands are
@@ -726,6 +796,81 @@ upload per `COCKPIT_IMAGE_MIN_INTERVAL`); `theme.py` is the palette/glyph/accent
 from the local Ollama brain (`/ask`). `engagement.py` maps native Poll votes
 (`on_raw_poll_vote_add`) to `ControlBus.decide` for gated approvals. `ops.py` resolves a
 gate from an owner super-reaction (`on_raw_reaction_add`) and runs a silence watchdog.
+
+---
+
+## Orchestrator error handling
+
+The `error_handling` module (and its re-export `enhanced_error_handling`) provides
+`retryTask` — a retry-before-alert wrapper for any callable inside the orchestrator.
+Failed tasks are retried up to `MAX_RETRIES` times before the alert fires.
+
+### `retryTask` — retry-before-alert
+
+```python
+from error_handling import retryTask, MAX_RETRIES, RETRY_DELAY_SECONDS, RetryExhausted
+
+# Basic usage — raises RetryExhausted if all attempts fail
+result = retryTask(my_function, args=(arg1, arg2))
+# {"ok": True, "result": <return value>, "attempts": <n>}
+
+# With an alert callback — returns {"ok": False, ...} instead of raising
+def on_alert(error_msg: str, attempts: int) -> None:
+    bus.emit("subtask_failed", {"error": error_msg, "attempts": attempts})
+
+result = retryTask(
+    my_function,
+    kwargs={"key": "value"},
+    max_retries=3,
+    delay=1.0,
+    on_alert=on_alert,
+)
+# {"ok": False, "error": "ValueError: ...", "attempts": 3}
+```
+
+### Key parameters and constants
+
+| Name | Default | Description |
+|------|---------|-------------|
+| `MAX_RETRIES` | `3` | Default retry ceiling (auto-retries before alerting) |
+| `RETRY_DELAY_SECONDS` | `1.0` | Sleep between attempts (seconds) |
+| `on_alert` | `None` | Callback `(error_msg, attempts)` fired after exhaustion |
+
+### Return shape
+
+| Key | Condition |
+|-----|-----------|
+| `{"ok": True, "result": ..., "attempts": n}` | At least one attempt succeeded |
+| `{"ok": False, "error": ..., "attempts": n}` | All failed, `on_alert` set |
+| raises `RetryExhausted` | All failed, `on_alert` is `None` |
+
+### Sleep-after-last-attempt guard
+
+Sleep fires **only between attempts** (never after the final attempt) so no
+unnecessary latency is added before the alert fires:
+
+```python
+if attempt < max_retries:   # explicit guard
+    time.sleep(delay)
+```
+
+### Logging behaviour
+
+| Event | Level | Logger |
+|-------|-------|--------|
+| Attempt failed | `WARNING` | `9to5.error_handling` |
+| Recovered on later attempt | `INFO` | `9to5.error_handling` |
+| All attempts exhausted | `CRITICAL` | `9to5.error_handling` |
+
+### Import paths
+
+```python
+# Canonical
+from error_handling import retryTask, MAX_RETRIES, RETRY_DELAY_SECONDS, RetryExhausted
+
+# Deliverable alias (re-exports the canonical module identically)
+from enhanced_error_handling import retryTask
+```
 
 ---
 

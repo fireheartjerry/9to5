@@ -238,9 +238,17 @@ def _composePrompt(spec: dict, system_prompt: Optional[str], extra: Optional[str
     subagent = spec.get("subagent")
     if subagent:
         parts.append(f"Use the '{subagent}' subagent for the analysis portion of this task.")
-    # Dynamic workflow: a brain-authored multi-phase plan replaces the flat prompt body.
-    if spec.get("use_workflow") and isinstance(spec.get("workflow_definition"), dict):
-        parts.append(_composeWorkflowPrompt(spec["workflow_definition"], spec.get("prompt") or ""))
+    # Dynamic workflow: resolve from centralized registry, then compose prompt.
+    # resolveWorkflowDefinition is the single authoritative path — it already falls back
+    # to the raw inline dict when validation fails, so bypassing it here would let
+    # registry-rejected definitions render outside registry control.
+    if spec.get("use_workflow"):
+        from agents.workflow_resolver import resolveWorkflowDefinition
+        wf_def = resolveWorkflowDefinition(spec)
+        if wf_def is not None:
+            parts.append(_composeWorkflowPrompt(wf_def, spec.get("prompt") or ""))
+        else:
+            parts.append(spec.get("prompt") or "")
     else:
         parts.append(spec.get("prompt") or "")
     if extra:

@@ -122,6 +122,7 @@ class WorkflowDefinition(TypedDict, total=False):
     description: str
     phases: list["WorkflowPhase"]
     synthesis: str                  # instruction merging phase outputs into the final deliverable
+    speedup_model: dict             # optional: documents concurrent-phase time-reduction claim
 
 
 # ===========================================================================

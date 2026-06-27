@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""
+check_trace_replay_docs.py
+Acceptance check: validates that trace-replay documentation is comprehensive.
+Exits 0 on pass, 1 on failure with a description of what is missing.
+"""
+import pathlib
+import sys
+
+DOCS_ROOT = pathlib.Path(__file__).resolve().parent
+SKILLS_ROOT = DOCS_ROOT.parent / ".claude" / "skills"
+
+DOCS_MD = DOCS_ROOT / "trace_replay.md"
+SKILL_MD = SKILLS_ROOT / "trace_replay.md"
+README_MD = SKILLS_ROOT / "trace_replay" / "README.md"
+
+# Required content in docs/trace_replay.md
+DOCS_MD_REQUIRED = [
+    "## What it does",
+    "## When to invoke",
+    "## Protocol",
+    "### Phase 1",
+    "### Phase 2",
+    "### Phase 3",
+    "### Phase 4",
+    "### Phase 5",
+    "### Phase 6",
+    "## Examples",
+    "## Rules",
+    "DIVERGENCE",
+    "root cause",
+    "agents/trace-replay.py",
+    "--run-id",
+    "FAIL",
+    "REPLAN",
+    "CHALLENGE",
+    "--calibrate",
+    "--self-test",
+    "--chart",
+    "--format",
+]
+
+# Required content in the main skill file
+SKILL_MD_REQUIRED = [
+    "## Purpose",
+    "## When to invoke",
+    "## Protocol",
+    "### Phase 1",
+    "### Phase 2",
+    "### Phase 3",
+    "### Phase 4",
+    "### Phase 5",
+    "### Phase 6",
+    "## Examples",
+    "## Rules",
+    "DIVERGENCE",
+    "root cause",
+    "agents/trace-replay.py",
+    "--run-id",
+    "FAIL",
+    "REPLAN",
+    "CHALLENGE",
+    "--calibrate",
+    "--self-test",
+]
+
+# Required content in the README
+README_REQUIRED = [
+    "## What it does",
+    "## How to invoke",
+    "## Output format",
+    "## Example",
+    "## Rules",
+    "agents/trace-replay.py",
+    "--run-id",
+    "FAIL",
+    "REPLAN",
+    "CHALLENGE",
+    "DIVERGENCE",
+    "## Event kinds",
+]
+
+FAILURES: list = []
+
+
+def checkFile(path: pathlib.Path, required_strings: list, label: str) -> None:
+    if not path.exists():
+        FAILURES.append(f"[MISSING] {label}: {path}")
+        return
+
+    text = path.read_text(encoding="utf-8")
+
+    if len(text.strip()) < 500:
+        FAILURES.append(
+            f"[TOO SHORT] {label}: only {len(text.strip())} chars — expected at least 500"
+        )
+
+    for needle in required_strings:
+        if needle not in text:
+            FAILURES.append(f"[MISSING CONTENT] {label} must contain: {needle!r}")
+
+
+def main() -> int:
+    checkFile(DOCS_MD, DOCS_MD_REQUIRED, "docs/trace_replay.md")
+    checkFile(SKILL_MD, SKILL_MD_REQUIRED, "trace_replay.md")
+    checkFile(README_MD, README_REQUIRED, "trace_replay/README.md")
+
+    if FAILURES:
+        print("FAIL — trace-replay documentation is incomplete:", file=sys.stderr)
+        for msg in FAILURES:
+            print(f"  {msg}", file=sys.stderr)
+        return 1
+
+    print("PASS — trace-replay documentation is comprehensive.")
+    print(f"  docs/trace_replay.md          : {DOCS_MD.stat().st_size} bytes")
+    print(f"  trace_replay.md               : {SKILL_MD.stat().st_size} bytes")
+    print(f"  trace_replay/README.md        : {README_MD.stat().st_size} bytes")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

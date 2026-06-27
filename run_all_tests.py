@@ -1,0 +1,43 @@
+"""Run all error-handling-related tests via pytest and exit with the aggregate result.
+
+Usage
+-----
+    python run_all_tests.py          # run all suites, exit 0 on pass
+    python run_all_tests.py -v       # verbose pytest output
+
+Suites included
+---------------
+- tests/test_error_handling.py          -- retryTask unit suite (acceptance target)
+- tests/test_error_handling_hardening.py -- behavioural hardening across health/control/state/webdash
+- tests/test_sim_error_handling.py       -- simulator-level error-path coverage
+
+Windows path note: all paths are resolved via pathlib.Path so forward/back
+slashes are normalised by the OS automatically.
+"""
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent
+
+ERROR_HANDLING_SUITES = [
+    REPO_ROOT / "tests" / "test_error_handling.py",
+    REPO_ROOT / "tests" / "test_error_handling_hardening.py",
+    REPO_ROOT / "tests" / "test_sim_error_handling.py",
+]
+
+def main() -> int:
+    extra_args = sys.argv[1:]
+    cmd = [
+        sys.executable, "-m", "pytest",
+        *[str(p) for p in ERROR_HANDLING_SUITES if p.exists()],
+        *extra_args,
+    ]
+    result = subprocess.run(cmd, cwd=str(REPO_ROOT))
+    return result.returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main())

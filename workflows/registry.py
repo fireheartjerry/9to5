@@ -68,7 +68,7 @@ def _validateWorkflowDefinition(data: object, source: str) -> Optional[str]:
     if not isinstance(data, dict):
         return f"{source}: root must be a dict, got {type(data).__name__}"
     for key in data:
-        if key not in ("name", "description", "phases", "synthesis"):
+        if key not in ("name", "description", "phases", "synthesis", "speedup_model"):
             return f"{source}: unknown key '{key}'"
     for str_key in ("name", "description", "synthesis"):
         if str_key in data and not isinstance(data[str_key], str):

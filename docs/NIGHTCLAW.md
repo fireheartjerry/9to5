@@ -88,21 +88,42 @@ The live Discord dashboard should:
 
 ## Commands
 
-Known commands may include:
+### Slash commands (Discord app_commands)
 
 ```txt
-!status
-!plan
-!log
-!abort
-!pause
-!resume
-!approve
-!reject
-!skip <id>
-!add <title>
-!retry
+/work              Start a 9TO5 run
+/wipe              Factory reset — granular wipe of state, vault, logs
+/runs              List recent runs (paginated)
+/run <id>          Inspect a run by id
+/resume [id]       Resume paused run (or resume prior run by id)
+/create-pr <id>    Manually create a PR for any completed run (bypasses test gate, posts to Discord)
+/pause             Pause current run
+/abort             Abort current run
+/status            Show current run status
 ```
+
+### `/create-pr` details
+
+**Purpose:** Force-create a PR for a completed run, bypassing the test-suite gate. Useful when:
+- Tests pass locally but the gate held the PR
+- You want to override the degradation check
+- You need to manually cherry-pick changes
+
+**Usage:**
+```
+/create-pr task_id: 9a3853b4
+/create-pr task_id: st_abc123def456
+```
+
+**Behavior:**
+- Validates task is complete (status = `done` or `partial`)
+- Creates PR on the branch
+- Posts success embed to Discord (visible to all)
+- Reports errors: merge conflicts, auth, no changes, etc.
+
+**Permissions:** Owner only (via `DISCORD_HUMAN_USER_ID`).
+
+Legacy `!` prefix commands still work (parsed by gateway bot).
 
 If command behavior changes, update:
 

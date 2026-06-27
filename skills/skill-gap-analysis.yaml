@@ -1,0 +1,85 @@
+name: skill-gap-analysis
+version: "2.0"
+description: >
+  Identifies coverage gaps between the current skill inventory and historical task demand.
+  Produces a ranked coverage report with automated acquisition recommendations.
+  Enhanced with detailed coverage percentages, per-domain coverage breakdown, and
+  priority-ordered acquisition actions.
+
+script: C:\9to5\.claude\skills\skill-gap-analysis.py
+
+domains:
+  - testing
+  - debugging
+  - documentation
+  - workflow
+  - deployment
+  - security
+  - performance
+  - memory
+  - discord
+  - subagent
+  - refactoring
+  - dependency
+  - contracts
+  - monitoring
+  - state
+  - git
+
+coverage_model:
+  saturation_skills: 2  # skills needed to reach 100% coverage for a domain
+  gap_formula: "demand × (1 − min(skill_count / saturation_skills, 1.0))"
+  coverage_pct: "max(0, 100 × (1 − gap_score / demand))"
+
+report_sections:
+  inventory:
+    description: Full list of skills currently in the skills directory
+  ranked_gaps:
+    description: >
+      All domains sorted by gap score descending. Columns: rank, domain,
+      demand (token frequency in task history), coverage %, covered-by skill names,
+      gap score.
+  critical_gaps:
+    description: Domains with nonzero demand and zero coverage — highest priority
+  latent_gaps:
+    description: Domains with zero demand and zero coverage — worth monitoring
+  priority_actions:
+    description: >
+      Top-5 actionable recommendations. Each entry specifies whether to create a new skill
+      or strengthen existing coverage, with demand and gap statistics.
+
+recommendations:
+  create_threshold: 0      # covered_by list is empty → "Create new skill"
+  strengthen_threshold: 0  # covered_by non-empty but gap > 0 → "Strengthen coverage"
+  top_n: 5                 # number of priority actions shown
+
+inputs:
+  skills_dir: C:\9to5\skills
+  tasks_dir: C:\9to5\state\tasks
+
+exit_codes:
+  0: success — inventory non-empty, report printed
+  1: error — skills directory empty or unreadable
+
+usage: |
+  python C:\9to5\.claude\skills\skill-gap-analysis.py
+
+  Example output excerpt:
+    SKILL GAP REPORT
+    ================================================================
+    Tasks analyzed     : 42
+    Skills in inventory: 8
+
+    -- Ranked Gaps (highest gap score first) ----------------------
+      #    Domain              Demand   Cov%  Covered By               Gap
+      1    documentation          70     0%  NONE                   70.00
+      2    debugging             111    50%  debugging              55.50
+
+    -- Critical Gaps (demanded, zero coverage) --------------------
+      * documentation  (demand=70)
+
+    -- Priority Actions (skill development recommendations) -------
+      1. Create new skill for 'documentation'
+         demand=70, gap=70.00, coverage=0%
+      2. Strengthen 'debugging' coverage (existing: debugging)
+         demand=111, gap=55.50, coverage=50%

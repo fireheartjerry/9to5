@@ -11,21 +11,42 @@ Invariants:
 """
 from __future__ import annotations
 
+import importlib.util
 import sys
 import threading
 from pathlib import Path
 from typing import Dict, List, Optional
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+_REPO_ROOT: Path = Path(__file__).resolve().parent.parent
 
-from contracts import WorkflowDefinition  # noqa: E402
-from workflows.registry import (  # noqa: E402
-    DEFINITIONS_DIR,
-    _validateWorkflowDefinition,
-    loadRegistry,
+
+def _load_module(module_name: str, file_path: Path):
+    """Load a module from an absolute file path, registering it in sys.modules.
+
+    Avoids sys.path mutation: caller supplies the resolved absolute path.
+    """
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load module '{module_name}' from {file_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+# Load dependencies by absolute resolved path — no sys.path mutation.
+_contracts_mod = _load_module("contracts", _REPO_ROOT / "contracts.py")
+_workflows_pkg = _load_module("workflows", _REPO_ROOT / "workflows" / "__init__.py")
+_registry_mod = _load_module(
+    "workflows.registry", _REPO_ROOT / "workflows" / "registry.py"
 )
+
+WorkflowDefinition = _contracts_mod.WorkflowDefinition
+DEFINITIONS_DIR: Path = _registry_mod.DEFINITIONS_DIR
+_validateWorkflowDefinition = _registry_mod._validateWorkflowDefinition
+loadRegistry = _registry_mod.loadRegistry
 
 
 class WorkflowNotFoundError(KeyError):

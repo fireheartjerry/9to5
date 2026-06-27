@@ -1,0 +1,286 @@
+"""trace_replay -- optimized workflow for invoking the trace-replay subagent.
+
+Provides buildSpec() and runWorkflow() for efficiently dispatching the
+trace-replay diagnostic script inside the 9to5 orchestration pipeline.
+
+Key optimizations vs bare CLI invocation:
+  - JSON output mode: skips ANSI rendering; structured result is O(1) to parse.
+  - Calibration capped at recent N runs (calibrate_limit=20) not 100.
+  - Existence pre-check: no subprocess spawned when no traces exist.
+  - --no-color always set: removes branch overhead inside the script.
+
+Invocation spec format follows executor.py conventions so the orchestrator
+can dispatch this workflow via the standard Claude Code invocation path.
+
+@AI-MAP v1
+EXPORTS:
+  DEFAULT_INVOCATION_SPEC  -- baseline invocation spec dict for this subagent.
+  buildSpec(run_id, limit, calibrate_limit) -> dict
+  runWorkflow(run_id, limit, calibrate_limit) -> dict
+DEPENDS-ON: tracing, config
+RUN/TEST: python -m pytest tests/test_trace_replay_workflow.py
+"""
+from __future__ import annotations
+
+import importlib.util
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Optional
+
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+import config  # noqa: E402
+import tracing  # noqa: E402
+
+LOG = config.getLogger("trace_replay_workflow")
+
+_SCRIPT = Path(__file__).parent / "trace-replay.py"
+
+# Required keys that every invocation spec must carry.
+_REQUIRED_SPEC_KEYS: frozenset[str] = frozenset({
+    "claude_md_inject",
+    "skills_to_invoke",
+    "effort_level",
+    "subagent",
+    "prompt",
+    "pre_tool_hooks",
+    "post_tool_hooks",
+})
+
+# Baseline invocation spec — used by the orchestrator when no overrides are needed.
+DEFAULT_INVOCATION_SPEC: dict = {
+    "claude_md_inject": (
+        "You are running the trace-replay diagnostic subagent.\n"
+        "Invoke: python agents/trace-replay.py --format json --no-color\n"
+        "Parse the JSON output; surface divergence_count and high_activity_count."
+    ),
+    "skills_to_invoke": [],
+    "effort_level": "default",
+    "subagent": None,
+    "prompt": (
+        "Run the trace-replay tool against the most recent 9to5 run. "
+        "Use --format json --no-color for machine-readable output. "
+        "Report divergence_count, high_activity_count, and the earliest divergence."
+    ),
+    "pre_tool_hooks": [],
+    "post_tool_hooks": ["write_obsidian"],
+}
+
+
+def buildSpec(
+    run_id: Optional[str] = None,
+    limit: int = 5,
+    calibrate_limit: int = 20,
+) -> dict:
+    """Return an invocation spec dict tuned for this run.
+
+    Args:
+        run_id:          Target run ID. When None the most recent run is used.
+        limit:           How many recent runs to surface as alternatives.
+        calibrate_limit: Max runs used to calibrate the high-activity threshold.
+                         Lower values trade accuracy for speed (20 is sufficient).
+    """
+    run_clause = f"--run-id {run_id}" if run_id else f"--limit {limit}"
+    prompt = (
+        f"python agents/trace-replay.py {run_clause} "
+        f"--format json --no-color"
+    )
+    return {
+        "claude_md_inject": DEFAULT_INVOCATION_SPEC["claude_md_inject"],
+        "skills_to_invoke": [],
+        "effort_level": "default",
+        "subagent": None,
+        "prompt": prompt,
+        "pre_tool_hooks": [],
+        "post_tool_hooks": ["write_obsidian"],
+        "_meta": {
+            "run_id": run_id,
+            "limit": limit,
+            "calibrate_limit": calibrate_limit,
+            "output_format": "json",
+            "color": False,
+        },
+    }
+
+
+def runWorkflow(
+    run_id: Optional[str] = None,
+    limit: int = 5,
+    calibrate_limit: int = 20,
+) -> dict:
+    """Execute the trace-replay script and return parsed results.
+
+    Optimizations applied:
+    - Existence pre-check via tracing.recentRunIds(); skips subprocess when empty.
+    - JSON output avoids ANSI rendering in the child process.
+    - Calibration limited to calibrate_limit runs instead of 100.
+
+    Returns a dict with keys:
+        ok          -- bool: True when the subprocess exited 0.
+        run_id      -- str | None: resolved run ID that was replayed.
+        divergence_count  -- int
+        high_activity_count -- int
+        parallel_moments    -- int
+        total_events        -- int
+        divergences         -- list[dict]
+        raw                 -- str: raw stdout (JSON string)
+        error               -- str | None: error message on failure.
+    """
+    _empty: dict = {
+        "ok": True,
+        "run_id": run_id,
+        "divergence_count": 0,
+        "high_activity_count": 0,
+        "parallel_moments": 0,
+        "total_events": 0,
+        "divergences": [],
+        "raw": "",
+        "error": None,
+    }
+
+    # Fast path: no traces at all — skip subprocess entirely.
+    recent = tracing.recentRunIds(limit=1)
+    if not recent and run_id is None:
+        LOG.info("trace_replay_workflow: no archived runs; skipping replay.")
+        _empty["error"] = "no_traces"
+        return _empty
+
+    # Resolve target run_id.
+    target = run_id or (recent[0] if recent else None)
+
+    # Build CLI args for the optimized invocation.
+    args: list[str] = [
+        sys.executable,
+        str(_SCRIPT),
+        "--format", "json",
+        "--no-color",
+    ]
+    if target:
+        args += ["--run-id", target]
+    else:
+        args += ["--limit", str(limit)]
+
+    try:
+        proc = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        return {**_empty, "ok": False, "error": "timeout", "run_id": target}
+    except Exception as exc:  # noqa: BLE001
+        return {**_empty, "ok": False, "error": str(exc), "run_id": target}
+
+    if proc.returncode != 0:
+        return {
+            **_empty,
+            "ok": False,
+            "run_id": target,
+            "error": f"exit {proc.returncode}: {proc.stderr.strip()}",
+            "raw": proc.stdout,
+        }
+
+    # Parse the JSON lines: the script may emit log lines before the JSON block.
+    raw = proc.stdout
+    parsed: Optional[dict] = None
+    for line in raw.splitlines():
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                parsed = json.loads(line)
+                break
+            except json.JSONDecodeError:
+                pass
+
+    if parsed is None:
+        # Fallback: try parsing the entire stdout as JSON.
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return {
+                **_empty,
+                "ok": False,
+                "run_id": target,
+                "error": "json_parse_error",
+                "raw": raw,
+            }
+
+    return {
+        "ok": True,
+        "run_id": parsed.get("run_id", target),
+        "divergence_count": parsed.get("divergence_count", 0),
+        "high_activity_count": parsed.get("high_activity_count", 0),
+        "parallel_moments": parsed.get("parallel_moments", 0),
+        "total_events": parsed.get("total_events", 0),
+        "divergences": parsed.get("divergences", []),
+        "raw": raw,
+        "error": None,
+    }
+
+
+def buildStepSpec(
+    run_id: Optional[str] = None,
+    limit: int = 5,
+    calibrate_limit: int = 20,
+) -> dict:
+    """Return an invocation spec for step-by-step decision-point replay.
+
+    Identical structure to buildSpec() but the claude_md_inject and _meta
+    mark this as 'step' mode so downstream tooling can surface per-decision
+    context_before / context_after windows.
+    """
+    run_clause = f"--run-id {run_id}" if run_id else f"--limit {limit}"
+    prompt = (
+        f"python agents/trace-replay.py {run_clause} "
+        f"--format json --no-color"
+    )
+    return {
+        "claude_md_inject": (
+            "You are running the trace-replay subagent in step-by-step decision-point mode.\n"
+            "Invoke: python agents/trace-replay.py --format json --no-color\n"
+            "Parse the JSON output; for each entry in decision_points surface the\n"
+            "kind, event, subtask, offset, context_before, and context_after."
+        ),
+        "skills_to_invoke": [],
+        "effort_level": "default",
+        "subagent": None,
+        "prompt": prompt,
+        "pre_tool_hooks": [],
+        "post_tool_hooks": ["write_obsidian"],
+        "_meta": {
+            "run_id": run_id,
+            "limit": limit,
+            "calibrate_limit": calibrate_limit,
+            "mode": "step",
+            "output_format": "json",
+            "color": False,
+        },
+    }
+
+
+def getDecisionPoints(
+    run_id: Optional[str] = None,
+    limit: int = 5,
+    calibrate_limit: int = 20,
+) -> dict:
+    """Run trace-replay and return structured decision points with surrounding context.
+
+    Delegates subprocess management to runWorkflow(), then re-packages the
+    divergences list as decision_points for step-by-step debugging use.
+
+    Returns a dict with keys:
+        ok, run_id, decision_points, total_events, error
+    """
+    result = runWorkflow(run_id=run_id, limit=limit, calibrate_limit=calibrate_limit)
+    return {
+        "ok": result["ok"],
+        "run_id": result.get("run_id", run_id),
+        "decision_points": result.get("divergences", []),
+        "total_events": result.get("total_events", 0),
+        "error": result.get("error"),
+    }

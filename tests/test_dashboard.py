@@ -31,6 +31,7 @@ class TestRecreateOnlyOn404(unittest.TestCase):
     def test_transient_edit_does_not_recreate(self):
         d = self._dash()
         with mock.patch.object(config, "DISCORD_DASHBOARD", True), \
+                mock.patch.object(config, "DASHBOARD_CV2", False), \
                 mock.patch.object(d, "_embed", return_value={}), \
                 mock.patch("notifications.dashboard.discord.editMessageResult", return_value="transient") as ed, \
                 mock.patch("notifications.dashboard.discord.createMessage") as create:
@@ -43,6 +44,7 @@ class TestRecreateOnlyOn404(unittest.TestCase):
     def test_genuine_404_recreates_once(self):
         d = self._dash()
         with mock.patch.object(config, "DISCORD_DASHBOARD", True), \
+                mock.patch.object(config, "DASHBOARD_CV2", False), \
                 mock.patch.object(d, "_embed", return_value={}), \
                 mock.patch("notifications.dashboard.discord.editMessageResult", return_value="not_found"), \
                 mock.patch("notifications.dashboard.discord.createMessage", return_value="456") as create, \

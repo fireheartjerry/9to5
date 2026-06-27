@@ -378,6 +378,141 @@ EVENT DISTRIBUTION PER SUBTASK
 
 ---
 
+## New Features
+
+### Decision-point extraction — `_extractDecisionPoints`
+
+**Location:** `agents/trace-replay.py`
+
+`_extractDecisionPoints(events, context_window=2)` scans a pre-loaded event list and
+returns one structured record per divergence event (`FAIL`, `REPLAN`, `CHALLENGE`),
+enriched with the surrounding context window.
+
+**Return shape (one entry per divergence):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `index` | int | Position of the event in the original list |
+| `event` | str | Raw event type string (e.g. `verify_fail`) |
+| `subtask` | str | Subtask ID (`subtask_id` field, or `"-"` if absent) |
+| `kind` | str | Classified kind: `FAIL`, `REPLAN`, or `CHALLENGE` |
+| `ts` | float | Unix timestamp |
+| `offset` | str | Human offset from first event (e.g. `T+1.83s`) |
+| `fields` | str | Key fields summary string |
+| `context_before` | list | Up to `context_window` events immediately before |
+| `context_after` | list | Up to `context_window` events immediately after |
+
+`context_before` / `context_after` entries each carry `event`, `subtask`, and `ts`.
+
+**Parameters:**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `events` | — | Raw event list (dicts) loaded from a JSONL trace |
+| `context_window` | `2` | Events before/after each divergence to include |
+
+**Example (direct call):**
+
+```python
+# Load events manually, then call the private function
+spec = importlib.util.spec_from_file_location("tr", "agents/trace-replay.py")
+tr = importlib.util.module_from_spec(spec); spec.loader.exec_module(tr)
+
+events = [...]  # from a JSONL trace
+points = tr._extractDecisionPoints(events, context_window=3)
+```
+
+For everyday use, prefer `getDecisionPoints()` (see below) — it handles subprocess
+management and returns the same shape without manual JSONL loading.
+
+---
+
+### Step-by-step replay spec — `buildStepSpec`
+
+**Location:** `agents/trace_replay.py`
+
+`buildStepSpec(run_id, limit, calibrate_limit)` is a variant of `buildSpec()` that
+returns an invocation spec marked as **step mode**. Downstream orchestrator tooling
+that checks `_meta["mode"]` can use this to surface per-decision `context_before` /
+`context_after` windows instead of the flat divergence list.
+
+```python
+from agents.trace_replay import buildStepSpec
+
+spec = buildStepSpec(run_id="run_abc123")
+# spec["_meta"]["mode"] == "step"
+# spec["claude_md_inject"] instructs the subagent to surface decision_points
+```
+
+Differences from `buildSpec()`:
+
+- `claude_md_inject` instructs the executor to surface each entry in `decision_points`
+  (with `context_before` / `context_after`) rather than the flat divergence summary.
+- `_meta["mode"]` is set to `"step"` (absent in `buildSpec`).
+
+All other keys — `skills_to_invoke`, `effort_level`, `subagent`, `prompt`,
+`pre_tool_hooks`, `post_tool_hooks` — are identical.
+
+---
+
+### High-level decision-point API — `getDecisionPoints`
+
+**Location:** `agents/trace_replay.py`
+
+`getDecisionPoints(run_id, limit, calibrate_limit)` runs trace-replay via
+`runWorkflow()` and repackages the result as a decision-points dict, ready for
+step-by-step debugging loops or downstream orchestrator consumers.
+
+**Signature:**
+
+```python
+def getDecisionPoints(
+    run_id: str | None = None,
+    limit: int = 5,
+    calibrate_limit: int = 20,
+) -> dict: ...
+```
+
+**Return shape:**
+
+```python
+{
+    "ok": True,                  # bool: False on subprocess failure
+    "run_id": "run_abc123",      # resolved run ID that was replayed
+    "decision_points": [...],    # list of divergence dicts (FAIL/REPLAN/CHALLENGE)
+    "total_events": 42,          # total event count in the trace
+    "error": None,               # str | None: set on failure
+}
+```
+
+Each `decision_points` entry includes `index`, `event`, `subtask`, `kind`, `ts`,
+`offset`, `fields`, `context_before`, and `context_after`.
+
+**Example:**
+
+```python
+from agents.trace_replay import getDecisionPoints
+
+result = getDecisionPoints()          # most recent run
+if result["ok"]:
+    for dp in result["decision_points"]:
+        print(f"{dp['offset']}  [{dp['kind']}]  {dp['event']}  {dp['subtask']}")
+        for ev in dp["context_before"]:
+            print(f"  <- {ev['event']}")
+        for ev in dp["context_after"]:
+            print(f"  -> {ev['event']}")
+```
+
+**`getDecisionPoints` vs `runWorkflow`:**
+
+| | `runWorkflow()` | `getDecisionPoints()` |
+|--|---|---|
+| Primary output key | `divergences` | `decision_points` (same data, renamed) |
+| Extra fields | `divergence_count`, `high_activity_count`, `parallel_moments`, `raw` | — |
+| Use case | CI pipelines, dashboards | Step-by-step debugging, orchestrator step loops |
+
+---
+
 ## See also
 
 - `.claude/skills/trace_replay.md` — LLM-facing protocol (phases 1–6, full prompt)

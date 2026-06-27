@@ -173,9 +173,10 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--verify-recurring-task-handling", action="store_true", default=False)
+    parser.add_argument("--verify-recurring-task-retries", action="store_true", default=False)
     known, remaining = parser.parse_known_args()
 
-    if known.verify_recurring_task_handling:
+    if known.verify_recurring_task_handling or known.verify_recurring_task_retries:
         # Run the full suite; exit 0 on success, 1 on any failure.
         loader = unittest.TestLoader()
         suite = loader.loadTestsFromModule(sys.modules[__name__])
