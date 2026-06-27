@@ -37,7 +37,7 @@ _CRITICAL_MODULES = [
 # Steps that must appear in the main CI workflow.
 _REQUIRED_CI_STEPS = [
     "validate_workflows.py",
-    "unittest discover",
+    'pytest -m "not slow"',   # the fast-lane test step (replaced `unittest discover`)
 ]
 
 
