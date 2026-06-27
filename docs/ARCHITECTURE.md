@@ -135,6 +135,8 @@ Supported expectation modes:
 exit_zero
 stdout_contains:<text>
 stdout_regex:<regex>
+stdout_contains_all:<t1>|||<t2>|||...   # all listed texts must be present
+stdout_regex_all:<p1>|||<p2>|||...      # all listed patterns must match
 ```
 
 A subtask is done only if verification passes.
@@ -169,6 +171,38 @@ Fields:
 - `hard_boundaries`: actual forbidden paths
 
 Hard boundaries should include secrets, VCS internals, venvs, generated/runtime state unless explicitly authorized, and other dangerous paths.
+
+## Workflow registry
+
+`workflows/registry.py` loads `WorkflowDefinition` JSON files from `workflows/definitions/` and
+exposes them as a dict keyed by workflow name. The orchestrator sets `InvocationSpec.use_workflow`
+and `workflow_definition` to run a multi-phase agent workflow instead of a single prompt.
+
+Built-in templates: `bug_investigation`, `code_review`, `feature_implementation`.
+
+### code_review workflow — optimized parallel design (st-046)
+
+The `code_review` workflow was restructured to reduce wall-clock review time by ≥20% through
+parallel phase design:
+
+**Phase 1 — Design pre-flight (sequential, 1 agent)**
+Examines architectural concerns (module boundaries, interface drift, scalability) before
+line-level review begins. This avoids re-discovering scope redundantly across all agents.
+
+**Phase 2 — Parallel line-level review + test coverage (4 agents, parallel)**
+- `correctness` (effort: high) — off-by-one, null dereferences, API contract violations
+- `security` (effort: high) — injection, insecure deserialization, missing input validation
+- `simplification` (effort: default) — dead code, duplicated logic, unnecessary abstractions
+- `test-coverage` (effort: default) — missing test cases for changed code paths
+
+`test-coverage` has no dependency on Phase 1 output, so it runs in Phase 2 at zero
+sequencing cost. Wall-clock: `2T` vs `5T` sequential baseline → **≥50% reduction**.
+
+**Synthesis** merges all five dimensions into a single severity-ranked finding list.
+
+See `docs/workflow.md` § *Workflow registry* for the full schema and template descriptions.
+
+---
 
 ## Learning subsystem boundary
 

@@ -1,0 +1,112 @@
+"""Structured retry policy object for the 9to5 error-handling layer.
+
+``RetryPolicy`` encapsulates every knob that governs retry behaviour —
+max attempts, inter-attempt delay, and the alert callback — in a single
+immutable-by-convention dataclass so callers can pass, store, and swap
+policies without threading individual parameters through every call site.
+
+Usage
+-----
+    from retry_policy import RetryPolicy
+
+    policy = RetryPolicy(max_retries=3, delay=1.0, on_alert=my_alert_fn)
+    result = policy.execute(my_fn, args=(arg1,), kwargs={"k": "v"})
+    # result == {"ok": True/False, "result": ..., "attempts": n, "policy": policy}
+
+Extending
+---------
+Subclass ``RetryPolicy`` and override ``execute`` (or add pre/post hooks)
+to layer in custom back-off strategies, jitter, circuit-breaker state, etc.
+without touching the base implementation.
+
+@AI-MAP v1
+EXPORTS:
+  RetryPolicy -- dataclass; .execute(fn, *, args, kwargs) -> dict
+DEPENDS-ON: error_handling (stdlib only, no new deps)
+RUN/TEST: python C:/9to5/tests/test_retry_policy.py
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Callable, Optional
+
+from error_handling import MAX_RETRIES, RETRY_DELAY_SECONDS, retryTask
+
+
+@dataclass
+class RetryPolicy:
+    """Configuration object for retry-before-alert behaviour.
+
+    Attributes
+    ----------
+    max_retries:
+        Maximum number of call attempts before the policy is exhausted.
+        Default matches the global ``MAX_RETRIES`` constant (3).
+    delay:
+        Seconds to sleep between consecutive attempts (never after the
+        final attempt).  Default matches ``RETRY_DELAY_SECONDS``.
+    on_alert:
+        Optional callable invoked as ``on_alert(error_msg, attempt_count)``
+        when all retries are exhausted.  When *None* the policy raises
+        ``error_handling.RetryExhausted`` instead.
+    """
+
+    max_retries: int = MAX_RETRIES
+    delay: float = RETRY_DELAY_SECONDS
+    on_alert: Optional[Callable[[str, int], None]] = field(default=None, repr=False)
+
+    def execute(
+        self,
+        fn: Callable,
+        *,
+        args: tuple = (),
+        kwargs: Optional[dict] = None,
+    ) -> dict[str, Any]:
+        """Run *fn* under this policy and return a result dict.
+
+        Delegates to ``error_handling.retryTask`` with the policy's
+        configured parameters.
+
+        Returns
+        -------
+        On success:
+            ``{"ok": True, "result": <return value>, "attempts": n, "policy": self}``
+        On exhaustion with ``on_alert`` set:
+            ``{"ok": False, "error": "<last error>", "attempts": n, "policy": self}``
+
+        Raises
+        ------
+        ``error_handling.RetryExhausted``
+            When ``on_alert`` is *None* and all attempts fail — identical
+            to the bare ``retryTask`` behaviour.
+        """
+        result = retryTask(
+            fn,
+            args=args,
+            kwargs=kwargs,
+            max_retries=self.max_retries,
+            delay=self.delay,
+            on_alert=self.on_alert,
+        )
+        result["policy"] = self
+        return result
+
+    def with_alert(self, on_alert: Callable[[str, int], None]) -> "RetryPolicy":
+        """Return a new policy identical to *self* but with *on_alert* set.
+
+        Allows composing a base policy with different alert handlers without
+        mutating the original.
+        """
+        return RetryPolicy(
+            max_retries=self.max_retries,
+            delay=self.delay,
+            on_alert=on_alert,
+        )
+
+    def with_retries(self, max_retries: int) -> "RetryPolicy":
+        """Return a new policy with a different retry ceiling."""
+        return RetryPolicy(
+            max_retries=max_retries,
+            delay=self.delay,
+            on_alert=self.on_alert,
+        )

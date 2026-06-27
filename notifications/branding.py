@@ -82,11 +82,12 @@ def brandEmbed(title: str, *, description: Optional[str] = None, color: Optional
 _CATEGORIES = {
     "Control": ["abort", "pause", "approve", "reject", "skip", "add", "retry"],
     "Info": ["status", "plan", "log", "help"],
-    "Run": ["work", "runs", "run", "resume"],   # /resume is unified: unpause, or resume a prior run by id
+    "Run": ["work", "runs", "run", "resume", "create-pr"],
 }
 _EXTRA_HELP = {
     "work": "launch a new run (blank = guided setup)",
     "runs": "list recent runs", "run": "inspect a run by id", "resume": "resume a run by id",
+    "create-pr": "manually create PR for any completed run (bypass test gate)",
     "ping": "latency, uptime, version", "diagnostics": "environment health checks",
     "metrics": "aggregate run metrics", "audit": "recent control actions",
 }

@@ -2,7 +2,8 @@
 import unittest
 
 import contracts
-from contracts import AgentDecision, ControlCommand, SubtaskSpec, Universe, VerificationResult
+from contracts import (AgentDecision, ControlCommand, SubtaskSpec, Universe,
+                       VerificationResult, WorkflowAgent, WorkflowDefinition, WorkflowPhase)
 
 try:
     from tests.factories import make_subtask
@@ -58,8 +59,45 @@ class TestSmallValues(unittest.TestCase):
 
     def test_module_exports_the_spine(self):
         for name in ("Goal", "ElaboratedGoal", "Universe", "SubtaskSpec",
-                     "VerificationResult", "ControlCommand", "AgentDecision"):
+                     "VerificationResult", "ControlCommand", "AgentDecision",
+                     "WorkflowAgent", "WorkflowPhase", "WorkflowDefinition"):
             self.assertTrue(hasattr(contracts, name), name)
+
+
+class TestWorkflowDefinition(unittest.TestCase):
+    def test_minimal_definition_is_valid_typed_dict(self):
+        wf: WorkflowDefinition = {
+            "name": "audit-pipeline",
+            "description": "Three-phase audit workflow",
+            "phases": [],
+            "synthesis": "Merge phase outputs into a final report.",
+        }
+        self.assertEqual(wf["name"], "audit-pipeline")
+        self.assertEqual(wf["synthesis"], "Merge phase outputs into a final report.")
+
+    def test_phase_with_parallel_agents(self):
+        agent: WorkflowAgent = {"label": "find-bugs", "prompt": "Find all bugs.", "effort": "high"}
+        phase: WorkflowPhase = {"title": "Scan", "parallel": True, "agents": [agent]}
+        self.assertTrue(phase["parallel"])
+        self.assertEqual(phase["agents"][0]["label"], "find-bugs")
+
+    def test_definition_nested_in_invocation_spec(self):
+        from contracts import InvocationSpec
+        spec: InvocationSpec = {
+            "use_workflow": True,
+            "workflow_definition": {
+                "name": "wf",
+                "description": "desc",
+                "phases": [{"title": "P1", "parallel": False, "agents": []}],
+                "synthesis": "combine",
+            },
+        }
+        self.assertEqual(spec["workflow_definition"]["name"], "wf")
+
+    def test_total_false_allows_partial_construction(self):
+        # total=False means no key is required at runtime (TypedDict erased).
+        wf: WorkflowDefinition = {"name": "minimal"}
+        self.assertNotIn("phases", wf)
 
 
 if __name__ == "__main__":

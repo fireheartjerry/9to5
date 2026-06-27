@@ -132,6 +132,13 @@ verify.expect  ∈  exit_zero
                |  stdout_contains_all:<t1>|||<t2>|||...   (multi-requirement)
                |  stdout_regex_all:<p1>|||<p2>|||...      (multi-requirement)
 ```
+**Work-dir normalization:** self-referential runs set the subtask `--work-dir` to a
+`.sc-ctx/<sid>` scratch dir, but verify commands are authored relative to the repo root.
+Before running, the verifier re-roots to `INSTALL_ROOT` when the command's referenced path
+(absolute *or* relative, including `pytest <dir>/*_test.py` globs) resolves under the repo
+root but not under the scratch dir. Without this, `python tests/foo.py` / `pytest tests/...`
+fail with "No such file or directory" or pytest usage-error (exit 4) from the scratch cwd.
+
 **Decision point — pass / fail:**
 - **Pass** → subtask is marked `done`; flow continues to step 4d.
 - **Fail** → the failure output is appended to the next Ollama prompt and the
@@ -243,6 +250,13 @@ subtasks done/total, success rate %, elapsed time, replan count, adversary count
 Multi-requirement types (`_all`) assert every deliverable of a multi-goal subtask
 in a single verify command. Introduced in `fix/multi-requirement-verify`.
 
+**Test-runner override:** when the verify command is a self-asserting test suite
+(`pytest`, `python -m unittest`, or a `test_*.py` / `*_test.py` script — but **not**
+`python -c` inline snippets) and it exits 0, the subtask **passes regardless of a
+content `expect`**. A green suite's own assertions are the verification; a brain-guessed
+`stdout_contains` needle must not false-FAIL correct work whose runner reports success to
+stderr (e.g. unittest's `OK`).
+
 ---
 
 ## Error handling and resilience
@@ -266,6 +280,7 @@ in a single verify command. Introduced in `fix/multi-requirement-verify`.
 | `main.py` | Entry point — goal input, elaboration approval, subprocess launch |
 | `orchestrator.py` | Brain loop — plan → spec → execute → verify → replan → PR |
 | `config.py` | Env vars, constants, logging, UTF-8 stdio |
+| `contracts.py` | Central TypedDicts: `InvocationSpec`, `ExecutorResult`, `WorkflowDefinition`, etc. |
 | `control.py` | `ControlBus` — file-backed cross-process abort/pause/gate/ops |
 | `agents/elaborator.py` | Ollama goal expansion |
 | `agents/architect.py` | Ollama-authored architecture doc via Claude Code |
@@ -278,6 +293,90 @@ in a single verify command. Introduced in `fix/multi-requirement-verify`.
 | `notifications/dashboard.py` | Live self-updating Discord dashboard embed |
 | `notifications/webdash.py` | stdlib web dashboard — view + control buttons |
 | `notifications/command_bot.py` | discord.py gateway bot — `!` commands |
+| `nightclaw.py` | Repo-root entrypoint: `python nightclaw.py` starts the gateway bot |
+| `workflows/registry.py` | Loads and validates `WorkflowDefinition` JSON files from `workflows/definitions/` |
+| `workflows/definitions/*.json` | Built-in workflow templates (see below) |
+| `scheduling/recurring.py` | Recurring task scheduler — priority queue + EDF, 5-minute SLA tracking |
+| `workflows/scheduler.py` | Priority min-heap with deadline-aware slot allocation (used by `scheduling/`) |
+
+---
+
+## Recurring task scheduling
+
+9TO5 includes a scheduling layer that fires recurring tasks (health checks, alert
+scans, metrics flushes) on fixed intervals and guarantees an average start delay of
+< 5 minutes.
+
+Key design points:
+- **Priority + EDF**: higher-priority tasks dispatch first; earliest-deadline breaks ties.
+- **Fixed-interval re-enqueue**: only one fire per missed interval on restart — no thundering herd.
+- **Slot-cap concurrency**: `max_concurrent` limits simultaneous executions.
+- **SLA tracking**: `average_delay_seconds()` exposes the running mean; > 300 s means slot starvation.
+- **Overdue detection**: `overdue_jobs()` surfaces tasks that missed their deadline window.
+
+See **`docs/scheduling.md`** for the full pattern reference and operating parameters.
+
+---
+
+## Workflow registry
+
+The `workflows/` module lets the orchestrator execute pre-defined, multi-phase agent workflows instead of (or in addition to) the normal single-prompt executor path.
+
+### How it works
+
+1. `workflows/registry.py :: loadRegistry()` scans `workflows/definitions/*.json` at import time and validates each file against the `WorkflowDefinition` schema from `contracts.py`.
+2. The orchestrator (or Ollama brain) sets `InvocationSpec.use_workflow = True` and provides a `WorkflowDefinition` in `InvocationSpec.workflow_definition`.
+3. `agents/executor.py :: _composeWorkflowPrompt()` expands the phases into a structured prompt handed to Claude Code.
+
+### `WorkflowDefinition` schema
+
+```json
+{
+  "name": "string",
+  "description": "string",
+  "phases": [
+    {
+      "title": "string",
+      "parallel": false,
+      "agents": [
+        { "label": "string", "prompt": "string", "effort": "default|high|xhigh|ultracode" }
+      ]
+    }
+  ],
+  "synthesis": "string — instruction merging all phase outputs into the final deliverable"
+}
+```
+
+- `parallel: true` → all agents in the phase are dispatched concurrently.
+- `parallel: false` → agents run sequentially; each may reference the previous output.
+- `effort` maps to the same effort levels as `InvocationSpec.effort_level`.
+- Unknown keys are rejected by `loadRegistry()` — the file is skipped with a warning rather than crashing the registry.
+
+### Built-in workflow templates
+
+| File | Name | Phases |
+|------|------|--------|
+| `bug_investigation.json` | `bug_investigation` | Reproduce and trace → Parallel hypothesis (data-flow + control-flow) → Fix |
+| `code_review.json` | `code_review` | Parallel review (correctness + security + simplification) |
+| `feature_implementation.json` | `feature_implementation` | Design → Implement and test → Verify and document |
+
+#### `bug_investigation`
+
+Systematic root-cause investigation. The two parallel hypothesis agents trace data-flow and control-flow independently; the patch agent reconciles both to author the minimal fix.
+
+#### `code_review`
+
+Three reviewers run in parallel across correctness, security, and simplification dimensions. The `synthesis` instruction merges findings into a single severity-ranked list.
+
+#### `feature_implementation`
+
+End-to-end feature delivery. The design agent produces the interface + verification command before any code is written; the implement agent runs that command to confirm the fix; the verify-doc agent applies doc updates.
+
+### Adding a new workflow
+
+1. Create `workflows/definitions/<name>.json` following the schema above.
+2. The registry picks it up automatically on the next import — no code change needed.
+3. Reference it by `name` in Ollama brain prompts or in `InvocationSpec.workflow_definition`.
 
 ---
 

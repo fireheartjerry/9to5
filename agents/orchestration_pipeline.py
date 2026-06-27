@@ -17,6 +17,7 @@ EXPORTS:
   validateSpec(spec: dict) -> StepResult  -- Validate a sanitized spec has the minimum required fields populated.
   fmtElapsed(seconds: float) -> str  -- Format elapsed seconds as ``Hh MMm SSs``.
   singleDeliverable(goal: str) -> bool  -- True when the goal targets at most one file with no multi-deliverable phrasing.
+  resolveWorkflow(name_or_def: Any) -> StepResult  -- Resolve a workflow by name from the central registry or accept an inline dict.
   verifyStep(verify: 'Optional[dict]', work_dir: str, executor_result: dict) -> StepResult  -- Thin wrapper around ``verifier.runVerification`` returning a ``StepResult``.
   runSteps(steps: 'list[str]', context: dict, handlers: 'dict[str, Callable[[dict], StepResult]]') -> 'list[StepResult]'  -- Execute a named sequence of steps, stopping on first failure.
 DEPENDS-ON: agents.verifier, config
@@ -261,6 +262,39 @@ def singleDeliverable(goal: str) -> bool:
     multi_phrase = any(w in g for w in ("multiple files", "several files", "multiple deliverables",
                                         "as well as", "separate "))
     return len(files) <= 1 and not multi_phrase
+
+
+def resolveWorkflow(name_or_def: "Any") -> StepResult:
+    """Resolve a workflow by name from the central registry or accept an inline dict.
+
+    Parameters
+    ----------
+    name_or_def:
+        Either a workflow name string (looked up in ``workflows.registry.REGISTRY``)
+        or an already-expanded WorkflowDefinition dict.
+
+    Returns
+    -------
+    StepResult with ``payload["workflow_definition"]`` populated on success, or
+    ``ok=False`` when the name is unknown or the value is neither str nor dict.
+    """
+    if isinstance(name_or_def, dict):
+        return StepResult(step="resolve_workflow", ok=True,
+                          payload={"workflow_definition": name_or_def})
+    if isinstance(name_or_def, str):
+        try:
+            from src.workflow_registry import REGISTRY, WorkflowNotFoundError
+            wf = REGISTRY.getWorkflow(name_or_def)
+        except WorkflowNotFoundError:
+            return StepResult(step="resolve_workflow", ok=False,
+                              error=f"unknown workflow: {name_or_def!r}")
+        except Exception as exc:  # noqa: BLE001
+            return StepResult(step="resolve_workflow", ok=False,
+                              error=f"registry unavailable: {exc}")
+        return StepResult(step="resolve_workflow", ok=True,
+                          payload={"workflow_definition": wf})
+    return StepResult(step="resolve_workflow", ok=False,
+                      error=f"expected workflow name or dict, got {type(name_or_def).__name__}")
 
 
 def verifyStep(verify: "Optional[dict]", work_dir: str, executor_result: dict) -> StepResult:

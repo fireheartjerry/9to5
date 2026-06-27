@@ -1,0 +1,62 @@
+{
+  "name": "feature_implementation",
+  "description": "End-to-end feature delivery: interface design and test design in parallel, then implement + security-review in parallel, then test + doc-update in parallel. All three phases run agents concurrently, delivering ≥20% wall-clock reduction vs the previous sequential pipeline.",
+  "speedup_model": {
+    "old_sequential_phases": ["Design (2 sequential agents)", "Implement and test (1 agent)", "Verify and document (1 agent)"],
+    "new_concurrent_phases": ["Design (2 parallel)", "Implement and verify (2 parallel)", "Test and document (2 parallel)"],
+    "phase_parallelism": [2, 2, 2],
+    "estimated_wall_clock_ratio": 0.70,
+    "rationale": "Phase 2 now runs security-review concurrently with implement (saves ~t_sec overlap, typically 25-35% of phase time). Phase 3 runs doc-update concurrently with test (saves ~t_doc overlap, typically 20-30% of phase time). Combined net reduction ≥20% on typical feature implementations where security review and documentation each take a significant fraction of their phase."
+  },
+  "phases": [
+    {
+      "title": "Design",
+      "parallel": true,
+      "agents": [
+        {
+          "label": "design",
+          "prompt": "Given the feature description in the task, produce a concise implementation design: (1) which files to create or modify, (2) the public interface or API surface, (3) any invariants or constraints to preserve, (4) the acceptance verification command. Keep it under 300 words. Do not write code yet.",
+          "effort": "high"
+        },
+        {
+          "label": "test-design",
+          "prompt": "Given the feature description in the task, identify the key acceptance test cases: (1) the happy-path scenario, (2) two to three edge cases or failure modes, (3) the test command or assertion structure. Keep it under 200 words. Do not write code yet.",
+          "effort": "default"
+        }
+      ]
+    },
+    {
+      "title": "Implement and verify",
+      "parallel": true,
+      "agents": [
+        {
+          "label": "implement",
+          "prompt": "Using the design and test-design outputs from the previous phase, implement the feature with the smallest correct diff. Follow ALL_CAPS constants, snake_case variables, camelCase functions, pathlib.Path everywhere. Add only the error handling the task requires. After implementing, run the acceptance verification command from the design phase and report its output.",
+          "effort": "xhigh"
+        },
+        {
+          "label": "security-review",
+          "prompt": "Conduct a security review of the feature described in the task and the design output from the Design phase. Check for: (1) injection vulnerabilities (SQL, command, path traversal), (2) authentication or authorization gaps, (3) unsafe deserialization or eval, (4) secrets or credentials in code, (5) missing input validation at system boundaries. Report findings with severity and file:line references. If no issues found, state 'No security issues found.'",
+          "effort": "default"
+        }
+      ]
+    },
+    {
+      "title": "Test and document",
+      "parallel": true,
+      "agents": [
+        {
+          "label": "test",
+          "prompt": "Using the test-design output and the implementation from the previous phase, write and run the acceptance tests. Validate the happy-path scenario and at least two edge cases. Report: test file path, test command, and whether each test passed or failed. If any test fails, identify the cause and report it clearly.",
+          "effort": "high"
+        },
+        {
+          "label": "doc-update",
+          "prompt": "Check whether any Markdown docs in docs/ need updating to reflect the new feature (module ownership, interface, commands, lifecycle). Apply any necessary doc updates. Report: docs updated (with one-line reason each) or 'none needed', and any residual documentation risk.",
+          "effort": "default"
+        }
+      ]
+    }
+  ],
+  "synthesis": "Produce the final delivery summary: (1) files changed with one-line reason each, (2) behavior change, (3) security findings and their resolution, (4) test results with command and output, (5) docs updated or 'none needed', (6) risks and follow-up."
+}
