@@ -23,8 +23,7 @@
     "state",
     "testing",
     "tests",
-    "validate_workflows",
-    "workflows"
+    "validate_workflows"
   ],
   "modules": {
     "agents": {
@@ -6773,9 +6772,7 @@
           "lineno": 33
         }
       ],
-      "depends_on": [
-        "workflows.registry"
-      ],
+      "depends_on": [],
       "side_effects": [
         "unannotated"
       ],
@@ -7600,9 +7597,7 @@
           "lineno": 39
         }
       ],
-      "depends_on": [
-        "workflows.scheduler"
-      ],
+      "depends_on": [],
       "side_effects": [
         "unannotated"
       ],
@@ -7912,6 +7907,84 @@
           "signature": "(argv: list[str]) -> int",
           "summary": "",
           "lineno": 61
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.check_skill_gap_analysis_docs": {
+      "path": "tools/check_skill_gap_analysis_docs.py",
+      "purpose": "check_skill_gap_analysis_docs.py",
+      "exports": [
+        {
+          "name": "checkFile",
+          "kind": "function",
+          "signature": "(path: pathlib.Path, required_strings: list, label: str) -> None",
+          "summary": "",
+          "lineno": 86
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 103
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.check_trace_replay_docs": {
+      "path": "tools/check_trace_replay_docs.py",
+      "purpose": "check_trace_replay_docs.py",
+      "exports": [
+        {
+          "name": "checkFile",
+          "kind": "function",
+          "signature": "(path: pathlib.Path, required_strings: list, label: str) -> None",
+          "summary": "",
+          "lineno": 94
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 111
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.check_trace_replay_subagent_docs": {
+      "path": "tools/check_trace_replay_subagent_docs.py",
+      "purpose": "check_trace_replay_subagent_docs.py",
+      "exports": [
+        {
+          "name": "checkFile",
+          "kind": "function",
+          "signature": "(path: pathlib.Path, required_strings: list, label: str) -> None",
+          "summary": "",
+          "lineno": 53
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 70
         }
       ],
       "depends_on": [],
@@ -8399,7 +8472,7 @@
           "kind": "function",
           "signature": "(m: dict, pkg: str) -> str",
           "summary": "",
-          "lineno": 105
+          "lineno": 114
         }
       ],
       "depends_on": [],
@@ -8435,6 +8508,58 @@
       "test": [],
       "callers": []
     },
+    "tools.update-skill-gap-analysis": {
+      "path": "tools/update-skill-gap-analysis.py",
+      "purpose": "update-skill-gap-analysis.py",
+      "exports": [
+        {
+          "name": "checkFile",
+          "kind": "function",
+          "signature": "(path: pathlib.Path, required_strings: list, label: str) -> None",
+          "summary": "",
+          "lineno": 60
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 77
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.update-trace-replay": {
+      "path": "tools/update-trace-replay.py",
+      "purpose": "update-trace-replay.py",
+      "exports": [
+        {
+          "name": "checkFile",
+          "kind": "function",
+          "signature": "(path: pathlib.Path, required_strings: list, label: str) -> None",
+          "summary": "",
+          "lineno": 65
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 82
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "validate_workflows": {
       "path": "validate_workflows.py",
       "purpose": "Compatibility script for CI workflow validation.",
@@ -8448,17 +8573,6 @@
       "test": [
         "tests/test_validate_workflows.py"
       ],
-      "callers": []
-    },
-    "workflows": {
-      "path": "workflows/__init__.py",
-      "purpose": "",
-      "exports": [],
-      "depends_on": [],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
       "callers": []
     },
     "workflows.registry": {
@@ -8482,9 +8596,7 @@
       "test": [
         "tests/test_registry.py"
       ],
-      "callers": [
-        "platform_core.ops.validate_workflows"
-      ]
+      "callers": []
     },
     "workflows.scheduler": {
       "path": "workflows/scheduler.py",
@@ -8513,9 +8625,7 @@
         "tests/test_priority_scheduler.py",
         "tests/test_scheduler_priority.py"
       ],
-      "callers": [
-        "scheduling.recurring"
-      ]
+      "callers": []
     },
     "workflows.skill-gap-analysis": {
       "path": "workflows/skill-gap-analysis.py",

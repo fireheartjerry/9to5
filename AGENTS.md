@@ -30,6 +30,13 @@
 - **Add a Discord embed:** add a builder in `notifications/discord_bot.py` (see existing `*Embed` builders) + send via `discord.sendEmbed`.
 - **Add + run one test:** use `tests/factories.py` builders; run `python tools/dev.py check tests/test_<x>.py`.
 
+## Tree Guide
+
+- Root files are public facades or entrypoints: `main.py`, `config.py`, `orchestrator.py`, `knowledge.py`, `validate_workflows.py`.
+- Internal platform plumbing lives under `platform_core/`: orchestration, runtime/control, config internals, knowledge-base mechanics, ops, and simulation.
+- Product domains stay at root: `agents/`, `notifications/`, `memory/`, `learning/`, `workflows/`, `state/`, `tools/`, and `tests/`.
+- Prefer editing the narrow implementation module, while preserving root facades and compatibility imports when callers already use them.
+
 ## Packages
 
 | Package | Modules | Index |
@@ -43,6 +50,5 @@
 | `scheduling/` | 2 | `scheduling/AGENTS.md` |
 | `src/` | 2 | `src/AGENTS.md` |
 | `state/` | 4 | `state/AGENTS.md` |
-| `workflows/` | 4 | `workflows/AGENTS.md` |
 | (top-level) | 10 | this file |
 

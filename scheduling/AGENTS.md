@@ -12,7 +12,7 @@ scheduling -- recurring task scheduling patterns for 9to5.
 ## scheduling/recurring.py
 scheduling.recurring -- recurring task scheduling with priority queue + deadline-aware slots.
 - Exports: RecurringTask, RecurringScheduler
-- Depends on: workflows.scheduler
+- Depends on: (stdlib only)
 - Side effects: unannotated
 - Test: (none)
 

@@ -54,7 +54,7 @@ jobs:
             if [[ ! "$f" =~ ^(docs/|.*\.md$|AGENTS\.md$|LLM_MAP\.md$|CAPABILITIES\.md$|README\.md$) ]]; then
               docs_only=false
             fi
-            if [[ ! "$f" =~ ^(\.github/workflows/|workflows/|src/workflow_registry\.py|validate_workflows\.py|tests/test_.*workflow.*\.py|tests/test_validate_workflows\.py) ]]; then
+            if [[ ! "$f" =~ ^(\.github/workflows/|workflows/|validate_workflows\.py|tests/test_.*workflow.*\.py|tests/test_validate_workflows\.py) ]]; then
               workflow_only=false
             fi
             if [[ ! "$f" =~ ^(tools/|tests/test_(repo_map|tools)\.py|\.repo-map\.json|.*AGENTS\.md$) ]]; then

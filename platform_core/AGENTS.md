@@ -173,7 +173,7 @@ Staging environment validator — runs pre-deployment checks automatically.
 ## platform_core/ops/validate_workflows.py
 validate_workflows.py -- one-shot script to validate all workflow definitions.
 - Exports: main
-- Depends on: workflows.registry
+- Depends on: (stdlib only)
 - Side effects: unannotated
 - Test: pytest tests/test_validate_workflows.py
 

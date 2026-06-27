@@ -10,7 +10,7 @@ via average_delay_seconds() to verify the < 5-minute SLA.
 EXPORTS:
   RecurringTask  -- Definition of a repeating workflow task.
   RecurringScheduler  -- Schedules recurring tasks through a priority + deadline-aware queue.
-DEPENDS-ON: workflows.scheduler
+DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
