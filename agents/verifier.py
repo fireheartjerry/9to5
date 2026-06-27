@@ -400,11 +400,13 @@ def _normalizeWorkDir(cmd: str, work_dir: str) -> str:
         return work_dir
     script = Path(candidate)
     if script.is_absolute():
-        try:
-            script.relative_to(config.INSTALL_ROOT)
-            return str(config.INSTALL_ROOT)
-        except ValueError:
-            return work_dir
+        for root in (config.PROJECT_ROOT, config.INSTALL_ROOT):
+            try:
+                script.relative_to(root)
+                return str(root)
+            except ValueError:
+                continue
+        return work_dir
     # Relative path: strip any glob tail to a resolvable prefix, then compare locations.
     probe = re.split(r"[*?\[]", candidate, maxsplit=1)[0]
     if probe.endswith(("/", "\\")) or probe == candidate:
