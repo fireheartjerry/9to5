@@ -908,7 +908,7 @@
           "kind": "function",
           "signature": "(verify: Optional[dict], work_dir: str, executor_result: dict) -> dict",
           "summary": "Return a verify_result dict: {passed, cmd, expect, returncode, stdout, stderr}.",
-          "lineno": 440
+          "lineno": 442
         }
       ],
       "depends_on": [
