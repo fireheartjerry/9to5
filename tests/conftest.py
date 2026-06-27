@@ -114,6 +114,16 @@ def _no_real_discord(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_experience_db(monkeypatch, tmp_path):
+    """Point the experience ledger at a per-test tmp DB so tests never read the real 33 MB
+    state/experience.db and -- critically under `pytest -n auto` -- never have two workers write
+    the same SQLite file concurrently. Mirrors _isolate_state. Tests that need their own ledger
+    still pass an explicit db_path or patch this locally (unaffected)."""
+    monkeypatch.setattr(config, "EXPERIENCE_DB_PATH", tmp_path / "experience.db", raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _no_real_browser(monkeypatch):
     """Never let a test drive the real generic browser (CDP) layer.
 
