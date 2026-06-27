@@ -28,14 +28,8 @@ if str(_ROOT) not in sys.path:
 # ---------------------------------------------------------------------------
 
 import tests.test_notification_bus                        # noqa: F401 — registers test classes
-# test_notification_enhancements was split; import both halves
-try:
-    import tests.test_notification_enhancements_a         # noqa: F401
-    import tests.test_notification_enhancements_b         # noqa: F401
-except ModuleNotFoundError:
-    pass  # file may have been renamed
-import tests.test_notification_integration_basic         # noqa: F401
-import tests.test_notification_integration_advanced      # noqa: F401
+import tests.test_notification_enhancements              # noqa: F401
+import tests.test_notification_integration               # noqa: F401
 import tests.test_notification_config                    # noqa: F401
 import tests.test_notification_docs                      # noqa: F401
 
