@@ -42,7 +42,7 @@ def _doc() -> str:
 # notification_system.md coverage
 # ---------------------------------------------------------------------------
 
-class NotificationDocsCoverage(unittest.TestCase):
+class TestNotificationDocsCoverage(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
