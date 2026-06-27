@@ -25,7 +25,7 @@ Do not touch:
 |---|---|---|
 | `main.py` | Core run loop wiring | Run focused integration/smoke checks |
 | `orchestrator.py` | Brain/planning logic | Preserve lifecycle contracts |
-| `control.py` | Shared control state | Test pause/resume/abort/gates |
+| `platform_core/runtime/control.py` | Shared control state | Test pause/resume/abort/gates |
 | `config.py` | Runtime config/secrets loading | Never hardcode secrets |
 | `agents/executor.py` | Claude subprocess execution | Avoid destructive command changes |
 | `agents/verifier.py` | Done/not-done gate | Add tests for expectation behavior |
@@ -37,7 +37,7 @@ Do not touch:
 | `notifications/webdash.py` | Human control surface | Test control command wiring |
 | `notifications/command_bot.py` | Discord commands | Preserve owner/auth/control behavior |
 | `notifications/bot/` | Nightclaw cogs/UI | Update `docs/NIGHTCLAW.md` |
-| `agents/hooks.py` + `identity.py`/`provenance.py`/`epoch.py` | Guard/path policy; prevents bad self-edits | Never weaken hard boundaries; keep guard fail-closed |
+| `agents/hooks.py` + `platform_core/core/identity.py`/`platform_core/core/provenance.py`/`platform_core/core/epoch.py` | Guard/path policy; prevents bad self-edits | Never weaken hard boundaries; keep guard fail-closed |
 | `learning/promotion.py`, `learning/finetune.py`, `learning/rollout.py` | Adapter promotion can mutate future behavior | Require eval gates; never bypass verifier/adversary/guards |
 
 ## Core invariants

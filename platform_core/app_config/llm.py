@@ -298,7 +298,7 @@ ARCHITECTURE_BRIEF: str = (
     "Key files: `orchestrator.py` (brain loop: plan->spec->execute->verify->retry->replan), "
     "`main.py` (entry/CLI/resume/health/terminal-control), `config.py` (env+constants), "
     "`agents/` (elaborator, architect, executor, adversary[stub], replanner, verifier, hooks), "
-    "`control.py` (ControlBus: abort/pause/gates), `memory/obsidian.py` (notes, REST+disk fallback), "
+    "`platform_core/runtime/control.py` (ControlBus: abort/pause/gates), `memory/obsidian.py` (notes, REST+disk fallback), "
     "`state/task.py` (lean task JSON), `notifications/` (discord_bot, dashboard, webdash, command_bot), "
     "`health.py` (/health checks).\n"
     "Invocation-spec keys: claude_md_inject, skills_to_invoke, effort_level, subagent, prompt, "

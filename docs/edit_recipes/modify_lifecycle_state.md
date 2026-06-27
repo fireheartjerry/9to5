@@ -17,7 +17,7 @@ Use when adding, removing, or renaming run/subtask statuses.
 - `state/task.py` (esp. `_TERMINAL`)
 - `main.py`
 - `orchestrator.py`
-- `control.py`
+- `platform_core/runtime/control.py`
 - dashboard consumers
 - `docs/STATE.md`
 - `docs/ARCHITECTURE.md`

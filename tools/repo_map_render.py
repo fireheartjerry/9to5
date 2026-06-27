@@ -88,6 +88,15 @@ def render_root_agents_md(m: dict) -> str:
                "(see existing `*Embed` builders) + send via `discord.sendEmbed`.\n"
                "- **Add + run one test:** use `tests/factories.py` builders; run "
                "`python tools/dev.py check tests/test_<x>.py`.\n")
+    out.append("## Tree Guide\n")
+    out.append("- Root files are public facades or entrypoints: `main.py`, `config.py`, "
+               "`orchestrator.py`, `knowledge.py`, `validate_workflows.py`.\n"
+               "- Internal platform plumbing lives under `platform_core/`: orchestration, "
+               "runtime/control, config internals, knowledge-base mechanics, ops, and simulation.\n"
+               "- Product domains stay at root: `agents/`, `notifications/`, `memory/`, "
+               "`learning/`, `workflows/`, `state/`, `tools/`, and `tests/`.\n"
+               "- Prefer editing the narrow implementation module, while preserving root "
+               "facades and compatibility imports when callers already use them.\n")
     out.append("## Packages\n")
     out.append("| Package | Modules | Index |\n|---|---|---|")
     dirs = _packages_with_init(m)

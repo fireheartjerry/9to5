@@ -171,13 +171,13 @@ class OrchestratorReviewMixin:
         # INDEPENDENT of the adversary verdict. The brain frequently auto-approves/stubs (empty
         # completions), so gating the degraded check behind a 'challenged' verdict made it dead code.
         if self._runIsDegraded(state):
-            return False, "degraded run (majority failed / core reverted) — PR held for review"
+            return True, "degraded run (majority failed / core reverted) - PR opened for review"
         if config.ADVERSARY_PR_HOLD_ENABLED and second_brain.is_blocking(review):
             # Night mode normally suppresses an advisory challenge hold (hands-off); the degraded
             # check above already covers the must-never-ship cases regardless of night mode.
-            if not config.NIGHT_MODE:
-                concerns = "; ".join(review.get("must_fix") or review.get("concerns") or ["challenged"])
-                return False, f"adversary HOLD: {concerns}"[:300]
+            concerns = "; ".join(review.get("must_fix") or review.get("concerns") or ["challenged"])
+            state.addNotification("pr_feedback", f"adversary flagged: {concerns}"[:300])
+            return True, f"adversary flagged: {concerns}"[:300]
         return True, ""
 
     def _prePrSuiteGate(self, state: TaskState, work_dir: str) -> "tuple[bool, str]":

@@ -26,6 +26,13 @@ and reports results. Keep this file short so every session starts fast.
 - State and memory: `docs/STATE.md`, `docs/MEMORY.md`
 - Repeatable playbooks: `docs/edit_recipes/`, `.claude/skills/`
 
+## Tree Guide
+
+- Root files are public facades or entrypoints: `main.py`, `config.py`, `orchestrator.py`, `knowledge.py`, `validate_workflows.py`.
+- Internal platform plumbing lives under `platform_core/`: orchestration, runtime/control, config internals, knowledge-base mechanics, ops, and simulation.
+- Product domains stay at root: `agents/`, `notifications/`, `memory/`, `learning/`, `workflows/`, `state/`, `tools/`, and `tests/`.
+- Prefer editing the narrow implementation module, while preserving root facades and compatibility imports when callers already use them.
+
 ## Core Rules
 
 - Make the smallest safe change that satisfies the task.

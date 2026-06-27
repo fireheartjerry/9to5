@@ -67,6 +67,10 @@ class TestBuildArgv(unittest.TestCase):
         self.assertNotIn("--no-pr", wl.buildArgv(wl.WorkRequest(goal="x")))
         self.assertIn("--no-pr", wl.buildArgv(wl.WorkRequest(goal="x", no_pr=True)))
 
+    def test_night_mode_forces_pr_feedback(self):
+        argv = wl.buildArgv(wl.WorkRequest(goal="x", no_pr=True, night_mode=True))
+        self.assertNotIn("--no-pr", argv)
+
     def test_workdir_only_when_set(self):
         self.assertNotIn("--work-dir", wl.buildArgv(wl.WorkRequest(goal="x")))
 

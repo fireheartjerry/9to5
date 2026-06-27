@@ -80,14 +80,6 @@ class WorkSetupView(discord.ui.View):
         self.req.parallel = int(select.values[0])
         await interaction.response.defer()
 
-    @discord.ui.select(placeholder="Pull request", options=[
-        discord.SelectOption(label="Create a PR when done", value="pr", default=True),
-        discord.SelectOption(label="Skip PR", value="nopr"),
-    ])
-    async def _pr(self, interaction, select):  # noqa: ANN001
-        self.req.no_pr = (select.values[0] == "nopr")
-        await interaction.response.defer()
-
     @discord.ui.select(placeholder="Night mode", options=[
         discord.SelectOption(label="Night mode: off (default)", value="off", default=True),
         discord.SelectOption(label="Night mode: on (zero interaction)", value="on"),

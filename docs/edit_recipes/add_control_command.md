@@ -11,7 +11,7 @@ Use when adding Discord/web/gateway commands that affect runs.
 
 ## Likely files
 
-- `control.py`
+- `platform_core/runtime/control.py`
 - `notifications/commands.py`
 - `notifications/command_bot.py`
 - `notifications/webdash.py`

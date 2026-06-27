@@ -110,7 +110,7 @@ updating `lifecycle.py`, its tests, and dashboard consumers.
 `ControlBus` lives in:
 
 ```txt
-control.py
+platform_core/runtime/control.py
 ```
 
 It stores one JSON per task under:

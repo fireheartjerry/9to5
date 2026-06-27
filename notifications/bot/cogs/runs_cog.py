@@ -100,41 +100,40 @@ class RunsCog(dpy_commands.Cog):
     @app_commands.command(name="work", description="Start a 9TO5 run (blank = guided setup)")
     @app_commands.describe(goal="What to work on (blank opens guided setup)",
                            hours="Time horizon in hours", mode="watch or gated",
-                           parallel="Concurrent subtasks", no_pr="Skip the PR",
-                           work_dir="Working directory",
+                           parallel="Concurrent subtasks", work_dir="Working directory",
                            night_mode="Zero human interaction — no pings, no holds, auto-resume pauses")
     @app_commands.choices(mode=[app_commands.Choice(name="watch", value="watch"),
                                 app_commands.Choice(name="gated", value="gated")])
     @slash.COOLDOWN
     async def work(self, interaction, goal: "str | None" = None, hours: "float | None" = None,
                    mode: "app_commands.Choice[str] | None" = None, parallel: "int | None" = None,
-                   no_pr: "bool | None" = None, work_dir: "str | None" = None,
+                   work_dir: "str | None" = None,
                    night_mode: "bool | None" = None) -> None:  # noqa: ANN001
         if not slash._ownerOk(interaction):
             return await interaction.response.send_message("Not authorized to launch runs.", ephemeral=True)
         if not goal:
             from notifications.views import WorkModal
             return await interaction.response.send_modal(WorkModal())
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
 
         if config.GEMINI_ENABLED:
             from agents import browser_executor
-            await interaction.followup.send("Checking Gemini reachability…", ephemeral=True)
+            await interaction.followup.send("Checking Gemini reachability…", ephemeral=False)
             reachable = await asyncio.to_thread(browser_executor.preflightLogin, 300, 3)
             if not reachable:
                 await interaction.followup.send(
                     "Gemini unreachable (check GEMINI_API_KEY / quota). Starting with the Ollama "
-                    "brain only.", ephemeral=True)
+                    "brain only.", ephemeral=False)
             else:
-                await interaction.followup.send("Gemini reachable. Starting run…", ephemeral=True)
+                await interaction.followup.send("Gemini reachable. Starting run…", ephemeral=False)
 
         req = work_launcher.WorkRequest(
             goal=goal, hours=work_launcher.parseHours(hours),
             mode=(mode.value if mode else "watch"), parallel=parallel or 1,
-            no_pr=bool(no_pr), work_dir=work_dir or None, night_mode=bool(night_mode))
+            work_dir=work_dir or None, night_mode=bool(night_mode))
         audit.record(interaction.user.id, "work", None, "slash")
         reply = await asyncio.to_thread(work_launcher.launchOrError, req)
-        await interaction.followup.send(reply[:slash.MAX_REPLY], ephemeral=True)
+        await interaction.followup.send(reply[:slash.MAX_REPLY], ephemeral=False)
 
     @app_commands.command(name="wipe", description="Factory reset — granular wipe of state, vault, and logs")
     @slash.COOLDOWN
@@ -149,29 +148,29 @@ class RunsCog(dpy_commands.Cog):
 
     @app_commands.command(name="runs", description="List recent runs")
     async def runs(self, interaction) -> None:  # noqa: ANN001
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
         summaries = TaskState.listRecent(40)
         _, total = branding.runsEmbed(summaries, 0)
         pages = [slash._embed(branding.runsEmbed(summaries, p)[0]) for p in range(total)]
         from notifications.views import Paginator
         if total > 1:
             await interaction.followup.send(embed=pages[0],
-                                            view=Paginator(interaction.user.id, pages), ephemeral=True)
+                                            view=Paginator(interaction.user.id, pages), ephemeral=False)
         else:
-            await interaction.followup.send(embed=pages[0], ephemeral=True)
+            await interaction.followup.send(embed=pages[0], ephemeral=False)
 
     @app_commands.command(name="run", description="Inspect a run by id")
     @app_commands.describe(task_id="Task id")
     @app_commands.autocomplete(task_id=slash._taskAutocomplete)
     async def run(self, interaction, task_id: str) -> None:  # noqa: ANN001
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
         if not work_launcher.taskExists(task_id):
-            return await interaction.followup.send(f" No such task `{task_id}`.", ephemeral=True)
+            return await interaction.followup.send(f" No such task `{task_id}`.", ephemeral=False)
         state = TaskState.loadSafe(task_id)
         if state is None:
             return await interaction.followup.send(
-                f" Task `{task_id}` exists but its state file is unreadable (corrupt JSON).", ephemeral=True)
-        await interaction.followup.send(embed=slash._embed(branding.runEmbed(state)), ephemeral=True)
+                f" Task `{task_id}` exists but its state file is unreadable (corrupt JSON).", ephemeral=False)
+        await interaction.followup.send(embed=slash._embed(branding.runEmbed(state)), ephemeral=False)
 
     @app_commands.command(name="resume", description="Resume a paused run, or resume a prior run by id")
     @app_commands.describe(task_id="(optional) prior task id to resume; omit to unpause the current run")
@@ -182,10 +181,10 @@ class RunsCog(dpy_commands.Cog):
             return await interaction.response.send_message("Not authorized.", ephemeral=True)
         if not task_id:
             return await slash._runControl(interaction, "resume")
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
         audit.record(interaction.user.id, "resume", task_id, "slash")
         reply = await asyncio.to_thread(work_launcher.resumeOrError, task_id)
-        await interaction.followup.send(reply[:slash.MAX_REPLY], ephemeral=True)
+        await interaction.followup.send(reply[:slash.MAX_REPLY], ephemeral=False)
 
     @app_commands.command(name="create-pr", description="Manually create a PR for any completed run (bypasses test gate)")
     @app_commands.describe(task_id="Task id or name to create PR for (required)")

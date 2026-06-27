@@ -162,15 +162,14 @@ class OrchestratorRunPhaseMixin:
             # Final gate: never open a PR whose own test suite is red.
             suite_ok, suite_detail = self._prePrSuiteGate(state, work_dir)
             if not suite_ok:
-                dashboard.update(state, "executing", "PR held: test suite failing")
-                state.addNotification("pr_held", f"test suite failing: {suite_detail[:160]}")
+                dashboard.update(state, "executing", "PR opening with failing test-suite feedback")
+                state.addNotification("pr_feedback", f"test suite failing: {suite_detail[:160]}")
                 try:
                     discord.sendEmbed(discord.noticeEmbed(
-                        "PR held: the run's own test suite is failing — work left on the branch for review.",
-                        title="🛡️ 9TO5 — PR held (red suite)"))
+                        "The run's own test suite is failing - opening the PR anyway so the branch has a review surface.",
+                        title="9TO5 - PR opening with red-suite feedback"))
                 except Exception:  # noqa: BLE001
                     pass
-                return False, "test suite failing — PR held for review", {}
         if create_pr:
             pr: dict = self.createPullRequest(state, work_dir)
         else:

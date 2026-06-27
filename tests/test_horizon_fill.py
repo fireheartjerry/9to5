@@ -118,7 +118,7 @@ class TestHorizonFill(unittest.TestCase):
 
 
 class TestPrGateDegraded(unittest.TestCase):
-    """RC-5: night mode must NOT auto-ship a degraded run past a challenged adversary verdict."""
+    """RC-5: night mode records degraded/challenged feedback while still creating a PR surface."""
     def setUp(self):
         self.dir = Path(tempfile.mkdtemp())
         self._patch = mock.patch.object(config, "STATE_DIR", self.dir)
@@ -154,15 +154,15 @@ class TestPrGateDegraded(unittest.TestCase):
         with mock.patch.object(config, "NIGHT_MODE", True), \
                 mock.patch.object(config, "ADVERSARY_PR_HOLD_ENABLED", True):
             create, reason = self.orch._prGate(review, auto_pr=True, state=self.state)
-        self.assertFalse(create)                 # degraded run held regardless of night mode (FX-18)
+        self.assertTrue(create)                  # PR becomes the feedback surface.
         self.assertIn("degraded", reason.lower())
 
     def test_degraded_holds_pr_even_when_adversary_approved(self):
-        # FX-18: degraded check is unconditional -- a stub/approved verdict can't green-light a broken run
+        # FX-18 follow-up: degraded check is unconditional, but annotates the PR instead of hiding it.
         self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['config.py']", reverted=True)
         with mock.patch.object(config, "ADVERSARY_PR_HOLD_ENABLED", True):
             create, reason = self.orch._prGate({"verdict": "approved"}, auto_pr=True, state=self.state)
-        self.assertFalse(create)
+        self.assertTrue(create)
         self.assertIn("degraded", reason.lower())
 
     def test_suite_gate_skips_non_self_ref(self):

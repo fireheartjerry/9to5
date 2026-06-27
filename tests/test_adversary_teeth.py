@@ -25,8 +25,8 @@ class TestPrGate(unittest.TestCase):
     def test_challenged_holds_pr_with_concerns(self):
         create, reason = self.orch._prGate(
             {"verdict": "challenged", "concerns": ["secret leak", "no rollback"]}, True, self.state)
-        self.assertFalse(create)
-        self.assertIn("HOLD", reason)
+        self.assertTrue(create)
+        self.assertIn("flagged", reason)
         self.assertIn("secret leak", reason)
 
     def test_challenged_respects_disable_flag(self):

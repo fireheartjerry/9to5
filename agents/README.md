@@ -9,7 +9,7 @@ draft* under the orchestrator's strict protocol. Module-by-module index: `agents
 - **Reviewers** — `adversary.py`, `second_brain.py` (`Reviewer` protocol; advisory verdicts). The external strong critic runs on Google Gemini via `gemini_driver.py`; fallback chain is Gemini → Ollama adversary → conservative stub.
 - **Verifier** — `verifier.py` (`Verifier` protocol; `{cmd, expect}` → pass/fail).
 - **Authoring** — `architect.py` (→ `architect.md`), `elaborator.py`, `clarifier.py`, `replanner.py`.
-- **Guard** — `hooks.py` (the PreToolUse self-modification guard; with `identity.py`/`provenance.py`/`epoch.py` it is the only hard stop).
+- **Guard** — `hooks.py` (the PreToolUse self-modification guard; with `platform_core/core/identity.py`, `platform_core/core/provenance.py`, and `platform_core/core/epoch.py` it is the only hard stop).
 
 ## Must NOT
 - Own or mutate run state — that's `state/task.py`. Agents return results; the orchestrator decides.
