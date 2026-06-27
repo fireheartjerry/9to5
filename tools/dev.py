@@ -136,9 +136,21 @@ def cmd_check(args: list[str]) -> int:
     return 0 if chain_ok else 1
 
 
+def _has_xdist() -> bool:
+    try:
+        import xdist  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def _xdist(args: list[str]) -> list[str]:
-    """Add `-n auto` (parallel across cores) unless the caller already chose a worker count."""
-    return args if any(a == "-n" or a.startswith("-n") for a in args) else ["-n", "auto", *args]
+    """Prepend `-n auto --dist loadscope` (parallel across cores) when pytest-xdist is installed and
+    the caller hasn't chosen a worker count. If xdist is absent, run serially so the command never
+    breaks with `unrecognized arguments: -n`."""
+    if any(a == "-n" or a.startswith("-n") for a in args) or not _has_xdist():
+        return args
+    return ["-n", "auto", "--dist", "loadscope", *args]
 
 
 def cmd_test(args: list[str]) -> int:
