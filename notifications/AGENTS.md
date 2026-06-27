@@ -98,7 +98,7 @@ NightclawBot -- the gateway ``commands.Bot`` harness.
 - Exports: handleCommand, buildBot, runBot
 - Depends on: config, control.ControlBus, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views
 - Side effects: unannotated
-- Test: (none)
+- Test: pytest tests/test_simulation_core.py tests/test_skill_gap_analysis_core.py
 
 ## notifications/bot/ui/__init__.py
 Reusable discord.py UI for the Nightclaw gateway.
@@ -171,9 +171,30 @@ DiscordDashboard -- ONE persistent, pinned embed that mirrors the whole run.
 - Test: pytest tests/test_dashboard.py
 
 ## notifications/discord_bot.py
-Discord notifications -- professional, glass-box embeds + REST plumbing.
-- Exports: humanPing, progressBar, subtaskTracker, effortBar, statusColor, relTime, formatVerdict, truncate, createComponentsV2, editComponentsV2Result, sendComponentsV2, sendAs, createMessage, postContent, postFile, editContent, editMessageResult, editMessage, pinMessage, unpinMessage, fetchMessagesAfter, baselineLatestId, sendEmbed, createPoll, endPoll, createScheduledEvent, planningStartEmbed, architectDoneEmbed, adversaryTriggeredEmbed, noticeEmbed, blockedEmbed, blockedComponents, completeEmbed, sendBlocked, gateNeededEmbed, subtaskFailedEmbed, abortedEmbed, selfRefEmbed
-- Depends on: config, notifications.icons
+Discord notifications -- re-export facade.
+- Exports: (none)
+- Depends on: notifications.discord_channels, notifications.discord_client, notifications.discord_embeds
+- Side effects: unannotated
+- Test: (none)
+
+## notifications/discord_channels.py
+Discord per-channel send helpers: message creation, editing, pinning, polling, and webhook personas.
+- Exports: createComponentsV2, editComponentsV2Result, sendComponentsV2, sendAs, createMessage, postContent, postFile, editContent, editMessageResult, editMessage, pinMessage, unpinMessage, fetchMessagesAfter, baselineLatestId, sendEmbed, createPoll, endPoll, createScheduledEvent, sendBlocked
+- Depends on: config, notifications.discord_client, notifications.discord_embeds
+- Side effects: unannotated
+- Test: (none)
+
+## notifications/discord_client.py
+Discord REST plumbing: single HTTP chokepoint, rate-limit circuit breaker, session state.
+- Exports: truncate
+- Depends on: config
+- Side effects: unannotated
+- Test: (none)
+
+## notifications/discord_embeds.py
+Discord embed builder functions: status colors, progress bars, and all embed dict constructors.
+- Exports: humanPing, progressBar, subtaskTracker, effortBar, statusColor, relTime, formatVerdict, planningStartEmbed, architectDoneEmbed, adversaryTriggeredEmbed, noticeEmbed, blockedEmbed, blockedComponents, completeEmbed, gateNeededEmbed, subtaskFailedEmbed, abortedEmbed, selfRefEmbed
+- Depends on: config, notifications.discord_client, notifications.icons
 - Side effects: unannotated
 - Test: (none)
 
@@ -189,7 +210,7 @@ NotificationEntry — typed schema for entries written to task.data['notificatio
 - Exports: makeEntry, isValid, validate
 - Depends on: (stdlib only)
 - Side effects: unannotated
-- Test: pytest tests/test_entry_creation.py tests/test_notification_entry.py tests/test_notification_entry_schema.py
+- Test: pytest tests/test_entry_creation.py tests/test_notification_entry.py tests/test_notification_entry_schema.py tests/test_notification_entry_ui.py
 
 ## notifications/icons.py
 Application-emoji icon registry -- professional icons for Discord TEXT surfaces.
@@ -241,18 +262,53 @@ Theme engine (T8 keystone) -- the single source of visual identity for the whole
 - Test: pytest tests/test_theme.py
 
 ## notifications/views.py
-discord.py UI components for the 9TO5 gateway: persistent control-panel + blocked
-- Exports: ConfirmView, confirmDestructive, ControlPanelView, BlockedView, Paginator, WorkSetupView, WipeSetupView, WipeConfirmView, WorkModal
-- Depends on: agents.browser_executor, config, control.ControlBus, notifications.audit, notifications.commands, notifications.icons, notifications.work_launcher, wipe.CATEGORIES, wipe.executeWipe, wipe.restartBot
+discord.py UI components for the 9TO5 gateway — re-export facade.
+- Exports: (none)
+- Depends on: notifications.views_control, notifications.views_run, notifications.views_subtask
 - Side effects: unannotated
 - Test: pytest tests/test_views.py
 
+## notifications/views_control.py
+Shared control helpers, ConfirmView/confirmDestructive, and ControlPanelView.
+- Exports: ConfirmView, confirmDestructive, ControlPanelView
+- Depends on: config, control.ControlBus, notifications.audit, notifications.commands, notifications.icons
+- Side effects: unannotated
+- Test: (none)
+
+## notifications/views_run.py
+Run-launching views: Paginator, WorkSetupView, WorkModal.
+- Exports: Paginator, WorkSetupView, WorkModal
+- Depends on: agents.browser_executor, config, notifications.audit, notifications.commands, notifications.work_launcher
+- Side effects: unannotated
+- Test: (none)
+
+## notifications/views_subtask.py
+Subtask-state and wipe-operation views: BlockedView, WipeSetupView, WipeConfirmView.
+- Exports: BlockedView, WipeSetupView, WipeConfirmView
+- Depends on: notifications.views_control, wipe.CATEGORIES, wipe.executeWipe, wipe.restartBot
+- Side effects: unannotated
+- Test: (none)
+
 ## notifications/visuals.py
 Generative visuals -- Pillow-rendered cockpit imagery in the "Nightclaw Ops Console" design
-- Exports: available, progressCard, burndownChart, duelCard, timelapseGif, runReplayGif
-- Depends on: config, notifications.theme
+- Exports: (none)
+- Depends on: notifications.visuals_cards, notifications.visuals_components
 - Side effects: unannotated
 - Test: pytest tests/test_visuals.py
+
+## notifications/visuals_cards.py
+Card and animation render functions for the Nightclaw Ops Console.
+- Exports: progressCard, burndownChart, duelCard, timelapseGif, runReplayGif
+- Depends on: config, notifications.theme, notifications.visuals_components
+- Side effects: unannotated
+- Test: (none)
+
+## notifications/visuals_components.py
+Drawing primitives and component helpers for the Nightclaw Ops Console visuals.
+- Exports: available
+- Depends on: config, notifications.theme
+- Side effects: unannotated
+- Test: (none)
 
 ## notifications/webdash.py
 webdash -- a zero-dependency local web dashboard for a running task.

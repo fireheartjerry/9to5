@@ -5,6 +5,9 @@
   "first_party_roots": [
     "agents",
     "config",
+    "config_discord",
+    "config_llm",
+    "config_paths",
     "conftest",
     "contracts",
     "control",
@@ -15,15 +18,32 @@
     "health",
     "identity",
     "knowledge",
+    "knowledge_builder",
+    "knowledge_compress",
+    "knowledge_scraper",
     "learning",
     "lifecycle",
     "llm_io",
     "main",
+    "main_cli",
     "memory",
     "monitoring",
     "nightclaw",
     "notifications",
     "orchestrator",
+    "orchestrator_brain_io",
+    "orchestrator_control_mixin",
+    "orchestrator_execute_mixin",
+    "orchestrator_github",
+    "orchestrator_knowledge",
+    "orchestrator_llm_mixin",
+    "orchestrator_plan_mixin",
+    "orchestrator_review_mixin",
+    "orchestrator_run_loop",
+    "orchestrator_run_loop_mixin",
+    "orchestrator_run_phase_mixin",
+    "orchestrator_subtask",
+    "orchestrator_time",
     "protocols",
     "provenance",
     "resilience",
@@ -61,44 +81,17 @@
       "purpose": "Adversary -- independent reviewer of executor output.",
       "exports": [
         {
-          "name": "systemFor",
-          "kind": "function",
-          "signature": "(review_type: str='subtask') -> str",
-          "summary": "The system prompt for a given touchpoint: the one schema + a type-specific lead-in.",
-          "lineno": 138
-        },
-        {
-          "name": "isCdpTransient",
-          "kind": "function",
-          "signature": "(exc: BaseException) -> bool",
-          "summary": "True when ``exc`` looks like a transient CDP/network hiccup worth retrying.",
-          "lineno": 162
-        },
-        {
-          "name": "shouldTrigger",
-          "kind": "function",
-          "signature": "(executor_output: str, subtask_position: int, attempt_count: int=1, pre_pr: bool=False) -> tuple[bool, str]",
-          "summary": "Return ``(triggered, reason)``.",
-          "lineno": 168
-        },
-        {
           "name": "reviewViaBrowser",
           "kind": "function",
           "signature": "(subtask_title: str, trigger_reason: str, executor_output: str, *, browser_ask: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict",
           "summary": "Phase-2 critique: route the review to Gemini via the google-genai SDK.",
-          "lineno": 260
-        },
-        {
-          "name": "review",
-          "kind": "function",
-          "signature": "(subtask_title: str, trigger_reason: str, executor_output: str, *, ollama_chat: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict",
-          "summary": "Critique the executor output and return a verdict dict.",
-          "lineno": 319
+          "lineno": 44
         }
       ],
       "depends_on": [
+        "agents.adversary_browser",
+        "agents.adversary_review",
         "agents.browser_executor",
-        "config",
         "llm_io"
       ],
       "side_effects": [
@@ -109,7 +102,67 @@
       ],
       "callers": [
         "agents.second_brain",
-        "orchestrator"
+        "orchestrator",
+        "orchestrator_execute_mixin",
+        "orchestrator_review_mixin"
+      ]
+    },
+    "agents.adversary_browser": {
+      "path": "agents/adversary_browser.py",
+      "purpose": "Adversary Phase-2 Gemini-specific constants.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.adversary"
+      ]
+    },
+    "agents.adversary_review": {
+      "path": "agents/adversary_review.py",
+      "purpose": "Shared adversary internals: constants, helpers, and the Ollama text-review path.",
+      "exports": [
+        {
+          "name": "systemFor",
+          "kind": "function",
+          "signature": "(review_type: str='subtask') -> str",
+          "summary": "The system prompt for a given touchpoint: the one schema + a type-specific lead-in.",
+          "lineno": 81
+        },
+        {
+          "name": "isCdpTransient",
+          "kind": "function",
+          "signature": "(exc: BaseException) -> bool",
+          "summary": "True when ``exc`` looks like a transient CDP/network hiccup worth retrying.",
+          "lineno": 87
+        },
+        {
+          "name": "shouldTrigger",
+          "kind": "function",
+          "signature": "(executor_output: str, subtask_position: int, attempt_count: int=1, pre_pr: bool=False) -> tuple[bool, str]",
+          "summary": "Return ``(triggered, reason)``.",
+          "lineno": 93
+        },
+        {
+          "name": "review",
+          "kind": "function",
+          "signature": "(subtask_title: str, trigger_reason: str, executor_output: str, *, ollama_chat: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict",
+          "summary": "Critique the executor output and return a verdict dict.",
+          "lineno": 231
+        }
+      ],
+      "depends_on": [
+        "config",
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.adversary"
       ]
     },
     "agents.architect": {
@@ -136,7 +189,7 @@
         "tests/test_phase_3_architecture.py"
       ],
       "callers": [
-        "orchestrator"
+        "orchestrator_run_phase_mixin"
       ]
     },
     "agents.browser_executor": {
@@ -222,8 +275,9 @@
       "callers": [
         "agents.adversary",
         "notifications.bot.cogs.runs_cog",
-        "notifications.views",
-        "orchestrator"
+        "notifications.views_run",
+        "orchestrator_llm_mixin",
+        "orchestrator_review_mixin"
       ]
     },
     "agents.clarifier": {
@@ -256,7 +310,7 @@
         "tests/test_clarifier.py"
       ],
       "callers": [
-        "orchestrator"
+        "orchestrator_llm_mixin"
       ]
     },
     "agents.debugging_workflow": {
@@ -327,40 +381,20 @@
       "purpose": "Executor (the hands) -- run Claude Code CLI from an Orchestrator invocation spec.",
       "exports": [
         {
-          "name": "normalizeSpec",
-          "kind": "function",
-          "signature": "(spec_or_prompt: Union[dict, str, None]) -> dict",
-          "summary": "Accept a full invocation spec dict OR a bare prompt string",
-          "lineno": 163
-        },
-        {
-          "name": "effortFlag",
-          "kind": "function",
-          "signature": "(effort_level: str) -> Optional[str]",
-          "summary": "",
-          "lineno": 260
-        },
-        {
-          "name": "scanDestructive",
-          "kind": "function",
-          "signature": "(text: str) -> list[str]",
-          "summary": "",
-          "lineno": 278
-        },
-        {
           "name": "runClaude",
           "kind": "function",
           "signature": "(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, system_prompt: Optional[str]=None, extra: Optional[str]=None, timeout: Optional[int]=None, resume_session: Optional[str]=None, cancel_check=None) -> dict",
           "summary": "Prepare the environment from the invocation spec, then fire one Claude run.",
-          "lineno": 347
+          "lineno": 166
         }
       ],
       "depends_on": [
+        "agents.executor_env",
+        "agents.executor_session",
+        "agents.executor_stream",
         "agents.playbook",
-        "agents.workflow_resolver",
         "config",
-        "memory.obsidian",
-        "notifications.discord_bot"
+        "memory.obsidian"
       ],
       "side_effects": [
         "unannotated"
@@ -371,9 +405,89 @@
       "callers": [
         "agents.browser_executor",
         "agents.native_executor",
-        "agents.verifier",
+        "agents.verifier_runner",
         "health",
         "orchestrator"
+      ]
+    },
+    "agents.executor_env": {
+      "path": "agents/executor_env.py",
+      "purpose": "Environment setup, prompt composition, and safety scanning for the Claude executor.",
+      "exports": [
+        {
+          "name": "normalizeSpec",
+          "kind": "function",
+          "signature": "(spec_or_prompt: Union[dict, str, None]) -> dict",
+          "summary": "Accept a full invocation spec dict OR a bare prompt string",
+          "lineno": 22
+        },
+        {
+          "name": "effortFlag",
+          "kind": "function",
+          "signature": "(effort_level: str) -> Optional[str]",
+          "summary": "",
+          "lineno": 119
+        },
+        {
+          "name": "scanDestructive",
+          "kind": "function",
+          "signature": "(text: str) -> list[str]",
+          "summary": "",
+          "lineno": 137
+        }
+      ],
+      "depends_on": [
+        "agents.workflow_resolver",
+        "config",
+        "notifications.discord_bot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.executor",
+        "agents.executor_stream"
+      ]
+    },
+    "agents.executor_session": {
+      "path": "agents/executor_session.py",
+      "purpose": "Session token limit management for the Claude executor.",
+      "exports": [],
+      "depends_on": [
+        "config",
+        "notifications.discord_bot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.executor"
+      ]
+    },
+    "agents.executor_stream": {
+      "path": "agents/executor_stream.py",
+      "purpose": "Subprocess management, stream parsing, and telemetry for the Claude executor.",
+      "exports": [
+        {
+          "name": "runSubprocess",
+          "kind": "function",
+          "signature": "(run_cmd: list, run_prompt: str, *, work: str, timeout: int, env: dict, creationflags: int, spec: dict, effort: str, flag, profile, playbook_md: str, claude_md_path, model: str) -> dict",
+          "summary": "Execute one Claude subprocess and return a normalised result dict.",
+          "lineno": 174
+        }
+      ],
+      "depends_on": [
+        "agents.executor_env",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.executor"
       ]
     },
     "agents.gemini_driver": {
@@ -442,60 +556,40 @@
       "purpose": "9TO5 deterministic hook dispatcher.",
       "exports": [
         {
-          "name": "blockDestructive",
-          "kind": "function",
-          "signature": "(data)",
-          "summary": "PreToolUse: block destructive Bash commands by exiting 2.",
-          "lineno": 141
-        },
-        {
-          "name": "writeObsidian",
-          "kind": "function",
-          "signature": "(data)",
-          "summary": "PostToolUse: log the edited file path to the in-progress subtask note.",
-          "lineno": 191
-        },
-        {
           "name": "discordNotify",
           "kind": "function",
           "signature": "(data)",
           "summary": "Notification: forward the message to Discord as a compact embed.",
-          "lineno": 242
+          "lineno": 71
         },
         {
           "name": "logAll",
           "kind": "function",
           "signature": "(data)",
           "summary": "PostToolUse / any: append one JSON line {time, tool_name} to the log.",
-          "lineno": 259
+          "lineno": 88
         },
         {
           "name": "logTelemetry",
           "kind": "function",
           "signature": "(data)",
           "summary": "Any Claude hook: append compact non-blocking iteration telemetry.",
-          "lineno": 279
-        },
-        {
-          "name": "selfModificationGuard",
-          "kind": "function",
-          "signature": "(data)",
-          "summary": "PreToolUse: during a SELF-REFERENTIAL task, block edits to the core files",
-          "lineno": 349
+          "lineno": 108
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "()",
           "summary": "Dispatch to the requested handler based on argv[1].",
-          "lineno": 477
+          "lineno": 121
         }
       ],
       "depends_on": [
+        "agents.hooks_destructive",
+        "agents.hooks_obsidian",
+        "agents.hooks_selfmod",
         "config",
-        "memory.obsidian",
-        "notifications.discord_bot",
-        "state.task"
+        "notifications.discord_bot"
       ],
       "side_effects": [
         "unannotated"
@@ -504,6 +598,79 @@
         "tests/test_hooks_self_path.py"
       ],
       "callers": []
+    },
+    "agents.hooks_destructive": {
+      "path": "agents/hooks_destructive.py",
+      "purpose": "PreToolUse hook: block destructive Bash commands before they execute.",
+      "exports": [
+        {
+          "name": "blockDestructive",
+          "kind": "function",
+          "signature": "(data)",
+          "summary": "PreToolUse: block destructive Bash commands by exiting 2.",
+          "lineno": 35
+        }
+      ],
+      "depends_on": [
+        "notifications.discord_bot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.hooks"
+      ]
+    },
+    "agents.hooks_obsidian": {
+      "path": "agents/hooks_obsidian.py",
+      "purpose": "PostToolUse hook: log edited file paths to the active Obsidian subtask note.",
+      "exports": [
+        {
+          "name": "writeObsidian",
+          "kind": "function",
+          "signature": "(data)",
+          "summary": "PostToolUse: log the edited file path to the in-progress subtask note.",
+          "lineno": 21
+        }
+      ],
+      "depends_on": [
+        "agents.hooks_selfmod",
+        "memory.obsidian"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.hooks"
+      ]
+    },
+    "agents.hooks_selfmod": {
+      "path": "agents/hooks_selfmod.py",
+      "purpose": "Self-modification guard: classify paths, scan diffs, and block unsafe edits.",
+      "exports": [
+        {
+          "name": "selfModificationGuard",
+          "kind": "function",
+          "signature": "(data)",
+          "summary": "PreToolUse: block edits to hard boundaries and core loop files",
+          "lineno": 246
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.discord_bot",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.hooks",
+        "agents.hooks_obsidian"
+      ]
     },
     "agents.native_executor": {
       "path": "agents/native_executor.py",
@@ -557,80 +724,60 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 39
-        },
-        {
-          "name": "PipelineStep",
-          "kind": "class",
-          "signature": "",
-          "summary": "Metadata for one named orchestration step.",
-          "lineno": 57
-        },
-        {
-          "name": "stepFor",
-          "kind": "function",
-          "signature": "(name: str) -> PipelineStep",
-          "summary": "Return the PipelineStep for *name*, raising KeyError when unknown.",
-          "lineno": 93
-        },
-        {
-          "name": "executionOrder",
-          "kind": "function",
-          "signature": "(steps: 'list[PipelineStep] | None'=None) -> list[str]",
-          "summary": "Topological order of step names (respects ``depends_on`` edges).",
-          "lineno": 101
+          "lineno": 36
         },
         {
           "name": "sanitizeSpec",
           "kind": "function",
           "signature": "(spec: Any, subtask: dict, available_skills: 'frozenset[str] | None'=None, available_subagents: 'frozenset[str] | None'=None, available_pre_hooks: 'frozenset[str] | None'=None, available_post_hooks: 'frozenset[str] | None'=None) -> StepResult",
           "summary": "Pure spec-sanitize step: coerce, filter, and validate a brain-authored spec.",
-          "lineno": 152
+          "lineno": 131
         },
         {
           "name": "validateSpec",
           "kind": "function",
           "signature": "(spec: dict) -> StepResult",
           "summary": "Validate a sanitized spec has the minimum required fields populated.",
-          "lineno": 223
+          "lineno": 163
         },
         {
           "name": "fmtElapsed",
           "kind": "function",
           "signature": "(seconds: float) -> str",
           "summary": "Format elapsed seconds as ``Hh MMm SSs``.",
-          "lineno": 236
+          "lineno": 176
         },
         {
           "name": "singleDeliverable",
           "kind": "function",
           "signature": "(goal: str) -> bool",
           "summary": "True when the goal targets at most one file with no multi-deliverable phrasing.",
-          "lineno": 244
+          "lineno": 184
         },
         {
           "name": "resolveWorkflow",
           "kind": "function",
           "signature": "(name_or_def: 'Any') -> StepResult",
           "summary": "Resolve a workflow by name from the central registry or accept an inline dict.",
-          "lineno": 267
+          "lineno": 207
         },
         {
           "name": "verifyStep",
           "kind": "function",
           "signature": "(verify: 'Optional[dict]', work_dir: str, executor_result: dict) -> StepResult",
           "summary": "Thin wrapper around ``verifier.runVerification`` returning a ``StepResult``.",
-          "lineno": 300
+          "lineno": 240
         },
         {
           "name": "runSteps",
           "kind": "function",
           "signature": "(steps: 'list[str]', context: dict, handlers: 'dict[str, Callable[[dict], StepResult]]') -> 'list[StepResult]'",
           "summary": "Execute a named sequence of steps, stopping on first failure.",
-          "lineno": 320
+          "lineno": 260
         }
       ],
       "depends_on": [
+        "agents.orchestration_pipeline_registry",
         "agents.verifier",
         "config",
         "src.workflow_registry"
@@ -640,6 +787,41 @@
       ],
       "test": [],
       "callers": []
+    },
+    "agents.orchestration_pipeline_registry": {
+      "path": "agents/orchestration_pipeline_registry.py",
+      "purpose": "Pipeline step registry for the 9TO5 orchestration pipeline.",
+      "exports": [
+        {
+          "name": "PipelineStep",
+          "kind": "class",
+          "signature": "",
+          "summary": "Metadata for one named orchestration step.",
+          "lineno": 21
+        },
+        {
+          "name": "stepFor",
+          "kind": "function",
+          "signature": "(name: str) -> PipelineStep",
+          "summary": "Return the PipelineStep for *name*, raising KeyError when unknown.",
+          "lineno": 57
+        },
+        {
+          "name": "executionOrder",
+          "kind": "function",
+          "signature": "(steps: 'list[PipelineStep] | None'=None) -> list[str]",
+          "summary": "Topological order of step names (respects ``depends_on`` edges).",
+          "lineno": 65
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [],
+      "callers": [
+        "agents.orchestration_pipeline"
+      ]
     },
     "agents.playbook": {
       "path": "agents/playbook.py",
@@ -736,7 +918,9 @@
         "tests/test_phase2_second_brain.py"
       ],
       "callers": [
-        "orchestrator"
+        "orchestrator_control_mixin",
+        "orchestrator_execute_mixin",
+        "orchestrator_review_mixin"
       ]
     },
     "agents.timing_harness": {
@@ -779,21 +963,31 @@
       "purpose": "trace-replay -- loads archived execution traces and surfaces brain divergence points.",
       "exports": [
         {
+          "name": "setColor",
+          "kind": "function",
+          "signature": "(enabled: bool) -> None",
+          "summary": "Toggle ANSI output for both this module and trace_replay_output.",
+          "lineno": 78
+        },
+        {
           "name": "replayTrace",
           "kind": "function",
           "signature": "(run_id: str, threshold: int) -> int",
           "summary": "Load and replay one run's event trace",
-          "lineno": 406
+          "lineno": 112
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "() -> int",
           "summary": "",
-          "lineno": 505
+          "lineno": 193
         }
       ],
       "depends_on": [
+        "agents.trace_replay_events",
+        "agents.trace_replay_output",
+        "agents.trace_replay_selftest",
         "config",
         "tracing"
       ],
@@ -819,21 +1013,21 @@
           "kind": "function",
           "signature": "(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict",
           "summary": "Execute the trace-replay script and return parsed results.",
-          "lineno": 112
+          "lineno": 193
         },
         {
           "name": "buildStepSpec",
           "kind": "function",
           "signature": "(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict",
           "summary": "Return an invocation spec for step-by-step decision-point replay.",
-          "lineno": 228
+          "lineno": 222
         },
         {
           "name": "getDecisionPoints",
           "kind": "function",
           "signature": "(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict",
           "summary": "Run trace-replay and return structured decision points with surrounding context.",
-          "lineno": 268
+          "lineno": 262
         }
       ],
       "depends_on": [
@@ -850,65 +1044,139 @@
         "agents.debugging_workflow"
       ]
     },
+    "agents.trace_replay_events": {
+      "path": "agents/trace_replay_events.py",
+      "purpose": "Event classification constants, pure functions, and JSON replay sub-helper.",
+      "exports": [],
+      "depends_on": [
+        "config",
+        "tracing"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.trace-replay",
+        "agents.trace_replay_output",
+        "agents.trace_replay_selftest"
+      ]
+    },
+    "agents.trace_replay_output": {
+      "path": "agents/trace_replay_output.py",
+      "purpose": "ANSI color helpers and text-mode print routines for trace-replay.",
+      "exports": [
+        {
+          "name": "setColor",
+          "kind": "function",
+          "signature": "(enabled: bool) -> None",
+          "summary": "Set the module-level color flag (call from main() before replay).",
+          "lineno": 38
+        }
+      ],
+      "depends_on": [
+        "agents.trace_replay_events"
+      ],
+      "side_effects": [
+        "stdout writes"
+      ],
+      "test": [],
+      "callers": [
+        "agents.trace-replay"
+      ]
+    },
+    "agents.trace_replay_selftest": {
+      "path": "agents/trace_replay_selftest.py",
+      "purpose": "Self-test sub-functions for agents/trace-replay.py.",
+      "exports": [],
+      "depends_on": [
+        "agents.trace_replay_events"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.trace-replay"
+      ]
+    },
     "agents.verifier": {
       "path": "agents/verifier.py",
       "purpose": "Verifier -- run the brain-authored verification check for a subtask.",
       "exports": [
         {
-          "name": "sanitizeVerify",
-          "kind": "function",
-          "signature": "(verify: Optional[dict]) -> Optional[dict]",
-          "summary": "Drop a structurally-unreliable brain-authored verify so the subtask falls back to",
-          "lineno": 108
-        },
-        {
           "name": "extractRequirements",
           "kind": "function",
           "signature": "(goal: str) -> list[str]",
           "summary": "Pull the EXPLICITLY enumerated deliverables out of a goal.",
-          "lineno": 197
+          "lineno": 72
         },
         {
           "name": "primaryTargetFile",
           "kind": "function",
           "signature": "(goal: str) -> Optional[str]",
           "summary": "The single distinct file path a goal targets, else None (zero or several files named).",
-          "lineno": 230
+          "lineno": 105
         },
         {
           "name": "requirementMarkers",
           "kind": "function",
           "signature": "(phrase: str) -> list[str]",
           "summary": "Lowercased, distinctive content-word markers for one requirement phrase.",
-          "lineno": 242
+          "lineno": 117
         },
         {
           "name": "buildContentScanVerify",
           "kind": "function",
           "signature": "(marker_groups: list[list[str]], target_path: str) -> dict",
           "summary": "A compound, deterministic, stdlib-only verify: the target file's (lowercased) source mu…",
-          "lineno": 265
+          "lineno": 140
         },
         {
           "name": "buildRequirementsVerify",
           "kind": "function",
           "signature": "(goal: str, target_path: str) -> Optional[dict]",
           "summary": "Synthesize a compound content-scan verify for an enumerated multi-deliverable `goal` ag…",
-          "lineno": 290
+          "lineno": 165
         },
         {
           "name": "isStrictVerify",
           "kind": "function",
           "signature": "(verify: Optional[dict]) -> bool",
           "summary": "True for a deliberate multi-requirement verify (compound expect or ``strict`` flag)",
-          "lineno": 310
-        },
+          "lineno": 185
+        }
+      ],
+      "depends_on": [
+        "agents.verifier_runner",
+        "agents.verifier_sanitize",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.orchestration_pipeline",
+        "learning.eval_runner",
+        "orchestrator_execute_mixin",
+        "orchestrator_llm_mixin",
+        "orchestrator_plan_mixin",
+        "orchestrator_run_loop_mixin",
+        "orchestrator_run_phase_mixin",
+        "orchestrator_subtask"
+      ]
+    },
+    "agents.verifier_runner": {
+      "path": "agents/verifier_runner.py",
+      "purpose": "Verification runner: execute brain-authored verify commands and evaluate results.",
+      "exports": [
         {
           "name": "runVerification",
           "kind": "function",
           "signature": "(verify: Optional[dict], work_dir: str, executor_result: dict) -> dict",
           "summary": "Return a verify_result dict: {passed, cmd, expect, returncode, stdout, stderr}.",
-          "lineno": 442
+          "lineno": 180
         }
       ],
       "depends_on": [
@@ -920,9 +1188,30 @@
       ],
       "test": [],
       "callers": [
-        "agents.orchestration_pipeline",
-        "learning.eval_runner",
-        "orchestrator"
+        "agents.verifier"
+      ]
+    },
+    "agents.verifier_sanitize": {
+      "path": "agents/verifier_sanitize.py",
+      "purpose": "Sanitization guard for brain-authored verify specs.",
+      "exports": [
+        {
+          "name": "sanitizeVerify",
+          "kind": "function",
+          "signature": "(verify: Optional[dict]) -> Optional[dict]",
+          "summary": "Drop a structurally-unreliable brain-authored verify so the subtask falls back to",
+          "lineno": 83
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.verifier"
       ]
     },
     "agents.workflow_resolver": {
@@ -945,7 +1234,7 @@
       ],
       "test": [],
       "callers": [
-        "agents.executor"
+        "agents.executor_env"
       ]
     },
     "config": {
@@ -957,31 +1246,33 @@
           "kind": "function",
           "signature": "(knob: str, value) -> bool",
           "summary": "Persist + live-apply a meta-optimizer knob change (whitelisted knobs only).",
-          "lineno": 366
-        },
-        {
-          "name": "ensureDirs",
-          "kind": "function",
-          "signature": "() -> None",
-          "summary": "Create every directory 9TO5 needs (idempotent).",
-          "lineno": 599
+          "lineno": 87
         },
         {
           "name": "validateEnv",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Return the names of required-but-missing environment values.",
-          "lineno": 605
+          "lineno": 132
         },
         {
           "name": "getLogger",
           "kind": "function",
           "signature": "(name: str='9to5') -> logging.Logger",
           "summary": "Return a child of the configured ``9to5`` logger.",
-          "lineno": 638
+          "lineno": 169
         }
       ],
-      "depends_on": [],
+      "depends_on": [
+        "config_discord.*",
+        "config_llm.*",
+        "config_llm.SIE_TUNABLE_KNOBS",
+        "config_llm._SIE_BOUNDS",
+        "config_llm._envFloat",
+        "config_llm._envInt",
+        "config_paths.*",
+        "config_paths.SIE_OVERRIDES_PATH"
+      ],
       "side_effects": [
         "unannotated"
       ],
@@ -990,14 +1281,18 @@
         "tests/test_notification_config.py"
       ],
       "callers": [
-        "agents.adversary",
+        "agents.adversary_review",
         "agents.architect",
         "agents.browser_executor",
         "agents.clarifier",
         "agents.elaborator",
         "agents.executor",
+        "agents.executor_env",
+        "agents.executor_session",
+        "agents.executor_stream",
         "agents.gemini_driver",
         "agents.hooks",
+        "agents.hooks_selfmod",
         "agents.native_executor",
         "agents.orchestration_pipeline",
         "agents.playbook",
@@ -1005,13 +1300,18 @@
         "agents.second_brain",
         "agents.trace-replay",
         "agents.trace_replay",
+        "agents.trace_replay_events",
         "agents.verifier",
+        "agents.verifier_runner",
+        "agents.verifier_sanitize",
         "control",
         "doctor",
         "epoch",
         "health",
         "identity",
-        "knowledge",
+        "knowledge_builder",
+        "knowledge_compress",
+        "knowledge_scraper",
         "learning.adapter_ops",
         "learning.adapter_promotion",
         "learning.adversary_trust",
@@ -1043,7 +1343,10 @@
         "learning.solution_cache",
         "learning.toolsmith",
         "main",
-        "memory.experience",
+        "main_cli",
+        "memory.experience_runs",
+        "memory.experience_schema",
+        "memory.experience_subtasks",
         "memory.obsidian",
         "memory.retrieval",
         "memory.subtask_manager",
@@ -1066,28 +1369,85 @@
         "notifications.console_hud",
         "notifications.cv2",
         "notifications.dashboard",
-        "notifications.discord_bot",
+        "notifications.discord_channels",
+        "notifications.discord_client",
+        "notifications.discord_embeds",
         "notifications.icons",
         "notifications.iconset",
         "notifications.metrics",
         "notifications.personas",
         "notifications.slash",
         "notifications.theme",
-        "notifications.views",
-        "notifications.visuals",
+        "notifications.views_control",
+        "notifications.views_run",
+        "notifications.visuals_cards",
+        "notifications.visuals_components",
         "notifications.webdash",
         "notifications.work_launcher",
         "orchestrator",
+        "orchestrator_control_mixin",
+        "orchestrator_execute_mixin",
+        "orchestrator_github",
+        "orchestrator_knowledge",
+        "orchestrator_llm_mixin",
+        "orchestrator_plan_mixin",
+        "orchestrator_review_mixin",
+        "orchestrator_run_loop",
+        "orchestrator_run_loop_mixin",
+        "orchestrator_run_phase_mixin",
+        "orchestrator_subtask",
         "resilience",
         "scripts.repo_health",
         "selfmod",
         "simulation",
         "staging_validator",
-        "state.task",
+        "state.task_io",
+        "state.task_schema",
         "surfaces",
         "tracing",
         "wipe"
       ]
+    },
+    "config_discord": {
+      "path": "config_discord.py",
+      "purpose": "9TO5 Discord bot credentials, limits, branding, and surface flags.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "config_llm": {
+      "path": "config_llm.py",
+      "purpose": "9TO5 LLM / orchestration / SIE / adversary / executor constants.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "config_paths": {
+      "path": "config_paths.py",
+      "purpose": "9TO5 file-system paths and directory helpers.",
+      "exports": [
+        {
+          "name": "ensureDirs",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Create every directory 9TO5 needs (idempotent).",
+          "lineno": 109
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
     },
     "conftest": {
       "path": "conftest.py",
@@ -1388,7 +1748,8 @@
         "tests/test_epoch.py"
       ],
       "callers": [
-        "orchestrator"
+        "orchestrator",
+        "orchestrator_subtask"
       ]
     },
     "error_handling": {
@@ -1517,95 +1878,24 @@
     "knowledge": {
       "path": "knowledge.py",
       "purpose": "Living Claude Code knowledge base -- mechanics for ``refreshClaudeKnowledge()``.",
-      "exports": [
-        {
-          "name": "fetchClaudeDocs",
-          "kind": "function",
-          "signature": "(enabled: bool=True, timeout: Optional[int]=None) -> dict",
-          "summary": "Scrape current Claude Code docs + changelog IN PARALLEL",
-          "lineno": 138
-        },
-        {
-          "name": "scanLocalClaude",
-          "kind": "function",
-          "signature": "(roots: Optional[tuple]=None) -> dict",
-          "summary": "Recursively read every installed ``.claude`` surface",
-          "lineno": 233
-        },
-        {
-          "name": "readProductSelfKnowledge",
-          "kind": "function",
-          "signature": "(roots: Optional[tuple]=None) -> dict",
-          "summary": "Locate + read the product-self-knowledge skill (Claude Code's own current",
-          "lineno": 310
-        },
-        {
-          "name": "readRecommendations",
-          "kind": "function",
-          "signature": "(path: Optional[Path]=None) -> dict",
-          "summary": "Read the expert recommendations doc (how 9to5 should wield Claude Code)",
-          "lineno": 330
-        },
-        {
-          "name": "injectableDoc",
-          "kind": "function",
-          "signature": "(text: str, *, name: str) -> str",
-          "summary": "Gate a knowledge-doc for injection into the brain prompt.",
-          "lineno": 354
-        },
-        {
-          "name": "buildUnifiedDoc",
-          "kind": "function",
-          "signature": "(prior_doc: str, fetched: dict, local: dict, psk: dict, *, refreshed_at: str, sources: list[str], recs: Optional[dict]=None) -> str",
-          "summary": "Fold prior self-analysis + live docs + local capability surface +",
-          "lineno": 482
-        },
-        {
-          "name": "diffHeadings",
-          "kind": "function",
-          "signature": "(prior_doc: str, new_doc: str) -> dict",
-          "summary": "Naive 'what changed' delta on top-level headings (for the refresh log).",
-          "lineno": 605
-        },
-        {
-          "name": "compressForInjection",
-          "kind": "function",
-          "signature": "(unified_doc: str, local: dict, fetched: dict, max_chars: Optional[int]=None, recs: Optional[dict]=None) -> str",
-          "summary": "Distill the unified reference into the structured ``CLAUDE CODE CAPABILITIES``",
-          "lineno": 658
-        },
-        {
-          "name": "setCapabilities",
-          "kind": "function",
-          "signature": "(summary: str) -> None",
-          "summary": "Cache the compressed CLAUDE CODE CAPABILITIES summary (called by the full refresh).",
-          "lineno": 752
-        },
-        {
-          "name": "getCapabilities",
-          "kind": "function",
-          "signature": "() -> str",
-          "summary": "",
-          "lineno": 758
-        },
-        {
-          "name": "ensureCapabilities",
-          "kind": "function",
-          "signature": "() -> str",
-          "summary": "Lazily build the capabilities summary OFFLINE (no web fetch) from the on-disk",
-          "lineno": 762
-        },
-        {
-          "name": "injectCapabilities",
-          "kind": "function",
-          "signature": "(system_prompt: str) -> str",
-          "summary": "Prepend the cached CLAUDE CODE CAPABILITIES block to ANY brain system prompt.",
-          "lineno": 787
-        }
-      ],
+      "exports": [],
       "depends_on": [
-        "config",
-        "provenance"
+        "knowledge_builder._topHeadings",
+        "knowledge_builder.buildUnifiedDoc",
+        "knowledge_builder.diffHeadings",
+        "knowledge_compress._executiveExcerpt",
+        "knowledge_compress.compressForInjection",
+        "knowledge_compress.ensureCapabilities",
+        "knowledge_compress.getCapabilities",
+        "knowledge_compress.injectCapabilities",
+        "knowledge_compress.setCapabilities",
+        "knowledge_scraper._htmlToText",
+        "knowledge_scraper._parseFrontmatter",
+        "knowledge_scraper.fetchClaudeDocs",
+        "knowledge_scraper.injectableDoc",
+        "knowledge_scraper.readProductSelfKnowledge",
+        "knowledge_scraper.readRecommendations",
+        "knowledge_scraper.scanLocalClaude"
       ],
       "side_effects": [
         "unannotated"
@@ -1617,9 +1907,142 @@
         "agents.architect",
         "agents.elaborator",
         "agents.replanner",
-        "orchestrator",
+        "orchestrator_knowledge",
         "surfaces"
       ]
+    },
+    "knowledge_builder": {
+      "path": "knowledge_builder.py",
+      "purpose": "Unified knowledge-doc assembly: folds prior analysis, live docs, local surface, and recs.",
+      "exports": [
+        {
+          "name": "buildUnifiedDoc",
+          "kind": "function",
+          "signature": "(prior_doc: str, fetched: dict, local: dict, psk: dict, *, refreshed_at: str, sources: list[str], recs: Optional[dict]=None) -> str",
+          "summary": "Fold prior self-analysis + live docs + local capability surface +",
+          "lineno": 150
+        },
+        {
+          "name": "diffHeadings",
+          "kind": "function",
+          "signature": "(prior_doc: str, new_doc: str) -> dict",
+          "summary": "Naive 'what changed' delta on top-level headings (for the refresh log).",
+          "lineno": 164
+        }
+      ],
+      "depends_on": [
+        "config",
+        "knowledge_scraper._SCRAPE_PROVENANCE_HEADER"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "knowledge_compress": {
+      "path": "knowledge_compress.py",
+      "purpose": "Compression and injection of the CLAUDE CODE CAPABILITIES summary for Ollama prompts.",
+      "exports": [
+        {
+          "name": "compressForInjection",
+          "kind": "function",
+          "signature": "(unified_doc: str, local: dict, fetched: dict, max_chars: Optional[int]=None, recs: Optional[dict]=None) -> str",
+          "summary": "Distill the unified reference into the structured ``CLAUDE CODE CAPABILITIES``",
+          "lineno": 132
+        },
+        {
+          "name": "setCapabilities",
+          "kind": "function",
+          "signature": "(summary: str) -> None",
+          "summary": "Cache the compressed CLAUDE CODE CAPABILITIES summary (called by the full refresh).",
+          "lineno": 179
+        },
+        {
+          "name": "getCapabilities",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "",
+          "lineno": 185
+        },
+        {
+          "name": "ensureCapabilities",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "Lazily build the capabilities summary OFFLINE (no web fetch) from the on-disk",
+          "lineno": 189
+        },
+        {
+          "name": "injectCapabilities",
+          "kind": "function",
+          "signature": "(system_prompt: str) -> str",
+          "summary": "Prepend the cached CLAUDE CODE CAPABILITIES block to ANY brain system prompt.",
+          "lineno": 214
+        }
+      ],
+      "depends_on": [
+        "config",
+        "knowledge_builder._topHeadings",
+        "knowledge_scraper._readText",
+        "knowledge_scraper.injectableDoc",
+        "knowledge_scraper.readRecommendations",
+        "knowledge_scraper.scanLocalClaude"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "knowledge_scraper": {
+      "path": "knowledge_scraper.py",
+      "purpose": "Web doc fetching, local .claude surface scanning, and provenance gating.",
+      "exports": [
+        {
+          "name": "fetchClaudeDocs",
+          "kind": "function",
+          "signature": "(enabled: bool=True, timeout: Optional[int]=None) -> dict",
+          "summary": "Scrape current Claude Code docs + changelog IN PARALLEL",
+          "lineno": 118
+        },
+        {
+          "name": "injectableDoc",
+          "kind": "function",
+          "signature": "(text: str, *, name: str) -> str",
+          "summary": "Gate a knowledge-doc for injection into the brain prompt.",
+          "lineno": 224
+        },
+        {
+          "name": "scanLocalClaude",
+          "kind": "function",
+          "signature": "(roots: Optional[tuple]=None) -> dict",
+          "summary": "Recursively read every installed ``.claude`` surface",
+          "lineno": 344
+        },
+        {
+          "name": "readProductSelfKnowledge",
+          "kind": "function",
+          "signature": "(roots: Optional[tuple]=None) -> dict",
+          "summary": "Locate + read the product-self-knowledge skill (Claude Code's own current",
+          "lineno": 375
+        },
+        {
+          "name": "readRecommendations",
+          "kind": "function",
+          "signature": "(path: Optional[Path]=None) -> dict",
+          "summary": "Read the expert recommendations doc (how 9to5 should wield Claude Code)",
+          "lineno": 395
+        }
+      ],
+      "depends_on": [
+        "config",
+        "provenance"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
     },
     "learning": {
       "path": "learning/__init__.py",
@@ -1728,7 +2151,8 @@
       ],
       "test": [],
       "callers": [
-        "orchestrator"
+        "orchestrator_review_mixin",
+        "orchestrator_run_phase_mixin"
       ]
     },
     "learning.bootstrap": {
@@ -1890,7 +2314,7 @@
       ],
       "test": [],
       "callers": [
-        "orchestrator"
+        "orchestrator_run_loop"
       ]
     },
     "learning.counterfactual": {
@@ -2128,7 +2552,7 @@
         "learning.dataset",
         "learning.distill",
         "learning.sie",
-        "orchestrator"
+        "orchestrator_llm_mixin"
       ]
     },
     "learning.eval_runner": {
@@ -2278,7 +2702,7 @@
       "callers": [
         "learning.adapter_promotion",
         "learning.sie",
-        "orchestrator"
+        "orchestrator_llm_mixin"
       ]
     },
     "learning.human_feedback": {
@@ -2349,7 +2773,7 @@
       "test": [],
       "callers": [
         "learning.sie",
-        "orchestrator"
+        "orchestrator_plan_mixin"
       ]
     },
     "learning.lessons": {
@@ -2483,7 +2907,7 @@
       ],
       "callers": [
         "learning.sie",
-        "orchestrator"
+        "orchestrator_plan_mixin"
       ]
     },
     "learning.postmortem": {
@@ -2523,7 +2947,7 @@
       "test": [],
       "callers": [
         "learning.sie",
-        "orchestrator"
+        "orchestrator_plan_mixin"
       ]
     },
     "learning.preferences": {
@@ -2671,7 +3095,7 @@
         "learning.promotion",
         "learning.release",
         "learning.safety",
-        "orchestrator"
+        "orchestrator_plan_mixin"
       ]
     },
     "learning.reflection": {
@@ -2718,7 +3142,8 @@
         "tests/test_reflection_trust.py"
       ],
       "callers": [
-        "orchestrator"
+        "orchestrator_execute_mixin",
+        "orchestrator_plan_mixin"
       ]
     },
     "learning.release": {
@@ -2976,7 +3401,7 @@
         "tests/test_sie.py"
       ],
       "callers": [
-        "orchestrator"
+        "orchestrator_run_phase_mixin"
       ]
     },
     "learning.solution_cache": {
@@ -3020,7 +3445,9 @@
       ],
       "callers": [
         "learning.sie",
-        "orchestrator"
+        "orchestrator_execute_mixin",
+        "orchestrator_plan_mixin",
+        "orchestrator_run_loop"
       ]
     },
     "learning.toolsmith": {
@@ -3129,11 +3556,12 @@
       ],
       "callers": [
         "agents.adversary",
+        "agents.adversary_review",
         "agents.architect",
         "agents.clarifier",
         "agents.replanner",
         "notifications.ask",
-        "orchestrator"
+        "orchestrator_brain_io"
       ]
     },
     "main": {
@@ -3145,7 +3573,7 @@
           "kind": "function",
           "signature": "() -> int",
           "summary": "",
-          "lineno": 170
+          "lineno": 296
         }
       ],
       "depends_on": [
@@ -3154,6 +3582,8 @@
         "control.ControlBus",
         "doctor",
         "health",
+        "main_cli._applyMentionShorthand",
+        "main_cli._parseArgs",
         "memory.obsidian",
         "orchestrator.Orchestrator",
         "orchestrator.refreshClaudeKnowledge",
@@ -3164,6 +3594,19 @@
       ],
       "side_effects": [
         "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "main_cli": {
+      "path": "main_cli.py",
+      "purpose": "CLI argument helpers for main.py.",
+      "exports": [],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none"
       ],
       "test": [],
       "callers": []
@@ -3181,320 +3624,15 @@
     },
     "memory.experience": {
       "path": "memory/experience.py",
-      "purpose": "Experience Ledger -- Layer 0 of the Self-Improvement Engine.",
-      "exports": [
-        {
-          "name": "close_pool",
-          "kind": "function",
-          "signature": "() -> None",
-          "summary": "Close every pooled connection across all threads (shutdown / test teardown).",
-          "lineno": 370
-        },
-        {
-          "name": "init",
-          "kind": "function",
-          "signature": "(db_path: Optional[Path]=None) -> None",
-          "summary": "Create the database + schema if absent (idempotent).",
-          "lineno": 387
-        },
-        {
-          "name": "record_run",
-          "kind": "function",
-          "signature": "(run: dict[str, Any], db_path: Optional[Path]=None) -> bool",
-          "summary": "Upsert a run row keyed by ``run_id``",
-          "lineno": 418
-        },
-        {
-          "name": "record_subtask",
-          "kind": "function",
-          "signature": "(run_id: str, st: dict[str, Any], db_path: Optional[Path]=None) -> bool",
-          "summary": "Upsert a subtask row keyed by ``(run_id, st_id)``",
-          "lineno": 464
-        },
-        {
-          "name": "set_subtask_embedding",
-          "kind": "function",
-          "signature": "(run_id: str, st_id: str, blob: bytes, db_path: Optional[Path]=None) -> bool",
-          "summary": "Attach an embedding BLOB to an existing subtask row (Layer 1 retrieval)",
-          "lineno": 519
-        },
-        {
-          "name": "embedded_subtasks",
-          "kind": "function",
-          "signature": "(only_passed: bool=True, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
-          "summary": "Subtask rows that carry an embedding",
-          "lineno": 532
-        },
-        {
-          "name": "record_eval",
-          "kind": "function",
-          "signature": "(score: dict[str, Any], *, suite_version: str='v1', prompt_set_id: Optional[str]=None, adapter_id: Optional[str]=None, passed_gate: Optional[bool]=None, db_path: Optional[Path]=None) -> Optional[int]",
-          "summary": "Append an eval-harness result row",
-          "lineno": 546
-        },
-        {
-          "name": "sync_run",
-          "kind": "function",
-          "signature": "(state_data: dict[str, Any], db_path: Optional[Path]=None) -> bool",
-          "summary": "Best-effort upsert of the run row from a TaskState's lean ``data`` dict.",
-          "lineno": 606
-        },
-        {
-          "name": "sync_subtask",
-          "kind": "function",
-          "signature": "(state_data: dict[str, Any], st: dict[str, Any], db_path: Optional[Path]=None) -> bool",
-          "summary": "Best-effort upsert of one subtask, enriching it with position + the latest",
-          "lineno": 625
-        },
-        {
-          "name": "upsert_lesson",
-          "kind": "function",
-          "signature": "(scope: str, signature_tags: str, text: str, *, support_count: int, win_rate: float, db_path: Optional[Path]=None) -> bool",
-          "summary": "Insert/refresh a consolidated lesson (keyed by scope+tags+text)",
-          "lineno": 654
-        },
-        {
-          "name": "fetch_lessons",
-          "kind": "function",
-          "signature": "(scope: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
-          "summary": "",
-          "lineno": 672
-        },
-        {
-          "name": "clear_lessons",
-          "kind": "function",
-          "signature": "(db_path: Optional[Path]=None) -> None",
-          "summary": "",
-          "lineno": 683
-        },
-        {
-          "name": "set_arm",
-          "kind": "function",
-          "signature": "(context_key: str, action_json: str, *, pulls: int, reward_sum: float, reward_sq_sum: float, db_path: Optional[Path]=None) -> bool",
-          "summary": "Write a policy arm's accumulated stats (keyed by context+action)",
-          "lineno": 688
-        },
-        {
-          "name": "fetch_arms",
-          "kind": "function",
-          "signature": "(context_key: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
-          "summary": "",
-          "lineno": 706
-        },
-        {
-          "name": "clear_arms",
-          "kind": "function",
-          "signature": "(db_path: Optional[Path]=None) -> None",
-          "summary": "",
-          "lineno": 717
-        },
-        {
-          "name": "register_variant",
-          "kind": "function",
-          "signature": "(role: str, body: str, *, state: str='challenger', parent_id: Optional[int]=None, file_path: Optional[str]=None, provenance: Optional[str]=None, db_path: Optional[Path]=None) -> Optional[int]",
-          "summary": "Register a prompt variant (deduped by role+body hash)",
-          "lineno": 724
-        },
-        {
-          "name": "get_champion",
-          "kind": "function",
-          "signature": "(role: str, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]",
-          "summary": "",
-          "lineno": 755
-        },
-        {
-          "name": "get_champion_body",
-          "kind": "function",
-          "signature": "(role: str, db_path: Optional[Path]=None) -> Optional[str]",
-          "summary": "",
-          "lineno": 763
-        },
-        {
-          "name": "get_champion_provenance",
-          "kind": "function",
-          "signature": "(role: str, db_path: Optional[Path]=None) -> Optional[dict]",
-          "summary": "Return the provenance dict for the current champion of ``role``, or None.",
-          "lineno": 768
-        },
-        {
-          "name": "fetch_variants",
-          "kind": "function",
-          "signature": "(role: str, state: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
-          "summary": "",
-          "lineno": 784
-        },
-        {
-          "name": "promote_variant",
-          "kind": "function",
-          "signature": "(role: str, variant_id: int, db_path: Optional[Path]=None) -> bool",
-          "summary": "Make ``variant_id`` the champion for ``role``",
-          "lineno": 797
-        },
-        {
-          "name": "tag_run_prompt",
-          "kind": "function",
-          "signature": "(run_id: str, prompt_set_id: str, db_path: Optional[Path]=None) -> bool",
-          "summary": "Record which prompt champion authored a run (so per-variant field metrics exist).",
-          "lineno": 817
-        },
-        {
-          "name": "prompt_field_stats",
-          "kind": "function",
-          "signature": "(prompt_set_id: str, db_path: Optional[Path]=None) -> dict[str, int]",
-          "summary": "First-pass field outcomes for subtasks of runs authored by ``prompt_set_id``:",
-          "lineno": 829
-        },
-        {
-          "name": "register_adapter",
-          "kind": "function",
-          "signature": "(*, base_model: str, tag: str, lora_path: str, role: str='all', modelfile_path: Optional[str]=None, n_train_examples: int=0, state: str='challenger', db_path: Optional[Path]=None) -> Optional[int]",
-          "summary": "Register a trained LoRA adapter (keyed by unique tag, scoped to a brain ``role``).",
-          "lineno": 845
-        },
-        {
-          "name": "get_champion_adapter",
-          "kind": "function",
-          "signature": "(role: str='all', db_path: Optional[Path]=None) -> Optional[dict[str, Any]]",
-          "summary": "Champion adapter for ``role`` (per-role MoE)",
-          "lineno": 867
-        },
-        {
-          "name": "fetch_adapters",
-          "kind": "function",
-          "signature": "(state: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
-          "summary": "",
-          "lineno": 877
-        },
-        {
-          "name": "promote_adapter",
-          "kind": "function",
-          "signature": "(adapter_id: int, db_path: Optional[Path]=None) -> bool",
-          "summary": "Make ``adapter_id`` the champion for ITS role",
-          "lineno": 887
-        },
-        {
-          "name": "retire_champion_adapter",
-          "kind": "function",
-          "signature": "(role: Optional[str]=None, db_path: Optional[Path]=None) -> bool",
-          "summary": "Roll back: retire the champion adapter (of ``role``, or all roles if None).",
-          "lineno": 902
-        },
-        {
-          "name": "record_feedback",
-          "kind": "function",
-          "signature": "(*, kind: str, run_id: Optional[str]=None, subtask_id: Optional[str]=None, target: Optional[str]=None, before: Any=None, after: Any=None, db_path: Optional[Path]=None) -> bool",
-          "summary": "Capture a human control decision (approve/reject/skip/edit/...) as a label (J).",
-          "lineno": 920
-        },
-        {
-          "name": "fetch_feedback",
-          "kind": "function",
-          "signature": "(kind: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
-          "summary": "",
-          "lineno": 937
-        },
-        {
-          "name": "upsert_failure_mode",
-          "kind": "function",
-          "signature": "(signature_tags: str, taxonomy_class: str, *, root_cause: str, mitigation: str='', db_path: Optional[Path]=None) -> bool",
-          "summary": "Accrete a failure into the taxonomy (occurrence-counted, keyed by family+class) (L).",
-          "lineno": 947
-        },
-        {
-          "name": "fetch_failure_modes",
-          "kind": "function",
-          "signature": "(signature_tags: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
-          "summary": "",
-          "lineno": 969
-        },
-        {
-          "name": "upsert_solution",
-          "kind": "function",
-          "signature": "(signature: str, spec_json: str, *, verify_passed: bool, provenance: Optional[str]=None, db_path: Optional[Path]=None) -> bool",
-          "summary": "Cache a working solution keyed by signature (O).",
-          "lineno": 984
-        },
-        {
-          "name": "get_solution",
-          "kind": "function",
-          "signature": "(signature: str, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]",
-          "summary": "",
-          "lineno": 1011
-        },
-        {
-          "name": "upsert_kg_node",
-          "kind": "function",
-          "signature": "(kind: str, key: str, summary: str, db_path: Optional[Path]=None) -> bool",
-          "summary": "Add/refresh a codebase knowledge-graph node (file/module/gotcha) (N).",
-          "lineno": 1025
-        },
-        {
-          "name": "fetch_kg_nodes",
-          "kind": "function",
-          "signature": "(kind: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
-          "summary": "",
-          "lineno": 1039
-        },
-        {
-          "name": "record_reflection",
-          "kind": "function",
-          "signature": "(*, run_id: str, subtask_id: str, role: str='executor', teacher: str='claude', trusted: bool=False, db_path: Optional[Path]=None, **fields: Any) -> bool",
-          "summary": "Store an executor/teacher learning summary (I/M)",
-          "lineno": 1049
-        },
-        {
-          "name": "fetch_reflections",
-          "kind": "function",
-          "signature": "(trusted_only: bool=False, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
-          "summary": "",
-          "lineno": 1073
-        },
-        {
-          "name": "fetch_runs",
-          "kind": "function",
-          "signature": "(db_path: Optional[Path]=None) -> list[dict[str, Any]]",
-          "summary": "",
-          "lineno": 1082
-        },
-        {
-          "name": "fetch_subtasks",
-          "kind": "function",
-          "signature": "(run_id: Optional[str]=None, *, limit: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
-          "summary": "",
-          "lineno": 1087
-        },
-        {
-          "name": "gold_examples",
-          "kind": "function",
-          "signature": "(db_path: Optional[Path]=None) -> list[dict[str, Any]]",
-          "summary": "First-attempt, verify-passing, **really** adversary-approved subtasks",
-          "lineno": 1102
-        },
-        {
-          "name": "fitness_series",
-          "kind": "function",
-          "signature": "(limit: int=90, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
-          "summary": "Recent eval-harness scores, oldest-first",
-          "lineno": 1115
-        },
-        {
-          "name": "counts",
-          "kind": "function",
-          "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
-          "summary": "Row counts per table",
-          "lineno": 1131
-        },
-        {
-          "name": "backfill_from_store",
-          "kind": "function",
-          "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
-          "summary": "Seed the ledger from the existing task-JSON store so months-long learning never",
-          "lineno": 1140
-        }
-      ],
+      "purpose": "Experience Ledger -- thin re-export facade. See sub-modules for implementation.",
+      "exports": [],
       "depends_on": [
-        "config",
-        "state.task"
+        "memory.experience_adapters",
+        "memory.experience_policy",
+        "memory.experience_runs",
+        "memory.experience_schema",
+        "memory.experience_solutions",
+        "memory.experience_subtasks"
       ],
       "side_effects": [
         "unannotated"
@@ -3528,8 +3666,424 @@
         "learning.toolsmith",
         "memory.retrieval",
         "memory.subtask_manager",
-        "orchestrator",
+        "orchestrator_execute_mixin",
+        "orchestrator_plan_mixin",
+        "orchestrator_run_loop_mixin",
+        "state.task_schema"
+      ]
+    },
+    "memory.experience_adapters": {
+      "path": "memory/experience_adapters.py",
+      "purpose": "Adapter / feedback / failure-mode learning stores.",
+      "exports": [
+        {
+          "name": "register_adapter",
+          "kind": "function",
+          "signature": "(*, base_model: str, tag: str, lora_path: str, role: str='all', modelfile_path: Optional[str]=None, n_train_examples: int=0, state: str='challenger', db_path: Optional[Path]=None) -> Optional[int]",
+          "summary": "Register a trained LoRA adapter (keyed by unique tag, scoped to a brain ``role``).",
+          "lineno": 26
+        },
+        {
+          "name": "get_champion_adapter",
+          "kind": "function",
+          "signature": "(role: str='all', db_path: Optional[Path]=None) -> Optional[dict[str, Any]]",
+          "summary": "Champion adapter for ``role`` (per-role MoE)",
+          "lineno": 48
+        },
+        {
+          "name": "fetch_adapters",
+          "kind": "function",
+          "signature": "(state: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 58
+        },
+        {
+          "name": "promote_adapter",
+          "kind": "function",
+          "signature": "(adapter_id: int, db_path: Optional[Path]=None) -> bool",
+          "summary": "Make ``adapter_id`` the champion for ITS role",
+          "lineno": 68
+        },
+        {
+          "name": "retire_champion_adapter",
+          "kind": "function",
+          "signature": "(role: Optional[str]=None, db_path: Optional[Path]=None) -> bool",
+          "summary": "Roll back: retire the champion adapter (of ``role``, or all roles if None).",
+          "lineno": 83
+        },
+        {
+          "name": "record_feedback",
+          "kind": "function",
+          "signature": "(*, kind: str, run_id: Optional[str]=None, subtask_id: Optional[str]=None, target: Optional[str]=None, before: Any=None, after: Any=None, db_path: Optional[Path]=None) -> bool",
+          "summary": "Capture a human control decision (approve/reject/skip/edit/...) as a label (J).",
+          "lineno": 99
+        },
+        {
+          "name": "fetch_feedback",
+          "kind": "function",
+          "signature": "(kind: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 116
+        },
+        {
+          "name": "upsert_failure_mode",
+          "kind": "function",
+          "signature": "(signature_tags: str, taxonomy_class: str, *, root_cause: str, mitigation: str='', db_path: Optional[Path]=None) -> bool",
+          "summary": "Accrete a failure into the taxonomy (occurrence-counted, keyed by family+class) (L).",
+          "lineno": 126
+        },
+        {
+          "name": "fetch_failure_modes",
+          "kind": "function",
+          "signature": "(signature_tags: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 148
+        }
+      ],
+      "depends_on": [
+        "memory.experience_schema"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "memory.experience"
+      ]
+    },
+    "memory.experience_policy": {
+      "path": "memory/experience_policy.py",
+      "purpose": "Policy / bandit / prompt-variant learning stores.",
+      "exports": [
+        {
+          "name": "upsert_lesson",
+          "kind": "function",
+          "signature": "(scope: str, signature_tags: str, text: str, *, support_count: int, win_rate: float, db_path: Optional[Path]=None) -> bool",
+          "summary": "Insert/refresh a consolidated lesson (keyed by scope+tags+text)",
+          "lineno": 32
+        },
+        {
+          "name": "fetch_lessons",
+          "kind": "function",
+          "signature": "(scope: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 50
+        },
+        {
+          "name": "clear_lessons",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> None",
+          "summary": "",
+          "lineno": 61
+        },
+        {
+          "name": "set_arm",
+          "kind": "function",
+          "signature": "(context_key: str, action_json: str, *, pulls: int, reward_sum: float, reward_sq_sum: float, db_path: Optional[Path]=None) -> bool",
+          "summary": "Write a policy arm's accumulated stats (keyed by context+action)",
+          "lineno": 66
+        },
+        {
+          "name": "fetch_arms",
+          "kind": "function",
+          "signature": "(context_key: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 84
+        },
+        {
+          "name": "clear_arms",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> None",
+          "summary": "",
+          "lineno": 95
+        },
+        {
+          "name": "register_variant",
+          "kind": "function",
+          "signature": "(role: str, body: str, *, state: str='challenger', parent_id: Optional[int]=None, file_path: Optional[str]=None, provenance: Optional[str]=None, db_path: Optional[Path]=None) -> Optional[int]",
+          "summary": "Register a prompt variant (deduped by role+body hash)",
+          "lineno": 100
+        },
+        {
+          "name": "get_champion",
+          "kind": "function",
+          "signature": "(role: str, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]",
+          "summary": "",
+          "lineno": 131
+        },
+        {
+          "name": "get_champion_body",
+          "kind": "function",
+          "signature": "(role: str, db_path: Optional[Path]=None) -> Optional[str]",
+          "summary": "",
+          "lineno": 139
+        },
+        {
+          "name": "get_champion_provenance",
+          "kind": "function",
+          "signature": "(role: str, db_path: Optional[Path]=None) -> Optional[dict]",
+          "summary": "Return the provenance dict for the current champion of ``role``, or None.",
+          "lineno": 144
+        },
+        {
+          "name": "fetch_variants",
+          "kind": "function",
+          "signature": "(role: str, state: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 159
+        },
+        {
+          "name": "promote_variant",
+          "kind": "function",
+          "signature": "(role: str, variant_id: int, db_path: Optional[Path]=None) -> bool",
+          "summary": "Make ``variant_id`` the champion for ``role``",
+          "lineno": 172
+        },
+        {
+          "name": "tag_run_prompt",
+          "kind": "function",
+          "signature": "(run_id: str, prompt_set_id: str, db_path: Optional[Path]=None) -> bool",
+          "summary": "Record which prompt champion authored a run (so per-variant field metrics exist).",
+          "lineno": 191
+        },
+        {
+          "name": "prompt_field_stats",
+          "kind": "function",
+          "signature": "(prompt_set_id: str, db_path: Optional[Path]=None) -> dict[str, int]",
+          "summary": "First-pass field outcomes for subtasks of runs authored by ``prompt_set_id``:",
+          "lineno": 203
+        }
+      ],
+      "depends_on": [
+        "memory.experience_schema"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "memory.experience"
+      ]
+    },
+    "memory.experience_runs": {
+      "path": "memory/experience_runs.py",
+      "purpose": "Experience Ledger -- run-level records (record, sync, fetch, analytics).",
+      "exports": [
+        {
+          "name": "record_run",
+          "kind": "function",
+          "signature": "(run: dict[str, Any], db_path: Optional[Path]=None) -> bool",
+          "summary": "Upsert a run row keyed by ``run_id``",
+          "lineno": 29
+        },
+        {
+          "name": "sync_run",
+          "kind": "function",
+          "signature": "(state_data: dict[str, Any], db_path: Optional[Path]=None) -> bool",
+          "summary": "Best-effort upsert of the run row from a TaskState's lean ``data`` dict.",
+          "lineno": 75
+        },
+        {
+          "name": "record_eval",
+          "kind": "function",
+          "signature": "(score: dict[str, Any], *, suite_version: str='v1', prompt_set_id: Optional[str]=None, adapter_id: Optional[str]=None, passed_gate: Optional[bool]=None, db_path: Optional[Path]=None) -> Optional[int]",
+          "summary": "Append an eval-harness result row",
+          "lineno": 94
+        },
+        {
+          "name": "fetch_runs",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 113
+        },
+        {
+          "name": "gold_examples",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "First-attempt, verify-passing, **really** adversary-approved subtasks",
+          "lineno": 118
+        },
+        {
+          "name": "fitness_series",
+          "kind": "function",
+          "signature": "(limit: int=90, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Recent eval-harness scores, oldest-first",
+          "lineno": 131
+        },
+        {
+          "name": "counts",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
+          "summary": "Row counts per table",
+          "lineno": 147
+        },
+        {
+          "name": "backfill_from_store",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
+          "summary": "Seed the ledger from the existing task-JSON store so months-long learning never",
+          "lineno": 154
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience_schema",
+        "memory.experience_subtasks",
         "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "memory.experience"
+      ]
+    },
+    "memory.experience_schema": {
+      "path": "memory/experience_schema.py",
+      "purpose": "Experience Ledger schema, connection pool, and shared utilities.",
+      "exports": [
+        {
+          "name": "close_pool",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Close every pooled connection across all threads (shutdown / test teardown).",
+          "lineno": 313
+        },
+        {
+          "name": "init",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None) -> None",
+          "summary": "Create the database + schema if absent (idempotent).",
+          "lineno": 329
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "memory.experience",
+        "memory.experience_adapters",
+        "memory.experience_policy",
+        "memory.experience_runs",
+        "memory.experience_solutions",
+        "memory.experience_subtasks"
+      ]
+    },
+    "memory.experience_solutions": {
+      "path": "memory/experience_solutions.py",
+      "purpose": "Solution cache / knowledge-graph / reflection learning stores.",
+      "exports": [
+        {
+          "name": "upsert_solution",
+          "kind": "function",
+          "signature": "(signature: str, spec_json: str, *, verify_passed: bool, provenance: Optional[str]=None, db_path: Optional[Path]=None) -> bool",
+          "summary": "Cache a working solution keyed by signature (O).",
+          "lineno": 25
+        },
+        {
+          "name": "get_solution",
+          "kind": "function",
+          "signature": "(signature: str, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]",
+          "summary": "",
+          "lineno": 52
+        },
+        {
+          "name": "upsert_kg_node",
+          "kind": "function",
+          "signature": "(kind: str, key: str, summary: str, db_path: Optional[Path]=None) -> bool",
+          "summary": "Add/refresh a codebase knowledge-graph node (file/module/gotcha) (N).",
+          "lineno": 66
+        },
+        {
+          "name": "fetch_kg_nodes",
+          "kind": "function",
+          "signature": "(kind: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 80
+        },
+        {
+          "name": "record_reflection",
+          "kind": "function",
+          "signature": "(*, run_id: str, subtask_id: str, role: str='executor', teacher: str='claude', trusted: bool=False, db_path: Optional[Path]=None, **fields: Any) -> bool",
+          "summary": "Store an executor/teacher learning summary (I/M)",
+          "lineno": 90
+        },
+        {
+          "name": "fetch_reflections",
+          "kind": "function",
+          "signature": "(trusted_only: bool=False, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 114
+        }
+      ],
+      "depends_on": [
+        "memory.experience_schema"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "memory.experience"
+      ]
+    },
+    "memory.experience_subtasks": {
+      "path": "memory/experience_subtasks.py",
+      "purpose": "Experience Ledger -- subtask-level records (record, sync, embedding, fetch).",
+      "exports": [
+        {
+          "name": "record_subtask",
+          "kind": "function",
+          "signature": "(run_id: str, st: dict[str, Any], db_path: Optional[Path]=None) -> bool",
+          "summary": "Upsert a subtask row keyed by ``(run_id, st_id)``",
+          "lineno": 62
+        },
+        {
+          "name": "sync_subtask",
+          "kind": "function",
+          "signature": "(state_data: dict[str, Any], st: dict[str, Any], db_path: Optional[Path]=None) -> bool",
+          "summary": "Best-effort upsert of one subtask, enriching it with position + the latest",
+          "lineno": 117
+        },
+        {
+          "name": "set_subtask_embedding",
+          "kind": "function",
+          "signature": "(run_id: str, st_id: str, blob: bytes, db_path: Optional[Path]=None) -> bool",
+          "summary": "Attach an embedding BLOB to an existing subtask row (Layer 1 retrieval)",
+          "lineno": 139
+        },
+        {
+          "name": "embedded_subtasks",
+          "kind": "function",
+          "signature": "(only_passed: bool=True, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Subtask rows that carry an embedding",
+          "lineno": 152
+        },
+        {
+          "name": "fetch_subtasks",
+          "kind": "function",
+          "signature": "(run_id: Optional[str]=None, *, limit: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 166
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience_schema"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "memory.experience",
+        "memory.experience_runs"
       ]
     },
     "memory.obsidian": {
@@ -3570,9 +4124,10 @@
       ],
       "callers": [
         "agents.executor",
-        "agents.hooks",
+        "agents.hooks_obsidian",
         "main",
-        "orchestrator"
+        "orchestrator",
+        "orchestrator_knowledge"
       ]
     },
     "memory.retrieval": {
@@ -3676,7 +4231,7 @@
       ],
       "callers": [
         "learning.sie",
-        "orchestrator"
+        "orchestrator_plan_mixin"
       ]
     },
     "memory.subtask_manager": {
@@ -3987,8 +4542,9 @@
         "notifications.bot.cogs.runs_cog",
         "notifications.bot.ui.dynamic",
         "notifications.slash",
-        "notifications.views",
-        "orchestrator"
+        "notifications.views_control",
+        "notifications.views_run",
+        "orchestrator_control_mixin"
       ]
     },
     "notifications.bot": {
@@ -4283,14 +4839,14 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 26
+          "lineno": 96
         },
         {
           "name": "setup",
           "kind": "function",
           "signature": "(bot: dpy_commands.Bot) -> None",
           "summary": "",
-          "lineno": 198
+          "lineno": 204
         }
       ],
       "depends_on": [
@@ -4328,14 +4884,14 @@
           "kind": "function",
           "signature": "()",
           "summary": "Construct (but do not run) the NightclawBot",
-          "lineno": 61
+          "lineno": 117
         },
         {
           "name": "runBot",
           "kind": "function",
           "signature": "() -> None",
           "summary": "",
-          "lineno": 176
+          "lineno": 186
         }
       ],
       "depends_on": [
@@ -4349,7 +4905,10 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/test_simulation_core.py",
+        "tests/test_skill_gap_analysis_core.py"
+      ],
       "callers": [
         "notifications.command_bot"
       ]
@@ -4416,77 +4975,77 @@
           "kind": "function",
           "signature": "() -> list",
           "summary": "Two action rows of control buttons (<=5/row)",
-          "lineno": 40
+          "lineno": 46
         },
         {
           "name": "brandEmbed",
           "kind": "function",
           "signature": "(title: str, *, description: Optional[str]=None, color: Optional[int]=None, fields: Optional[list]=None, uptime: Optional[str]=None) -> dict",
           "summary": "",
-          "lineno": 64
+          "lineno": 70
         },
         {
           "name": "helpEmbed",
           "kind": "function",
           "signature": "() -> dict",
           "summary": "",
-          "lineno": 102
+          "lineno": 108
         },
         {
           "name": "statusEmbed",
           "kind": "function",
           "signature": "(state, bus, uptime: Optional[str]=None) -> dict",
           "summary": "",
-          "lineno": 116
+          "lineno": 122
         },
         {
           "name": "planEmbed",
           "kind": "function",
           "signature": "(state, page: int=0, per: int=10)",
           "summary": "",
-          "lineno": 158
+          "lineno": 164
         },
         {
           "name": "runsEmbed",
           "kind": "function",
           "signature": "(summaries, page: int=0, per: int=8)",
           "summary": "",
-          "lineno": 168
+          "lineno": 174
         },
         {
           "name": "runEmbed",
           "kind": "function",
           "signature": "(state) -> dict",
           "summary": "",
-          "lineno": 178
+          "lineno": 184
         },
         {
           "name": "diagnosticsEmbed",
           "kind": "function",
           "signature": "(checks) -> dict",
           "summary": "",
-          "lineno": 195
+          "lineno": 201
         },
         {
           "name": "metricsEmbed",
           "kind": "function",
           "signature": "(m) -> dict",
           "summary": "",
-          "lineno": 209
+          "lineno": 215
         },
         {
           "name": "pingEmbed",
           "kind": "function",
           "signature": "(latency_ms, uptime, version) -> dict",
           "summary": "",
-          "lineno": 223
+          "lineno": 229
         },
         {
           "name": "auditEmbed",
           "kind": "function",
           "signature": "(entries) -> dict",
           "summary": "",
-          "lineno": 231
+          "lineno": 237
         }
       ],
       "depends_on": [
@@ -4580,7 +5139,9 @@
         "tests/test_cast.py"
       ],
       "callers": [
-        "orchestrator"
+        "orchestrator_execute_mixin",
+        "orchestrator_review_mixin",
+        "orchestrator_run_phase_mixin"
       ]
     },
     "notifications.command_bot": {
@@ -4698,9 +5259,10 @@
         "notifications.branding",
         "notifications.dashboard",
         "notifications.slash",
-        "notifications.views",
+        "notifications.views_control",
+        "notifications.views_run",
         "notifications.work_launcher",
-        "orchestrator"
+        "orchestrator_control_mixin"
       ]
     },
     "notifications.console_hud": {
@@ -4831,291 +5393,33 @@
         "tests/test_dashboard.py"
       ],
       "callers": [
-        "orchestrator"
+        "orchestrator",
+        "orchestrator_control_mixin",
+        "orchestrator_execute_mixin",
+        "orchestrator_llm_mixin",
+        "orchestrator_run_loop_mixin",
+        "orchestrator_run_phase_mixin"
       ]
     },
     "notifications.discord_bot": {
       "path": "notifications/discord_bot.py",
-      "purpose": "Discord notifications -- professional, glass-box embeds + REST plumbing.",
-      "exports": [
-        {
-          "name": "humanPing",
-          "kind": "function",
-          "signature": "() -> str",
-          "summary": "`<@id>` mention for the human, ONLY used on severe events",
-          "lineno": 84
-        },
-        {
-          "name": "progressBar",
-          "kind": "function",
-          "signature": "(done: int, total: int, width: int=16) -> str",
-          "summary": "",
-          "lineno": 91
-        },
-        {
-          "name": "subtaskTracker",
-          "kind": "function",
-          "signature": "(subtasks: list[dict], limit: int=12) -> str",
-          "summary": "",
-          "lineno": 100
-        },
-        {
-          "name": "effortBar",
-          "kind": "function",
-          "signature": "(effort: Optional[str]) -> str",
-          "summary": "",
-          "lineno": 116
-        },
-        {
-          "name": "statusColor",
-          "kind": "function",
-          "signature": "(status: Optional[str]) -> int",
-          "summary": "",
-          "lineno": 123
-        },
-        {
-          "name": "relTime",
-          "kind": "function",
-          "signature": "(value=None) -> str",
-          "summary": "Discord native relative timestamp: <t:UNIX:R>.",
-          "lineno": 127
-        },
-        {
-          "name": "formatVerdict",
-          "kind": "function",
-          "signature": "(verdict: Optional[str]) -> str",
-          "summary": "",
-          "lineno": 145
-        },
-        {
-          "name": "truncate",
-          "kind": "function",
-          "signature": "(text, n: int) -> str",
-          "summary": "Clamp to n chars, marking a clip with a trailing ellipsis.",
-          "lineno": 254
-        },
-        {
-          "name": "createComponentsV2",
-          "kind": "function",
-          "signature": "(components: list, files: Optional[list]=None) -> Optional[str]",
-          "summary": "POST a Components-V2 message (flag 32768; no content/embeds)",
-          "lineno": 381
-        },
-        {
-          "name": "editComponentsV2Result",
-          "kind": "function",
-          "signature": "(message_id: str, components: list, files: Optional[list]=None) -> str",
-          "summary": "Edit a CV2 message in place",
-          "lineno": 398
-        },
-        {
-          "name": "sendComponentsV2",
-          "kind": "function",
-          "signature": "(components: list, files: Optional[list]=None, milestone: bool=False) -> dict",
-          "summary": "Post a one-off CV2 message (e.g",
-          "lineno": 423
-        },
-        {
-          "name": "sendAs",
-          "kind": "function",
-          "signature": "(persona: dict, *, content: Optional[str]=None, embed: Optional[dict]=None, embeds: Optional[list]=None, components: Optional[list]=None, files: Optional[list]=None, thread_id: Optional[str]=None, components_v2: bool=False) -> bool",
-          "summary": "Post a message AS ``persona`` (a dict with 'name'/'avatar_url') through the Cast webhoo…",
-          "lineno": 469
-        },
-        {
-          "name": "createMessage",
-          "kind": "function",
-          "signature": "(embed: dict, content: Optional[str]=None, components: Optional[list]=None) -> Optional[str]",
-          "summary": "",
-          "lineno": 503
-        },
-        {
-          "name": "postContent",
-          "kind": "function",
-          "signature": "(content: str, components: Optional[list]=None) -> Optional[str]",
-          "summary": "Post a content-only message (no embed) -- e.g",
-          "lineno": 519
-        },
-        {
-          "name": "postFile",
-          "kind": "function",
-          "signature": "(filename: str, data: bytes, content_type: str, content: Optional[str]=None) -> Optional[str]",
-          "summary": "Post a single attachment (e.g",
-          "lineno": 534
-        },
-        {
-          "name": "editContent",
-          "kind": "function",
-          "signature": "(message_id: str, content: str) -> str",
-          "summary": "PATCH a content-only message in place (HUD live-repaint)",
-          "lineno": 551
-        },
-        {
-          "name": "editMessageResult",
-          "kind": "function",
-          "signature": "(message_id: str, embed: dict, content: Optional[str]=None, components: Optional[list]=None) -> str",
-          "summary": "Edit a message, returning a status the caller can ACT on:",
-          "lineno": 566
-        },
-        {
-          "name": "editMessage",
-          "kind": "function",
-          "signature": "(message_id: str, embed: dict, content: Optional[str]=None, components: Optional[list]=None) -> bool",
-          "summary": "",
-          "lineno": 594
-        },
-        {
-          "name": "pinMessage",
-          "kind": "function",
-          "signature": "(message_id: Optional[str]) -> bool",
-          "summary": "",
-          "lineno": 599
-        },
-        {
-          "name": "unpinMessage",
-          "kind": "function",
-          "signature": "(message_id: Optional[str]) -> bool",
-          "summary": "Idempotent: 404 (already unpinned / message gone) counts as success.",
-          "lineno": 610
-        },
-        {
-          "name": "fetchMessagesAfter",
-          "kind": "function",
-          "signature": "(after_id: Optional[str], limit: int=25) -> tuple[list[dict], Optional[str]]",
-          "summary": "Control-poll path: retries=0 so a 429 returns immediately and never blocks the run loop.",
-          "lineno": 620
-        },
-        {
-          "name": "baselineLatestId",
-          "kind": "function",
-          "signature": "() -> Optional[str]",
-          "summary": "Newest message id (no messages returned)",
-          "lineno": 640
-        },
-        {
-          "name": "sendEmbed",
-          "kind": "function",
-          "signature": "(embed: dict, content: Optional[str]=None, components: Optional[list]=None, milestone: bool=False) -> dict",
-          "summary": "Post a new embed message",
-          "lineno": 654
-        },
-        {
-          "name": "createPoll",
-          "kind": "function",
-          "signature": "(poll: dict, content: Optional[str]=None) -> Optional[str]",
-          "summary": "Post a native Discord Poll (engagement.gatePollPayload)",
-          "lineno": 675
-        },
-        {
-          "name": "endPoll",
-          "kind": "function",
-          "signature": "(message_id: str) -> bool",
-          "summary": "Finalize a poll early (the gate resolved)",
-          "lineno": 690
-        },
-        {
-          "name": "createScheduledEvent",
-          "kind": "function",
-          "signature": "(guild_id: int, body: dict) -> Optional[str]",
-          "summary": "Create a guild Scheduled Event (engagement.scheduledEventPayload)",
-          "lineno": 698
-        },
-        {
-          "name": "planningStartEmbed",
-          "kind": "function",
-          "signature": "(goal: str, subtasks) -> dict",
-          "summary": "Structured plan embed",
-          "lineno": 727
-        },
-        {
-          "name": "architectDoneEmbed",
-          "kind": "function",
-          "signature": "(doc_path: str) -> dict",
-          "summary": "",
-          "lineno": 759
-        },
-        {
-          "name": "adversaryTriggeredEmbed",
-          "kind": "function",
-          "signature": "(subtask_title: str, reason: str, verdict: Optional[str]=None) -> dict",
-          "summary": "",
-          "lineno": 768
-        },
-        {
-          "name": "noticeEmbed",
-          "kind": "function",
-          "signature": "(reason: str, title: str='9TO5 — Notice') -> dict",
-          "summary": "An AUTONOMOUS, informational event the system already handled itself (a fallback was ta…",
-          "lineno": 792
-        },
-        {
-          "name": "blockedEmbed",
-          "kind": "function",
-          "signature": "(reason: str, question: Optional[str]=None) -> dict",
-          "summary": "",
-          "lineno": 805
-        },
-        {
-          "name": "blockedComponents",
-          "kind": "function",
-          "signature": "() -> list",
-          "summary": "Action row with Answer / Skip / Abort buttons (handled by the gateway bot).",
-          "lineno": 819
-        },
-        {
-          "name": "completeEmbed",
-          "kind": "function",
-          "signature": "(state, pr_link: str, elapsed: str) -> dict",
-          "summary": "",
-          "lineno": 838
-        },
-        {
-          "name": "sendBlocked",
-          "kind": "function",
-          "signature": "(reason: str, question: Optional[str]=None) -> dict",
-          "summary": "Severe: new message, owner ping only (allowed_mentions can't expand past owner), with",
-          "lineno": 873
-        },
-        {
-          "name": "gateNeededEmbed",
-          "kind": "function",
-          "signature": "(gate: str) -> dict",
-          "summary": "",
-          "lineno": 879
-        },
-        {
-          "name": "subtaskFailedEmbed",
-          "kind": "function",
-          "signature": "(subtask_id: str, title: str, verify_result: Optional[dict], attempts: int) -> dict",
-          "summary": "",
-          "lineno": 889
-        },
-        {
-          "name": "abortedEmbed",
-          "kind": "function",
-          "signature": "(reason: str, elapsed: str) -> dict",
-          "summary": "",
-          "lineno": 911
-        },
-        {
-          "name": "selfRefEmbed",
-          "kind": "function",
-          "signature": "(branch: str, protected: tuple) -> dict",
-          "summary": "",
-          "lineno": 923
-        }
-      ],
+      "purpose": "Discord notifications -- re-export facade.",
+      "exports": [],
       "depends_on": [
-        "config",
-        "notifications.icons"
+        "notifications.discord_channels",
+        "notifications.discord_client",
+        "notifications.discord_embeds"
       ],
       "side_effects": [
         "unannotated"
       ],
       "test": [],
       "callers": [
-        "agents.executor",
+        "agents.executor_env",
+        "agents.executor_session",
         "agents.hooks",
+        "agents.hooks_destructive",
+        "agents.hooks_selfmod",
         "monitoring.alerter",
         "notifications.bot.cogs.admin",
         "notifications.bot.cogs.ops_cog",
@@ -5126,7 +5430,335 @@
         "notifications.cv2",
         "notifications.dashboard",
         "notifications.icons",
-        "orchestrator"
+        "orchestrator_control_mixin",
+        "orchestrator_execute_mixin",
+        "orchestrator_llm_mixin",
+        "orchestrator_plan_mixin",
+        "orchestrator_review_mixin",
+        "orchestrator_run_loop",
+        "orchestrator_run_loop_mixin",
+        "orchestrator_run_phase_mixin"
+      ]
+    },
+    "notifications.discord_channels": {
+      "path": "notifications/discord_channels.py",
+      "purpose": "Discord per-channel send helpers: message creation, editing, pinning, polling, and webhook personas.",
+      "exports": [
+        {
+          "name": "createComponentsV2",
+          "kind": "function",
+          "signature": "(components: list, files: Optional[list]=None) -> Optional[str]",
+          "summary": "POST a Components-V2 message (flag 32768; no content/embeds)",
+          "lineno": 49
+        },
+        {
+          "name": "editComponentsV2Result",
+          "kind": "function",
+          "signature": "(message_id: str, components: list, files: Optional[list]=None) -> str",
+          "summary": "Edit a CV2 message in place",
+          "lineno": 66
+        },
+        {
+          "name": "sendComponentsV2",
+          "kind": "function",
+          "signature": "(components: list, files: Optional[list]=None, milestone: bool=False) -> dict",
+          "summary": "Post a one-off CV2 message (e.g",
+          "lineno": 91
+        },
+        {
+          "name": "sendAs",
+          "kind": "function",
+          "signature": "(persona: dict, *, content: Optional[str]=None, embed: Optional[dict]=None, embeds: Optional[list]=None, components: Optional[list]=None, files: Optional[list]=None, thread_id: Optional[str]=None, components_v2: bool=False) -> bool",
+          "summary": "Post a message AS ``persona`` (a dict with 'name'/'avatar_url') through the Cast webhoo…",
+          "lineno": 135
+        },
+        {
+          "name": "createMessage",
+          "kind": "function",
+          "signature": "(embed: dict, content: Optional[str]=None, components: Optional[list]=None) -> Optional[str]",
+          "summary": "",
+          "lineno": 173
+        },
+        {
+          "name": "postContent",
+          "kind": "function",
+          "signature": "(content: str, components: Optional[list]=None) -> Optional[str]",
+          "summary": "Post a content-only message (no embed) -- e.g",
+          "lineno": 189
+        },
+        {
+          "name": "postFile",
+          "kind": "function",
+          "signature": "(filename: str, data: bytes, content_type: str, content: Optional[str]=None) -> Optional[str]",
+          "summary": "Post a single attachment (e.g",
+          "lineno": 204
+        },
+        {
+          "name": "editContent",
+          "kind": "function",
+          "signature": "(message_id: str, content: str) -> str",
+          "summary": "PATCH a content-only message in place (HUD live-repaint)",
+          "lineno": 221
+        },
+        {
+          "name": "editMessageResult",
+          "kind": "function",
+          "signature": "(message_id: str, embed: dict, content: Optional[str]=None, components: Optional[list]=None) -> str",
+          "summary": "Edit a message, returning a status the caller can ACT on:",
+          "lineno": 236
+        },
+        {
+          "name": "editMessage",
+          "kind": "function",
+          "signature": "(message_id: str, embed: dict, content: Optional[str]=None, components: Optional[list]=None) -> bool",
+          "summary": "",
+          "lineno": 264
+        },
+        {
+          "name": "pinMessage",
+          "kind": "function",
+          "signature": "(message_id: Optional[str]) -> bool",
+          "summary": "",
+          "lineno": 269
+        },
+        {
+          "name": "unpinMessage",
+          "kind": "function",
+          "signature": "(message_id: Optional[str]) -> bool",
+          "summary": "Idempotent: 404 (already unpinned / message gone) counts as success.",
+          "lineno": 280
+        },
+        {
+          "name": "fetchMessagesAfter",
+          "kind": "function",
+          "signature": "(after_id: Optional[str], limit: int=25) -> tuple[list[dict], Optional[str]]",
+          "summary": "Control-poll path: retries=0 so a 429 returns immediately and never blocks the run loop.",
+          "lineno": 290
+        },
+        {
+          "name": "baselineLatestId",
+          "kind": "function",
+          "signature": "() -> Optional[str]",
+          "summary": "Newest message id (no messages returned)",
+          "lineno": 310
+        },
+        {
+          "name": "sendEmbed",
+          "kind": "function",
+          "signature": "(embed: dict, content: Optional[str]=None, components: Optional[list]=None, milestone: bool=False) -> dict",
+          "summary": "Post a new embed message",
+          "lineno": 324
+        },
+        {
+          "name": "createPoll",
+          "kind": "function",
+          "signature": "(poll: dict, content: Optional[str]=None) -> Optional[str]",
+          "summary": "Post a native Discord Poll (engagement.gatePollPayload)",
+          "lineno": 346
+        },
+        {
+          "name": "endPoll",
+          "kind": "function",
+          "signature": "(message_id: str) -> bool",
+          "summary": "Finalize a poll early (the gate resolved)",
+          "lineno": 361
+        },
+        {
+          "name": "createScheduledEvent",
+          "kind": "function",
+          "signature": "(guild_id: int, body: dict) -> Optional[str]",
+          "summary": "Create a guild Scheduled Event (engagement.scheduledEventPayload)",
+          "lineno": 369
+        },
+        {
+          "name": "sendBlocked",
+          "kind": "function",
+          "signature": "(reason: str, question: Optional[str]=None) -> dict",
+          "summary": "Severe: new message, owner ping only (allowed_mentions can't expand past owner), with",
+          "lineno": 386
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.discord_client",
+        "notifications.discord_embeds"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.discord_bot"
+      ]
+    },
+    "notifications.discord_client": {
+      "path": "notifications/discord_client.py",
+      "purpose": "Discord REST plumbing: single HTTP chokepoint, rate-limit circuit breaker, session state.",
+      "exports": [
+        {
+          "name": "truncate",
+          "kind": "function",
+          "signature": "(text, n: int) -> str",
+          "summary": "Clamp to n chars, marking a clip with a trailing ellipsis.",
+          "lineno": 128
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.discord_bot",
+        "notifications.discord_channels",
+        "notifications.discord_embeds"
+      ]
+    },
+    "notifications.discord_embeds": {
+      "path": "notifications/discord_embeds.py",
+      "purpose": "Discord embed builder functions: status colors, progress bars, and all embed dict constructors.",
+      "exports": [
+        {
+          "name": "humanPing",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "`<@id>` mention for the human, ONLY used on severe events",
+          "lineno": 48
+        },
+        {
+          "name": "progressBar",
+          "kind": "function",
+          "signature": "(done: int, total: int, width: int=16) -> str",
+          "summary": "",
+          "lineno": 55
+        },
+        {
+          "name": "subtaskTracker",
+          "kind": "function",
+          "signature": "(subtasks: list[dict], limit: int=12) -> str",
+          "summary": "",
+          "lineno": 64
+        },
+        {
+          "name": "effortBar",
+          "kind": "function",
+          "signature": "(effort: Optional[str]) -> str",
+          "summary": "",
+          "lineno": 80
+        },
+        {
+          "name": "statusColor",
+          "kind": "function",
+          "signature": "(status: Optional[str]) -> int",
+          "summary": "",
+          "lineno": 87
+        },
+        {
+          "name": "relTime",
+          "kind": "function",
+          "signature": "(value=None) -> str",
+          "summary": "Discord native relative timestamp: <t:UNIX:R>.",
+          "lineno": 91
+        },
+        {
+          "name": "formatVerdict",
+          "kind": "function",
+          "signature": "(verdict: Optional[str]) -> str",
+          "summary": "",
+          "lineno": 109
+        },
+        {
+          "name": "planningStartEmbed",
+          "kind": "function",
+          "signature": "(goal: str, subtasks) -> dict",
+          "summary": "Structured plan embed",
+          "lineno": 136
+        },
+        {
+          "name": "architectDoneEmbed",
+          "kind": "function",
+          "signature": "(doc_path: str) -> dict",
+          "summary": "",
+          "lineno": 168
+        },
+        {
+          "name": "adversaryTriggeredEmbed",
+          "kind": "function",
+          "signature": "(subtask_title: str, reason: str, verdict: Optional[str]=None) -> dict",
+          "summary": "",
+          "lineno": 177
+        },
+        {
+          "name": "noticeEmbed",
+          "kind": "function",
+          "signature": "(reason: str, title: str='9TO5 — Notice') -> dict",
+          "summary": "An AUTONOMOUS, informational event the system already handled itself (a fallback was ta…",
+          "lineno": 201
+        },
+        {
+          "name": "blockedEmbed",
+          "kind": "function",
+          "signature": "(reason: str, question: Optional[str]=None) -> dict",
+          "summary": "",
+          "lineno": 214
+        },
+        {
+          "name": "blockedComponents",
+          "kind": "function",
+          "signature": "() -> list",
+          "summary": "Action row with Answer / Skip / Abort buttons (handled by the gateway bot).",
+          "lineno": 228
+        },
+        {
+          "name": "completeEmbed",
+          "kind": "function",
+          "signature": "(state, pr_link: str, elapsed: str) -> dict",
+          "summary": "",
+          "lineno": 247
+        },
+        {
+          "name": "gateNeededEmbed",
+          "kind": "function",
+          "signature": "(gate: str) -> dict",
+          "summary": "",
+          "lineno": 282
+        },
+        {
+          "name": "subtaskFailedEmbed",
+          "kind": "function",
+          "signature": "(subtask_id: str, title: str, verify_result: Optional[dict], attempts: int) -> dict",
+          "summary": "",
+          "lineno": 292
+        },
+        {
+          "name": "abortedEmbed",
+          "kind": "function",
+          "signature": "(reason: str, elapsed: str) -> dict",
+          "summary": "",
+          "lineno": 314
+        },
+        {
+          "name": "selfRefEmbed",
+          "kind": "function",
+          "signature": "(branch: str, protected: tuple) -> dict",
+          "summary": "",
+          "lineno": 326
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.discord_client",
+        "notifications.icons"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.discord_bot",
+        "notifications.discord_channels"
       ]
     },
     "notifications.engagement": {
@@ -5164,7 +5796,7 @@
       ],
       "callers": [
         "notifications.bot.cogs.engagement_cog",
-        "orchestrator"
+        "orchestrator_control_mixin"
       ]
     },
     "notifications.entry": {
@@ -5200,10 +5832,11 @@
       "test": [
         "tests/test_entry_creation.py",
         "tests/test_notification_entry.py",
-        "tests/test_notification_entry_schema.py"
+        "tests/test_notification_entry_schema.py",
+        "tests/test_notification_entry_ui.py"
       ],
       "callers": [
-        "state.task"
+        "state.task_schema"
       ]
     },
     "notifications.icons": {
@@ -5262,9 +5895,9 @@
         "notifications.branding",
         "notifications.cast",
         "notifications.cv2",
-        "notifications.discord_bot",
-        "notifications.views",
-        "orchestrator"
+        "notifications.discord_embeds",
+        "notifications.views_control",
+        "orchestrator_run_phase_mixin"
       ]
     },
     "notifications.iconset": {
@@ -5509,88 +6142,18 @@
         "notifications.console_hud",
         "notifications.cv2",
         "notifications.iconset",
-        "notifications.visuals"
+        "notifications.visuals_cards",
+        "notifications.visuals_components"
       ]
     },
     "notifications.views": {
       "path": "notifications/views.py",
-      "purpose": "discord.py UI components for the 9TO5 gateway: persistent control-panel + blocked",
-      "exports": [
-        {
-          "name": "ConfirmView",
-          "kind": "class",
-          "signature": "",
-          "summary": "Ephemeral Confirm/Cancel",
-          "lineno": 100
-        },
-        {
-          "name": "confirmDestructive",
-          "kind": "function",
-          "signature": "(interaction: 'discord.Interaction', label: str) -> bool",
-          "summary": "Send an ephemeral confirm dialog (this consumes the initial response)",
-          "lineno": 123
-        },
-        {
-          "name": "ControlPanelView",
-          "kind": "class",
-          "signature": "",
-          "summary": "Persistent (timeout=None)",
-          "lineno": 147
-        },
-        {
-          "name": "BlockedView",
-          "kind": "class",
-          "signature": "",
-          "summary": "Persistent view for the BLOCKED embed's Answer/Skip/Abort buttons (custom_ids sc_*).",
-          "lineno": 182
-        },
-        {
-          "name": "Paginator",
-          "kind": "class",
-          "signature": "",
-          "summary": "Prev/Next over pre-built discord.Embed pages, bound to the invoking user.",
-          "lineno": 205
-        },
-        {
-          "name": "WorkSetupView",
-          "kind": "class",
-          "signature": "",
-          "summary": "Dropdowns + Launch/Cancel for the /work guided setup (used after WorkModal).",
-          "lineno": 237
-        },
-        {
-          "name": "WipeSetupView",
-          "kind": "class",
-          "signature": "",
-          "summary": "Multi-select wipe config view",
-          "lineno": 322
-        },
-        {
-          "name": "WipeConfirmView",
-          "kind": "class",
-          "signature": "",
-          "summary": "Final confirm/cancel for a wipe",
-          "lineno": 400
-        },
-        {
-          "name": "WorkModal",
-          "kind": "class",
-          "signature": "",
-          "summary": "",
-          "lineno": 433
-        }
-      ],
+      "purpose": "discord.py UI components for the 9TO5 gateway — re-export facade.",
+      "exports": [],
       "depends_on": [
-        "agents.browser_executor",
-        "config",
-        "control.ControlBus",
-        "notifications.audit",
-        "notifications.commands",
-        "notifications.icons",
-        "notifications.work_launcher",
-        "wipe.CATEGORIES",
-        "wipe.executeWipe",
-        "wipe.restartBot"
+        "notifications.views_control",
+        "notifications.views_run",
+        "notifications.views_subtask"
       ],
       "side_effects": [
         "unannotated"
@@ -5607,56 +6170,136 @@
         "notifications.bot.core"
       ]
     },
-    "notifications.visuals": {
-      "path": "notifications/visuals.py",
-      "purpose": "Generative visuals -- Pillow-rendered cockpit imagery in the \"Nightclaw Ops Console\" design",
+    "notifications.views_control": {
+      "path": "notifications/views_control.py",
+      "purpose": "Shared control helpers, ConfirmView/confirmDestructive, and ControlPanelView.",
       "exports": [
         {
-          "name": "available",
-          "kind": "function",
-          "signature": "() -> bool",
-          "summary": "",
-          "lineno": 46
+          "name": "ConfirmView",
+          "kind": "class",
+          "signature": "",
+          "summary": "Ephemeral Confirm/Cancel",
+          "lineno": 108
         },
         {
-          "name": "progressCard",
+          "name": "confirmDestructive",
           "kind": "function",
-          "signature": "(state, *, phase: str='executing', model: Optional[str]=None, effort: str='default') -> Optional[bytes]",
-          "summary": "",
-          "lineno": 192
+          "signature": "(interaction: 'discord.Interaction', label: str) -> bool",
+          "summary": "Send an ephemeral confirm dialog (this consumes the initial response)",
+          "lineno": 131
         },
         {
-          "name": "burndownChart",
-          "kind": "function",
-          "signature": "(state) -> Optional[bytes]",
-          "summary": "",
-          "lineno": 260
-        },
-        {
-          "name": "duelCard",
-          "kind": "function",
-          "signature": "(subtask_title: str, verdict: str, *, trust: Optional[float]=None) -> Optional[bytes]",
-          "summary": "",
-          "lineno": 303
-        },
-        {
-          "name": "timelapseGif",
-          "kind": "function",
-          "signature": "(frames: list, *, duration_ms: int=700) -> Optional[bytes]",
-          "summary": "",
-          "lineno": 358
-        },
-        {
-          "name": "runReplayGif",
-          "kind": "function",
-          "signature": "(state, *, max_frames: int=8) -> Optional[bytes]",
-          "summary": "",
-          "lineno": 382
+          "name": "ControlPanelView",
+          "kind": "class",
+          "signature": "",
+          "summary": "Persistent (timeout=None)",
+          "lineno": 139
         }
       ],
       "depends_on": [
         "config",
-        "notifications.theme"
+        "control.ControlBus",
+        "notifications.audit",
+        "notifications.commands",
+        "notifications.icons"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.views",
+        "notifications.views_subtask"
+      ]
+    },
+    "notifications.views_run": {
+      "path": "notifications/views_run.py",
+      "purpose": "Run-launching views: Paginator, WorkSetupView, WorkModal.",
+      "exports": [
+        {
+          "name": "Paginator",
+          "kind": "class",
+          "signature": "",
+          "summary": "Prev/Next over pre-built discord.Embed pages, bound to the invoking user.",
+          "lineno": 22
+        },
+        {
+          "name": "WorkSetupView",
+          "kind": "class",
+          "signature": "",
+          "summary": "Dropdowns + Launch/Cancel for the /work guided setup (used after WorkModal).",
+          "lineno": 54
+        },
+        {
+          "name": "WorkModal",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 139
+        }
+      ],
+      "depends_on": [
+        "agents.browser_executor",
+        "config",
+        "notifications.audit",
+        "notifications.commands",
+        "notifications.work_launcher"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.views"
+      ]
+    },
+    "notifications.views_subtask": {
+      "path": "notifications/views_subtask.py",
+      "purpose": "Subtask-state and wipe-operation views: BlockedView, WipeSetupView, WipeConfirmView.",
+      "exports": [
+        {
+          "name": "BlockedView",
+          "kind": "class",
+          "signature": "",
+          "summary": "Persistent view for the BLOCKED embed's Answer/Skip/Abort buttons (custom_ids sc_*).",
+          "lineno": 21
+        },
+        {
+          "name": "WipeSetupView",
+          "kind": "class",
+          "signature": "",
+          "summary": "Multi-select wipe config view",
+          "lineno": 45
+        },
+        {
+          "name": "WipeConfirmView",
+          "kind": "class",
+          "signature": "",
+          "summary": "Final confirm/cancel for a wipe",
+          "lineno": 123
+        }
+      ],
+      "depends_on": [
+        "notifications.views_control",
+        "wipe.CATEGORIES",
+        "wipe.executeWipe",
+        "wipe.restartBot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.views"
+      ]
+    },
+    "notifications.visuals": {
+      "path": "notifications/visuals.py",
+      "purpose": "Generative visuals -- Pillow-rendered cockpit imagery in the \"Nightclaw Ops Console\" design",
+      "exports": [],
+      "depends_on": [
+        "notifications.visuals_cards",
+        "notifications.visuals_components"
       ],
       "side_effects": [
         "unannotated"
@@ -5667,7 +6310,85 @@
       "callers": [
         "notifications.cast",
         "notifications.dashboard",
-        "orchestrator"
+        "orchestrator_run_phase_mixin"
+      ]
+    },
+    "notifications.visuals_cards": {
+      "path": "notifications/visuals_cards.py",
+      "purpose": "Card and animation render functions for the Nightclaw Ops Console.",
+      "exports": [
+        {
+          "name": "progressCard",
+          "kind": "function",
+          "signature": "(state, *, phase: str='executing', model: Optional[str]=None, effort: str='default') -> Optional[bytes]",
+          "summary": "",
+          "lineno": 33
+        },
+        {
+          "name": "burndownChart",
+          "kind": "function",
+          "signature": "(state) -> Optional[bytes]",
+          "summary": "",
+          "lineno": 101
+        },
+        {
+          "name": "duelCard",
+          "kind": "function",
+          "signature": "(subtask_title: str, verdict: str, *, trust: Optional[float]=None) -> Optional[bytes]",
+          "summary": "",
+          "lineno": 142
+        },
+        {
+          "name": "timelapseGif",
+          "kind": "function",
+          "signature": "(frames: list, *, duration_ms: int=700) -> Optional[bytes]",
+          "summary": "",
+          "lineno": 196
+        },
+        {
+          "name": "runReplayGif",
+          "kind": "function",
+          "signature": "(state, *, max_frames: int=8) -> Optional[bytes]",
+          "summary": "",
+          "lineno": 221
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.theme",
+        "notifications.visuals_components"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.visuals"
+      ]
+    },
+    "notifications.visuals_components": {
+      "path": "notifications/visuals_components.py",
+      "purpose": "Drawing primitives and component helpers for the Nightclaw Ops Console visuals.",
+      "exports": [
+        {
+          "name": "available",
+          "kind": "function",
+          "signature": "() -> bool",
+          "summary": "",
+          "lineno": 22
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.theme"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.visuals",
+        "notifications.visuals_cards"
       ]
     },
     "notifications.webdash": {
@@ -5702,7 +6423,8 @@
         "tests/test_webdash_control.py"
       ],
       "callers": [
-        "orchestrator"
+        "orchestrator",
+        "orchestrator_run_phase_mixin"
       ]
     },
     "notifications.work_launcher": {
@@ -5810,7 +6532,7 @@
         "learning.sie",
         "notifications.bot.cogs.plan_cog",
         "notifications.bot.cogs.runs_cog",
-        "notifications.views"
+        "notifications.views_run"
       ]
     },
     "orchestrator": {
@@ -5818,62 +6540,41 @@
       "purpose": "Orchestrator -- the brain (Ollama qwen2.5:7b) + the core autonomous loop.",
       "exports": [
         {
-          "name": "refreshClaudeKnowledge",
-          "kind": "function",
-          "signature": "(obs: 'ObsidianClient | None'=None, *, fetch_web: bool | None=None, log_session: bool=True, force: bool=False) -> str",
-          "summary": "Living knowledge refresh",
-          "lineno": 91
-        },
-        {
           "name": "Orchestrator",
           "kind": "class",
           "signature": "",
-          "summary": "",
-          "lineno": 371
+          "summary": "Brain + autonomous loop",
+          "lineno": 68
         }
       ],
       "depends_on": [
         "agents.adversary",
-        "agents.architect",
-        "agents.browser_executor",
-        "agents.clarifier",
         "agents.executor",
         "agents.replanner",
-        "agents.second_brain",
-        "agents.verifier",
         "config",
         "control.AbortRun",
         "control.ControlBus",
         "epoch",
-        "knowledge",
-        "learning.adversary_trust",
-        "learning.confidence",
-        "learning.eval_harness",
         "learning.eval_runner",
-        "learning.finetune",
-        "learning.knowledge_graph",
-        "learning.policy",
-        "learning.postmortem",
-        "learning.prompts",
-        "learning.reflection",
-        "learning.sie",
-        "learning.solution_cache",
-        "llm_io",
-        "memory.experience",
         "memory.obsidian",
-        "memory.retrieval",
-        "notifications.audit",
-        "notifications.cast",
-        "notifications.commands",
         "notifications.dashboard",
-        "notifications.discord_bot",
-        "notifications.engagement",
-        "notifications.icons",
-        "notifications.visuals",
         "notifications.webdash",
-        "selfmod",
-        "state.task",
-        "surfaces"
+        "orchestrator_brain_io",
+        "orchestrator_control_mixin.OrchestratorControlMixin",
+        "orchestrator_execute_mixin.OrchestratorExecuteMixin",
+        "orchestrator_knowledge.injectCapabilities",
+        "orchestrator_knowledge.refreshClaudeKnowledge",
+        "orchestrator_llm_mixin.OrchestratorLlmMixin",
+        "orchestrator_plan_mixin.ORCHESTRATOR_CONSTITUTION",
+        "orchestrator_plan_mixin.OrchestratorPlanMixin",
+        "orchestrator_plan_mixin._VERIFY_EXAMPLE_PATH",
+        "orchestrator_review_mixin.OrchestratorReviewMixin",
+        "orchestrator_run_loop._asList",
+        "orchestrator_run_loop._asText",
+        "orchestrator_run_loop_mixin.OrchestratorRunLoopMixin",
+        "orchestrator_run_phase_mixin.OrchestratorRunPhaseMixin",
+        "orchestrator_subtask._checkCodeDivergence",
+        "state.task"
       ],
       "side_effects": [
         "unannotated"
@@ -5882,6 +6583,370 @@
         "tests/test_orchestrator_poll.py",
         "tests/test_orchestrator_with_registry.py"
       ],
+      "callers": [
+        "orchestrator_run_phase_mixin"
+      ]
+    },
+    "orchestrator_brain_io": {
+      "path": "orchestrator_brain_io.py",
+      "purpose": "Brain response parsing and prompt sizing helpers for the orchestrator.",
+      "exports": [
+        {
+          "name": "parseJsonText",
+          "kind": "function",
+          "signature": "(text: str)",
+          "summary": "Parse JSON text, tolerating fences and leading/trailing prose.",
+          "lineno": 49
+        }
+      ],
+      "depends_on": [
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator"
+      ]
+    },
+    "orchestrator_control_mixin": {
+      "path": "orchestrator_control_mixin.py",
+      "purpose": "Control-plane mixin for the Orchestrator – Discord polling, gates, Obsidian notes, reviews.",
+      "exports": [
+        {
+          "name": "OrchestratorControlMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handles Discord control polling, approval gates, Obsidian index, and second-opinion rev…",
+          "lineno": 34
+        }
+      ],
+      "depends_on": [
+        "agents.second_brain",
+        "config",
+        "control.AbortRun",
+        "control.ControlBus",
+        "notifications.audit",
+        "notifications.commands",
+        "notifications.dashboard",
+        "notifications.discord_bot",
+        "notifications.engagement",
+        "orchestrator_brain_io._chatJson",
+        "orchestrator_github",
+        "orchestrator_run_loop",
+        "orchestrator_subtask",
+        "selfmod",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "orchestrator_execute_mixin": {
+      "path": "orchestrator_execute_mixin.py",
+      "purpose": "Core execution mixin – attempt loop, verify, adversary remediation, SIE capture, enrichment.",
+      "exports": [
+        {
+          "name": "OrchestratorExecuteMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment.",
+          "lineno": 34
+        }
+      ],
+      "depends_on": [
+        "agents.adversary",
+        "agents.second_brain",
+        "agents.verifier",
+        "config",
+        "control.AbortRun",
+        "control.ControlBus",
+        "learning.reflection",
+        "learning.solution_cache",
+        "memory.experience",
+        "notifications.cast",
+        "notifications.dashboard",
+        "notifications.discord_bot",
+        "orchestrator_brain_io._resultText",
+        "orchestrator_subtask._checkCodeDivergence",
+        "state.task",
+        "surfaces"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "orchestrator_github": {
+      "path": "orchestrator_github.py",
+      "purpose": "Git and GitHub operations for the orchestrator (PR creation, repo helpers).",
+      "exports": [
+        {
+          "name": "createPullRequest",
+          "kind": "function",
+          "signature": "(state, work_dir: str) -> dict",
+          "summary": "Create a PR for the completed run",
+          "lineno": 20
+        }
+      ],
+      "depends_on": [
+        "config",
+        "selfmod"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator_control_mixin",
+        "orchestrator_review_mixin"
+      ]
+    },
+    "orchestrator_knowledge": {
+      "path": "orchestrator_knowledge.py",
+      "purpose": "Claude Code knowledge refresh plumbing for the orchestrator.",
+      "exports": [
+        {
+          "name": "refreshClaudeKnowledge",
+          "kind": "function",
+          "signature": "(obs: 'ObsidianClient | None'=None, *, fetch_web: bool | None=None, log_session: bool=True, force: bool=False) -> str",
+          "summary": "Refresh and cache Claude Code capabilities for Ollama brain prompts.",
+          "lineno": 42
+        }
+      ],
+      "depends_on": [
+        "config",
+        "knowledge",
+        "memory.obsidian",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "orchestrator_llm_mixin": {
+      "path": "orchestrator_llm_mixin.py",
+      "purpose": "LLM/brain interaction mixin for the Orchestrator (Ollama calls, goal eval, executor routing).",
+      "exports": [
+        {
+          "name": "OrchestratorLlmMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handles all LLM/brain interaction: Ollama calls, goal evaluation, executor routing.",
+          "lineno": 28
+        }
+      ],
+      "depends_on": [
+        "agents.browser_executor",
+        "agents.clarifier",
+        "agents.verifier",
+        "config",
+        "learning.eval_harness",
+        "learning.finetune",
+        "notifications.dashboard",
+        "notifications.discord_bot",
+        "orchestrator_brain_io._chatJson",
+        "orchestrator_brain_io._chatText",
+        "orchestrator_brain_io._fitUserToCtx",
+        "orchestrator_knowledge.injectCapabilities",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "orchestrator_plan_mixin": {
+      "path": "orchestrator_plan_mixin.py",
+      "purpose": "Planning mixin for the Orchestrator – subtask plan authoring, spec construction, SIE context.",
+      "exports": [
+        {
+          "name": "OrchestratorPlanMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handles subtask plan authoring, invocation spec construction, and SIE authoring context.",
+          "lineno": 88
+        }
+      ],
+      "depends_on": [
+        "agents.verifier",
+        "config",
+        "learning.knowledge_graph",
+        "learning.policy",
+        "learning.postmortem",
+        "learning.prompts",
+        "learning.reflection",
+        "learning.solution_cache",
+        "memory.experience",
+        "memory.retrieval",
+        "notifications.discord_bot",
+        "orchestrator_brain_io._chatJson",
+        "orchestrator_run_loop._asList",
+        "orchestrator_run_loop._asText",
+        "orchestrator_run_loop._confidenceNudge",
+        "orchestrator_run_loop._warmStartHint",
+        "orchestrator_subtask._repairVerify",
+        "orchestrator_subtask._singleDeliverable",
+        "orchestrator_subtask._strengthenPlanVerifies",
+        "state.task",
+        "surfaces"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "orchestrator_review_mixin": {
+      "path": "orchestrator_review_mixin.py",
+      "purpose": "Adversary review and PR mixin – second brain routing, Gemini session, git helpers, PR gate.",
+      "exports": [
+        {
+          "name": "OrchestratorReviewMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handles adversary review routing, Gemini session lifecycle, git helpers, and the PR gat…",
+          "lineno": 23
+        }
+      ],
+      "depends_on": [
+        "agents.adversary",
+        "agents.browser_executor",
+        "agents.second_brain",
+        "config",
+        "learning.adversary_trust",
+        "notifications.cast",
+        "notifications.discord_bot",
+        "orchestrator_github",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "orchestrator_run_loop": {
+      "path": "orchestrator_run_loop.py",
+      "purpose": "Execution-loop helpers for the orchestrator – timing, scaffolding, SIE context, type coercions.",
+      "exports": [],
+      "depends_on": [
+        "config",
+        "learning.confidence",
+        "learning.solution_cache",
+        "notifications.discord_bot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator_control_mixin"
+      ]
+    },
+    "orchestrator_run_loop_mixin": {
+      "path": "orchestrator_run_loop_mixin.py",
+      "purpose": "Run-loop execution mixin – execution loop, backfill, livelock guard, replan application.",
+      "exports": [
+        {
+          "name": "OrchestratorRunLoopMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handles the execution loop, backfill, livelock guard, and replan application.",
+          "lineno": 31
+        }
+      ],
+      "depends_on": [
+        "agents.verifier",
+        "config",
+        "control.AbortRun",
+        "control.ControlBus",
+        "memory.experience",
+        "notifications.dashboard",
+        "notifications.discord_bot",
+        "orchestrator_run_loop._deadlinePassed",
+        "orchestrator_run_loop._remainingHours",
+        "orchestrator_subtask._pendingCount",
+        "orchestrator_subtask._readySet",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "orchestrator_run_phase_mixin": {
+      "path": "orchestrator_run_phase_mixin.py",
+      "purpose": "Run phase mixin – startup phases, preamble, phase 4 PR completion, teardown.",
+      "exports": [
+        {
+          "name": "OrchestratorRunPhaseMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handles run lifecycle phases: resume, fresh run, preamble, phase 4, teardown.",
+          "lineno": 31
+        }
+      ],
+      "depends_on": [
+        "agents.architect",
+        "agents.verifier",
+        "config",
+        "control.ControlBus",
+        "learning.adversary_trust",
+        "learning.sie",
+        "notifications.cast",
+        "notifications.dashboard",
+        "notifications.discord_bot",
+        "notifications.icons",
+        "notifications.visuals",
+        "notifications.webdash",
+        "orchestrator",
+        "orchestrator_brain_io._resultText",
+        "orchestrator_knowledge.refreshClaudeKnowledge",
+        "orchestrator_time._elapsedSince",
+        "orchestrator_time._fmtElapsed",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "orchestrator_subtask": {
+      "path": "orchestrator_subtask.py",
+      "purpose": "Subtask planning helpers and verification utilities for the orchestrator.",
+      "exports": [],
+      "depends_on": [
+        "agents.verifier",
+        "config",
+        "epoch"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "orchestrator_control_mixin"
+      ]
+    },
+    "orchestrator_time": {
+      "path": "orchestrator_time.py",
+      "purpose": "Small wall-clock formatting helpers for orchestrator status output.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
       "callers": []
     },
     "protocols": {
@@ -5981,7 +7046,7 @@
         "tests/test_provenance.py"
       ],
       "callers": [
-        "knowledge",
+        "knowledge_scraper",
         "learning.prompts"
       ]
     },
@@ -6224,7 +7289,8 @@
         "tests/test_selfmod.py"
       ],
       "callers": [
-        "orchestrator"
+        "orchestrator_control_mixin",
+        "orchestrator_github"
       ]
     },
     "sim_error_handling": {
@@ -6338,7 +7404,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_simulation_units.py"
+        "tests/test_simulation_advanced.py",
+        "tests/test_simulation_core.py"
       ],
       "callers": [
         "main"
@@ -6434,27 +7501,10 @@
     },
     "state.task": {
       "path": "state/task.py",
-      "purpose": "Lean task-state model + JSON persistence.",
-      "exports": [
-        {
-          "name": "nowIso",
-          "kind": "function",
-          "signature": "() -> str",
-          "summary": "Local-timezone ISO-8601 timestamp (second precision).",
-          "lineno": 57
-        },
-        {
-          "name": "TaskState",
-          "kind": "class",
-          "signature": "",
-          "summary": "Wraps the lean state dict and persists it to ``state/tasks/<id>.json``.",
-          "lineno": 62
-        }
-      ],
+      "purpose": "Lean task-state model + JSON persistence -- re-export facade.",
+      "exports": [],
       "depends_on": [
-        "config",
-        "memory.experience",
-        "notifications.entry"
+        "state.task_schema"
       ],
       "side_effects": [
         "unannotated"
@@ -6465,9 +7515,9 @@
         "tests/test_task_save_concurrent.py"
       ],
       "callers": [
-        "agents.hooks",
+        "agents.hooks_selfmod",
         "main",
-        "memory.experience",
+        "memory.experience_runs",
         "notifications.bot.cogs.runs_cog",
         "notifications.command_bot",
         "notifications.commands",
@@ -6477,7 +7527,108 @@
         "notifications.webdash",
         "notifications.work_launcher",
         "orchestrator",
+        "orchestrator_control_mixin",
+        "orchestrator_execute_mixin",
+        "orchestrator_knowledge",
+        "orchestrator_llm_mixin",
+        "orchestrator_plan_mixin",
+        "orchestrator_review_mixin",
+        "orchestrator_run_loop_mixin",
+        "orchestrator_run_phase_mixin",
         "resilience"
+      ]
+    },
+    "state.task_io": {
+      "path": "state/task_io.py",
+      "purpose": "TaskState file I/O: atomic save, load, iteration, and list helpers.",
+      "exports": [
+        {
+          "name": "save",
+          "kind": "function",
+          "signature": "(state: 'TaskState') -> Path",
+          "summary": "Atomic JSON save with monotonic state_epoch stamp.",
+          "lineno": 57
+        },
+        {
+          "name": "load",
+          "kind": "function",
+          "signature": "(task_id: str) -> 'TaskState'",
+          "summary": "Load task JSON from the state store",
+          "lineno": 87
+        },
+        {
+          "name": "loadSafe",
+          "kind": "function",
+          "signature": "(task_id: str) -> 'Optional[TaskState]'",
+          "summary": "Like ``load`` but returns None for a missing/corrupt file instead of raising.",
+          "lineno": 97
+        },
+        {
+          "name": "iterStored",
+          "kind": "function",
+          "signature": "()",
+          "summary": "Yield ``(path, data)`` for every readable task JSON in the store.",
+          "lineno": 105
+        },
+        {
+          "name": "loadLatest",
+          "kind": "function",
+          "signature": "() -> 'Optional[TaskState]'",
+          "summary": "Prefer the most-recently-STARTED active (non-terminal) task.",
+          "lineno": 118
+        },
+        {
+          "name": "listRecent",
+          "kind": "function",
+          "signature": "(n: int=10) -> list[dict[str, Any]]",
+          "summary": "Lightweight summaries of recent tasks, newest first",
+          "lineno": 135
+        }
+      ],
+      "depends_on": [
+        "config",
+        "state.task_schema"
+      ],
+      "side_effects": [
+        "writes state/tasks/<id>.json"
+      ],
+      "test": [],
+      "callers": [
+        "state.task_schema"
+      ]
+    },
+    "state.task_schema": {
+      "path": "state/task_schema.py",
+      "purpose": "TaskState core schema, construction, accessors, and domain methods.",
+      "exports": [
+        {
+          "name": "nowIso",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "Local-timezone ISO-8601 timestamp (second precision).",
+          "lineno": 26
+        },
+        {
+          "name": "TaskState",
+          "kind": "class",
+          "signature": "",
+          "summary": "Wraps the lean state dict and persists it to ``state/tasks/<id>.json``.",
+          "lineno": 31
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience",
+        "notifications.entry",
+        "state.task_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "state.task",
+        "state.task_io"
       ]
     },
     "surfaces": {
@@ -6524,7 +7675,8 @@
         "tests/test_surfaces.py"
       ],
       "callers": [
-        "orchestrator"
+        "orchestrator_execute_mixin",
+        "orchestrator_plan_mixin"
       ]
     },
     "tools.affected_tests": {
@@ -6699,151 +7851,67 @@
       "purpose": "dev -- the one-command developer/agent task runner for 9to5 (cross-platform, no `make`).",
       "exports": [
         {
-          "name": "cmd_lint",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 149
-        },
-        {
-          "name": "cmd_typecheck",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 154
-        },
-        {
-          "name": "cmd_check",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "Fail-fast gate chain: ruff -> typecheck(changed) -> affected tests -> repo-map drift.",
-          "lineno": 162
-        },
-        {
-          "name": "cmd_test",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 219
-        },
-        {
-          "name": "cmd_fast",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 223
-        },
-        {
-          "name": "cmd_ci_local",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "Run the local CI gates in cheapest useful order.",
-          "lineno": 227
-        },
-        {
-          "name": "cmd_slow_report",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 256
-        },
-        {
-          "name": "cmd_heartbeat_test",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 262
-        },
-        {
-          "name": "cmd_context_check",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 270
-        },
-        {
-          "name": "cmd_iteration_health",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 274
-        },
-        {
           "name": "cmd_bench_iteration",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 298
+          "lineno": 68
+        },
+        {
+          "name": "cmd_size_audit",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 72
         },
         {
           "name": "cmd_affected",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 302
-        },
-        {
-          "name": "cmd_watch",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "Poll .py mtimes; on any change, run the affected tests",
-          "lineno": 306
-        },
-        {
-          "name": "cmd_outline",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 342
-        },
-        {
-          "name": "cmd_where",
-          "kind": "function",
-          "signature": "(args: list[str]) -> int",
-          "summary": "",
-          "lineno": 370
+          "lineno": 76
         },
         {
           "name": "cmd_map",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 399
+          "lineno": 80
         },
         {
           "name": "cmd_run",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 403
+          "lineno": 84
         },
         {
           "name": "cmd_dryrun",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 407
+          "lineno": 88
         },
         {
           "name": "cmd_e2e",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 412
+          "lineno": 93
         },
         {
           "name": "cmd_codemod",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 416
+          "lineno": 97
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: list[str]) -> int",
           "summary": "",
-          "lineno": 432
+          "lineno": 114
         }
       ],
       "depends_on": [],
@@ -6853,6 +7921,121 @@
       "test": [
         "tests/test_dev_commands.py"
       ],
+      "callers": []
+    },
+    "tools.dev_checks": {
+      "path": "tools/dev_checks.py",
+      "purpose": "Check, lint, type, and test commands for the 9to5 dev runner.",
+      "exports": [
+        {
+          "name": "cmd_lint",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 66
+        },
+        {
+          "name": "cmd_typecheck",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 71
+        },
+        {
+          "name": "cmd_check",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "Fail-fast gate chain: ruff -> typecheck(changed) -> affected tests -> repo-map drift.",
+          "lineno": 79
+        },
+        {
+          "name": "cmd_test",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 135
+        },
+        {
+          "name": "cmd_fast",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 139
+        },
+        {
+          "name": "cmd_ci_local",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "Run the local CI gates in cheapest useful order.",
+          "lineno": 143
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.dev_reports": {
+      "path": "tools/dev_reports.py",
+      "purpose": "Reporting, navigation, health-check, and watch commands for the 9to5 dev runner.",
+      "exports": [
+        {
+          "name": "cmd_slow_report",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 67
+        },
+        {
+          "name": "cmd_heartbeat_test",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 73
+        },
+        {
+          "name": "cmd_context_check",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 81
+        },
+        {
+          "name": "cmd_iteration_health",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 85
+        },
+        {
+          "name": "cmd_outline",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 109
+        },
+        {
+          "name": "cmd_where",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 137
+        },
+        {
+          "name": "cmd_watch",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "Poll .py mtimes; on any change, run the affected tests",
+          "lineno": 165
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
       "callers": []
     },
     "tools.iteration_bench": {
@@ -6883,91 +8066,77 @@
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> list[Path]",
           "summary": "All first-party .py files (sorted, deterministic), skipping EXCLUDE_DIRS",
-          "lineno": 77
+          "lineno": 68
         },
         {
           "name": "module_dotted",
           "kind": "function",
           "signature": "(path: Path) -> str",
           "summary": "agents/adversary.py -> 'agents.adversary'",
-          "lineno": 92
+          "lineno": 83
         },
         {
           "name": "first_party_roots",
           "kind": "function",
           "signature": "() -> set[str]",
           "summary": "Top-level importable names: every top-level .py stem + every dir holding an __init__.py.",
-          "lineno": 99
+          "lineno": 90
         },
         {
           "name": "parse_module",
           "kind": "function",
           "signature": "(path: Path, roots: set[str]) -> dict",
           "summary": "Extract the per-module record (sans callers, which are computed globally).",
-          "lineno": 225
+          "lineno": 212
         },
         {
           "name": "find_tests",
           "kind": "function",
           "signature": "(dotted: str, name: str) -> list[str]",
           "summary": "Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> glob -> [].",
-          "lineno": 243
+          "lineno": 230
         },
         {
           "name": "build_map",
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> dict",
           "summary": "Full-repo machine index",
-          "lineno": 255
+          "lineno": 242
         },
         {
           "name": "toplevel_import_graph",
           "kind": "function",
           "signature": "() -> dict[str, list[str]]",
           "summary": "{dotted-module: [first-party modules imported at LOAD time]}",
-          "lineno": 291
+          "lineno": 271
         },
         {
           "name": "render_header",
           "kind": "function",
           "signature": "(rec: dict) -> str",
           "summary": "Render the @AI-MAP block (text only, no surrounding quotes).",
-          "lineno": 306
+          "lineno": 286
         },
         {
           "name": "splice_header",
           "kind": "function",
           "signature": "(src: str, header: str) -> Optional[str]",
           "summary": "Return ``src`` with ``header`` placed inside the module docstring (below the prose,",
-          "lineno": 323
-        },
-        {
-          "name": "render_root_agents_md",
-          "kind": "function",
-          "signature": "(m: dict) -> str",
-          "summary": "",
-          "lineno": 349
-        },
-        {
-          "name": "render_package_agents_md",
-          "kind": "function",
-          "signature": "(m: dict, pkg: str) -> str",
-          "summary": "",
-          "lineno": 398
+          "lineno": 303
         },
         {
           "name": "write_outputs",
           "kind": "function",
           "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 427
+          "lineno": 325
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: Optional[list[str]]=None) -> int",
           "summary": "",
-          "lineno": 501
+          "lineno": 338
         }
       ],
       "depends_on": [],
@@ -6977,6 +8146,77 @@
       "test": [
         "tests/test_repo_map.py"
       ],
+      "callers": []
+    },
+    "tools.repo_map_outputs": {
+      "path": "tools/repo_map_outputs.py",
+      "purpose": "write_outputs and its sub-functions for the 9to5 AI-navigation layer.",
+      "exports": [
+        {
+          "name": "write_outputs",
+          "kind": "function",
+          "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
+          "summary": "Write (or --check) all artifacts",
+          "lineno": 106
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.repo_map_render": {
+      "path": "tools/repo_map_render.py",
+      "purpose": "AGENTS.md and JSON rendering helpers for the 9to5 AI-navigation layer.",
+      "exports": [
+        {
+          "name": "render_root_agents_md",
+          "kind": "function",
+          "signature": "(m: dict) -> str",
+          "summary": "",
+          "lineno": 56
+        },
+        {
+          "name": "render_package_agents_md",
+          "kind": "function",
+          "signature": "(m: dict, pkg: str) -> str",
+          "summary": "",
+          "lineno": 105
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.size_audit": {
+      "path": "tools/size_audit.py",
+      "purpose": "Line-count audit for agent-friendly files and functions.",
+      "exports": [
+        {
+          "name": "collect",
+          "kind": "function",
+          "signature": "() -> tuple[list[dict], list[dict]]",
+          "summary": "",
+          "lineno": 70
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 104
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
       "callers": []
     },
     "tracing": {
@@ -7024,6 +8264,7 @@
       "callers": [
         "agents.trace-replay",
         "agents.trace_replay",
+        "agents.trace_replay_events",
         "scripts.repo_health"
       ]
     },

@@ -109,6 +109,87 @@ def buildSpec(
     }
 
 
+def _buildWorkflowEnv(
+    run_id: Optional[str],
+    limit: int,
+) -> tuple:
+    """Build the empty result template, check for traces, and assemble CLI args.
+
+    Returns (target, args, _empty).  When no traces exist and run_id is None,
+    target and args are both None — the caller should return _empty immediately.
+    """
+    _empty: dict = {
+        "ok": True,
+        "run_id": run_id,
+        "divergence_count": 0,
+        "high_activity_count": 0,
+        "parallel_moments": 0,
+        "total_events": 0,
+        "divergences": [],
+        "raw": "",
+        "error": None,
+    }
+    # Fast path: no traces at all — skip subprocess entirely.
+    recent = tracing.recentRunIds(limit=1)
+    if not recent and run_id is None:
+        LOG.info("trace_replay_workflow: no archived runs; skipping replay.")
+        _empty["error"] = "no_traces"
+        return None, None, _empty
+    target = run_id or (recent[0] if recent else None)
+    cli_args: list[str] = [sys.executable, str(_SCRIPT), "--format", "json", "--no-color"]
+    if target:
+        cli_args += ["--run-id", target]
+    else:
+        cli_args += ["--limit", str(limit)]
+    return target, cli_args, _empty
+
+
+def _executeWorkflowPhases(target: Optional[str], cli_args: list, _empty: dict) -> dict:
+    """Run the trace-replay subprocess, parse its JSON output, and return result dict."""
+    try:
+        proc = subprocess.run(cli_args, capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return {**_empty, "ok": False, "error": "timeout", "run_id": target}
+    except Exception as exc:  # noqa: BLE001
+        return {**_empty, "ok": False, "error": str(exc), "run_id": target}
+
+    if proc.returncode != 0:
+        return {
+            **_empty, "ok": False, "run_id": target,
+            "error": f"exit {proc.returncode}: {proc.stderr.strip()}",
+            "raw": proc.stdout,
+        }
+
+    # Parse JSON: the script may emit log lines before the JSON block.
+    raw = proc.stdout
+    parsed: Optional[dict] = None
+    for line in raw.splitlines():
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                parsed = json.loads(line)
+                break
+            except json.JSONDecodeError:
+                pass
+    if parsed is None:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return {**_empty, "ok": False, "run_id": target, "error": "json_parse_error", "raw": raw}
+
+    return {
+        "ok": True,
+        "run_id": parsed.get("run_id", target),
+        "divergence_count": parsed.get("divergence_count", 0),
+        "high_activity_count": parsed.get("high_activity_count", 0),
+        "parallel_moments": parsed.get("parallel_moments", 0),
+        "total_events": parsed.get("total_events", 0),
+        "divergences": parsed.get("divergences", []),
+        "raw": raw,
+        "error": None,
+    }
+
+
 def runWorkflow(
     run_id: Optional[str] = None,
     limit: int = 5,
@@ -132,97 +213,10 @@ def runWorkflow(
         raw                 -- str: raw stdout (JSON string)
         error               -- str | None: error message on failure.
     """
-    _empty: dict = {
-        "ok": True,
-        "run_id": run_id,
-        "divergence_count": 0,
-        "high_activity_count": 0,
-        "parallel_moments": 0,
-        "total_events": 0,
-        "divergences": [],
-        "raw": "",
-        "error": None,
-    }
-
-    # Fast path: no traces at all — skip subprocess entirely.
-    recent = tracing.recentRunIds(limit=1)
-    if not recent and run_id is None:
-        LOG.info("trace_replay_workflow: no archived runs; skipping replay.")
-        _empty["error"] = "no_traces"
+    target, cli_args, _empty = _buildWorkflowEnv(run_id, limit)
+    if target is None:
         return _empty
-
-    # Resolve target run_id.
-    target = run_id or (recent[0] if recent else None)
-
-    # Build CLI args for the optimized invocation.
-    args: list[str] = [
-        sys.executable,
-        str(_SCRIPT),
-        "--format", "json",
-        "--no-color",
-    ]
-    if target:
-        args += ["--run-id", target]
-    else:
-        args += ["--limit", str(limit)]
-
-    try:
-        proc = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except subprocess.TimeoutExpired:
-        return {**_empty, "ok": False, "error": "timeout", "run_id": target}
-    except Exception as exc:  # noqa: BLE001
-        return {**_empty, "ok": False, "error": str(exc), "run_id": target}
-
-    if proc.returncode != 0:
-        return {
-            **_empty,
-            "ok": False,
-            "run_id": target,
-            "error": f"exit {proc.returncode}: {proc.stderr.strip()}",
-            "raw": proc.stdout,
-        }
-
-    # Parse the JSON lines: the script may emit log lines before the JSON block.
-    raw = proc.stdout
-    parsed: Optional[dict] = None
-    for line in raw.splitlines():
-        line = line.strip()
-        if line.startswith("{"):
-            try:
-                parsed = json.loads(line)
-                break
-            except json.JSONDecodeError:
-                pass
-
-    if parsed is None:
-        # Fallback: try parsing the entire stdout as JSON.
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            return {
-                **_empty,
-                "ok": False,
-                "run_id": target,
-                "error": "json_parse_error",
-                "raw": raw,
-            }
-
-    return {
-        "ok": True,
-        "run_id": parsed.get("run_id", target),
-        "divergence_count": parsed.get("divergence_count", 0),
-        "high_activity_count": parsed.get("high_activity_count", 0),
-        "parallel_moments": parsed.get("parallel_moments", 0),
-        "total_events": parsed.get("total_events", 0),
-        "divergences": parsed.get("divergences", []),
-        "raw": raw,
-        "error": None,
-    }
+    return _executeWorkflowPhases(target, cli_args, _empty)
 
 
 def buildStepSpec(

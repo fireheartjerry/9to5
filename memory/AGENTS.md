@@ -10,11 +10,53 @@ Obsidian-backed memory layer (see memory.obsidian).
 - Test: (none)
 
 ## memory/experience.py
-Experience Ledger -- Layer 0 of the Self-Improvement Engine.
-- Exports: close_pool, init, record_run, record_subtask, set_subtask_embedding, embedded_subtasks, record_eval, sync_run, sync_subtask, upsert_lesson, fetch_lessons, clear_lessons, set_arm, fetch_arms, clear_arms, register_variant, get_champion, get_champion_body, get_champion_provenance, fetch_variants, promote_variant, tag_run_prompt, prompt_field_stats, register_adapter, get_champion_adapter, fetch_adapters, promote_adapter, retire_champion_adapter, record_feedback, fetch_feedback, upsert_failure_mode, fetch_failure_modes, upsert_solution, get_solution, upsert_kg_node, fetch_kg_nodes, record_reflection, fetch_reflections, fetch_runs, fetch_subtasks, gold_examples, fitness_series, counts, backfill_from_store
-- Depends on: config, state.task
+Experience Ledger -- thin re-export facade. See sub-modules for implementation.
+- Exports: (none)
+- Depends on: memory.experience_adapters, memory.experience_policy, memory.experience_runs, memory.experience_schema, memory.experience_solutions, memory.experience_subtasks
 - Side effects: unannotated
 - Test: pytest tests/test_experience_ledger.py
+
+## memory/experience_adapters.py
+Adapter / feedback / failure-mode learning stores.
+- Exports: register_adapter, get_champion_adapter, fetch_adapters, promote_adapter, retire_champion_adapter, record_feedback, fetch_feedback, upsert_failure_mode, fetch_failure_modes
+- Depends on: memory.experience_schema
+- Side effects: unannotated
+- Test: (none)
+
+## memory/experience_policy.py
+Policy / bandit / prompt-variant learning stores.
+- Exports: upsert_lesson, fetch_lessons, clear_lessons, set_arm, fetch_arms, clear_arms, register_variant, get_champion, get_champion_body, get_champion_provenance, fetch_variants, promote_variant, tag_run_prompt, prompt_field_stats
+- Depends on: memory.experience_schema
+- Side effects: unannotated
+- Test: (none)
+
+## memory/experience_runs.py
+Experience Ledger -- run-level records (record, sync, fetch, analytics).
+- Exports: record_run, sync_run, record_eval, fetch_runs, gold_examples, fitness_series, counts, backfill_from_store
+- Depends on: config, memory.experience_schema, memory.experience_subtasks, state.task
+- Side effects: unannotated
+- Test: (none)
+
+## memory/experience_schema.py
+Experience Ledger schema, connection pool, and shared utilities.
+- Exports: close_pool, init
+- Depends on: config
+- Side effects: unannotated
+- Test: (none)
+
+## memory/experience_solutions.py
+Solution cache / knowledge-graph / reflection learning stores.
+- Exports: upsert_solution, get_solution, upsert_kg_node, fetch_kg_nodes, record_reflection, fetch_reflections
+- Depends on: memory.experience_schema
+- Side effects: unannotated
+- Test: (none)
+
+## memory/experience_subtasks.py
+Experience Ledger -- subtask-level records (record, sync, embedding, fetch).
+- Exports: record_subtask, sync_subtask, set_subtask_embedding, embedded_subtasks, fetch_subtasks
+- Depends on: config, memory.experience_schema
+- Side effects: unannotated
+- Test: (none)
 
 ## memory/obsidian.py
 Obsidian memory layer: REST-first, disk-fallback note writer/reader.

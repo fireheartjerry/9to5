@@ -4,6 +4,7 @@ import unittest
 from unittest import mock
 
 import knowledge
+import knowledge_compress
 
 
 class TestPureHelpers(unittest.TestCase):
@@ -57,7 +58,7 @@ class TestInjectCapabilities(unittest.TestCase):
 
     def test_passthrough_when_no_caps(self):
         knowledge.setCapabilities("")
-        with mock.patch.object(knowledge, "ensureCapabilities", return_value=""):
+        with mock.patch.object(knowledge_compress, "ensureCapabilities", return_value=""):
             self.assertEqual(knowledge.injectCapabilities("SYS"), "SYS")
 
 

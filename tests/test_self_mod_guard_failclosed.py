@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 from agents import hooks
+from agents import hooks_selfmod
 
 
 class TestGuardFailClosed(unittest.TestCase):
@@ -27,13 +28,13 @@ class TestGuardFailClosed(unittest.TestCase):
     def test_internal_error_with_write_target_blocks(self):
         """An exception after the write target is identified must exit 2 (block), not 0 (allow)."""
         data = {"tool_name": "Edit", "tool_input": {"file_path": r"C:\9to5\.env"}}
-        with mock.patch.object(hooks, "_resolveState", side_effect=RuntimeError("malformed meta")):
+        with mock.patch.object(hooks_selfmod, "_resolveState", side_effect=RuntimeError("malformed meta")):
             code = self._run(data)
         self.assertEqual(code, 2, "guard failed OPEN on internal error (should fail CLOSED)")
 
     def test_internal_error_bash_write_target_blocks(self):
         data = {"tool_name": "Bash", "tool_input": {"command": "echo x > config.py"}}
-        with mock.patch.object(hooks, "_resolveState", side_effect=RuntimeError("boom")):
+        with mock.patch.object(hooks_selfmod, "_resolveState", side_effect=RuntimeError("boom")):
             code = self._run(data)
         self.assertEqual(code, 2)
 
@@ -52,25 +53,25 @@ class TestGuardFailClosed(unittest.TestCase):
         """A Bash command STARTING with mv/cp onto a hard-boundary file must be inspected + blocked --
         the old ' mv '/' cp ' substring tokens missed a command-initial mv/cp (fail-open)."""
         data = {"tool_name": "Bash", "tool_input": {"command": "mv secrets.txt .env"}}
-        with mock.patch.object(hooks, "_resolveState", return_value=(self._state_with_env_boundary(), True)), \
-                mock.patch.object(hooks, "_envTaskRequested", return_value=True), \
-                mock.patch.object(hooks, "_coreLockFor", return_value=(False, ())):
+        with mock.patch.object(hooks_selfmod, "_resolveState", return_value=(self._state_with_env_boundary(), True)), \
+                mock.patch.object(hooks_selfmod, "_envTaskRequested", return_value=True), \
+                mock.patch.object(hooks_selfmod, "_coreLockFor", return_value=(False, ())):
             code = self._run(data)
         self.assertEqual(code, 2, "command-initial `mv` onto a boundary was not blocked (fail-open)")
 
     def test_cp_at_command_start_is_inspected(self):
         data = {"tool_name": "Bash", "tool_input": {"command": "cp config.py .env"}}
-        with mock.patch.object(hooks, "_resolveState", return_value=(self._state_with_env_boundary(), True)), \
-                mock.patch.object(hooks, "_envTaskRequested", return_value=True), \
-                mock.patch.object(hooks, "_coreLockFor", return_value=(False, ())):
+        with mock.patch.object(hooks_selfmod, "_resolveState", return_value=(self._state_with_env_boundary(), True)), \
+                mock.patch.object(hooks_selfmod, "_envTaskRequested", return_value=True), \
+                mock.patch.object(hooks_selfmod, "_coreLockFor", return_value=(False, ())):
             code = self._run(data)
         self.assertEqual(code, 2)
 
     def _block_expected(self, command: str):
         data = {"tool_name": "Bash", "tool_input": {"command": command}}
-        with mock.patch.object(hooks, "_resolveState", return_value=(self._state_with_env_boundary(), True)), \
-                mock.patch.object(hooks, "_envTaskRequested", return_value=True), \
-                mock.patch.object(hooks, "_coreLockFor", return_value=(False, ())):
+        with mock.patch.object(hooks_selfmod, "_resolveState", return_value=(self._state_with_env_boundary(), True)), \
+                mock.patch.object(hooks_selfmod, "_envTaskRequested", return_value=True), \
+                mock.patch.object(hooks_selfmod, "_coreLockFor", return_value=(False, ())):
             return self._run(data)
 
     def test_write_verbs_after_a_wrapper_word_are_blocked(self):

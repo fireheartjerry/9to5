@@ -66,6 +66,7 @@ python tools/dev.py slow-report                  # slow lane + heartbeat + durat
 python tools/dev.py context-check                # Claude-facing context budget warning
 python tools/dev.py iteration-health             # recent LLM/test-loop health summary
 python tools/dev.py bench-iteration --dry-run    # list validated iteration benchmark tasks
+python tools/dev.py size-audit                   # file/function line-count budget audit
 ```
 
 > Run tests via **pytest**, not bare `unittest`: the per-test sandbox (offline Discord/Ollama/

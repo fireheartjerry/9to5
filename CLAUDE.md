@@ -56,6 +56,25 @@ python tools/dev.py context-check
 python tools/dev.py iteration-health
 ```
 
+## Modularity Rules
+
+Every Python file must stay within the size thresholds enforced by `tools/size_audit.py`:
+
+| Threshold | Files | Functions |
+|---|---|---|
+| **ideal** | ≤300 lines | ≤25 lines |
+| **acceptable** | 301–450 lines | 26–70 lines |
+| **must_split** | >450 lines | >70 lines |
+
+Run `python tools/size_audit.py` before committing. Zero `must_split` violations is the bar.
+
+**Splitting patterns used in this codebase:**
+- Large classes → Python mixin classes (see `orchestrator_*_mixin.py`)
+- Large modules → domain sub-modules + thin re-export facade (see `memory/experience_*.py`, `notifications/discord_*.py`, `knowledge_*.py`, `config_*.py`)
+- Large functions → private helper sub-functions in the same file
+
+When splitting, preserve all public names as re-exports in the original module so callers don't break.
+
 ## Documentation Rules
 
 - Regenerate `AGENTS.md` with `python tools/repo_map.py` after exported Python structure changes.

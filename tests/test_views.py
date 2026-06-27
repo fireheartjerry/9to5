@@ -36,7 +36,10 @@ class TestSkipTargetsPending(unittest.TestCase):
     """The dashboard Skip button must queue a skip of a PENDING subtask (what the backend honors),
     not the in_progress one (which the orchestrator drops -> the button silently no-op'd)."""
     def test_skip_targets_next_pending(self):
-        from notifications import views
+        # _skipCurrent and _ownerOk live in views_control after the split; patch from there so
+        # the name look-ups inside the function see the mock (views re-exports the objects but
+        # _skipCurrent's closure still resolves names via views_control's module globals).
+        import notifications.views_control as views_control
         state = mock.Mock()
         state.task_id = "t1"
         state.subtasks = [
@@ -47,13 +50,13 @@ class TestSkipTargetsPending(unittest.TestCase):
         interaction = mock.AsyncMock()
         interaction.user.id = 1
         captured = {}
-        with mock.patch.object(views, "_ownerOk", return_value=True), \
-                mock.patch.object(views.commands, "resolveTargetTask", return_value=state), \
-                mock.patch.object(views.commands, "applyCommand",
+        with mock.patch.object(views_control, "_ownerOk", return_value=True), \
+                mock.patch.object(views_control.commands, "resolveTargetTask", return_value=state), \
+                mock.patch.object(views_control.commands, "applyCommand",
                                   side_effect=lambda bus, st, cmd: captured.setdefault("cmd", cmd) or "queued"), \
-                mock.patch.object(views.audit, "record"), \
-                mock.patch.object(views, "ControlBus"):
-            _run(views._skipCurrent(interaction, "test"))
+                mock.patch.object(views_control.audit, "record"), \
+                mock.patch.object(views_control, "ControlBus"):
+            _run(views_control._skipCurrent(interaction, "test"))
         self.assertEqual(captured["cmd"].arg, "st-002",
                          "Skip targeted a non-pending subtask (backend would drop it)")
 

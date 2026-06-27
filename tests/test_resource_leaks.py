@@ -11,6 +11,7 @@ from unittest import mock
 
 import config
 from memory import experience
+from memory import experience_schema
 
 
 class TestNewConnNoLeakOnSchemaFailure(unittest.TestCase):
@@ -21,9 +22,9 @@ class TestNewConnNoLeakOnSchemaFailure(unittest.TestCase):
     def test_conn_closed_and_not_registered_on_schema_error(self):
         before = len(experience._all_conns)
         experience._schema_ready.discard(str(self.db))
-        with mock.patch.object(experience, "_applyMigrations", side_effect=RuntimeError("bad migration")):
+        with mock.patch.object(experience_schema, "_applyMigrations", side_effect=RuntimeError("bad migration")):
             with self.assertRaises(RuntimeError):
-                experience._new_conn(str(self.db), first=True)
+                experience_schema._new_conn(str(self.db), first=True)
         self.assertEqual(len(experience._all_conns), before, "connection leaked on schema failure")
         self.assertNotIn(str(self.db), experience._schema_ready)   # not marked -> next call retries clean
 
@@ -38,7 +39,7 @@ class TestGeminiSessionNoLeak(unittest.TestCase):
                 mock.patch("agents.browser_executor.probe", return_value=True), \
                 mock.patch("agents.browser_executor.startConversation", side_effect=RuntimeError("boom")), \
                 mock.patch("agents.browser_executor.closeSession") as close, \
-                mock.patch("orchestrator.discord"):
+                mock.patch("orchestrator_review_mixin.discord"):
             orch._openGeminiSession(state)
         close.assert_called_once()              # the probe()-opened session was torn down
         self.assertIsNone(orch._gemini_session)

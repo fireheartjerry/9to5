@@ -232,6 +232,7 @@ Local commands added for agents:
 | `python tools/dev.py context-check` | Check Claude-facing context surfaces stay within budget |
 | `python tools/dev.py iteration-health` | Summarize recent hook/executor telemetry and suggest the next validation |
 | `python tools/dev.py bench-iteration` | Run the validated iteration benchmark harness |
+| `python tools/dev.py size-audit` | Bucket tracked Python files/functions by line-count budget |
 
 CI is split into path-aware lanes: docs-only, workflow-only, tooling-only, core fast, PR slow, PR
 dry-run smoke, PR E2E smoke, and nightly/manual exhaustive slow+smoke.
@@ -248,3 +249,12 @@ The second observability pass measures the LLM loop itself, not just pytest:
 
 Runtime logs remain ignored. The initial context budget is advisory by default; use
 `python tools/dev.py context-check --strict` when turning it into a hard gate.
+
+## Source size budget (2026-06-26)
+
+Large files slow agent orientation and patch accuracy. Use `python tools/dev.py size-audit`
+before major refactors. Default targets:
+
+- Files: ideal <=300 lines, acceptable <=450, must split >450.
+- Functions: preferred <=25 lines, absolute max 70.
+- Per edit: load no more than 8 files and about 2000 lines of code context.

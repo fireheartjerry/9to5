@@ -10,9 +10,23 @@ Lean task-state model + JSON persistence (see state.task).
 - Test: (none)
 
 ## state/task.py
-Lean task-state model + JSON persistence.
-- Exports: nowIso, TaskState
-- Depends on: config, memory.experience, notifications.entry
+Lean task-state model + JSON persistence -- re-export facade.
+- Exports: (none)
+- Depends on: state.task_schema
 - Side effects: unannotated
 - Test: pytest tests/test_memory_subtask_manager.py tests/test_task_listrecent.py tests/test_task_save_concurrent.py
+
+## state/task_io.py
+TaskState file I/O: atomic save, load, iteration, and list helpers.
+- Exports: save, load, loadSafe, iterStored, loadLatest, listRecent
+- Depends on: config, state.task_schema
+- Side effects: writes state/tasks/<id>.json
+- Test: (none)
+
+## state/task_schema.py
+TaskState core schema, construction, accessors, and domain methods.
+- Exports: nowIso, TaskState
+- Depends on: config, memory.experience, notifications.entry, state.task_io
+- Side effects: unannotated
+- Test: (none)
 

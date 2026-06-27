@@ -15,7 +15,9 @@ from unittest import mock
 
 import config
 import orchestrator
+import orchestrator_control_mixin
 from agents import hooks
+from agents import hooks_selfmod
 from agents.verifier import _evaluate
 from learning import eval_harness
 from memory import retrieval
@@ -84,8 +86,8 @@ class TestTaskStoreBoundaryAnchored(unittest.TestCase):
 
     def _guard_code(self, file_path):
         data = {"tool_name": "Edit", "tool_input": {"file_path": file_path}}
-        with mock.patch.object(hooks, "_resolveState", return_value=(self.state, True)), \
-                mock.patch.object(hooks, "_envTaskRequested", return_value=False):
+        with mock.patch.object(hooks_selfmod, "_resolveState", return_value=(self.state, True)), \
+                mock.patch.object(hooks_selfmod, "_envTaskRequested", return_value=False):
             try:
                 hooks.selfModificationGuard(data)
             except SystemExit as e:
@@ -133,8 +135,8 @@ class TestPrePrGateDeadline(unittest.TestCase):
     def test_pre_pr_deadline_skips_pr_without_abort(self):
         orch = self._orch()
         state = types.SimpleNamespace(meta={"control_mode": "gated"}, task_id="t1")
-        with mock.patch.object(orchestrator, "discord") as d, \
-                mock.patch.object(orchestrator.time, "sleep"):
+        with mock.patch.object(orchestrator_control_mixin, "discord") as d, \
+                mock.patch.object(orchestrator_control_mixin.time, "sleep"):
             d.gateNeededEmbed.return_value = {}
             d.humanPing.return_value = ""
             orch._checkControl(state, self._bus(), mock.Mock(), gate="pre_pr")  # must NOT raise
@@ -143,8 +145,8 @@ class TestPrePrGateDeadline(unittest.TestCase):
     def test_other_gate_deadline_still_aborts(self):
         orch = self._orch()
         state = types.SimpleNamespace(meta={"control_mode": "gated"}, task_id="t1")
-        with mock.patch.object(orchestrator, "discord") as d, \
-                mock.patch.object(orchestrator.time, "sleep"):
+        with mock.patch.object(orchestrator_control_mixin, "discord") as d, \
+                mock.patch.object(orchestrator_control_mixin.time, "sleep"):
             d.gateNeededEmbed.return_value = {}
             d.humanPing.return_value = ""
             with self.assertRaises(orchestrator.AbortRun):

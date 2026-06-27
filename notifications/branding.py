@@ -21,12 +21,18 @@ RUN/TEST: python -m pytest tests/test_branding.py
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Optional
 
 import config
 from notifications import commands
 from notifications import discord_bot as discord
 from notifications import icons
+
+
+def _nowIso() -> str:
+    """RFC3339 UTC timestamp for Discord embeds."""
+    return datetime.now(timezone.utc).isoformat()
 
 BRAND = config.BRAND_COLOR
 
@@ -66,7 +72,7 @@ def brandEmbed(title: str, *, description: Optional[str] = None, color: Optional
     e: dict = {
         "title": title,
         "color": color if color is not None else BRAND,
-        "timestamp": discord._nowIso(),
+        "timestamp": _nowIso(),
         "author": {"name": f"9TO5 v{config.VERSION}"},
         "footer": {"text": f"9TO5 v{config.VERSION}" + (f" · up {uptime}" if uptime else "")},
     }

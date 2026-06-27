@@ -18,7 +18,7 @@ EXPORTS:
   runBot() -> None
 DEPENDS-ON: config, control.ControlBus, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_simulation_core.py tests/test_skill_gap_analysis_core.py
 """
 from __future__ import annotations
 
@@ -58,10 +58,65 @@ def handleCommand(content: str) -> str:
     return spine.applyCommand(ControlBus(state.task_id), state, cmd)
 
 
+async def _loadCogs(bot) -> None:  # pragma: no cover
+    """Load all EXTENSIONS into bot; a bad cog is logged and skipped, never killing the bot."""
+    for ext in EXTENSIONS:
+        try:
+            await bot.load_extension(ext)
+            LOG.info("loaded extension %s", ext)
+        except Exception as e:  # noqa: BLE001
+            LOG.exception("failed to load extension %s: %s", ext, e)
+
+
+async def _setupPersistentViews(bot) -> None:  # pragma: no cover
+    """Provision app-emoji icons then register persistent views and dynamic items."""
+    try:
+        from notifications import icons
+        await asyncio.to_thread(icons.ensureIcons)
+    except Exception:  # noqa: BLE001
+        pass
+    from notifications import views
+    from notifications.bot.ui.dynamic import SubtaskButton
+    bot.add_view(views.ControlPanelView())   # persistent: matches cp_* anywhere
+    bot.add_view(views.BlockedView())         # persistent: matches sc_*
+    bot.add_dynamic_items(SubtaskButton)      # stateless per-subtask skip/inspect (Tier 2)
+
+
+async def _syncCommandTree(bot) -> None:  # pragma: no cover
+    """Sync the slash command tree (guild-scoped is instant; global ~1 h)."""
+    import discord
+    try:
+        if config.DISCORD_GUILD_ID:
+            guild = discord.Object(id=config.DISCORD_GUILD_ID)
+            bot.tree.copy_global_to(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
+        else:
+            synced = await bot.tree.sync()
+        LOG.info("synced %d slash command(s)", len(synced))
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("slash sync failed: %s", e)
+
+
+async def _onAppError(interaction, error) -> None:  # pragma: no cover  # noqa: ANN001
+    """Global app-command error handler registered on bot.tree."""
+    from discord import app_commands
+    if isinstance(error, app_commands.CommandOnCooldown):
+        msg = f" Slow down — try again in {error.retry_after:.0f}s."
+    else:
+        LOG.exception("slash error: %s", error)
+        msg = "internal error (see logs)"
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(msg, ephemeral=True)
+        else:
+            await interaction.response.send_message(msg, ephemeral=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def buildBot():  # pragma: no cover -- requires discord + a gateway connection
     """Construct (but do not run) the NightclawBot. Lazy-imports discord."""
     import discord
-    from discord import app_commands
     from discord.ext import commands as dpy_commands
 
     intents = discord.Intents.default()
@@ -75,37 +130,9 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
             self._presence_started = False
 
         async def setup_hook(self) -> None:
-            # 1) feature cogs (hot-reloadable via /reload)
-            for ext in EXTENSIONS:
-                try:
-                    await self.load_extension(ext)
-                    LOG.info("loaded extension %s", ext)
-                except Exception as e:  # noqa: BLE001 -- one bad cog must not kill the bot
-                    LOG.exception("failed to load extension %s: %s", ext, e)
-            # 2) provision the professional app-emoji icon set FIRST, so persistent views can put
-            #    the icons on their buttons when constructed below (best-effort, off the loop).
-            try:
-                from notifications import icons
-                await asyncio.to_thread(icons.ensureIcons)
-            except Exception:  # noqa: BLE001
-                pass
-            # 3) persistent views + dynamic items (all slash commands now live in cogs above)
-            from notifications import views
-            from notifications.bot.ui.dynamic import SubtaskButton
-            self.add_view(views.ControlPanelView())   # persistent: matches cp_* anywhere
-            self.add_view(views.BlockedView())         # persistent: matches sc_*
-            self.add_dynamic_items(SubtaskButton)      # stateless per-subtask skip/inspect (Tier 2)
-            # 4) sync the command tree (guild-scoped is instant; global ~1h)
-            try:
-                if config.DISCORD_GUILD_ID:
-                    guild = discord.Object(id=config.DISCORD_GUILD_ID)
-                    self.tree.copy_global_to(guild=guild)
-                    synced = await self.tree.sync(guild=guild)
-                else:
-                    synced = await self.tree.sync()
-                LOG.info("synced %d slash command(s)", len(synced))
-            except Exception as e:  # noqa: BLE001
-                LOG.warning("slash sync failed: %s", e)
+            await _loadCogs(self)
+            await _setupPersistentViews(self)
+            await _syncCommandTree(self)
 
         async def on_ready(self) -> None:
             if not self._presence_started:
@@ -122,9 +149,8 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
             if config.DISCORD_CHANNEL_ID and message.channel.id != config.DISCORD_CHANNEL_ID:
                 return
             try:
-                # off the event loop: handleCommand does blocking ControlBus file IO (atomic temp +
-                # os.replace with backoff sleeps, the _fileLock sidecar). Running it inline froze the
-                # gateway's heartbeat/other handlers for the duration under contention.
+                # Off the event loop: handleCommand does blocking ControlBus file IO.
+                # Running it inline froze the gateway's heartbeat under contention.
                 reply = await asyncio.to_thread(handleCommand, message.content)
             except Exception:  # noqa: BLE001
                 LOG.exception("command error")
@@ -136,8 +162,7 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
             await self.wait_until_ready()
 
             def _presenceName() -> str:
-                # off the event loop: resolveTargetTask is a glob + JSON read; running it (and
-                # state.progress) inline every tick stalled the heartbeat under disk contention.
+                # Off the event loop: resolveTargetTask is a glob + JSON read.
                 state = spine.resolveTargetTask()
                 if state is not None and spine.isRunActive(state):
                     done, total = state.progress()
@@ -154,22 +179,7 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
                 await asyncio.sleep(config.PRESENCE_INTERVAL)
 
     bot = NightclawBot()
-
-    @bot.tree.error
-    async def _on_app_error(interaction, error):  # noqa: ANN001
-        if isinstance(error, app_commands.CommandOnCooldown):
-            msg = f" Slow down — try again in {error.retry_after:.0f}s."
-        else:
-            LOG.exception("slash error: %s", error)
-            msg = "internal error (see logs)"
-        try:
-            if interaction.response.is_done():
-                await interaction.followup.send(msg, ephemeral=True)
-            else:
-                await interaction.response.send_message(msg, ephemeral=True)
-        except Exception:  # noqa: BLE001
-            pass
-
+    bot.tree.error(_onAppError)
     return bot
 
 

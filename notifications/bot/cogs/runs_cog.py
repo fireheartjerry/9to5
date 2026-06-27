@@ -23,6 +23,76 @@ from notifications import slash
 from state.task import TaskState
 
 
+async def _validatePrContext(interaction, task_id: str) -> "TaskState | None":
+    """Validate task exists, is loadable, and has a terminal status (done/partial).
+
+    Sends an ephemeral error reply and returns None on any failure; returns the
+    loaded TaskState on success.
+    """
+    if not work_launcher.taskExists(task_id):
+        await interaction.followup.send(
+            f"❌ Task `{task_id}` not found. Use autocomplete to pick from recent runs.",
+            ephemeral=True)
+        return None
+    state = TaskState.loadSafe(task_id)
+    if state is None:
+        await interaction.followup.send(
+            f"❌ Task `{task_id}` state file is corrupt (unreadable JSON).", ephemeral=True)
+        return None
+    status = state.meta.get("status", "unknown")
+    if status not in ("done", "partial"):
+        await interaction.followup.send(
+            f"❌ Task `{task_id}` is not done yet (status: `{status}`). "
+            f"Only completed runs can create PRs.", ephemeral=True)
+        return None
+    return state
+
+
+async def _buildPrAndReport(interaction, state: "TaskState", task_id: str) -> None:
+    """Send a progress message, create the PR in a thread, then post the result embed."""
+    goal = state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "(unknown goal)")
+    done, total = state.progress()
+    await interaction.followup.send(
+        f"🔄 Creating PR for `{task_id}` ({done}/{total} subtasks)…", ephemeral=True)
+    audit.record(interaction.user.id, "create_pr", task_id, "slash")
+
+    def _sync() -> "tuple[bool, str, str]":
+        from orchestrator import Orchestrator
+        from notifications import discord_bot as discord_notify
+        try:
+            orch = Orchestrator()
+            work_dir = state.meta.get("work_dir") or config.PROJECT_ROOT
+            pr = orch.createPullRequest(state, work_dir)
+            if pr.get("url"):
+                pr_url = pr["url"]
+                try:
+                    embed = discord_notify.noticeEmbed(
+                        f"Manual PR created: {pr_url}\n\n**Goal:** {goal[:200]}",
+                        "✅ PR Created (Manual)")
+                    discord_notify.sendEmbed(embed)
+                except Exception:  # noqa: BLE001
+                    pass
+                return True, pr_url, ""
+            return False, "", pr.get("reason", "unknown error")
+        except Exception as e:  # noqa: BLE001
+            _log = config.getLogger("create_pr")
+            _log.exception("PR creation failed")
+            return False, "", f"{type(e).__name__}: {str(e)[:150]}"
+
+    ok, pr_url, error = await asyncio.to_thread(_sync)
+    if ok:
+        await interaction.followup.send(
+            f"✅ **PR created successfully!**\n{pr_url}", ephemeral=True)
+    else:
+        await interaction.followup.send(
+            f"❌ **PR creation failed:**\n```\n{error[:500]}\n```\n\n"
+            f"Common causes:\n"
+            f"• No tracked changes on branch\n"
+            f"• Branch deleted or force-pushed\n"
+            f"• Git auth issue (check credentials)\n"
+            f"• Network error (check connection)", ephemeral=True)
+
+
 class RunsCog(dpy_commands.Cog):
     def __init__(self, bot: dpy_commands.Bot) -> None:
         self.bot = bot
@@ -125,74 +195,10 @@ class RunsCog(dpy_commands.Cog):
         if not slash._ownerOk(interaction):
             return await interaction.response.send_message("Not authorized.", ephemeral=True)
         await interaction.response.defer(ephemeral=True)
-
-        # Resolve task ID
-        if not work_launcher.taskExists(task_id):
-            return await interaction.followup.send(
-                f"❌ Task `{task_id}` not found. Use autocomplete to pick from recent runs.",
-                ephemeral=True)
-
-        state = TaskState.loadSafe(task_id)
+        state = await _validatePrContext(interaction, task_id)
         if state is None:
-            return await interaction.followup.send(
-                f"❌ Task `{task_id}` state file is corrupt (unreadable JSON).", ephemeral=True)
-
-        # Validate task is done
-        status = state.meta.get("status", "unknown")
-        if status not in ("done", "partial"):
-            return await interaction.followup.send(
-                f"❌ Task `{task_id}` is not done yet (status: `{status}`). "
-                f"Only completed runs can create PRs.", ephemeral=True)
-
-        goal = state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "(unknown goal)")
-        done, total = state.progress()
-
-        await interaction.followup.send(
-            f"🔄 Creating PR for `{task_id}` ({done}/{total} subtasks)…", ephemeral=True)
-
-        audit.record(interaction.user.id, "create_pr", task_id, "slash")
-
-        def create_pr_sync() -> "tuple[bool, str, str]":
-            from orchestrator import Orchestrator
-            from notifications import discord_bot as discord
-            try:
-                orch = Orchestrator()
-                work_dir = state.meta.get("work_dir") or config.PROJECT_ROOT
-                pr = orch.createPullRequest(state, work_dir)
-
-                if pr.get("url"):
-                    pr_url = pr["url"]
-                    # Post success embed to Discord
-                    try:
-                        embed = discord.noticeEmbed(
-                            f"Manual PR created: {pr_url}\n\n**Goal:** {goal[:200]}",
-                            "✅ PR Created (Manual)")
-                        discord.sendEmbed(embed)
-                    except Exception:  # noqa: BLE001
-                        pass
-                    return True, pr_url, ""
-                else:
-                    reason = pr.get("reason", "unknown error")
-                    return False, "", reason
-            except Exception as e:  # noqa: BLE001
-                import traceback
-                LOG = config.getLogger("create_pr")
-                LOG.exception("PR creation failed")
-                return False, "", f"{type(e).__name__}: {str(e)[:150]}"
-
-        ok, pr_url, error = await asyncio.to_thread(create_pr_sync)
-
-        if ok:
-            await interaction.followup.send(
-                f"✅ **PR created successfully!**\n{pr_url}", ephemeral=True)
-        else:
-            await interaction.followup.send(
-                f"❌ **PR creation failed:**\n```\n{error[:500]}\n```\n\n"
-                f"Common causes:\n"
-                f"• No tracked changes on branch\n"
-                f"• Branch deleted or force-pushed\n"
-                f"• Git auth issue (check credentials)\n"
-                f"• Network error (check connection)", ephemeral=True)
+            return
+        await _buildPrAndReport(interaction, state, task_id)
 
 
 async def setup(bot: dpy_commands.Bot) -> None:

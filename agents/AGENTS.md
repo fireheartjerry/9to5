@@ -11,10 +11,24 @@
 
 ## agents/adversary.py
 Adversary -- independent reviewer of executor output.
-- Exports: systemFor, isCdpTransient, shouldTrigger, reviewViaBrowser, review
-- Depends on: agents.browser_executor, config, llm_io
+- Exports: reviewViaBrowser
+- Depends on: agents.adversary_browser, agents.adversary_review, agents.browser_executor, llm_io
 - Side effects: unannotated
 - Test: pytest tests/test_adversary.py
+
+## agents/adversary_browser.py
+Adversary Phase-2 Gemini-specific constants.
+- Exports: (none)
+- Depends on: (stdlib only)
+- Side effects: unannotated
+- Test: (none)
+
+## agents/adversary_review.py
+Shared adversary internals: constants, helpers, and the Ollama text-review path.
+- Exports: systemFor, isCdpTransient, shouldTrigger, review
+- Depends on: config, llm_io
+- Side effects: unannotated
+- Test: (none)
 
 ## agents/architect.py
 Architect (Step 1).
@@ -53,10 +67,31 @@ Elaborator (Step 0.5) -- Ollama expands the raw goal into a buildable spec.
 
 ## agents/executor.py
 Executor (the hands) -- run Claude Code CLI from an Orchestrator invocation spec.
-- Exports: normalizeSpec, effortFlag, scanDestructive, runClaude
-- Depends on: agents.playbook, agents.workflow_resolver, config, memory.obsidian, notifications.discord_bot
+- Exports: runClaude
+- Depends on: agents.executor_env, agents.executor_session, agents.executor_stream, agents.playbook, config, memory.obsidian
 - Side effects: unannotated
 - Test: pytest tests/test_executor.py
+
+## agents/executor_env.py
+Environment setup, prompt composition, and safety scanning for the Claude executor.
+- Exports: normalizeSpec, effortFlag, scanDestructive
+- Depends on: agents.workflow_resolver, config, notifications.discord_bot
+- Side effects: unannotated
+- Test: (none)
+
+## agents/executor_session.py
+Session token limit management for the Claude executor.
+- Exports: (none)
+- Depends on: config, notifications.discord_bot
+- Side effects: unannotated
+- Test: (none)
+
+## agents/executor_stream.py
+Subprocess management, stream parsing, and telemetry for the Claude executor.
+- Exports: runSubprocess
+- Depends on: agents.executor_env, config
+- Side effects: unannotated
+- Test: (none)
 
 ## agents/gemini_driver.py
 gemini_driver -- the second-brain transport: Google Gemini via the google-genai SDK.
@@ -67,10 +102,31 @@ gemini_driver -- the second-brain transport: Google Gemini via the google-genai 
 
 ## agents/hooks.py
 9TO5 deterministic hook dispatcher.
-- Exports: blockDestructive, writeObsidian, discordNotify, logAll, logTelemetry, selfModificationGuard, main
-- Depends on: config, memory.obsidian, notifications.discord_bot, state.task
+- Exports: discordNotify, logAll, logTelemetry, main
+- Depends on: agents.hooks_destructive, agents.hooks_obsidian, agents.hooks_selfmod, config, notifications.discord_bot
 - Side effects: unannotated
 - Test: pytest tests/test_hooks_self_path.py
+
+## agents/hooks_destructive.py
+PreToolUse hook: block destructive Bash commands before they execute.
+- Exports: blockDestructive
+- Depends on: notifications.discord_bot
+- Side effects: unannotated
+- Test: (none)
+
+## agents/hooks_obsidian.py
+PostToolUse hook: log edited file paths to the active Obsidian subtask note.
+- Exports: writeObsidian
+- Depends on: agents.hooks_selfmod, memory.obsidian
+- Side effects: unannotated
+- Test: (none)
+
+## agents/hooks_selfmod.py
+Self-modification guard: classify paths, scan diffs, and block unsafe edits.
+- Exports: selfModificationGuard
+- Depends on: config, notifications.discord_bot, state.task
+- Side effects: unannotated
+- Test: (none)
 
 ## agents/native_executor.py
 Native UI execution backend -- Layer 2 (UIA/pywinauto) "hands" for 9TO5.
@@ -81,9 +137,16 @@ Native UI execution backend -- Layer 2 (UIA/pywinauto) "hands" for 9TO5.
 
 ## agents/orchestration_pipeline.py
 Orchestration pipeline -- finer-grained step control.
-- Exports: StepResult, PipelineStep, stepFor, executionOrder, sanitizeSpec, validateSpec, fmtElapsed, singleDeliverable, resolveWorkflow, verifyStep, runSteps
-- Depends on: agents.verifier, config, src.workflow_registry
+- Exports: StepResult, sanitizeSpec, validateSpec, fmtElapsed, singleDeliverable, resolveWorkflow, verifyStep, runSteps
+- Depends on: agents.orchestration_pipeline_registry, agents.verifier, config, src.workflow_registry
 - Side effects: unannotated
+- Test: (none)
+
+## agents/orchestration_pipeline_registry.py
+Pipeline step registry for the 9TO5 orchestration pipeline.
+- Exports: PipelineStep, stepFor, executionOrder
+- Depends on: (stdlib only)
+- Side effects: none
 - Test: (none)
 
 ## agents/playbook.py
@@ -116,8 +179,8 @@ agents/timing_harness.py -- Wall-clock timing harness for parallel workflow phas
 
 ## agents/trace-replay.py
 trace-replay -- loads archived execution traces and surfaces brain divergence points.
-- Exports: replayTrace, main
-- Depends on: config, tracing
+- Exports: setColor, replayTrace, main
+- Depends on: agents.trace_replay_events, agents.trace_replay_output, agents.trace_replay_selftest, config, tracing
 - Side effects: unannotated
 - Test: (none)
 
@@ -128,10 +191,45 @@ trace_replay -- optimized workflow for invoking the trace-replay subagent.
 - Side effects: unannotated
 - Test: pytest tests/test_trace_replay.py
 
+## agents/trace_replay_events.py
+Event classification constants, pure functions, and JSON replay sub-helper.
+- Exports: (none)
+- Depends on: config, tracing
+- Side effects: unannotated
+- Test: (none)
+
+## agents/trace_replay_output.py
+ANSI color helpers and text-mode print routines for trace-replay.
+- Exports: setColor
+- Depends on: agents.trace_replay_events
+- Side effects: stdout writes
+- Test: (none)
+
+## agents/trace_replay_selftest.py
+Self-test sub-functions for agents/trace-replay.py.
+- Exports: (none)
+- Depends on: agents.trace_replay_events
+- Side effects: unannotated
+- Test: (none)
+
 ## agents/verifier.py
 Verifier -- run the brain-authored verification check for a subtask.
-- Exports: sanitizeVerify, extractRequirements, primaryTargetFile, requirementMarkers, buildContentScanVerify, buildRequirementsVerify, isStrictVerify, runVerification
+- Exports: extractRequirements, primaryTargetFile, requirementMarkers, buildContentScanVerify, buildRequirementsVerify, isStrictVerify
+- Depends on: agents.verifier_runner, agents.verifier_sanitize, config
+- Side effects: unannotated
+- Test: (none)
+
+## agents/verifier_runner.py
+Verification runner: execute brain-authored verify commands and evaluate results.
+- Exports: runVerification
 - Depends on: agents.executor, config
+- Side effects: unannotated
+- Test: (none)
+
+## agents/verifier_sanitize.py
+Sanitization guard for brain-authored verify specs.
+- Exports: sanitizeVerify
+- Depends on: config
 - Side effects: unannotated
 - Test: (none)
 

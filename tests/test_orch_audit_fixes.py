@@ -43,7 +43,7 @@ class TestGptSoftFailDisable(unittest.TestCase):
         orch._gemini_ask = lambda m: "x"
         soft = {"tier": "ollama", "verdict": "approved", "concerns": []}
         with mock.patch("agents.second_brain.consult", return_value=soft), \
-                mock.patch("orchestrator.discord"), \
+                mock.patch("orchestrator_review_mixin.discord"), \
                 mock.patch("learning.adversary_trust.record"), \
                 mock.patch.object(orch, "_worthGptReview", return_value=True):
             for _ in range(2):
@@ -56,7 +56,7 @@ class TestGptSoftFailDisable(unittest.TestCase):
         orch = _orch()
         orch._gemini_session_ok = True
         orch._gemini_ask = lambda m: "x"
-        with mock.patch("orchestrator.discord"), \
+        with mock.patch("orchestrator_review_mixin.discord"), \
                 mock.patch("learning.adversary_trust.record"), \
                 mock.patch.object(orch, "_worthGptReview", return_value=True):
             with mock.patch("agents.second_brain.consult",

@@ -227,6 +227,47 @@ Recommended role:
 - prompt/router optimizer
 - small LoRA/adapter experiment harness
 
+## Module layout (post-modularization)
+
+As of 2026-06-27, the codebase uses sub-module extraction to keep every file ≤450 lines
+and every function ≤70 lines. Key patterns:
+
+### Mixin decomposition — `orchestrator.py`
+The `Orchestrator` class is assembled from 7 focused mixin files:
+
+| Mixin | Responsibility |
+|---|---|
+| `orchestrator_llm_mixin.py` | LLM/Ollama chat, eval, model selection |
+| `orchestrator_plan_mixin.py` | Subtask planning, spec authoring, backfill |
+| `orchestrator_control_mixin.py` | Gate handling, ControlBus, Discord commands |
+| `orchestrator_execute_mixin.py` | Attempt loop, SIE, replan, subtask enrichment |
+| `orchestrator_review_mixin.py` | Adversary review, Gemini session, PR gate, git helpers |
+| `orchestrator_run_loop_mixin.py` | Execution loop, backfill drain, livelock, parallel batch |
+| `orchestrator_run_phase_mixin.py` | Run lifecycle: preamble, phases, teardown, crash/abort |
+
+Helper modules re-exported into `orchestrator.py` namespace:
+`orchestrator_brain_io.py`, `orchestrator_knowledge.py`, `orchestrator_time.py`
+
+### Sub-module extraction with re-export facade
+
+| Facade | Sub-modules |
+|---|---|
+| `config.py` | `config_paths.py`, `config_discord.py`, `config_llm.py` |
+| `knowledge.py` | `knowledge_scraper.py`, `knowledge_builder.py`, `knowledge_compress.py` |
+| `memory/experience.py` | `experience_schema.py`, `experience_runs.py`, `experience_subtasks.py`, `experience_policy.py`, `experience_adapters.py`, `experience_solutions.py` |
+| `notifications/discord_bot.py` | `discord_client.py`, `discord_embeds.py`, `discord_channels.py` |
+| `notifications/views.py` | `views_control.py`, `views_run.py`, `views_subtask.py` |
+| `notifications/visuals.py` | `visuals_components.py`, `visuals_cards.py` |
+| `agents/executor.py` | `executor_session.py`, `executor_env.py`, `executor_stream.py` |
+| `agents/hooks.py` | `hooks_selfmod.py`, `hooks_obsidian.py`, `hooks_destructive.py` |
+| `agents/verifier.py` | `verifier_sanitize.py`, `verifier_runner.py` |
+| `agents/adversary.py` | `adversary_review.py`, `adversary_browser.py` |
+| `state/task.py` | `task_schema.py`, `task_io.py` |
+| `tools/dev.py` | `dev_checks.py`, `dev_reports.py` |
+| `tools/repo_map.py` | `repo_map_render.py`, `repo_map_outputs.py` |
+
+Run `python tools/size_audit.py` to verify thresholds are met.
+
 ## Design smell checklist
 
 Be suspicious of:

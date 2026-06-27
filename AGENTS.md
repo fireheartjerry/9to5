@@ -34,14 +34,14 @@
 
 | Package | Modules | Index |
 |---|---|---|
-| `agents/` | 20 | `agents/AGENTS.md` |
+| `agents/` | 34 | `agents/AGENTS.md` |
 | `learning/` | 32 | `learning/AGENTS.md` |
-| `memory/` | 5 | `memory/AGENTS.md` |
+| `memory/` | 11 | `memory/AGENTS.md` |
 | `monitoring/` | 3 | `monitoring/AGENTS.md` |
-| `notifications/` | 38 | `notifications/AGENTS.md` |
+| `notifications/` | 46 | `notifications/AGENTS.md` |
 | `scheduling/` | 2 | `scheduling/AGENTS.md` |
 | `src/` | 2 | `src/AGENTS.md` |
-| `state/` | 2 | `state/AGENTS.md` |
+| `state/` | 4 | `state/AGENTS.md` |
 | `workflows/` | 4 | `workflows/AGENTS.md` |
-| (top-level) | 29 | this file |
+| (top-level) | 49 | this file |
 
