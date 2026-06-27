@@ -167,14 +167,11 @@ class OrchestratorReviewMixin:
         """Decide whether to create the PR. Returns (create, skip_reason)."""
         if not auto_pr:
             return False, "--no-pr"
-        # FX-18: a DEGRADED run (most subtasks failed, or core changes reverted) must NEVER open a PR,
-        # INDEPENDENT of the adversary verdict. The brain frequently auto-approves/stubs (empty
-        # completions), so gating the degraded check behind a 'challenged' verdict made it dead code.
+        # A degraded run still creates a PR so users get a concrete feedback surface, but it is
+        # clearly annotated instead of silently looking clean.
         if self._runIsDegraded(state):
             return True, "degraded run (majority failed / core reverted) - PR opened for review"
         if config.ADVERSARY_PR_HOLD_ENABLED and second_brain.is_blocking(review):
-            # Night mode normally suppresses an advisory challenge hold (hands-off); the degraded
-            # check above already covers the must-never-ship cases regardless of night mode.
             concerns = "; ".join(review.get("must_fix") or review.get("concerns") or ["challenged"])
             state.addNotification("pr_feedback", f"adversary flagged: {concerns}"[:300])
             return True, f"adversary flagged: {concerns}"[:300]

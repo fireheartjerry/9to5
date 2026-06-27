@@ -194,6 +194,8 @@ GEMINI_TIMEOUT_MS: int = _envInt("GEMINI_TIMEOUT_MS", 120000)
 GEMINI_MAX_TURNS: int = _envInt("GEMINI_MAX_TURNS", 40)        # rollover to a fresh chat
 GEMINI_MIN_OUTPUT_CHARS: int = _envInt("GEMINI_MIN_OUTPUT_CHARS", 200)   # cost guard
 GEMINI_JSON_REPAIR_RETRIES: int = _envInt("GEMINI_JSON_REPAIR_RETRIES", 1)
+# Health probe resilience: retry transient failures up to N times before falling back to Ollama
+GEMINI_HEALTH_PROBE_RETRIES: int = _envInt("GEMINI_HEALTH_PROBE_RETRIES", 2)
 GEMINI_SYSTEM_PREAMBLE: str = os.getenv(
     "GEMINI_SYSTEM_PREAMBLE",
     "You are the second brain for the 9to5 autonomous orchestrator: a strict, independent "

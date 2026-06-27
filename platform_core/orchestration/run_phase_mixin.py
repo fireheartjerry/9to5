@@ -159,7 +159,7 @@ class OrchestratorRunPhaseMixin:
         pr_review = self._prePrAdversary(state, work_dir)
         create_pr, skip_reason = self._prGate(pr_review, auto_pr, state)
         if create_pr:
-            # Final gate: never open a PR whose own test suite is red.
+            # Final check: annotate a red suite, but still open the PR so users get a review surface.
             suite_ok, suite_detail = self._prePrSuiteGate(state, work_dir)
             if not suite_ok:
                 dashboard.update(state, "executing", "PR opening with failing test-suite feedback")
@@ -174,9 +174,8 @@ class OrchestratorRunPhaseMixin:
             pr: dict = self.createPullRequest(state, work_dir)
         else:
             pr = {"skipped": True, "reason": skip_reason}
-            if skip_reason.startswith("adversary HOLD"):
-                dashboard.update(state, "executing", f"PR held by adversary: {skip_reason}")
-                state.addNotification("pr_held", skip_reason)
+            if skip_reason.startswith("adversary flagged"):
+                dashboard.update(state, "executing", f"PR opening with adversary feedback: {skip_reason}")
         return create_pr, skip_reason, pr
 
     def _phase4PrComplete(self, state: TaskState, work_dir: str, auto_pr: bool,

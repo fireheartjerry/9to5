@@ -148,7 +148,7 @@ class TestPrGateDegraded(unittest.TestCase):
         self.state.addSubtask("a", "d"); self.state.updateSubtask("st-001", status="done")
         self.assertFalse(self.orch._runIsDegraded(self.state))
 
-    def test_night_mode_holds_pr_for_degraded_run(self):
+    def test_night_mode_opens_pr_for_degraded_run(self):
         self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['config.py']", reverted=True)
         review = {"verdict": "challenged", "concerns": ["broke core"]}
         with mock.patch.object(config, "NIGHT_MODE", True), \
@@ -157,7 +157,7 @@ class TestPrGateDegraded(unittest.TestCase):
         self.assertTrue(create)                  # PR becomes the feedback surface.
         self.assertIn("degraded", reason.lower())
 
-    def test_degraded_holds_pr_even_when_adversary_approved(self):
+    def test_degraded_opens_pr_even_when_adversary_approved(self):
         # FX-18 follow-up: degraded check is unconditional, but annotates the PR instead of hiding it.
         self.state.addNotification("selfmod_gate", "REVERTED (tests failed): ['config.py']", reverted=True)
         with mock.patch.object(config, "ADVERSARY_PR_HOLD_ENABLED", True):
