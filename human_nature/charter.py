@@ -82,7 +82,9 @@ def ratify(
         raise PermissionError("charter amendments require human ratification")
 
     new_c = copy.deepcopy(charter)
-    new_c["ratified"].append(amendment)
+    ratified_amendment = copy.deepcopy(amendment)
+    ratified_amendment["status"] = "ratified"
+    new_c["ratified"].append(ratified_amendment)
     new_c["version"] = charter["version"] + 1
     return new_c
 

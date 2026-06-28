@@ -87,6 +87,8 @@ def propose_change(
     Returns:
         dict with keys: ``trait``, ``value``, ``rationale``, ``status``.
     """
+    if trait not in _VALID_TRAITS:
+        raise ValueError(f"unknown trait {trait!r}; valid traits: {sorted(_VALID_TRAITS)}")
     return {
         "trait": trait,
         "value": value,
@@ -108,6 +110,8 @@ def ratify(vec: dict[str, Any], proposal: dict[str, Any]) -> dict[str, Any]:
         New character vector with the proposed change applied.
     """
     trait = proposal["trait"]
+    if trait not in _VALID_TRAITS:
+        raise ValueError(f"unknown trait {trait!r}; valid traits: {sorted(_VALID_TRAITS)}")
     value = proposal["value"]
     new_vec = copy.deepcopy(vec)
     new_vec["traits"][trait] = _clamp(value)

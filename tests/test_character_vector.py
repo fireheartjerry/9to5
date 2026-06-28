@@ -159,3 +159,21 @@ class TestRatify:
             if trait != "honesty":
                 assert vec2["traits"][trait] == 50
         assert vec2["traits"]["honesty"] == 95
+
+    def test_ratify_rejects_unknown_trait(self):
+        vec = new_character_vector()
+        bad = {"trait": "NONEXISTENT", "value": 77, "rationale": "x", "status": "proposed"}
+        with pytest.raises(ValueError, match="unknown trait"):
+            ratify(vec, bad)
+
+
+# ---------------------------------------------------------------------------
+# set_dial() deep-copy isolation guard
+# ---------------------------------------------------------------------------
+
+class TestSetDialIsolation:
+    def test_set_dial_returned_object_is_isolated(self):
+        vec = new_character_vector()
+        vec2 = set_dial(vec, "humor", 75)
+        vec2["traits"]["humor"] = 999
+        assert vec["traits"]["humor"] == 50

@@ -85,7 +85,9 @@ class TestRatify:
         amendment = draft_amendment("Propose, never self-apply.", "core tenet")
         new_c = ratify(charter, amendment, human_token="jerry-2026-06-28")
         assert len(new_c["ratified"]) == 1
-        assert new_c["ratified"][0] is amendment
+        assert new_c["ratified"][0] == {**amendment, "status": "ratified"}
+        assert new_c["ratified"][0] is not amendment
+        assert new_c["ratified"][0]["status"] == "ratified"
 
     def test_ratify_bumps_version(self):
         charter = new_charter()
@@ -108,6 +110,13 @@ class TestRatify:
         c2 = ratify(c1, a2, human_token="tok")
         assert len(c2["ratified"]) == 2
         assert c2["version"] == 3
+
+    def test_ratify_amendment_is_isolated_from_later_mutation(self):
+        ch = new_charter()
+        amd = draft_amendment("keep composition over inheritance", "won 9/10 runs")
+        ch2 = ratify(ch, amd, human_token="jerry")
+        amd["text"] = "CORRUPTED"
+        assert ch2["ratified"][0]["text"] == "keep composition over inheritance"
 
 
 # ---------------------------------------------------------------------------
