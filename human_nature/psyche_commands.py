@@ -25,7 +25,6 @@ from typing import Any
 
 from human_nature.charter import active_tenets
 from human_nature.character_vector import set_dial
-from human_nature.self_state import get_competence
 from human_nature.user_model import snapshot
 
 

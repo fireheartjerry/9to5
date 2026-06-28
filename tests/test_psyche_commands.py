@@ -107,6 +107,14 @@ def test_cmd_dial_all_valid_traits_succeed():
 # cmd_dial — unknown trait (no exception, returns original + error text)
 # ---------------------------------------------------------------------------
 
+def test_cmd_dial_clamps_over_100():
+    """cmd_dial with value > 100 must clamp to 100 (no exception, value capped)."""
+    vec = new_character_vector()
+    new_vec, text = cmd_dial(vec, "humor", 150)
+    assert new_vec["traits"]["humor"] == 100
+    assert isinstance(text, str)
+
+
 def test_cmd_dial_unknown_trait_does_not_raise():
     vec = new_character_vector()
     # must not raise
