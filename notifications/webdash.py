@@ -199,92 +199,98 @@ def _applyControl(task_id: str, action: str, arg: Optional[str]) -> dict:
     return {"ok": True}
 
 
-def _makeHandler(task_id: str, token: str = ""):
-    class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *_a):  # silence default stderr noise
+class _DashboardHandler(BaseHTTPRequestHandler):
+    """Per-run handler; ``task_id``/``token`` are bound as class attrs by ``_makeHandler``."""
+    task_id: str = ""
+    token: str = ""
+
+    def log_message(self, *_a):  # silence default stderr noise
+        return
+
+    def _send(self, code: int, body: bytes, ctype: str) -> None:
+        # A browser tab closing mid-response drops the socket; swallow the disconnect.
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionError, ConnectionResetError, ConnectionAbortedError):
+            pass
+
+    def _serve_sse(self) -> None:
+        bus = get_bus()
+        q = bus.subscribe_sse()
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            for e in bus.history(last_n=200):
+                self._sse_write(e)
+            while not _SSE_STOP.is_set():
+                try:
+                    item = q.get(timeout=15)
+                except queue.Empty:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    continue
+                self._sse_write(item)
+        except (BrokenPipeError, ConnectionError, ConnectionResetError,
+                ConnectionAbortedError, OSError):
+            pass
+        finally:
+            bus.unsubscribe_sse(q)
+
+    def _sse_write(self, obj: dict) -> None:
+        self.wfile.write(f"data: {json.dumps(obj)}\n\n".encode("utf-8"))
+        self.wfile.flush()
+
+    def do_GET(self):  # noqa: N802
+        if self.path.startswith("/api/state"):
+            self._send(200, json.dumps(_snapshot(self.task_id)).encode("utf-8"), "application/json")
+        elif self.path.startswith("/api/events"):
+            self._serve_sse()
+        elif self.path.startswith("/api/raw"):
+            sid = (parse_qs(urlparse(self.path).query).get("sid") or [""])[0]
+            self._send(200, _raw_payload(sid).encode("utf-8"), "application/json")
+        else:
+            self._send(200, _PAGE.replace("__WEBDASH_TOKEN__", self.token).encode("utf-8"),
+                       "text/html; charset=utf-8")
+
+    def do_POST(self):  # noqa: N802
+        if not self.path.startswith("/api/control"):
+            self._send(404, b"{}", "application/json")
             return
-
-        def _send(self, code: int, body: bytes, ctype: str) -> None:
-            # A browser tab closing mid-response drops the socket; swallow the disconnect.
-            try:
-                self.send_response(code)
-                self.send_header("Content-Type", ctype)
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-            except (BrokenPipeError, ConnectionError, ConnectionResetError, ConnectionAbortedError):
-                pass
-
-        def _serve_sse(self) -> None:
-            bus = get_bus()
-            q = bus.subscribe_sse()
-            try:
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")
-                self.send_header("Cache-Control", "no-cache")
-                self.send_header("Connection", "keep-alive")
-                self.end_headers()
-                for e in bus.history(last_n=200):
-                    self._sse_write(e)
-                while not _SSE_STOP.is_set():
-                    try:
-                        item = q.get(timeout=15)
-                    except queue.Empty:
-                        self.wfile.write(b": ping\n\n")
-                        self.wfile.flush()
-                        continue
-                    self._sse_write(item)
-            except (BrokenPipeError, ConnectionError, ConnectionResetError,
-                    ConnectionAbortedError, OSError):
-                pass
-            finally:
-                bus.unsubscribe_sse(q)
-
-        def _sse_write(self, obj: dict) -> None:
-            self.wfile.write(f"data: {json.dumps(obj)}\n\n".encode("utf-8"))
-            self.wfile.flush()
-
-        def do_GET(self):  # noqa: N802
-            if self.path.startswith("/api/state"):
-                self._send(200, json.dumps(_snapshot(task_id)).encode("utf-8"), "application/json")
-            elif self.path.startswith("/api/events"):
-                self._serve_sse()
-            elif self.path.startswith("/api/raw"):
-                sid = (parse_qs(urlparse(self.path).query).get("sid") or [""])[0]
-                self._send(200, _raw_payload(sid).encode("utf-8"), "application/json")
-            else:
-                self._send(200, _PAGE.replace("__WEBDASH_TOKEN__", token).encode("utf-8"),
-                           "text/html; charset=utf-8")
-
-        def do_POST(self):  # noqa: N802
-            if not self.path.startswith("/api/control"):
-                self._send(404, b"{}", "application/json")
-                return
-            # CSRF / local-process guard: require the per-run token embedded in the served page.
-            if token and self.headers.get("X-9to5-Token") != token:
-                self._send(403, b'{"ok":false,"error":"forbidden"}', "application/json")
-                return
-            try:
-                length = int(self.headers.get("Content-Length") or 0)
-            except (TypeError, ValueError):
-                length = 0
-            length = max(0, min(length, 64_000))   # cap the read; control payloads are tiny
-            try:
-                payload = json.loads(self.rfile.read(length) or b"{}")
-                if not isinstance(payload, dict):
-                    payload = {}
-            except Exception:  # noqa: BLE001
+        # CSRF / local-process guard: require the per-run token embedded in the served page.
+        if self.token and self.headers.get("X-9to5-Token") != self.token:
+            self._send(403, b'{"ok":false,"error":"forbidden"}', "application/json")
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            length = 0
+        length = max(0, min(length, 64_000))   # cap the read; control payloads are tiny
+        try:
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            if not isinstance(payload, dict):
                 payload = {}
-            action = payload.get("action") or ""
-            if not isinstance(action, str):
-                action = ""
-            arg = payload.get("arg")
-            if arg is not None and not isinstance(arg, str):
-                arg = str(arg)
-            result = _applyControl(task_id, action, arg)
-            self._send(200, json.dumps(result).encode("utf-8"), "application/json")
+        except Exception:  # noqa: BLE001
+            payload = {}
+        action = payload.get("action") or ""
+        if not isinstance(action, str):
+            action = ""
+        arg = payload.get("arg")
+        if arg is not None and not isinstance(arg, str):
+            arg = str(arg)
+        result = _applyControl(self.task_id, action, arg)
+        self._send(200, json.dumps(result).encode("utf-8"), "application/json")
 
-    return Handler
+
+def _makeHandler(task_id: str, token: str = ""):
+    """Bind ``task_id``/``token`` onto a fresh handler subclass for this run's server."""
+    return type("Handler", (_DashboardHandler,), {"task_id": task_id, "token": token})
 
 
 _SERVER = None  # the live dashboard server, so it can be shut down between runs in one process

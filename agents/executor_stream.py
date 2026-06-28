@@ -217,6 +217,29 @@ def _drainStreaming(proc, run_prompt: str, feed, timeout: int) -> "tuple[str, st
     return out, err
 
 
+def _completeResult(proc, out: str, err, wf, run_cmd: list, base_m: dict, *,
+                    effort, flag, spec, claude_md_path, profile) -> dict:
+    """Parse the envelope, build the result dict, and record the completion metric."""
+    if config.EXECUTOR_OUTPUT_JSON:
+        text, fields = _parseEnvelope(out)
+        if not fields:   # the contract degraded silently otherwise
+            LOG.warning("EXECUTOR_OUTPUT_JSON on but no result envelope parsed (rc=%s, %dch)",
+                        proc.returncode, len(out))
+    else:
+        text, fields = out, {}
+    _scanOutput(text, spec)
+    # is_error from the envelope is the authoritative success signal -- exit code is unreliable.
+    result = _makeRunResult(proc.returncode, text, err, fields, effort=effort, flag=flag,
+                            spec=spec, claude_md_path=claude_md_path, profile=profile)
+    _recordIterationMetric(_makeMetric(
+        "completed", run_cmd, returncode=proc.returncode, ok=result["ok"],
+        skills=spec.get("skills_to_invoke"), subagent=spec.get("subagent"),
+        workflow=(spec["workflow_definition"].get("name") if wf else False),
+        session_id=fields.get("session_id"), cost_usd=fields.get("cost_usd"),
+        usage=fields.get("usage"), num_turns=fields.get("num_turns"), **base_m))
+    return result
+
+
 def runSubprocess(run_cmd: list, run_prompt: str, *, work: str, timeout: int, env: dict,
                   creationflags: int, spec: dict, effort: str, flag, profile,
                   playbook_md: str, claude_md_path, model: str, feed=None) -> dict:
@@ -252,26 +275,9 @@ def runSubprocess(run_cmd: list, run_prompt: str, *, work: str, timeout: int, en
             out, err = _drainStreaming(proc, run_prompt, feed, timeout)
         else:
             out, err = proc.communicate(input=run_prompt, timeout=timeout)
-        out = out or ""
-        if config.EXECUTOR_OUTPUT_JSON:
-            text, fields = _parseEnvelope(out)
-            if not fields:   # the contract degraded silently otherwise
-                LOG.warning("EXECUTOR_OUTPUT_JSON on but no result envelope parsed (rc=%s, %dch)",
-                            proc.returncode, len(out))
-        else:
-            text, fields = out, {}
-        _scanOutput(text, spec)
-        # is_error from the envelope is the authoritative success signal -- exit code is unreliable.
-        result = _makeRunResult(proc.returncode, text, err, fields,
-                                effort=effort, flag=flag, spec=spec,
-                                claude_md_path=claude_md_path, profile=profile)
-        _recordIterationMetric(_makeMetric(
-            "completed", run_cmd, returncode=proc.returncode, ok=result["ok"],
-            skills=spec.get("skills_to_invoke"), subagent=spec.get("subagent"),
-            workflow=(spec["workflow_definition"].get("name") if wf else False),
-            session_id=fields.get("session_id"), cost_usd=fields.get("cost_usd"),
-            usage=fields.get("usage"), num_turns=fields.get("num_turns"), **base_m))
-        return result
+        return _completeResult(proc, out or "", err, wf, run_cmd, base_m,
+                               effort=effort, flag=flag, spec=spec,
+                               claude_md_path=claude_md_path, profile=profile)
     except subprocess.TimeoutExpired:
         _killProcessTree(proc.pid)   # stop the work, no orphan leak, drain returns immediately
         try:

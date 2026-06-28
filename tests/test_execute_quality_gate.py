@@ -30,7 +30,7 @@ class TestSelfRefQualityGate(unittest.TestCase):
                 return _cp(stdout="tests/test_github_pr_gate.py\n")
             return _cp(stdout="ok")
 
-        with mock.patch("platform_core.orchestration.execute_mixin.subprocess.run", side_effect=fake_run):
+        with mock.patch("platform_core.orchestration.self_ref_gate.subprocess.run", side_effect=fake_run):
             ok, detail = _ConcreteExecuteMixin()._selfRefQualityGate("C:\\9to5")
 
         self.assertTrue(ok, detail)
@@ -47,7 +47,7 @@ class TestSelfRefQualityGate(unittest.TestCase):
             calls.append(cmd)
             return _cp(stdout="")
 
-        with mock.patch("platform_core.orchestration.execute_mixin.subprocess.run", side_effect=fake_run):
+        with mock.patch("platform_core.orchestration.self_ref_gate.subprocess.run", side_effect=fake_run):
             ok, _ = _ConcreteExecuteMixin()._selfRefQualityGate("C:\\9to5")
 
         self.assertTrue(ok)
@@ -55,7 +55,7 @@ class TestSelfRefQualityGate(unittest.TestCase):
 
     def test_blocks_on_repo_gate_failure(self):
         failed = _cp(returncode=1, stdout="stale repo map")
-        with mock.patch("platform_core.orchestration.execute_mixin.subprocess.run", return_value=failed) as run:
+        with mock.patch("platform_core.orchestration.self_ref_gate.subprocess.run", return_value=failed) as run:
             ok, detail = _ConcreteExecuteMixin()._selfRefQualityGate("C:\\9to5")
 
         self.assertFalse(ok)

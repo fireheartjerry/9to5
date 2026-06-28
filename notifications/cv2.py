@@ -110,6 +110,22 @@ def _healthToken(state) -> str:
     return f"{dot} {score}"
 
 
+def _metaBlock(m: dict, cur_txt: str, model, effort: str, done: int, total: int,
+               replans: int, advs: int, verify_txt: str, state) -> str:
+    """The cockpit metadata text block (current/model/elapsed/health/verify/workdir)."""
+    return (
+        f"**Current** {cur_txt}\n"
+        f"**Model** `{model or config.PRIMARY_MODEL}`  ·  **Mode** `{m.get('control_mode', 'watch')}`"
+        f"  ·  **Effort** {discord.effortBar(effort)}\n"
+        f"**Elapsed** {elapsedStr(m.get('started_at'))}  ·  **ETA** {etaStr(m.get('started_at'), done, total)}"
+        f"  ·  {icons.prefix('replan') or ('replan ' if replans == 1 else 'replans ')}{replans}"
+        f"  ·  {icons.prefix('adversary') or ('adversary ' if advs == 1 else 'adversaries ')}{advs}"
+        f"  ·  **Health** {_healthToken(state)}\n"
+        f"**Last verify** {verify_txt}\n"
+        f"**Working dir** `{discord.truncate(m.get('work_dir') or '—', 160)}`"
+    )
+
+
 # ---- the cockpit ------------------------------------------------------------
 def buildCockpit(state, phase: str, *, events: Optional[list] = None,
                  model: Optional[str] = None, effort: str = "default",
@@ -160,17 +176,8 @@ def buildCockpit(state, phase: str, *, events: Optional[list] = None,
         children.append(media_gallery([image_url]))
 
     children.append(separator())
-    children.append(text(
-        f"**Current** {cur_txt}\n"
-        f"**Model** `{model or config.PRIMARY_MODEL}`  ·  **Mode** `{m.get('control_mode', 'watch')}`"
-        f"  ·  **Effort** {discord.effortBar(effort)}\n"
-        f"**Elapsed** {elapsedStr(m.get('started_at'))}  ·  **ETA** {etaStr(m.get('started_at'), done, total)}"
-        f"  ·  {icons.prefix('replan') or ('replan ' if replans == 1 else 'replans ')}{replans}"
-        f"  ·  {icons.prefix('adversary') or ('adversary ' if advs == 1 else 'adversaries ')}{advs}"
-        f"  ·  **Health** {_healthToken(state)}\n"
-        f"**Last verify** {verify_txt}\n"
-        f"**Working dir** `{discord.truncate(m.get('work_dir') or '—', 160)}`"
-    ))
+    children.append(text(_metaBlock(m, cur_txt, model, effort, done, total,
+                                    replans, advs, verify_txt, state)))
 
     ev = events or []
     children.append(separator())
