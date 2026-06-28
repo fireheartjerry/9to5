@@ -10,6 +10,7 @@ RUN/TEST: python -m pytest tests/test_github_pr_gate.py
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 
@@ -37,6 +38,11 @@ def createPullRequest(state, work_dir: str) -> dict:
         if chk.returncode != 0 or "true" not in (chk.stdout or "").lower():
             LOG.info("PR skipped: %s is not a git repository", work_dir)
             return {"skipped": True, "reason": "not a git repository"}
+        remote = git("remote", "get-url", "origin")
+        if remote.returncode != 0 or not (remote.stdout or "").strip():
+            return {"skipped": True, "reason": "no origin remote configured"}
+        if not shutil.which("gh"):
+            return {"skipped": True, "reason": "GitHub CLI not found on PATH"}
         branch = state.meta.get("self_ref_branch") or f"9to5/{state.task_id[:8]}"
         git("checkout", "-B", branch)
         git("add", "-A", "--", ".", ":(exclude).sc-ctx", ":(exclude)**/__pycache__/**", ":(exclude)**/*.pyc")
@@ -50,6 +56,9 @@ def createPullRequest(state, work_dir: str) -> dict:
         if commit.returncode != 0 and "nothing to commit" in ((commit.stdout or "") + (commit.stderr or "")).lower():
             LOG.warning("PR skipped: no tracked changes to commit (work may have landed in .sc-ctx)")
             return {"skipped": True, "reason": "no tracked changes produced"}
+        if commit.returncode != 0:
+            detail = ((commit.stderr or "") + (commit.stdout or "")).strip()[:200]
+            return {"skipped": True, "reason": f"git commit failed: {detail}"}
         push = git("push", "-u", "origin", branch)
         if push.returncode != 0:
             return {"skipped": True, "reason": f"git push failed: {(push.stderr or '')[:200]}"}

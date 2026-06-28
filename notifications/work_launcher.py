@@ -7,7 +7,9 @@ EXPORTS:
   WorkRequest
   parseHours(raw) -> float  -- Tolerant parse ('2', '2h', '1.5')
   validate(req: WorkRequest) -> list[str]
+  externalReadiness(req: WorkRequest) -> list[str]  -- Warn about external-project setup gaps that degrade PR output, without blocking launch.
   buildArgv(req: WorkRequest) -> list[str]
+  prepareExternalRepo(req: WorkRequest) -> None  -- Clone repo_url into a managed workspace and mutate req.work_dir for this launch.
   activeRun() -> Optional[TaskState]  -- The latest task iff it's still active
   newestTaskSince(ts: float) -> Optional[str]  -- task_id of the newest state file created at/after `ts` (with ~2s mtime fuzz for filesys…
   spawn(req: WorkRequest) -> int
@@ -16,7 +18,7 @@ EXPORTS:
   spawnResume(task_id: str) -> int
   launchOrError(req: WorkRequest) -> str  -- Validate -> block-if-active -> spawn -> confirm
   resumeOrError(task_id: str) -> str  -- Resume an existing task by id (block if a run is active)
-DEPENDS-ON: config, notifications.commands, platform_core.runtime.control, state.task
+DEPENDS-ON: config, notifications.commands, platform_core.ops.external_project, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_work_launcher.py
 """
@@ -24,6 +26,7 @@ from __future__ import annotations
 
 import math
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -74,6 +77,8 @@ class WorkRequest:
     mode: str = "watch"
     parallel: int = 1
     work_dir: Optional[str] = None
+    repo_url: Optional[str] = None
+    repo_ref: Optional[str] = None
     no_pr: bool = False
     night_mode: bool = False
 
@@ -107,9 +112,46 @@ def validate(req: WorkRequest) -> list[str]:
         errs.append(f"Mode must be one of {VALID_MODES}.")
     if not (1 <= req.parallel <= MAX_PARALLEL):
         errs.append(f"Parallel must be between 1 and {MAX_PARALLEL}.")
+    if req.repo_url and req.work_dir:
+        errs.append("repo_url and work_dir are mutually exclusive.")
+    if req.repo_ref and not req.repo_url:
+        errs.append("repo_ref requires repo_url.")
     if req.work_dir and not Path(req.work_dir).is_dir():
         errs.append(f"work_dir does not exist or is not a directory: {req.work_dir}")
     return errs
+
+
+def externalReadiness(req: WorkRequest) -> list[str]:
+    """Warn about external-project setup gaps that degrade PR output, without blocking launch."""
+    if not req.work_dir:
+        return []
+    work = Path(req.work_dir).resolve()
+    if work == config.PROJECT_ROOT.resolve():
+        return []
+    if not shutil.which("git"):
+        return ["External project: git is not installed, so PR output will be skipped."]
+    warnings: list[str] = []
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", *args], cwd=str(work), capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL, env=env, timeout=config.GIT_TIMEOUT_SECONDS)
+
+    try:
+        inside = git("rev-parse", "--is-inside-work-tree")
+        if inside.returncode != 0 or "true" not in (inside.stdout or "").lower():
+            return ["External project: not a git repo, so the run can edit files but cannot open a PR."]
+        remote = git("remote", "get-url", "origin")
+        if remote.returncode != 0 or not (remote.stdout or "").strip():
+            warnings.append("External project: no `origin` remote, so PR push/create will be skipped.")
+    except subprocess.TimeoutExpired:
+        warnings.append("External project: git preflight timed out; PR output may be skipped.")
+    except Exception as e:  # noqa: BLE001
+        warnings.append(f"External project: git preflight failed ({e}); PR output may be skipped.")
+    if not shutil.which("gh"):
+        warnings.append("External project: `gh` is not on PATH, so GitHub PR creation will be skipped.")
+    return warnings
 
 
 def buildArgv(req: WorkRequest) -> list[str]:
@@ -129,7 +171,21 @@ def buildArgv(req: WorkRequest) -> list[str]:
         argv.append("--night-mode")
     if req.work_dir:
         argv += ["--work-dir", str(Path(req.work_dir).resolve())]
+    if req.repo_url:
+        argv += ["--repo-url", req.repo_url]
+    if req.repo_ref:
+        argv += ["--repo-ref", req.repo_ref]
     return argv
+
+
+def prepareExternalRepo(req: WorkRequest) -> None:
+    """Clone repo_url into a managed workspace and mutate req.work_dir for this launch."""
+    if not req.repo_url:
+        return
+    from platform_core.ops.external_project import cloneRepo
+    req.work_dir = str(cloneRepo(req.repo_url, req.repo_ref))
+    req.repo_url = None
+    req.repo_ref = None
 
 
 def activeRun() -> Optional[TaskState]:
@@ -257,6 +313,11 @@ def launchOrError(req: WorkRequest) -> str:
     if active is not None:
         return (f"⛔ A run is already active (`{active.task_id[:8]}` · "
                 f"`{active.meta.get('status')}`). Abort it first.")
+    try:
+        prepareExternalRepo(req)
+    except Exception as e:  # noqa: BLE001
+        LOG.exception("external repo clone failed")
+        return f"❌ Clone failed: {e}"
     t0 = time.time()
     try:
         pid = spawn(req)
@@ -271,10 +332,17 @@ def launchOrError(req: WorkRequest) -> str:
         time.sleep(0.5)
     web = f"http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/"
     if task_id:
-        return (f"✅ Launched run `{task_id[:8]}` (pid {pid}) · mode `{req.mode}` · "
-                f"{req.hours}h · parallel {req.parallel}\n{web}")
-    return (f"✅ Launch started (pid {pid}) · mode `{req.mode}` · {req.hours}h. "
-            f"If no dashboard appears shortly, check `logs\\work-*.log`.\n{web}")
+        msg = (f"✅ Launched run `{task_id[:8]}` (pid {pid}) · mode `{req.mode}` · "
+               f"{req.hours}h · parallel {req.parallel}\n{web}")
+    else:
+        msg = (f"✅ Launch started (pid {pid}) · mode `{req.mode}` · {req.hours}h. "
+               f"If no dashboard appears shortly, check `logs\\work-*.log`.\n{web}")
+    warnings = externalReadiness(req)
+    if warnings:
+        msg += "\n\n" + "\n".join(f"⚠️ {w}" for w in warnings)
+    if req.work_dir and Path(req.work_dir).resolve() != config.PROJECT_ROOT.resolve():
+        msg += f"\n\nWorking dir: `{str(Path(req.work_dir).resolve())[:300]}`"
+    return msg
 
 
 def resumeOrError(task_id: str) -> str:

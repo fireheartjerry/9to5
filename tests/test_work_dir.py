@@ -70,6 +70,27 @@ class TestWorkDirLauncherValidation(unittest.TestCase):
             self.assertIn("--work-dir", argv)
             self.assertIn(str(Path(d).resolve()), argv)
 
+    def test_external_readiness_warns_for_non_git_dir(self):
+        with tempfile.TemporaryDirectory() as d:
+            warnings = wl.externalReadiness(wl.WorkRequest(goal="x", work_dir=d))
+            self.assertTrue(any("not a git repo" in w for w in warnings))
+
+    def test_external_readiness_warns_for_git_repo_without_origin(self):
+        with tempfile.TemporaryDirectory() as d:
+            import subprocess
+            subprocess.run(["git", "init", d], check=True, capture_output=True, text=True)
+            warnings = wl.externalReadiness(wl.WorkRequest(goal="x", work_dir=d))
+            self.assertTrue(any("no `origin` remote" in w for w in warnings))
+
+    def test_launch_reply_includes_external_readiness_warnings(self):
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(wl, "activeRun", return_value=None), \
+                mock.patch.object(wl, "spawn", return_value=123), \
+                mock.patch.object(wl, "newestTaskSince", return_value="abcdef12"):
+            out = wl.launchOrError(wl.WorkRequest(goal="x", work_dir=d))
+        self.assertIn("Launched run", out)
+        self.assertIn("not a git repo", out)
+
 
 if __name__ == "__main__":
     unittest.main()

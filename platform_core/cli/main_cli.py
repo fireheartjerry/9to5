@@ -53,6 +53,8 @@ def _parseArgs(argv: list[str]) -> "argparse.Namespace":
     parser.add_argument("--goal", help="Raw goal. If omitted you are prompted.")
     parser.add_argument("--hours", type=float, default=1.0, help="Time horizon in hours (default 1).")
     parser.add_argument("--work-dir", help="Working directory for Claude Code CLI (default PROJECT_ROOT).")
+    parser.add_argument("--repo-url", help="Clone this git repo into a managed workspace and run there.")
+    parser.add_argument("--repo-ref", help="Branch, tag, or ref to check out when used with --repo-url.")
     parser.add_argument("--auto-approve", action="store_true", help="Skip the elaboration approval prompt.")
     parser.add_argument("--no-pr", action="store_true", help="Do not attempt to open a GitHub PR.")
     parser.add_argument("--mode", choices=["watch", "gated"], default=config.CONTROL_MODE_DEFAULT,

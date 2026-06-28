@@ -25,9 +25,9 @@ class TestDetectSelfReferential(unittest.TestCase):
         self.assertFalse(orch._detectSelfReferential(
             self._state("clone the 9to5 app for a client"), r"C:\some\external\repo"))
 
-    def test_intent_phrase_is_selfref(self):
+    def test_intent_phrase_in_external_repo_is_not_selfref(self):
         orch = _orch()
-        self.assertTrue(orch._detectSelfReferential(
+        self.assertFalse(orch._detectSelfReferential(
             self._state("improve its own code"), r"C:\external\repo"))
 
     def test_running_in_install_tree_is_selfref(self):

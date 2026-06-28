@@ -102,6 +102,9 @@ The live Discord dashboard should:
 /status            Show current run status
 ```
 
+`/work` can target either a local `work_dir` or a managed clone via `repo_url`
+and optional `repo_ref`. See `docs/EXTERNAL_PROJECTS.md`.
+
 ### `/create-pr` details
 
 **Purpose:** Force-create a PR for a completed run, bypassing the test-suite gate. Useful when:

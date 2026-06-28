@@ -59,14 +59,13 @@ def _execCwd(state, sid: "str | None", work_dir: str) -> str:
 
 
 def _detectSelfReferential(state, work_dir: str) -> bool:
-    """Return True when the goal explicitly targets 9to5's own codebase or work_dir IS the project
-    root.  Uses explicit self-targeting intent phrases to avoid false positives."""
-    text = f"{state.meta.get('goal_raw', '')} {state.meta.get('goal_elaborated', '')}".lower()
-    root = str(config.PROJECT_ROOT).lower()
-    markers = ["itself", "self-referential", "self-modify", "self modify",
-               "self-improve", "its own code", "9to5's own", "this orchestrator"]
-    same_dir = os.path.abspath(work_dir).lower() == root
-    return same_dir or any(m in text for m in markers)
+    """Return True only when the selected work_dir is the 9to5 install root.
+
+    A user-provided external work_dir must never be reclassified from goal text; otherwise phrases
+    like "make this app improve itself" can create branches and apply core-file locks in the user's
+    target repo.
+    """
+    return os.path.abspath(work_dir).lower() == os.path.abspath(str(config.PROJECT_ROOT)).lower()
 
 
 def _prepareSelfReferential(state, work_dir: str, bus, dashboard) -> None:

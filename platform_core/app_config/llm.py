@@ -282,7 +282,10 @@ EXECUTOR_RESUME_RETRIES: bool = _envBool("EXECUTOR_RESUME_RETRIES", True)
 # --- Self-referential safety (9to5 modifying itself) ----------------------
 CORE_PROTECTED_FILES: tuple[str, ...] = ("orchestrator.py", "main.py", "agents/hooks.py", "config.py")
 SELF_REF_BRANCH_PREFIX: str = "sc/"
-UNIVERSE_DEFAULT_HARD_BOUNDARIES: tuple[str, ...] = (".env", ".git", "venv", "state/tasks")
+UNIVERSE_DEFAULT_HARD_BOUNDARIES: tuple[str, ...] = (
+    ".env", ".git", "venv", ".venv", "node_modules", "dist", "build", ".next",
+    "coverage", "__pycache__", "state/tasks",
+)
 
 SELF_IMPROVEMENT_PHILOSOPHY: str = (
     "When 9to5 runs on itself, it operates with one principle: improve indiscriminately. No numerical "

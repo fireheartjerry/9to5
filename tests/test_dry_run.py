@@ -8,6 +8,7 @@ from unittest import mock
 
 import config
 import platform_core.simulator.simulation as simulation
+from platform_core.orchestration import run_loop
 from orchestrator import Orchestrator
 from state.task import TaskState
 
@@ -104,6 +105,26 @@ class TestDryRun(unittest.TestCase):
         simulation.buildOrchestrator(n_subtasks=1).runFull(
             st, work_dir=str(self.work), auto_pr=False, control_mode="watch")
         self.assertFalse(st.meta.get("is_self_referential"))
+
+    def test_external_goal_about_app_itself_stays_external(self):
+        st = TaskState.create("make this app improve itself", 1.0)
+        st.setElaboratedGoal("make the target project improve itself")
+        st.save()
+        simulation.buildOrchestrator(n_subtasks=1).runFull(
+            st, work_dir=str(self.work), auto_pr=False, control_mode="watch")
+        self.assertFalse(st.meta.get("is_self_referential"))
+
+    def test_external_goal_explicitly_about_9to5_own_code_stays_external(self):
+        st = TaskState.create("improve 9to5's own run loop", 1.0)
+        st.setElaboratedGoal("improve 9to5's own code")
+        st.save()
+        self.assertFalse(run_loop._detectSelfReferential(st, str(self.work)))
+
+    def test_project_root_work_dir_is_self_referential(self):
+        st = TaskState.create("clean up docs", 1.0)
+        st.setElaboratedGoal("clean up docs")
+        st.save()
+        self.assertTrue(run_loop._detectSelfReferential(st, str(config.PROJECT_ROOT)))
 
 
 if __name__ == "__main__":

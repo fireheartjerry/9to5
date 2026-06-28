@@ -101,13 +101,16 @@ class RunsCog(dpy_commands.Cog):
     @app_commands.describe(goal="What to work on (blank opens guided setup)",
                            hours="Time horizon in hours", mode="watch or gated",
                            parallel="Concurrent subtasks", work_dir="Working directory",
+                           repo_url="Clone this repo into a managed workspace",
+                           repo_ref="Branch, tag, or ref to check out with repo_url",
                            night_mode="Zero human interaction — no pings, no holds, auto-resume pauses")
     @app_commands.choices(mode=[app_commands.Choice(name="watch", value="watch"),
                                 app_commands.Choice(name="gated", value="gated")])
     @slash.COOLDOWN
     async def work(self, interaction, goal: "str | None" = None, hours: "float | None" = None,
                    mode: "app_commands.Choice[str] | None" = None, parallel: "int | None" = None,
-                   work_dir: "str | None" = None,
+                   work_dir: "str | None" = None, repo_url: "str | None" = None,
+                   repo_ref: "str | None" = None,
                    night_mode: "bool | None" = None) -> None:  # noqa: ANN001
         if not slash._ownerOk(interaction):
             return await interaction.response.send_message("Not authorized to launch runs.", ephemeral=True)
@@ -130,7 +133,8 @@ class RunsCog(dpy_commands.Cog):
         req = work_launcher.WorkRequest(
             goal=goal, hours=work_launcher.parseHours(hours),
             mode=(mode.value if mode else "watch"), parallel=parallel or 1,
-            work_dir=work_dir or None, night_mode=bool(night_mode))
+            work_dir=work_dir or None, repo_url=repo_url or None, repo_ref=repo_ref or None,
+            night_mode=bool(night_mode))
         audit.record(interaction.user.id, "work", None, "slash")
         reply = await asyncio.to_thread(work_launcher.launchOrError, req)
         await interaction.followup.send(reply[:slash.MAX_REPLY], ephemeral=False)

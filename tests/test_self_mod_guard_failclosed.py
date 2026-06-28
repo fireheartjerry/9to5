@@ -110,6 +110,25 @@ class TestGuardFailClosed(unittest.TestCase):
         for cmd in ("cat .envrc", "cat foo.env", "cat .environment", "grep x app.py"):
             self.assertEqual(self._block_expected(cmd), 0, f"false-blocked: {cmd!r}")
 
+    def test_external_generated_dirs_are_hard_boundaries(self):
+        st = mock.Mock()
+        st.meta = {"universe": {"hard_boundaries": []}, "is_self_referential": False, "epoch": None}
+        with mock.patch.object(hooks_selfmod, "_resolveState", return_value=(st, True)), \
+                mock.patch.object(hooks_selfmod, "_envTaskRequested", return_value=True), \
+                mock.patch.object(hooks_selfmod, "_coreLockFor", return_value=(False, ())):
+            data = {"tool_name": "Edit",
+                    "tool_input": {"file_path": r"C:\project\node_modules\pkg\index.js"}}
+            self.assertEqual(self._run(data), 2)
+
+    def test_normal_external_source_file_is_not_boundary(self):
+        st = mock.Mock()
+        st.meta = {"universe": {"hard_boundaries": []}, "is_self_referential": False, "epoch": None}
+        with mock.patch.object(hooks_selfmod, "_resolveState", return_value=(st, True)), \
+                mock.patch.object(hooks_selfmod, "_envTaskRequested", return_value=True), \
+                mock.patch.object(hooks_selfmod, "_coreLockFor", return_value=(False, ())):
+            data = {"tool_name": "Edit", "tool_input": {"file_path": r"C:\project\src\app.py"}}
+            self.assertEqual(self._run(data), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -53,10 +53,12 @@ class Paginator(discord.ui.View):
 
 class WorkSetupView(discord.ui.View):
     """Dropdowns + Launch/Cancel for the /work guided setup (used after WorkModal)."""
-    def __init__(self, owner_id: int, goal: str, hours: float, work_dir: "str | None"):
+    def __init__(self, owner_id: int, goal: str, hours: float, work_dir: "str | None",
+                 repo_url: "str | None" = None, repo_ref: "str | None" = None):
         super().__init__(timeout=300)
         self.owner_id = owner_id
-        self.req = work_launcher.WorkRequest(goal=goal, hours=hours, work_dir=work_dir or None)
+        self.req = work_launcher.WorkRequest(goal=goal, hours=hours, work_dir=work_dir or None,
+                                             repo_url=repo_url or None, repo_ref=repo_ref or None)
 
     async def interaction_check(self, interaction: "discord.Interaction") -> bool:
         if not commands.isAuthorized(interaction.user.id):
@@ -133,8 +135,11 @@ class WorkModal(discord.ui.Modal, title="Start a 9TO5 run"):
                                 required=True, max_length=4000)
     hours = discord.ui.TextInput(label="Hours", default="1", required=False, max_length=6)
     work_dir = discord.ui.TextInput(label="Working directory (optional)", required=False, max_length=300)
+    repo_url = discord.ui.TextInput(label="Repo URL (optional)", required=False, max_length=500)
+    repo_ref = discord.ui.TextInput(label="Repo ref (optional)", required=False, max_length=120)
 
     async def on_submit(self, interaction: "discord.Interaction") -> None:
         view = WorkSetupView(interaction.user.id, str(self.goal),
-                             work_launcher.parseHours(str(self.hours)), str(self.work_dir) or None)
+                             work_launcher.parseHours(str(self.hours)), str(self.work_dir) or None,
+                             str(self.repo_url) or None, str(self.repo_ref) or None)
         await interaction.response.send_message("Set options, then **Launch**:", view=view, ephemeral=True)
