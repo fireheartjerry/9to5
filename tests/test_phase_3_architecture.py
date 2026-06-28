@@ -18,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
 
 import config
 from agents import native_executor
+from agents import architect
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -209,6 +210,21 @@ class TestNativeDispatch(unittest.TestCase):
         with mock.patch.object(config, "NATIVE_LAYER_ENABLED", True):
             hands = native_executor.selectForSurface(_SENTINEL_FN, {})
         self.assertIs(hands, _SENTINEL_FN)
+
+
+def test_author_architect_prompt_injects_discovery_report():
+    """When discovery_report is passed, its content appears in the authored prompt."""
+    from agents.discovery.models import Finding, DiscoveryReport
+    f = Finding("Rewrite orchestrator", "reimagining", 5, 4, 5,
+                "Current approach is tightly coupled", ["orchestrator.py"], "lens_3")
+    f.rank = 1
+    report = DiscoveryReport(theme_suggestion="transform the orchestrator layer", findings=[f])
+
+    with mock.patch.object(architect, "_getOllama") as mock_oll:
+        mock_oll.return_value.chat.return_value = {"message": {"content": "design the architecture"}}
+        prompt = architect.authorArchitectPrompt("spec text", discovery_report=report)
+    # Either the theme or the finding title should appear in the final prompt
+    assert "transform the orchestrator layer" in prompt or "Rewrite orchestrator" in prompt
 
 
 if __name__ == "__main__":
