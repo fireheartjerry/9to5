@@ -137,7 +137,6 @@ def _build_proposals(reflections: list[str]) -> list[dict[str, Any]]:
 
 def _build_practice_schedule(
     self_state: dict[str, Any],
-    updated_domains: list[str],
 ) -> list[str]:
     """List domains with p < _P_LOW or n < _N_MIN (high self-uncertainty)."""
     all_domains = list(self_state.get("competence", {}).keys())
@@ -195,7 +194,7 @@ def run_cycle(
     proposals = _build_proposals(reflections)
 
     # 4. Practice schedule from current competence state
-    practice = _build_practice_schedule(self_state, updated)
+    practice = _build_practice_schedule(self_state)
 
     return {
         "competence_updated": updated,

@@ -76,9 +76,9 @@ def _keep_section(body_state: dict[str, Any]) -> str:
 
 def _next_filename(letters_dir: Path) -> str:
     """Return a zero-padded monotonic counter filename (e.g. '0001.md')."""
-    existing = list(letters_dir.glob("*.md"))
-    idx = len(existing) + 1
-    return f"{idx:04d}.md"
+    existing = sorted(letters_dir.glob("*.md"))
+    next_idx = max((int(f.stem) for f in existing if f.stem.isdigit()), default=0) + 1
+    return f"{next_idx:04d}.md"
 
 
 def _compose_letter(task_id: str, body_state: dict[str, Any]) -> str:

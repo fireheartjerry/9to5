@@ -188,13 +188,15 @@ def test_no_manipulative_public_callables():
     )
 
 
-def test_public_api_is_exactly_three_functions():
-    """Only new_user_model, update, snapshot should be public callables."""
-    public_callables = {
-        name for name in dir(um)
-        if not name.startswith("_") and callable(getattr(um, name))
-        and not isinstance(getattr(um, name), type)  # exclude imported types
+def test_public_functions_are_exactly_three():
+    """Public functions in user_model must be EXACTLY {new_user_model, update, snapshot}.
+
+    Uses inspect to restrict to functions defined in this module (excludes
+    re-exports, imported helpers, timing/persuasion leaks, etc.).
+    """
+    import inspect
+    funcs = {
+        name for name, obj in inspect.getmembers(um, inspect.isfunction)
+        if not name.startswith("_") and obj.__module__ == um.__name__
     }
-    # Must include the three required functions
-    for required in ("new_user_model", "update", "snapshot"):
-        assert required in public_callables, f"Missing required public function: {required}"
+    assert funcs == {"new_user_model", "update", "snapshot"}
