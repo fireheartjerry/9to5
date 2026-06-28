@@ -99,6 +99,23 @@ def etaStr(started_at, done: int, total: int) -> str:
     return f"~{eta}s"
 
 
+# ---- steering selects (Spec B) ----------------------------------------------
+def _steeringRows() -> list:
+    """Cockpit String Selects for live steering: run effort + control mode (CV2 type 3).
+    The per-subtask select is added dynamically by the gateway where ids are known."""
+    return [
+        text("**Steering** — effort · mode"),
+        {"type": 1, "components": [{
+            "type": 3, "custom_id": "cv2_effort_select", "placeholder": "Set run effort",
+            "options": [{"label": lvl, "value": lvl} for lvl in
+                        ("low", "default", "high", "xhigh", "ultracode")]}]},
+        {"type": 1, "components": [{
+            "type": 3, "custom_id": "cv2_mode_select", "placeholder": "Control mode",
+            "options": [{"label": "watch", "value": "watch"},
+                        {"label": "gated", "value": "gated"}]}]},
+    ]
+
+
 # ---- the cockpit ------------------------------------------------------------
 def buildCockpit(state, phase: str, *, events: Optional[list] = None,
                  model: Optional[str] = None, effort: str = "default",
@@ -165,6 +182,7 @@ def buildCockpit(state, phase: str, *, events: Optional[list] = None,
     # Control buttons live INSIDE the container (reuses the cp_* custom_ids the
     # persistent ControlPanelView already routes).
     children.append(separator())
+    children.extend(_steeringRows())
     for row in branding.controlPanelRow():
         children.append(row)
 
