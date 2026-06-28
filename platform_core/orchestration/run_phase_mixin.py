@@ -395,3 +395,14 @@ class OrchestratorRunPhaseMixin:
                     _mt.join(timeout=config.SIE_MAINTENANCE_JOIN_SECONDS)
             except Exception:  # noqa: BLE001 -- learning is best-effort, never blocks
                 LOG.debug("sie maintenance dispatch failed (ignored)", exc_info=True)
+        self._postGrowth()
+
+    def _postGrowth(self) -> None:
+        """Spec B: post a short '!growth' learning summary to Discord at teardown (best-effort)."""
+        try:
+            from learning import wisdom
+            line = wisdom.growthSummary()
+            if line:
+                discord.sendEmbed(discord.noticeEmbed(line, title="9TO5 growth"))
+        except Exception:  # noqa: BLE001 -- growth post is best-effort, never blocks teardown
+            LOG.debug("growth post failed (ignored)", exc_info=True)
