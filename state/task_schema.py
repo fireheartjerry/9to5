@@ -28,6 +28,15 @@ def nowIso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def _gen_codename() -> str:
+    """Run codename for this task; degrades to a constant if the generator is unavailable."""
+    try:
+        from platform_core.ops import codenames
+        return codenames.generate()
+    except Exception:  # noqa: BLE001 -- a codename must never break task construction
+        return "RUN"
+
+
 class TaskState:
     """Wraps the lean state dict and persists it to ``state/tasks/<id>.json``."""
 
@@ -63,6 +72,10 @@ class TaskState:
                 "epoch": None,
                 "state_epoch": 0,
                 "discovery_report": None,
+                "codename": _gen_codename(),
+                "tunnel_url": None,
+                "arc": [],
+                "health_score": 100,
             },
             "plan": {"architect_design_doc": None, "subtasks": []},
             "adversary_reviews": [],
