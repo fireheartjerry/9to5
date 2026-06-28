@@ -113,7 +113,7 @@ class TestFeedbackViewIntegration(unittest.TestCase):
         self.assertIsNone(view.timeout)
 
     @mock.patch("notifications.slash._runControl")
-    async def test_feedback_approve_button_calls_runControl(self, mock_run_control):
+    def test_feedback_approve_button_calls_runControl(self, mock_run_control):
         """Clicking approve button calls _runControl with 'approve'."""
         # This is a mock-based test; real async interaction testing requires
         # discord.py's testing framework or a Discord test client.

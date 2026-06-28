@@ -19,7 +19,7 @@ env:
 
 jobs:
   classify:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     outputs:
       docs_only: ${{ steps.paths.outputs.docs_only }}
       workflow_only: ${{ steps.paths.outputs.workflow_only }}
@@ -82,7 +82,7 @@ jobs:
   docs:
     needs: classify
     if: needs.classify.outputs.docs_only == 'true'
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -94,7 +94,7 @@ jobs:
   workflow-validation:
     needs: classify
     if: needs.classify.outputs.workflow_only == 'true'
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -108,12 +108,12 @@ jobs:
       - name: Validate workflow definitions
         run: python validate_workflows.py
       - name: Workflow tests
-        run: python -m pytest tests/test_validate_workflows.py tests/test_workflows.py tests/test_workflows_registry.py tests/test_workflow_registry.py -q
+        run: python -m pytest tests/test_validate_workflows.py tests/test_workflows.py tests/test_workflows_registry_load.py tests/test_workflows_registry_validators.py tests/test_workflow_registry.py -q
 
   tooling:
     needs: classify
     if: needs.classify.outputs.tooling_only == 'true'
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -130,7 +130,7 @@ jobs:
   fast:
     needs: classify
     if: needs.classify.outputs.core == 'true'
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
@@ -155,7 +155,7 @@ jobs:
   slow:
     needs: [classify, fast]
     if: github.event_name == 'pull_request' && needs.classify.outputs.core == 'true'
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -172,7 +172,7 @@ jobs:
   dry-run-smoke:
     needs: [classify, fast]
     if: github.event_name == 'pull_request' && needs.classify.outputs.core == 'true'
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -189,7 +189,7 @@ jobs:
   e2e-smoke:
     needs: [classify, fast]
     if: github.event_name == 'pull_request' && needs.classify.outputs.core == 'true'
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -205,7 +205,7 @@ jobs:
 
   exhaustive:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

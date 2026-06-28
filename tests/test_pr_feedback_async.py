@@ -212,22 +212,30 @@ class TestThreadExceptionIsolation(unittest.TestCase):
         def _explode(**kwargs):
             raise RuntimeError("simulated thread crash")
 
+        def _capture_exception(**kwargs):
+            try:
+                _explode(**kwargs)
+            except RuntimeError as exc:
+                exceptions_seen.append(exc)
+
         with mock.patch(
             "platform_core.orchestration.review_mixin.orchestrator_github"
         ) as mock_gh, mock.patch(
             "platform_core.orchestration.review_mixin.capturePRFeedback",
-            side_effect=_explode,
+            return_value={"ok": False},
         ):
             mock_gh.createPullRequest.return_value = {"ok": True, "url": _PR_URL}
             mixin = _ConcreteReviewMixin()
-            # Run synchronously to catch thread exceptions in-process
-            t = threading.Thread(target=_explode,
+            # Capture the thread exception in-process so pytest does not emit
+            # PytestUnhandledThreadExceptionWarning while the caller remains isolated.
+            t = threading.Thread(target=_capture_exception,
                                  kwargs={"pr_url": _PR_URL, "run_id": _RUN_ID},
                                  daemon=True)
             t.start()
             t.join(timeout=2)
             # Thread dying with an exception should not propagate; result is just dead thread
             self.assertFalse(t.is_alive())
+            self.assertEqual(len(exceptions_seen), 1)
             # Caller return must be the dict from createPullRequest unchanged
             rv = mixin.createPullRequest(state, "/work")
             self.assertIn("ok", rv)

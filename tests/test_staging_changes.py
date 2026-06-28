@@ -231,9 +231,9 @@ class TestMonitoringTrackerThresholds(unittest.TestCase):
         from monitoring.tracker import MAX_RETRIES
         self.assertEqual(MAX_RETRIES, 3)
 
-    def test_critical_detection_window_is_2_minutes(self):
+    def test_critical_detection_window_is_1_minute(self):
         from monitoring.tracker import CRITICAL_DETECTION_WINDOW_SECS
-        self.assertAlmostEqual(CRITICAL_DETECTION_WINDOW_SECS, 120.0)
+        self.assertAlmostEqual(CRITICAL_DETECTION_WINDOW_SECS, 60.0)
 
     def test_healthy_executions_produce_no_alerts(self):
         import monitoring

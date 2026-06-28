@@ -46,6 +46,8 @@ _COMMON_CHARTER = (
     "Stay surgical and on-scope: change only what the subtask needs; never break unrelated code. "
     "NEVER touch hard boundaries (.env, .git, venv, state/) -- and in a self-referential run, never edit the "
     "core loop files (orchestrator.py, main.py, agents/hooks.py, config.py). "
+    "For 9TO5 self-improvement work, this is a Windows-only repo rooted at C:\\9to5: do not add Linux/macOS "
+    "compatibility layers, shell scripts, or POSIX-only commands unless explicitly asked. "
     "The subtask is DONE only when its acceptance command (in CLAUDE.md) actually passes -- run it, read the "
     "output, and report truthfully. Evidence before claims."
 )
@@ -60,7 +62,11 @@ _COMMON_PLAYBOOK = (
     "self-referential run). A PreToolUse guard will hard-block these anyway.\n"
     "- **Verify before you claim done.** Run the acceptance command yourself; if it fails, fix and re-run. "
     "Report the real result -- if a check failed, say so with the output.\n"
-    "- **No new dependencies** unless the goal explicitly allows them (e.g. 'standard library only' => none)."
+    "- **Windows-only target.** This repo runs on the user's Windows checkout (`C:\\9to5`). Do not spend effort "
+    "on Linux/macOS portability, bash scripts, or POSIX path handling unless the subtask explicitly asks.\n"
+    "- **No new dependencies** unless the goal explicitly allows them (e.g. 'standard library only' => none).\n"
+    "- **PR hygiene:** never leave `.sc-ctx`, `__pycache__`, `.pyc`, temp logs, or scratch files in the diff. "
+    "Do not bundle unrelated cleanups with the requested change."
 )
 
 # ---------------------------------------------------------------------------
@@ -89,6 +95,10 @@ PROFILES: dict[str, dict] = {
             "- **Error handling:** wrap fallible I/O/network in try/except with a real fallback or a clear message; "
             "never silently swallow an exception that hides a bug. Match the file's existing logging.\n"
             "- **No stray artifacts:** no scratch files, no commented-out dead code, no debug prints left behind.\n"
+            "- **Repo-map discipline:** after editing Python modules, run `python tools\\repo_map.py`, then "
+            "`python tools\\repo_map.py --check`; include generated artifacts only when the generator changes them.\n"
+            "- **Nearby tests:** run the acceptance command plus mapped/affected tests when code changes. A passing "
+            "single new test is not enough if nearby existing tests fail.\n"
             "- **Idempotent + re-runnable:** a retry of this subtask must not double-apply or corrupt prior work.\n"
             "- **Tool chain:** Grep/Glob to locate -> Read to understand -> Edit/Write to change -> Bash to run the "
             "verify. Don't guess file locations; find them."

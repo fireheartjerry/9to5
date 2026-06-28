@@ -37,7 +37,7 @@ def test_local_scan() -> None:
     inv = knowledge.scanLocalClaude()
     check("finds >=1 skill", len(inv["skills"]) >= 1)
     check("finds >=1 subagent", len(inv["agents"]) >= 1)
-    check("captures hooks", len(inv["hooks"]) >= 1)
+    check("captures settings", len(inv["settings"]) >= 1)
 
 
 def test_unified_idempotent() -> None:

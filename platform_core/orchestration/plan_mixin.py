@@ -79,6 +79,11 @@ ORCHESTRATOR_CONSTITUTION = (
     "subagents, parallel where marked, then synthesize). For a simple single-step subtask keep "
     "use_workflow=false and workflow_definition=null.\n\n"
     "RULES: Honor the goal's constraints (e.g. 'standard library only' => never instruct installs). "
+    "For self-improvement/code subtasks in this repo, aim for PR-green work: keep scope narrow, never "
+    "stage scratch/runtime artifacts (`.sc-ctx`, `__pycache__`, `*.pyc`), run the stated verify plus "
+    "nearby affected tests, and run `python tools\\repo_map.py` after Python module edits. This is a "
+    "Windows-only project rooted at C:\\9to5; do not ask the hands to add cross-platform compatibility "
+    "unless the user explicitly requests it. "
     "Consult the injected CLAUDE CODE CAPABILITIES before choosing primitives -- prefer a real installed "
     "skill/subagent/workflow over a generic prompt whenever one fits. Keep prompt self-contained and "
     "imperative. Output ONLY the JSON object, no prose."
@@ -276,6 +281,10 @@ class OrchestratorPlanMixin:
             f"Acceptance verify command: {verify.get('cmd')} (expect: {verify.get('expect')})\n"
             f"Suggested effort: {subtask.get('effort_level', 'default')}\n"
             f"Working directory: {config.PROJECT_ROOT}\n\n"
+            "Quality bar for this subtask: keep the diff narrow, do not leave scratch/runtime artifacts, "
+            "run the acceptance command, run affected/nearby tests when code changes, and regenerate/check "
+            "repo-map after Python module edits. The PR gate will reject stale repo-map, workflow failures, "
+            "or failing fast-lane tests.\n\n"
         )
         if failure_feedback:
             user += f"PREVIOUS ATTEMPT FAILED THE VERIFICATION:\n{failure_feedback[:1200]}\n\n"

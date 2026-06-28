@@ -1,4 +1,4 @@
-"""Tests for monitoring.tracker -- success-rate / delay / alert logic.
+r"""Tests for monitoring.tracker -- success-rate / delay / alert logic.
 
 Acceptance criteria verified:
   * success rate >= 90% threshold alert fires below 90%

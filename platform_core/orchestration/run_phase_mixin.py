@@ -159,15 +159,16 @@ class OrchestratorRunPhaseMixin:
         pr_review = self._prePrAdversary(state, work_dir)
         create_pr, skip_reason = self._prGate(pr_review, auto_pr, state)
         if create_pr:
-            # Final check: annotate a red suite, but still open the PR so users get a review surface.
             suite_ok, suite_detail = self._prePrSuiteGate(state, work_dir)
             if not suite_ok:
-                dashboard.update(state, "executing", "PR opening with failing test-suite feedback")
+                create_pr = False
+                skip_reason = f"pre-PR gate failed: {suite_detail[:200]}"
+                dashboard.update(state, "executing", "PR held by failing pre-PR gate")
                 state.addNotification("pr_feedback", f"test suite failing: {suite_detail[:160]}")
                 try:
                     discord.sendEmbed(discord.noticeEmbed(
-                        "The run's own test suite is failing - opening the PR anyway so the branch has a review surface.",
-                        title="9TO5 - PR opening with red-suite feedback"))
+                        "The Windows pre-PR gate is failing - holding the PR until Nightclaw fixes it.",
+                        title="9TO5 - PR held by red pre-PR gate"))
                 except Exception:  # noqa: BLE001
                     pass
         if create_pr:

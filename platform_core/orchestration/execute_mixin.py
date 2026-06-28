@@ -10,6 +10,8 @@ RUN/TEST: (no mapped test)
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import time
 from typing import TYPE_CHECKING
 
@@ -33,6 +35,74 @@ LOG = config.getLogger("orchestrator")
 
 class OrchestratorExecuteMixin:
     """Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment."""
+
+    def _selfRefQualityGate(self, work_dir: str) -> "tuple[bool, str]":
+        """Run cheap Windows repo gates after a self-ref subtask passes its own verify.
+
+        This catches stale generated artifacts and nearby test failures while the executor still has
+        retry attempts left, instead of discovering them only at pre-PR time.
+        """
+        commands = [
+            [sys.executable, "tools\\repo_map.py"],
+            [sys.executable, "tools\\repo_map.py", "--check"],
+            [sys.executable, "validate_workflows.py"],
+        ]
+        tail = ""
+        for cmd in commands:
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    cwd=work_dir,
+                    capture_output=True,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
+                    timeout=config.GIT_TIMEOUT_SECONDS,
+                )
+            except subprocess.TimeoutExpired:
+                return False, f"{' '.join(cmd)} timed out after {config.GIT_TIMEOUT_SECONDS}s"
+            except Exception as e:  # noqa: BLE001
+                return False, f"{' '.join(cmd)} errored: {e}"
+            tail = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+            if proc.returncode != 0:
+                return False, f"{' '.join(cmd)} failed:\n{tail}"[-1200:]
+
+        try:
+            mapper = subprocess.run(
+                [sys.executable, "tools\\affected_tests.py"],
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=config.GIT_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            return False, f"{sys.executable} tools\\affected_tests.py timed out after {config.GIT_TIMEOUT_SECONDS}s"
+        except Exception as e:  # noqa: BLE001
+            return False, f"{sys.executable} tools\\affected_tests.py errored: {e}"
+        mapper_tail = ((mapper.stdout or "") + "\n" + (mapper.stderr or "")).strip()
+        if mapper.returncode != 0:
+            return False, f"{sys.executable} tools\\affected_tests.py failed:\n{mapper_tail}"[-1200:]
+        targets = [t for t in (mapper.stdout or "").split() if t.strip()]
+        if not targets:
+            return True, (tail or "no affected tests")
+        pytest_cmd = [sys.executable, "-m", "pytest", *targets, "-q"]
+        try:
+            tests = subprocess.run(
+                pytest_cmd,
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=config.GIT_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            return False, f"{' '.join(pytest_cmd)} timed out after {config.GIT_TIMEOUT_SECONDS}s"
+        except Exception as e:  # noqa: BLE001
+            return False, f"{' '.join(pytest_cmd)} errored: {e}"
+        test_tail = ((tests.stdout or "") + "\n" + (tests.stderr or "")).strip()
+        if tests.returncode != 0:
+            return False, f"{' '.join(pytest_cmd)} failed:\n{test_tail}"[-1200:]
+        return True, test_tail[-1200:] or tail[-1200:]
 
     # ===================================================================
     # Adversary teeth -- bounded remediation LOOP
@@ -114,6 +184,18 @@ class OrchestratorExecuteMixin:
                 if rv.get("passed"):
                     LOG.info("%s: brittle verify repaired -> PASS via %s", sid, repaired["cmd"])
                     vresult, passed = rv, True
+        if passed and state.meta.get("is_self_referential"):
+            gate_ok, gate_detail = self._selfRefQualityGate(str(config.PROJECT_ROOT))
+            if not gate_ok:
+                passed = False
+                vresult = dict(vresult)
+                vresult.update({
+                    "passed": False,
+                    "returncode": 1,
+                    "stderr": gate_detail,
+                    "quality_gate": "self_ref",
+                })
+                LOG.warning("%s: self-ref quality gate failed after verify pass", sid)
         with self._state_lock:
             state.recordVerify(sid, vresult)
         dashboard.update(state, "verifying",

@@ -23,7 +23,8 @@
     "state",
     "testing",
     "tests",
-    "validate_workflows"
+    "validate_workflows",
+    "workflows"
   ],
   "modules": {
     "agents": {
@@ -793,21 +794,21 @@
           "kind": "function",
           "signature": "(spec: Optional[dict], subtask: Optional[dict], task_state=None) -> str",
           "summary": "Deterministically pick the executor profile from the spec + subtask.",
-          "lineno": 210
+          "lineno": 220
         },
         {
           "name": "buildCharter",
           "kind": "function",
           "signature": "(profile: str) -> str",
           "summary": "Compact system-level charter for ``--append-system-prompt`` (always injected).",
-          "lineno": 256
+          "lineno": 266
         },
         {
           "name": "buildPlaybook",
           "kind": "function",
           "signature": "(profile: str) -> str",
           "summary": "Richer role playbook rendered as a CLAUDE.md section (auto-read by Claude Code).",
-          "lineno": 262
+          "lineno": 272
         }
       ],
       "depends_on": [
@@ -6856,7 +6857,9 @@
           "lineno": 33
         }
       ],
-      "depends_on": [],
+      "depends_on": [
+        "workflows.registry"
+      ],
       "side_effects": [
         "unannotated"
       ],
@@ -6995,7 +6998,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment.",
-          "lineno": 34
+          "lineno": 36
         }
       ],
       "depends_on": [
@@ -7032,17 +7035,18 @@
           "kind": "function",
           "signature": "(state, work_dir: str) -> dict",
           "summary": "Create a PR for the completed run",
-          "lineno": 20
+          "lineno": 21
         }
       ],
       "depends_on": [
-        "config",
-        "selfmod"
+        "config"
       ],
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/test_github_pr_gate.py"
+      ],
       "callers": [
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.review_mixin"
@@ -7118,7 +7122,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles subtask plan authoring, invocation spec construction, and SIE authoring context.",
-          "lineno": 88
+          "lineno": 93
         }
       ],
       "depends_on": [
@@ -7711,7 +7715,9 @@
           "lineno": 39
         }
       ],
-      "depends_on": [],
+      "depends_on": [
+        "workflows.scheduler"
+      ],
       "side_effects": [
         "unannotated"
       ],
@@ -7806,8 +7812,7 @@
         "tests/test_selfmod.py"
       ],
       "callers": [
-        "platform_core.orchestration.control_mixin",
-        "platform_core.orchestration.github"
+        "platform_core.orchestration.control_mixin"
       ]
     },
     "src": {
@@ -8689,6 +8694,17 @@
       ],
       "callers": []
     },
+    "workflows": {
+      "path": "workflows/__init__.py",
+      "purpose": "Workflow registry package.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "workflows.registry": {
       "path": "workflows/registry.py",
       "purpose": "Workflow registry — loads and validates WorkflowDefinition JSON files.",
@@ -8710,7 +8726,9 @@
       "test": [
         "tests/test_registry.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.ops.validate_workflows"
+      ]
     },
     "workflows.scheduler": {
       "path": "workflows/scheduler.py",
@@ -8739,7 +8757,9 @@
         "tests/test_priority_scheduler.py",
         "tests/test_scheduler_priority.py"
       ],
-      "callers": []
+      "callers": [
+        "scheduling.recurring"
+      ]
     },
     "workflows.skill-gap-analysis": {
       "path": "workflows/skill-gap-analysis.py",
