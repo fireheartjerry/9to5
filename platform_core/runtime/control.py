@@ -126,8 +126,10 @@ def _blank() -> dict[str, Any]:
     return {
         "abort": False,
         "pause": False,
+        "kill_subprocess": False,  # Spec B: kill the current Claude attempt (not the run)
+        "force_replan": False,     # Spec B: operator-requested replanning pass
         "decisions": {g: None for g in GATES},
-        "plan_ops": [],          # queued: {"op": "skip"|"add"|"retry", ...}
+        "plan_ops": [],          # queued: {"op": "skip"|"add"|"retry"|"intent"|..., ...}
         "seen_discord_id": None,  # last Discord message id processed by the poller
         "pending_gate": None,     # gate the run is currently waiting on (gated mode)
     }
@@ -238,6 +240,25 @@ class ControlBus:
 
     def isPaused(self) -> bool:
         return bool(self.load()["pause"])
+
+    # ---- Spec B: granular mid-run control signals -----------------------
+    def requestKillSubprocess(self) -> None:
+        self._mutate(lambda d: d.__setitem__("kill_subprocess", True))
+
+    def isKillSubprocess(self) -> bool:
+        return bool(self.load().get("kill_subprocess"))
+
+    def clearKillSubprocess(self) -> None:
+        self._mutate(lambda d: d.__setitem__("kill_subprocess", False))
+
+    def requestForceReplan(self) -> None:
+        self._mutate(lambda d: d.__setitem__("force_replan", True))
+
+    def isForceReplan(self) -> bool:
+        return bool(self.load().get("force_replan"))
+
+    def clearForceReplan(self) -> None:
+        self._mutate(lambda d: d.__setitem__("force_replan", False))
 
     # ---- approval decisions (gated mode) -------------------------------
     def decide(self, gate: str, verdict: str) -> None:
