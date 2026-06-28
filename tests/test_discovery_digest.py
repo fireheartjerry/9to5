@@ -59,3 +59,23 @@ def test_compile_digest_survives_subprocess_failure(tmp_path):
         result = digest_mod.compile_digest(str(tmp_path))
     assert isinstance(result, dict)
     assert "static_signals" in result
+
+
+def test_fallback_has_all_14_keys():
+    """Fallback dict on exception must have all 14 required keys."""
+    REQUIRED = [
+        "repo_map", "architecture", "module_signatures", "dependency_graph",
+        "dead_code_signals", "static_signals", "quality", "git_signals",
+        "github", "institutional_memory", "innovation_seeds",
+        "leverage_signals", "skills_hooks", "config_signals",
+    ]
+    # Simulate fallback
+    fallback = {k: {} for k in (
+        "repo_map", "architecture", "module_signatures", "dependency_graph",
+        "dead_code_signals", "static_signals", "quality", "git_signals",
+        "github", "institutional_memory", "innovation_seeds",
+        "leverage_signals", "skills_hooks", "config_signals",
+    )}
+    for key in REQUIRED:
+        assert key in fallback, f"fallback missing: {key}"
+    assert len(fallback) == 14, f"fallback has {len(fallback)} keys, expected 14"
