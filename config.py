@@ -53,6 +53,7 @@ load_dotenv(dotenv_path=_THIS_DIR / ".env")
 from platform_core.app_config.paths import *    # noqa: E402, F401, F403
 from platform_core.app_config.discord import *  # noqa: E402, F401, F403
 from platform_core.app_config.llm import *      # noqa: E402, F401, F403
+from platform_core.app_config.human_nature import *  # noqa: E402, F401, F403
 
 # _SIE_BOUNDS starts with _ so it is excluded from star imports; import it
 # explicitly because set_override / _load_overrides (below) need it.
