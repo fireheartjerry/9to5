@@ -39,6 +39,17 @@ _PHASE_EMOJI = {
 }
 
 
+def _healthField(state) -> str:
+    """Composite health aura as a colored-dot + number string for the cockpit embed."""
+    try:
+        from notifications.health_aura import compute_health
+        score = compute_health(state)
+    except Exception:  # noqa: BLE001
+        return "—"
+    dot = "🟢" if score >= 80 else ("🟡" if score >= 50 else "🔴")
+    return f"{dot} {score}"
+
+
 class DiscordDashboard:
     def __init__(self) -> None:
         self.message_id: Optional[str] = None
@@ -50,10 +61,36 @@ class DiscordDashboard:
         self._state_lock = None                # set by start(); used to snapshot TaskState safely
         self._recreated = False                # at most one 404 recovery (no pin spam)
         self._last_image_ts = 0.0              # monotonic: throttle cockpit hero-image uploads
+        self._tunnel_msg_id: Optional[str] = None   # second pinned message: live tunnel URL
 
     def event(self, text: str) -> None:
         with self._lock:
             self.events.append(f"`{datetime.now().astimezone().strftime('%H:%M')}` {text}")
+        # Route every dashboard event through the LiveEventBus so the web/SSE surfaces see it too.
+        try:
+            from notifications.event_bus import Event, get_bus
+            get_bus().emit(Event(kind="narration", sid="system", text=text))
+        except Exception:  # noqa: BLE001 -- the bus is best-effort; never break a run
+            pass
+
+    def set_tunnel_url(self, url: str) -> None:
+        """Post/edit the single pinned tunnel message (``🖥 Live Dashboard → <url>``).
+        Edited in place on URL change, never replaced. Gated + best-effort; never raises."""
+        if not config.DISCORD_DASHBOARD or not url:
+            return
+        body = f"🖥 Live Dashboard → {url}"
+        try:
+            with self._send_lock:
+                if self._tunnel_msg_id:
+                    if discord.editMessageResult(self._tunnel_msg_id, discord.noticeEmbed(
+                            body, title="9TO5 — Live Dashboard")) == "ok":
+                        return
+                self._tunnel_msg_id = discord.createMessage(
+                    discord.noticeEmbed(body, title="9TO5 — Live Dashboard"))
+                if self._tunnel_msg_id:
+                    discord.pinMessage(self._tunnel_msg_id)
+        except Exception:  # noqa: BLE001
+            LOG.warning("set_tunnel_url failed", exc_info=True)
 
     def _eventsSnapshot(self) -> list:
         with self._lock:
@@ -159,6 +196,7 @@ class DiscordDashboard:
                 {"name": "ETA", "value": self._eta(m.get("started_at"), done, total), "inline": True},
                 {"name": "Replans", "value": str(replans), "inline": True},
                 {"name": "Adversary", "value": str(advs), "inline": True},
+                {"name": "Health", "value": _healthField(state), "inline": True},
                 {"name": "Effort", "value": discord.effortBar(self.effort), "inline": True},
                 {"name": "Current subtask", "value": cur_txt[:1000], "inline": False},
                 {"name": "Working dir", "value": f"`{(m.get('work_dir') or '—')[:200]}`", "inline": False},
