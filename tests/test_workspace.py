@@ -122,3 +122,29 @@ def test_broadcast_calls_all_with_on_broadcast():
 
     ws.broadcast({"winner": "dumb", "content": "dumb", "salience": 0.3, "losers": ["obs_a", "obs_b"]})
     assert set(log) == {"a", "b"}
+
+
+def test_broadcast_isolates_failing_on_broadcast():
+    from human_nature.workspace import Workspace
+    log = []
+    class Crasher:
+        def __call__(self, state): return {"content": "c", "salience": 0.1}
+        def on_broadcast(self, winner): raise RuntimeError("boom")
+    class Recorder:
+        def __call__(self, state): return {"content": "r", "salience": 0.1}
+        def on_broadcast(self, winner): log.append(winner)
+    ws = Workspace()
+    ws.register("crash", Crasher())
+    ws.register("record", Recorder())
+    ws.broadcast({"winner": "x", "content": "x", "salience": 0.9, "losers": []})
+    assert len(log) == 1  # Recorder still notified despite Crasher raising
+
+
+def test_three_way_tie_first_registered_wins():
+    from human_nature.workspace import Workspace
+    ws = Workspace()
+    ws.register("a", lambda s: {"content": "A", "salience": 0.5})
+    ws.register("b", lambda s: {"content": "B", "salience": 0.5})
+    ws.register("c", lambda s: {"content": "C", "salience": 0.5})
+    result = ws.tick({})
+    assert result["winner"] == "a"

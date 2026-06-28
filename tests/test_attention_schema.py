@@ -109,11 +109,21 @@ def test_reattending_same_content_refreshes_to_one():
     assert f["intensity"] == 1.0
 
 
-def test_intensity_floored_at_zero():
+def test_immediate_reinforcement_keeps_full_intensity_and_empty_faded():
     from human_nature.attention_schema import AttentionSchema
+    a = AttentionSchema()
+    a.update({"content": "A"})
+    a.update({"content": "A"})  # same content, already attending — Case 1
+    f = a.focus()
+    assert f["attending"] == "A"
+    assert f["intensity"] == 1.0
+    assert f["faded"] == []
 
-    ast = AttentionSchema()
-    ast.update(_winner("seed"))
-    for i in range(100):           # drive decay to floor
-        ast.update(_winner(f"item-{i}"))
-    assert ast.focus()["intensity"] >= 0.0
+
+def test_intensity_decays_toward_zero_over_many_distinct_updates():
+    from human_nature.attention_schema import AttentionSchema
+    a = AttentionSchema()
+    for i in range(20):
+        a.update({"content": f"topic-{i}"})
+    f = a.focus()
+    assert 0.0 <= f["intensity"] < 0.05   # decayed far toward zero, never negative
