@@ -72,10 +72,10 @@ class ControlCog(dpy_commands.Cog):
         if await confirmDestructive(interaction, "abort the run"):
             state = spine.resolveTargetTask()
             if state is None:
-                return await interaction.followup.send(spine.NO_TASK, ephemeral=True)
+                return await interaction.followup.send(spine.NO_TASK, ephemeral=False)
             audit.record(interaction.user.id, "abort", state.task_id, "slash")
             msg = spine.applyCommand(ControlBus(state.task_id), state, spine.Command("abort", ""))
-            await interaction.followup.send(msg[:slash.MAX_REPLY], ephemeral=True)
+            await interaction.followup.send(msg[:slash.MAX_REPLY], ephemeral=False)
 
 
 async def setup(bot: dpy_commands.Bot) -> None:

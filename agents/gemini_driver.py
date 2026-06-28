@@ -210,22 +210,52 @@ class GeminiSession:
     # -- run-start health probe --------------------------------------------------------------
     def health_probe(self) -> bool:
         """Confirm Gemini is reachable + the key is valid before a run relies on it. Returns False
-        (never raises) on any problem so the orchestrator can fall back to Ollama for the run."""
-        try:
-            self.open()
-            resp = self._client.models.generate_content(
-                model=config.GEMINI_MODEL, contents="ping",
-                config=self._gen_config())
-            ok = bool(_response_text(resp))
-            if ok:
-                LOG.info("Gemini health probe passed (model=%s reachable)", config.GEMINI_MODEL)
-            else:
-                LOG.warning("Gemini health probe got an empty reply")
-            return ok
-        except Exception as e:  # noqa: BLE001
-            LOG.warning("Gemini health probe failed: %s", e)
-            self.close()
-            return False
+        (never raises) on any problem so the orchestrator can fall back to Ollama for the run.
+        Retries transient failures up to GEMINI_HEALTH_PROBE_RETRIES times before giving up."""
+        for attempt in range(1 + config.GEMINI_HEALTH_PROBE_RETRIES):
+            try:
+                self.open()
+                resp = self._client.models.generate_content(
+                    model=config.GEMINI_MODEL, contents="ping",
+                    config=self._gen_config())
+                text = _response_text(resp)
+                if text:
+                    LOG.info("Gemini health probe passed (model=%s reachable, attempt %d/%d)",
+                             config.GEMINI_MODEL, attempt + 1, 1 + config.GEMINI_HEALTH_PROBE_RETRIES)
+                    return True
+                # Empty response: transient, retry
+                reason = "empty response"
+                LOG.debug("Gemini health probe attempt %d got empty reply; retrying",
+                         attempt + 1)
+                if attempt < config.GEMINI_HEALTH_PROBE_RETRIES:
+                    continue
+                LOG.warning("Gemini health probe failed after %d attempt(s): %s",
+                           1 + config.GEMINI_HEALTH_PROBE_RETRIES, reason)
+                return False
+            except Exception as e:  # noqa: BLE001
+                # Classify error: fatal vs transient
+                code = getattr(e, "code", None) or getattr(e, "status_code", None)
+                msg = str(e).lower()
+                is_fatal = (
+                    code in (401, 403) or
+                    any(s in msg for s in ("api key", "api_key", "unauthenticated", "permission"))
+                )
+                reason = f"{type(e).__name__}: {e}"
+                if is_fatal:
+                    LOG.error("Gemini health probe FATAL (auth/perms): %s", reason)
+                    self.close()
+                    return False
+                # Transient: retry if we haven't exhausted retries
+                if attempt < config.GEMINI_HEALTH_PROBE_RETRIES:
+                    LOG.debug("Gemini health probe attempt %d transient error; retrying: %s",
+                             attempt + 1, reason)
+                    self.close()
+                    continue
+                LOG.warning("Gemini health probe failed after %d attempt(s): %s",
+                           1 + config.GEMINI_HEALTH_PROBE_RETRIES, reason)
+                self.close()
+                return False
+        return False
 
     # -- the one verb everything routes through ----------------------------------------------
     def ask(self, message: str, *, expect_json: bool = False) -> Optional[str]:

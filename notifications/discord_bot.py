@@ -55,6 +55,8 @@ from notifications.discord_embeds import (
     completeEmbed,
     gateNeededEmbed,
     subtaskFailedEmbed,
+    feedbackEmbed,
+    feedbackComponents,
     abortedEmbed,
     selfRefEmbed,
 )
@@ -150,5 +152,6 @@ __all__ = [
     # embed builders
     "planningStartEmbed", "architectDoneEmbed", "adversaryTriggeredEmbed",
     "noticeEmbed", "blockedEmbed", "blockedComponents", "completeEmbed",
-    "gateNeededEmbed", "subtaskFailedEmbed", "abortedEmbed", "selfRefEmbed",
+    "gateNeededEmbed", "subtaskFailedEmbed", "feedbackEmbed", "feedbackComponents",
+    "abortedEmbed", "selfRefEmbed",
 ]

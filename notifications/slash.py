@@ -50,8 +50,8 @@ def _ownerOk(interaction) -> bool:  # noqa: ANN001
 
 
 async def _runControl(interaction, name: str, arg: str = "") -> None:  # noqa: ANN001
-    """defer -> resolve task -> audit (mutating only) -> apply via the spine -> reply ephemerally."""
-    await interaction.response.defer(ephemeral=True)
+    """Defer, resolve the task, audit mutating commands, and post the result publicly."""
+    await interaction.response.defer(ephemeral=False)
 
     def _blocking() -> "str | None":
         # All ControlBus/TaskState/audit file IO runs off the event loop so a file-lock stall
@@ -65,8 +65,8 @@ async def _runControl(interaction, name: str, arg: str = "") -> None:  # noqa: A
 
     msg = await asyncio.to_thread(_blocking)
     if msg is None:
-        return await interaction.followup.send(commands.NO_TASK, ephemeral=True)
-    await interaction.followup.send(msg[:MAX_REPLY], ephemeral=True)
+        return await interaction.followup.send(commands.NO_TASK, ephemeral=False)
+    await interaction.followup.send(msg[:MAX_REPLY], ephemeral=False)
 
 
 async def _guard(interaction) -> bool:  # noqa: ANN001

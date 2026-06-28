@@ -81,7 +81,7 @@ Python 3.11 + 3.12).
 | `main.py` | entrypoint: goal input, elaboration approval, launch |
 | `orchestrator.py` | brain (Ollama) + core loop (architect→plan→verify→exec→PR) |
 | `config.py` | env/config + logging + UTF-8 stdio |
-| `control.py` | `ControlBus` — file-backed cross-process control (abort/pause/gates/ops) |
+| `platform_core/runtime/control.py` | `ControlBus` — file-backed cross-process control (abort/pause/gates/ops) |
 | `agents/` | elaborator, architect, executor, adversary, replanner, **verifier**, clarifier, playbook |
 | `state/task.py` | lean task-state model + JSON persistence |
 | `memory/obsidian.py` | REST-first, disk-fallback note writer/reader |

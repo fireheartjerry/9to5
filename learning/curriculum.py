@@ -14,7 +14,7 @@ EXPORTS:
   write_suggestions(goals: list[dict[str, Any]], path: Optional[Path]=None) -> Optional[Path]  -- Persist suggested goals (for the human/orchestrator to pick up)
 DEPENDS-ON: config, learning.lessons, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_curriculum_release.py
+RUN/TEST: python -m pytest tests/test_curriculum_adaptive_trigger.py tests/test_curriculum_release.py
 """
 from __future__ import annotations
 

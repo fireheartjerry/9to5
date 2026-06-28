@@ -121,7 +121,9 @@ def buildArgv(req: WorkRequest) -> list[str]:
         "--mode", req.mode,
         "--parallel", str(req.parallel),
     ]
-    if req.no_pr:
+    # Nightclaw's unattended/night runs should still create a review surface at the end.
+    # Keep the raw no_pr escape hatch for CLI/local callers, but never let night mode hide feedback.
+    if req.no_pr and not req.night_mode:
         argv.append("--no-pr")
     if req.night_mode:
         argv.append("--night-mode")

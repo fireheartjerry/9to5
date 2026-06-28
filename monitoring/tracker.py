@@ -31,7 +31,7 @@ from typing import Optional
 SUCCESS_RATE_MIN: float = 0.90
 MAX_DELAY_SECONDS: float = 300.0
 MAX_RETRIES: int = 3
-CRITICAL_DETECTION_WINDOW_SECS: float = 120.0
+CRITICAL_DETECTION_WINDOW_SECS: float = 60.0
 
 _lock = threading.Lock()
 _records: list[dict] = []

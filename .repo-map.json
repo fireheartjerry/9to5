@@ -23,8 +23,7 @@
     "state",
     "testing",
     "tests",
-    "validate_workflows",
-    "workflows"
+    "validate_workflows"
   ],
   "modules": {
     "agents": {
@@ -1293,6 +1292,7 @@
         "learning.solution_cache",
         "learning.toolsmith",
         "main",
+        "memory.experience_pr",
         "memory.experience_runs",
         "memory.experience_schema",
         "memory.experience_subtasks",
@@ -1328,6 +1328,7 @@
         "notifications.slash",
         "notifications.theme",
         "notifications.views_control",
+        "notifications.views_feedback",
         "notifications.views_run",
         "notifications.visuals_cards",
         "notifications.visuals_components",
@@ -1352,6 +1353,7 @@
         "platform_core.orchestration.knowledge_refresh",
         "platform_core.orchestration.llm_mixin",
         "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.review_mixin",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.run_loop_mixin",
@@ -1745,6 +1747,7 @@
         "unannotated"
       ],
       "test": [
+        "tests/test_curriculum_adaptive_trigger.py",
         "tests/test_curriculum_release.py"
       ],
       "callers": [
@@ -2727,14 +2730,14 @@
           "kind": "function",
           "signature": "(*, reason: str='post-run', force: bool=False, throttle_seconds: float=DEFAULT_THROTTLE_SECONDS, db_path: Optional[Path]=None) -> dict[str, Any]",
           "summary": "Run the throttled learning passes once (idempotent, best-effort, locked).",
-          "lineno": 118
+          "lineno": 126
         },
         {
           "name": "run_maintenance_async",
           "kind": "function",
           "signature": "(**kwargs)",
           "summary": "Start maintenance on a daemon thread and RETURN the thread so the caller can join it wi…",
-          "lineno": 284
+          "lineno": 401
         }
       ],
       "depends_on": [
@@ -2928,6 +2931,7 @@
       "depends_on": [
         "memory.experience_adapters",
         "memory.experience_policy",
+        "memory.experience_pr",
         "memory.experience_runs",
         "memory.experience_schema",
         "memory.experience_solutions",
@@ -2937,7 +2941,9 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_experience_ledger.py"
+        "tests/test_experience_ledger.py",
+        "tests/test_experience_pr.py",
+        "tests/test_memory_experience_pr.py"
       ],
       "callers": [
         "learning.adapter_ops",
@@ -2967,6 +2973,7 @@
         "memory.subtask_manager",
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.run_loop_mixin",
         "state.task_schema"
       ]
@@ -3164,6 +3171,40 @@
         "memory.experience"
       ]
     },
+    "memory.experience_pr": {
+      "path": "memory/experience_pr.py",
+      "purpose": "Experience Ledger -- PR outcome records (store and fetch).",
+      "exports": [
+        {
+          "name": "record_pr_outcome",
+          "kind": "function",
+          "signature": "(run_id: str, pr_url: str, result: dict[str, Any], *, subtask_id: Optional[str]=None, db_path: Optional[Path]=None) -> bool",
+          "summary": "Upsert one PR outcome row keyed by ``(run_id, pr_url)``",
+          "lineno": 31
+        },
+        {
+          "name": "fetch_pr_outcomes",
+          "kind": "function",
+          "signature": "(run_id: Optional[str]=None, *, promote_safe: Optional[bool]=None, limit: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "Query stored PR outcomes, optionally filtered by run or promotion safety.",
+          "lineno": 94
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience_schema"
+      ],
+      "side_effects": [
+        "writes to experience ledger (pr_outcomes table)"
+      ],
+      "test": [
+        "tests/test_experience_pr.py"
+      ],
+      "callers": [
+        "memory.experience",
+        "platform_core.orchestration.pr_feedback"
+      ]
+    },
     "memory.experience_runs": {
       "path": "memory/experience_runs.py",
       "purpose": "Experience Ledger -- run-level records (record, sync, fetch, analytics).",
@@ -3248,14 +3289,14 @@
           "kind": "function",
           "signature": "() -> None",
           "summary": "Close every pooled connection across all threads (shutdown / test teardown).",
-          "lineno": 313
+          "lineno": 327
         },
         {
           "name": "init",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> None",
           "summary": "Create the database + schema if absent (idempotent).",
-          "lineno": 329
+          "lineno": 343
         }
       ],
       "depends_on": [
@@ -3269,6 +3310,7 @@
         "memory.experience",
         "memory.experience_adapters",
         "memory.experience_policy",
+        "memory.experience_pr",
         "memory.experience_runs",
         "memory.experience_solutions",
         "memory.experience_subtasks"
@@ -3629,7 +3671,7 @@
         {
           "name": "startAlertLoop",
           "kind": "function",
-          "signature": "(interval_seconds: float=30.0) -> None",
+          "signature": "(interval_seconds: float=10.0) -> None",
           "summary": "Start a background daemon thread that calls ``checkAndNotify`` on an",
           "lineno": 50
         },
@@ -4145,7 +4187,7 @@
           "kind": "function",
           "signature": "(bot: dpy_commands.Bot) -> None",
           "summary": "",
-          "lineno": 204
+          "lineno": 203
         }
       ],
       "depends_on": [
@@ -4183,14 +4225,14 @@
           "kind": "function",
           "signature": "()",
           "summary": "Construct (but do not run) the NightclawBot",
-          "lineno": 117
+          "lineno": 119
         },
         {
           "name": "runBot",
           "kind": "function",
           "signature": "() -> None",
           "summary": "",
-          "lineno": 186
+          "lineno": 188
         }
       ],
       "depends_on": [
@@ -4199,6 +4241,7 @@
         "notifications.commands",
         "notifications.icons",
         "notifications.views",
+        "notifications.views_feedback",
         "platform_core.runtime.control"
       ],
       "side_effects": [
@@ -4393,8 +4436,7 @@
         "tests/test_bus_documentation.py",
         "tests/test_config_robust_env.py",
         "tests/test_memory_robustness.py",
-        "tests/test_notification_bus.py",
-        "tests/test_notification_bus_docs.py"
+        "tests/test_notification_bus.py"
       ],
       "callers": []
     },
@@ -4924,126 +4966,140 @@
           "kind": "function",
           "signature": "() -> str",
           "summary": "`<@id>` mention for the human, ONLY used on severe events",
-          "lineno": 48
+          "lineno": 50
         },
         {
           "name": "progressBar",
           "kind": "function",
           "signature": "(done: int, total: int, width: int=16) -> str",
           "summary": "",
-          "lineno": 55
+          "lineno": 57
         },
         {
           "name": "subtaskTracker",
           "kind": "function",
           "signature": "(subtasks: list[dict], limit: int=12) -> str",
           "summary": "",
-          "lineno": 64
+          "lineno": 66
         },
         {
           "name": "effortBar",
           "kind": "function",
           "signature": "(effort: Optional[str]) -> str",
           "summary": "",
-          "lineno": 80
+          "lineno": 82
         },
         {
           "name": "statusColor",
           "kind": "function",
           "signature": "(status: Optional[str]) -> int",
           "summary": "",
-          "lineno": 87
+          "lineno": 89
         },
         {
           "name": "relTime",
           "kind": "function",
           "signature": "(value=None) -> str",
           "summary": "Discord native relative timestamp: <t:UNIX:R>.",
-          "lineno": 91
+          "lineno": 93
         },
         {
           "name": "formatVerdict",
           "kind": "function",
           "signature": "(verdict: Optional[str]) -> str",
           "summary": "",
-          "lineno": 109
+          "lineno": 111
         },
         {
           "name": "planningStartEmbed",
           "kind": "function",
           "signature": "(goal: str, subtasks) -> dict",
           "summary": "Structured plan embed",
-          "lineno": 136
+          "lineno": 138
         },
         {
           "name": "architectDoneEmbed",
           "kind": "function",
           "signature": "(doc_path: str) -> dict",
           "summary": "",
-          "lineno": 168
+          "lineno": 170
         },
         {
           "name": "adversaryTriggeredEmbed",
           "kind": "function",
           "signature": "(subtask_title: str, reason: str, verdict: Optional[str]=None) -> dict",
           "summary": "",
-          "lineno": 177
+          "lineno": 179
         },
         {
           "name": "noticeEmbed",
           "kind": "function",
           "signature": "(reason: str, title: str='9TO5 — Notice') -> dict",
           "summary": "An AUTONOMOUS, informational event the system already handled itself (a fallback was ta…",
-          "lineno": 201
+          "lineno": 203
         },
         {
           "name": "blockedEmbed",
           "kind": "function",
           "signature": "(reason: str, question: Optional[str]=None) -> dict",
           "summary": "",
-          "lineno": 214
+          "lineno": 216
         },
         {
           "name": "blockedComponents",
           "kind": "function",
           "signature": "() -> list",
           "summary": "Action row with Answer / Skip / Abort buttons (handled by the gateway bot).",
-          "lineno": 228
+          "lineno": 230
         },
         {
           "name": "completeEmbed",
           "kind": "function",
           "signature": "(state, pr_link: str, elapsed: str) -> dict",
           "summary": "",
-          "lineno": 247
+          "lineno": 249
         },
         {
           "name": "gateNeededEmbed",
           "kind": "function",
           "signature": "(gate: str) -> dict",
           "summary": "",
-          "lineno": 282
+          "lineno": 284
         },
         {
           "name": "subtaskFailedEmbed",
           "kind": "function",
           "signature": "(subtask_id: str, title: str, verify_result: Optional[dict], attempts: int) -> dict",
           "summary": "",
-          "lineno": 292
+          "lineno": 294
+        },
+        {
+          "name": "feedbackEmbed",
+          "kind": "function",
+          "signature": "(subtask_id: str, goal: str, status: str) -> dict",
+          "summary": "Feedback prompt embed (Subsystem C) — post after subtask completion to invite human fee…",
+          "lineno": 316
+        },
+        {
+          "name": "feedbackComponents",
+          "kind": "function",
+          "signature": "() -> list",
+          "summary": "Action row with Approve / Reject / Skip / Retry buttons (Subsystem C feedback).",
+          "lineno": 340
         },
         {
           "name": "abortedEmbed",
           "kind": "function",
           "signature": "(reason: str, elapsed: str) -> dict",
           "summary": "",
-          "lineno": 314
+          "lineno": 360
         },
         {
           "name": "selfRefEmbed",
           "kind": "function",
           "signature": "(branch: str, protected: tuple) -> dict",
           "summary": "",
-          "lineno": 326
+          "lineno": 372
         }
       ],
       "depends_on": [
@@ -5130,9 +5186,7 @@
       ],
       "test": [
         "tests/test_entry_creation.py",
-        "tests/test_notification_entry.py",
-        "tests/test_notification_entry_schema.py",
-        "tests/test_notification_entry_ui.py"
+        "tests/test_notification_entry.py"
       ],
       "callers": [
         "state.task_schema"
@@ -5336,7 +5390,8 @@
       "callers": [
         "notifications.bot.cogs.control_cog",
         "notifications.bot.cogs.observe_cog",
-        "notifications.bot.cogs.runs_cog"
+        "notifications.bot.cogs.runs_cog",
+        "notifications.views_feedback"
       ]
     },
     "notifications.theme": {
@@ -5451,6 +5506,7 @@
       "exports": [],
       "depends_on": [
         "notifications.views_control",
+        "notifications.views_feedback",
         "notifications.views_run",
         "notifications.views_subtask"
       ],
@@ -5508,7 +5564,34 @@
       "test": [],
       "callers": [
         "notifications.views",
+        "notifications.views_feedback",
         "notifications.views_subtask"
+      ]
+    },
+    "notifications.views_feedback": {
+      "path": "notifications/views_feedback.py",
+      "purpose": "Feedback view for subtask completion -- FeedbackView with Approve/Reject/Skip/Retry buttons.",
+      "exports": [
+        {
+          "name": "FeedbackView",
+          "kind": "class",
+          "signature": "",
+          "summary": "Persistent (timeout=None) feedback view for subtask completion.",
+          "lineno": 21
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.slash",
+        "notifications.views_control"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.bot.core",
+        "notifications.views"
       ]
     },
     "notifications.views_run": {
@@ -5534,7 +5617,7 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 139
+          "lineno": 131
         }
       ],
       "depends_on": [
@@ -5760,56 +5843,56 @@
           "kind": "function",
           "signature": "() -> Optional[TaskState]",
           "summary": "The latest task iff it's still active",
-          "lineno": 133
+          "lineno": 135
         },
         {
           "name": "newestTaskSince",
           "kind": "function",
           "signature": "(ts: float) -> Optional[str]",
           "summary": "task_id of the newest state file created at/after `ts` (with ~2s mtime fuzz for filesys…",
-          "lineno": 194
+          "lineno": 196
         },
         {
           "name": "spawn",
           "kind": "function",
           "signature": "(req: WorkRequest) -> int",
           "summary": "",
-          "lineno": 232
+          "lineno": 234
         },
         {
           "name": "buildResumeArgv",
           "kind": "function",
           "signature": "(task_id: str) -> list[str]",
           "summary": "",
-          "lineno": 236
+          "lineno": 238
         },
         {
           "name": "taskExists",
           "kind": "function",
           "signature": "(task_id: str) -> bool",
           "summary": "",
-          "lineno": 240
+          "lineno": 242
         },
         {
           "name": "spawnResume",
           "kind": "function",
           "signature": "(task_id: str) -> int",
           "summary": "",
-          "lineno": 244
+          "lineno": 246
         },
         {
           "name": "launchOrError",
           "kind": "function",
           "signature": "(req: WorkRequest) -> str",
           "summary": "Validate -> block-if-active -> spawn -> confirm",
-          "lineno": 248
+          "lineno": 250
         },
         {
           "name": "resumeOrError",
           "kind": "function",
           "signature": "(task_id: str) -> str",
           "summary": "Resume an existing task by id (block if a run is active)",
-          "lineno": 278
+          "lineno": 280
         }
       ],
       "depends_on": [
@@ -6773,9 +6856,7 @@
           "lineno": 33
         }
       ],
-      "depends_on": [
-        "workflows.registry"
-      ],
+      "depends_on": [],
       "side_effects": [
         "unannotated"
       ],
@@ -7066,6 +7147,34 @@
         "orchestrator"
       ]
     },
+    "platform_core.orchestration.pr_feedback": {
+      "path": "platform_core/orchestration/pr_feedback.py",
+      "purpose": "Poll GitHub for CI status + review state after PR creation; write results to experience ledger.",
+      "exports": [
+        {
+          "name": "capturePRFeedback",
+          "kind": "function",
+          "signature": "(pr_url: str, run_id: str, subtask_id: Optional[str]=None, *, poll_attempts: int=6, poll_interval: int=30) -> dict[str, Any]",
+          "summary": "Poll GitHub CI + review state for ``pr_url`` and write the result to the experience led…",
+          "lineno": 283
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience",
+        "memory.experience_pr"
+      ],
+      "side_effects": [
+        "writes to experience ledger (record_feedback, record_reflection)"
+      ],
+      "test": [
+        "tests/test_pr_feedback.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.review_mixin",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
     "platform_core.orchestration.review_mixin": {
       "path": "platform_core/orchestration/review_mixin.py",
       "purpose": "Adversary review and PR mixin – second brain routing, Gemini session, git helpers, PR gate.",
@@ -7075,7 +7184,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles adversary review routing, Gemini session lifecycle, git helpers, and the PR gat…",
-          "lineno": 23
+          "lineno": 26
         }
       ],
       "depends_on": [
@@ -7087,6 +7196,7 @@
         "notifications.cast",
         "notifications.discord_bot",
         "platform_core.orchestration.github",
+        "platform_core.orchestration.pr_feedback",
         "state.task"
       ],
       "side_effects": [
@@ -7176,6 +7286,7 @@
         "orchestrator",
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.knowledge_refresh",
+        "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.time_utils",
         "platform_core.runtime.control",
         "state.task"
@@ -7600,9 +7711,7 @@
           "lineno": 39
         }
       ],
-      "depends_on": [
-        "workflows.scheduler"
-      ],
+      "depends_on": [],
       "side_effects": [
         "unannotated"
       ],
@@ -7912,6 +8021,84 @@
           "signature": "(argv: list[str]) -> int",
           "summary": "",
           "lineno": 61
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.check_skill_gap_analysis_docs": {
+      "path": "tools/check_skill_gap_analysis_docs.py",
+      "purpose": "check_skill_gap_analysis_docs.py",
+      "exports": [
+        {
+          "name": "checkFile",
+          "kind": "function",
+          "signature": "(path: pathlib.Path, required_strings: list, label: str) -> None",
+          "summary": "",
+          "lineno": 86
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 103
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.check_trace_replay_docs": {
+      "path": "tools/check_trace_replay_docs.py",
+      "purpose": "check_trace_replay_docs.py",
+      "exports": [
+        {
+          "name": "checkFile",
+          "kind": "function",
+          "signature": "(path: pathlib.Path, required_strings: list, label: str) -> None",
+          "summary": "",
+          "lineno": 94
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 111
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.check_trace_replay_subagent_docs": {
+      "path": "tools/check_trace_replay_subagent_docs.py",
+      "purpose": "check_trace_replay_subagent_docs.py",
+      "exports": [
+        {
+          "name": "checkFile",
+          "kind": "function",
+          "signature": "(path: pathlib.Path, required_strings: list, label: str) -> None",
+          "summary": "",
+          "lineno": 53
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 70
         }
       ],
       "depends_on": [],
@@ -8399,7 +8586,7 @@
           "kind": "function",
           "signature": "(m: dict, pkg: str) -> str",
           "summary": "",
-          "lineno": 105
+          "lineno": 114
         }
       ],
       "depends_on": [],
@@ -8435,6 +8622,58 @@
       "test": [],
       "callers": []
     },
+    "tools.update-skill-gap-analysis": {
+      "path": "tools/update-skill-gap-analysis.py",
+      "purpose": "update-skill-gap-analysis.py",
+      "exports": [
+        {
+          "name": "checkFile",
+          "kind": "function",
+          "signature": "(path: pathlib.Path, required_strings: list, label: str) -> None",
+          "summary": "",
+          "lineno": 60
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 77
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.update-trace-replay": {
+      "path": "tools/update-trace-replay.py",
+      "purpose": "update-trace-replay.py",
+      "exports": [
+        {
+          "name": "checkFile",
+          "kind": "function",
+          "signature": "(path: pathlib.Path, required_strings: list, label: str) -> None",
+          "summary": "",
+          "lineno": 65
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 82
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "validate_workflows": {
       "path": "validate_workflows.py",
       "purpose": "Compatibility script for CI workflow validation.",
@@ -8448,17 +8687,6 @@
       "test": [
         "tests/test_validate_workflows.py"
       ],
-      "callers": []
-    },
-    "workflows": {
-      "path": "workflows/__init__.py",
-      "purpose": "",
-      "exports": [],
-      "depends_on": [],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
       "callers": []
     },
     "workflows.registry": {
@@ -8482,9 +8710,7 @@
       "test": [
         "tests/test_registry.py"
       ],
-      "callers": [
-        "platform_core.ops.validate_workflows"
-      ]
+      "callers": []
     },
     "workflows.scheduler": {
       "path": "workflows/scheduler.py",
@@ -8513,9 +8739,7 @@
         "tests/test_priority_scheduler.py",
         "tests/test_scheduler_priority.py"
       ],
-      "callers": [
-        "scheduling.recurring"
-      ]
+      "callers": []
     },
     "workflows.skill-gap-analysis": {
       "path": "workflows/skill-gap-analysis.py",

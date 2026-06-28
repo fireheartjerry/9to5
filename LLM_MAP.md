@@ -23,15 +23,12 @@ For doc-sync rules, read `docs/DOC_MAINTENANCE.md`.
 ## Current top-level structure
 
 ```txt
-main.py
-orchestrator.py
-config.py
-control.py
-contracts.py        # cross-module payload shapes (TypedDicts)
-protocols.py        # replaceable-intelligence seams (Executor/Verifier/Reviewer/Brain)
-lifecycle.py        # canonical RunStatus/SubtaskStatus vocabulary
-resilience.py  selfmod.py  knowledge.py  llm_io.py
-identity.py  provenance.py  epoch.py      # guard primitives (role/provenance/epoch)
+main.py             # public entrypoint
+orchestrator.py     # public orchestrator facade
+config.py           # public config facade
+knowledge.py        # public Claude-knowledge facade
+validate_workflows.py
+selfmod.py  llm_io.py  nightclaw.py
 requirements.txt
 CLAUDE.md
 README.md
@@ -41,6 +38,7 @@ learning/       # SIE subsystem (32 modules) — traces, retrieval, policy, fine
 memory/         # obsidian + experience DB
 state/
 notifications/  # Discord/web dashboards, command bot, cogs
+platform_core/  # internal platform plumbing: core, runtime, orchestration, ops, config internals
 tools/          # AI-nav layer: repo_map.py, dev.py, affected_tests.py, codemod.py
 docs/
 tests/
@@ -51,12 +49,12 @@ tests/
 | Area | Likely files | Responsibility |
 |---|---|---|
 | Entry point / run loop | `main.py` | Starts runs, wires orchestrator, control, dashboards, and execution loop |
-| Brain/planning | `orchestrator.py`, `agents/elaborator.py`, `agents/replanner.py` | Goal elaboration, planning, replanning, prompt authorship |
+| Brain/planning | `orchestrator.py`, `platform_core/orchestration/`, `agents/elaborator.py`, `agents/replanner.py` | Goal elaboration, planning, replanning, prompt authorship |
 | Execution | `agents/executor.py` | Claude Code subprocess execution |
 | Architecture drafting | `agents/architect.py` | Generates architecture/design notes |
 | Adversarial review | `agents/adversary.py` | Critique/review verdicts |
 | Verification | `agents/verifier.py` | Runs verify commands and decides pass/fail |
-| Run control | `control.py` | ControlBus, pause/resume/abort/approval/plan ops |
+| Run control | `platform_core/runtime/control.py` | ControlBus, pause/resume/abort/approval/plan ops |
 | Task state | `state/task.py`, `state/tasks/` | Task JSON structure and persistence |
 | Memory | `memory/obsidian.py` | Obsidian REST API + disk fallback |
 | Discord dashboard | `notifications/dashboard.py`, `notifications/discord_bot.py` | Live embed and milestone embeds |
@@ -64,11 +62,11 @@ tests/
 | Gateway bot | `notifications/command_bot.py`, `notifications/bot/` | Discord gateway command bot / cogs |
 | Nightclaw surfaces | `notifications/*`, especially `bot/`, `ask.py`, `cast.py`, `engagement.py`, `ops.py` | Bot, cogs, dashboards, engagement, UI |
 | Learning / SIE | `learning/` (32 modules: `trace*`, `policy.py`, `finetune.py`, `promotion.py`, `rollout.py`, …) | Consumes traces, proposes improvements — **downstream only**, never mutates a live run |
-| Guards / boundaries | `agents/hooks.py`, `identity.py`, `provenance.py`, `epoch.py` | The only hard stops (self-modification guard) |
-| Contracts / seams / status | `contracts.py`, `protocols.py`, `lifecycle.py` | Cross-module shapes, replaceable-intelligence Protocols, canonical status vocab |
-| Resilience / self-mod | `resilience.py`, `selfmod.py` | Crash recovery + self-modification baseline |
+| Guards / boundaries | `agents/hooks.py`, `platform_core/core/identity.py`, `platform_core/core/provenance.py`, `platform_core/core/epoch.py` | The only hard stops (self-modification guard) |
+| Contracts / seams / status | `platform_core/core/contracts.py`, `platform_core/core/protocols.py`, `platform_core/core/lifecycle.py` | Cross-module shapes, replaceable-intelligence Protocols, canonical status vocab |
+| Resilience / self-mod | `platform_core/runtime/resilience.py`, `selfmod.py` | Crash recovery + self-modification baseline |
 | Dev / AI-nav tooling | `tools/repo_map.py`, `tools/dev.py`, `tools/affected_tests.py`, `tools/codemod.py` | `@AI-MAP` headers, `.repo-map.json`, `AGENTS.md`, fast check loop |
-| Config | `config.py`, `.env` | Runtime configuration |
+| Config | `config.py`, `platform_core/app_config/`, `.env` | Runtime configuration |
 | Docs | `CLAUDE.md`, `LLM_MAP.md`, `docs/` | Operating and architectural context for future agents |
 
 ## When changing code, read these docs first
@@ -123,7 +121,7 @@ Likely files:
 - `notifications/commands.py`
 - `notifications/command_bot.py`
 - `notifications/bot/cogs/*`
-- `control.py` if command changes ControlBus behavior
+- `platform_core/runtime/control.py` if command changes ControlBus behavior
 - `docs/NIGHTCLAW.md`
 - `docs/STATE.md` if control state changes
 
@@ -132,7 +130,7 @@ Likely files:
 Likely files:
 
 - `state/task.py`
-- `control.py` if control state is involved
+- `platform_core/runtime/control.py` if control state is involved
 - `main.py` if lifecycle assumptions change
 - `docs/STATE.md`
 - `docs/ARCHITECTURE.md`
@@ -159,56 +157,23 @@ Likely files:
 
 Learning may consume traces and propose improvements, but should not bypass verifier/adversary/guards.
 
-## Preferred future structure
+## Platform Core Guide
 
-When refactoring for LLM-native editability, prefer clear ownership:
+Use `platform_core/` for internal plumbing. Keep root files as public facades and entrypoints:
 
 ```txt
-orchestration/
-  task_graph.py
-  lifecycle.py
-  replanner.py
-
-execution/
-  claude_code_runner.py
-  subprocess_step.py
-  execution_result.py
-
-verification/
-  verify_spec.py
-  verify_runner.py
-  expectation_matcher.py
-
-control/
-  control_bus.py
-  commands.py
-  state_store.py
-
-dashboard/
-  discord_embed.py
-  web_server.py
-  metrics.py
-
-memory/
-  obsidian_store.py
-  experience_db.py
-
-learning/
-  trace_mining.py
-  eval_generation.py
-  adapter_experiments.py
-
-guards/
-  universe.py
-  path_policy.py
-
-drivers/
-  browser_executor.py
-  native_executor.py
-  gemini_driver.py
+platform_core/
+  app_config/       # config internals re-exported by config.py
+  cli/              # CLI parsing helpers used by main.py
+  core/             # contracts, identity, epoch, provenance, lifecycle, tracing, surfaces
+  knowledge_base/   # knowledge scrape/build/compress internals re-exported by knowledge.py
+  ops/              # doctor, health, staging validation, workflow validation, wipe
+  orchestration/    # orchestrator mixins and helpers used by orchestrator.py
+  runtime/          # ControlBus, retry/error handling, resilience
+  simulator/        # dry-run simulation and simulation-safe parsing
 ```
 
-Do not force this structure in one giant patch. Use it as the target direction when refactors are justified.
+Prefer editing the narrow implementation module under `platform_core/`, while preserving the root facade when callers already import it.
 
 ## Golden rule
 

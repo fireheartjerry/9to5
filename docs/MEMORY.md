@@ -76,6 +76,36 @@ It should not bypass:
 - hard boundaries
 - source-of-truth state ownership
 
+### PR outcomes table (`pr_outcomes`)
+
+Added alongside the existing `reflections` and `human_feedback` tables. Stores one
+row per `(run_id, pr_url)` keyed pair, upserted on each `capturePRFeedback` call:
+
+| Column | Type | Notes |
+|---|---|---|
+| `run_id` | TEXT | 9TO5 run ID |
+| `subtask_id` | TEXT | optional; enables `record_reflection` |
+| `pr_url` | TEXT | full GitHub PR URL |
+| `ci_status` | TEXT | `passed` / `failed` / `pending` / `unknown` |
+| `ci_summary` | TEXT | human-readable CI outcome |
+| `review_state` | TEXT | `approved` / `changes_requested` / `pending` / `none` |
+| `review_feedback_json` | TEXT | JSON list of reviewer comment bodies (max 3) |
+| `promote_safe` | INTEGER | `1` = safe to promote; `0` = blocked |
+| `provenance_json` | TEXT | JSON with `origin`, `owner`, `repo`, `pr_number`, `head_sha` |
+| `recorded_at` | TEXT | ISO-8601 timestamp |
+
+The schema is applied automatically on first `_connect()` — no migration script needed.
+
+**API:**
+```python
+from memory.experience_pr import record_pr_outcome, fetch_pr_outcomes
+
+# Fetch all outcomes where promotion is blocked
+blocked = fetch_pr_outcomes(promote_safe=False, limit=20)
+```
+
+See `docs/pr_feedback.md` for the full architecture and deployment instructions.
+
 ## Memory change checklist
 
 Before changing memory code:

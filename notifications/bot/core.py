@@ -16,7 +16,7 @@ EXPORTS:
   handleCommand(content: str) -> str  -- Parse + apply a '!' command against the latest task
   buildBot()  -- Construct (but do not run) the NightclawBot
   runBot() -> None
-DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, platform_core.runtime.control
+DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, notifications.views_feedback, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_simulation_core.py tests/test_skill_gap_analysis_core.py
 """
@@ -76,9 +76,11 @@ async def _setupPersistentViews(bot) -> None:  # pragma: no cover
     except Exception:  # noqa: BLE001
         pass
     from notifications import views
+    from notifications.views_feedback import FeedbackView
     from notifications.bot.ui.dynamic import SubtaskButton
     bot.add_view(views.ControlPanelView())   # persistent: matches cp_* anywhere
     bot.add_view(views.BlockedView())         # persistent: matches sc_*
+    bot.add_view(FeedbackView())              # persistent: matches fb_* (Subsystem C feedback)
     bot.add_dynamic_items(SubtaskButton)      # stateless per-subtask skip/inspect (Tier 2)
 
 

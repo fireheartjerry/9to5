@@ -123,6 +123,11 @@ The live Discord dashboard should:
 
 **Permissions:** Owner only (via `DISCORD_HUMAN_USER_ID`).
 
+Nightclaw-launched `/work` runs always attempt to create a PR at completion.
+Red tests, degraded progress, or adversary concerns are reported as review
+feedback instead of hiding the PR; only Git/GitHub failures or no tracked
+changes can prevent the PR from being created.
+
 Legacy `!` prefix commands still work (parsed by gateway bot).
 
 If command behavior changes, update:

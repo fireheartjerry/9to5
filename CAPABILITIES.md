@@ -75,7 +75,7 @@ one subtask; every 3rd subtask (heartbeat floor); right before PR creation.
 ## Control surfaces — the glass box
 - **Terminal / CLI** — `main.py` flags: `--mode watch|gated`, `--work-dir`,
   `--web-port`, `--no-web`, `--no-pr`, `--auto-approve`. Backed by **ControlBus**
-  (`control.py`), one JSON per task under `state/control/`, shared by the run,
+  (`platform_core/runtime/control.py`), one JSON per task under `state/control/`, shared by the run,
   the command bot, and the web dashboard.
   - **Control modes:** `watch` (autonomous + abort, default) or `gated`
     (approval gates at the `plan` and `pre_pr` boundaries).

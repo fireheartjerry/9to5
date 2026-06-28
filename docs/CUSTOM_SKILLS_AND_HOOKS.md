@@ -45,7 +45,7 @@ Trigger on edits to:
 agents/
 orchestrator.py
 main.py
-control.py
+platform_core/runtime/control.py
 state/
 memory/
 notifications/
@@ -87,7 +87,7 @@ Note: this already exists as `python tools/affected_tests.py <files>` (and
 | Changed file | Suggested command |
 |---|---|
 | `agents/verifier.py` | `python -m pytest tests/test_verify_multi_requirement.py tests/test_verify_shell_safety.py -q` |
-| `control.py` | `python -m pytest tests/test_control_concurrency.py -q` |
+| `platform_core/runtime/control.py` | `python -m pytest tests/test_control_concurrency.py -q` |
 | `notifications/dashboard.py` | `python -m pytest tests/test_dashboard.py -q` |
 | `memory/obsidian.py` | `python -m pytest tests/test_memory_subtask_manager.py -q` |
 

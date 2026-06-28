@@ -151,7 +151,7 @@ fail with "No such file or directory" or pytest usage-error (exit 4) from the sc
 - Disk fallback: `vault/9to5/tasks/<task_id>_<date>/subtasks/st-00N.md`
 
 #### 4e. Control check
-`ControlBus` (`control.py`) is polled. Possible outcomes:
+`ControlBus` (`platform_core/runtime/control.py`) is polled. Possible outcomes:
 
 | Signal | Action |
 |--------|--------|
@@ -201,7 +201,7 @@ and current subtask list. It may:
 - Reorder subtasks (dependency update)
 - Leave the plan unchanged (most common)
 
-Changes are applied atomically via `control.py :: applyPlanOps()` and logged to
+Changes are applied atomically via `platform_core/runtime/control.py :: applyPlanOps()` and logged to
 `vault/.../replan-log.md`.
 
 ---
@@ -213,8 +213,10 @@ the orchestrator calls:
 ```
 gh pr create --title "..." --body "..." --base <main_branch>
 ```
-This is best-effort: if it fails (no remote, no GitHub auth), the run still
-completes successfully.
+This is best-effort: if it fails (no remote, no GitHub auth, no tracked changes),
+the run still completes. Nightclaw-launched runs always attempt this step so users
+get a review surface even when tests, degradation checks, or adversary review
+produce feedback.
 
 **Decision point — gated mode:**
 If `--mode gated`, the run pauses here waiting for `!approve` before calling `gh`.
@@ -280,8 +282,8 @@ stderr (e.g. unittest's `OK`).
 | `main.py` | Entry point — goal input, elaboration approval, subprocess launch |
 | `orchestrator.py` | Brain loop — plan → spec → execute → verify → replan → PR |
 | `config.py` | Env vars, constants, logging, UTF-8 stdio |
-| `contracts.py` | Central TypedDicts: `InvocationSpec`, `ExecutorResult`, `WorkflowDefinition`, etc. |
-| `control.py` | `ControlBus` — file-backed cross-process abort/pause/gate/ops |
+| `platform_core/core/contracts.py` | Central TypedDicts: `InvocationSpec`, `ExecutorResult`, `WorkflowDefinition`, etc. |
+| `platform_core/runtime/control.py` | `ControlBus` — file-backed cross-process abort/pause/gate/ops |
 | `agents/elaborator.py` | Ollama goal expansion |
 | `agents/architect.py` | Ollama-authored architecture doc via Claude Code |
 | `agents/executor.py` | Claude Code CLI subprocess wrapper |
@@ -324,7 +326,7 @@ The `workflows/` module lets the orchestrator execute pre-defined, multi-phase a
 
 ### How it works
 
-1. `workflows/registry.py :: loadRegistry()` scans `workflows/definitions/*.json` at import time and validates each file against the `WorkflowDefinition` schema from `contracts.py`.
+1. `workflows/registry.py :: loadRegistry()` scans `workflows/definitions/*.json` at import time and validates each file against the `WorkflowDefinition` schema from `platform_core/core/contracts.py`.
 2. The orchestrator (or Ollama brain) sets `InvocationSpec.use_workflow = True` and provides a `WorkflowDefinition` in `InvocationSpec.workflow_definition`.
 3. `agents/executor.py :: _composeWorkflowPrompt()` expands the phases into a structured prompt handed to Claude Code.
 
@@ -394,7 +396,7 @@ Each maps to a discrete responsibility; they are the "how" behind every step abo
 | `agents/verifier.py` | 4c | Runs verify command; maps result to pass/fail/retry |
 | `agents/adversary.py` | 5 | Ollama-backed critique; returns `approved`/`challenged` |
 | `agents/replanner.py` | 6 | Post-subtask plan mutation via `applyPlanOps()` |
-| `control.py` | 4e, 3, 7 | `ControlBus` — file-backed abort/pause/gate/plan-ops |
+| `platform_core/runtime/control.py` | 4e, 3, 7 | `ControlBus` — file-backed abort/pause/gate/plan-ops |
 | `state/task.py` | all | Lean task-state model + JSON persistence |
 | `memory/obsidian.py` | 4d | REST-first, disk-fallback Obsidian note writer |
 

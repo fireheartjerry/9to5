@@ -18,6 +18,8 @@ EXPORTS:
   completeEmbed(state, pr_link: str, elapsed: str) -> dict
   gateNeededEmbed(gate: str) -> dict
   subtaskFailedEmbed(subtask_id: str, title: str, verify_result: Optional[dict], attempts: int) -> dict
+  feedbackEmbed(subtask_id: str, goal: str, status: str) -> dict  -- Feedback prompt embed (Subsystem C) — post after subtask completion to invite human fee…
+  feedbackComponents() -> list  -- Action row with Approve / Reject / Skip / Retry buttons (Subsystem C feedback).
   abortedEmbed(reason: str, elapsed: str) -> dict
   selfRefEmbed(branch: str, protected: tuple) -> dict
 DEPENDS-ON: config, notifications.discord_client, notifications.icons
@@ -309,6 +311,50 @@ def subtaskFailedEmbed(subtask_id: str, title: str, verify_result: Optional[dict
         "fields": fields,
         "footer": {"text": "task continues with remaining subtasks"},
     }
+
+
+def feedbackEmbed(subtask_id: str, goal: str, status: str) -> dict:
+    """Feedback prompt embed (Subsystem C) — post after subtask completion to invite human feedback.
+
+    Displays: "Feedback needed — [status emoji] [goal]" with a prompt for Approve/Reject/Skip/Retry.
+    """
+    status_emoji = "✅" if status == "done" else "❌" if status == "failed" else "⏸️"
+    title = f"Feedback needed — {status_emoji} {truncate(goal, 200)}"
+    desc = (
+        f"Subtask `{subtask_id}` has completed.\n\n"
+        f"**Your feedback (1 click):**\n"
+        f"• **Approve** — accept the result and move on\n"
+        f"• **Reject** — mark as unsatisfactory, block progress\n"
+        f"• **Skip** — skip this subtask, continue with others\n"
+        f"• **Retry** — retry the subtask (executor will rework it)"
+    )
+    return {
+        "title": title,
+        "description": desc,
+        "color": statusColor(status),
+        "timestamp": _nowIso(),
+        "footer": {"text": f"task {subtask_id[:8]}"},
+    }
+
+
+def feedbackComponents() -> list:
+    """Action row with Approve / Reject / Skip / Retry buttons (Subsystem C feedback).
+    Buttons carry professional app-emoji icons when provisioned (clean text otherwise)."""
+    from notifications import icons
+
+    def _b(style, label, cid, concept):
+        b = {"type": 2, "style": style, "label": label, "custom_id": cid}
+        em = icons.buttonEmoji(concept)    # near-white button icon
+        if em:
+            b["emoji"] = em
+        return b
+
+    return [{"type": 1, "components": [
+        _b(3, "Approve", "fb_approve", "done"),       # style 3 = green (success)
+        _b(4, "Reject", "fb_reject", "fail"),         # style 4 = red (danger)
+        _b(2, "Skip", "fb_skip", "skip"),             # style 2 = gray (secondary)
+        _b(1, "Retry", "fb_retry", "retry"),          # style 1 = blue (primary)
+    ]}]
 
 
 def abortedEmbed(reason: str, elapsed: str) -> dict:

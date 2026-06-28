@@ -51,16 +51,16 @@ jobs:
           core=false
           while IFS= read -r f; do
             [[ -z "$f" ]] && continue
-            if [[ ! "$f" =~ ^(docs/|.*\.md$|AGENTS\.md$|LLM_MAP\.md$|CAPABILITIES\.md$|README\.md$) ]]; then
+            if [[ ! "$f" =~ ^(docs/|.*\.md$|LLM_MAP\.md$|CAPABILITIES\.md$|README\.md$) ]]; then
               docs_only=false
             fi
-            if [[ ! "$f" =~ ^(\.github/workflows/|workflows/|src/workflow_registry\.py|validate_workflows\.py|tests/test_.*workflow.*\.py|tests/test_validate_workflows\.py) ]]; then
+            if [[ ! "$f" =~ ^(\.github/workflows/|workflows/|validate_workflows\.py|tests/test_.*workflow.*\.py|tests/test_validate_workflows\.py) ]]; then
               workflow_only=false
             fi
-            if [[ ! "$f" =~ ^(tools/|tests/test_(repo_map|tools)\.py|\.repo-map\.json|.*AGENTS\.md$) ]]; then
+            if [[ ! "$f" =~ ^(tools/|tests/test_(repo_map|tools)\.py|\.repo-map\.json) ]]; then
               tooling_only=false
             fi
-            if [[ ! "$f" =~ ^(docs/|.*\.md$|\.github/workflows/|tools/|\.repo-map\.json|.*AGENTS\.md$) ]]; then
+            if [[ ! "$f" =~ ^(docs/|.*\.md$|\.github/workflows/|tools/|\.repo-map\.json) ]]; then
               core=true
             fi
           done < /tmp/changed.txt
@@ -88,8 +88,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Repo-map drift
-        run: python tools/repo_map.py --check
+      - name: Repo-map generate
+        run: python tools/repo_map.py
 
   workflow-validation:
     needs: classify

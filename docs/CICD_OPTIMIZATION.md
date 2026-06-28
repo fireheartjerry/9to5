@@ -111,8 +111,8 @@ heavy tests like `test_builder_sim.py` (`"sim"` ≠ `"simulation"`) and `test_dr
 run full `runFull` pipelines in the fast lane.
 
 **Two unmocked subsystems dominate — and the autonomous loop pays them live:**
-- **Epoch fingerprint repo-walk** — `identity.py:129` `PROJECT_ROOT.rglob("*.py")` enumerates
-  **14,337 files** to keep 143; `_canonical()` (`identity.py:31-38`) `realpath` called **238,496×**;
+- **Epoch fingerprint repo-walk** — `platform_core/core/identity.py:129` `PROJECT_ROOT.rglob("*.py")` enumerates
+  **14,337 files** to keep 143; `_canonical()` (`platform_core/core/identity.py:31-38`) `realpath` called **238,496×**;
   `_isUnder` re-canonicalizes constant roots per file. `epoch.fingerprint()` = 3.85s cold, run
   **4×/run** via `orchestrator.py:59 _checkCodeDivergence` (~15-19s/run).
 - **Memory retrieval scans real 33 MB `state/experience.db`** — `memory/retrieval.py:116-165`
@@ -122,11 +122,11 @@ run full `runFull` pipelines in the fast lane.
 ### Fixes (ranked; #1-#3 also speed production `runFull`)
 | # | Change | File:line | Saving |
 |---|---|---|---|
-| 1 | Prune during traversal (`os.walk`, skip non-self/venv/.git/.claude before descending) instead of `rglob` then filter | `identity.py:124-137` | 3.85s → ~0.1-0.3s/walk |
-| 2 | Memoize `_canonical()` for the constant roots (compute once at import) | `identity.py:31-44` | ~200k syscalls gone |
-| 3 | Cache `selfCodeFiles()` per run; compare mtimes instead of re-walk+re-hash each subtask | `orchestrator.py:59`, `epoch.py:94-96` | 4 walks/run → 1 |
+| 1 | Prune during traversal (`os.walk`, skip non-self/venv/.git/.claude before descending) instead of `rglob` then filter | `platform_core/core/identity.py:124-137` | 3.85s -> ~0.1-0.3s/walk |
+| 2 | Memoize `_canonical()` for the constant roots (compute once at import) | `platform_core/core/identity.py:31-44` | ~200k syscalls gone |
+| 3 | Cache `selfCodeFiles()` per run; compare mtimes instead of re-walk+re-hash each subtask | `orchestrator.py:59`, `platform_core/core/epoch.py:94-96` | 4 walks/run -> 1 |
 | 4 | Mock `retrieval.retrieve` / `lessons_block` (or empty tmp `db_path`) in pipeline tests | `test_dry_run.py`, `test_builder_sim.py` | ~6-13s/test |
-| 5 | `mock.patch("identity.selfCodeFiles", ...)` in epoch/identity unit tests (copy `test_epoch.py:14,52`) | `test_epoch*.py`, `test_identity.py` | ~3.8s → ~0.05s each |
+| 5 | `mock.patch("platform_core.core.identity.selfCodeFiles", ...)` in epoch/identity unit tests (copy `test_epoch.py:14,52`) | `test_epoch*.py`, `test_identity.py` | ~3.8s -> ~0.05s each |
 | 6 | Obsidian test: writer `range(25)→5` + throttle reader spin | `test_obsidian_atomic_claude_md.py:23,28` | 9s → ~1s |
 
 **Outcomes:** re-tag only → fast lane ~40s (cost hidden in slow lane). **Make-fast (#1-#6,
@@ -173,7 +173,7 @@ pytest collection 1.22s (healthy); bytecode cache on.
   `addopts = -ra --strict-markers`; start using `pytest --lf` / `dev.py check <file>`.
 - **Tier 1 — CI restructure:** pytest + `-n auto --dist loadscope` + fast/slow lanes; matrix trim;
   `uv` installs; gate smoke/slow to PR→main.
-- **Tier 2 — deeper, touches core (DANGER_MAP):** `identity.py` walk + canonical memoization +
+- **Tier 2 — deeper, touches core (DANGER_MAP):** `platform_core/core/identity.py` walk + canonical memoization +
   `selfCodeFiles` caching; retrieval mock/isolation + experience-db fixture; `ollama` lazy imports;
   re-tag/make-fast the heavy tests. Speeds tests **and** production `runFull`.
 
@@ -197,7 +197,7 @@ regression fixes (staging gate + ollama harness invariant).
 
 **Task 5 (per-run `selfCodeFiles` cache / mtime divergence) — SKIPPED.** Task 4 already collapsed
 the fingerprint walk to 0.057s, making the "4 walks/run" cost ~0.2s. Adding cache machinery to
-`epoch.py`/`orchestrator.py` (DANGER_MAP core) for ~0.2s failed the simplicity-first bar.
+`platform_core/core/epoch.py`/`orchestrator.py` (DANGER_MAP core) for ~0.2s failed the simplicity-first bar.
 
 **Pre-existing failures (NOT from this work; reproduce on the branch base):**
 - `test_repo_map.py::test_no_drift` — 24 stale `@AI-MAP`/`AGENTS.md` headers from the inherited

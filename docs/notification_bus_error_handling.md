@@ -174,7 +174,7 @@ raises `TypeError`.
 
 ## ControlBus for shutdown signals
 
-`ControlBus` (`control.py`) is the correct channel for surfaces that need to
+`ControlBus` (`platform_core/runtime/control.py`) is the correct channel for surfaces that need to
 signal abort or pause to the orchestrator.  Write a control command from
 inside `handle()` instead of raising:
 

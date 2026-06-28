@@ -34,7 +34,7 @@ class ObserveCog(dpy_commands.Cog):
 
     @app_commands.command(name="status", description="Current run status")
     async def status(self, interaction) -> None:  # noqa: ANN001
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
         uptime = self._uptime()
 
         def _payload():
@@ -46,12 +46,12 @@ class ObserveCog(dpy_commands.Cog):
 
         e = await asyncio.to_thread(_payload)
         if e is None:
-            return await interaction.followup.send(spine.NO_TASK, ephemeral=True)
-        await interaction.followup.send(embed=slash._embed(e), ephemeral=True)
+            return await interaction.followup.send(spine.NO_TASK, ephemeral=False)
+        await interaction.followup.send(embed=slash._embed(e), ephemeral=False)
 
     @app_commands.command(name="plan", description="The subtask plan")
     async def plan(self, interaction) -> None:  # noqa: ANN001
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
 
         def _pages():
             # off the event loop: resolveTargetTask (glob + JSON read) + planEmbed page build.
@@ -63,14 +63,14 @@ class ObserveCog(dpy_commands.Cog):
 
         pages = await asyncio.to_thread(_pages)
         if pages is None:
-            return await interaction.followup.send(spine.NO_TASK, ephemeral=True)
+            return await interaction.followup.send(spine.NO_TASK, ephemeral=False)
         total = len(pages)
         from notifications.views import Paginator
         if total > 1:
             await interaction.followup.send(embed=pages[0],
-                                            view=Paginator(interaction.user.id, pages), ephemeral=True)
+                                            view=Paginator(interaction.user.id, pages), ephemeral=False)
         else:
-            await interaction.followup.send(embed=pages[0], ephemeral=True)
+            await interaction.followup.send(embed=pages[0], ephemeral=False)
 
     @app_commands.command(name="log", description="Obsidian index + web dashboard URL")
     async def log(self, interaction) -> None:  # noqa: ANN001
@@ -78,30 +78,30 @@ class ObserveCog(dpy_commands.Cog):
 
     @app_commands.command(name="help", description="Show the command list")
     async def help_(self, interaction) -> None:  # noqa: ANN001
-        await interaction.response.send_message(embed=slash._embed(branding.helpEmbed()), ephemeral=True)
+        await interaction.response.send_message(embed=slash._embed(branding.helpEmbed()), ephemeral=False)
 
     @app_commands.command(name="ping", description="Bot latency, uptime, version")
     async def ping(self, interaction) -> None:  # noqa: ANN001
         ms = round(self.bot.latency * 1000) if self.bot.latency else 0
         e = branding.pingEmbed(ms, self._uptime(), config.VERSION)
-        await interaction.response.send_message(embed=slash._embed(e), ephemeral=True)
+        await interaction.response.send_message(embed=slash._embed(e), ephemeral=False)
 
     @app_commands.command(name="diagnostics", description="Environment health checks")
     async def diagnostics(self, interaction) -> None:  # noqa: ANN001
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
         checks = await asyncio.to_thread(health.collectHealth)
-        await interaction.followup.send(embed=slash._embed(branding.diagnosticsEmbed(checks)), ephemeral=True)
+        await interaction.followup.send(embed=slash._embed(branding.diagnosticsEmbed(checks)), ephemeral=False)
 
     @app_commands.command(name="metrics", description="Aggregate run metrics")
     async def metrics_(self, interaction) -> None:  # noqa: ANN001
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
         m = await asyncio.to_thread(metrics.compute)
-        await interaction.followup.send(embed=slash._embed(branding.metricsEmbed(m)), ephemeral=True)
+        await interaction.followup.send(embed=slash._embed(branding.metricsEmbed(m)), ephemeral=False)
 
     @app_commands.command(name="audit", description="Recent control actions")
     async def audit_(self, interaction) -> None:  # noqa: ANN001
         await interaction.response.send_message(
-            embed=slash._embed(branding.auditEmbed(audit.recent(20))), ephemeral=True)
+            embed=slash._embed(branding.auditEmbed(audit.recent(20))), ephemeral=False)
 
 
 async def setup(bot: dpy_commands.Bot) -> None:

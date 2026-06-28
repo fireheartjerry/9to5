@@ -11,7 +11,7 @@ Conceptual home of "Nightclaw" — see `docs/NIGHTCLAW.md`.
 
 ## The one rule
 These are **windows into state, not competing state machines.** Display must derive from canonical
-run state (`state/task.py`); control intent flows through the **ControlBus** (`control.py`). Never
+run state (`state/task.py`); control intent flows through the **ControlBus** (`platform_core/runtime/control.py`). Never
 persist authoritative state in a dashboard path. Respect Discord embed/field limits (clamp).
 
 ## Tests

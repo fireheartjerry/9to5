@@ -38,7 +38,7 @@ def _tracked_py_files() -> list[Path]:
     for line in _run_git_ls():
         p = REPO_ROOT / line
         parts = set(p.relative_to(REPO_ROOT).parts)
-        if parts & {"logs", "venv", "__pycache__", ".pytest_cache"}:
+        if parts & {"logs", "venv", "__pycache__", ".pytest_cache", "tests"}:
             continue
         paths.append(p)
     return paths

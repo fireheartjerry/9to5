@@ -194,6 +194,8 @@ GEMINI_TIMEOUT_MS: int = _envInt("GEMINI_TIMEOUT_MS", 120000)
 GEMINI_MAX_TURNS: int = _envInt("GEMINI_MAX_TURNS", 40)        # rollover to a fresh chat
 GEMINI_MIN_OUTPUT_CHARS: int = _envInt("GEMINI_MIN_OUTPUT_CHARS", 200)   # cost guard
 GEMINI_JSON_REPAIR_RETRIES: int = _envInt("GEMINI_JSON_REPAIR_RETRIES", 1)
+# Health probe resilience: retry transient failures up to N times before falling back to Ollama
+GEMINI_HEALTH_PROBE_RETRIES: int = _envInt("GEMINI_HEALTH_PROBE_RETRIES", 2)
 GEMINI_SYSTEM_PREAMBLE: str = os.getenv(
     "GEMINI_SYSTEM_PREAMBLE",
     "You are the second brain for the 9to5 autonomous orchestrator: a strict, independent "
@@ -298,7 +300,7 @@ ARCHITECTURE_BRIEF: str = (
     "Key files: `orchestrator.py` (brain loop: plan->spec->execute->verify->retry->replan), "
     "`main.py` (entry/CLI/resume/health/terminal-control), `config.py` (env+constants), "
     "`agents/` (elaborator, architect, executor, adversary[stub], replanner, verifier, hooks), "
-    "`control.py` (ControlBus: abort/pause/gates), `memory/obsidian.py` (notes, REST+disk fallback), "
+    "`platform_core/runtime/control.py` (ControlBus: abort/pause/gates), `memory/obsidian.py` (notes, REST+disk fallback), "
     "`state/task.py` (lean task JSON), `notifications/` (discord_bot, dashboard, webdash, command_bot), "
     "`health.py` (/health checks).\n"
     "Invocation-spec keys: claude_md_inject, skills_to_invoke, effort_level, subagent, prompt, "
