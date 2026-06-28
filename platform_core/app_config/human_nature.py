@@ -32,3 +32,7 @@ HN_FAST_MODEL: str = os.getenv("HN_FAST_MODEL", "qwen2.5:1.5b")
 
 # Conviction ledger database (mirrors EXPERIENCE_DB_PATH location).
 CONVICTION_DB_PATH = PROJECT_ROOT / "state" / "conviction.db"
+
+# A/B validation harness database (behaviour-coupling gated here until non-inferior
+# task outcomes are proven; see human_nature/ab_harness.py).
+AB_HARNESS_DB_PATH = PROJECT_ROOT / "state" / "ab_runs.db"
