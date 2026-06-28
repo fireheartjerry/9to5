@@ -134,7 +134,7 @@
         {
           "name": "authorArchitectPrompt",
           "kind": "function",
-          "signature": "(goal_elaborated: str, chat=None) -> str",
+          "signature": "(goal_elaborated: str, chat=None, discovery_report=None) -> str",
           "summary": "Ollama authors the prompt that will be sent to Claude Code CLI.",
           "lineno": 53
         }
@@ -302,6 +302,146 @@
       ],
       "test": [
         "tests/test_debugging_workflow.py"
+      ],
+      "callers": []
+    },
+    "agents.discovery": {
+      "path": "agents/discovery/__init__.py",
+      "purpose": "Proactive Discovery Engine — public facade.",
+      "exports": [
+        {
+          "name": "shouldRunFullDiscovery",
+          "kind": "function",
+          "signature": "(goal_raw: str) -> bool",
+          "summary": "True when goal is absent or matches a vague pattern.",
+          "lineno": 33
+        },
+        {
+          "name": "run_discovery",
+          "kind": "function",
+          "signature": "(work_dir: str, goal_raw: str) -> Optional[DiscoveryReport]",
+          "summary": "Run the full discovery pipeline",
+          "lineno": 41
+        }
+      ],
+      "depends_on": [
+        "agents.discovery",
+        "agents.discovery.models",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.discovery",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "agents.discovery.digest": {
+      "path": "agents/discovery/digest.py",
+      "purpose": "Phase 0: compile the shared codebase digest for all lens agents.",
+      "exports": [
+        {
+          "name": "compile_digest",
+          "kind": "function",
+          "signature": "(work_dir: str) -> dict",
+          "summary": "Compile and return the full codebase digest",
+          "lineno": 242
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.postmortem",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_discovery_digest.py"
+      ],
+      "callers": []
+    },
+    "agents.discovery.lenses": {
+      "path": "agents/discovery/lenses.py",
+      "purpose": "Phase 1: parallel lens panel — 5 agents run concurrently on the digest.",
+      "exports": [
+        {
+          "name": "run_lens_panel",
+          "kind": "function",
+          "signature": "(digest: dict) -> List[Finding]",
+          "summary": "Run all lenses in parallel",
+          "lineno": 253
+        }
+      ],
+      "depends_on": [
+        "agents.discovery.models",
+        "config",
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_discovery_lenses.py"
+      ],
+      "callers": []
+    },
+    "agents.discovery.models": {
+      "path": "agents/discovery/models.py",
+      "purpose": "Finding and DiscoveryReport dataclasses for the discovery engine.",
+      "exports": [
+        {
+          "name": "Finding",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 18
+        },
+        {
+          "name": "DiscoveryReport",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 46
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_discovery_models.py"
+      ],
+      "callers": [
+        "agents.discovery",
+        "agents.discovery.lenses",
+        "agents.discovery.synthesis"
+      ]
+    },
+    "agents.discovery.synthesis": {
+      "path": "agents/discovery/synthesis.py",
+      "purpose": "Phase 2: synthesize lens findings into a ranked DiscoveryReport.",
+      "exports": [
+        {
+          "name": "synthesize",
+          "kind": "function",
+          "signature": "(findings: List[Finding]) -> DiscoveryReport",
+          "summary": "Rank and filter findings into a DiscoveryReport",
+          "lineno": 116
+        }
+      ],
+      "depends_on": [
+        "agents.discovery.models",
+        "config",
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_discovery_synthesis.py"
       ],
       "callers": []
     },
@@ -1243,6 +1383,10 @@
         "agents.architect",
         "agents.browser_executor",
         "agents.clarifier",
+        "agents.discovery",
+        "agents.discovery.digest",
+        "agents.discovery.lenses",
+        "agents.discovery.synthesis",
         "agents.elaborator",
         "agents.executor",
         "agents.executor_env",
@@ -1345,6 +1489,7 @@
         "platform_core.knowledge_base.compress",
         "platform_core.knowledge_base.scraper",
         "platform_core.ops.doctor",
+        "platform_core.ops.external_project",
         "platform_core.ops.health",
         "platform_core.ops.staging_validator",
         "platform_core.ops.wipe",
@@ -2314,6 +2459,7 @@
       ],
       "test": [],
       "callers": [
+        "agents.discovery.digest",
         "learning.sie",
         "platform_core.orchestration.plan_mixin"
       ]
@@ -2876,6 +3022,8 @@
         "agents.adversary_review",
         "agents.architect",
         "agents.clarifier",
+        "agents.discovery.lenses",
+        "agents.discovery.synthesis",
         "agents.replanner",
         "notifications.ask",
         "platform_core.orchestration.brain_io"
@@ -2901,6 +3049,7 @@
         "orchestrator.refreshClaudeKnowledge",
         "platform_core.cli.main_cli",
         "platform_core.ops.doctor",
+        "platform_core.ops.external_project",
         "platform_core.ops.health",
         "platform_core.runtime.control",
         "platform_core.runtime.resilience",
@@ -2947,6 +3096,7 @@
         "tests/test_memory_experience_pr.py"
       ],
       "callers": [
+        "agents.discovery.digest",
         "learning.adapter_ops",
         "learning.adapter_promotion",
         "learning.confidence",
@@ -4188,7 +4338,7 @@
           "kind": "function",
           "signature": "(bot: dpy_commands.Bot) -> None",
           "summary": "",
-          "lineno": 203
+          "lineno": 207
         }
       ],
       "depends_on": [
@@ -5618,7 +5768,7 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 131
+          "lineno": 133
         }
       ],
       "depends_on": [
@@ -5816,89 +5966,104 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 71
+          "lineno": 74
         },
         {
           "name": "parseHours",
           "kind": "function",
           "signature": "(raw) -> float",
           "summary": "Tolerant parse ('2', '2h', '1.5')",
-          "lineno": 81
+          "lineno": 86
         },
         {
           "name": "validate",
           "kind": "function",
           "signature": "(req: WorkRequest) -> list[str]",
           "summary": "",
-          "lineno": 98
+          "lineno": 103
+        },
+        {
+          "name": "externalReadiness",
+          "kind": "function",
+          "signature": "(req: WorkRequest) -> list[str]",
+          "summary": "Warn about external-project setup gaps that degrade PR output, without blocking launch.",
+          "lineno": 124
         },
         {
           "name": "buildArgv",
           "kind": "function",
           "signature": "(req: WorkRequest) -> list[str]",
           "summary": "",
-          "lineno": 115
+          "lineno": 157
+        },
+        {
+          "name": "prepareExternalRepo",
+          "kind": "function",
+          "signature": "(req: WorkRequest) -> None",
+          "summary": "Clone repo_url into a managed workspace and mutate req.work_dir for this launch.",
+          "lineno": 181
         },
         {
           "name": "activeRun",
           "kind": "function",
           "signature": "() -> Optional[TaskState]",
           "summary": "The latest task iff it's still active",
-          "lineno": 135
+          "lineno": 191
         },
         {
           "name": "newestTaskSince",
           "kind": "function",
           "signature": "(ts: float) -> Optional[str]",
           "summary": "task_id of the newest state file created at/after `ts` (with ~2s mtime fuzz for filesys…",
-          "lineno": 196
+          "lineno": 252
         },
         {
           "name": "spawn",
           "kind": "function",
           "signature": "(req: WorkRequest) -> int",
           "summary": "",
-          "lineno": 234
+          "lineno": 290
         },
         {
           "name": "buildResumeArgv",
           "kind": "function",
           "signature": "(task_id: str) -> list[str]",
           "summary": "",
-          "lineno": 238
+          "lineno": 294
         },
         {
           "name": "taskExists",
           "kind": "function",
           "signature": "(task_id: str) -> bool",
           "summary": "",
-          "lineno": 242
+          "lineno": 298
         },
         {
           "name": "spawnResume",
           "kind": "function",
           "signature": "(task_id: str) -> int",
           "summary": "",
-          "lineno": 246
+          "lineno": 302
         },
         {
           "name": "launchOrError",
           "kind": "function",
           "signature": "(req: WorkRequest) -> str",
           "summary": "Validate -> block-if-active -> spawn -> confirm",
-          "lineno": 250
+          "lineno": 306
         },
         {
           "name": "resumeOrError",
           "kind": "function",
           "signature": "(task_id: str) -> str",
           "summary": "Resume an existing task by id (block if a run is active)",
-          "lineno": 280
+          "lineno": 348
         }
       ],
       "depends_on": [
         "config",
         "notifications.commands",
+        "platform_core.ops.external_project",
         "platform_core.runtime.control",
         "state.task"
       ],
@@ -6782,6 +6947,32 @@
         "main"
       ]
     },
+    "platform_core.ops.external_project": {
+      "path": "platform_core/ops/external_project.py",
+      "purpose": "Managed external project checkout helpers.",
+      "exports": [
+        {
+          "name": "cloneRepo",
+          "kind": "function",
+          "signature": "(repo_url: str, ref: str | None=None) -> Path",
+          "summary": "Clone a remote repo into 9to5's managed external workspace.",
+          "lineno": 33
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_external_project.py"
+      ],
+      "callers": [
+        "main",
+        "notifications.work_launcher"
+      ]
+    },
     "platform_core.ops.health": {
       "path": "platform_core/ops/health.py",
       "purpose": "9to5 /health -- environment readiness checks.",
@@ -7035,7 +7226,7 @@
           "kind": "function",
           "signature": "(state, work_dir: str) -> dict",
           "summary": "Create a PR for the completed run",
-          "lineno": 21
+          "lineno": 22
         }
       ],
       "depends_on": [
@@ -7277,6 +7468,7 @@
       ],
       "depends_on": [
         "agents.architect",
+        "agents.discovery",
         "agents.verifier",
         "config",
         "learning.adversary_trust",

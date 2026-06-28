@@ -62,6 +62,7 @@ class TaskState:
                 "universe": None,
                 "epoch": None,
                 "state_epoch": 0,
+                "discovery_report": None,
             },
             "plan": {"architect_design_doc": None, "subtasks": []},
             "adversary_reviews": [],
