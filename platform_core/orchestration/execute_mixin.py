@@ -240,10 +240,27 @@ class OrchestratorExecuteMixin:
                          effort=spec.get("effort_level"))
         attempt_started = time.time()
         hands = self._selectExecutor(spec)   # route to the right surface (terminal | browser)
+        # Live surface feed: tap the Claude subprocess stdout in real time (terminal path only;
+        # the browser hands layer doesn't take a feed). Best-effort -- never block a run.
+        feed = None
+        if hands is self._run_claude:
+            try:
+                from notifications.event_bus import get_bus
+                from notifications.subprocess_feed import SubprocessFeed
+                feed = SubprocessFeed(get_bus(), sid, time.monotonic())
+            except Exception:  # noqa: BLE001
+                feed = None
         # cancel_check lets a long in-hands wait break early on abort or deadline (CB-9).
-        result = hands(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
-                       resume_session=resume_session,
-                       cancel_check=lambda: bus.isAbort() or self._deadlinePassed(state))
+        hands_kw = dict(work_dir=exec_cwd, task_state=state, subtask=subtask,
+                        resume_session=resume_session,
+                        cancel_check=lambda: bus.isAbort() or self._deadlinePassed(state))
+        if feed is not None:
+            hands_kw["feed"] = feed
+        try:
+            result = hands(spec, **hands_kw)
+        finally:
+            if feed is not None:
+                feed.stop()
         if not isinstance(result, dict):   # a hands layer that returns junk must fail cleanly
             result = {"ok": False, "returncode": -1, "stdout": "",
                       "stderr": f"executor returned non-dict result: {type(result).__name__}"}

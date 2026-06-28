@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -171,11 +172,58 @@ def _scanOutput(text: str, spec: dict) -> None:
             _alertBlocked(f"block_destructive: executor output shows destructive command(s) {out_hits}")
 
 
+def _drainStreaming(proc, run_prompt: str, feed, timeout: int) -> "tuple[str, str]":
+    """Stream stdout line-by-line through ``feed`` while the prompt is written on a writer
+    thread (avoids stdin/stdout pipe deadlock). On timeout, kills the tree and raises
+    ``TimeoutExpired`` so the caller's existing timeout path runs unchanged."""
+    timed_out = {"v": False}
+
+    def _on_timeout():
+        timed_out["v"] = True
+        _killProcessTree(proc.pid)
+
+    timer = threading.Timer(timeout, _on_timeout)
+    timer.start()
+
+    def _writer():
+        try:
+            if proc.stdin:
+                proc.stdin.write(run_prompt)
+                proc.stdin.close()
+        except Exception:  # noqa: BLE001 -- child may exit before we finish writing
+            pass
+
+    wt = threading.Thread(target=_writer, name="claude-stdin", daemon=True)
+    wt.start()
+    out_lines: list[str] = []
+    try:
+        for line in proc.stdout:   # blocks until EOF (process exit or tree-kill closes the pipe)
+            out_lines.append(line)
+            try:
+                feed.consume(line.rstrip("\n"))
+            except Exception:  # noqa: BLE001 -- a feed hiccup must never break the drain
+                pass
+    finally:
+        timer.cancel()
+    try:
+        err = proc.stderr.read() or ""
+    except Exception:  # noqa: BLE001
+        err = ""
+    proc.wait()
+    wt.join(timeout=1.0)
+    out = "".join(out_lines)
+    if timed_out["v"]:
+        raise subprocess.TimeoutExpired(str(getattr(proc, "args", "claude")), timeout, output=out)
+    return out, err
+
+
 def runSubprocess(run_cmd: list, run_prompt: str, *, work: str, timeout: int, env: dict,
                   creationflags: int, spec: dict, effort: str, flag, profile,
-                  playbook_md: str, claude_md_path, model: str) -> dict:
+                  playbook_md: str, claude_md_path, model: str, feed=None) -> dict:
     """Execute one Claude subprocess and return a normalised result dict.
-    Handles launch errors, JSON envelope parsing, timeout (full tree kill), and telemetry."""
+    Handles launch errors, JSON envelope parsing, timeout (full tree kill), and telemetry.
+    When ``feed`` is set, stdout is streamed line-by-line through it in real time; when
+    ``feed`` is None the unchanged ``communicate()`` path runs (zero regression)."""
     wf = spec.get("use_workflow") and isinstance(spec.get("workflow_definition"), dict)
     run_started = time.perf_counter()
     inject_chars, playbook_chars, context_chars = _logRunStart(
@@ -200,7 +248,10 @@ def runSubprocess(run_cmd: list, run_prompt: str, *, work: str, timeout: int, en
         return _makeErrResult(-1, "", str(e), effort=effort, flag=flag, spec=spec,
                               claude_md_path=claude_md_path)
     try:
-        out, err = proc.communicate(input=run_prompt, timeout=timeout)
+        if feed is not None:
+            out, err = _drainStreaming(proc, run_prompt, feed, timeout)
+        else:
+            out, err = proc.communicate(input=run_prompt, timeout=timeout)
         out = out or ""
         if config.EXECUTOR_OUTPUT_JSON:
             text, fields = _parseEnvelope(out)
