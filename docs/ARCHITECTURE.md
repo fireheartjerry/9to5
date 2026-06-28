@@ -125,6 +125,31 @@ Dashboards, Obsidian, ControlBus, learning traces, and Discord events should obs
 
 Discord and web dashboards are windows into state, not state machines.
 
+## Surface layer (Observability & Surfaces)
+
+All live surfaces are fed by one process-global nervous system; nothing bypasses it.
+
+- **`notifications/event_bus.py` — `LiveEventBus`** (singleton via `get_bus()`): ring buffers for
+  raw stdout (10k), structured events (2k), and per-subtask raw (1k). Fans every `Event`
+  (`tool_use`/`raw`/`heartbeat`/`phase`/`moment`/`narration`/`health`/...) out to web SSE
+  subscribers; producers never block on a slow tab.
+- **`notifications/subprocess_feed.py` — `SubprocessFeed`**: created per Claude attempt in
+  `execute_mixin`; taps stdout line-by-line (opt-in streaming path in `agents/executor_stream.py`,
+  threaded through `runClaude(feed=...)`), parses Claude JSONL into tool events, and emits a 30s heartbeat.
+- **`notifications/tunnel.py` + `tunnel_providers.py` — `TunnelManager`**: supervised public tunnel
+  (cloudflared → ngrok → bore → localtunnel) with watchdog, HTTP probe, backoff restart, provider
+  demotion, validate-before-announce, and resume reuse of a live `meta["tunnel_url"]`.
+- **`notifications/webdash.py` (+ `webdash_page.py`)**: Bloomberg-terminal page; `/api/events` SSE,
+  `/api/raw` per-subtask stdout, `/api/state` snapshot (health aura, codename, arc, wisdom trail,
+  comparative, intelligence curve). Control token CSRF guard preserved.
+- **Voice/story (best-effort, wired additively into the orchestration mixins):**
+  `run_arc.py` (narrative beats), `narration.py` (rate-limited proactive narration + Moments +
+  attention-mode), `reflection_post.py` (end-of-run self-reflection), `health_aura.py`
+  (composite 0–100 score), `platform_core/ops/codenames.py` (run identity).
+- **Discord on-demand surfaces** (`notifications/commands.py`): `!logs` / `!stdout` / `!arc` /
+  `!history` read from the bus and persist as normal channel messages.
+- **Comparative intelligence**: `memory/experience.compare_run(task_id)` deltas vs rolling averages.
+
 ## Verification gate
 
 Verifier executes a brain-authored `{cmd, expect}`.

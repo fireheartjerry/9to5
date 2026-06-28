@@ -38,6 +38,10 @@ meta:
   deadline_at:
   status:
   blocked_reason:
+  codename:        # run identity, e.g. IRON_PHOENIX (platform_core/ops/codenames.py); shown on every surface
+  tunnel_url:      # last validated public tunnel URL (TunnelManager); resume reuses it if still live
+  arc: []          # run narrative arc beats [{text, at}] (notifications/run_arc.py)
+  health_score:    # last composite Health Aura 0-100 (notifications/health_aura.py)
   universe:
     description:
     allowed_paths:

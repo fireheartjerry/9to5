@@ -88,6 +88,7 @@ def brandEmbed(title: str, *, description: Optional[str] = None, color: Optional
 _CATEGORIES = {
     "Control": ["abort", "pause", "approve", "reject", "skip", "add", "retry"],
     "Info": ["status", "plan", "log", "help"],
+    "Surfaces": ["logs", "stdout", "arc", "history"],
     "Run": ["work", "runs", "run", "resume", "create-pr"],
 }
 _EXTRA_HELP = {
