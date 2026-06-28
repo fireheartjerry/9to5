@@ -24,6 +24,8 @@ MIN_SAMPLES = 5  # cold-start floor: below this, track_record gives no teeth
 
 
 def recalibrate(p: float, temperature: float = 2.5) -> float:
+    if float(temperature) <= 0.0:
+        raise ValueError("temperature must be > 0")
     p = min(max(float(p), 1e-6), 1.0 - 1e-6)
     logit = math.log(p / (1.0 - p)) / float(temperature)
     return 1.0 / (1.0 + math.exp(-logit))

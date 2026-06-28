@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -48,7 +49,7 @@ def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
 def record_judgment(*, judgment_type: str, domain: str, conviction: float,
                     db_path: Optional[Path] = None) -> str:
     jid = str(uuid.uuid4())
-    with _connect(db_path) as conn:
+    with closing(_connect(db_path)) as conn:
         conn.execute(
             "INSERT INTO judgments (id, judgment_type, domain, conviction, correct, created_at)"
             " VALUES (?, ?, ?, ?, ?, ?)",
@@ -60,7 +61,7 @@ def record_judgment(*, judgment_type: str, domain: str, conviction: float,
 
 
 def score_judgment(judgment_id: str, correct: bool, db_path: Optional[Path] = None) -> bool:
-    with _connect(db_path) as conn:
+    with closing(_connect(db_path)) as conn:
         cur = conn.execute(
             "UPDATE judgments SET correct = ? WHERE id = ?",
             (1 if correct else 0, judgment_id),
@@ -70,7 +71,7 @@ def score_judgment(judgment_id: str, correct: bool, db_path: Optional[Path] = No
 
 
 def track_record(judgment_type: str, domain: str, db_path: Optional[Path] = None) -> dict[str, Any]:
-    with _connect(db_path) as conn:
+    with closing(_connect(db_path)) as conn:
         row = conn.execute(
             "SELECT COUNT(*) AS total, COALESCE(SUM(correct), 0) AS hits FROM judgments"
             " WHERE judgment_type = ? AND domain = ? AND correct IS NOT NULL",

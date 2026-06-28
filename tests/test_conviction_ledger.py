@@ -22,3 +22,7 @@ def test_track_record_is_domain_scoped(tmp_path):
     j = record_judgment(judgment_type="opinion", domain="async", conviction=0.7, db_path=db)
     score_judgment(j, True, db_path=db)
     assert track_record("opinion", "windows", db_path=db)["total"] == 0
+
+def test_score_nonexistent_returns_false(tmp_path):
+    db = tmp_path / "c.db"
+    assert score_judgment("no-such-id", True, db_path=db) is False

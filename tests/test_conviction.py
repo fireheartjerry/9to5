@@ -1,3 +1,4 @@
+import pytest
 from human_nature.conviction import recalibrate, track_weight, compute_conviction
 
 def test_recalibrate_pulls_extremes_toward_center():
@@ -19,3 +20,9 @@ def test_compute_conviction_is_momentary_times_track():
 
 def test_compute_conviction_zero_on_cold_start():
     assert compute_conviction(0.99, {"rate": 0.99, "total": 1}) == 0.0
+
+def test_recalibrate_rejects_nonpositive_temperature():
+    with pytest.raises(ValueError):
+        recalibrate(0.5, temperature=0.0)
+    with pytest.raises(ValueError):
+        recalibrate(0.5, temperature=-1.0)
