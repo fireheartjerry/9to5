@@ -153,16 +153,18 @@ def _lens_2_institutional_memory(digest: dict) -> List[Finding]:
 
 def _lens_3_architectural_reimagining(digest: dict) -> List[Finding]:
     system = (
-        "You are a systems architect with strong opinions. "
-        "Your ONLY job is to find things that should work COMPLETELY DIFFERENTLY. "
-        "Surface wrong assumptions, expensive design mistakes, and structural changes "
-        "that would simplify everything downstream. "
-        "Reject surface-level patches — only propose structural changes. "
-        "Answer these questions as you read: "
-        "What would you rewrite from scratch if you had a week? "
-        "What assumption does this system make that might be fundamentally wrong? "
-        "What is the most expensive mistake baked into the current architecture? "
-        "What would this look like if it were 10x simpler? " + _OUTPUT_FORMAT
+        "You are a systems architect who HATES the status quo. "
+        "Your job is to find things that are FUNDAMENTALLY WRONG — not cosmetically bad. "
+        "You are looking for: wrong abstractions, expensive assumptions baked into the design, "
+        "places where the whole approach should be thrown out and replaced. "
+        "Surface-level fixes (add a parameter, rename a function) are REJECTED. "
+        "Demand only structural reimaginings that change HOW the system works, not just WHAT it does. "
+        "Answer these before finding: "
+        "What assumption does this system make that is completely wrong? "
+        "What would you delete entirely if you had the authority? "
+        "What is the single most expensive design mistake here? "
+        "If you rewrote this tomorrow, what would look completely different? "
+        "Be aggressive. Be specific. Name files, name modules, name the exact wrong pattern. " + _OUTPUT_FORMAT
     )
     user = f"Codebase digest:\n{_digest_summary(digest)}"
     raw = _brain_call(system, user)
@@ -176,14 +178,18 @@ def _lens_3_architectural_reimagining(digest: dict) -> List[Finding]:
 
 def _lens_4_missing_capabilities(digest: dict) -> List[Finding]:
     system = (
-        "You are a product engineer who knows what ambitious autonomous agent systems "
-        "should be able to do. Find capabilities this system obviously should have but doesn't. "
-        "Think about: what features would make a new user immediately say 'this is serious'? "
-        "What would 10x the system's capability? "
-        "What workflow is impossible today but trivial if one abstraction existed? "
-        "What does every comparable system have that this one is missing? "
-        "Be SPECIFIC: vague suggestions like 'better observability' are rejected. "
-        "Name the exact capability, where it would live, and what it enables. " + _OUTPUT_FORMAT
+        "You are a demanding power user and product engineer for autonomous AI agent systems. "
+        "You know what best-in-class agentic systems can do. This one probably can't. Find the gaps. "
+        "Do NOT suggest incremental improvements. Suggest capabilities that would make someone say "
+        "'wow, this system is serious'. "
+        "Ask yourself: "
+        "What is this system embarrassingly missing compared to top-tier agent frameworks? "
+        "What would make a new user immediately trust this system? "
+        "What single new capability would 10x the value delivered per run? "
+        "What workflow is completely impossible today that should be trivial? "
+        "What does every ambitious engineering team wish their AI assistant could do? "
+        "Be specific: name the capability, where it would live, exactly what it unlocks. "
+        "Vague answers ('better observability', 'smarter planning') are rejected. " + _OUTPUT_FORMAT
     )
     user = f"Codebase digest:\n{_digest_summary(digest)}"
     raw = _brain_call(system, user)
