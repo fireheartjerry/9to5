@@ -37,7 +37,16 @@ CAST: dict[str, dict] = {
     "verifier":     {"name": "Nightclaw · Verifier",  "icon": "verify",    "color": 0x1ABC9C},
     "adversary":    {"name": "Nightclaw · Adversary", "icon": "adversary", "color": 0xDB6D28},
     "replanner":    {"name": "Nightclaw · Replanner", "icon": "replan",    "color": 0xBC8CFF},
+    # Sci-fi archetype personas (Phase 5 / human-nature layer).
+    # The Character Vector tunes expression within one archetype;
+    # callers enumerate selectable voices via ARCHETYPES.
+    "data":   {"name": "Nightclaw · Data",   "icon": "verify",    "color": 0xE3C15C},
+    "tars":   {"name": "Nightclaw · TARS",   "icon": "adversary", "color": 0x8E9BAE},
+    "jarvis": {"name": "Nightclaw · Jarvis", "icon": "mode",      "color": 0x43B581},
 }
+
+# Selectable sci-fi archetype voices (earnest/Data, dry-wit/TARS, warm/Jarvis).
+ARCHETYPES: tuple[str, ...] = ("data", "tars", "jarvis")
 
 
 def persona(role: str) -> dict:
