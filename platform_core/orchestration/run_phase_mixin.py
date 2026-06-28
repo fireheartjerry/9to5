@@ -9,6 +9,8 @@ RUN/TEST: (no mapped test)
 """
 from __future__ import annotations
 
+import threading
+import time
 from typing import TYPE_CHECKING
 
 import config
@@ -328,6 +330,46 @@ class OrchestratorRunPhaseMixin:
                 "elapsed_seconds": round(elapsed, 1), "web_dashboard": web_url,
                 "subtasks": [{"subtask_id": s["subtask_id"], "status": s["status"]}
                              for s in state.subtasks]}
+
+    # ===================================================================
+    # Spec B: Nightclaw instinct (periodic, off-thread, at most once per run)
+    # ===================================================================
+    def _maybeInstinct(self, state: TaskState, bus: "ControlBus") -> None:
+        """Throttled trigger for the periodic instinct call. Fires OFF-THREAD so it never blocks
+        the run loop; at most once per run (guarded by state.meta['instinct_flags'])."""
+        if not config.INSTINCT_ENABLED or state.meta.get("instinct_flags"):
+            return
+        try:
+            from memory import user_prefs
+            if not user_prefs.get("instinct_enabled"):
+                return
+        except Exception:  # noqa: BLE001
+            pass
+        now = time.monotonic()
+        if (now - getattr(self, "_last_instinct_ts", 0.0)) < config.INSTINCT_INTERVAL_SECONDS:
+            return
+        if getattr(self, "_instinct_inflight", False):
+            return
+        self._last_instinct_ts = now
+        self._instinct_inflight = True
+        threading.Thread(target=self._runInstinct, args=(state,), daemon=True).start()
+
+    def _runInstinct(self, state: TaskState) -> None:
+        try:
+            from notifications import instinct as instinct_mod
+            text = instinct_mod.NightclawInstinct().maybe_fire(state, chat=self._instinctChat)
+            if text:
+                with self._state_lock:
+                    state.addInstinctFlag(text)
+                discord.sendEmbed(discord.noticeEmbed(text, title="Nightclaw instinct"))
+        except Exception:  # noqa: BLE001 -- instinct is best-effort, never affects the run
+            LOG.debug("instinct run failed (ignored)", exc_info=True)
+        finally:
+            self._instinct_inflight = False
+
+    def _instinctChat(self, system: str, user: str) -> str:
+        from platform_core.orchestration.brain_io import _chatText
+        return _chatText(self._ollamaChat(system, user))
 
     def _runTeardown(self, bus: "ControlBus", dashboard: "DiscordDashboard",
                      work_dir: str) -> None:
