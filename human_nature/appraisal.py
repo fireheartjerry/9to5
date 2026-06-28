@@ -106,6 +106,13 @@ def appraise(events: list[dict]) -> dict:
 def emotion_label(pad: dict) -> str:
     """Map a PAD coordinate to a discrete emotion label.
 
+    Requires:
+        pad must contain a ``"vars"`` key — i.e. it must be the output of
+        ``appraise()``.  A bare PAD dict without ``vars`` will raise
+        ``ValueError`` because the novelty field inside ``vars`` is load-bearing
+        for curiosity detection; silently defaulting to 0 would suppress that
+        signal and mask real emotions.
+
     Region definitions:
       satisfaction — valence > 0.3 AND arousal < 0.5
                      (positive outcome, calm — consolidate)
@@ -120,10 +127,14 @@ def emotion_label(pad: dict) -> str:
     Checked in this order so high-arousal novel-positive events → curiosity,
     not satisfaction (satisfaction requires arousal < 0.5).
     """
+    if "vars" not in pad:
+        raise ValueError(
+            "emotion_label requires pad['vars'] (use the output of appraise())"
+        )
     v = float(pad.get("valence", 0.0))
     a = float(pad.get("arousal", 0.0))
     c = float(pad.get("control", 0.0))
-    nov = float(pad.get("vars", {}).get("novelty", 0.0))
+    nov = float(pad["vars"].get("novelty", 0.0))
 
     if v > 0.3 and a < 0.5:
         return "satisfaction"

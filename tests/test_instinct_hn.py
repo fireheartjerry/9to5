@@ -9,6 +9,7 @@ Tests cover:
 """
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 from memory.conviction_ledger import track_record
@@ -75,14 +76,14 @@ def test_flag_appended_to_instinct_flags(tmp_path: Path):
 
 def test_flag_records_judgment_in_ledger(tmp_path: Path):
     db = tmp_path / "c.db"
-    chat = _make_chat("Timeout pattern smells bad.")
-    state = _fresh_state(domain="timing")
-    maybe_flag(state, [], [], chat=chat, db_path=db)
-    tr = track_record("instinct", "timing", db_path=db)
-    # judgment recorded but not yet scored → total=0, but the row exists
-    # We verify by checking that a judgment WAS inserted (unscored rows not in track_record;
-    # so we verify via the flag side-effect and a fresh call → once-per-run guard fires)
-    assert len(state["meta"]["instinct_flags"]) == 1
+    state = {"meta": {"instinct_flags": [], "goal_raw": "x"}}
+    chat = lambda *a, **k: {"message": {"content": "something feels off about the pool"}}  # noqa: E731
+    out = maybe_flag(state, [], [], chat=chat, db_path=db)
+    assert out  # non-empty flag returned
+    rows = sqlite3.connect(str(db)).execute(
+        "SELECT COUNT(*) FROM judgments WHERE judgment_type='instinct'"
+    ).fetchone()[0]
+    assert rows == 1
 
 
 def test_flag_records_judgment_with_general_domain(tmp_path: Path):

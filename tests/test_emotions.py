@@ -168,3 +168,13 @@ def test_regulate_custom_decay():
     # With decay=0.5, retention=0.5: new values should be 0.5
     assert abs(regulated["valence"] - 0.5) < 1e-9
     assert abs(regulated["arousal"] - 0.5) < 1e-9
+
+
+def test_regulate_full_decay_resets_to_zero():
+    out = regulate({"valence": 0.5, "arousal": 0.5, "control": 0.5}, decay=1.0)
+    assert out["valence"] == 0.0 and out["arousal"] == 0.0 and out["control"] == 0.0
+
+
+def test_regulate_clamps_overshoot_no_sign_flip():
+    out = regulate({"valence": 0.5, "arousal": 0.5, "control": 0.5}, decay=1.5)
+    assert out["valence"] >= 0.0 and out["arousal"] >= 0.0 and out["control"] >= 0.0

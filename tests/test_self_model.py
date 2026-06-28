@@ -124,8 +124,8 @@ def test_johari_result_has_required_keys():
 
 def test_dissonance_overconfidence_channel():
     d = dissonance(felt=0.9, demonstrated=0.5, self_report=0.8, observed=0.8)
-    # overconfidence = |felt - demonstrated| or signed; either way it reflects the gap
-    assert d["overconfidence"] != 0.0
+    # felt > demonstrated → overconfidence must be positive (signed channel)
+    assert d["overconfidence"] > 0
     # The magnitude should reflect the gap (0.4)
     assert abs(abs(d["overconfidence"]) - 0.4) < 1e-9
 

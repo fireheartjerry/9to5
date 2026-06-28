@@ -114,7 +114,8 @@ def regulate(pad: dict[str, Any], *, decay: float = 0.7) -> dict[str, Any]:
     Returns:
         New PAD dict with decayed dimensions; vars copied unchanged.
     """
-    retention = 1.0 - float(decay)
+    decay = max(0.0, min(1.0, float(decay)))
+    retention = 1.0 - decay
     result: dict[str, Any] = dict(pad)
     result["vars"] = dict(pad.get("vars") or {})
     result["valence"] = float(pad.get("valence", 0.0)) * retention
