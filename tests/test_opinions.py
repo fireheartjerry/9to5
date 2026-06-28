@@ -138,6 +138,41 @@ def test_rederive_case_insensitive_concede():
 
 
 # ---------------------------------------------------------------------------
+# rederive — F5 anti-capitulation hardening
+# ---------------------------------------------------------------------------
+
+def test_rederive_does_not_capitulate_on_hedged_hold():
+    """Reply containing both words: HOLD must win (checked first; F5 bias)."""
+    def chat(system, user):  # noqa: ARG001
+        return {"message": {"content": "Don't CONCEDE, HOLD the position"}}
+
+    out = rederive("ship it now", "add a test first", "the module has zero coverage", chat=chat)
+    assert out["verdict"] == "hold"
+
+
+def test_rederive_never_concedes_without_evidence():
+    """Empty evidence forces hold regardless of model reply (F5/F4 guard)."""
+    def chat(system, user):  # noqa: ARG001
+        return {"message": {"content": "CONCEDE"}}
+
+    out = rederive("ship it now", "add a test first", "", chat=chat)
+    assert out["verdict"] == "hold"
+
+
+def test_rederive_system_prompt_is_neutral():
+    """Judge system prompt must contain 'neutral' so neither position is pre-favoured."""
+    captured: dict = {}
+
+    def chat(system, user):
+        captured["system"] = system
+        captured["user"] = user
+        return {"message": {"content": "HOLD: evidence supports B"}}
+
+    rederive("A", "B", "some evidence", chat=chat)
+    assert "neutral" in captured["system"].lower()
+
+
+# ---------------------------------------------------------------------------
 # Opinion dataclass
 # ---------------------------------------------------------------------------
 

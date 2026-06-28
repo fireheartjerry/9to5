@@ -95,16 +95,20 @@ def tier(conviction: float, domain: str) -> str:
 
 
 def _parse_verdict(text: str) -> dict[str, str]:
-    """Parse HOLD / CONCEDE from judge reply.  Default to hold on noise."""
+    """Parse HOLD / CONCEDE from judge reply.  Default to hold on noise.
+
+    HOLD is checked before CONCEDE so a hedged reply such as
+    "Don't CONCEDE, HOLD the position" correctly returns hold (F5 bias).
+    """
     upper = text.upper()
-    if "CONCEDE" in upper:
-        idx = upper.index("CONCEDE")
-        rationale = text[idx + len("CONCEDE"):].strip(" .:").strip()
-        return {"verdict": "concede", "rationale": rationale or text}
     if "HOLD" in upper:
         idx = upper.index("HOLD")
         rationale = text[idx + len("HOLD"):].strip(" .:").strip()
         return {"verdict": "hold", "rationale": rationale or text}
+    if "CONCEDE" in upper:
+        idx = upper.index("CONCEDE")
+        rationale = text[idx + len("CONCEDE"):].strip(" .:").strip()
+        return {"verdict": "concede", "rationale": rationale or text}
     # Unparseable → always hold (don't capitulate on noise; F5)
     return {"verdict": "hold", "rationale": text}
 
@@ -130,4 +134,9 @@ def rederive(
         "Answer HOLD (keep B) or CONCEDE (adopt A) with one-line rationale."
     )
     resp = _chat(_JUDGE_SYSTEM, prompt)
-    return _parse_verdict(llm_io.responseText(resp))
+    result = _parse_verdict(llm_io.responseText(resp))
+    # F5/F4 guard: warranted disagreement requires evidence.
+    # Never concede when no evidence was supplied, regardless of model reply.
+    if not (evidence or "").strip():
+        return {"verdict": "hold", "rationale": "no evidence to warrant conceding"}
+    return result

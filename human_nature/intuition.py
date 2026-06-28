@@ -14,7 +14,7 @@ This implements the F-default-OFF safety: until the shortcut has been A/B-proven
 calibrated, it is OFF and the system always deliberates.
 
 Supported numeric signal keys (others ignored):
-  p_true          -- verbalized P(True) recalibrated estimate
+  p_true          -- raw verbalized P(True) estimate
   self_consistency -- N-sample agreement fraction
   similarity       -- semantic proximity to known past states
 
