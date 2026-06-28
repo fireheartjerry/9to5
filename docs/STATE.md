@@ -135,6 +135,30 @@ It handles:
 - skip
 - retry
 - plan operations
+- `kill_subprocess` / `force_replan` boolean signals (Spec B granular controls)
+- Spec B queued ops: `intent`, `intent_clear`, `inject_context`, `set_effort`,
+  `set_run_effort`, `extend_deadline` (drained by `control_mixin._applyOps`)
+
+## Intelligence & Control fields (Spec B)
+
+Additive `meta` fields (`state/task_schema.py`):
+
+- `user_intents`: append-only list of `{text, at, added_at_completed}`. `activeIntents()`
+  returns intents added < 2 subtask-completions ago (they expire after 2 completions).
+- `instinct_flags`: list of `{text, at}` — Nightclaw instinct fires at most once per run.
+- `injected_context`: queued one-shot CLAUDE.md context, consumed by the next attempt
+  (`takeInjectedContext()` clears it).
+- `run_effort_override` / per-subtask `effort_override`: live effort overrides folded into
+  the invocation spec by `plan_mixin._foldOperatorContext`.
+
+Cross-session operator preferences live OUTSIDE task state in `memory/user_prefs.py`
+(`<state_dir>/../user_prefs.json`), set via `!prefer` / `!brief set` / `!prefs`.
+
+New `!` command surface (registry in `notifications/commands.py`, help in
+`branding._CATEGORIES`): `intent`, `prefer`, `prefs`, `effort`, `mode`, `replan`,
+`deadline`, `kill`, `inject`, `set-effort`. Ollama-backed info commands
+(`brief`/`why`/`explain`/`wisdom`/`growth`) are gateway-only (`bot/cogs/log_cog.py`) so a
+slow brain call never blocks the run loop.
 
 ## Control modes
 

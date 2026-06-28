@@ -15,7 +15,7 @@ EXPORTS:
   ControlBus
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_control_concurrency.py tests/test_fuzz_control.py tests/test_webdash_control.py
+RUN/TEST: python -m pytest tests/test_control_concurrency.py tests/test_fuzz_control.py tests/test_granular_controls.py tests/test_webdash_control.py
 """
 from __future__ import annotations
 
