@@ -240,10 +240,16 @@ class OrchestratorExecuteMixin:
                          effort=spec.get("effort_level"))
         attempt_started = time.time()
         hands = self._selectExecutor(spec)   # route to the right surface (terminal | browser)
-        # cancel_check lets a long in-hands wait break early on abort or deadline (CB-9).
+        # cancel_check lets a long in-hands wait break early on abort, deadline, or an operator
+        # kill-subprocess signal (Spec B: terminate THIS attempt, not the whole run) (CB-9).
         result = hands(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
                        resume_session=resume_session,
-                       cancel_check=lambda: bus.isAbort() or self._deadlinePassed(state))
+                       cancel_check=lambda: bus.isAbort() or bus.isKillSubprocess()
+                       or self._deadlinePassed(state))
+        if bus.isKillSubprocess():
+            bus.clearKillSubprocess()
+            with self._state_lock:
+                state.addNotification("kill_subprocess", f"{sid}: operator killed the attempt")
         if not isinstance(result, dict):   # a hands layer that returns junk must fail cleanly
             result = {"ok": False, "returncode": -1, "stdout": "",
                       "stderr": f"executor returned non-dict result: {type(result).__name__}"}
