@@ -63,6 +63,9 @@ class TaskState:
                 "epoch": None,
                 "state_epoch": 0,
                 "discovery_report": None,
+                "self_state": None,      # human_nature interior (lazily initialised by the layer)
+                "autonomy": None,        # human_nature earned-autonomy ceilings per domain
+                "charter_version": None, # ratified Cast-charter version in effect
             },
             "plan": {"architect_design_doc": None, "subtasks": []},
             "adversary_reviews": [],
