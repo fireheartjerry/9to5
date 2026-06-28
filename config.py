@@ -23,9 +23,9 @@ EXPORTS:
   set_override(knob: str, value) -> bool  -- Persist + live-apply a meta-optimizer knob change (whitelisted knobs only).
   validateEnv() -> list[str]  -- Return the names of required-but-missing environment values.
   getLogger(name: str='9to5') -> logging.Logger  -- Return a child of the configured ``9to5`` logger.
-DEPENDS-ON: platform_core.app_config.discord, platform_core.app_config.llm, platform_core.app_config.paths
+DEPENDS-ON: platform_core.app_config.discord, platform_core.app_config.human_nature, platform_core.app_config.llm, platform_core.app_config.paths
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_config_robust_env.py tests/test_notification_config.py
+RUN/TEST: python -m pytest tests/test_config_robust_env.py tests/test_hn_config.py tests/test_notification_config.py
 """
 from __future__ import annotations
 

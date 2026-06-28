@@ -6,6 +6,7 @@
     "agents",
     "config",
     "conftest",
+    "human_nature",
     "knowledge",
     "learning",
     "llm_io",
@@ -1349,25 +1350,26 @@
           "kind": "function",
           "signature": "(knob: str, value) -> bool",
           "summary": "Persist + live-apply a meta-optimizer knob change (whitelisted knobs only).",
-          "lineno": 87
+          "lineno": 88
         },
         {
           "name": "validateEnv",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Return the names of required-but-missing environment values.",
-          "lineno": 132
+          "lineno": 133
         },
         {
           "name": "getLogger",
           "kind": "function",
           "signature": "(name: str='9to5') -> logging.Logger",
           "summary": "Return a child of the configured ``9to5`` logger.",
-          "lineno": 169
+          "lineno": 170
         }
       ],
       "depends_on": [
         "platform_core.app_config.discord",
+        "platform_core.app_config.human_nature",
         "platform_core.app_config.llm",
         "platform_core.app_config.paths"
       ],
@@ -1376,6 +1378,7 @@
       ],
       "test": [
         "tests/test_config_robust_env.py",
+        "tests/test_hn_config.py",
         "tests/test_notification_config.py"
       ],
       "callers": [
@@ -1437,6 +1440,7 @@
         "learning.solution_cache",
         "learning.toolsmith",
         "main",
+        "memory.conviction_ledger",
         "memory.experience_pr",
         "memory.experience_runs",
         "memory.experience_schema",
@@ -1531,6 +1535,143 @@
         "unannotated"
       ],
       "test": [],
+      "callers": []
+    },
+    "human_nature": {
+      "path": "human_nature/__init__.py",
+      "purpose": "human_nature — the human-nature layer: a functional cognitive architecture.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "human_nature.conviction": {
+      "path": "human_nature/conviction.py",
+      "purpose": "Conviction Engine — the single source of every \"earned\" signal.",
+      "exports": [
+        {
+          "name": "recalibrate",
+          "kind": "function",
+          "signature": "(p: float, temperature: float=2.5) -> float",
+          "summary": "",
+          "lineno": 26
+        },
+        {
+          "name": "track_weight",
+          "kind": "function",
+          "signature": "(track: dict[str, Any]) -> float",
+          "summary": "",
+          "lineno": 32
+        },
+        {
+          "name": "compute_conviction",
+          "kind": "function",
+          "signature": "(momentary: float, track: dict[str, Any], *, recal: bool=True) -> float",
+          "summary": "",
+          "lineno": 38
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/test_conviction.py"
+      ],
+      "callers": []
+    },
+    "human_nature.drift": {
+      "path": "human_nature/drift.py",
+      "purpose": "Drift monitor — measures expressed persona intensity vs the charter target.",
+      "exports": [
+        {
+          "name": "measure_drift",
+          "kind": "function",
+          "signature": "(expressed: Sequence[float], target: float) -> float",
+          "summary": "",
+          "lineno": 21
+        },
+        {
+          "name": "has_drifted",
+          "kind": "function",
+          "signature": "(expressed: Sequence[float], target: float, threshold: float=0.3) -> bool",
+          "summary": "",
+          "lineno": 28
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/test_drift.py"
+      ],
+      "callers": []
+    },
+    "human_nature.gating": {
+      "path": "human_nature/gating.py",
+      "purpose": "PRISM gate — persona/affect expression is allowed on human-facing surfaces only.",
+      "exports": [
+        {
+          "name": "is_expression_allowed",
+          "kind": "function",
+          "signature": "(surface: str) -> bool",
+          "summary": "",
+          "lineno": 19
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/test_gating.py"
+      ],
+      "callers": []
+    },
+    "human_nature.self_state": {
+      "path": "human_nature/self_state.py",
+      "purpose": "SelfState — the unified interior of the human-nature layer (a serializable dict).",
+      "exports": [
+        {
+          "name": "new_self_state",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "",
+          "lineno": 24
+        },
+        {
+          "name": "get_competence",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], domain: str) -> dict[str, Any]",
+          "summary": "",
+          "lineno": 36
+        },
+        {
+          "name": "observe_competence",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], domain: str, success: bool) -> None",
+          "summary": "",
+          "lineno": 40
+        },
+        {
+          "name": "set_affect",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], valence: float, arousal: float, control: float) -> None",
+          "summary": "",
+          "lineno": 47
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "mutates the passed-in dict in place"
+      ],
+      "test": [
+        "tests/test_self_state.py"
+      ],
       "callers": []
     },
     "knowledge": {
@@ -3072,6 +3213,43 @@
         "unannotated"
       ],
       "test": [],
+      "callers": []
+    },
+    "memory.conviction_ledger": {
+      "path": "memory/conviction_ledger.py",
+      "purpose": "Conviction Ledger — SQLite store of judgment -> outcome calibration.",
+      "exports": [
+        {
+          "name": "record_judgment",
+          "kind": "function",
+          "signature": "(*, judgment_type: str, domain: str, conviction: float, db_path: Optional[Path]=None) -> str",
+          "summary": "",
+          "lineno": 48
+        },
+        {
+          "name": "score_judgment",
+          "kind": "function",
+          "signature": "(judgment_id: str, correct: bool, db_path: Optional[Path]=None) -> bool",
+          "summary": "",
+          "lineno": 62
+        },
+        {
+          "name": "track_record",
+          "kind": "function",
+          "signature": "(judgment_type: str, domain: str, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "",
+          "lineno": 72
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "creates/writes the conviction SQLite db at CONVICTION_DB_PATH (or db_path)"
+      ],
+      "test": [
+        "tests/test_conviction_ledger.py"
+      ],
       "callers": []
     },
     "memory.experience": {
@@ -6165,6 +6343,22 @@
         "config"
       ]
     },
+    "platform_core.app_config.human_nature": {
+      "path": "platform_core/app_config/human_nature.py",
+      "purpose": "Human-nature layer configuration knobs.",
+      "exports": [],
+      "depends_on": [
+        "platform_core.app_config.llm",
+        "platform_core.app_config.paths"
+      ],
+      "side_effects": [
+        "reads environment variables at import"
+      ],
+      "test": [],
+      "callers": [
+        "config"
+      ]
+    },
     "platform_core.app_config.llm": {
       "path": "platform_core/app_config/llm.py",
       "purpose": "9TO5 LLM / orchestration / SIE / adversary / executor constants.",
@@ -6177,7 +6371,8 @@
         "tests/test_llm_io_pydantic.py"
       ],
       "callers": [
-        "config"
+        "config",
+        "platform_core.app_config.human_nature"
       ]
     },
     "platform_core.app_config.paths": {
@@ -6198,7 +6393,8 @@
       ],
       "test": [],
       "callers": [
-        "config"
+        "config",
+        "platform_core.app_config.human_nature"
       ]
     },
     "platform_core.cli": {
@@ -8082,7 +8278,8 @@
       "test": [
         "tests/test_memory_subtask_manager.py",
         "tests/test_task_listrecent.py",
-        "tests/test_task_save_concurrent.py"
+        "tests/test_task_save_concurrent.py",
+        "tests/test_task_schema_hn.py"
       ],
       "callers": [
         "agents.hooks_selfmod",
@@ -8195,7 +8392,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/test_task_schema_hn.py"
+      ],
       "callers": [
         "state.task",
         "state.task_io"
