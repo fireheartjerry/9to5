@@ -13,7 +13,7 @@ EXPORTS:
   isRunActive(state: Optional[TaskState]) -> bool  -- A run is 'active' iff its status is not terminal
   footerHelp() -> str  -- Short, never-stale command hint derived from the registry (used by the dashboard).
   applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str  -- Perform the bus mutation and return human markdown text ('' for silent control ops).
-DEPENDS-ON: config, learning.human_feedback, memory.user_prefs, notifications.discord_bot, platform_core.runtime.control, state.task
+DEPENDS-ON: config, learning.human_feedback, memory.user_prefs, notifications.discord_bot, notifications.event_bus, notifications.run_arc, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_commands.py
 """

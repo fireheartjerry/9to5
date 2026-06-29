@@ -10,7 +10,7 @@ EXPORTS:
   NotificationBus  -- Register surfaces once
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_bus_documentation.py tests/test_config_robust_env.py tests/test_memory_robustness.py tests/test_notification_bus.py
+RUN/TEST: python -m pytest tests/test_bus_documentation.py tests/test_config_robust_env.py tests/test_dashboard_bus.py tests/test_event_bus.py tests/test_memory_robustness.py tests/test_notification_bus.py
 """
 from __future__ import annotations
 

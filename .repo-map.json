@@ -486,7 +486,7 @@
         {
           "name": "runClaude",
           "kind": "function",
-          "signature": "(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, system_prompt: Optional[str]=None, extra: Optional[str]=None, timeout: Optional[int]=None, resume_session: Optional[str]=None, cancel_check=None) -> dict",
+          "signature": "(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, system_prompt: Optional[str]=None, extra: Optional[str]=None, timeout: Optional[int]=None, resume_session: Optional[str]=None, cancel_check=None, feed=None) -> dict",
           "summary": "Prepare the environment from the invocation spec, then fire one Claude run.",
           "lineno": 166
         }
@@ -576,9 +576,9 @@
         {
           "name": "runSubprocess",
           "kind": "function",
-          "signature": "(run_cmd: list, run_prompt: str, *, work: str, timeout: int, env: dict, creationflags: int, spec: dict, effort: str, flag, profile, playbook_md: str, claude_md_path, model: str) -> dict",
+          "signature": "(run_cmd: list, run_prompt: str, *, work: str, timeout: int, env: dict, creationflags: int, spec: dict, effort: str, flag, profile, playbook_md: str, claude_md_path, model: str, feed=None) -> dict",
           "summary": "Execute one Claude subprocess and return a normalised result dict.",
-          "lineno": 174
+          "lineno": 243
         }
       ],
       "depends_on": [
@@ -1448,6 +1448,7 @@
         "learning.sie",
         "learning.solution_cache",
         "learning.toolsmith",
+        "learning.wisdom",
         "main",
         "memory.conviction_ledger",
         "memory.experience_pr",
@@ -1457,19 +1458,24 @@
         "memory.obsidian",
         "memory.retrieval",
         "memory.subtask_manager",
+        "memory.user_prefs",
         "monitoring.alerter",
         "notifications.ask",
         "notifications.audit",
         "notifications.bot.cogs.admin",
         "notifications.bot.cogs.ask_cog",
+        "notifications.bot.cogs.context_cog",
         "notifications.bot.cogs.engagement_cog",
+        "notifications.bot.cogs.log_cog",
         "notifications.bot.cogs.observe_cog",
         "notifications.bot.cogs.ops_cog",
         "notifications.bot.cogs.plan_cog",
         "notifications.bot.cogs.runs_cog",
         "notifications.bot.core",
         "notifications.bot.ui.dynamic",
+        "notifications.brain_dialogue",
         "notifications.branding",
+        "notifications.briefing",
         "notifications.cast",
         "notifications.command_bot",
         "notifications.commands",
@@ -1481,10 +1487,16 @@
         "notifications.discord_embeds",
         "notifications.icons",
         "notifications.iconset",
+        "notifications.instinct",
         "notifications.metrics",
+        "notifications.narration",
         "notifications.personas",
+        "notifications.predictive",
+        "notifications.reflection_post",
         "notifications.slash",
         "notifications.theme",
+        "notifications.tunnel",
+        "notifications.tunnel_providers",
         "notifications.views_control",
         "notifications.views_feedback",
         "notifications.views_run",
@@ -1517,6 +1529,7 @@
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_phase_mixin",
+        "platform_core.orchestration.self_ref_gate",
         "platform_core.orchestration.subtask",
         "platform_core.runtime.control",
         "platform_core.runtime.resilience",
@@ -1973,7 +1986,7 @@
         "writes conviction ledger"
       ],
       "test": [
-        "tests/test_instinct_hn.py"
+        "tests/test_instinct.py"
       ],
       "callers": [
         "human_nature.integration"
@@ -3506,6 +3519,7 @@
         "unannotated"
       ],
       "test": [
+        "tests/test_reflection_post.py",
         "tests/test_reflection_trust.py"
       ],
       "callers": [
@@ -3844,6 +3858,40 @@
       "test": [],
       "callers": []
     },
+    "learning.wisdom": {
+      "path": "learning/wisdom.py",
+      "purpose": "Self-improvement made visible -- the wisdom trail + growth summary.",
+      "exports": [
+        {
+          "name": "wisdomTrail",
+          "kind": "function",
+          "signature": "(state, *, reflections: Optional[list]=None, limit: int=8) -> str",
+          "summary": "Reflections tagged relevant to this run's domain (keyword-matched on the goal).",
+          "lineno": 50
+        },
+        {
+          "name": "growthSummary",
+          "kind": "function",
+          "signature": "(*, domain: Optional[str]=None, reflections: Optional[list]=None, runs: Optional[list]=None, limit: int=5) -> str",
+          "summary": "A short learning summary: what the most recent runs taught the system.",
+          "lineno": 67
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_wisdom.py"
+      ],
+      "callers": [
+        "notifications.bot.cogs.log_cog",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
     "llm_io": {
       "path": "llm_io.py",
       "purpose": "Robust extraction from an Ollama chat response.",
@@ -3883,6 +3931,9 @@
         "human_nature.momentary",
         "human_nature.opinions",
         "notifications.ask",
+        "notifications.brain_dialogue",
+        "notifications.briefing",
+        "notifications.instinct",
         "platform_core.orchestration.brain_io"
       ]
     },
@@ -4016,12 +4067,17 @@
         "learning.sie",
         "learning.solution_cache",
         "learning.toolsmith",
+        "learning.wisdom",
         "memory.retrieval",
         "memory.subtask_manager",
+        "notifications.instinct",
+        "notifications.predictive",
+        "notifications.webdash",
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.plan_mixin",
         "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.run_loop_mixin",
+        "platform_core.orchestration.run_phase_mixin",
         "state.task_schema"
       ]
     },
@@ -4261,56 +4317,63 @@
           "kind": "function",
           "signature": "(run: dict[str, Any], db_path: Optional[Path]=None) -> bool",
           "summary": "Upsert a run row keyed by ``run_id``",
-          "lineno": 29
+          "lineno": 30
         },
         {
           "name": "sync_run",
           "kind": "function",
           "signature": "(state_data: dict[str, Any], db_path: Optional[Path]=None) -> bool",
           "summary": "Best-effort upsert of the run row from a TaskState's lean ``data`` dict.",
-          "lineno": 75
+          "lineno": 76
         },
         {
           "name": "record_eval",
           "kind": "function",
           "signature": "(score: dict[str, Any], *, suite_version: str='v1', prompt_set_id: Optional[str]=None, adapter_id: Optional[str]=None, passed_gate: Optional[bool]=None, db_path: Optional[Path]=None) -> Optional[int]",
           "summary": "Append an eval-harness result row",
-          "lineno": 94
+          "lineno": 95
         },
         {
           "name": "fetch_runs",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "",
-          "lineno": 113
+          "lineno": 114
         },
         {
           "name": "gold_examples",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "First-attempt, verify-passing, **really** adversary-approved subtasks",
-          "lineno": 118
+          "lineno": 119
         },
         {
           "name": "fitness_series",
           "kind": "function",
           "signature": "(limit: int=90, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "Recent eval-harness scores, oldest-first",
-          "lineno": 131
+          "lineno": 132
         },
         {
           "name": "counts",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
           "summary": "Row counts per table",
-          "lineno": 147
+          "lineno": 148
         },
         {
           "name": "backfill_from_store",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
           "summary": "Seed the ledger from the existing task-JSON store so months-long learning never",
-          "lineno": 154
+          "lineno": 155
+        },
+        {
+          "name": "compare_run",
+          "kind": "function",
+          "signature": "(task_id: str, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "This run vs the rolling average of prior terminal runs",
+          "lineno": 226
         }
       ],
       "depends_on": [
@@ -4695,6 +4758,98 @@
       ],
       "callers": []
     },
+    "memory.user_prefs": {
+      "path": "memory/user_prefs.py",
+      "purpose": "Cross-session user-preference store + natural-language prefer/brief-set parsers.",
+      "exports": [
+        {
+          "name": "load",
+          "kind": "function",
+          "signature": "(path: Optional[Path]=None) -> dict",
+          "summary": "Merged defaults + stored prefs",
+          "lineno": 61
+        },
+        {
+          "name": "save",
+          "kind": "function",
+          "signature": "(prefs: dict, path: Optional[Path]=None) -> bool",
+          "summary": "",
+          "lineno": 77
+        },
+        {
+          "name": "get",
+          "kind": "function",
+          "signature": "(key: str, path: Optional[Path]=None)",
+          "summary": "",
+          "lineno": 88
+        },
+        {
+          "name": "set_pref",
+          "kind": "function",
+          "signature": "(key: str, value, path: Optional[Path]=None) -> Optional[dict]",
+          "summary": "Persist one key",
+          "lineno": 92
+        },
+        {
+          "name": "reset",
+          "kind": "function",
+          "signature": "(path: Optional[Path]=None) -> dict",
+          "summary": "",
+          "lineno": 102
+        },
+        {
+          "name": "parsePreferIntent",
+          "kind": "function",
+          "signature": "(text: str) -> Optional[tuple[str, object]]",
+          "summary": "Map a short '!prefer ...' phrase to a (key, value)",
+          "lineno": 122
+        },
+        {
+          "name": "parseBriefSet",
+          "kind": "function",
+          "signature": "(text: str) -> Optional[tuple[str, object]]",
+          "summary": "Map '!brief set <field> <on|off>' to (key, value).",
+          "lineno": 139
+        },
+        {
+          "name": "applyPrefer",
+          "kind": "function",
+          "signature": "(text: str, path: Optional[Path]=None) -> str",
+          "summary": "",
+          "lineno": 160
+        },
+        {
+          "name": "applyBriefSet",
+          "kind": "function",
+          "signature": "(text: str, path: Optional[Path]=None) -> str",
+          "summary": "",
+          "lineno": 169
+        },
+        {
+          "name": "formatPrefs",
+          "kind": "function",
+          "signature": "(prefs: dict) -> str",
+          "summary": "",
+          "lineno": 177
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "writes user_prefs.json"
+      ],
+      "test": [
+        "tests/test_user_prefs.py"
+      ],
+      "callers": [
+        "human_nature.user_model",
+        "notifications.bot.cogs.context_cog",
+        "notifications.bot.cogs.log_cog",
+        "notifications.commands",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
     "monitoring": {
       "path": "monitoring/__init__.py",
       "purpose": "monitoring -- workflow execution monitoring for 9to5.",
@@ -5022,6 +5177,40 @@
       "test": [],
       "callers": []
     },
+    "notifications.bot.cogs.context_cog": {
+      "path": "notifications/bot/cogs/context_cog.py",
+      "purpose": "Context-menu commands (Spec B): right-click a message to Explain / Why / Brief here.",
+      "exports": [
+        {
+          "name": "buildReply",
+          "kind": "function",
+          "signature": "(kind: str, arg: str, *, state) -> str",
+          "summary": "Pure core for the three context menus",
+          "lineno": 36
+        },
+        {
+          "name": "setup",
+          "kind": "function",
+          "signature": "(bot: dpy_commands.Bot) -> None",
+          "summary": "",
+          "lineno": 50
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.user_prefs",
+        "notifications.brain_dialogue",
+        "notifications.briefing",
+        "notifications.commands"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_context_cog.py"
+      ],
+      "callers": []
+    },
     "notifications.bot.cogs.control_cog": {
       "path": "notifications/bot/cogs/control_cog.py",
       "purpose": "Run-control slash commands (owner + cooldown): pause / approve / reject / retry / add / skip / abort.",
@@ -5091,6 +5280,49 @@
         "unannotated"
       ],
       "test": [],
+      "callers": []
+    },
+    "notifications.bot.cogs.log_cog": {
+      "path": "notifications/bot/cogs/log_cog.py",
+      "purpose": "Intelligence gateway cog (Spec B): the Ollama-backed info surface.",
+      "exports": [
+        {
+          "name": "dispatchBang",
+          "kind": "function",
+          "signature": "(content: str, *, state, prefs: dict, chat: Optional[Callable[[str, str], str]]=None) -> Optional[str]",
+          "summary": "Route a Spec B Ollama-backed bang command to its pure core",
+          "lineno": 41
+        },
+        {
+          "name": "LogCog",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 64
+        },
+        {
+          "name": "setup",
+          "kind": "function",
+          "signature": "(bot: dpy_commands.Bot) -> None",
+          "summary": "",
+          "lineno": 138
+        }
+      ],
+      "depends_on": [
+        "config",
+        "learning.wisdom",
+        "memory.user_prefs",
+        "notifications.brain_dialogue",
+        "notifications.briefing",
+        "notifications.commands",
+        "notifications.slash"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_log_cog.py"
+      ],
       "callers": []
     },
     "notifications.bot.cogs.observe_cog": {
@@ -5265,21 +5497,21 @@
           "kind": "function",
           "signature": "(content: str) -> str",
           "summary": "Parse + apply a '!' command against the latest task",
-          "lineno": 50
+          "lineno": 52
         },
         {
           "name": "buildBot",
           "kind": "function",
           "signature": "()",
           "summary": "Construct (but do not run) the NightclawBot",
-          "lineno": 119
+          "lineno": 121
         },
         {
           "name": "runBot",
           "kind": "function",
           "signature": "() -> None",
           "summary": "",
-          "lineno": 188
+          "lineno": 190
         }
       ],
       "depends_on": [
@@ -5355,6 +5587,40 @@
         "notifications.bot.core"
       ]
     },
+    "notifications.brain_dialogue": {
+      "path": "notifications/brain_dialogue.py",
+      "purpose": "Brain dialogue -- a direct window into the Ollama brain's reasoning, mid-run.",
+      "exports": [
+        {
+          "name": "build_context",
+          "kind": "function",
+          "signature": "(state, kind: str, arg: str) -> str",
+          "summary": "",
+          "lineno": 48
+        },
+        {
+          "name": "answer",
+          "kind": "function",
+          "signature": "(kind: str, arg: str, state, *, chat: Optional[Callable[[str, str], str]]=None) -> str",
+          "summary": "Answer a brain-dialogue command",
+          "lineno": 80
+        }
+      ],
+      "depends_on": [
+        "config",
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_brain_dialogue.py"
+      ],
+      "callers": [
+        "notifications.bot.cogs.context_cog",
+        "notifications.bot.cogs.log_cog"
+      ]
+    },
     "notifications.branding": {
       "path": "notifications/branding.py",
       "purpose": "9TO5 Discord design system + rich embed builders. Pure (no network, no discord.py).",
@@ -5378,63 +5644,63 @@
           "kind": "function",
           "signature": "() -> dict",
           "summary": "",
-          "lineno": 108
+          "lineno": 111
         },
         {
           "name": "statusEmbed",
           "kind": "function",
           "signature": "(state, bus, uptime: Optional[str]=None) -> dict",
           "summary": "",
-          "lineno": 122
+          "lineno": 125
         },
         {
           "name": "planEmbed",
           "kind": "function",
           "signature": "(state, page: int=0, per: int=10)",
           "summary": "",
-          "lineno": 164
+          "lineno": 167
         },
         {
           "name": "runsEmbed",
           "kind": "function",
           "signature": "(summaries, page: int=0, per: int=8)",
           "summary": "",
-          "lineno": 174
+          "lineno": 177
         },
         {
           "name": "runEmbed",
           "kind": "function",
           "signature": "(state) -> dict",
           "summary": "",
-          "lineno": 184
+          "lineno": 187
         },
         {
           "name": "diagnosticsEmbed",
           "kind": "function",
           "signature": "(checks) -> dict",
           "summary": "",
-          "lineno": 201
+          "lineno": 204
         },
         {
           "name": "metricsEmbed",
           "kind": "function",
           "signature": "(m) -> dict",
           "summary": "",
-          "lineno": 215
+          "lineno": 218
         },
         {
           "name": "pingEmbed",
           "kind": "function",
           "signature": "(latency_ms, uptime, version) -> dict",
           "summary": "",
-          "lineno": 229
+          "lineno": 232
         },
         {
           "name": "auditEmbed",
           "kind": "function",
           "signature": "(entries) -> dict",
           "summary": "",
-          "lineno": 237
+          "lineno": 240
         }
       ],
       "depends_on": [
@@ -5454,6 +5720,40 @@
         "notifications.bot.cogs.runs_cog",
         "notifications.cv2",
         "notifications.dashboard"
+      ]
+    },
+    "notifications.briefing": {
+      "path": "notifications/briefing.py",
+      "purpose": "On-demand briefing generator -- preference-tuned, depth-leveled, never blocks a run.",
+      "exports": [
+        {
+          "name": "resolveDepth",
+          "kind": "function",
+          "signature": "(prefs: dict, depth: Optional[str]) -> str",
+          "summary": "",
+          "lineno": 28
+        },
+        {
+          "name": "generate_brief",
+          "kind": "function",
+          "signature": "(state, prefs: dict, depth: Optional[str]=None, *, chat: Optional[Callable[[str, str], str]]=None) -> str",
+          "summary": "",
+          "lineno": 143
+        }
+      ],
+      "depends_on": [
+        "config",
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_briefing.py"
+      ],
+      "callers": [
+        "notifications.bot.cogs.context_cog",
+        "notifications.bot.cogs.log_cog"
       ]
     },
     "notifications.bus": {
@@ -5482,6 +5782,8 @@
       "test": [
         "tests/test_bus_documentation.py",
         "tests/test_config_robust_env.py",
+        "tests/test_dashboard_bus.py",
+        "tests/test_event_bus.py",
         "tests/test_memory_robustness.py",
         "tests/test_notification_bus.py"
       ],
@@ -5527,6 +5829,7 @@
         "tests/test_cast.py"
       ],
       "callers": [
+        "notifications.narration",
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.review_mixin",
         "platform_core.orchestration.run_phase_mixin"
@@ -5568,62 +5871,65 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 53
+          "lineno": 68
         },
         {
           "name": "parseCommand",
           "kind": "function",
           "signature": "(content: str) -> Optional[Command]",
           "summary": "Exact-token parse of a '!' command",
-          "lineno": 58
+          "lineno": 73
         },
         {
           "name": "isAuthorized",
           "kind": "function",
           "signature": "(user_id: Optional[object]) -> bool",
           "summary": "True if no owner configured (dev), else only the configured owner",
-          "lineno": 73
+          "lineno": 88
         },
         {
           "name": "decide",
           "kind": "function",
           "signature": "(author_id: Optional[object], is_bot: bool, content: str) -> Optional[Command]",
           "summary": "Shared gate for BOTH the gateway and the in-run poller: returns the command to",
-          "lineno": 84
+          "lineno": 99
         },
         {
           "name": "resolveTargetTask",
           "kind": "function",
           "signature": "() -> Optional[TaskState]",
           "summary": "",
-          "lineno": 95
+          "lineno": 110
         },
         {
           "name": "isRunActive",
           "kind": "function",
           "signature": "(state: Optional[TaskState]) -> bool",
           "summary": "A run is 'active' iff its status is not terminal",
-          "lineno": 99
+          "lineno": 114
         },
         {
           "name": "footerHelp",
           "kind": "function",
           "signature": "() -> str",
           "summary": "Short, never-stale command hint derived from the registry (used by the dashboard).",
-          "lineno": 107
+          "lineno": 122
         },
         {
           "name": "applyCommand",
           "kind": "function",
           "signature": "(bus: ControlBus, state: TaskState, cmd: Command) -> str",
           "summary": "Perform the bus mutation and return human markdown text ('' for silent control ops).",
-          "lineno": 150
+          "lineno": 281
         }
       ],
       "depends_on": [
         "config",
         "learning.human_feedback",
+        "memory.user_prefs",
         "notifications.discord_bot",
+        "notifications.event_bus",
+        "notifications.run_arc",
         "platform_core.runtime.control",
         "state.task"
       ],
@@ -5636,8 +5942,10 @@
       "callers": [
         "notifications.bot.cogs.admin",
         "notifications.bot.cogs.ask_cog",
+        "notifications.bot.cogs.context_cog",
         "notifications.bot.cogs.control_cog",
         "notifications.bot.cogs.engagement_cog",
+        "notifications.bot.cogs.log_cog",
         "notifications.bot.cogs.observe_cog",
         "notifications.bot.cogs.ops_cog",
         "notifications.bot.cogs.plan_cog",
@@ -5731,13 +6039,14 @@
           "kind": "function",
           "signature": "(state, phase: str, *, events: Optional[list]=None, model: Optional[str]=None, effort: str='default', image_url: Optional[str]=None) -> tuple[list, int]",
           "summary": "Return ``(components, flags)`` for the live cockpit",
-          "lineno": 103
+          "lineno": 147
         }
       ],
       "depends_on": [
         "config",
         "notifications.branding",
         "notifications.discord_bot",
+        "notifications.health_aura",
         "notifications.icons",
         "notifications.theme"
       ],
@@ -5762,7 +6071,7 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 42
+          "lineno": 53
         }
       ],
       "depends_on": [
@@ -5771,6 +6080,8 @@
         "notifications.commands",
         "notifications.cv2",
         "notifications.discord_bot",
+        "notifications.event_bus",
+        "notifications.health_aura",
         "notifications.visuals",
         "state.task"
       ],
@@ -5818,6 +6129,7 @@
         "notifications.cv2",
         "notifications.dashboard",
         "notifications.icons",
+        "notifications.reflection_post",
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.llm_mixin",
@@ -6239,6 +6551,95 @@
         "state.task_schema"
       ]
     },
+    "notifications.event_bus": {
+      "path": "notifications/event_bus.py",
+      "purpose": "LiveEventBus -- the single nervous system every 9to5 surface listens to.",
+      "exports": [
+        {
+          "name": "Event",
+          "kind": "class",
+          "signature": "",
+          "summary": "A structured, fan-out event",
+          "lineno": 40
+        },
+        {
+          "name": "RawLine",
+          "kind": "class",
+          "signature": "",
+          "summary": "One raw stdout line tagged with its subtask id.",
+          "lineno": 60
+        },
+        {
+          "name": "LiveEventBus",
+          "kind": "class",
+          "signature": "",
+          "summary": "Ring-buffered pub/sub bus",
+          "lineno": 70
+        },
+        {
+          "name": "get_bus",
+          "kind": "function",
+          "signature": "() -> LiveEventBus",
+          "summary": "Process-global singleton",
+          "lineno": 151
+        },
+        {
+          "name": "reset_bus",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Drop the singleton so the next ``get_bus`` builds a fresh one (test hook).",
+          "lineno": 161
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_event_bus.py"
+      ],
+      "callers": [
+        "notifications.commands",
+        "notifications.dashboard",
+        "notifications.narration",
+        "notifications.subprocess_feed",
+        "notifications.webdash",
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "notifications.health_aura": {
+      "path": "notifications/health_aura.py",
+      "purpose": "Health Aura -- a single composite 0-100 score for a run, surfaced everywhere.",
+      "exports": [
+        {
+          "name": "aura_color",
+          "kind": "function",
+          "signature": "(score: int) -> str",
+          "summary": "Green 80-100, amber 50-79, red 0-49.",
+          "lineno": 26
+        },
+        {
+          "name": "compute_health",
+          "kind": "function",
+          "signature": "(state: Any) -> int",
+          "summary": "Composite 0-100 health score",
+          "lineno": 62
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_health_aura.py"
+      ],
+      "callers": [
+        "notifications.cv2",
+        "notifications.dashboard",
+        "notifications.webdash"
+      ]
+    },
     "notifications.icons": {
       "path": "notifications/icons.py",
       "purpose": "Application-emoji icon registry -- professional icons for Discord TEXT surfaces.",
@@ -6324,6 +6725,34 @@
         "notifications.icons"
       ]
     },
+    "notifications.instinct": {
+      "path": "notifications/instinct.py",
+      "purpose": "Nightclaw instinct -- occasional, unprompted pattern signals not derived from explicit rules.",
+      "exports": [
+        {
+          "name": "NightclawInstinct",
+          "kind": "class",
+          "signature": "",
+          "summary": "Periodic 'something feels off' pattern layer",
+          "lineno": 39
+        }
+      ],
+      "depends_on": [
+        "config",
+        "llm_io",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_instinct.py"
+      ],
+      "callers": [
+        "human_nature.instinct",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
     "notifications.metrics": {
       "path": "notifications/metrics.py",
       "purpose": "Aggregate run metrics from the task-state JSON store. Pure (reads files only).",
@@ -6348,6 +6777,54 @@
       ],
       "callers": [
         "notifications.bot.cogs.observe_cog"
+      ]
+    },
+    "notifications.narration": {
+      "path": "notifications/narration.py",
+      "purpose": "Proactive narration, Moments, and attention-mode detection.",
+      "exports": [
+        {
+          "name": "Narrator",
+          "kind": "class",
+          "signature": "",
+          "summary": "Posts proactive narration, rate-limited to one message per ``min_interval`` seconds.",
+          "lineno": 40
+        },
+        {
+          "name": "MomentDetector",
+          "kind": "class",
+          "signature": "",
+          "summary": "Pure detectors returning a one-sentence moment (in voice) or None.",
+          "lineno": 65
+        },
+        {
+          "name": "emit_moment",
+          "kind": "function",
+          "signature": "(bus, sid: str, text: str, *, sink: Optional[Callable[[str, str], bool]]=None) -> None",
+          "summary": "Emit a ``kind='moment'`` bus event and post it (non-ephemeral) to the channel.",
+          "lineno": 89
+        },
+        {
+          "name": "detect_mode",
+          "kind": "function",
+          "signature": "(bus) -> str",
+          "summary": "Heuristic attention mode: Present if a web SSE tab is subscribed, else Away.",
+          "lineno": 102
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.cast",
+        "notifications.event_bus"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_narration.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.run_phase_mixin"
       ]
     },
     "notifications.ops": {
@@ -6419,6 +6896,130 @@
         "notifications.cast"
       ]
     },
+    "notifications.predictive": {
+      "path": "notifications/predictive.py",
+      "purpose": "Predictive flags -- the system warns the operator before things go wrong.",
+      "exports": [
+        {
+          "name": "PredictiveFlags",
+          "kind": "class",
+          "signature": "",
+          "summary": "Heuristic flag engine with per-run rate limiting.",
+          "lineno": 122
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_predictive_flags.py"
+      ],
+      "callers": []
+    },
+    "notifications.reflection_post": {
+      "path": "notifications/reflection_post.py",
+      "purpose": "Self-reflection -- the run, in its own voice, at the end.",
+      "exports": [
+        {
+          "name": "write_reflection",
+          "kind": "function",
+          "signature": "(state: Any, *, chat: Callable[..., Any], comparative: Optional[dict]=None, obs: Any=None) -> Optional[str]",
+          "summary": "Generate the reflection paragraph, persist it to disk + Obsidian, and return it.",
+          "lineno": 51
+        },
+        {
+          "name": "post_reflection",
+          "kind": "function",
+          "signature": "(state: Any, text: str, comparative: Optional[dict]=None) -> None",
+          "summary": "Post the reflection to Discord as ``CODENAME — text`` with a comparative footer",
+          "lineno": 91
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.discord_bot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_reflection_post.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "notifications.run_arc": {
+      "path": "notifications/run_arc.py",
+      "purpose": "Run narrative arc -- a living story of the run, not a log.",
+      "exports": [
+        {
+          "name": "append_beat",
+          "kind": "function",
+          "signature": "(state: Any, text: str) -> None",
+          "summary": "Append a beat (``{text, at}``) to ``state.meta[\"arc\"]`` and persist",
+          "lineno": 25
+        },
+        {
+          "name": "render_arc",
+          "kind": "function",
+          "signature": "(state: Any) -> str",
+          "summary": "The arc as a readable story (one beat per line), newest last.",
+          "lineno": 42
+        },
+        {
+          "name": "beat_discovery",
+          "kind": "function",
+          "signature": "(n: int, theme: str) -> str",
+          "summary": "",
+          "lineno": 54
+        },
+        {
+          "name": "beat_architect",
+          "kind": "function",
+          "signature": "(n: int) -> str",
+          "summary": "",
+          "lineno": 58
+        },
+        {
+          "name": "beat_first_verify",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "",
+          "lineno": 62
+        },
+        {
+          "name": "beat_replan",
+          "kind": "function",
+          "signature": "(reason: str) -> str",
+          "summary": "",
+          "lineno": 66
+        },
+        {
+          "name": "beat_complete",
+          "kind": "function",
+          "signature": "(status: str, done: int, total: int, elapsed: str) -> str",
+          "summary": "",
+          "lineno": 70
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_run_arc.py"
+      ],
+      "callers": [
+        "notifications.commands",
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
     "notifications.slash": {
       "path": "notifications/slash.py",
       "purpose": "Shared helpers for the slash-command cogs.",
@@ -6438,9 +7039,35 @@
       ],
       "callers": [
         "notifications.bot.cogs.control_cog",
+        "notifications.bot.cogs.log_cog",
         "notifications.bot.cogs.observe_cog",
         "notifications.bot.cogs.runs_cog",
         "notifications.views_feedback"
+      ]
+    },
+    "notifications.subprocess_feed": {
+      "path": "notifications/subprocess_feed.py",
+      "purpose": "SubprocessFeed -- tap a Claude subprocess's stdout stream in real time.",
+      "exports": [
+        {
+          "name": "SubprocessFeed",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 28
+        }
+      ],
+      "depends_on": [
+        "notifications.event_bus"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_subprocess_feed.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.execute_mixin"
       ]
     },
     "notifications.theme": {
@@ -6547,6 +7174,90 @@
         "notifications.iconset",
         "notifications.visuals_cards",
         "notifications.visuals_components"
+      ]
+    },
+    "notifications.tunnel": {
+      "path": "notifications/tunnel.py",
+      "purpose": "TunnelManager -- hyper-robust supervision of a public tunnel to the local dashboard.",
+      "exports": [
+        {
+          "name": "TunnelManager",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 31
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.tunnel_providers"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_tunnel.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "notifications.tunnel_providers": {
+      "path": "notifications/tunnel_providers.py",
+      "purpose": "Tunnel providers -- pluggable public-URL backends for the local web dashboard.",
+      "exports": [
+        {
+          "name": "TunnelProvider",
+          "kind": "class",
+          "signature": "",
+          "summary": "Base interface",
+          "lineno": 46
+        },
+        {
+          "name": "CloudflaredProvider",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 97
+        },
+        {
+          "name": "NgrokProvider",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 137
+        },
+        {
+          "name": "BoreProvider",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 164
+        },
+        {
+          "name": "LocaltunnelProvider",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 189
+        },
+        {
+          "name": "default_providers",
+          "kind": "function",
+          "signature": "() -> list",
+          "summary": "Providers in priority order (cloudflared first, localtunnel last).",
+          "lineno": 215
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.tunnel"
       ]
     },
     "notifications.views": {
@@ -6829,18 +7540,22 @@
           "kind": "function",
           "signature": "(task_id: str, port: Optional[int]=None) -> Optional[str]",
           "summary": "Start the dashboard in a daemon thread",
-          "lineno": 248
+          "lineno": 299
         },
         {
           "name": "stopWebDashboard",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Shut down the running dashboard server (frees the port)",
-          "lineno": 270
+          "lineno": 322
         }
       ],
       "depends_on": [
         "config",
+        "memory.experience",
+        "notifications.event_bus",
+        "notifications.health_aura",
+        "notifications.webdash_page",
         "platform_core.runtime.control",
         "state.task"
       ],
@@ -6848,11 +7563,25 @@
         "unannotated"
       ],
       "test": [
+        "tests/test_bloomberg_webdash.py",
         "tests/test_webdash_control.py"
       ],
       "callers": [
         "orchestrator",
         "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "notifications.webdash_page": {
+      "path": "notifications/webdash_page.py",
+      "purpose": "Bloomberg-terminal HTML page for the live web dashboard (data only, no logic).",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.webdash"
       ]
     },
     "notifications.work_launcher": {
@@ -7057,7 +7786,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_discord_rest.py"
+        "tests/test_discord_rest.py",
+        "tests/test_discord_surfaces.py"
       ],
       "callers": [
         "config"
@@ -7786,6 +8516,29 @@
         "unannotated"
       ],
       "test": [],
+      "callers": [
+        "state.task_schema"
+      ]
+    },
+    "platform_core.ops.codenames": {
+      "path": "platform_core/ops/codenames.py",
+      "purpose": "Run codename generator -- evocative ADJECTIVE_NOUN names for every run.",
+      "exports": [
+        {
+          "name": "generate",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "Return a random ``ADJECTIVE_NOUN`` codename.",
+          "lineno": 77
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_codenames.py"
+      ],
       "callers": []
     },
     "platform_core.ops.doctor": {
@@ -7916,6 +8669,7 @@
         "unannotated"
       ],
       "test": [
+        "tests/test_health_aura.py",
         "tests/test_health_collect.py",
         "tests/test_repo_health.py"
       ],
@@ -8105,7 +8859,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment.",
-          "lineno": 36
+          "lineno": 34
         }
       ],
       "depends_on": [
@@ -8119,8 +8873,12 @@
         "notifications.cast",
         "notifications.dashboard",
         "notifications.discord_bot",
+        "notifications.event_bus",
+        "notifications.run_arc",
+        "notifications.subprocess_feed",
         "platform_core.core.surfaces",
         "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.self_ref_gate",
         "platform_core.orchestration.subtask",
         "platform_core.runtime.control",
         "state.task"
@@ -8379,7 +9137,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles run lifecycle phases: resume, fresh run, preamble, phase 4, teardown.",
-          "lineno": 31
+          "lineno": 33
         }
       ],
       "depends_on": [
@@ -8389,10 +9147,19 @@
         "config",
         "learning.adversary_trust",
         "learning.sie",
+        "learning.wisdom",
+        "memory.experience",
+        "memory.user_prefs",
         "notifications.cast",
         "notifications.dashboard",
         "notifications.discord_bot",
+        "notifications.event_bus",
         "notifications.icons",
+        "notifications.instinct",
+        "notifications.narration",
+        "notifications.reflection_post",
+        "notifications.run_arc",
+        "notifications.tunnel",
         "notifications.visuals",
         "notifications.webdash",
         "orchestrator",
@@ -8409,6 +9176,29 @@
       "test": [],
       "callers": [
         "orchestrator"
+      ]
+    },
+    "platform_core.orchestration.self_ref_gate": {
+      "path": "platform_core/orchestration/self_ref_gate.py",
+      "purpose": "Self-referential quality gate -- cheap Windows repo checks after a self-ref subtask passes.",
+      "exports": [
+        {
+          "name": "run_self_ref_quality_gate",
+          "kind": "function",
+          "signature": "(work_dir: str) -> 'tuple[bool, str]'",
+          "summary": "Run cheap Windows repo gates after a self-ref subtask passes its own verify.",
+          "lineno": 36
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "platform_core.orchestration.execute_mixin"
       ]
     },
     "platform_core.orchestration.subtask": {
@@ -8474,7 +9264,7 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 136
+          "lineno": 138
         }
       ],
       "depends_on": [
@@ -8486,6 +9276,7 @@
       "test": [
         "tests/test_control_concurrency.py",
         "tests/test_fuzz_control.py",
+        "tests/test_granular_controls.py",
         "tests/test_webdash_control.py"
       ],
       "callers": [
@@ -9100,13 +9891,14 @@
           "kind": "class",
           "signature": "",
           "summary": "Wraps the lean state dict and persists it to ``state/tasks/<id>.json``.",
-          "lineno": 31
+          "lineno": 40
         }
       ],
       "depends_on": [
         "config",
         "memory.experience",
         "notifications.entry",
+        "platform_core.ops",
         "state.task_io"
       ],
       "side_effects": [

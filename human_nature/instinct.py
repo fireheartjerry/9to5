@@ -22,7 +22,7 @@ EXPORTS:
   maybe_flag(state: dict[str, Any], reflections: list[dict], failure_modes: list[dict], *, chat: Optional[Callable]=None, db_path: Optional[Path]=None) -> Optional[str]  -- Fire the instinct check
 DEPENDS-ON: config, llm_io, memory.conviction_ledger, notifications.instinct
 SIDE-EFFECTS: mutates state["meta"]["instinct_flags"]; writes conviction ledger
-RUN/TEST: python -m pytest tests/test_instinct_hn.py
+RUN/TEST: python -m pytest tests/test_instinct.py
 """
 from __future__ import annotations
 

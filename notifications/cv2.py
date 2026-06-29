@@ -21,7 +21,7 @@ EXPORTS:
   elapsedStr(started_at) -> str
   etaStr(started_at, done: int, total: int) -> str
   buildCockpit(state, phase: str, *, events: Optional[list]=None, model: Optional[str]=None, effort: str='default', image_url: Optional[str]=None) -> tuple[list, int]  -- Return ``(components, flags)`` for the live cockpit
-DEPENDS-ON: config, notifications.branding, notifications.discord_bot, notifications.icons, notifications.theme
+DEPENDS-ON: config, notifications.branding, notifications.discord_bot, notifications.health_aura, notifications.icons, notifications.theme
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_cv2.py
 """

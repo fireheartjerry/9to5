@@ -17,9 +17,9 @@ Routes:
 EXPORTS:
   startWebDashboard(task_id: str, port: Optional[int]=None) -> Optional[str]  -- Start the dashboard in a daemon thread
   stopWebDashboard() -> None  -- Shut down the running dashboard server (frees the port)
-DEPENDS-ON: config, notifications.event_bus, notifications.health_aura, notifications.webdash_page, platform_core.runtime.control, state.task
+DEPENDS-ON: config, memory.experience, notifications.event_bus, notifications.health_aura, notifications.webdash_page, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_webdash_control.py tests/test_bloomberg_webdash.py
+RUN/TEST: python -m pytest tests/test_bloomberg_webdash.py tests/test_webdash_control.py
 """
 from __future__ import annotations
 

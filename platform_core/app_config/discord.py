@@ -5,7 +5,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_discord_rest.py
+RUN/TEST: python -m pytest tests/test_discord_rest.py tests/test_discord_surfaces.py
 """
 from __future__ import annotations
 

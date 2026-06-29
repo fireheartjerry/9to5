@@ -10,6 +10,7 @@ EXPORTS:
   fitness_series(limit: int=90, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Recent eval-harness scores, oldest-first
   counts(db_path: Optional[Path]=None) -> dict[str, int]  -- Row counts per table
   backfill_from_store(db_path: Optional[Path]=None) -> dict[str, int]  -- Seed the ledger from the existing task-JSON store so months-long learning never
+  compare_run(task_id: str, db_path: Optional[Path]=None) -> dict[str, Any]  -- This run vs the rolling average of prior terminal runs
 DEPENDS-ON: config, memory.experience_schema, memory.experience_subtasks, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
