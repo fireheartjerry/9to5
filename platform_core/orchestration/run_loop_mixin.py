@@ -203,6 +203,7 @@ class OrchestratorRunLoopMixin:
         # whether a remediation snapshot/restore would clobber concurrent peer workers (see #1).
         self._parallelism = parallelism
         self._work_dir = work_dir
+        self._last_instinct_ts = 0.0   # Spec B: throttle the periodic Nightclaw instinct call
         position = 0
         iters = 0
         no_progress = 0
@@ -218,6 +219,13 @@ class OrchestratorRunLoopMixin:
             prev_terminal = terminal
             self._livelockGuard(no_progress, iters)
             self._checkControl(state, bus, dashboard)
+            if bus.isForceReplan():
+                bus.clearForceReplan()
+                self._forcedReplan(state, architect_doc, dashboard)
+            try:
+                self._maybeInstinct(state, bus)
+            except Exception:  # noqa: BLE001 -- instinct is best-effort, never blocks the loop
+                pass
             if parallelism <= 1:
                 subtask = state.nextActionable()
                 if subtask is None:
@@ -261,6 +269,29 @@ class OrchestratorRunLoopMixin:
                 bus, dashboard, position, parallelism)
             if abort is not None:
                 raise abort
+
+    def _forcedReplan(self, state: TaskState, architect_doc: str,
+                      dashboard: "DiscordDashboard") -> None:
+        """Operator-requested replanning pass (via !replan / ControlBus.force_replan). Best-effort:
+        never raises into the loop. Skips single-deliverable goals (nothing to replan)."""
+        try:
+            from platform_core.orchestration.subtask import _singleDeliverable
+            goal = state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "")
+            if _singleDeliverable(goal):
+                dashboard.event("forced replan skipped (single-deliverable goal)")
+                return
+            last_done = next((s for s in reversed(state.subtasks) if s["status"] == "done"), None)
+            with self._state_lock:
+                subs = list(state.subtasks)
+            decision = self._replan(goal, subs, last_done or {}, "operator-forced replan",
+                                    self_referential=bool(state.meta.get("is_self_referential")),
+                                    remaining_hours=self._remainingHours(state))
+            if decision.get("action") == "mutate" and (decision.get("add") or decision.get("remove")):
+                dashboard.update(state, "replanning", "operator-forced replan")
+                with self._state_lock:
+                    self._applyReplan(state, decision)
+        except Exception as e:  # noqa: BLE001 -- forced replan is best-effort
+            LOG.warning("forced replan failed (ignored): %s", e)
 
     def _applyReplan(self, state: TaskState, decision: dict) -> None:
         diff = [f"## Replan @ {nowIso()}", f"Reason: {decision.get('reason', '')}", ""]

@@ -13,7 +13,7 @@ EXPORTS:
   isRunActive(state: Optional[TaskState]) -> bool  -- A run is 'active' iff its status is not terminal
   footerHelp() -> str  -- Short, never-stale command hint derived from the registry (used by the dashboard).
   applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str  -- Perform the bus mutation and return human markdown text ('' for silent control ops).
-DEPENDS-ON: config, learning.human_feedback, notifications.discord_bot, platform_core.runtime.control, state.task
+DEPENDS-ON: config, learning.human_feedback, memory.user_prefs, notifications.discord_bot, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_commands.py
 """
@@ -51,6 +51,17 @@ COMMAND_REGISTRY: dict[str, dict] = {
     "stdout":  {"arg": "optional", "mutating": False, "help": "last 500 raw stdout lines: !stdout [st-00N]"},
     "arc":     {"arg": "none",     "mutating": False, "help": "the run's narrative arc"},
     "history": {"arg": "none",     "mutating": False, "help": "recent live event log"},
+    # Spec B: intelligence & control commands (fast: bus op or file IO only)
+    "intent":  {"arg": "required", "mutating": True,  "help": "steer the run: !intent <text> | clear | persist <text>"},
+    "prefer":  {"arg": "required", "mutating": True,  "help": "set a preference: !prefer brief without cost"},
+    "prefs":   {"arg": "optional", "mutating": False, "help": "show/reset preferences: !prefs [show|reset]"},
+    "effort":  {"arg": "required", "mutating": True,  "help": "run-level effort: !effort high"},
+    "mode":    {"arg": "required", "mutating": True,  "help": "switch control mode: !mode gated|watch"},
+    "replan":  {"arg": "none",     "mutating": True,  "help": "force a replanning pass now"},
+    "deadline": {"arg": "required", "mutating": True, "help": "extend horizon: !deadline +1h"},
+    "kill":    {"arg": "none",     "mutating": True,  "help": "kill the current Claude attempt (not the run)"},
+    "inject":  {"arg": "required", "mutating": True,  "help": "add context to next attempt: !inject <text>"},
+    "set-effort": {"arg": "required", "mutating": True, "help": "per-subtask effort: !set-effort st-003 high"},
 }
 
 
@@ -194,6 +205,79 @@ def _historyText(state: TaskState, last_n: int = 50) -> str:
         return "(history unavailable)"
 
 
+def _applyIntent(bus: ControlBus, cmd: Command) -> str:
+    arg = cmd.arg.strip()
+    if arg.lower() == "clear":
+        bus.pushOp({"op": "intent_clear"})
+        return "Cleared active intents."
+    if arg.lower().startswith("persist "):
+        text = arg[len("persist "):].strip()
+        from memory import user_prefs
+        prefs = user_prefs.load()
+        prefs["persistent_intents"] = list(prefs.get("persistent_intents") or []) + [text]
+        user_prefs.save(prefs)
+        bus.pushOp({"op": "intent", "text": text})
+        return f"Persisted intent (every run) + active now: {text}"
+    if not arg:
+        return "usage: `!intent <text>` | `!intent clear` | `!intent persist <text>`"
+    bus.pushOp({"op": "intent", "text": arg})
+    return f"Intent noted — the brain will weigh it at the next decision: {arg}"
+
+
+def _applyIntelCommand(bus: ControlBus, state: TaskState, cmd: Command) -> Optional[str]:
+    """Spec B intelligence/control commands. Returns None for an unrecognized name."""
+    n = cmd.name
+    if n == "intent":
+        return _applyIntent(bus, cmd)
+    if n == "prefer":
+        from memory import user_prefs
+        return user_prefs.applyPrefer(cmd.arg)
+    if n == "prefs":
+        from memory import user_prefs
+        if cmd.arg.strip().lower() == "reset":
+            user_prefs.reset()
+            return "Preferences reset to defaults."
+        return user_prefs.formatPrefs(user_prefs.load())
+    if n == "effort":
+        lvl = cmd.arg.strip().lower()
+        if lvl not in config.EFFORT_FLAG_MAP:
+            return f"usage: `!effort <{'|'.join(sorted(set(config.EFFORT_FLAG_MAP)))}>`"
+        bus.pushOp({"op": "set_run_effort", "level": lvl})
+        return f"Run effort -> `{lvl}` for all future subtasks this run."
+    if n == "mode":
+        m = cmd.arg.strip().lower()
+        if m not in ("gated", "watch"):
+            return "usage: `!mode gated|watch`"
+        state.setControlMode(m)
+        return f"Control mode -> `{m}`."
+    if n == "replan":
+        bus.requestForceReplan()
+        return "Replanning pass requested — runs at the next loop tick."
+    if n == "deadline":
+        m = re.match(r"^\+?(\d+(?:\.\d+)?)\s*([hm])$", cmd.arg.strip().lower())
+        if not m:
+            return "usage: `!deadline +1h` or `!deadline +30m`"
+        secs = float(m.group(1)) * (3600 if m.group(2) == "h" else 60)
+        bus.pushOp({"op": "extend_deadline", "delta_seconds": secs})
+        return f"Deadline extension queued: +{cmd.arg.strip()}"
+    if n == "kill":
+        bus.requestKillSubprocess()
+        return "Kill signal sent — the current Claude attempt will be terminated."
+    if n == "inject":
+        if not cmd.arg.strip():
+            return "usage: `!inject <text>`"
+        bus.pushOp({"op": "inject_context", "text": cmd.arg.strip()})
+        return "Context queued for the next attempt (no replan)."
+    if n == "set-effort":
+        parts = cmd.arg.split()
+        if (len(parts) != 2 or not _SKIP_ID_RE.match(parts[0])
+                or parts[1].lower() not in config.EFFORT_FLAG_MAP):
+            return "usage: `!set-effort st-00N <level>`"
+        bus.pushOp({"op": "set_effort", "subtask_id": parts[0], "level": parts[1].lower()})
+        return f"Effort override queued for `{parts[0]}` -> `{parts[1].lower()}`."
+    return None
+
+
 def applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str:
     """Perform the bus mutation and return human markdown text ('' for silent control ops)."""
     if state is None:
@@ -255,4 +339,7 @@ def applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str:
         return _arcText(state)
     if n == "history":
         return _historyText(state)
+    intel = _applyIntelCommand(bus, state, cmd)
+    if intel is not None:
+        return intel
     return _helpText()

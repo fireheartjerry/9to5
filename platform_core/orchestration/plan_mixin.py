@@ -318,6 +318,8 @@ class OrchestratorPlanMixin:
             block = "## PREVIOUS ATTEMPT FAILED THE VERIFICATION — fix this\n" + failure_feedback.strip()[:1500]
             spec["claude_md_inject"] = ((spec.get("claude_md_inject") or "") + "\n\n" + block).strip()
             spec["prompt"] = block + "\n\n" + (spec.get("prompt") or "")
+        # Spec B: fold active operator intents + queued injected context + effort override.
+        spec = self._foldOperatorContext(state, subtask, spec)
         # SIE subsystem I: ask the executor (the strong teacher) for a learning summary so
         # we can distill its reasoning. Best-effort + only if it produced a prompt.
         try:
@@ -325,6 +327,31 @@ class OrchestratorPlanMixin:
                 spec["prompt"] = f"{spec['prompt']}\n\n{reflection.REQUEST}"
         except Exception:  # noqa: BLE001
             pass
+        return spec
+
+    def _foldOperatorContext(self, state: TaskState, subtask: dict, spec: dict) -> dict:
+        """Deterministically fold operator intents + injected context + effort override into the
+        spec, so they reach the executor even when the brain returns an empty spec. Best-effort."""
+        try:
+            intents = state.activeIntents()
+        except Exception:  # noqa: BLE001
+            intents = []
+        try:
+            injected = state.takeInjectedContext()
+        except Exception:  # noqa: BLE001
+            injected = []
+        extra = ""
+        if intents:
+            extra += ("\n\n## Operator intent (weigh this; it is direction, not a hard command)\n- "
+                      + "\n- ".join(intents[:8]))
+        if injected:
+            extra += "\n\n## Operator-injected context for this attempt\n- " + "\n- ".join(injected[:8])
+        if extra:
+            spec["claude_md_inject"] = ((spec.get("claude_md_inject") or "") + extra).strip()
+            spec["prompt"] = (spec.get("prompt") or "") + extra
+        ov = subtask.get("effort_override") or state.meta.get("run_effort_override")
+        if ov in config.EFFORT_FLAG_MAP:
+            spec["effort_level"] = ov
         return spec
 
     def _sieAuthoringContext(self, state: TaskState, subtask: dict) -> str:

@@ -76,6 +76,9 @@ class TaskState:
                 "tunnel_url": None,
                 "arc": [],
                 "health_score": 100,
+                "user_intents": [],
+                "instinct_flags": [],
+                "injected_context": [],
             },
             "plan": {"architect_design_doc": None, "subtasks": []},
             "adversary_reviews": [],
@@ -195,6 +198,56 @@ class TaskState:
     def setControlMode(self, mode: str) -> None:
         self.meta["control_mode"] = mode
         self.save()
+
+    # ---- Spec B: intents, instinct, injected context, deadline -----------
+    def _terminalCount(self) -> int:
+        return sum(1 for s in self.subtasks if s["status"] in ("done", "failed", "removed"))
+
+    def addIntent(self, text: str, *, persist: bool = False) -> dict[str, Any]:
+        rec = {"text": text, "at": nowIso(), "added_at_completed": self._terminalCount()}
+        self.meta.setdefault("user_intents", []).append(rec)
+        self.save()
+        return rec
+
+    def clearIntents(self) -> None:
+        self.meta["user_intents"] = []
+        self.save()
+
+    def activeIntents(self) -> list[str]:
+        """Intent texts still in force: those added < 2 subtask-completions ago."""
+        now_done = self._terminalCount()
+        out = []
+        for rec in self.meta.get("user_intents", []) or []:
+            if now_done - int(rec.get("added_at_completed", 0)) < 2:
+                out.append(rec.get("text", ""))
+        return [t for t in out if t]
+
+    def addInstinctFlag(self, text: str) -> dict[str, Any]:
+        rec = {"text": text, "at": nowIso()}
+        self.meta.setdefault("instinct_flags", []).append(rec)
+        self.save()
+        return rec
+
+    def addInjectedContext(self, text: str) -> None:
+        self.meta.setdefault("injected_context", []).append({"text": text, "at": nowIso()})
+        self.save()
+
+    def takeInjectedContext(self) -> list[str]:
+        """Return queued injected-context texts and clear them (consumed by the next attempt)."""
+        items = [c.get("text", "") for c in self.meta.get("injected_context", []) or []]
+        if items:
+            self.meta["injected_context"] = []
+            self.save()
+        return [t for t in items if t]
+
+    def extendDeadline(self, delta_seconds: float) -> str:
+        try:
+            dl = datetime.fromisoformat(self.meta["deadline_at"]) + timedelta(seconds=delta_seconds)
+            self.meta["deadline_at"] = dl.isoformat(timespec="seconds")
+            self.save()
+            return self.meta["deadline_at"]
+        except Exception:  # noqa: BLE001
+            return self.meta.get("deadline_at", "")
 
     def setWorkDir(self, work_dir: str) -> None:
         """Persist the working directory this run targets (resolved absolute)."""

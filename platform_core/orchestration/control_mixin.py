@@ -96,6 +96,27 @@ class OrchestratorControlMixin:
                             dashboard.event(f"edited {sid}")
                     else:
                         dashboard.event(f"edit ignored: {sid} is {st['status']} (only pending/in_progress)")
+                elif kind == "intent":
+                    state.addIntent(op.get("text", ""))
+                    dashboard.event(f"intent noted: {op.get('text','')[:60]}")
+                elif kind == "intent_clear":
+                    state.clearIntents()
+                    dashboard.event("intents cleared")
+                elif kind == "inject_context":
+                    state.addInjectedContext(op.get("text", ""))
+                    dashboard.event("context injected for next attempt")
+                elif kind == "set_effort":
+                    sid = op.get("subtask_id")
+                    if state.getSubtask(sid):
+                        state.updateSubtask(sid, effort_override=op.get("level"))
+                        dashboard.event(f"effort override {sid} -> {op.get('level')}")
+                elif kind == "set_run_effort":
+                    state.meta["run_effort_override"] = op.get("level")
+                    state.save()
+                    dashboard.event(f"run effort -> {op.get('level')}")
+                elif kind == "extend_deadline":
+                    new_dl = state.extendDeadline(float(op.get("delta_seconds", 0)))
+                    dashboard.event(f"deadline extended -> {new_dl}")
 
     def _waitWhilePaused(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard,
                          label: str = "paused") -> None:

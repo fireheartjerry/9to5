@@ -331,6 +331,29 @@ EFFORT_LABELS: dict[str, str] = {
     "high": "High", "xhigh": "Very High", "ultracode": "Max",
 }
 
+# --- Intelligence & Control (Spec B) -------------------------------------
+# Cheapest/fastest model for the on-demand briefing + brain-dialogue calls.
+BRIEF_MODEL: str = os.getenv("BRIEF_MODEL", OLLAMA_MODEL)
+BRAIN_DIALOGUE_SYSTEM_PROMPT: str = os.getenv(
+    "BRAIN_DIALOGUE_SYSTEM_PROMPT",
+    "You are the reasoning core of the 9to5 orchestrator brain, answering the operator "
+    "mid-run in the voice of a thoughtful engineer explaining their own work. Use ONLY the "
+    "plan + state provided. Be direct, concrete, 1-4 sentences. Reference subtask ids "
+    "(st-00N). Explain dependency/ordering reasons honestly; never invent results.")
+# Predictive flags: heuristic-first; optional NL explanation gated off by default (fast).
+PREDICTIVE_FLAGS_ENABLED: bool = _envBool("PREDICTIVE_FLAGS_ENABLED", True)
+PREDICTIVE_FLAG_OLLAMA: bool = _envBool("PREDICTIVE_FLAG_OLLAMA", False)
+PREDICTIVE_FLAG_MIN_INTERVAL_SECONDS: float = _envFloat("PREDICTIVE_FLAG_MIN_INTERVAL_SECONDS", 90)
+# Nightclaw instinct: periodic "something feels off" call, at most once per run.
+INSTINCT_ENABLED: bool = _envBool("INSTINCT_ENABLED", True)
+INSTINCT_INTERVAL_SECONDS: float = _envFloat("INSTINCT_INTERVAL_SECONDS", 900)  # ~15 min
+INSTINCT_SYSTEM_PROMPT: str = os.getenv(
+    "INSTINCT_SYSTEM_PROMPT",
+    "You are 9to5's pattern-recognition layer. Read the current run state and your accumulated "
+    "experience. If anything feels wrong or unexpected -- even if you can't articulate why -- say "
+    "so in ONE sentence. If everything looks normal, respond with exactly an empty line. Do not "
+    "explain, do not list evidence. Trust your pattern.")
+
 # --- Meta-optimizer knob system ------------------------------------------
 # Meta-optimization may auto-apply tuning to these knobs (persisted across restarts).
 SIE_META_AUTOAPPLY: bool = _envBool("SIE_META_AUTOAPPLY", True)
