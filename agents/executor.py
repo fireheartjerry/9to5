@@ -167,9 +167,10 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
               task_state=None, subtask: Optional[dict] = None,
               system_prompt: Optional[str] = None, extra: Optional[str] = None,
               timeout: Optional[int] = None, resume_session: Optional[str] = None,
-              cancel_check=None) -> dict:
+              cancel_check=None, feed=None) -> dict:
     """Prepare the environment from the invocation spec, then fire one Claude run.
-    Returns result dict with ok/returncode/stdout/stderr/profile/effort/cost_usd/session_id etc."""
+    Returns result dict with ok/returncode/stdout/stderr/profile/effort/cost_usd/session_id etc.
+    ``feed`` (optional SubprocessFeed) taps stdout line-by-line for the live surfaces."""
     spec = normalizeSpec(spec_or_prompt)
     timeout = timeout or config.CLAUDE_CLI_TIMEOUT_SECONDS
     ctx = _prepareEnv(spec, work_dir, task_state, subtask, system_prompt, extra, resume_session)
@@ -198,7 +199,7 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
                 "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
     run_kw = dict(work=work, timeout=timeout, env=env, creationflags=creationflags,
                   spec=spec, effort=effort, flag=flag, profile=profile,
-                  playbook_md=playbook_md, claude_md_path=claude_md_path, model=model)
+                  playbook_md=playbook_md, claude_md_path=claude_md_path, model=model, feed=feed)
     if not is_resume:
         result = runSubprocess(fresh_cmd, full_prompt, **run_kw)
     else:

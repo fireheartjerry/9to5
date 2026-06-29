@@ -166,3 +166,93 @@ def backfill_from_store(db_path: Optional[Path] = None) -> dict[str, int]:
                 subs += 1
     LOG.info("backfill complete: %d runs, %d subtasks", runs, subs)
     return {"runs": runs, "subtasks": subs}
+
+
+# --------------------------------------------------------------------------- comparative
+_COMPARE_TERMINAL = ("done", "complete", "partial")
+
+
+def _elapsed_seconds(data: dict[str, Any]) -> float:
+    """Best-effort run duration: started_at -> latest subtask completed_at."""
+    import datetime as _dt
+    meta = data.get("meta", {}) or {}
+    try:
+        start = _dt.datetime.fromisoformat(str(meta.get("started_at")))
+    except Exception:  # noqa: BLE001
+        return 0.0
+    ends = [s.get("completed_at") for s in (data.get("plan", {}) or {}).get("subtasks", [])
+            if s.get("completed_at")]
+    last = None
+    for e in ends:
+        try:
+            cand = _dt.datetime.fromisoformat(str(e))
+            last = cand if last is None or cand > last else last
+        except Exception:  # noqa: BLE001
+            continue
+    if last is None:
+        return 0.0
+    return max(0.0, (last - start).total_seconds())
+
+
+def _run_metrics(data: dict[str, Any]) -> dict[str, float]:
+    """Extract the comparative metrics (pace/innovation/adversary/replans) from a run's data."""
+    meta = data.get("meta", {}) or {}
+    subs = (data.get("plan", {}) or {}).get("subtasks", []) or []
+    notifs = data.get("notifications", []) or []
+    done = sum(1 for s in subs if s.get("status") == "done")
+    elapsed = _elapsed_seconds(data)
+    innovation = (meta.get("discovery_report") or {}).get("innovation_rate")
+    return {
+        "replans": float(sum(1 for n in notifs if isinstance(n, dict) and n.get("kind") == "replan")),
+        "adversary": float(len(data.get("adversary_reviews", []) or [])),
+        "innovation": float(innovation) if isinstance(innovation, (int, float)) else None,
+        "pace": (done / elapsed) if elapsed > 0 else None,
+    }
+
+
+def _avg(values: list[float]) -> "Optional[float]":
+    nums = [v for v in values if isinstance(v, (int, float))]
+    return (sum(nums) / len(nums)) if nums else None
+
+
+def _fmt_pace(this: "Optional[float]", avg: "Optional[float]") -> str:
+    if not this or not avg:
+        return "n/a (no history)"
+    ratio = this / avg
+    return f"{ratio:.1f}x faster" if ratio >= 1 else f"{(1 / ratio):.1f}x slower"
+
+
+def compare_run(task_id: str, db_path: Optional[Path] = None) -> dict[str, Any]:
+    """This run vs the rolling average of prior terminal runs. Never raises -- returns
+    display strings (+ a numeric ``raw`` block). Sources metrics from the task-JSON store,
+    which is authoritative for replans/adversary/innovation the ledger does not column."""
+    from state.task import TaskState  # lazy: avoid import cycle
+    try:
+        this_state = TaskState.loadSafe(task_id)
+        this = _run_metrics(this_state.data) if this_state is not None else {}
+        priors: list[dict[str, float]] = []
+        for _f, data in TaskState.iterStored():
+            if data.get("task_id") == task_id:
+                continue
+            if (data.get("meta", {}) or {}).get("status") in _COMPARE_TERMINAL:
+                priors.append(_run_metrics(data))
+        avg = {k: _avg([p.get(k) for p in priors]) for k in ("pace", "innovation", "adversary", "replans")}
+    except Exception as e:  # noqa: BLE001 -- comparative is best-effort, never blocks a run
+        LOG.warning("compare_run failed (ignored): %s", e)
+        return {"pace": "n/a", "innovation": "n/a", "adversary": "n/a", "replans": "n/a", "raw": {}}
+
+    def _pct(v):
+        return f"{round(v * 100)}%" if isinstance(v, (int, float)) else "n/a"
+
+    adv_avg = avg["adversary"]
+    rep_avg = avg["replans"]
+    return {
+        "pace": _fmt_pace(this.get("pace"), avg["pace"]),
+        "innovation": (_pct(this.get("innovation")) +
+                       (f" (avg {_pct(avg['innovation'])})" if avg["innovation"] is not None else " (no history)")),
+        "adversary": (f"{int(this.get('adversary') or 0)} triggers" +
+                      (f" (avg {adv_avg:.1f})" if adv_avg is not None else " (no history)")),
+        "replans": (f"{int(this.get('replans') or 0)}" +
+                    (f" (avg {rep_avg:.1f})" if rep_avg is not None else " (no history)")),
+        "raw": {"this": this, "avg": avg, "prior_runs": len(priors)},
+    }

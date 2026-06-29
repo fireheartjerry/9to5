@@ -47,6 +47,10 @@ COMMAND_REGISTRY: dict[str, dict] = {
     "skip":    {"arg": "required", "mutating": True,  "help": "skip a pending subtask: !skip st-00N"},
     "add":     {"arg": "required", "mutating": True,  "help": "queue a new subtask: !add <title>"},
     "retry":   {"arg": "none",     "mutating": True,  "help": "re-run the current subtask"},
+    "logs":    {"arg": "optional", "mutating": False, "help": "last 100 raw stdout lines: !logs [st-00N]"},
+    "stdout":  {"arg": "optional", "mutating": False, "help": "last 500 raw stdout lines: !stdout [st-00N]"},
+    "arc":     {"arg": "none",     "mutating": False, "help": "the run's narrative arc"},
+    "history": {"arg": "none",     "mutating": False, "help": "recent live event log"},
 }
 
 
@@ -147,6 +151,49 @@ def _helpText() -> str:
     return "**9TO5 commands**\n" + "\n".join(rows)
 
 
+def _resolveSid(state: TaskState, arg: str) -> Optional[str]:
+    """Pick the subtask for a raw-stdout query: explicit arg, else current, else last."""
+    if arg and _SKIP_ID_RE.match(arg):
+        return arg
+    cur = next((s for s in state.subtasks if s["status"] == "in_progress"), None)
+    if cur:
+        return cur["subtask_id"]
+    return state.subtasks[-1]["subtask_id"] if state.subtasks else None
+
+
+def _logsText(state: TaskState, arg: str, last_n: int) -> str:
+    """Last ``last_n`` raw stdout lines of a subprocess as a code block (off the LiveEventBus)."""
+    try:
+        from notifications.event_bus import get_bus
+        sid = _resolveSid(state, arg)
+        if not sid:
+            return "(no subtask has produced output yet)"
+        lines = [r["line"] for r in get_bus().raw_history(sid, last_n=last_n)]
+        body = ("\n".join(lines) or "(no output captured)")[-1800:]
+        return f"**stdout `{sid}`** (last {last_n})\n```\n{body}\n```"
+    except Exception:  # noqa: BLE001
+        return "(logs unavailable)"
+
+
+def _arcText(state: TaskState) -> str:
+    try:
+        from notifications import run_arc
+        return "**Run arc**\n" + run_arc.render_arc(state)
+    except Exception:  # noqa: BLE001
+        return "(arc unavailable)"
+
+
+def _historyText(state: TaskState, last_n: int = 50) -> str:
+    try:
+        from notifications.event_bus import get_bus
+        evs = get_bus().history(last_n=last_n)
+        lines = [f"{e.get('at', '')} {e.get('kind')}: {e.get('text', '')}" for e in evs]
+        body = ("\n".join(lines) or "(no events)")[-1800:]
+        return f"**Event history** (last {last_n})\n```\n{body}\n```"
+    except Exception:  # noqa: BLE001
+        return "(history unavailable)"
+
+
 def applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str:
     """Perform the bus mutation and return human markdown text ('' for silent control ops)."""
     if state is None:
@@ -200,4 +247,12 @@ def applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str:
     if n == "retry":
         bus.pushOp({"op": "retry"})
         return "Queued retry of the current subtask."
+    if n == "logs":
+        return _logsText(state, cmd.arg, 100)
+    if n == "stdout":
+        return _logsText(state, cmd.arg, 500)
+    if n == "arc":
+        return _arcText(state)
+    if n == "history":
+        return _historyText(state)
     return _helpText()

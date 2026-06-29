@@ -10,8 +10,6 @@ RUN/TEST: (no mapped test)
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 import time
 from typing import TYPE_CHECKING
 
@@ -38,71 +36,9 @@ class OrchestratorExecuteMixin:
 
     def _selfRefQualityGate(self, work_dir: str) -> "tuple[bool, str]":
         """Run cheap Windows repo gates after a self-ref subtask passes its own verify.
-
-        This catches stale generated artifacts and nearby test failures while the executor still has
-        retry attempts left, instead of discovering them only at pre-PR time.
-        """
-        commands = [
-            [sys.executable, "tools\\repo_map.py"],
-            [sys.executable, "tools\\repo_map.py", "--check"],
-            [sys.executable, "validate_workflows.py"],
-        ]
-        tail = ""
-        for cmd in commands:
-            try:
-                proc = subprocess.run(
-                    cmd,
-                    cwd=work_dir,
-                    capture_output=True,
-                    text=True,
-                    stdin=subprocess.DEVNULL,
-                    timeout=config.GIT_TIMEOUT_SECONDS,
-                )
-            except subprocess.TimeoutExpired:
-                return False, f"{' '.join(cmd)} timed out after {config.GIT_TIMEOUT_SECONDS}s"
-            except Exception as e:  # noqa: BLE001
-                return False, f"{' '.join(cmd)} errored: {e}"
-            tail = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
-            if proc.returncode != 0:
-                return False, f"{' '.join(cmd)} failed:\n{tail}"[-1200:]
-
-        try:
-            mapper = subprocess.run(
-                [sys.executable, "tools\\affected_tests.py"],
-                cwd=work_dir,
-                capture_output=True,
-                text=True,
-                stdin=subprocess.DEVNULL,
-                timeout=config.GIT_TIMEOUT_SECONDS,
-            )
-        except subprocess.TimeoutExpired:
-            return False, f"{sys.executable} tools\\affected_tests.py timed out after {config.GIT_TIMEOUT_SECONDS}s"
-        except Exception as e:  # noqa: BLE001
-            return False, f"{sys.executable} tools\\affected_tests.py errored: {e}"
-        mapper_tail = ((mapper.stdout or "") + "\n" + (mapper.stderr or "")).strip()
-        if mapper.returncode != 0:
-            return False, f"{sys.executable} tools\\affected_tests.py failed:\n{mapper_tail}"[-1200:]
-        targets = [t for t in (mapper.stdout or "").split() if t.strip()]
-        if not targets:
-            return True, (tail or "no affected tests")
-        pytest_cmd = [sys.executable, "-m", "pytest", *targets, "-q"]
-        try:
-            tests = subprocess.run(
-                pytest_cmd,
-                cwd=work_dir,
-                capture_output=True,
-                text=True,
-                stdin=subprocess.DEVNULL,
-                timeout=config.GIT_TIMEOUT_SECONDS,
-            )
-        except subprocess.TimeoutExpired:
-            return False, f"{' '.join(pytest_cmd)} timed out after {config.GIT_TIMEOUT_SECONDS}s"
-        except Exception as e:  # noqa: BLE001
-            return False, f"{' '.join(pytest_cmd)} errored: {e}"
-        test_tail = ((tests.stdout or "") + "\n" + (tests.stderr or "")).strip()
-        if tests.returncode != 0:
-            return False, f"{' '.join(pytest_cmd)} failed:\n{test_tail}"[-1200:]
-        return True, test_tail[-1200:] or tail[-1200:]
+        Delegates to ``self_ref_gate`` (extracted for modularity)."""
+        from platform_core.orchestration.self_ref_gate import run_self_ref_quality_gate
+        return run_self_ref_quality_gate(work_dir)
 
     # ===================================================================
     # Adversary teeth -- bounded remediation LOOP
@@ -238,12 +174,31 @@ class OrchestratorExecuteMixin:
                  spec.get("effort_level"))
         dashboard.update(state, "executing", f"{sid} attempt {attempt} · effort {spec.get('effort_level')}",
                          effort=spec.get("effort_level"))
+        if attempt >= 2:
+            self._narrate(f"`{sid}` attempt {attempt}. Still working on it.")
         attempt_started = time.time()
         hands = self._selectExecutor(spec)   # route to the right surface (terminal | browser)
+        # Live surface feed: tap the Claude subprocess stdout in real time (terminal path only;
+        # the browser hands layer doesn't take a feed). Best-effort -- never block a run.
+        feed = None
+        if hands is self._run_claude:
+            try:
+                from notifications.event_bus import get_bus
+                from notifications.subprocess_feed import SubprocessFeed
+                feed = SubprocessFeed(get_bus(), sid, time.monotonic())
+            except Exception:  # noqa: BLE001
+                feed = None
         # cancel_check lets a long in-hands wait break early on abort or deadline (CB-9).
-        result = hands(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
-                       resume_session=resume_session,
-                       cancel_check=lambda: bus.isAbort() or self._deadlinePassed(state))
+        hands_kw = dict(work_dir=exec_cwd, task_state=state, subtask=subtask,
+                        resume_session=resume_session,
+                        cancel_check=lambda: bus.isAbort() or self._deadlinePassed(state))
+        if feed is not None:
+            hands_kw["feed"] = feed
+        try:
+            result = hands(spec, **hands_kw)
+        finally:
+            if feed is not None:
+                feed.stop()
         if not isinstance(result, dict):   # a hands layer that returns junk must fail cleanly
             result = {"ok": False, "returncode": -1, "stdout": "",
                       "stderr": f"executor returned non-dict result: {type(result).__name__}"}
@@ -312,6 +267,11 @@ class OrchestratorExecuteMixin:
         cast.speak("adversary", f"⚔️ Reviewing `{sid}` ({subtask['title']}) → "
                    f"**{discord.formatVerdict(rv.get('verdict'))}**.")
         cast.duel(subtask["title"], rv.get("verdict"))   # VS-card on a CHALLENGE (T8)
+        # Proactive narration + a rare Moment when the adversary catches something critical.
+        self._narrate(f"⚠️ Adversary flagged something in {sid}. Remediating.")
+        if rv.get("verdict") == "rejected":
+            self._emitMoment(sid, f"⚡ MOMENT — The adversary caught a critical issue in "
+                             f"`{sid}` the plan never anticipated.")
         with self._state_lock:
             state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
             self.obs.writeNote(state.subtaskReviewNoteRel(sid),
@@ -366,6 +326,21 @@ class OrchestratorExecuteMixin:
                 dashboard.update(state, "replanning", f"replanning after {sid}")
                 with self._state_lock:
                     self._applyReplan(state, decision)
+                from notifications import run_arc as _arc
+                self._arcBeat(state, _arc.beat_replan(f"after {sid}"))
+                self._narrate(f"🔁 Replanning after {sid}. Scope was wider than expected.")
+
+    def _surfaceSubtaskPass(self, state: TaskState, sid: str, attempt: int) -> None:
+        """First-verify arc beat (once) + redemption moment after 2+ prior failures. Best-effort."""
+        try:
+            done_count = sum(1 for s in state.subtasks if s["status"] == "done")
+            if done_count == 1:
+                self._arcBeat(state, "Chapter 3 — First subtask closed clean.")
+            if attempt >= 3:
+                self._emitMoment(sid, "⚡ MOMENT — Redemption. It clawed back from "
+                                 "two dead ends and closed clean.")
+        except Exception:  # noqa: BLE001
+            pass
 
     def _postSubtaskEnrich(self, state: TaskState, subtask: dict, spec: dict, result: dict,
                            vresult: "dict | None", combined: str, passed: bool, final: str,
@@ -442,6 +417,8 @@ class OrchestratorExecuteMixin:
             if not passed:
                 state.addNotification("subtask_failed",
                                       f"{sid} failed verification after {attempt} attempts")
+        if passed:
+            self._surfaceSubtaskPass(state, sid, attempt)
         if not passed:
             discord.sendEmbed(discord.subtaskFailedEmbed(sid, subtask["title"], vresult, attempt))
         dashboard.update(state, "executing", f"{sid} -> {final}")

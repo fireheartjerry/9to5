@@ -32,6 +32,71 @@ class OrchestratorRunPhaseMixin:
     """Handles run lifecycle phases: resume, fresh run, preamble, phase 4, teardown."""
 
     # ===================================================================
+    # Surface helpers (narration, moments, arc, reflection) -- all best-effort
+    # ===================================================================
+    def _getNarrator(self):
+        nar = getattr(self, "_narrator", None)
+        if nar is None:
+            from notifications.narration import Narrator
+            nar = self._narrator = Narrator()
+        return nar
+
+    def _narrate(self, text: str, *, force: bool = False) -> None:
+        """Post one rate-limited proactive narration in The Cast's voice. Never raises."""
+        try:
+            self._getNarrator().narrate(text, force=force)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _emitMoment(self, sid: str, text: str) -> None:
+        """Elevate a rare event: bus moment + non-ephemeral Cast line. Never raises."""
+        try:
+            from notifications.event_bus import get_bus
+            from notifications.narration import emit_moment
+            emit_moment(get_bus(), sid, text)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _arcBeat(self, state: TaskState, text: str) -> None:
+        try:
+            from notifications import run_arc
+            run_arc.append_beat(state, text)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _finalizeSurfaces(self, state: TaskState, status: str, done: int, total: int,
+                          elapsed: str) -> None:
+        """Run-end surfaces: arc final beat, perfect-run moment, self-reflection post."""
+        try:
+            from notifications import reflection_post, run_arc
+            from memory import experience
+            run_arc.append_beat(state, run_arc.beat_complete(status, done, total, elapsed))
+            replans = sum(1 for n in state.data.get("notifications", [])
+                          if isinstance(n, dict) and n.get("kind") == "replan")
+            advs = len(state.data.get("adversary_reviews", []))
+            if replans == 0 and advs == 0:
+                self._emitMoment("system",
+                                 "⚡ MOMENT — A perfect run. Zero replans, zero adversary triggers.")
+            comparative = experience.compare_run(state.task_id)
+            text = reflection_post.write_reflection(state, chat=self._ollamaChat,
+                                                    comparative=comparative, obs=self.obs)
+            if text:
+                reflection_post.post_reflection(state, text, comparative=comparative)
+            self._narrate(f"{(state.meta.get('codename') or 'Run')} closed — {status}, "
+                          f"{done}/{total} in {elapsed}.", force=True)
+        except Exception:  # noqa: BLE001 -- surfaces are best-effort; never break teardown
+            LOG.warning("run-end surface finalize failed", exc_info=True)
+
+    def _stopTunnel(self) -> None:
+        tunnel = getattr(self, "_tunnel", None)
+        if tunnel is not None:
+            try:
+                tunnel.stop()
+            except Exception:  # noqa: BLE001
+                pass
+            self._tunnel = None
+
+    # ===================================================================
     # runFull phase helpers (resume, fresh run, preamble, phase 4, teardown)
     # ===================================================================
     def _resumeSetup(self, state: TaskState, work_dir: str,
@@ -53,28 +118,38 @@ class OrchestratorRunPhaseMixin:
         LOG.info("Resuming task %s (%d/%d done)", state.task_id, done_n, len(state.subtasks))
         return architect_doc
 
+    def _runDiscoveryPhase(self, state: TaskState, work_dir: str, elaborated: str,
+                           dashboard: "DiscordDashboard"):
+        """Phase 0: proactive discovery. Persists the report + emits the opening arc beat.
+        Returns the DiscoveryReport (or None). Best-effort -- never blocks the run."""
+        try:
+            from agents import discovery as discovery_mod
+            goal_raw = state.meta.get("goal_raw") or elaborated
+            dashboard.update(state, "architecting", "running discovery engine")
+            report = discovery_mod.run_discovery(work_dir, goal_raw)
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("Discovery engine failed (%s); proceeding without report", e)
+            return None
+        if report is not None:
+            state.meta["discovery_report"] = report.to_dict()
+            LOG.info("Discovery complete: %d findings, theme=%r",
+                     len(report.findings), report.theme_suggestion)
+            dashboard.update(state, "architecting",
+                             f"discovery: {len(report.findings)} findings — {report.theme_suggestion}")
+            self._arcBeat(state, f"Chapter 1 — Discovery surfaced {len(report.findings)} findings. "
+                          f"Theme: {report.theme_suggestion}.")
+            self._narrate(f"🔍 Discovery: {len(report.findings)} findings, "
+                          f"theme: {report.theme_suggestion}.")
+        return report
+
     def _freshRunPhase(self, state: TaskState, work_dir: str, bus: "ControlBus",
                        dashboard: "DiscordDashboard", elaborated: str) -> str:
         """Run the architect (Phase 1) and planner (Phase 2) for a new (non-resume) run.
         Returns the architect_doc string used by all downstream phases."""
         state.setStatus("architecting")
         self._checkControl(state, bus, dashboard)
-        # ── Phase 0: Proactive discovery ────────────────────────────────────
-        discovery_report = None
-        try:
-            from agents import discovery as discovery_mod
-            goal_raw = state.meta.get("goal_raw") or elaborated
-            dashboard.update(state, "architecting", "running discovery engine")
-            discovery_report = discovery_mod.run_discovery(work_dir, goal_raw)
-            if discovery_report is not None:
-                state.meta["discovery_report"] = discovery_report.to_dict()
-                LOG.info("Discovery complete: %d findings, theme=%r",
-                         len(discovery_report.findings), discovery_report.theme_suggestion)
-                dashboard.update(state, "architecting",
-                                 f"discovery: {len(discovery_report.findings)} findings — "
-                                 f"{discovery_report.theme_suggestion}")
-        except Exception as e:  # noqa: BLE001
-            LOG.warning("Discovery engine failed (%s); proceeding without report", e)
+        discovery_report = self._runDiscoveryPhase(state, work_dir, elaborated, dashboard)
+        n_findings = len(discovery_report.findings) if discovery_report is not None else 0
         # ── Phase 1: Architect ───────────────────────────────────────────────
         dashboard.update(state, "architecting", "authoring architecture")
         arch_prompt = architect.authorArchitectPrompt(
@@ -108,6 +183,8 @@ class OrchestratorRunPhaseMixin:
         cast.speak("architect", f"📐 Architecture is ready — `{state.architectNoteRel()}`. "
                    f"Handing the design to the Planner.", milestone=True)
         state.addNotification("architect_done", state.architectNoteRel())
+        self._arcBeat(state, f"Chapter 2 — Architect chose {n_findings} findings, "
+                      "shaped them into one narrative.")
         dashboard.update(state, "architecting", f"architecture done ({len(architect_doc)} chars)")
         architect_doc = self._architectureReview(state, architect_doc, dashboard)
         # --- Phase 2: Planning ---
@@ -159,6 +236,15 @@ class OrchestratorRunPhaseMixin:
             pass
         import orchestrator as _orch_mod  # deferred: avoids circular at import time; tests patch here
         web_url = _orch_mod.startWebDashboard(state.task_id)
+        # Hyper-robust public tunnel alongside the local dashboard (non-blocking; URL via callback).
+        try:
+            from notifications.tunnel import TunnelManager
+            self._tunnel = TunnelManager(state=state)
+            self._tunnel.on_url(dashboard.set_tunnel_url)
+            self._tunnel.start(config.WEB_DASHBOARD_PORT)
+        except Exception as e:  # noqa: BLE001 -- the tunnel is best-effort; never block a run
+            LOG.warning("tunnel start failed (non-fatal): %s", e)
+            self._tunnel = None
         dashboard.start(state, "resuming" if resume else "starting", state_lock=self._state_lock)
         elaborated = state.meta["goal_elaborated"] or state.meta["goal_raw"]
         self.writeIndex(state)
@@ -263,6 +349,7 @@ class OrchestratorRunPhaseMixin:
             if gif:
                 discord.postFile("replay.gif", gif, "image/gif", content="🎬 Run replay")
         state.addNotification("complete", pr_link)
+        self._finalizeSurfaces(state, final_status, done, total, _fmtElapsed(elapsed))
         dashboard.update(state, "complete", f"done {done}/{total} · {_fmtElapsed(elapsed)}")
         # Trust telemetry rollup: surface GPT<->Ollama agreement + challenge stats for the run.
         try:
@@ -338,6 +425,7 @@ class OrchestratorRunPhaseMixin:
             dashboard.unpin()
         except Exception:  # noqa: BLE001
             LOG.warning("dashboard unpin failed", exc_info=True)
+        self._stopTunnel()
         _webdash_mod.stopWebDashboard()
         self._cleanupScaffolding(work_dir)   # never leave 9to5 scratch dirs in the user's project
         # Fire throttled SIE learning passes off-thread so they never slow teardown.

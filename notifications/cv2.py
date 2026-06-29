@@ -99,6 +99,33 @@ def etaStr(started_at, done: int, total: int) -> str:
     return f"~{eta}s"
 
 
+def _healthToken(state) -> str:
+    """Composite health aura as a colored-dot + number token for the cockpit."""
+    try:
+        from notifications.health_aura import compute_health
+        score = compute_health(state)
+    except Exception:  # noqa: BLE001
+        return "—"
+    dot = "🟢" if score >= 80 else ("🟡" if score >= 50 else "🔴")
+    return f"{dot} {score}"
+
+
+def _metaBlock(m: dict, cur_txt: str, model, effort: str, done: int, total: int,
+               replans: int, advs: int, verify_txt: str, state) -> str:
+    """The cockpit metadata text block (current/model/elapsed/health/verify/workdir)."""
+    return (
+        f"**Current** {cur_txt}\n"
+        f"**Model** `{model or config.PRIMARY_MODEL}`  ·  **Mode** `{m.get('control_mode', 'watch')}`"
+        f"  ·  **Effort** {discord.effortBar(effort)}\n"
+        f"**Elapsed** {elapsedStr(m.get('started_at'))}  ·  **ETA** {etaStr(m.get('started_at'), done, total)}"
+        f"  ·  {icons.prefix('replan') or ('replan ' if replans == 1 else 'replans ')}{replans}"
+        f"  ·  {icons.prefix('adversary') or ('adversary ' if advs == 1 else 'adversaries ')}{advs}"
+        f"  ·  **Health** {_healthToken(state)}\n"
+        f"**Last verify** {verify_txt}\n"
+        f"**Working dir** `{discord.truncate(m.get('work_dir') or '—', 160)}`"
+    )
+
+
 # ---- the cockpit ------------------------------------------------------------
 def buildCockpit(state, phase: str, *, events: Optional[list] = None,
                  model: Optional[str] = None, effort: str = "default",
@@ -135,9 +162,11 @@ def buildCockpit(state, phase: str, *, events: Optional[list] = None,
     phase_ic = icons.prefix(theme.PHASE_ICON.get(phase, "info"))
     accent = discord.statusColor(m.get("status"))
     goal = discord.truncate(m.get("goal_raw", ""), 280)
+    codename = m.get("codename")
+    header = f"## {phase_ic}9TO5 · {codename} · {phase}" if codename else f"## {phase_ic}9TO5 · {phase}"
 
     children: list = [
-        text(f"## {phase_ic}9TO5 · {phase}"),
+        text(header),
         text(f"**{goal}**"),
         separator(),
         text(f"{discord.progressBar(done, total)}\n{discord.subtaskTracker(subtasks)}"),
@@ -147,16 +176,8 @@ def buildCockpit(state, phase: str, *, events: Optional[list] = None,
         children.append(media_gallery([image_url]))
 
     children.append(separator())
-    children.append(text(
-        f"**Current** {cur_txt}\n"
-        f"**Model** `{model or config.PRIMARY_MODEL}`  ·  **Mode** `{m.get('control_mode', 'watch')}`"
-        f"  ·  **Effort** {discord.effortBar(effort)}\n"
-        f"**Elapsed** {elapsedStr(m.get('started_at'))}  ·  **ETA** {etaStr(m.get('started_at'), done, total)}"
-        f"  ·  {icons.prefix('replan') or ('replan ' if replans == 1 else 'replans ')}{replans}"
-        f"  ·  {icons.prefix('adversary') or ('adversary ' if advs == 1 else 'adversaries ')}{advs}\n"
-        f"**Last verify** {verify_txt}\n"
-        f"**Working dir** `{discord.truncate(m.get('work_dir') or '—', 160)}`"
-    ))
+    children.append(text(_metaBlock(m, cur_txt, model, effort, done, total,
+                                    replans, advs, verify_txt, state)))
 
     ev = events or []
     children.append(separator())

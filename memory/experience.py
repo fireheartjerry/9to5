@@ -54,6 +54,7 @@ from memory.experience_runs import (
     gold_examples,
     fitness_series,
     counts,
+    compare_run,
     _TERMINAL,
 )
 
@@ -134,6 +135,7 @@ __all__ = [
     "gold_examples",
     "fitness_series",
     "counts",
+    "compare_run",
     "_TERMINAL",
     # subtasks
     "record_subtask",
