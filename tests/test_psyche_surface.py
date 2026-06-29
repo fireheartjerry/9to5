@@ -194,3 +194,81 @@ def test_render_web_tolerates_new_self_state():
     html = render_web(new_self_state())
     assert isinstance(html, str)
     assert len(html) > 0
+
+
+# ---------------------------------------------------------------------------
+# Gap 1 — boredom label reachable via surface
+# ---------------------------------------------------------------------------
+
+def test_render_discord_boredom_label():
+    """Low arousal + neutral valence yields boredom in Mood-Core field."""
+    ss = new_self_state()
+    set_affect(ss, 0.0, 0.1, 0.5)
+    result = render_discord(ss)
+    assert result is not None
+    mood_values = [f["value"] for f in result["fields"] if "Mood" in f.get("name", "")]
+    assert any("boredom" in v for v in mood_values)
+
+
+def test_render_web_boredom_label():
+    """Low arousal + neutral valence yields boredom in web render."""
+    ss = new_self_state()
+    set_affect(ss, 0.0, 0.1, 0.5)
+    html = render_web(ss)
+    assert "boredom" in html
+
+
+# ---------------------------------------------------------------------------
+# Gap 2 — autonomy curve on psyche surface
+# ---------------------------------------------------------------------------
+
+def test_render_discord_autonomy_with_domains():
+    """render_discord with autonomy dict must include the ceiling tiers."""
+    result = render_discord(_populated_ss(), autonomy={"async": "hard", "windows": "soft"})
+    assert result is not None
+    values_blob = " ".join(f["value"] for f in result["fields"])
+    assert "hard" in values_blob
+    assert "soft" in values_blob
+
+
+def test_render_discord_autonomy_placeholder_when_none():
+    """render_discord with autonomy=None must show the earning trust placeholder."""
+    result = render_discord(_populated_ss())  # autonomy defaults to None
+    assert result is not None
+    values_blob = " ".join(f["value"] for f in result["fields"])
+    assert "earning trust" in values_blob
+
+
+def test_render_discord_autonomy_field_present():
+    """An Autonomy field must always appear in the embed."""
+    result = render_discord(_populated_ss())
+    assert result is not None
+    names = [f["name"] for f in result["fields"]]
+    assert "Autonomy" in names
+
+
+def test_render_discord_existing_callers_unaffected():
+    """Calling render_discord without autonomy arg must still succeed."""
+    result = render_discord(_populated_ss(), surface="psyche")
+    assert result is not None
+    assert isinstance(result["fields"], list)
+
+
+def test_render_web_autonomy_with_domains():
+    """render_web with autonomy dict must include the ceiling tiers."""
+    html = render_web(_populated_ss(), autonomy={"async": "hard", "windows": "soft"})
+    assert "hard" in html
+    assert "soft" in html
+
+
+def test_render_web_autonomy_placeholder_when_none():
+    """render_web with autonomy=None must show the earning trust placeholder."""
+    html = render_web(_populated_ss())  # autonomy defaults to None
+    assert "earning trust" in html
+
+
+def test_render_web_existing_callers_unaffected():
+    """Calling render_web without autonomy arg must still return valid HTML."""
+    html = render_web(new_self_state())
+    assert "<div" in html
+    assert "psyche" in html

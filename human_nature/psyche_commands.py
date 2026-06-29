@@ -35,7 +35,7 @@ from human_nature.user_model import snapshot
 
 def _pad_label(valence: float, arousal: float, control: float) -> str:
     """Map a PAD vector to a named functional-affect region."""
-    if arousal < -0.3:
+    if arousal < 0.2 and abs(valence) <= 0.3:
         return "boredom"
     if valence < -0.2 and arousal > 0.2 and control < 0.0:
         return "frustration"
@@ -46,6 +46,14 @@ def _pad_label(valence: float, arousal: float, control: float) -> str:
     if valence > 0.2 and arousal <= 0.2 and control >= 0.0:
         return "satisfaction"
     return "neutral"
+
+
+def _autonomy_lines(autonomy: dict[str, str] | None) -> str:
+    """Render earned-autonomy curve, or placeholder when absent/empty."""
+    if not autonomy:
+        return "Autonomy: earning trust…"
+    lines = "\n".join(f"  {domain}: {tier}" for domain, tier in autonomy.items())
+    return f"Autonomy:\n{lines}"
 
 
 def _read_pad(self_state: dict[str, Any]) -> tuple[float, float, float]:
@@ -61,11 +69,17 @@ def _read_pad(self_state: dict[str, Any]) -> tuple[float, float, float]:
 # cmd_psyche
 # ---------------------------------------------------------------------------
 
-def cmd_psyche(self_state: dict[str, Any]) -> str:
+def cmd_psyche(
+    self_state: dict[str, Any],
+    *,
+    autonomy: dict[str, str] | None = None,
+) -> str:
     """Render a text snapshot of the interior for the ``!psyche`` command.
 
     Args:
         self_state: The SelfState dict (read defensively; may be empty).
+        autonomy:   Optional earned-autonomy dict {domain: ceiling_tier}.
+                    When None/empty, an "earning trust…" placeholder is shown.
 
     Returns:
         A multi-line str suitable for a Discord reply.
@@ -94,7 +108,8 @@ def cmd_psyche(self_state: dict[str, Any]) -> str:
         f"Dissonance: {dissonance:.2f}\n"
         f"Competence:\n{comp_block}\n"
         f"Open stances: {len(open_stances)}  "
-        f"Convictions: {len(convictions)}"
+        f"Convictions: {len(convictions)}\n"
+        f"{_autonomy_lines(autonomy)}"
     )
 
 

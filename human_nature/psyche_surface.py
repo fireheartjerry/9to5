@@ -52,7 +52,7 @@ def _mood_text(ss: dict[str, Any]) -> str:
 
 def _affect_label(valence: float, arousal: float, control: float) -> str:
     """Map a PAD vector to a functional region label."""
-    if arousal < -0.3:
+    if arousal < 0.2 and abs(valence) <= 0.3:
         return "boredom"
     if valence < -0.2 and arousal > 0.2 and control < 0.0:
         return "frustration"
@@ -85,6 +85,13 @@ def _charter_text(ss: dict[str, Any]) -> str | None:
     return f"v{version}"
 
 
+def _autonomy_text(autonomy: dict[str, str] | None) -> str:
+    """Render the earned-autonomy curve, or a placeholder when absent."""
+    if not autonomy:
+        return "earning trust…"
+    return "\n".join(f"{domain} → {tier}" for domain, tier in autonomy.items())
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -94,6 +101,7 @@ def render_discord(
     self_state: dict[str, Any],
     *,
     surface: str = "psyche",
+    autonomy: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     """Return an embed-shaped dict of the interior, or None if PRISM-gated.
 
@@ -139,10 +147,16 @@ def render_discord(
     if charter is not None:
         fields.append({"name": "Charter", "value": charter})
 
+    # Earned-autonomy curve
+    fields.append({
+        "name": "Autonomy",
+        "value": _autonomy_text(autonomy),
+    })
+
     return {"title": "Nightclaw Psyche · Interior Snapshot", "fields": fields}
 
 
-def render_web(self_state: dict[str, Any]) -> str:
+def render_web(self_state: dict[str, Any], *, autonomy: dict[str, str] | None = None) -> str:
     """Return an HTML fragment of the interior (no external dependencies).
 
     Always renders regardless of surface — callers must ensure the web
@@ -192,6 +206,15 @@ def render_web(self_state: dict[str, Any]) -> str:
             f"    <p>Version {charter}</p>\n"
             "  </section>\n"
         )
+
+    # Earned-autonomy curve
+    autonomy_content = _autonomy_text(autonomy)
+    html += (
+        '  <section class="autonomy">\n'
+        '    <h3>Autonomy</h3>\n'
+        f"    <pre>{autonomy_content}</pre>\n"
+        "  </section>\n"
+    )
 
     html += "</div>"
     return html

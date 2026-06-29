@@ -144,4 +144,6 @@ def emotion_label(pad: dict) -> str:
         return "frustration"
     if v < 0.0 and a > 0.5 and c >= 0.5:
         return "anxiety"
+    if a < 0.2 and abs(v) <= 0.3 and nov < 0.2:
+        return "boredom"
     return "neutral"

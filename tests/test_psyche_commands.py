@@ -268,3 +268,46 @@ def test_cmd_why_i_feel_never_uses_bare_i_feel():
     result = cmd_why_i_feel(ss, {"goal_congruence": -0.5})
     # 'functional' guard replaces naive sentiment speech
     assert "functional" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# Gap 1 — boredom label reachable via psyche commands
+# ---------------------------------------------------------------------------
+
+def test_cmd_psyche_boredom_label():
+    """Low arousal + neutral valence must produce boredom in cmd_psyche output."""
+    ss = new_self_state()
+    set_affect(ss, 0.0, 0.1, 0.5)
+    result = cmd_psyche(ss)
+    assert "boredom" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# Gap 2 — autonomy curve in cmd_psyche
+# ---------------------------------------------------------------------------
+
+def test_cmd_psyche_autonomy_with_domains():
+    """cmd_psyche with autonomy dict must include domain names and tiers."""
+    result = cmd_psyche(_ss_with_state(), autonomy={"async": "hard", "windows": "soft"})
+    low = result.lower()
+    assert "hard" in low
+    assert "soft" in low
+
+
+def test_cmd_psyche_autonomy_placeholder_when_none():
+    """cmd_psyche without autonomy arg must show earning trust placeholder."""
+    result = cmd_psyche(new_self_state()).lower()
+    assert "earning trust" in result
+
+
+def test_cmd_psyche_autonomy_placeholder_when_empty_dict():
+    """cmd_psyche with autonomy={} (empty) must also show placeholder."""
+    result = cmd_psyche(new_self_state(), autonomy={}).lower()
+    assert "earning trust" in result
+
+
+def test_cmd_psyche_existing_callers_unaffected():
+    """Calling cmd_psyche without autonomy arg must still return a valid string."""
+    result = cmd_psyche(_ss_with_state())
+    assert isinstance(result, str)
+    assert "Mood-Core" in result

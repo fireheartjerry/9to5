@@ -74,6 +74,8 @@ def ensure_self_state(state: Any) -> Optional[dict[str, Any]]:
     meta = _meta(state)
     if meta.get("self_state") is None:
         meta["self_state"] = new_self_state()
+    if meta.get("autonomy") is None:
+        meta["autonomy"] = {}
     return meta["self_state"]
 
 

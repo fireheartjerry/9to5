@@ -218,3 +218,43 @@ class TestOnEnabled:
         state = _make_state()
         integration.at_teardown(state, [], [])
         assert state["meta"]["self_state"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Gap 3 — lazy autonomy init
+# ---------------------------------------------------------------------------
+
+class TestAutonomyInit:
+    """ensure_self_state must lazily init meta['autonomy'] when ON; no-op when OFF."""
+
+    def test_off_does_not_create_autonomy_key(self):
+        """OFF: meta['autonomy'] must NOT be created — byte-identical guarantee."""
+        state = _make_state()
+        before = copy.deepcopy(state)
+        integration.ensure_self_state(state)
+        assert "autonomy" not in state["meta"]
+        assert state == before
+
+    def test_on_autonomy_becomes_empty_dict(self, monkeypatch):
+        """ON: meta['autonomy'] is initialised to {} when absent/None."""
+        monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+        state = _make_state()
+        integration.ensure_self_state(state)
+        assert state["meta"]["autonomy"] == {}
+
+    def test_on_autonomy_idempotent_when_already_set(self, monkeypatch):
+        """ON: if meta['autonomy'] is already populated, it is not reset."""
+        monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+        state = _make_state()
+        state["meta"]["autonomy"] = {"async": "hard"}
+        integration.ensure_self_state(state)
+        assert state["meta"]["autonomy"] == {"async": "hard"}
+
+    def test_on_autonomy_initialised_to_empty_not_none(self, monkeypatch):
+        """ON: meta['autonomy'] must be {} so callers can safely populate it."""
+        monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+        state = _make_state()
+        integration.ensure_self_state(state)
+        autonomy = state["meta"]["autonomy"]
+        assert autonomy is not None
+        assert isinstance(autonomy, dict)
