@@ -149,13 +149,22 @@ def test_snapshot_is_fully_inspectable():
 # _prefs degradation (absent on this branch → in-memory only)
 # ---------------------------------------------------------------------------
 
-def test_prefs_module_unavailable_degrades_gracefully():
-    """On this branch memory.user_prefs doesn't exist; _prefs must be None."""
-    assert um._prefs is None
+def test_prefs_module_unavailable_degrades_gracefully(monkeypatch):
+    """When memory.user_prefs is unavailable, user_model still works in-memory.
+
+    Post Spec-B merge memory.user_prefs exists and the import guard resolves it;
+    we simulate its absence to pin the graceful-degradation contract regardless
+    of which other layers are present.
+    """
+    monkeypatch.setattr(um, "_prefs", None)
+    m = new_user_model()
+    m2 = update(m, {"kind": "risk", "value": 0.6})
+    assert snapshot(m2)["risk_tolerance"] == 0.6
 
 
-def test_operations_work_without_prefs():
+def test_operations_work_without_prefs(monkeypatch):
     """All operations succeed with _prefs=None (in-memory only)."""
+    monkeypatch.setattr(um, "_prefs", None)
     m = new_user_model()
     m2 = update(m, {"kind": "risk", "value": 0.6})
     s = snapshot(m2)
