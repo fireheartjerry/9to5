@@ -6,6 +6,7 @@
     "agents",
     "config",
     "conftest",
+    "human_nature",
     "knowledge",
     "learning",
     "llm_io",
@@ -1349,25 +1350,26 @@
           "kind": "function",
           "signature": "(knob: str, value) -> bool",
           "summary": "Persist + live-apply a meta-optimizer knob change (whitelisted knobs only).",
-          "lineno": 87
+          "lineno": 88
         },
         {
           "name": "validateEnv",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Return the names of required-but-missing environment values.",
-          "lineno": 132
+          "lineno": 133
         },
         {
           "name": "getLogger",
           "kind": "function",
           "signature": "(name: str='9to5') -> logging.Logger",
           "summary": "Return a child of the configured ``9to5`` logger.",
-          "lineno": 169
+          "lineno": 170
         }
       ],
       "depends_on": [
         "platform_core.app_config.discord",
+        "platform_core.app_config.human_nature",
         "platform_core.app_config.llm",
         "platform_core.app_config.paths"
       ],
@@ -1376,6 +1378,7 @@
       ],
       "test": [
         "tests/test_config_robust_env.py",
+        "tests/test_hn_config.py",
         "tests/test_notification_config.py"
       ],
       "callers": [
@@ -1406,6 +1409,15 @@
         "agents.verifier",
         "agents.verifier_runner",
         "agents.verifier_sanitize",
+        "human_nature.ab_harness",
+        "human_nature.consolidation",
+        "human_nature.continuity",
+        "human_nature.emotions",
+        "human_nature.instinct",
+        "human_nature.integration",
+        "human_nature.intuition",
+        "human_nature.momentary",
+        "human_nature.opinions",
         "learning.adapter_ops",
         "learning.adapter_promotion",
         "learning.adversary_trust",
@@ -1437,6 +1449,7 @@
         "learning.solution_cache",
         "learning.toolsmith",
         "main",
+        "memory.conviction_ledger",
         "memory.experience_pr",
         "memory.experience_runs",
         "memory.experience_schema",
@@ -1531,6 +1544,846 @@
         "unannotated"
       ],
       "test": [],
+      "callers": []
+    },
+    "human_nature": {
+      "path": "human_nature/__init__.py",
+      "purpose": "human_nature — the human-nature layer: a functional cognitive architecture.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "human_nature.ab_harness": {
+      "path": "human_nature/ab_harness.py",
+      "purpose": "A/B validation harness — behaviour-coupling gate before any flag goes ON-by-default.",
+      "exports": [
+        {
+          "name": "record_run",
+          "kind": "function",
+          "signature": "(run_id: str, arm: str, metrics: dict[str, Any], *, db_path: Optional[Path]=None) -> None",
+          "summary": "Record a single run's metrics for the given experiment arm.",
+          "lineno": 79
+        },
+        {
+          "name": "compare",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "Aggregate per-arm averages and return the on-minus-off delta.",
+          "lineno": 118
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "creates/writes the ab_runs SQLite db at AB_HARNESS_DB_PATH (or db_path)"
+      ],
+      "test": [
+        "tests/test_ab_harness.py"
+      ],
+      "callers": []
+    },
+    "human_nature.appraisal": {
+      "path": "human_nature/appraisal.py",
+      "purpose": "Appraisal engine — Scherer/OCC appraisal variables → PAD affect coordinate.",
+      "exports": [
+        {
+          "name": "appraise",
+          "kind": "function",
+          "signature": "(events: list[dict]) -> dict",
+          "summary": "Appraise a list of run events",
+          "lineno": 85
+        },
+        {
+          "name": "emotion_label",
+          "kind": "function",
+          "signature": "(pad: dict) -> str",
+          "summary": "Map a PAD coordinate to a discrete emotion label.",
+          "lineno": 106
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/test_appraisal.py"
+      ],
+      "callers": [
+        "human_nature.integration"
+      ]
+    },
+    "human_nature.attention_schema": {
+      "path": "human_nature/attention_schema.py",
+      "purpose": "Attention Schema — the system's model of its own attention (AST; Graziano).",
+      "exports": [
+        {
+          "name": "AttentionSchema",
+          "kind": "class",
+          "signature": "",
+          "summary": "Model of the system's own attention.",
+          "lineno": 37
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure",
+        "mutates own internal state only)"
+      ],
+      "test": [
+        "tests/test_attention_schema.py"
+      ],
+      "callers": []
+    },
+    "human_nature.autonomy": {
+      "path": "human_nature/autonomy.py",
+      "purpose": "Earned-autonomy dynamic trust contract (F6).",
+      "exports": [
+        {
+          "name": "ceiling",
+          "kind": "function",
+          "signature": "(track: dict[str, Any]) -> str",
+          "summary": "Derive earned autonomy tier from a ``track_record``-shaped dict.",
+          "lineno": 36
+        },
+        {
+          "name": "revoke_on_miscalibration",
+          "kind": "function",
+          "signature": "(current: str, recent_rate: float, threshold: float=0.5) -> str",
+          "summary": "Demote exactly one tier level when recent performance is below ``threshold``.",
+          "lineno": 57
+        },
+        {
+          "name": "cap_to",
+          "kind": "function",
+          "signature": "(tier: str, ceil: str) -> str",
+          "summary": "Return ``min(tier, ceil)`` on the cosmetic < soft < hard ordering.",
+          "lineno": 80
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/test_autonomy.py"
+      ],
+      "callers": []
+    },
+    "human_nature.character_vector": {
+      "path": "human_nature/character_vector.py",
+      "purpose": "TARS dials — versioned, inspectable, propose-not-apply character vector (F6).",
+      "exports": [
+        {
+          "name": "new_character_vector",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Return a fresh character vector with all traits at the neutral midpoint.",
+          "lineno": 46
+        },
+        {
+          "name": "set_dial",
+          "kind": "function",
+          "signature": "(vec: dict[str, Any], trait: str, value: int | float) -> dict[str, Any]",
+          "summary": "Human action — return a NEW vector with ``trait`` set to clamped ``value``.",
+          "lineno": 59
+        },
+        {
+          "name": "propose_change",
+          "kind": "function",
+          "signature": "(vec: dict[str, Any], trait: str, value: int | float, rationale: str) -> dict[str, Any]",
+          "summary": "System action — return a proposal dict",
+          "lineno": 75
+        },
+        {
+          "name": "ratify",
+          "kind": "function",
+          "signature": "(vec: dict[str, Any], proposal: dict[str, Any]) -> dict[str, Any]",
+          "summary": "Apply a proposal (clamped) + bump version",
+          "lineno": 99
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure",
+        "does not mutate inputs)"
+      ],
+      "test": [
+        "tests/test_character_vector.py"
+      ],
+      "callers": [
+        "human_nature.psyche_commands"
+      ]
+    },
+    "human_nature.charter": {
+      "path": "human_nature/charter.py",
+      "purpose": "Living Constitution — versioned, human-gated charter (F1, F6).",
+      "exports": [
+        {
+          "name": "new_charter",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Return a fresh charter with no ratified amendments and version 1.",
+          "lineno": 28
+        },
+        {
+          "name": "draft_amendment",
+          "kind": "function",
+          "signature": "(text: str, evidence: str) -> dict[str, Any]",
+          "summary": "Draft an amendment proposal.",
+          "lineno": 36
+        },
+        {
+          "name": "ratify",
+          "kind": "function",
+          "signature": "(charter: dict[str, Any], amendment: dict[str, Any], human_token: Any) -> dict[str, Any]",
+          "summary": "Apply an amendment to the charter — requires a truthy human token.",
+          "lineno": 58
+        },
+        {
+          "name": "active_tenets",
+          "kind": "function",
+          "signature": "(charter: dict[str, Any]) -> list[str]",
+          "summary": "Return the texts of all ratified amendments in ratification order.",
+          "lineno": 92
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure",
+        "does not mutate inputs, no I/O)"
+      ],
+      "test": [
+        "tests/test_charter.py"
+      ],
+      "callers": [
+        "human_nature.consolidation",
+        "human_nature.psyche_commands"
+      ]
+    },
+    "human_nature.consolidation": {
+      "path": "human_nature/consolidation.py",
+      "purpose": "Consolidation cycle — the \"sleep\" phase between runs (propose, never apply).",
+      "exports": [
+        {
+          "name": "run_cycle",
+          "kind": "function",
+          "signature": "(self_state: dict[str, Any], scored_judgments: list[dict[str, Any]], reflections: list[str], *, chat: Optional[Callable]=None) -> dict[str, Any]",
+          "summary": "Run the consolidation cycle (the 'sleep' phase).",
+          "lineno": 155
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.charter",
+        "human_nature.self_state",
+        "llm_io"
+      ],
+      "side_effects": [
+        "mutates self_state in place (competence update)",
+        "no I/O otherwise"
+      ],
+      "test": [
+        "tests/test_consolidation.py"
+      ],
+      "callers": [
+        "human_nature.integration"
+      ]
+    },
+    "human_nature.continuity": {
+      "path": "human_nature/continuity.py",
+      "purpose": "Diachronic narrative self — letters to my future self (inspectable artifacts).",
+      "exports": [
+        {
+          "name": "write_letter",
+          "kind": "function",
+          "signature": "(task_id: str, body_state: dict[str, Any], *, letters_dir: Optional[Any]=None, stamp: Optional[str]=None) -> dict[str, Any]",
+          "summary": "Compose and save a letter to the future self for *task_id*.",
+          "lineno": 97
+        },
+        {
+          "name": "read_letters",
+          "kind": "function",
+          "signature": "(task_id: str, *, letters_dir: Optional[Any]=None) -> list[str]",
+          "summary": "Read all letters for *task_id*, in filename-sorted (chronological) order.",
+          "lineno": 131
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "writes markdown files under STATE_DIR/task_id/letters/ (or letters_dir)"
+      ],
+      "test": [
+        "tests/test_continuity.py"
+      ],
+      "callers": []
+    },
+    "human_nature.conviction": {
+      "path": "human_nature/conviction.py",
+      "purpose": "Conviction Engine — the single source of every \"earned\" signal.",
+      "exports": [
+        {
+          "name": "recalibrate",
+          "kind": "function",
+          "signature": "(p: float, temperature: float=2.5) -> float",
+          "summary": "",
+          "lineno": 26
+        },
+        {
+          "name": "track_weight",
+          "kind": "function",
+          "signature": "(track: dict[str, Any]) -> float",
+          "summary": "",
+          "lineno": 34
+        },
+        {
+          "name": "compute_conviction",
+          "kind": "function",
+          "signature": "(momentary: float, track: dict[str, Any], *, recal: bool=True) -> float",
+          "summary": "",
+          "lineno": 40
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/test_conviction.py"
+      ],
+      "callers": [
+        "human_nature.intuition",
+        "human_nature.momentary"
+      ]
+    },
+    "human_nature.drift": {
+      "path": "human_nature/drift.py",
+      "purpose": "Drift monitor — measures expressed persona intensity vs the charter target.",
+      "exports": [
+        {
+          "name": "measure_drift",
+          "kind": "function",
+          "signature": "(expressed: Sequence[float], target: float) -> float",
+          "summary": "",
+          "lineno": 21
+        },
+        {
+          "name": "has_drifted",
+          "kind": "function",
+          "signature": "(expressed: Sequence[float], target: float, threshold: float=0.3) -> bool",
+          "summary": "",
+          "lineno": 28
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/test_drift.py"
+      ],
+      "callers": []
+    },
+    "human_nature.emotions": {
+      "path": "human_nature/emotions.py",
+      "purpose": "Emotions faculty — affect → behavior/comms coupling (F8 mandate) and regulation.",
+      "exports": [
+        {
+          "name": "couple",
+          "kind": "function",
+          "signature": "(emotion_label: str, state: dict[str, Any], *, behavior_enabled: Optional[bool]=None) -> dict[str, Any]",
+          "summary": "Map an emotion label to a behavior intent and functional comms string.",
+          "lineno": 45
+        },
+        {
+          "name": "bias_appraisal",
+          "kind": "function",
+          "signature": "(pad: dict[str, Any], morale: float) -> dict[str, Any]",
+          "summary": "Apply mood-congruent bias to an ambiguous PAD coordinate.",
+          "lineno": 73
+        },
+        {
+          "name": "regulate",
+          "kind": "function",
+          "signature": "(pad: dict[str, Any], *, decay: float=0.7) -> dict[str, Any]",
+          "summary": "Homeostatic decay of all PAD dimensions toward the zero setpoint.",
+          "lineno": 100
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/test_emotions.py"
+      ],
+      "callers": []
+    },
+    "human_nature.gating": {
+      "path": "human_nature/gating.py",
+      "purpose": "PRISM gate — persona/affect expression is allowed on human-facing surfaces only.",
+      "exports": [
+        {
+          "name": "is_expression_allowed",
+          "kind": "function",
+          "signature": "(surface: str) -> bool",
+          "summary": "",
+          "lineno": 19
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/test_gating.py"
+      ],
+      "callers": [
+        "human_nature.psyche_surface"
+      ]
+    },
+    "human_nature.instinct": {
+      "path": "human_nature/instinct.py",
+      "purpose": "Instinct faculty — ledger-grounded \"something feels off\" signal (Phase 3.4).",
+      "exports": [
+        {
+          "name": "maybe_flag",
+          "kind": "function",
+          "signature": "(state: dict[str, Any], reflections: list[dict], failure_modes: list[dict], *, chat: Optional[Callable]=None, db_path: Optional[Path]=None) -> Optional[str]",
+          "summary": "Fire the instinct check",
+          "lineno": 127
+        }
+      ],
+      "depends_on": [
+        "config",
+        "llm_io",
+        "memory.conviction_ledger",
+        "notifications.instinct"
+      ],
+      "side_effects": [
+        "mutates state[\"meta\"][\"instinct_flags\"]",
+        "writes conviction ledger"
+      ],
+      "test": [
+        "tests/test_instinct_hn.py"
+      ],
+      "callers": [
+        "human_nature.integration"
+      ]
+    },
+    "human_nature.integration": {
+      "path": "human_nature/integration.py",
+      "purpose": "Integration hooks — flag-gated run-loop wiring for the human-nature layer.",
+      "exports": [
+        {
+          "name": "is_enabled",
+          "kind": "function",
+          "signature": "() -> bool",
+          "summary": "Return True iff the human-nature layer is currently enabled.",
+          "lineno": 53
+        },
+        {
+          "name": "ensure_self_state",
+          "kind": "function",
+          "signature": "(state: Any) -> Optional[dict[str, Any]]",
+          "summary": "Lazily initialise SelfState inside state.meta.",
+          "lineno": 58
+        },
+        {
+          "name": "observe_run_events",
+          "kind": "function",
+          "signature": "(state: Any, events: list[dict[str, Any]]) -> None",
+          "summary": "Appraise run events and write the resulting PAD vector to self_state.",
+          "lineno": 81
+        },
+        {
+          "name": "route_pre_act",
+          "kind": "function",
+          "signature": "(state: Any, domain: str, signals: dict[str, Any], *, chat: Optional[Callable]=None) -> str",
+          "summary": "Return the dual-process routing decision before an action is taken.",
+          "lineno": 101
+        },
+        {
+          "name": "maybe_run_instinct",
+          "kind": "function",
+          "signature": "(state: Any, reflections: list[dict[str, Any]], failure_modes: list[dict[str, Any]], *, chat: Optional[Callable]=None, db_path: Optional[Path]=None) -> Optional[str]",
+          "summary": "Fire the instinct check if enabled",
+          "lineno": 128
+        },
+        {
+          "name": "at_teardown",
+          "kind": "function",
+          "signature": "(state: Any, scored_judgments: list[dict[str, Any]], reflections: list[str], *, chat: Optional[Callable]=None) -> Optional[dict[str, Any]]",
+          "summary": "Run the consolidation cycle at run teardown",
+          "lineno": 156
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.appraisal",
+        "human_nature.consolidation",
+        "human_nature.instinct",
+        "human_nature.intuition",
+        "human_nature.self_state"
+      ],
+      "side_effects": [
+        "mutates state[\"meta\"] (or state.data[\"meta\"]) when enabled"
+      ],
+      "test": [
+        "tests/test_integration.py"
+      ],
+      "callers": []
+    },
+    "human_nature.intuition": {
+      "path": "human_nature/intuition.py",
+      "purpose": "Intuition faculty — System-1 pre-verbal confidence + dual-process routing.",
+      "exports": [
+        {
+          "name": "snap",
+          "kind": "function",
+          "signature": "(domain: str, signals: dict, *, chat: Optional[Callable]=None) -> dict",
+          "summary": "Fuse available signals into a pre-verbal confidence snapshot.",
+          "lineno": 56
+        },
+        {
+          "name": "route",
+          "kind": "function",
+          "signature": "(snap_result: dict, *, shortcut_enabled: Optional[bool]=None) -> str",
+          "summary": "Dual-process routing: return \"fast\" or \"deliberate\".",
+          "lineno": 73
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.conviction"
+      ],
+      "side_effects": [
+        "none in current implementation (chat param reserved for future use)"
+      ],
+      "test": [
+        "tests/test_intuition.py"
+      ],
+      "callers": [
+        "human_nature.integration"
+      ]
+    },
+    "human_nature.momentary": {
+      "path": "human_nature/momentary.py",
+      "purpose": "Momentary confidence providers for the human-nature Conviction Engine.",
+      "exports": [
+        {
+          "name": "verbalized_p_true",
+          "kind": "function",
+          "signature": "(statement: str, *, chat: Optional[Callable]=None) -> float",
+          "summary": "Ask HN_FAST_MODEL for P(True) of *statement*",
+          "lineno": 80
+        },
+        {
+          "name": "self_consistency",
+          "kind": "function",
+          "signature": "(sampler: Callable, n: int=5) -> float",
+          "summary": "Run *sampler* n times",
+          "lineno": 97
+        },
+        {
+          "name": "cross_cast_agreement",
+          "kind": "function",
+          "signature": "(votes: list) -> float",
+          "summary": "Fraction of *votes* equal to the modal vote",
+          "lineno": 110
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.conviction",
+        "llm_io"
+      ],
+      "side_effects": [
+        "calls Ollama (HN_FAST_MODEL) when chat=None"
+      ],
+      "test": [
+        "tests/test_momentary.py"
+      ],
+      "callers": []
+    },
+    "human_nature.opinions": {
+      "path": "human_nature/opinions.py",
+      "purpose": "Opinions faculty — tiered, domain-gated, conviction-gated opinion engine.",
+      "exports": [
+        {
+          "name": "Opinion",
+          "kind": "class",
+          "signature": "",
+          "summary": "A single tiered opinion with its domain and conviction score.",
+          "lineno": 71
+        },
+        {
+          "name": "tier",
+          "kind": "function",
+          "signature": "(conviction: float, domain: str) -> str",
+          "summary": "Return the effective tier for *conviction* in *domain*.",
+          "lineno": 78
+        },
+        {
+          "name": "rederive",
+          "kind": "function",
+          "signature": "(user_assertion: str, my_stance: str, evidence: str, *, chat: Optional[Callable]=None) -> dict",
+          "summary": "Neutral-judge re-derivation on pushback (F5).",
+          "lineno": 115
+        }
+      ],
+      "depends_on": [
+        "config",
+        "llm_io"
+      ],
+      "side_effects": [
+        "calls Ollama (HN_FAST_MODEL) when rederive chat=None"
+      ],
+      "test": [
+        "tests/test_opinions.py"
+      ],
+      "callers": []
+    },
+    "human_nature.psyche_commands": {
+      "path": "human_nature/psyche_commands.py",
+      "purpose": "Psyche Discord command routers — pure functions, no discord.py import.",
+      "exports": [
+        {
+          "name": "cmd_psyche",
+          "kind": "function",
+          "signature": "(self_state: dict[str, Any], *, autonomy: dict[str, str] | None=None) -> str",
+          "summary": "Render a text snapshot of the interior for the ``!psyche`` command.",
+          "lineno": 71
+        },
+        {
+          "name": "cmd_dial",
+          "kind": "function",
+          "signature": "(character_vector: dict[str, Any], trait: str, value: int | float) -> tuple[dict[str, Any], str]",
+          "summary": "Apply ``set_dial`` and return (new_vector, confirmation_text).",
+          "lineno": 119
+        },
+        {
+          "name": "cmd_charter",
+          "kind": "function",
+          "signature": "(charter: dict[str, Any]) -> str",
+          "summary": "Render the active tenets and charter version for the ``!charter`` command.",
+          "lineno": 156
+        },
+        {
+          "name": "cmd_whatyouknow",
+          "kind": "function",
+          "signature": "(user_model: dict[str, Any]) -> str",
+          "summary": "Render the user-model snapshot for the ``!whatyouknow`` command.",
+          "lineno": 183
+        },
+        {
+          "name": "cmd_why_i_feel",
+          "kind": "function",
+          "signature": "(self_state: dict[str, Any], appraisal_vars: dict[str, Any]) -> str",
+          "summary": "Return a functional-label trace of the current affect.",
+          "lineno": 224
+        }
+      ],
+      "depends_on": [
+        "human_nature.character_vector",
+        "human_nature.charter",
+        "human_nature.user_model"
+      ],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/test_psyche_commands.py"
+      ],
+      "callers": []
+    },
+    "human_nature.psyche_surface": {
+      "path": "human_nature/psyche_surface.py",
+      "purpose": "Psyche surface — legible interior readouts for Discord and web (PRISM-gated).",
+      "exports": [
+        {
+          "name": "render_discord",
+          "kind": "function",
+          "signature": "(self_state: dict[str, Any], *, surface: str='psyche', autonomy: dict[str, str] | None=None) -> dict[str, Any] | None",
+          "summary": "Return an embed-shaped dict of the interior, or None if PRISM-gated.",
+          "lineno": 100
+        },
+        {
+          "name": "render_web",
+          "kind": "function",
+          "signature": "(self_state: dict[str, Any], *, autonomy: dict[str, str] | None=None) -> str",
+          "summary": "Return an HTML fragment of the interior (no external dependencies).",
+          "lineno": 159
+        }
+      ],
+      "depends_on": [
+        "human_nature.gating"
+      ],
+      "side_effects": [
+        "none (pure render)"
+      ],
+      "test": [
+        "tests/test_psyche_surface.py"
+      ],
+      "callers": []
+    },
+    "human_nature.self_model": {
+      "path": "human_nature/self_model.py",
+      "purpose": "Self-model — metacognitive supervisor (F11 / F3 + honest phenomenology).",
+      "exports": [
+        {
+          "name": "competence_report",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], domain: str) -> dict[str, Any]",
+          "summary": "Calibrated competence with epistemic interval and verdict.",
+          "lineno": 42
+        },
+        {
+          "name": "johari",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], ood: bool, surprise: float) -> dict[str, Any]",
+          "summary": "Johari-window blind-spot analysis.",
+          "lineno": 67
+        },
+        {
+          "name": "dissonance",
+          "kind": "function",
+          "signature": "(felt: float, demonstrated: float, self_report: float, observed: float) -> dict[str, Any]",
+          "summary": "Two dissonance channels (spec § self-awareness, F3).",
+          "lineno": 96
+        },
+        {
+          "name": "honest_phenomenology",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "Return the fixed, honest access-vs-phenomenal paragraph.",
+          "lineno": 136
+        }
+      ],
+      "depends_on": [
+        "human_nature.self_state"
+      ],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/test_self_model.py"
+      ],
+      "callers": []
+    },
+    "human_nature.self_state": {
+      "path": "human_nature/self_state.py",
+      "purpose": "SelfState — the unified interior of the human-nature layer (a serializable dict).",
+      "exports": [
+        {
+          "name": "new_self_state",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "",
+          "lineno": 24
+        },
+        {
+          "name": "get_competence",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], domain: str) -> dict[str, Any]",
+          "summary": "",
+          "lineno": 36
+        },
+        {
+          "name": "observe_competence",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], domain: str, success: bool) -> None",
+          "summary": "",
+          "lineno": 40
+        },
+        {
+          "name": "set_affect",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], valence: float, arousal: float, control: float) -> None",
+          "summary": "",
+          "lineno": 47
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "mutates the passed-in dict in place"
+      ],
+      "test": [
+        "tests/test_self_state.py"
+      ],
+      "callers": [
+        "human_nature.consolidation",
+        "human_nature.integration",
+        "human_nature.self_model"
+      ]
+    },
+    "human_nature.user_model": {
+      "path": "human_nature/user_model.py",
+      "purpose": "Theory-of-Mind of the user — the Dyad model (service-only, manipulation-guarded).",
+      "exports": [
+        {
+          "name": "new_user_model",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Return a fresh user model with neutral defaults.",
+          "lineno": 54
+        },
+        {
+          "name": "update",
+          "kind": "function",
+          "signature": "(model: dict[str, Any], observation: dict[str, Any]) -> dict[str, Any]",
+          "summary": "Fold one observation into a NEW model dict (input is never mutated).",
+          "lineno": 69
+        },
+        {
+          "name": "snapshot",
+          "kind": "function",
+          "signature": "(model: dict[str, Any]) -> dict[str, Any]",
+          "summary": "Return a fully inspectable, deep-copied view of the user model.",
+          "lineno": 107
+        }
+      ],
+      "depends_on": [
+        "memory.user_prefs"
+      ],
+      "side_effects": [
+        "none in-module (persistence delegated to _prefs when available)"
+      ],
+      "test": [
+        "tests/test_user_model.py"
+      ],
+      "callers": [
+        "human_nature.psyche_commands"
+      ]
+    },
+    "human_nature.workspace": {
+      "path": "human_nature/workspace.py",
+      "purpose": "Global Workspace — the GWT competition/broadcast loop (Baars, Dehaene).",
+      "exports": [
+        {
+          "name": "Workspace",
+          "kind": "class",
+          "signature": "",
+          "summary": "Global Workspace: specialists compete, winner is broadcast.",
+          "lineno": 20
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure",
+        "broadcast may call specialist.on_broadcast callbacks)"
+      ],
+      "test": [
+        "tests/test_workspace.py"
+      ],
       "callers": []
     },
     "knowledge": {
@@ -3025,6 +3878,10 @@
         "agents.discovery.lenses",
         "agents.discovery.synthesis",
         "agents.replanner",
+        "human_nature.consolidation",
+        "human_nature.instinct",
+        "human_nature.momentary",
+        "human_nature.opinions",
         "notifications.ask",
         "platform_core.orchestration.brain_io"
       ]
@@ -3073,6 +3930,45 @@
       ],
       "test": [],
       "callers": []
+    },
+    "memory.conviction_ledger": {
+      "path": "memory/conviction_ledger.py",
+      "purpose": "Conviction Ledger — SQLite store of judgment -> outcome calibration.",
+      "exports": [
+        {
+          "name": "record_judgment",
+          "kind": "function",
+          "signature": "(*, judgment_type: str, domain: str, conviction: float, db_path: Optional[Path]=None) -> str",
+          "summary": "",
+          "lineno": 49
+        },
+        {
+          "name": "score_judgment",
+          "kind": "function",
+          "signature": "(judgment_id: str, correct: bool, db_path: Optional[Path]=None) -> bool",
+          "summary": "",
+          "lineno": 63
+        },
+        {
+          "name": "track_record",
+          "kind": "function",
+          "signature": "(judgment_type: str, domain: str, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "",
+          "lineno": 73
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "creates/writes the conviction SQLite db at CONVICTION_DB_PATH (or db_path)"
+      ],
+      "test": [
+        "tests/test_conviction_ledger.py"
+      ],
+      "callers": [
+        "human_nature.instinct"
+      ]
     },
     "memory.experience": {
       "path": "memory/experience.py",
@@ -5500,14 +6396,14 @@
           "kind": "function",
           "signature": "(role: str) -> dict",
           "summary": "Resolve a role to its persona dict (falls back to Brain), with avatar_url filled in.",
-          "lineno": 43
+          "lineno": 52
         },
         {
           "name": "roles",
           "kind": "function",
           "signature": "() -> tuple",
           "summary": "",
-          "lineno": 53
+          "lineno": 62
         }
       ],
       "depends_on": [
@@ -5516,7 +6412,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/test_personas_archetypes.py"
+      ],
       "callers": [
         "notifications.cast"
       ]
@@ -6165,6 +7063,22 @@
         "config"
       ]
     },
+    "platform_core.app_config.human_nature": {
+      "path": "platform_core/app_config/human_nature.py",
+      "purpose": "Human-nature layer configuration knobs.",
+      "exports": [],
+      "depends_on": [
+        "platform_core.app_config.llm",
+        "platform_core.app_config.paths"
+      ],
+      "side_effects": [
+        "reads environment variables at import"
+      ],
+      "test": [],
+      "callers": [
+        "config"
+      ]
+    },
     "platform_core.app_config.llm": {
       "path": "platform_core/app_config/llm.py",
       "purpose": "9TO5 LLM / orchestration / SIE / adversary / executor constants.",
@@ -6177,7 +7091,8 @@
         "tests/test_llm_io_pydantic.py"
       ],
       "callers": [
-        "config"
+        "config",
+        "platform_core.app_config.human_nature"
       ]
     },
     "platform_core.app_config.paths": {
@@ -6198,7 +7113,8 @@
       ],
       "test": [],
       "callers": [
-        "config"
+        "config",
+        "platform_core.app_config.human_nature"
       ]
     },
     "platform_core.cli": {
@@ -8082,7 +8998,8 @@
       "test": [
         "tests/test_memory_subtask_manager.py",
         "tests/test_task_listrecent.py",
-        "tests/test_task_save_concurrent.py"
+        "tests/test_task_save_concurrent.py",
+        "tests/test_task_schema_hn.py"
       ],
       "callers": [
         "agents.hooks_selfmod",
@@ -8195,7 +9112,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/test_task_schema_hn.py"
+      ],
       "callers": [
         "state.task",
         "state.task_io"

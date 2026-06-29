@@ -10,7 +10,7 @@ EXPORTS:
   TaskState  -- Wraps the lean state dict and persists it to ``state/tasks/<id>.json``.
 DEPENDS-ON: config, memory.experience, notifications.entry, state.task_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_task_schema_hn.py
 """
 from __future__ import annotations
 
@@ -79,6 +79,9 @@ class TaskState:
                 "user_intents": [],
                 "instinct_flags": [],
                 "injected_context": [],
+                "self_state": None,      # human_nature interior (lazily initialised by the layer)
+                "autonomy": None,        # human_nature earned-autonomy ceilings per domain
+                "charter_version": None, # ratified Cast-charter version in effect
             },
             "plan": {"architect_design_doc": None, "subtasks": []},
             "adversary_reviews": [],
