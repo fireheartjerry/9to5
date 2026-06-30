@@ -11,5 +11,6 @@ RUN/TEST: python -m pytest tests/test_society_blackboard.py
 from __future__ import annotations
 
 from society.blackboard import Blackboard, BlackboardEntry
+from society.inbox import makeEntry, inboxFilter
 
-__all__ = ["Blackboard", "BlackboardEntry"]
+__all__ = ["Blackboard", "BlackboardEntry", "makeEntry", "inboxFilter"]
