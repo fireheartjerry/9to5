@@ -21,6 +21,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import config
+from agents.executor import scanDestructive
 from platform_core.runtime.action_risk import (
     ActionDescriptor, AuthDecision, RiskTier, decideAuthorization,
 )
@@ -75,3 +76,22 @@ class OrchestratorSafetyMixin:
         if decision.tier in (RiskTier.DESTRUCTIVE, RiskTier.UNKNOWN):
             return False
         return True
+
+    def _authorizeAttempt(self, state: "TaskState", bus: "ControlBus",
+                          dashboard: "DiscordDashboard", spec: dict) -> "dict | None":
+        """Coarse per-attempt gate for the PAID Claude call. Returns None to proceed, or a blocked
+        result dict when the action implied by the prompt is not authorized. A clean passthrough
+        when the layer is disabled. Genuine operator aborts propagate (via _authorizeAction)."""
+        if not config.SEMANTIC_SAFETY_ENABLED:
+            return None
+        risk_hits = scanDestructive(spec.get("prompt", "") or "")
+        action = ActionDescriptor(
+            tool_name="ClaudeRun",
+            command=" ; ".join(risk_hits),
+            estimated_cost_usd=config.CLAUDE_ATTEMPT_COST_HINT_USD,
+        )
+        if self._authorizeAction(state, bus, dashboard, action):
+            return None
+        return {"ok": False, "returncode": -1, "stdout": "",
+                "stderr": "action_risk: attempt blocked (destructive/unknown escalation "
+                          "not approved)", "blocked": True, "effort": spec.get("effort_level")}

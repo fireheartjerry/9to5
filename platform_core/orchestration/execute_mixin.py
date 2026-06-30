@@ -19,6 +19,7 @@ from platform_core.runtime.control import AbortRun
 from notifications import cast
 from notifications import discord_bot as discord
 from platform_core.orchestration.brain_io import _resultText
+from platform_core.runtime import autonomy_allowance
 from state.task import TaskState, nowIso
 
 if TYPE_CHECKING:
@@ -131,6 +132,15 @@ class OrchestratorExecuteMixin:
                          effort=spec.get("effort_level"))
         if attempt >= 2:
             self._narrate(f"`{sid}` attempt {attempt}. Still working on it.")
+        # Epic 4 semantic-safety: per-attempt authorization (defense-in-depth, coarse-grained).
+        # The bulk lives in OrchestratorSafetyMixin; here we only honor a block verdict.
+        blocked = self._authorizeAttempt(state, bus, dashboard, spec)
+        if blocked is not None:
+            vresult = {"passed": False, "blocked": True, "returncode": -1,
+                       "cmd": None, "stderr": blocked["stderr"]}
+            with self._state_lock:
+                state.recordVerify(sid, vresult)
+            return spec, blocked, vresult, blocked["stderr"], False, None, None
         attempt_started = time.time()
         hands = self._selectExecutor(spec)   # route to the right surface (terminal | browser)
         # Live surface feed: tap the Claude subprocess stdout in real time (terminal path only;
@@ -199,6 +209,13 @@ class OrchestratorExecuteMixin:
         if not isinstance(result, dict):   # a hands layer that returns junk must fail cleanly
             result = {"ok": False, "returncode": -1, "stdout": "",
                       "stderr": f"executor returned non-dict result: {type(result).__name__}"}
+        # Epic 4: meter the committed (post-runClaude) cost against the autonomy allowance.
+        if config.SEMANTIC_SAFETY_ENABLED and not result.get("blocked"):
+            try:
+                autonomy_allowance.meterSpend(bus, result.get("cost_usd"),
+                                              attempt_id=f"{sid}:{attempt}")
+            except Exception:  # noqa: BLE001 -- metering never breaks a run
+                pass
         # Carry a HEALTHY session forward; start fresh on error (is_error absent => no resume).
         resume_session = result.get("session_id") if (
             result.get("session_id") and not result.get("is_error")) else None

@@ -41,6 +41,7 @@ from platform_core.orchestration.execute_mixin import OrchestratorExecuteMixin
 from platform_core.orchestration.review_mixin import OrchestratorReviewMixin
 from platform_core.orchestration.run_loop_mixin import OrchestratorRunLoopMixin
 from platform_core.orchestration.run_phase_mixin import OrchestratorRunPhaseMixin
+from platform_core.orchestration.safety_mixin import OrchestratorSafetyMixin
 
 # Re-export for callers that do `from orchestrator import refreshClaudeKnowledge`
 from platform_core.orchestration.knowledge_refresh import injectCapabilities, refreshClaudeKnowledge  # noqa: F401
@@ -67,7 +68,8 @@ def _chatJson(resp):
 
 class Orchestrator(OrchestratorLlmMixin, OrchestratorPlanMixin, OrchestratorControlMixin,
                    OrchestratorExecuteMixin, OrchestratorReviewMixin,
-                   OrchestratorRunLoopMixin, OrchestratorRunPhaseMixin):
+                   OrchestratorRunLoopMixin, OrchestratorRunPhaseMixin,
+                   OrchestratorSafetyMixin):
     """Brain + autonomous loop.  All methods live in the five mixin modules above;
     only __init__ and runFull (the public entry point) are defined here."""
 
