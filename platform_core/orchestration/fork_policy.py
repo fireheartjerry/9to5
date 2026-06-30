@@ -54,3 +54,31 @@ def shouldFork(subtask: dict, *, enabled: bool, projected_cost: float, cost_ceil
     if _singleDeliverable(goal_elaborated):    # mechanical single-file edit: not fork-worthy
         return False
     return True
+
+
+@dataclass
+class BranchSeed:
+    """One branch's diversity seed: effort (also picks the model) + an angle hint."""
+    branch_id: str
+    effort_level: str
+    angle_hint: str
+    model: str
+
+
+@dataclass
+class ForkPlan:
+    branch_seeds: list = field(default_factory=list)
+    n: int = 0
+
+
+def forkPlan(subtask: dict, *, n: int, angles: tuple = DIVERSITY_ANGLES) -> ForkPlan:
+    """Build N diversity seeds spanning effort x angle. Distinct by construction."""
+    n = max(1, int(n))
+    seeds: list = []
+    for i in range(n):
+        effort = EFFORT_CYCLE[i % len(EFFORT_CYCLE)]
+        angle = angles[i % len(angles)]
+        model = config.MODEL_BY_EFFORT.get(effort, config.PRIMARY_MODEL)
+        seeds.append(BranchSeed(branch_id=f"b{i}", effort_level=effort,
+                                angle_hint=angle, model=model))
+    return ForkPlan(branch_seeds=seeds, n=len(seeds))
