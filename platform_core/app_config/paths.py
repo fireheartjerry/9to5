@@ -72,6 +72,9 @@ SESSIONS_DIR_REL: str = "sessions"
 STATE_DIR: Path = PROJECT_ROOT / "state" / "tasks"
 CONTROL_DIR: Path = PROJECT_ROOT / "state" / "control"
 
+# --- Agent Society / Workforce (Epic 5) blackboard -----------------------
+BLACKBOARD_DIR: Path = PROJECT_ROOT / "state" / "blackboard"
+
 # --- SIE / learning paths ------------------------------------------------
 EXPERIENCE_DB_PATH: Path = PROJECT_ROOT / "state" / "experience.db"
 EVAL_SUITE_DIR: Path = PROJECT_ROOT / "learning" / "eval_suite"

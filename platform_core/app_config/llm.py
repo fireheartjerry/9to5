@@ -319,6 +319,26 @@ CONTROL_MODE_DEFAULT: str = "watch"   # "watch" (autonomous + abort) | "gated" (
 PLAN_GATE_AUTO_APPROVE_SECONDS: float = _envFloat("PLAN_GATE_AUTO_APPROVE_SECONDS", 8)
 DEFAULT_PARALLELISM: int = 1          # >1 runs independent ready subtasks concurrently
 
+# --- Agent Society / Workforce (Epic 5) -- OFF by default -----------------
+# A 9to5-owned multi-agent workforce: coordinator + specialized role workers on a
+# shared blackboard. When False the existing star/parallel path is unchanged.
+SOCIETY_ENABLED: bool = _envBool("SOCIETY_ENABLED", False)
+# Hard cap on concurrent role workers. MUST stay <= run parallelism (anti-runaway).
+SOCIETY_MAX_WORKERS: int = _envInt("SOCIETY_MAX_WORKERS", 3)
+# Max bounded debate rounds before convergence is forced (anti-livelock).
+SOCIETY_DEBATE_MAX_ROUNDS: int = _envInt("SOCIETY_DEBATE_MAX_ROUNDS", 3)
+# Per-run USD budget governor for the workforce; on breach the coordinator stops
+# spawning new workers and finalizes with what landed.
+SOCIETY_TOKEN_BUDGET_USD: float = _envFloat("SOCIETY_TOKEN_BUDGET_USD", 5.0)
+# role -> effort_level key (resolved through MODEL_BY_EFFORT; narrows, never bypasses).
+SOCIETY_ROLE_MODELS: dict[str, str] = {
+    "researcher": os.getenv("SOCIETY_MODEL_RESEARCHER", "low"),
+    "coder":      os.getenv("SOCIETY_MODEL_CODER", "high"),
+    "tester":     os.getenv("SOCIETY_MODEL_TESTER", "default"),
+    "reviewer":   os.getenv("SOCIETY_MODEL_REVIEWER", "high"),
+    "planner":    os.getenv("SOCIETY_MODEL_PLANNER", "default"),
+}
+
 # --- Claude Code primitives (model routing) ------------------------------
 # Automatic model fallback chain (handed to `claude --fallback-model`).
 PRIMARY_MODEL: str = "claude-opus-4-8"
