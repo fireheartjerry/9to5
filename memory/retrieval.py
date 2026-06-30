@@ -44,6 +44,7 @@ import config
 from memory import experience
 from memory import experience_content
 from memory import exp_index
+from memory import retrieval_rank
 
 LOG = config.getLogger("sie.retrieval")
 
@@ -220,7 +221,8 @@ def retrieve_content(goal: str, title: str = "", *, k: Optional[int] = None,
             n["created_at"] = row.get("created_at")
             if row.get("importance") is not None:
                 n["importance"] = row.get("importance")
-    return neighbors
+    neighbors = retrieval_rank.rerank(neighbors)
+    return neighbors[:k]
 
 
 # --------------------------------------------------------------------- rendering
