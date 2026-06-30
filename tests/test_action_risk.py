@@ -146,3 +146,12 @@ def test_autonomous_flag_annotates_escalation_reason():
     auton = D(A(command="rm -rf /"), autonomous=True)
     assert auton.reason.endswith("-autonomous")
     assert not gated.reason.endswith("-autonomous")
+
+
+def test_safety_config_defaults_ship_dark():
+    import config
+    assert config.SEMANTIC_SAFETY_ENABLED is False          # ship dark
+    assert config.AUTONOMY_ALLOWANCE_USD == 0.0             # confirm-everything
+    assert config.AUTONOMOUS_DESTRUCTIVE_POLICY == "block"  # fail-closed default
+    assert isinstance(config.AUTONOMOUS_DESTRUCTIVE_ALLOWANCE_USD, float)
+    assert isinstance(config.CLAUDE_ATTEMPT_COST_HINT_USD, float)

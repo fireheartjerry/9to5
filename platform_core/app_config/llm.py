@@ -193,6 +193,18 @@ SIE_REFLECTION_ENABLED: bool = _envBool("SIE_REFLECTION_ENABLED", True)
 SIE_AUTHORING_CONTEXT: bool = _envBool("SIE_AUTHORING_CONTEXT", True)
 # Let 9to5 improve its OWN core loop files during self-referential runs (opt-in).
 SELFMOD_ALLOW_CORE: bool = _envBool("SELFMOD_ALLOW_CORE", False)
+# --- Epic 4 semantic-safety (ship dark; flip ON to enable the layer) ---
+# Master kill switch: False = today's path/regex guards only (clean revert).
+SEMANTIC_SAFETY_ENABLED: bool = _envBool("SEMANTIC_SAFETY_ENABLED", False)
+# Bounded autonomy allowance for mutating/paid actions. 0.0 = confirm-everything (eliza-safe).
+AUTONOMY_ALLOWANCE_USD: float = _envFloat("AUTONOMY_ALLOWANCE_USD", 0.0)
+# When escalation is required but no human is present (autonomous mode):
+#   "block" (default, fail-closed) | "strict_allowance" (still hard-blocks destructive/unknown).
+AUTONOMOUS_DESTRUCTIVE_POLICY: str = os.getenv("AUTONOMOUS_DESTRUCTIVE_POLICY", "block")
+# Separate small budget for the strict_allowance escape (never applies to destructive/unknown).
+AUTONOMOUS_DESTRUCTIVE_ALLOWANCE_USD: float = _envFloat("AUTONOMOUS_DESTRUCTIVE_ALLOWANCE_USD", 0.0)
+# Decision-only cost HINT for the per-attempt PAID Claude subprocess call.
+CLAUDE_ATTEMPT_COST_HINT_USD: float = _envFloat("CLAUDE_ATTEMPT_COST_HINT_USD", 0.0)
 # Compute router for LoRA/DPO training.
 SIE_COMPUTE: str = os.getenv("SIE_COMPUTE", "auto")
 # LoRA hyperparameters.
