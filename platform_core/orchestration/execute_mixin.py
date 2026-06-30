@@ -58,7 +58,11 @@ class OrchestratorExecuteMixin:
         # gitignored .sc-ctx scratch, but the executor edits the project at work_dir via --add-dir --
         # so snapshotting/restoring exec_cwd was a NO-OP and a broken remediation was never reverted.
         # work_dir IS the real tree for both self-ref (== PROJECT_ROOT) and non-self-ref runs.
-        repo_tree = getattr(self, "_work_dir", None) or exec_cwd
+        from platform_core.runtime import worktree
+        # With worktree isolation, exec_cwd IS this subtask's private tree -> snapshot it so a
+        # revert is peer-safe. Otherwise fall back to the shared work_dir (today's behavior).
+        repo_tree = exec_cwd if worktree.isIsolated(exec_cwd) else (
+            getattr(self, "_work_dir", None) or exec_cwd)
         for i in range(1, attempts + 1):
             feedback = ("The work PASSED its acceptance check, but an adversarial reviewer raised "
                         "concerns. Address these WITHOUT breaking the passing verification:\n- "
@@ -360,8 +364,8 @@ class OrchestratorExecuteMixin:
         # TEETH: a challenged verdict on a PASSED subtask earns ONE bounded remediation attempt.
         if (config.ADVERSARY_REMEDIATION_ENABLED and final == "done"
                 and rv.get("verdict") == "challenged" and rv.get("concerns")):
-            if self._remediationTreeShared(exec_cwd):
-                # Skip: snapshot + whole-tree checkout would clobber concurrent peer workers.
+            if self._remediationUnsafe(exec_cwd):
+                # Skip ONLY a shared tree under parallelism (a revert would clobber peers).
                 LOG.warning("%s: skipping adversary remediation -- shared working tree under "
                             "parallelism>1 (a revert would clobber peer subtasks)", sid)
                 with self._state_lock:

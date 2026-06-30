@@ -116,14 +116,15 @@ class OrchestratorReviewMixin:
     # ===================================================================
     # Adversary teeth -- shared tree guard, git helpers, pre-PR hold
     # ===================================================================
-    def _remediationTreeShared(self, exec_cwd: str = "") -> bool:
-        """True when >1 subtask runs concurrently against the SHARED real edit tree -- the case where
-        the remediation snapshot + whole-tree `git checkout <sha> -- .` would revert a peer worker's
-        edits (silent data loss). The real edit tree is ALWAYS work_dir: non-self-ref subtasks run
-        directly in it, and self-ref subtasks edit it (== PROJECT_ROOT) via --add-dir even though their
-        cwd is an isolated .sc-ctx scratch. So ANY parallel run (self-ref OR not) shares the real tree;
-        only a sequential run (parallelism<=1) has no peers and can safely snapshot/revert it."""
-        return getattr(self, "_parallelism", 1) > 1
+    def _remediationUnsafe(self, exec_cwd: str = "") -> bool:
+        """True when a remediation snapshot/whole-tree-revert would clobber a concurrent peer:
+        i.e. >1 worker AND this subtask is NOT in an isolated worktree. With worktree isolation
+        on, each worker has its own tree, so remediation is peer-safe and runs (the old blanket
+        parallelism>1 skip is gone). A sequential run has no peers and is always safe."""
+        from platform_core.runtime import worktree
+        if getattr(self, "_parallelism", 1) <= 1:
+            return False
+        return not worktree.isIsolated(exec_cwd)
 
     @staticmethod
     def _gitSnapshot(cwd: str) -> "str | None":

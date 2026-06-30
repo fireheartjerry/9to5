@@ -166,12 +166,24 @@ class OrchestratorRunLoopMixin:
                              work_dir: str, bus: "ControlBus", dashboard: "DiscordDashboard",
                              position: int, parallelism: int) -> "tuple[int, AbortRun | None]":
         """Execute a batch of subtasks concurrently; return (updated_position, abort_or_None)."""
+        from platform_core.orchestration import parallel_safety
+        from platform_core.runtime import worktree
+        isolate = getattr(config, "WORKTREE_ISOLATION_ENABLED", False)
         with ThreadPoolExecutor(max_workers=parallelism) as pool:
             futures = {}
+            cwds = {}
             for st in batch:
+                sid = st["subtask_id"]
+                if isolate:
+                    with self._state_lock:           # atomic CAS: pending -> in_progress
+                        if not parallel_safety.claim(state, sid):
+                            continue                 # lost race / already claimed -> skip
+                    ctx = worktree.enterWorktree(state, sid)
+                else:
+                    # FX-8: derive cwd via the SAME helper as the sequential path.
+                    ctx = self._execCwd(state, sid, work_dir)
+                cwds[sid] = ctx
                 position += 1
-                # FX-8: derive cwd via the SAME helper as the sequential path for identical behavior.
-                ctx = self._execCwd(state, st["subtask_id"], work_dir)
                 futures[pool.submit(self._executeSubtask, state, st, architect_doc,
                                     work_dir, bus, dashboard, position, ctx)] = st
             abort = None
@@ -189,6 +201,11 @@ class OrchestratorRunLoopMixin:
                     with self._state_lock:
                         state.updateSubtask(st["subtask_id"], status="failed", completed_at=nowIso())
                         state.addNotification("subtask_crashed", f"{st.get('subtask_id')}: {e}")
+                finally:
+                    if isolate:
+                        sid = st["subtask_id"]
+                        merged = (state.getSubtask(sid) or {}).get("status") == "done"
+                        worktree.exitWorktree(cwds.get(sid, ""), merge=merged)
         # Close thread-local SQLite connections so they don't accumulate across batches (CB-3).
         try:
             experience.close_pool()
@@ -199,7 +216,7 @@ class OrchestratorRunLoopMixin:
     def runExecutionLoop(self, state: TaskState, architect_doc: str, work_dir: str,
                          bus: "ControlBus", dashboard: "DiscordDashboard",
                          parallelism: int = 1) -> None:
-        # Record the run's concurrency + shared working tree so _remediationTreeShared can tell
+        # Record the run's concurrency + shared working tree so _remediationUnsafe can tell
         # whether a remediation snapshot/restore would clobber concurrent peer workers (see #1).
         self._parallelism = parallelism
         self._work_dir = work_dir
@@ -264,9 +281,13 @@ class OrchestratorRunLoopMixin:
                         continue
                     break
                 ready = [state.nextActionable()]
+            from platform_core.orchestration import parallel_safety
+            if getattr(config, "WORKTREE_ISOLATION_ENABLED", False):
+                batch = parallel_safety.safeParallelSet(state, ready, parallelism)
+            else:
+                batch = ready[:parallelism]
             position, abort = self._handleParallelBatch(
-                state, ready[:parallelism], architect_doc, work_dir,
-                bus, dashboard, position, parallelism)
+                state, batch, architect_doc, work_dir, bus, dashboard, position, parallelism)
             if abort is not None:
                 raise abort
 
