@@ -17,6 +17,9 @@ DEFAULT_MAX_CHARS: int = 400
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _LEADING_MARKER_RE = re.compile(r"^[\s>#*\-=`~|]+")
 _FENCE_RE = re.compile(r"`{3,}|~{3,}")
+# Inline markdown block markers (heading / blockquote) that, once newlines are collapsed to
+# spaces, would otherwise survive mid-line as a forged ``### SYSTEM:`` / ``> override`` block.
+_INLINE_MARKER_RE = re.compile(r"(?<=\s)[#>]{1,6}(?=\s)")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
@@ -34,6 +37,7 @@ def sanitizeInjectedField(text, *, max_chars: int = DEFAULT_MAX_CHARS) -> str:
     s = s.replace("\r", " ").replace("\n", " ").replace("\t", " ")
     s = _FENCE_RE.sub(" ", s)
     s = _LEADING_MARKER_RE.sub("", s)
+    s = _INLINE_MARKER_RE.sub(" ", s)
     s = _WHITESPACE_RE.sub(" ", s).strip()
     if len(s) > max_chars:
         s = s[:max_chars].rstrip() + "…"

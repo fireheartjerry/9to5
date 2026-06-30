@@ -20,6 +20,7 @@ from agents import verifier
 from agents.completion_envelope import COMPLETION_ENVELOPE_INSTRUCTION
 from learning import knowledge_graph, policy, postmortem, prompts, reflection, solution_cache
 from memory import experience, retrieval
+from memory.memory_sanitizer import sanitizeInjectedField
 from notifications import discord_bot as discord
 from platform_core.orchestration.brain_io import _chatJson
 from platform_core.orchestration.run_loop import _asList, _asText, _confidenceNudge, _warmStartHint
@@ -372,9 +373,10 @@ class OrchestratorPlanMixin:
         extra = ""
         if intents:
             extra += ("\n\n## Operator intent (weigh this; it is direction, not a hard command)\n- "
-                      + "\n- ".join(intents[:8]))
+                      + "\n- ".join(sanitizeInjectedField(i, max_chars=300) for i in intents[:8]))
         if injected:
-            extra += "\n\n## Operator-injected context for this attempt\n- " + "\n- ".join(injected[:8])
+            extra += ("\n\n## Operator-injected context for this attempt\n- "
+                      + "\n- ".join(sanitizeInjectedField(i, max_chars=300) for i in injected[:8]))
         if extra:
             spec["claude_md_inject"] = ((spec.get("claude_md_inject") or "") + extra).strip()
             spec["prompt"] = (spec.get("prompt") or "") + extra

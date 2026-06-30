@@ -45,6 +45,7 @@ from memory import experience
 from memory import experience_content
 from memory import exp_index
 from memory import retrieval_rank
+from memory.memory_sanitizer import sanitizeInjectedField
 
 LOG = config.getLogger("sie.retrieval")
 
@@ -244,7 +245,7 @@ def render_lessons(neighbors: list[dict[str, Any]],
     header = "## RELEVANT PAST LESSONS (from similar subtasks that PASSED)\n"
     lines: list[str] = []
     for n in neighbors:
-        title = (n.get("title") or "untitled").strip()
+        title = sanitizeInjectedField((n.get("title") or "untitled"), max_chars=120)
         effort = n.get("effort") or "default"
         attempts = n.get("attempt_count")
         bits = [f"- \"{title}\": effort={effort}"]
