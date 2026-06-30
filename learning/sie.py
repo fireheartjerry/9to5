@@ -18,7 +18,7 @@ run, and two overlapping runs can't double-process. See the spec (meta-loop / X1
 EXPORTS:
   run_maintenance(*, reason: str='post-run', force: bool=False, throttle_seconds: float=DEFAULT_THROTTLE_SECONDS, db_path: Optional[Path]=None) -> dict[str, Any]  -- Run the throttled learning passes once (idempotent, best-effort, locked).
   run_maintenance_async(**kwargs)  -- Start maintenance on a daemon thread and RETURN the thread so the caller can join it wi…
-DEPENDS-ON: config, learning.adapter_promotion, learning.bootstrap, learning.curriculum, learning.eval_harness, learning.eval_runner, learning.finetune, learning.knowledge_graph, learning.lessons, learning.meta_opt, learning.policy, learning.postmortem, learning.promotion, learning.release, learning.selfplay, learning.solution_cache, memory.experience, memory.retrieval, notifications.work_launcher
+DEPENDS-ON: config, learning.adapter_promotion, learning.bootstrap, learning.curriculum, learning.eval_runner, learning.evolution, learning.finetune, learning.meta_opt, learning.promotion, learning.release, learning.selfplay, learning.sie_steps, memory.experience, notifications.work_launcher
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_sie.py
 """

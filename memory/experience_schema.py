@@ -6,7 +6,7 @@ EXPORTS:
   init(db_path: Optional[Path]=None) -> None  -- Create the database + schema if absent (idempotent).
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_experience_schema_migration.py
 """
 from __future__ import annotations
 

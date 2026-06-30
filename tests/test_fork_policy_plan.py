@@ -25,3 +25,9 @@ def test_plan_caps_at_angle_bank_but_stays_distinct():
     assert len(plan.branch_seeds) == 3
     fingerprints = {(s.effort_level, s.angle_hint) for s in plan.branch_seeds}
     assert len(fingerprints) == 3
+
+
+def test_profile_shapes_fork_angles():
+    plan = fp.forkPlan({"subtask_id": "st-001"}, n=3, work_profile="auditor")
+    assert any("test-first" in s.angle_hint for s in plan.branch_seeds)
+    assert any("conservative" in s.angle_hint for s in plan.branch_seeds)

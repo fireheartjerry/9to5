@@ -82,6 +82,8 @@ class TaskState:
                 "self_state": None,      # human_nature interior (lazily initialised by the layer)
                 "autonomy": None,        # human_nature earned-autonomy ceilings per domain
                 "charter_version": None, # ratified Cast-charter version in effect
+                "work_profile": None,
+                "run_intent_policy": None,
             },
             "plan": {"architect_design_doc": None, "subtasks": []},
             "adversary_reviews": [],

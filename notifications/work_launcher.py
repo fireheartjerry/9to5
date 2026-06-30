@@ -18,7 +18,7 @@ EXPORTS:
   spawnResume(task_id: str) -> int
   launchOrError(req: WorkRequest) -> str  -- Validate -> block-if-active -> spawn -> confirm
   resumeOrError(task_id: str) -> str  -- Resume an existing task by id (block if a run is active)
-DEPENDS-ON: config, notifications.commands, platform_core.ops.external_project, platform_core.runtime.control, state.task
+DEPENDS-ON: config, notifications.commands, platform_core.ops.external_project, platform_core.orchestration, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_work_launcher.py
 """
@@ -37,6 +37,7 @@ from typing import Optional
 
 import config
 from notifications import commands
+from platform_core.orchestration import work_profile
 from state.task import TaskState
 
 LOG = config.getLogger("work_launcher")
@@ -81,6 +82,7 @@ class WorkRequest:
     repo_ref: Optional[str] = None
     no_pr: bool = False
     night_mode: bool = False
+    work_profile: Optional[str] = None
 
 
 def parseHours(raw) -> float:
@@ -118,6 +120,11 @@ def validate(req: WorkRequest) -> list[str]:
         errs.append("repo_ref requires repo_url.")
     if req.work_dir and not Path(req.work_dir).is_dir():
         errs.append(f"work_dir does not exist or is not a directory: {req.work_dir}")
+    if req.work_profile:
+        try:
+            work_profile.resolve(req.work_profile)
+        except ValueError as e:
+            errs.append(str(e))
     return errs
 
 
@@ -169,6 +176,8 @@ def buildArgv(req: WorkRequest) -> list[str]:
         argv.append("--no-pr")
     if req.night_mode:
         argv.append("--night-mode")
+    if req.work_profile:
+        argv += ["--work-profile", req.work_profile]
     if req.work_dir:
         argv += ["--work-dir", str(Path(req.work_dir).resolve())]
     if req.repo_url:
@@ -342,6 +351,11 @@ def launchOrError(req: WorkRequest) -> str:
         msg += "\n\n" + "\n".join(f"⚠️ {w}" for w in warnings)
     if req.work_dir and Path(req.work_dir).resolve() != config.PROJECT_ROOT.resolve():
         msg += f"\n\nWorking dir: `{str(Path(req.work_dir).resolve())[:300]}`"
+    try:
+        prof = work_profile.resolve(req.work_profile)
+        msg += f"\n\nProfile: `{prof.preset}` - {prof.summary()}"
+    except Exception:  # noqa: BLE001
+        pass
     return msg
 
 
