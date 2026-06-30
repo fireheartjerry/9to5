@@ -5,9 +5,10 @@ EXPORTS:
   record_subtask(run_id: str, st: dict[str, Any], db_path: Optional[Path]=None) -> bool  -- Upsert a subtask row keyed by ``(run_id, st_id)``
   sync_subtask(state_data: dict[str, Any], st: dict[str, Any], db_path: Optional[Path]=None) -> bool  -- Best-effort upsert of one subtask, enriching it with position + the latest
   set_subtask_embedding(run_id: str, st_id: str, blob: bytes, db_path: Optional[Path]=None) -> bool  -- Attach an embedding BLOB to an existing subtask row (Layer 1 retrieval)
+  set_subtask_importance(run_id: str, st_id: str, importance: float, db_path: Optional[Path]=None) -> bool  -- Denormalize write-time salience onto the subtask row (so rerank has it even for
   embedded_subtasks(only_passed: bool=True, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Subtask rows that carry an embedding
   fetch_subtasks(run_id: Optional[str]=None, *, limit: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]
-DEPENDS-ON: config, memory.experience_schema
+DEPENDS-ON: config, memory.experience_content, memory.experience_schema
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -133,6 +134,18 @@ def sync_subtask(state_data: dict[str, Any], st: dict[str, Any],
             adversary_stub = 1 if rv.get("stub") else 0
     enriched["_adversary_verdict"] = verdict
     enriched["_adversary_stub"] = adversary_stub
+    meta = state_data.get("meta", {}) or {}
+    prof = meta.get("work_profile") or {}
+    if isinstance(prof, dict):
+        axes = prof.get("axes") or {}
+        dominant = max(axes, key=lambda k: axes.get(k, 0)) if axes else None
+        enriched["signature_tags"] = " ".join(
+            str(x) for x in (enriched.get("signature_tags"), f"profile:{prof.get('preset')}",
+                             f"profile_axis:{dominant}") if x)
+    sess = dict(enriched.get("session") or {})
+    sess.setdefault("work_profile", meta.get("work_profile"))
+    sess.setdefault("run_intent_policy", meta.get("run_intent_policy"))
+    enriched["session"] = sess
     ok = record_subtask(state_data.get("task_id"), enriched, db_path=db_path)
     # Layer-1 widen: persist the REAL solution content + denormalize importance. Best-effort:
     # a content-store failure must NEVER change the subtask-record result.

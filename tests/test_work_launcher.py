@@ -52,6 +52,10 @@ class TestValidate(unittest.TestCase):
         errs = wl.validate(wl.WorkRequest(goal="x", work_dir="C:/nope/zzz/nonexistent"))
         self.assertTrue(any("work" in e.lower() for e in errs))
 
+    def test_bad_work_profile(self):
+        errs = wl.validate(wl.WorkRequest(goal="x", work_profile="nope=99"))
+        self.assertTrue(any("axis" in e.lower() for e in errs))
+
 
 class TestBuildArgv(unittest.TestCase):
     def test_core(self):
@@ -73,6 +77,11 @@ class TestBuildArgv(unittest.TestCase):
 
     def test_workdir_only_when_set(self):
         self.assertNotIn("--work-dir", wl.buildArgv(wl.WorkRequest(goal="x")))
+
+    def test_work_profile_passed_to_cli(self):
+        argv = wl.buildArgv(wl.WorkRequest(goal="x", work_profile="auditor"))
+        self.assertIn("--work-profile", argv)
+        self.assertIn("auditor", argv)
 
 
 class TestActiveRun(unittest.TestCase):
@@ -165,6 +174,14 @@ class TestLaunchGlue(unittest.TestCase):
             out = wl.launchOrError(wl.WorkRequest(goal="x"))
         self.assertIn("Launched", out)
         self.assertIn("abcdef12", out)
+
+    def test_launch_summary_includes_profile(self):
+        with mock.patch.object(wl, "activeRun", return_value=None), \
+                mock.patch.object(wl, "spawn", return_value=123), \
+                mock.patch.object(wl, "newestTaskSince", return_value="abcdef12"):
+            out = wl.launchOrError(wl.WorkRequest(goal="x", work_profile="auditor"))
+        self.assertIn("Profile:", out)
+        self.assertIn("auditor", out)
 
     def test_resume_no_task(self):
         with mock.patch.object(wl, "taskExists", return_value=False):

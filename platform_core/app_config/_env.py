@@ -10,7 +10,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_config_robust_env.py
+RUN/TEST: python -m pytest tests/test_completion_envelope.py tests/test_config_robust_env.py tests/test_execute_mixin_env.py tests/test_execution_environment.py tests/test_executor_wrap_env.py
 """
 from __future__ import annotations
 

@@ -20,15 +20,15 @@ EXPORTS:
   unpack(blob: bytes) -> list[float]  -- Inverse of ``pack``
   cosine(a: list[float], b: list[float]) -> float  -- Cosine similarity in [-1, 1]
   signature_text(goal: str, title: str='') -> str  -- The text we embed for a subtask/goal
-  embed_and_store(run_id: str, st_id: str, goal: str, title: str='', db_path: Optional[Path]=None) -> bool  -- Compute + persist a subtask's embedding (called once the subtask has a signature).
+  embed_and_store(run_id: str, st_id: str, goal: str, title: str='', db_path: Optional[Path]=None) -> bool  -- Compute + persist a subtask's embedding AND seed the ANN index (derived cache
   top_k_similar(query_vec: list[float], k: int=5, *, only_passed: bool=True, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- The ``k`` most-similar embedded subtasks to ``query_vec``, each annotated with a
   retrieve(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Embed the (goal, title) query and return the top-K similar past successes.
-  retrieve_content(goal, title='', *, k=None, db_path=None) -> list[dict]  -- Top-K similar successes joined to their exp_content solution rows.
+  retrieve_content(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Embed the query, look up the ANN index (fallback: O(n) scan), and JOIN each hit to
   render_lessons(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str  -- Render neighbors into a compact lessons block, truncated to the token budget.
-  render_solutions(neighbors, max_tokens=None) -> str  -- Render ACTUAL sanitized solution content, budgeted by RETRIEVAL_CONTENT_MAX_TOKENS.
+  render_solutions(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str  -- Render neighbors into a compact block of ACTUAL solution content (sanitized),
   backfill_embeddings(db_path: Optional[Path]=None) -> dict[str, int]  -- Embed every verify-passing subtask that lacks an embedding (run off the hot path,
   lessons_block(goal: str, title: str='', *, db_path: Optional[Path]=None) -> str  -- Orchestrator-facing one-call helper: retrieve + render, fully best-effort.
-DEPENDS-ON: config, memory.experience
+DEPENDS-ON: config, memory.exp_index, memory.experience, memory.experience_content, memory.memory_sanitizer, memory.retrieval_rank
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_retrieval.py
 """

@@ -70,3 +70,9 @@ def test_rubric_llm_failure_does_not_block():
     branches = [FakeBranch("b0", fs.VERIFIED)]
     scores = jp.scoreBranches(jp.factsGate(branches), goal="g", score_with_brain=boom)
     assert jp.pickWinner(scores) == "b0"   # rubric_mean=0, still wins on facts
+
+
+def test_profile_weights_raise_evidence_fact_weight():
+    base = jp.weightsForProfile("balanced")
+    evidence = jp.weightsForProfile("test-review")
+    assert evidence.fact > base.fact

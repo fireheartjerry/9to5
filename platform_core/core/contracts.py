@@ -34,6 +34,9 @@ EXPORTS:
   VerificationResult  -- ``agents/verifier.py`` runVerification() output -- the proof gate's verdict
   ControlCommand  -- A parsed human control command (``notifications/commands.py`` Command): name + arg.
   AgentDecision  -- Confidence/risk metadata an intelligence may attach so the orchestrator can escalate.
+  BlackboardEntry  -- One append-only coordination artifact on the run blackboard.
+  WorkerMessage  -- The structured result a WorkerAgent.run() returns and posts to the board.
+  DebateVerdict  -- Advisory outcome of a structured debate
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_contracts.py

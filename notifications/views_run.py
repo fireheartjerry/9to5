@@ -5,7 +5,8 @@ EXPORTS:
   Paginator  -- Prev/Next over pre-built discord.Embed pages, bound to the invoking user.
   WorkSetupView  -- Dropdowns + Launch/Cancel for the /work guided setup (used after WorkModal).
   WorkModal
-DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.commands, notifications.work_launcher
+  WorkProfileModal
+DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.commands, notifications.work_launcher, platform_core.orchestration
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -15,6 +16,7 @@ import discord
 
 import config
 from notifications import audit, commands, work_launcher
+from platform_core.orchestration import work_profile
 
 MAX_REPLY = config.DISCORD_MAX_CONTENT - 100
 
@@ -60,6 +62,10 @@ class WorkSetupView(discord.ui.View):
         self.req = work_launcher.WorkRequest(goal=goal, hours=hours, work_dir=work_dir or None,
                                              repo_url=repo_url or None, repo_ref=repo_ref or None)
 
+    def _summary(self) -> str:
+        prof = work_profile.resolve(self.req.work_profile)
+        return f"Set options, then **Launch**:\nProfile: `{prof.preset}` - {prof.summary()}"
+
     async def interaction_check(self, interaction: "discord.Interaction") -> bool:
         if not commands.isAuthorized(interaction.user.id):
             await interaction.response.send_message("Not authorized.", ephemeral=True)
@@ -89,6 +95,31 @@ class WorkSetupView(discord.ui.View):
     async def _night_mode(self, interaction, select):  # noqa: ANN001
         self.req.night_mode = (select.values[0] == "on")
         await interaction.response.defer()
+
+    @discord.ui.select(placeholder="Work profile preset", options=[
+        discord.SelectOption(
+            label=name,
+            value=name,
+            description=work_profile.PRESET_DESCRIPTIONS.get(name, "")[:100],
+            default=(name == work_profile.DEFAULT_PRESET),
+        )
+        for name in work_profile.PRESETS
+    ])
+    async def _profile_preset(self, interaction, select):  # noqa: ANN001
+        self.req.work_profile = select.values[0]
+        await interaction.response.edit_message(content=self._summary(), view=self)
+
+    @discord.ui.button(label="Profile", style=discord.ButtonStyle.primary)
+    async def _profile(self, interaction, button):  # noqa: ANN001
+        await interaction.response.send_modal(WorkProfileModal(self))
+
+    @discord.ui.button(label="Details", style=discord.ButtonStyle.secondary)
+    async def _details(self, interaction, button):  # noqa: ANN001
+        embed = discord.Embed(title="Nightclaw Work Profile",
+                              description="Five 0-100 axes shape how the whole run behaves.")
+        for name, value in work_profile.profile_help_embed_fields():
+            embed.add_field(name=name, value=value[:1024], inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @discord.ui.button(label="Launch", style=discord.ButtonStyle.success)
     async def _launch(self, interaction, button):  # noqa: ANN001
@@ -142,4 +173,34 @@ class WorkModal(discord.ui.Modal, title="Start a 9TO5 run"):
         view = WorkSetupView(interaction.user.id, str(self.goal),
                              work_launcher.parseHours(str(self.hours)), str(self.work_dir) or None,
                              str(self.repo_url) or None, str(self.repo_ref) or None)
-        await interaction.response.send_message("Set options, then **Launch**:", view=view, ephemeral=True)
+        await interaction.response.send_message(view._summary(), view=view, ephemeral=True)
+
+
+class WorkProfileModal(discord.ui.Modal, title="Nightclaw work profile"):
+    stability = discord.ui.TextInput(label="Stability (0-100)", default="45", required=False,
+                                     max_length=3, placeholder="Bugs, safety, regressions")
+    evidence = discord.ui.TextInput(label="Evidence (0-100)", default="45", required=False,
+                                    max_length=3, placeholder="Tests, verification, proof")
+    architecture = discord.ui.TextInput(label="Architecture (0-100)", default="45", required=False,
+                                        max_length=3, placeholder="Design, boundaries, maintainability")
+    momentum = discord.ui.TextInput(label="Momentum (0-100)", default="55", required=False,
+                                    max_length=3, placeholder="Shipping speed, concrete delivery")
+    discovery = discord.ui.TextInput(label="Discovery (0-100)", default="35", required=False,
+                                     max_length=3, placeholder="Novelty, exploration, upside")
+
+    def __init__(self, parent: WorkSetupView):
+        super().__init__()
+        self.parent_view = parent
+        prof = work_profile.resolve(parent.req.work_profile)
+        for axis in work_profile.AXES:
+            getattr(self, axis).default = str(prof.axes[axis])
+
+    async def on_submit(self, interaction: "discord.Interaction") -> None:
+        raw = ",".join(f"{axis}={getattr(self, axis).value}" for axis in work_profile.AXES)
+        try:
+            work_profile.resolve(raw)
+        except ValueError as e:
+            return await interaction.response.send_message(f"Invalid profile: {e}", ephemeral=True)
+        self.parent_view.req.work_profile = raw
+        await interaction.response.edit_message(content=self.parent_view._summary(),
+                                                view=self.parent_view)

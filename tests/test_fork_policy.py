@@ -39,3 +39,8 @@ def test_single_deliverable_excluded():
 
 def test_self_referential_excluded():
     assert fp.shouldFork({"fork_eligible": True}, **_kwargs(is_self_referential=True)) is False
+
+
+def test_discovery_profile_can_opt_in_design_fork():
+    st = {"title": "Explore transformative architecture", "description": "ambiguous design options"}
+    assert fp.shouldFork(st, **_kwargs(work_profile="inventor")) is True

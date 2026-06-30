@@ -16,7 +16,7 @@ EXPORTS:
   available() -> dict[str, Any]  -- Everything the executor can reach right now, grouped by surface kind.
   catalog_block() -> str  -- A compact, injectable catalog + directive so the brain composes across surfaces.
   surfaces_used(spec: dict[str, Any]) -> list[str]  -- Which surfaces a spec actually invokes -> tags stored for SIE learning.
-DEPENDS-ON: config, knowledge
+DEPENDS-ON: config, knowledge, platform_core.orchestration
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_surfaces.py
 """
@@ -115,6 +115,24 @@ def surfaces_used(spec: dict[str, Any]) -> list[str]:
     backend = spec.get("execution_backend")
     if backend:
         used.add(f"backend:{str(backend).lower()}")
+    profile = spec.get("work_profile")
+    if profile:
+        try:
+            from platform_core.orchestration import work_profile as _wp
+            used.update(_wp.surface_tags(profile))
+        except Exception:  # noqa: BLE001
+            used.add("profile:unparsed")
+    policy = spec.get("run_intent_policy")
+    if isinstance(policy, dict):
+        posture = policy.get("planner_posture")
+        depth = policy.get("discovery_depth")
+        env = policy.get("execution_environment_preference")
+        if posture:
+            used.add(f"profile_posture:{str(posture).lower()}")
+        if depth:
+            used.add(f"profile_discovery:{str(depth).lower()}")
+        if env:
+            used.add(f"profile_env:{str(env).lower()}")
     if not used:
         used.add("terminal")
     return sorted(used)

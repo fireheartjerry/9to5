@@ -67,6 +67,9 @@ def _parseArgs(argv: list[str]) -> "argparse.Namespace":
     parser.add_argument("--task-id", help="Alias for --resume: restore + continue a task by id.")
     parser.add_argument("--night-mode", action="store_true",
                         help="Zero human interaction: watch mode, no adversary PR hold, auto-resume pauses.")
+    parser.add_argument("--work-profile",
+                        help=("Nightclaw work profile preset or compact axes, e.g. "
+                              "auditor or stability=80,evidence=90,momentum=20."))
     parser.add_argument("--health", action="store_true", help="Run environment health checks and exit.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Simulate a full run with no external services (offline; for testing).")

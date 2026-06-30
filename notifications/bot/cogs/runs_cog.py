@@ -5,7 +5,7 @@ Thin shells over work_launcher + branding (see notifications.slash helpers).
 EXPORTS:
   RunsCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.branding, notifications.commands, notifications.discord_bot, notifications.slash, notifications.views, notifications.work_launcher, orchestrator.Orchestrator, state.task
+DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.branding, notifications.commands, notifications.discord_bot, notifications.slash, notifications.views, notifications.work_launcher, orchestrator.Orchestrator, platform_core.orchestration, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -20,6 +20,7 @@ import config
 from notifications import audit, branding, work_launcher
 from notifications import commands as spine
 from notifications import slash
+from platform_core.orchestration import work_profile as work_profile_mod
 from state.task import TaskState
 
 
@@ -103,15 +104,23 @@ class RunsCog(dpy_commands.Cog):
                            parallel="Concurrent subtasks", work_dir="Working directory",
                            repo_url="Clone this repo into a managed workspace",
                            repo_ref="Branch, tag, or ref to check out with repo_url",
-                           night_mode="Zero human interaction — no pings, no holds, auto-resume pauses")
+                           night_mode="Zero human interaction — no pings, no holds, auto-resume pauses",
+                           profile_preset="Nightclaw work-profile preset",
+                           work_profile="Custom axes, e.g. stability=80,evidence=90")
     @app_commands.choices(mode=[app_commands.Choice(name="watch", value="watch"),
-                                app_commands.Choice(name="gated", value="gated")])
+                                app_commands.Choice(name="gated", value="gated")],
+                          profile_preset=[
+                              app_commands.Choice(name=name, value=name)
+                              for name in work_profile_mod.PRESETS
+                          ])
     @slash.COOLDOWN
     async def work(self, interaction, goal: "str | None" = None, hours: "float | None" = None,
                    mode: "app_commands.Choice[str] | None" = None, parallel: "int | None" = None,
                    work_dir: "str | None" = None, repo_url: "str | None" = None,
                    repo_ref: "str | None" = None,
-                   night_mode: "bool | None" = None) -> None:  # noqa: ANN001
+                   night_mode: "bool | None" = None,
+                   profile_preset: "app_commands.Choice[str] | None" = None,
+                   work_profile: "str | None" = None) -> None:  # noqa: ANN001
         if not slash._ownerOk(interaction):
             return await interaction.response.send_message("Not authorized to launch runs.", ephemeral=True)
         if not goal:
@@ -134,7 +143,8 @@ class RunsCog(dpy_commands.Cog):
             goal=goal, hours=work_launcher.parseHours(hours),
             mode=(mode.value if mode else "watch"), parallel=parallel or 1,
             work_dir=work_dir or None, repo_url=repo_url or None, repo_ref=repo_ref or None,
-            night_mode=bool(night_mode))
+            night_mode=bool(night_mode),
+            work_profile=(work_profile or (profile_preset.value if profile_preset else None)))
         audit.record(interaction.user.id, "work", None, "slash")
         reply = await asyncio.to_thread(work_launcher.launchOrError, req)
         await interaction.followup.send(reply[:slash.MAX_REPLY], ephemeral=False)

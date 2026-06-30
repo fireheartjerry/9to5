@@ -33,3 +33,8 @@ def test_classify_research_subtask_to_researcher():
 def test_brain_hint_overrides_keywords():
     st = {"title": "do the thing", "description": ""}
     assert classifyRole(st, hint="tester").name == "tester"
+
+
+def test_profile_hint_routes_discovery_to_researcher():
+    st = {"title": "Discover transformative queue options", "description": ""}
+    assert classifyRole(st, work_profile="inventor").name == "researcher"

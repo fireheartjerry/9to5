@@ -87,6 +87,8 @@ def sync_run(state_data: dict[str, Any], db_path: Optional[Path] = None) -> bool
         "universe": meta.get("universe"),
         "control_mode": meta.get("control_mode"),
         "status": meta.get("status"),
+        "fitness": {"work_profile": meta.get("work_profile"),
+                    "run_intent_policy": meta.get("run_intent_policy")},
         "started_at": meta.get("started_at"),
         "ended_at": _nowIso() if meta.get("status") in _TERMINAL else None,
     }, db_path=db_path)

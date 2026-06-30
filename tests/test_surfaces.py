@@ -53,6 +53,21 @@ class TestSurfacesUsed(unittest.TestCase):
     def test_defaults_to_terminal(self):
         self.assertEqual(surfaces.surfaces_used({"prompt": "run pytest"}), ["terminal"])
 
+    def test_profile_metadata_becomes_learning_tags(self):
+        used = surfaces.surfaces_used({
+            "prompt": "run pytest",
+            "work_profile": {"preset": "auditor"},
+            "run_intent_policy": {
+                "planner_posture": "audit",
+                "discovery_depth": "digest",
+                "execution_environment_preference": "isolated",
+            },
+        })
+        self.assertIn("profile:auditor", used)
+        self.assertIn("profile_axis:stability", used)
+        self.assertIn("profile_posture:audit", used)
+        self.assertIn("profile_env:isolated", used)
+
 
 if __name__ == "__main__":
     unittest.main()
