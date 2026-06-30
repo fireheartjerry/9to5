@@ -15,7 +15,8 @@ from society.inbox import makeEntry, inboxFilter
 from society.roles import ROLES, RoleSpec, classifyRole
 from society.worker import WorkerAgent
 from society.debate import runDebate, selectNextSpeaker
+from society.coordinator import Coordinator
 
 __all__ = ["Blackboard", "BlackboardEntry", "makeEntry", "inboxFilter",
            "ROLES", "RoleSpec", "classifyRole", "WorkerAgent",
-           "runDebate", "selectNextSpeaker"]
+           "runDebate", "selectNextSpeaker", "Coordinator"]
