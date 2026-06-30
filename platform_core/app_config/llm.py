@@ -112,6 +112,15 @@ EXPERIENCE_POOL: bool = _envBool("EXPERIENCE_POOL", True)
 # --- Self-Improvement Engine (SIE) ---------------------------------------
 # Layer 0: the Experience Ledger -- a best-effort SQLite store of every run+subtask.
 EXPERIENCE_LEDGER_ENABLED: bool = _envBool("EXPERIENCE_LEDGER_ENABLED", True)
+# --- Epic 1: durable execution (trajectory / journal / resume / worktree) ---
+# Additive observability defaults ON (no behavior change); the two behavior-changing
+# units ship DARK (OFF) until soaked. All four units fail-open to today's behavior.
+TRAJECTORY_ENABLED: bool = _envBool("TRAJECTORY_ENABLED", True)
+COST_BUDGET_ENABLED: bool = _envBool("COST_BUDGET_ENABLED", False)
+COST_BUDGET_CEILING_USD: float = _envFloat("COST_BUDGET_CEILING_USD", 0.0)  # 0 = no ceiling
+STEP_JOURNAL_ENABLED: bool = _envBool("STEP_JOURNAL_ENABLED", True)
+STEP_RESUME_ENABLED: bool = _envBool("STEP_RESUME_ENABLED", False)
+WORKTREE_ISOLATION_ENABLED: bool = _envBool("WORKTREE_ISOLATION_ENABLED", False)
 # Layer 1 retrieval: local embedding model + injection budget.
 EMBED_MODEL: str = os.getenv("EMBED_MODEL", "nomic-embed-text")
 RETRIEVAL_K: int = _envInt("RETRIEVAL_K", 5)
