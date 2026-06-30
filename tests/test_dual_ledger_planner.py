@@ -24,3 +24,32 @@ def test_author_task_ledger_two_calls():
 def test_author_task_ledger_none_on_bad_json():
     chat = _Chat(["not json", "not json", "not json", "not json", "not json", "not json"])
     assert dlp.authorTaskLedger(chat, "build X", "arch") is None
+
+
+import tempfile
+from pathlib import Path
+from unittest import mock
+
+import config
+from platform_core.orchestration import task_ledger as tl
+from state.task import TaskState
+
+
+def test_derive_dag_sequential_and_independent():
+    led = tl.TaskLedger(plan=["build module", "[independent] write docs", "wire it up"])
+    subs = dlp.deriveSubtaskDag(led, "goal")
+    assert len(subs) == 3
+    assert subs[0]["depends_on"] == []            # first bullet, no dep
+    assert subs[1]["depends_on"] == []            # [independent] breaks the chain
+    assert subs[2]["depends_on"] == [1]           # sequential: depends on the prior index
+    assert subs[1]["title"] == "write docs"       # marker stripped
+
+
+def test_materialize_resolves_index_deps_to_ids():
+    with mock.patch.object(config, "STATE_DIR", Path(tempfile.mkdtemp())):
+        st = TaskState.create("g", 1.0)
+        led = tl.TaskLedger(plan=["a", "b"])  # b depends on a (index 0)
+        subs = dlp.deriveSubtaskDag(led, "g")
+        created = dlp.materializeDag(st, subs)
+        assert created[1]["depends_on"] == [created[0]["subtask_id"]]
+        assert st.getSubtask(created[1]["subtask_id"])["depends_on"] == [created[0]["subtask_id"]]

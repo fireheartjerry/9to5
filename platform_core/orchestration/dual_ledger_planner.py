@@ -55,3 +55,38 @@ def authorTaskLedger(ollama_chat: Callable, goal: str, architect_doc: str) -> "O
         guess_facts=list(facts.get("guess_facts") or []),
         plan=[str(b) for b in plan.get("plan") or []],
         revision=0)
+
+
+def deriveSubtaskDag(ledger: "tl.TaskLedger", goal: str) -> list:
+    """Turn the bullet plan into subtask dicts with INDEX-based depends_on (metagpt dependent_task_ids
+    mapped onto positions). Sequential bullets depend on the prior index; an '[independent]' prefix
+    breaks the chain. Index deps are resolved to real st-ids by materializeDag."""
+    subs: list[dict] = []
+    for i, bullet in enumerate(ledger.plan or []):
+        text = str(bullet).strip()
+        independent = text.lower().startswith(_INDEP)
+        if independent:
+            text = text[len(_INDEP):].strip()
+        deps = [] if (independent or i == 0) else [i - 1]
+        subs.append({
+            "title": text[:80] or f"step {i + 1}",
+            "description": text,
+            "layer": 3,
+            "effort_level": "high",
+            "verify": None,
+            "depends_on": deps,   # INDEX form; materializeDag rewrites to st-ids
+        })
+    return subs
+
+
+def materializeDag(state, subs: list) -> list:
+    """Create the subtasks in order via state.addSubtask, resolving each index dep to the real st-id
+    of the already-created earlier subtask. Returns the created subtask dicts."""
+    created: list[dict] = []
+    for s in subs:
+        dep_ids = [created[idx]["subtask_id"] for idx in (s.get("depends_on") or [])
+                   if isinstance(idx, int) and 0 <= idx < len(created)]
+        st = state.addSubtask(s.get("title", "step"), s.get("description", ""),
+                              layer=s.get("layer", 3), depends_on=dep_ids, verify=s.get("verify"))
+        created.append(st)
+    return created
