@@ -130,6 +130,13 @@ RETRIEVAL_MIN_SCORE: float = _envFloat("RETRIEVAL_MIN_SCORE", 0.35)
 # Layer-1 content injection: budget for the REAL solution-content block (separate from
 # the metadata RETRIEVAL_MAX_TOKENS so content can be richer without starving lessons).
 RETRIEVAL_CONTENT_MAX_TOKENS: int = _envInt("RETRIEVAL_CONTENT_MAX_TOKENS", 700)
+# Layer-1 ANN index (drop-in over the O(n) cosine scan; fail-open to the scan).
+ANN_INDEX_ENABLED: bool = _envBool("ANN_INDEX_ENABLED", False)
+ANN_INDEX_BACKEND: str = os.getenv("ANN_INDEX_BACKEND", "chroma")
+ANN_INDEX_DIR: str = os.getenv("ANN_INDEX_DIR", "state/exp_index")
+# Pin the embedding dim into the collection name so a swapped embedder can't silently mix
+# vector spaces (nomic-embed-text is 768-dim). See spec 8 "Embedding dim / mixed spaces".
+ANN_EMBED_DIM: int = _envInt("ANN_EMBED_DIM", 768)
 # Eval harness: golden suite + fitness scalar weights.
 EVAL_FITNESS_WEIGHTS: dict[str, float] = {
     "first_pass_rate": 0.5,
