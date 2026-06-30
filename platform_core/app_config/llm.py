@@ -247,6 +247,17 @@ MAX_SUBTASKS: int = 8                # hard cap on plan size (anti-runaway / ant
 VERIFY_DEFAULT_EXPECT: str = "exit_zero"
 VERIFY_TIMEOUT_SECONDS: int = 120
 
+# --- Epic 2: Trustworthy 7B loop (staged defaults; each layer independently flaggable) ---
+# Dual-ledger planner ships DARK first (A/B vs the current planner on the golden eval suite).
+DUAL_LEDGER_PLANNER_ENABLED: bool = _envBool("DUAL_LEDGER_PLANNER_ENABLED", False)
+# Execution-grounded independent verifier + Evidence Receipt: additive, only DOWNGRADES, on by default.
+INDEPENDENT_VERIFY_ENABLED: bool = _envBool("INDEPENDENT_VERIFY_ENABLED", True)  # code-change subtasks only
+EVIDENCE_RECEIPT_ENABLED: bool = _envBool("EVIDENCE_RECEIPT_ENABLED", True)
+# JSON self-correction: how many times to re-prompt the brain with exact field errors before giving up.
+BRAIN_JSON_RETRY_MAX: int = _envInt("BRAIN_JSON_RETRY_MAX", 2)
+# Dual-ledger stall counter: root-cause replan fires at/above this many consecutive stalls.
+STALL_THRESHOLD: int = _envInt("STALL_THRESHOLD", 2)
+
 # --- Run control ---------------------------------------------------------
 CONTROL_MODE_DEFAULT: str = "watch"   # "watch" (autonomous + abort) | "gated" (approval gates)
 # Plans AUTO-APPROVE through Ollama -- a human never approves plans. In gated mode the plan gate
