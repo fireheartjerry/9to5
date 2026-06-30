@@ -90,3 +90,25 @@ def materializeDag(state, subs: list) -> list:
                               layer=s.get("layer", 3), depends_on=dep_ids, verify=s.get("verify"))
         created.append(st)
     return created
+
+
+def progressLedgerStep(ollama_chat: Callable, goal: str, recent: str) -> Optional[dict]:
+    """One tiny per-step Progress Ledger call (autogen ORCHESTRATOR_PROGRESS_LEDGER_PROMPT, minus
+    next_speaker -- 9to5 is a star topology). Returns the validated 4-key dict, or None."""
+    user = f"GOAL:\n{goal}\n\nMOST RECENT OUTCOME:\n{(recent or '')[:2000]}"
+    _obj = lambda v: isinstance(v, dict) and "answer" in v
+    return chatJsonValidated(
+        ollama_chat, tl.PROGRESS_LEDGER_PROMPT, user,
+        required_keys=["is_request_satisfied", "is_in_loop",
+                       "is_progress_being_made", "instruction"],
+        validators={"is_request_satisfied": _obj, "is_in_loop": _obj,
+                    "is_progress_being_made": _obj, "instruction": _obj})
+
+
+def updateStallCount(progress: dict, current: int) -> int:
+    """autogen n_stalls: +1 when in a loop OR no progress; -1 (floored at 0) when progressing."""
+    in_loop = bool(((progress or {}).get("is_in_loop") or {}).get("answer"))
+    progressing = bool(((progress or {}).get("is_progress_being_made") or {}).get("answer"))
+    if in_loop or not progressing:
+        return current + 1
+    return max(0, current - 1)

@@ -53,3 +53,28 @@ def test_materialize_resolves_index_deps_to_ids():
         created = dlp.materializeDag(st, subs)
         assert created[1]["depends_on"] == [created[0]["subtask_id"]]
         assert st.getSubtask(created[1]["subtask_id"])["depends_on"] == [created[0]["subtask_id"]]
+
+
+def test_progress_ledger_step_validates_four_keys():
+    chat = _Chat(['{"is_request_satisfied": {"reason": "no", "answer": false}, '
+                  '"is_in_loop": {"reason": "no", "answer": false}, '
+                  '"is_progress_being_made": {"reason": "yes", "answer": true}, '
+                  '"instruction": {"reason": "next", "answer": "do step 2"}}'])
+    out = dlp.progressLedgerStep(chat, "goal", "recent output")
+    assert out["instruction"]["answer"] == "do step 2"
+
+
+def test_update_stall_count_increments_on_loop():
+    prog = {"is_in_loop": {"answer": True}, "is_progress_being_made": {"answer": True}}
+    assert dlp.updateStallCount(prog, 0) == 1
+
+
+def test_update_stall_count_increments_on_no_progress():
+    prog = {"is_in_loop": {"answer": False}, "is_progress_being_made": {"answer": False}}
+    assert dlp.updateStallCount(prog, 1) == 2
+
+
+def test_update_stall_count_decrements_on_progress_floor_zero():
+    prog = {"is_in_loop": {"answer": False}, "is_progress_being_made": {"answer": True}}
+    assert dlp.updateStallCount(prog, 0) == 0   # never below zero
+    assert dlp.updateStallCount(prog, 2) == 1
