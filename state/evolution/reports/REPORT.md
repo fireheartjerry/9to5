@@ -43,3 +43,6 @@
 - [promote] playbook:generalist (id=1) -- challenger 100% vs champion 0%, z=2.00
 - [promote] playbook:g (id=1) -- challenger 100% vs champion 0%, z=2.00
 - [rollback] playbook:g (id=1) -- champion retired -> fall back to prior/constant
+- [promote] playbook:generalist (id=1) -- challenger 100% vs champion 0%, z=2.00
+- [promote] playbook:g (id=1) -- challenger 100% vs champion 0%, z=2.00
+- [rollback] playbook:g (id=1) -- champion retired -> fall back to prior/constant
