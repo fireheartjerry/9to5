@@ -172,6 +172,19 @@ def _buildRunConfig(spec: dict, task_state, subtask, resume_session: Optional[st
     return fresh_cmd, resume_cmd, env, creationflags, model
 
 
+def _applyEnvironment(fresh_cmd: list, resume_cmd: "list | None", work: str,
+                      environment, env_handle) -> "tuple[list, list | None, str]":
+    """Route the built run_cmd(s) INTO a provisioned environment via its wrapLauncher.
+    Default (environment/env_handle None) is a pure identity -> zero behavior change (fabric off)."""
+    if environment is None or env_handle is None:
+        return fresh_cmd, resume_cmd, work
+    wrapped_fresh, new_work = environment.wrapLauncher(fresh_cmd, env_handle)
+    wrapped_resume = None
+    if resume_cmd is not None:
+        wrapped_resume, _ = environment.wrapLauncher(resume_cmd, env_handle)
+    return wrapped_fresh, wrapped_resume, new_work
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -181,7 +194,8 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
               system_prompt: Optional[str] = None, extra: Optional[str] = None,
               timeout: Optional[int] = None, resume_session: Optional[str] = None,
               cancel_check=None, feed=None,
-              parent_trajectory_step_id: Optional[str] = None) -> dict:
+              parent_trajectory_step_id: Optional[str] = None,
+              environment=None, env_handle=None) -> dict:
     """Prepare the environment from the invocation spec, then fire one Claude run.
     Returns result dict with ok/returncode/stdout/stderr/profile/effort/cost_usd/session_id etc.
     ``feed`` (optional SubprocessFeed) taps stdout line-by-line for the live surfaces."""
@@ -212,6 +226,9 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
         LOG.error("%s", e)
         return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
                 "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
+    # Epic 8: route the built run_cmd(s) INTO a provisioned environment (None => identity).
+    fresh_cmd, resume_cmd, work = _applyEnvironment(
+        fresh_cmd, resume_cmd, work, environment, env_handle)
     run_kw = dict(work=work, timeout=timeout, env=env, creationflags=creationflags,
                   spec=spec, effort=effort, flag=flag, profile=profile,
                   playbook_md=playbook_md, claude_md_path=claude_md_path, model=model, feed=feed)
