@@ -179,105 +179,10 @@ def run_maintenance(*, reason: str = "post-run", force: bool = False,
             pass
 
 
-def _pr_consolidate(db_path: Optional[Path] = None) -> dict[str, Any]:
-    """Read pr_outcomes from ledger; emit failure-mode records + lessons for each failed PR.
-
-    A PR is considered unsafe-to-promote when promote_safe != 1 (i.e. 0 or NULL).
-    This gates auto-promotion: no failed CI / rejected review result leaks into the
-    promotion path. Each failure also accretes the taxonomy so the brain can avoid
-    the same class of mistake again.
-    """
-    outcomes = experience.fetch_pr_outcomes(db_path=db_path)
-    gated = 0
-    modes_written = 0
-    lessons_emitted = 0
-
-    for row in outcomes:
-        if row.get("promote_safe") == 1:
-            continue  # safe -> nothing to record
-        gated += 1
-
-        ci_status = (row.get("ci_status") or "unknown").lower()
-        review_state = (row.get("review_state") or "").lower()
-        pr_url = row.get("pr_url") or ""
-        prov: dict[str, Any] = {}
-        try:
-            prov = json.loads(row.get("provenance_json") or "{}")
-        except Exception:  # noqa: BLE001
-            pass
-        fam = row.get("subtask_id") or prov.get("subtask_id") or pr_url or "misc"
-
-        if review_state in ("changes_requested", "dismissed"):
-            cls = "review_rejected"
-            root_cause = f"PR review rejected (state={review_state}) for {pr_url}"
-            mitigation = "address reviewer feedback before re-submitting"
-        else:
-            cls = "ci_failure"
-            root_cause = f"CI failed (ci_status={ci_status}) for {pr_url}"
-            mitigation = "fix failing CI checks before promoting"
-
-        if experience.upsert_failure_mode(fam, cls, root_cause=root_cause,
-                                          mitigation=mitigation, db_path=db_path):
-            modes_written += 1
-
-        lesson_text = (f"PR {pr_url or '(unknown)'} blocked from promotion: {cls}. "
-                       f"CI={ci_status}, review={review_state or 'n/a'}. {mitigation}.")
-        if experience.upsert_lesson("pr_feedback", fam, lesson_text,
-                                    support_count=1, win_rate=0.0, db_path=db_path):
-            lessons_emitted += 1
-
-    LOG.info("pr_consolidate: %d outcomes, %d gated, %d modes, %d lessons",
-             len(outcomes), gated, modes_written, lessons_emitted)
-    return {"outcomes": len(outcomes), "gated": gated,
-            "failure_modes_written": modes_written, "lessons_emitted": lessons_emitted}
-
-
-def _maintenance_steps(db_path: Optional[Path]):
-    """The ordered learning passes. Imported lazily so a heavy/broken submodule can't
-    taint module load, and so future phases (promotion, LoRA) append here cleanly."""
-    def embeddings():
-        from memory import retrieval
-        return retrieval.backfill_embeddings(db_path=db_path)
-
-    def pr_consolidate():
-        return _pr_consolidate(db_path=db_path)
-
-    def consolidate():
-        from learning import lessons
-        return lessons.consolidate(db_path=db_path, write_digest=True)
-
-    def insight_consolidate():
-        from learning import insight
-        return insight.consolidate_insights(db_path=db_path)
-
-    def policy_rebuild():
-        from learning import policy
-        return policy.rebuild_from_ledger(db_path=db_path)
-
-    def evaluate():
-        from learning import eval_harness, eval_runner
-        # Always produces a REAL fitness point: the deterministic verify runner runs in any
-        # environment; a registered brain-in-the-loop runner upgrades it automatically.
-        return eval_harness.run_suite(runner=eval_runner.active_runner(), db_path=db_path)
-
-    def mine():
-        # Failure taxonomy (L) -> solution cache (O) -> knowledge graph (N). Order matters:
-        # the KG reads the failure modes the post-mortem just wrote.
-        from learning import knowledge_graph, postmortem, solution_cache
-        pm = postmortem.run_postmortems(db_path=db_path)
-        sc = solution_cache.build_from_ledger(db_path=db_path)
-        kg = knowledge_graph.build_from_ledger(db_path=db_path)
-        return {"postmortem": pm, "solution_cache": sc, "kg": kg}
-
-    return [
-        ("embeddings", embeddings),
-        ("pr_consolidate", pr_consolidate),
-        ("consolidate", consolidate),
-        ("insight", insight_consolidate),
-        ("policy_rebuild", policy_rebuild),
-        ("mine", mine),
-        ("evaluate", evaluate),
-    ]
+# The daily ladder-step builders (_maintenance_steps + the _pr_consolidate step it wires) live
+# in sie_steps.py to keep this module under the size threshold. Re-exported so sie._pr_consolidate
+# / sie._maintenance_steps (and the tests that call them) keep resolving.
+from learning.sie_steps import _maintenance_steps, _pr_consolidate  # noqa: E402,F401
 
 
 def _weekly_due(state: dict[str, Any]) -> bool:
