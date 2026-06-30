@@ -38,7 +38,7 @@ class RiskTier(str, Enum):
 
 @dataclass(frozen=True)
 class ActionDescriptor:
-    tool_name: str
+    tool_name: str = ""
     command: str = ""
     file_path: str = ""
     estimated_cost_usd: "float | None" = None   # decision-only HINT; None => unknown cost
