@@ -84,3 +84,65 @@ def test_file_tool_without_path_is_unknown():
 
 def test_empty_bash_is_unknown():
     assert classifyActionRisk(A(tool_name="Bash", command="   ")) is RiskTier.UNKNOWN
+
+
+from platform_core.runtime.action_risk import decideAuthorization
+
+
+def D(action, allowance=0.0, spent=0.0, autonomous=False):
+    return decideAuthorization(action, allowance_usd=allowance,
+                               already_spent_usd=spent, autonomous=autonomous)
+
+
+def test_read_auto_authorizes_never_escalates():
+    d = D(A(tool_name="Read"))
+    assert d.auto_authorize and not d.escalate
+    assert d.tier is RiskTier.READ and d.metered_cost_usd is None
+
+
+def test_dry_run_auto_authorizes():
+    d = D(A(command="git diff"))
+    assert d.auto_authorize and not d.escalate and d.tier is RiskTier.DRY_RUN
+
+
+def test_destructive_always_escalates_no_cap_buys_past_it():
+    d = D(A(command="rm -rf /"), allowance=1_000_000.0, spent=0.0)
+    assert d.escalate and not d.auto_authorize
+    assert d.tier is RiskTier.DESTRUCTIVE
+    assert d.reason.startswith("destructive-requires-human")
+
+
+def test_unknown_routes_identically_to_destructive():
+    d = D(A(tool_name="MysteryTool"), allowance=1_000_000.0)
+    assert d.escalate and not d.auto_authorize and d.tier is RiskTier.UNKNOWN
+    assert d.reason.startswith("unknown-requires-human")
+
+
+def test_mutating_within_allowance_auto_meters_cost():
+    d = D(A(tool_name="Edit", file_path="a.py", estimated_cost_usd=0.10),
+          allowance=1.00, spent=0.50)
+    assert d.auto_authorize and not d.escalate
+    assert d.reason == "within-allowance" and d.metered_cost_usd == 0.10
+
+
+def test_mutating_over_allowance_escalates():
+    d = D(A(tool_name="Edit", file_path="a.py", estimated_cost_usd=0.60),
+          allowance=1.00, spent=0.50)
+    assert d.escalate and not d.auto_authorize and d.reason == "over-allowance"
+
+
+def test_paid_unknown_cost_escalates():
+    d = D(A(tool_name="ClaudeRun", estimated_cost_usd=None), allowance=100.0)
+    assert d.escalate and d.reason == "unknown-cost" and d.tier is RiskTier.PAID
+
+
+def test_zero_allowance_means_confirm_everything_for_paid():
+    d = D(A(tool_name="ClaudeRun", estimated_cost_usd=0.01), allowance=0.0)
+    assert d.escalate and d.reason == "over-allowance"
+
+
+def test_autonomous_flag_annotates_escalation_reason():
+    gated = D(A(command="rm -rf /"), autonomous=False)
+    auton = D(A(command="rm -rf /"), autonomous=True)
+    assert auton.reason.endswith("-autonomous")
+    assert not gated.reason.endswith("-autonomous")

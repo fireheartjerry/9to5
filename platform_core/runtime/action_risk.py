@@ -122,3 +122,26 @@ def classifyActionRisk(action: ActionDescriptor) -> RiskTier:
         return RiskTier.READ
     # 6. Anything else -- fail-closed.
     return RiskTier.UNKNOWN
+
+
+def decideAuthorization(action: ActionDescriptor, *, allowance_usd: float,
+                        already_spent_usd: float, autonomous: bool) -> AuthDecision:
+    """Eliza three-way routing (pure): read/dry_run -> auto; destructive/unknown -> ALWAYS
+    escalate (no cap can buy past it); mutating/paid -> auto only while spent+cost <= allowance,
+    else escalate. ``autonomous`` never relaxes routing (the fallback policy lives in the caller);
+    it only annotates the escalation reason for the §2.7 audit trail."""
+    tier = classifyActionRisk(action)
+    suffix = "-autonomous" if autonomous else ""
+    if tier in (RiskTier.READ, RiskTier.DRY_RUN):
+        return AuthDecision(True, False, tier, "non-mutating", None)
+    if tier in (RiskTier.DESTRUCTIVE, RiskTier.UNKNOWN):
+        base = ("destructive-requires-human" if tier is RiskTier.DESTRUCTIVE
+                else "unknown-requires-human")
+        return AuthDecision(False, True, tier, base + suffix, None)
+    # MUTATING or PAID -> bounded autonomy meter.
+    cost = action.estimated_cost_usd
+    if cost is None:
+        return AuthDecision(False, True, tier, "unknown-cost", None)
+    if float(already_spent_usd) + float(cost) <= float(allowance_usd):
+        return AuthDecision(True, False, tier, "within-allowance", float(cost))
+    return AuthDecision(False, True, tier, "over-allowance", float(cost))
