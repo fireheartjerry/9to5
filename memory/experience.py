@@ -188,6 +188,21 @@ __all__ += [
     "fetch_pr_outcomes",
 ]
 
+# --------------------------------------------------------------------------- step journal (Epic 1a)
+from memory.experience_journal import (
+    appendStep,
+    loadSteps,
+    lastStepIdx,
+    markAttemptSuperseded,
+)
+
+__all__ += [
+    "appendStep",
+    "loadSteps",
+    "lastStepIdx",
+    "markAttemptSuperseded",
+]
+
 if __name__ == "__main__":  # pragma: no cover -- manual backfill/inspection entrypoint
     init()
     result = backfill_from_store()
