@@ -133,7 +133,23 @@ def sync_subtask(state_data: dict[str, Any], st: dict[str, Any],
             adversary_stub = 1 if rv.get("stub") else 0
     enriched["_adversary_verdict"] = verdict
     enriched["_adversary_stub"] = adversary_stub
-    return record_subtask(state_data.get("task_id"), enriched, db_path=db_path)
+    ok = record_subtask(state_data.get("task_id"), enriched, db_path=db_path)
+    # Layer-1 widen: persist the REAL solution content + denormalize importance. Best-effort:
+    # a content-store failure must NEVER change the subtask-record result.
+    try:
+        from memory import experience_content
+        run_id = state_data.get("task_id")
+        if experience_content.recordFromSubtask(run_id, enriched, db_path=db_path):
+            session = enriched.get("session") or {}
+            vres = enriched.get("verify_result") or {}
+            importance = experience_content.computeImportance(
+                attempt_count=session.get("attempts") or vres.get("attempt_count"),
+                adversary_verdict=enriched.get("_adversary_verdict"),
+                cost_usd=session.get("cost_usd"))
+            set_subtask_importance(run_id, enriched["subtask_id"], importance, db_path=db_path)
+    except Exception as e:  # noqa: BLE001
+        LOG.debug("sync_subtask content write-back skipped (ignored): %s", e)
+    return ok
 
 
 def set_subtask_embedding(run_id: str, st_id: str, blob: bytes,
@@ -146,6 +162,20 @@ def set_subtask_embedding(run_id: str, st_id: str, blob: bytes,
         return True
     except Exception as e:  # noqa: BLE001
         LOG.warning("set_subtask_embedding failed (ignored): %s", e)
+        return False
+
+
+def set_subtask_importance(run_id: str, st_id: str, importance: float,
+                           db_path: Optional[Path] = None) -> bool:
+    """Denormalize write-time salience onto the subtask row (so rerank has it even for
+    rows that predate exp_content). Best-effort; mirrors set_subtask_embedding."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            conn.execute("UPDATE subtasks SET importance=? WHERE run_id=? AND st_id=?",
+                         (float(importance), run_id, st_id))
+        return True
+    except Exception as e:  # noqa: BLE001
+        LOG.debug("set_subtask_importance failed (ignored): %s", e)
         return False
 
 
