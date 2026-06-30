@@ -378,3 +378,51 @@ class OrchestratorRunLoopMixin:
         state.addNotification("replan", decision.get("reason", "")[:200])
         self.obs.appendNote(state.replanLogRel(), "\n".join(diff) + "\n")
         LOG.info("Replan applied: %s", decision.get("reason", ""))
+
+    def _cascadeResetDependents(self, state: TaskState, removed_ids: list) -> None:
+        """Remove only the still-PENDING dependents (transitively) of removed/replaced subtasks, so a
+        root-cause replan invalidates downstream work that built on now-stale assumptions while the
+        executed prefix (done/failed) is frozen (metagpt reset_task; cf. nextActionable FX-21)."""
+        queue = list(removed_ids or [])
+        seen: set = set(queue)
+        while queue:
+            rid = queue.pop()
+            for dep in state.dependentsOf(rid):
+                did = dep["subtask_id"]
+                # Traverse THROUGH a frozen (done/failed) dependent so its own still-pending
+                # dependents are still invalidated, but never reset the frozen prefix itself.
+                if did not in seen:
+                    seen.add(did)
+                    queue.append(did)
+                if dep["status"] != "pending":
+                    continue
+                state.updateSubtask(did, status="removed")
+                state.addNotification("cascade_reset", f"{did} (depended on {rid})")
+
+    def _stallReplan(self, state: TaskState, architect_doc: str, failure_summary: str) -> bool:
+        """Stall-driven root-cause replan: rewrite facts+plan, freeze the executed prefix, remove the
+        pending tail + cascade-reset its dependents, then re-derive the remaining DAG. Gated by
+        DUAL_LEDGER_PLANNER_ENABLED. Returns True when a rewrite was applied."""
+        from platform_core.orchestration import dual_ledger_planner as dlp
+        from platform_core.orchestration import task_ledger as tl
+        ledger = tl.loadFromState(state)
+        if ledger is None:
+            return False
+        goal = state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "")
+        new_ledger = dlp.rootCauseReplan(self._ollamaChat, goal, ledger, failure_summary)
+        if new_ledger is None:
+            return False
+        with self._state_lock:
+            pending = [s["subtask_id"] for s in state.subtasks if s["status"] == "pending"]
+            for pid in pending:
+                state.updateSubtask(pid, status="removed")
+            self._cascadeResetDependents(state, pending)
+            subs = dlp.deriveSubtaskDag(new_ledger, goal)
+            dlp.materializeDag(state, subs)
+            tl.saveToState(state, new_ledger)
+            state.meta["stall_count"] = 0
+            state.save()
+            state.addNotification("root_cause_replan",
+                                  f"revision {new_ledger.revision}: {failure_summary[:160]}")
+        LOG.info("root-cause replan applied (revision %d)", new_ledger.revision)
+        return True
