@@ -12,5 +12,11 @@ from __future__ import annotations
 from platform_core.execution.environment import (  # noqa: F401
     Capability, EnvHandle, ExecutionEnvironment,
 )
+from platform_core.execution.router import (  # noqa: F401
+    finalize, provision, selectEnvironment,
+)
 
-__all__ = ["Capability", "EnvHandle", "ExecutionEnvironment"]
+__all__ = [
+    "Capability", "EnvHandle", "ExecutionEnvironment",
+    "selectEnvironment", "provision", "finalize",
+]
