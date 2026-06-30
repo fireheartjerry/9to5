@@ -12,5 +12,7 @@ from __future__ import annotations
 
 from society.blackboard import Blackboard, BlackboardEntry
 from society.inbox import makeEntry, inboxFilter
+from society.roles import ROLES, RoleSpec, classifyRole
 
-__all__ = ["Blackboard", "BlackboardEntry", "makeEntry", "inboxFilter"]
+__all__ = ["Blackboard", "BlackboardEntry", "makeEntry", "inboxFilter",
+           "ROLES", "RoleSpec", "classifyRole"]
