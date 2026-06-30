@@ -9,8 +9,6 @@ RUN/TEST: (no mapped test)
 """
 from __future__ import annotations
 
-import threading
-import time
 from typing import TYPE_CHECKING
 
 import config
@@ -310,33 +308,9 @@ class OrchestratorRunPhaseMixin:
         return create_pr, skip_reason, pr
 
     def _phase4PrCapture(self, state: TaskState, pr: dict) -> dict:
-        """Capture CI + review feedback for a created PR into the experience ledger.
-
-        Returns the capturePRFeedback result dict (or a skipped sentinel on error).
-        Never raises — errors are logged and callers receive a degraded result.
-        """
-        pr_url = pr.get("url", "")
-        if not pr_url:
-            return {"ok": False, "skipped": True, "reason": "no PR URL to capture"}
-        last_done = next(
-            (s["subtask_id"] for s in reversed(state.subtasks) if s["status"] == "done"),
-            None,
-        )
-        try:
-            from platform_core.orchestration.pr_feedback import capturePRFeedback
-            capture_result = capturePRFeedback(pr_url, state.task_id, subtask_id=last_done)
-        except Exception as exc:  # noqa: BLE001
-            LOG.warning("_phase4PrCapture: capturePRFeedback import/call failed (%s); skipping", exc)
-            return {"ok": False, "skipped": True, "reason": str(exc)[:200]}
-        if not capture_result.get("promote_safe", True):
-            LOG.warning(
-                "_phase4PrCapture: promote_safe=False for %s (ci=%s, review=%s)",
-                pr_url,
-                capture_result.get("ci_status"),
-                capture_result.get("review_state"),
-            )
-            state.addNotification("pr_capture_block", capture_result.get("ci_summary", "")[:200])
-        return capture_result
+        """Capture CI + review feedback for a created PR (delegates to run_phase_outcome)."""
+        from platform_core.orchestration import run_phase_outcome
+        return run_phase_outcome.phase4PrCapture(self, state, pr)
 
     def _phase4PrComplete(self, state: TaskState, work_dir: str, auto_pr: bool,
                           bus: "ControlBus", dashboard: "DiscordDashboard",
@@ -402,80 +376,28 @@ class OrchestratorRunPhaseMixin:
 
     def _handleRunAbort(self, state: TaskState, e: BaseException,
                         web_url: "str | None", dashboard: "DiscordDashboard") -> dict:
-        """Handle AbortRun/KeyboardInterrupt: persist aborted status and notify."""
-        reason = "ctrl-c" if isinstance(e, KeyboardInterrupt) else str(e)
-        elapsed = _elapsedSince(state.meta["started_at"])
-        state.setStatus("aborted", blocked_reason=reason)
-        self.writeIndex(state)
-        discord.sendEmbed(discord.abortedEmbed(reason, _fmtElapsed(elapsed)))
-        state.addNotification("aborted", reason)
-        dashboard.update(state, "aborted", f"aborted: {reason}")
-        LOG.warning("Run aborted: %s", reason)
-        return {"task_id": state.task_id, "status": "aborted", "reason": reason,
-                "elapsed_seconds": round(elapsed, 1), "web_dashboard": web_url,
-                "subtasks": [{"subtask_id": s["subtask_id"], "status": s["status"]}
-                             for s in state.subtasks]}
+        """Handle AbortRun/KeyboardInterrupt (delegates to run_phase_outcome)."""
+        from platform_core.orchestration import run_phase_outcome
+        return run_phase_outcome.handleRunAbort(self, state, e, web_url, dashboard)
 
     def _handleRunCrash(self, state: TaskState, e: Exception,
                         web_url: "str | None", dashboard: "DiscordDashboard") -> dict:
-        """Handle unexpected crash: persist 'crashed' (non-terminal) status so recovery can resume."""
-        elapsed = _elapsedSince(state.meta["started_at"])
-        LOG.error("Run crashed: %s", e, exc_info=True)
-        try:
-            # Persist 'crashed' (NOT 'blocked'): 'blocked' is terminal so run_with_recovery would
-            # return immediately -- defeating the crash auto-recovery. 'crashed' is non-terminal,
-            # so the supervisor resumes the task (committed progress as source of truth) until it
-            # finishes, the deadline passes, or the no-progress restart budget is exhausted.
-            state.setStatus("crashed", blocked_reason=str(e))
-            self.writeIndex(state)
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            discord.sendEmbed(discord.noticeEmbed(
-                f"9to5 run crashed: {e} — supervisor will auto-recover if time remains"))
-            dashboard.update(state, "crashed", f"crashed: {e}")
-        except Exception:  # noqa: BLE001
-            pass
-        return {"task_id": state.task_id, "status": "crashed", "reason": str(e),
-                "elapsed_seconds": round(elapsed, 1), "web_dashboard": web_url,
-                "subtasks": [{"subtask_id": s["subtask_id"], "status": s["status"]}
-                             for s in state.subtasks]}
+        """Handle unexpected crash (delegates to run_phase_outcome)."""
+        from platform_core.orchestration import run_phase_outcome
+        return run_phase_outcome.handleRunCrash(self, state, e, web_url, dashboard)
 
     # ===================================================================
     # Spec B: Nightclaw instinct (periodic, off-thread, at most once per run)
     # ===================================================================
     def _maybeInstinct(self, state: TaskState, bus: "ControlBus") -> None:
-        """Throttled trigger for the periodic instinct call. Fires OFF-THREAD so it never blocks
-        the run loop; at most once per run (guarded by state.meta['instinct_flags'])."""
-        if not config.INSTINCT_ENABLED or state.meta.get("instinct_flags"):
-            return
-        try:
-            from memory import user_prefs
-            if not user_prefs.get("instinct_enabled"):
-                return
-        except Exception:  # noqa: BLE001
-            pass
-        now = time.monotonic()
-        if (now - getattr(self, "_last_instinct_ts", 0.0)) < config.INSTINCT_INTERVAL_SECONDS:
-            return
-        if getattr(self, "_instinct_inflight", False):
-            return
-        self._last_instinct_ts = now
-        self._instinct_inflight = True
-        threading.Thread(target=self._runInstinct, args=(state,), daemon=True).start()
+        """Throttled, off-thread instinct trigger (delegates to run_phase_outcome)."""
+        from platform_core.orchestration import run_phase_outcome
+        run_phase_outcome.maybeInstinct(self, state, bus)
 
     def _runInstinct(self, state: TaskState) -> None:
-        try:
-            from notifications import instinct as instinct_mod
-            text = instinct_mod.NightclawInstinct().maybe_fire(state, chat=self._instinctChat)
-            if text:
-                with self._state_lock:
-                    state.addInstinctFlag(text)
-                discord.sendEmbed(discord.noticeEmbed(text, title="Nightclaw instinct"))
-        except Exception:  # noqa: BLE001 -- instinct is best-effort, never affects the run
-            LOG.debug("instinct run failed (ignored)", exc_info=True)
-        finally:
-            self._instinct_inflight = False
+        """One best-effort instinct call (delegates to run_phase_outcome)."""
+        from platform_core.orchestration import run_phase_outcome
+        run_phase_outcome.runInstinct(self, state)
 
     def _instinctChat(self, system: str, user: str) -> str:
         from platform_core.orchestration.brain_io import _chatText
