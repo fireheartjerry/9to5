@@ -38,3 +38,13 @@ def _validateShape(obj, required_keys: list[str], validators: dict) -> list[str]
         if not ok:
             errors.append(f"{key}: failed validation [got {obj[key]!r}]")
     return errors
+
+
+def _makeRetryPrompt(errors: list[str]) -> str:
+    """Build the corrective re-prompt (pydantic-ai's retry message, plain-string form).
+    Hands the brain its exact field errors so the next attempt is targeted, not a blind re-roll."""
+    bullets = "\n".join(f"- {e}" for e in errors)
+    return (
+        "Your previous response was NOT valid for the required schema. Fix EXACTLY these field "
+        "errors and respond with ONLY the corrected JSON object (no prose, no fences):\n" + bullets
+    )

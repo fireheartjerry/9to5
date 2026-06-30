@@ -20,3 +20,9 @@ def test_validator_failure_reports_repr():
 
 def test_clean_object_no_errors():
     assert brain_json._validateShape({"n": 3}, ["n"], {"n": lambda v: isinstance(v, int)}) == []
+
+
+def test_retry_prompt_carries_exact_errors():
+    prompt = brain_json._makeRetryPrompt(["b: required key missing [got <absent>]"])
+    assert "b: required key missing" in prompt
+    assert "ONLY" in prompt  # instructs the brain to return only corrected JSON
