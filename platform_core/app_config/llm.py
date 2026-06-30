@@ -191,6 +191,8 @@ CONFIDENCE_DEFER_THRESHOLD: float = _envFloat("CONFIDENCE_DEFER_THRESHOLD", 0.4)
 SIE_REFLECTION_ENABLED: bool = _envBool("SIE_REFLECTION_ENABLED", True)
 # Inject the learned authoring context into specs.
 SIE_AUTHORING_CONTEXT: bool = _envBool("SIE_AUTHORING_CONTEXT", True)
+# Epic 7: summed poignancy of new rows that triggers insight consolidation.
+INSIGHT_TRIGGER_BUDGET: float = _envFloat("INSIGHT_TRIGGER_BUDGET", 3.0)
 # Let 9to5 improve its OWN core loop files during self-referential runs (opt-in).
 SELFMOD_ALLOW_CORE: bool = _envBool("SELFMOD_ALLOW_CORE", False)
 # --- Epic 4 semantic-safety (ship dark; flip ON to enable the layer) ---
