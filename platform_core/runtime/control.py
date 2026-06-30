@@ -119,7 +119,7 @@ class AbortRun(Exception):
 
 
 # Approval gates the orchestrator may wait on (gated mode).
-GATES = ("plan", "pre_pr")
+GATES = ("plan", "pre_pr", "action_risk")
 
 
 def _blank() -> dict[str, Any]:
@@ -132,6 +132,7 @@ def _blank() -> dict[str, Any]:
         "plan_ops": [],          # queued: {"op": "skip"|"add"|"retry"|"intent"|..., ...}
         "seen_discord_id": None,  # last Discord message id processed by the poller
         "pending_gate": None,     # gate the run is currently waiting on (gated mode)
+        "autonomy_spent_usd": 0.0,  # Epic 4: monotonic autonomy-allowance ledger (one key)
     }
 
 

@@ -155,3 +155,16 @@ def test_safety_config_defaults_ship_dark():
     assert config.AUTONOMOUS_DESTRUCTIVE_POLICY == "block"  # fail-closed default
     assert isinstance(config.AUTONOMOUS_DESTRUCTIVE_ALLOWANCE_USD, float)
     assert isinstance(config.CLAUDE_ATTEMPT_COST_HINT_USD, float)
+
+
+def test_controlbus_has_action_risk_gate_and_spend_default(tmp_path, monkeypatch):
+    import config
+    from platform_core.runtime.control import ControlBus, GATES
+    monkeypatch.setattr(config, "CONTROL_DIR", tmp_path, raising=False)
+    assert "action_risk" in GATES
+    bus = ControlBus("task-epic4")
+    data = bus.load()
+    assert data["decisions"]["action_risk"] is None
+    assert data["autonomy_spent_usd"] == 0.0
+    bus.decide("action_risk", "approve")
+    assert bus.getDecision("action_risk") == "approve"
