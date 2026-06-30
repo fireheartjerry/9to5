@@ -302,7 +302,8 @@ class TaskState:
 
     def addSubtask(self, title: str, description: str, assigned_to: str = "executor",
                    layer: int = 3, depends_on: Optional[list[str]] = None,
-                   verify: Optional[dict] = None) -> dict[str, Any]:
+                   verify: Optional[dict] = None,
+                   files_touched: Optional[list[str]] = None) -> dict[str, Any]:
         seq = self._nextSubtaskSeq()
         st: dict[str, Any] = {
             "subtask_id": f"st-{seq:03d}",
@@ -312,6 +313,8 @@ class TaskState:
             "layer": layer,
             "status": "pending",
             "depends_on": depends_on or [],
+            "files_touched": files_touched or [],   # planner-authored; empty -> serialize (Epic 1c)
+            "claimed_by": None,                      # atomic-CAS claim slot (Epic 1c)
             "started_at": None,
             "completed_at": None,
             "output_ref": None,
