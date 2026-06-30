@@ -41,3 +41,8 @@ def reclaimLosers(branches: list, winner, *, worktree) -> int:
         except Exception as e:  # noqa: BLE001 -- straggler swept by Epic 1 gcOrphans at run-phase boundary
             LOG.warning("reclaim of loser %s failed (will be GC'd): %s", b.branch_id, e)
     return reclaimed
+
+
+def graftRunnerUp(orch, state, subtask, architect_doc, exec_cwd, runner_up, *, enabled: bool) -> None:
+    """Advisory graft of the top runner-up idea (filled in Task 11)."""
+    return None

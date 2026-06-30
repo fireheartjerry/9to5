@@ -19,6 +19,7 @@ import copy
 
 import config
 from platform_core.orchestration import fork_seams as fs
+from platform_core.orchestration import fork_policy, branch_runner, judge_panel, winner_merge
 from state.task import TaskState
 
 LOG = config.getLogger("orchestrator")
@@ -68,3 +69,98 @@ def cleanupForkStates(state: TaskState) -> int:
     except Exception:  # noqa: BLE001 -- cleanup never affects a committed winner
         pass
     return removed
+
+
+def _singleAttempt(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec):
+    """Today's linear path -- the fail-open fallback. Byte-identical to never having forked."""
+    return orch._runAttemptLoop(state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec)
+
+
+def _makeRunOneBranch(orch, state, subtask, architect_doc, bus, dashboard, sid, verify_spec, backend):
+    """Build the per-branch closure: enter an isolated worktree, run the attempt loop on a state clone."""
+    def run_one_branch(seed):
+        wt_path = backend.enterWorktree(state, f"{sid}#{seed.branch_id}") or ""
+        branch_state = forkBranchState(state, seed.branch_id)
+        branch_subtask = forkBranchSubtask(subtask, seed)
+        spec, result, vresult, combined, passed, attempt = orch._runAttemptLoop(
+            branch_state, branch_subtask, architect_doc, wt_path, bus, dashboard, sid, verify_spec)
+        headline = fs.headlineFromBranch(passed, (vresult or {}).get("receipt"))
+        diff_lines = int((vresult or {}).get("diff_lines", 0))
+        cost_usd = float((vresult or {}).get("cost_usd", 0.0))
+        return branch_runner.BranchResult(
+            branch_id=seed.branch_id, seed=seed, worktree_path=wt_path, spec=spec, result=result,
+            vresult=vresult, combined=combined, passed=passed, headline=headline,
+            diff_lines=diff_lines, cost_usd=cost_usd, attempt=attempt)
+    return run_one_branch
+
+
+def runForked(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec) -> tuple:
+    """Fork N branches, judge, merge the winner, reclaim losers. Returns the _runAttemptLoop tuple.
+
+    Fail-open: no eligible winner / merge failure -> a single attempt on the canonical tree, so the
+    result is never worse than today's linear path (spec §6).
+    SEAM: Epic 1 cost_budget headroom is approximated by SOLUTION_FORK_BRANCH_COST_ESTIMATE_USD until
+    cost_budget.py lands (the shouldFork ceiling check in execute_mixin already gated the spawn)."""
+    backend = fs.loadWorktreeBackend()
+    plan = fork_policy.forkPlan(subtask, n=config.SOLUTION_FORK_N)
+    try:
+        run_one = _makeRunOneBranch(orch, state, subtask, architect_doc, bus, dashboard,
+                                    sid, verify_spec, backend)
+        branches = branch_runner.runBranches(
+            plan, run_one_branch=run_one, max_concurrency=config.SOLUTION_FORK_MAX_CONCURRENCY)
+        eligible = judge_panel.factsGate(branches)
+        scores = judge_panel.scoreBranches(eligible, goal=_goalText(state),
+                                           score_with_brain=None)   # SEAM: Epic 2 rubric scorer
+        winner_id = judge_panel.pickWinner(scores)
+        if winner_id is None:                                       # none eligible -> fallback
+            return _forkFallback(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard,
+                                 sid, verify_spec, backend, branches, None)
+        winner = next(b for b in branches if b.branch_id == winner_id)
+        try:
+            winner_merge.mergeWinner(winner, worktree=backend)
+        except Exception:  # noqa: BLE001 -- merge conflict -> single-attempt fallback (spec §6)
+            return _forkFallback(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard,
+                                 sid, verify_spec, backend, branches, winner)
+        with orch._state_lock:
+            state.recordVerify(sid, winner.vresult or {})          # winner commits via the NORMAL path
+        _afterWinner(orch, state, subtask, architect_doc, exec_cwd, winner, branches, backend)
+        return (winner.spec, winner.result, winner.vresult, winner.combined, winner.passed, winner.attempt)
+    finally:
+        cleanupForkStates(state)
+
+
+def _forkFallback(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec,
+                  backend, branches, winner) -> tuple:
+    """Reclaim every branch tree (start clean -- never trust un-judged edits) then single-attempt."""
+    for b in branches:
+        if b.worktree_path:
+            try:
+                backend.removeWorktree(b.worktree_path)
+            except Exception:  # noqa: BLE001
+                pass
+    return _singleAttempt(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec)
+
+
+def _afterWinner(orch, state, subtask, architect_doc, exec_cwd, winner, branches, backend) -> None:
+    """Optional graft of the top runner-up, then reclaim losing worktrees. All best-effort."""
+    try:
+        runner_up = _topRunnerUp(branches, winner)
+        winner_merge.graftRunnerUp(orch, state, subtask, architect_doc, exec_cwd, runner_up,
+                                   enabled=config.SOLUTION_FORK_GRAFT_ENABLED)
+    except Exception:  # noqa: BLE001 -- graft never rolls back a committed winner
+        pass
+    try:
+        winner_merge.reclaimLosers(branches, winner, worktree=backend)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _topRunnerUp(branches: list, winner):
+    """The best non-winner that was itself VERIFIED, or None."""
+    candidates = [b for b in branches
+                  if b.branch_id != winner.branch_id and b.headline == fs.VERIFIED]
+    return candidates[0] if candidates else None
+
+
+def _goalText(state: TaskState) -> str:
+    return state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "")
