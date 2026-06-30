@@ -136,6 +136,10 @@ class OrchestratorExecuteMixin:
                     "quality_gate": "self_ref",
                 })
                 LOG.warning("%s: self-ref quality gate failed after verify pass", sid)
+        # Epic 2 (steal #3): execution-grounded downgrade. Runs ONLY when the deterministic gate
+        # already passed; can never upgrade a fail. MODE-DEPENDENT NOT_VERIFIED handled inside.
+        if passed and config.INDEPENDENT_VERIFY_ENABLED:
+            vresult, passed = self._runEvidenceGate(state, subtask, result, exec_cwd, vresult, sid)
         with self._state_lock:
             state.recordVerify(sid, vresult)
         dashboard.update(state, "verifying",
@@ -156,6 +160,25 @@ class OrchestratorExecuteMixin:
                 )
                 resume_session = None   # approach is changing -> start the next attempt fresh
         return vresult, passed, resume_session, failure_feedback
+
+    # ===================================================================
+    # Epic 2 (steal #3): execution-grounded evidence gate (thin delegates to evidence_gate)
+    # ===================================================================
+    def _gitDiffFacts(self, work_dir: str) -> dict:
+        """Best-effort re-derivable git facts for the receipt (delegates to evidence_gate)."""
+        from platform_core.orchestration import evidence_gate
+        return evidence_gate.gitDiffFacts(work_dir)
+
+    def _runEvidenceGate(self, state: TaskState, subtask: dict, result: dict, exec_cwd: str,
+                         vresult: dict, sid: str) -> "tuple[dict, bool]":
+        """Run the independent verifier + Evidence Receipt downgrade (delegates to evidence_gate)."""
+        from platform_core.orchestration import evidence_gate
+        return evidence_gate.runEvidenceGate(self, state, subtask, result, exec_cwd, vresult, sid)
+
+    def _persistReceipt(self, state: TaskState, sid: str, receipt: dict) -> None:
+        """Persist the Evidence Receipt as a per-subtask Obsidian note (delegates to evidence_gate)."""
+        from platform_core.orchestration import evidence_gate
+        evidence_gate.persistReceipt(self, state, sid, receipt)
 
     def _trajectoryRecorder(self, state: TaskState):
         """Lazily build ONE trajectory Recorder per run (cached on self). Off when disabled.
