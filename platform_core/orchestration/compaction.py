@@ -50,3 +50,73 @@ def shouldCompact(system: str, user: str, num_ctx: int, headroom: int) -> bool:
     if budget <= 0:
         return True
     return (_approxTokens(system) + _approxTokens(user)) > budget
+
+
+def _splitForCompression(user: str) -> tuple[str, str]:
+    """Split into (compress_half=oldest, reserve_half=newest). The newest
+    COMPACTION_RESERVE_RATIO fraction is kept verbatim; the older remainder is condensed."""
+    ratio = float(getattr(config, "COMPACTION_RESERVE_RATIO", 0.4))
+    reserve_chars = int(len(user) * max(0.0, min(ratio, 0.9)))
+    if reserve_chars <= 0:
+        return user, ""
+    return user[:-reserve_chars], user[-reserve_chars:]
+
+
+def _writeOffload(raw: str, offload_dir: str) -> Optional[str]:
+    """Persist the raw compress-half to disk; return its path (or None on failure)."""
+    try:
+        d = Path(offload_dir)
+        d.mkdir(parents=True, exist_ok=True)
+        path = d / f"ctx-{int(time.time() * 1000)}-{os.getpid()}.txt"
+        path.write_text(raw, encoding="utf-8")
+        return str(path)
+    except Exception as e:  # noqa: BLE001
+        LOG.debug("offload write skipped (ignored): %s", e)
+        return None
+
+
+def compactPayload(system: str, user: str, num_ctx: int, headroom: int, *,
+                   summarize: Callable[[str], str], offload_dir: Optional[str] = None) -> str:
+    """Condense the oldest half into a MUST-PRESERVE summary + offload the raw with a
+    breadcrumb. Drop-oldest fallback: on empty/raising summarize, or if the result still
+    overflows, return brain_io._fitUserToCtx (today's exact truncation)."""
+    from platform_core.orchestration.brain_io import _fitUserToCtx
+    try:
+        compress_half, reserve_half = _splitForCompression(user)
+        if not compress_half.strip():
+            return _fitUserToCtx(system, user, num_ctx, headroom)
+        try:
+            summary = summarize(compress_half) or ""
+        except Exception as e:  # noqa: BLE001 -- summarizer failure -> safety net
+            LOG.debug("summarize raised, falling back to truncation: %s", e)
+            return _fitUserToCtx(system, user, num_ctx, headroom)
+        if not summary.strip():
+            return _fitUserToCtx(system, user, num_ctx, headroom)
+        path = _writeOffload(compress_half, offload_dir or config.COMPACTION_OFFLOAD_DIR)
+        breadcrumb = f"\n[raw context offloaded to {path}]\n" if path else ""
+        compacted = ("## CONDENSED EARLIER CONTEXT (MUST-PRESERVE summary)\n"
+                     + summary.strip() + breadcrumb + "\n" + reserve_half)
+        if shouldCompact(system, compacted, num_ctx, headroom):
+            # Even the summary overflows -> fall back to truncation of the compacted text.
+            return _fitUserToCtx(system, compacted, num_ctx, headroom)
+        return compacted
+    except Exception as e:  # noqa: BLE001 -- a bug here must never block a brain call
+        LOG.debug("compactPayload failed, truncating: %s", e)
+        return _fitUserToCtx(system, user, num_ctx, headroom)
+
+
+def fitOrCompact(system: str, user: str, num_ctx: int, headroom: int, *,
+                 summarize: Optional[Callable[[str], str]] = None) -> str:
+    """The llm_mixin seam. Returns user bounded by _fitUserToCtx when small or when compaction
+    is disabled/unavailable; compacts only when enabled AND over budget AND a summarizer is
+    provided. Never raises into the brain call."""
+    from platform_core.orchestration.brain_io import _fitUserToCtx
+    try:
+        if not getattr(config, "COMPACTION_ENABLED", False) or summarize is None:
+            return _fitUserToCtx(system, user, num_ctx, headroom)
+        if not shouldCompact(system, user, num_ctx, headroom):
+            return _fitUserToCtx(system, user, num_ctx, headroom)
+        return compactPayload(system, user, num_ctx, headroom, summarize=summarize)
+    except Exception as e:  # noqa: BLE001
+        LOG.debug("fitOrCompact failed, truncating: %s", e)
+        return _fitUserToCtx(system, user, num_ctx, headroom)
