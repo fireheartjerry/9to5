@@ -28,6 +28,8 @@ import config  # noqa: F401 -- re-exported defaults consumed by callers/tests
 from platform_core.orchestration.brain_json import chatJsonValidated
 from platform_core.orchestration import task_ledger as tl
 
+LOG = config.getLogger("orchestrator")
+
 _INDEP = "[independent]"
 
 
@@ -55,6 +57,21 @@ def authorTaskLedger(ollama_chat: Callable, goal: str, architect_doc: str) -> "O
         guess_facts=list(facts.get("guess_facts") or []),
         plan=[str(b) for b in plan.get("plan") or []],
         revision=0)
+
+
+def tryAuthorPlan(ollama_chat: Callable, goal: str, architect_doc: str) -> Optional[list]:
+    """Flag-on convenience: author a TaskLedger then derive its DAG -> index-form subtask dicts, or
+    None on any failure (caller falls through to the legacy one-shot planner; never worse than today)."""
+    try:
+        ledger = authorTaskLedger(ollama_chat, goal, architect_doc)
+        if ledger is not None and ledger.plan:
+            subs = deriveSubtaskDag(ledger, goal)
+            if subs:
+                LOG.info("dual-ledger planner authored %d subtasks with depends_on", len(subs))
+                return subs
+    except Exception as e:  # noqa: BLE001 -- dual-ledger never blocks; legacy path follows
+        LOG.warning("dual-ledger planner failed (%s); using legacy planner", e)
+    return None
 
 
 def deriveSubtaskDag(ledger: "tl.TaskLedger", goal: str) -> list:

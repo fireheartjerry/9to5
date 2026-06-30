@@ -117,15 +117,9 @@ class OrchestratorPlanMixin:
         # Epic 2 (steal #2): dual-ledger planner. Flag-gated; on failure it returns None and we fall
         # straight through to the legacy one-shot planner below (never worse than today).
         if config.DUAL_LEDGER_PLANNER_ENABLED:
-            try:
-                ledger = _dlp.authorTaskLedger(self._ollamaChat, goal_elaborated, architect_doc)
-                if ledger is not None and ledger.plan:
-                    subs = _dlp.deriveSubtaskDag(ledger, goal_elaborated)
-                    if subs:
-                        LOG.info("dual-ledger planner authored %d subtasks with depends_on", len(subs))
-                        return subs
-            except Exception as e:  # noqa: BLE001 -- dual-ledger never blocks; legacy path follows
-                LOG.warning("dual-ledger planner failed (%s); using legacy planner", e)
+            subs = _dlp.tryAuthorPlan(self._ollamaChat, goal_elaborated, architect_doc)
+            if subs:
+                return subs
         system = (
             "You are the Planner for 9TO5. Break the specification into the MINIMAL ordered list of "
             "concrete subtasks. For a trivial single-artifact goal (one script/file/function), use EXACTLY "

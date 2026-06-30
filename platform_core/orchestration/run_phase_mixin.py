@@ -204,18 +204,7 @@ class OrchestratorRunPhaseMixin:
         dashboard.update(state, "planning", "authoring subtask plan")
         plan = self.critiqueSubtaskPlan(elaborated, self.authorSubtaskPlan(elaborated, architect_doc))
         plan = self._strengthenPlanVerifies(elaborated, plan)
-        capped = plan[:config.MAX_SUBTASKS]
-        # Epic 2 (steal #2): dual-ledger subtasks carry INDEX-form depends_on -> materialize the real
-        # DAG (resolves indices to st-ids). The legacy off-path keeps the plain addSubtask loop.
-        if config.DUAL_LEDGER_PLANNER_ENABLED and any(
-                any(isinstance(d, int) for d in (s.get("depends_on") or [])) for s in capped):
-            from platform_core.orchestration import dual_ledger_planner as _dlp
-            _dlp.materializeDag(state, [{**s, "verify": verifier.sanitizeVerify(s.get("verify"))}
-                                        for s in capped])
-        else:
-            for s in capped:
-                state.addSubtask(s.get("title", "untitled"), s.get("description", ""),
-                                 layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))
+        self._persistPlanSubtasks(state, plan)
         discord.sendEmbed(discord.planningStartEmbed(state.meta["goal_raw"], state.subtasks))
         cast.speak("planner", f"🗺️ Plan ready — {len(state.subtasks)} subtasks queued. "
                    f"Executor, you're up.", milestone=True)
@@ -225,6 +214,21 @@ class OrchestratorRunPhaseMixin:
         self._planReview(state, elaborated, dashboard)
         self._checkControl(state, bus, dashboard, gate="plan")
         return architect_doc
+
+    def _persistPlanSubtasks(self, state: TaskState, plan: list) -> None:
+        """Persist the authored plan as real subtasks. Epic 2 (steal #2): dual-ledger subtasks carry
+        INDEX-form depends_on -> materialize the real DAG (resolve indices to st-ids); the legacy
+        off-path keeps the plain addSubtask loop."""
+        capped = plan[:config.MAX_SUBTASKS]
+        if config.DUAL_LEDGER_PLANNER_ENABLED and any(
+                any(isinstance(d, int) for d in (s.get("depends_on") or [])) for s in capped):
+            from platform_core.orchestration import dual_ledger_planner as _dlp
+            _dlp.materializeDag(state, [{**s, "verify": verifier.sanitizeVerify(s.get("verify"))}
+                                        for s in capped])
+            return
+        for s in capped:
+            state.addSubtask(s.get("title", "untitled"), s.get("description", ""),
+                             layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))
 
     def _runPreamble(self, state: TaskState, work_dir: str, control_mode: "str | None",
                      resume: bool, bus: "ControlBus",
