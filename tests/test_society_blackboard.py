@@ -39,3 +39,32 @@ def test_for_task_uses_blackboard_dir(tmp_path):
     bb = Blackboard.forTask("abc-123", base_dir=tmp_path)
     bb.append(_entry("facts", "facts", "coordinator", "all", {}))
     assert (tmp_path / "abc-123.jsonl").exists()
+
+
+import threading as _threading
+
+from society.blackboard import Blackboard as _BB, BlackboardEntry as _BE
+
+
+def test_concurrent_append_no_lost_or_torn_lines(tmp_path):
+    bb = _BB(tmp_path / "c.jsonl")
+    n_threads, per = 8, 25
+
+    def worker(wid):
+        for i in range(per):
+            bb.append(_BE(key=f"k{wid}", kind="result", author=f"w{wid}",
+                          to="coordinator", value={"wid": wid, "i": i}))
+
+    threads = [_threading.Thread(target=worker, args=(w,)) for w in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    rows = bb.readAll()
+    assert len(rows) == n_threads * per          # zero lost lines
+    ids = {r["entry_id"] for r in rows}
+    assert len(ids) == n_threads * per           # zero torn/duplicate ids
+    # every line parsed cleanly (no interleaved/torn writes)
+    seen = {(r["value"]["wid"], r["value"]["i"]) for r in rows}
+    assert len(seen) == n_threads * per
