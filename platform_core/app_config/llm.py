@@ -127,6 +127,9 @@ RETRIEVAL_K: int = _envInt("RETRIEVAL_K", 5)
 RETRIEVAL_MAX_TOKENS: int = _envInt("RETRIEVAL_MAX_TOKENS", 350)
 # Cosine-similarity floor: a retrieved "past success" below this is irrelevant noise.
 RETRIEVAL_MIN_SCORE: float = _envFloat("RETRIEVAL_MIN_SCORE", 0.35)
+# Layer-1 content injection: budget for the REAL solution-content block (separate from
+# the metadata RETRIEVAL_MAX_TOKENS so content can be richer without starving lessons).
+RETRIEVAL_CONTENT_MAX_TOKENS: int = _envInt("RETRIEVAL_CONTENT_MAX_TOKENS", 700)
 # Eval harness: golden suite + fitness scalar weights.
 EVAL_FITNESS_WEIGHTS: dict[str, float] = {
     "first_pass_rate": 0.5,

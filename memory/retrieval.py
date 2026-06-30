@@ -23,7 +23,9 @@ EXPORTS:
   embed_and_store(run_id: str, st_id: str, goal: str, title: str='', db_path: Optional[Path]=None) -> bool  -- Compute + persist a subtask's embedding (called once the subtask has a signature).
   top_k_similar(query_vec: list[float], k: int=5, *, only_passed: bool=True, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- The ``k`` most-similar embedded subtasks to ``query_vec``, each annotated with a
   retrieve(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Embed the (goal, title) query and return the top-K similar past successes.
+  retrieve_content(goal, title='', *, k=None, db_path=None) -> list[dict]  -- Top-K similar successes joined to their exp_content solution rows.
   render_lessons(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str  -- Render neighbors into a compact lessons block, truncated to the token budget.
+  render_solutions(neighbors, max_tokens=None) -> str  -- Render ACTUAL sanitized solution content, budgeted by RETRIEVAL_CONTENT_MAX_TOKENS.
   backfill_embeddings(db_path: Optional[Path]=None) -> dict[str, int]  -- Embed every verify-passing subtask that lacks an embedding (run off the hot path,
   lessons_block(goal: str, title: str='', *, db_path: Optional[Path]=None) -> str  -- Orchestrator-facing one-call helper: retrieve + render, fully best-effort.
 DEPENDS-ON: config, memory.experience
@@ -40,6 +42,7 @@ from typing import Any, Optional
 
 import config
 from memory import experience
+from memory import experience_content
 
 LOG = config.getLogger("sie.retrieval")
 
@@ -174,6 +177,27 @@ def retrieve(goal: str, title: str = "", *, k: Optional[int] = None,
     return top_k_similar(qvec, k or config.RETRIEVAL_K, db_path=db_path)
 
 
+def retrieve_content(goal: str, title: str = "", *, k: Optional[int] = None,
+                     db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    """Embed the query, find the top-K similar past successes (O(n) scan for now; Phase 2
+    adds the ANN lookup in front of this), and JOIN each hit to its exp_content row so the
+    caller can render REAL solution content. Best-effort: empty list on any failure."""
+    qvec = embed(signature_text(goal, title))
+    if not qvec:
+        return []
+    neighbors = top_k_similar(qvec, k or config.RETRIEVAL_K, db_path=db_path)
+    for n in neighbors:
+        row = experience_content.fetchSolutionContent(
+            n.get("run_id"), n.get("st_id"), db_path=db_path)
+        if row:
+            n["solution_content"] = row.get("solution_content")
+            n["post_mortem"] = row.get("post_mortem")
+            n["created_at"] = row.get("created_at")
+            if row.get("importance") is not None:
+                n["importance"] = row.get("importance")
+    return neighbors
+
+
 # --------------------------------------------------------------------- rendering
 
 def _approx_tokens(text: str) -> int:
@@ -215,6 +239,47 @@ def render_lessons(neighbors: list[dict[str, Any]],
     return header + "\n".join(lines) + "\n"
 
 
+def _sanitizeField(text: Any, limit: int = 400) -> str:
+    """Collapse a retrieved field to ONE safe inline line before it is injected verbatim
+    into a brain prompt: strip control chars, collapse all whitespace/newlines, defang a
+    leading markdown heading and any code fences (prompt-injection hardening, see spec 6)."""
+    if not text:
+        return ""
+    s = "".join(ch for ch in str(text) if ch >= " " or ch in "\t\n")
+    s = " ".join(s.split())            # all runs of whitespace (incl newlines) -> single space
+    s = s.lstrip("#").lstrip()         # defang leading heading
+    s = s.replace("```", "'''")        # defang fences
+    return s[:limit]
+
+
+def render_solutions(neighbors: list[dict[str, Any]],
+                     max_tokens: Optional[int] = None) -> str:
+    """Render neighbors into a compact block of ACTUAL solution content (sanitized),
+    budgeted by RETRIEVAL_CONTENT_MAX_TOKENS. Returns "" when no neighbor carries content
+    (the caller then degrades to render_lessons)."""
+    budget = max_tokens or config.RETRIEVAL_CONTENT_MAX_TOKENS
+    if not neighbors:
+        return ""
+    header = "## RELEVANT PAST SOLUTIONS (content from similar PASSED subtasks)\n"
+    lines: list[str] = []
+    for n in neighbors:
+        content = _sanitizeField(n.get("solution_content"))
+        if not content:
+            continue
+        title = _sanitizeField(n.get("title") or "untitled", 80)
+        line = f'- "{title}": {content}'
+        lesson = _sanitizeField(n.get("post_mortem"), 200)
+        if lesson:
+            line += f" [lesson: {lesson}]"
+        candidate = header + "\n".join(lines + [line])
+        if _approx_tokens(candidate) > budget:
+            break
+        lines.append(line)
+    if not lines:
+        return ""
+    return header + "\n".join(lines) + "\n"
+
+
 def backfill_embeddings(db_path: Optional[Path] = None) -> dict[str, int]:
     """Embed every verify-passing subtask that lacks an embedding (run off the hot path,
     e.g. by the nightly SIE job). Returns {embedded, skipped}. Stops early if the embedder
@@ -240,11 +305,14 @@ def backfill_embeddings(db_path: Optional[Path] = None) -> dict[str, int]:
 def lessons_block(goal: str, title: str = "", *, db_path: Optional[Path] = None) -> str:
     """Orchestrator-facing one-call helper: retrieve + render, fully best-effort.
 
-    Returns "" when retrieval is unavailable or finds nothing, so a caller can
-    unconditionally ``user = retrieval.lessons_block(...) + user``."""
+    Prefers REAL solution content (retrieve_content + render_solutions); degrades to the
+    metadata block (render_lessons) when no neighbor carries content. Returns "" when
+    retrieval is unavailable, so a caller can unconditionally prepend the result."""
     try:
-        neighbors = retrieve(goal, title, db_path=db_path)
-        block = render_lessons(neighbors)
+        neighbors = retrieve_content(goal, title, db_path=db_path)
+        block = render_solutions(neighbors)
+        if not block:
+            block = render_lessons(neighbors)
         return (block + "\n") if block else ""
     except Exception as e:  # noqa: BLE001 -- learning must never break authoring
         LOG.debug("lessons_block failed (ignored): %s", e)
