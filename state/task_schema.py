@@ -338,6 +338,16 @@ class TaskState:
         self.save()
         return st
 
+    def setResumeSession(self, subtask_id: str, session_id: Optional[str]) -> None:
+        """Persist the last healthy Claude session id on subtask['session'] so a PROCESS
+        crash (not just a retry) can resume. Merges into the existing session dict."""
+        st = self.getSubtask(subtask_id)
+        if st is None:
+            return
+        sess = dict(st.get("session") or {})
+        sess["resume_session_id"] = session_id
+        self.updateSubtask(subtask_id, session=sess)
+
     def addAdversaryReview(self, subtask_id: str, trigger_reason: str, verdict: str,
                            note_ref: Optional[str] = None, stub: bool = False) -> dict[str, Any]:
         rec = {"subtask_id": subtask_id, "trigger_reason": trigger_reason,

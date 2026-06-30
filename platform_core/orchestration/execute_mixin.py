@@ -269,6 +269,9 @@ class OrchestratorExecuteMixin:
         # Carry a HEALTHY session forward; start fresh on error (is_error absent => no resume).
         resume_session = result.get("session_id") if (
             result.get("session_id") and not result.get("is_error")) else None
+        if resume_session:
+            with self._state_lock:
+                state.setResumeSession(sid, resume_session)   # survive a PROCESS crash (Epic 1b)
         combined = _resultText(result, "stdout")
         stderr_text = _resultText(result, "stderr")
         if stderr_text:
@@ -277,6 +280,17 @@ class OrchestratorExecuteMixin:
             state, subtask, result, exec_cwd, verify_spec, attempt_started,
             sid, combined, dashboard, resume_session)
         return spec, result, vresult, combined, passed, resume_session, failure_feedback
+
+    @staticmethod
+    def _seedResumeContext(subtask: dict) -> "tuple[str | None, str | None]":
+        """For a resumable subtask (Epic 1b), return (resume_block_as_feedback, resume_session_id)
+        to seed attempt 1; ((None, None) when the flag is off or the subtask isn't resumable)."""
+        if not getattr(config, "STEP_RESUME_ENABLED", False):
+            return None, None
+        sess = subtask.get("session") or {}
+        if not sess.get("resumable"):
+            return None, None
+        return sess.get("resume_block"), sess.get("resume_session_id")
 
     def _runAttemptLoop(self, state: TaskState, subtask: dict, architect_doc: str,
                         exec_cwd: str, bus: "ControlBus", dashboard: "DiscordDashboard",
@@ -288,12 +302,13 @@ class OrchestratorExecuteMixin:
         """
         attempt = 0
         passed = False
-        failure_feedback: "str | None" = None
+        seed_feedback, seed_resume = self._seedResumeContext(subtask)
+        failure_feedback: "str | None" = seed_feedback
         spec: dict = {}
         result: dict = {"ok": False, "stdout": "", "stderr": "", "returncode": None}
         vresult: "dict | None" = None
         combined = ""
-        resume_session: "str | None" = None   # continue the SAME Claude session across retries
+        resume_session: "str | None" = seed_resume   # continue the SAME Claude session across retries
         while attempt < config.MAX_SUBTASK_ATTEMPTS and not passed:
             attempt += 1
             with self._state_lock:
