@@ -246,6 +246,10 @@ def _maintenance_steps(db_path: Optional[Path]):
         from learning import lessons
         return lessons.consolidate(db_path=db_path, write_digest=True)
 
+    def insight_consolidate():
+        from learning import insight
+        return insight.consolidate_insights(db_path=db_path)
+
     def policy_rebuild():
         from learning import policy
         return policy.rebuild_from_ledger(db_path=db_path)
@@ -269,6 +273,7 @@ def _maintenance_steps(db_path: Optional[Path]):
         ("embeddings", embeddings),
         ("pr_consolidate", pr_consolidate),
         ("consolidate", consolidate),
+        ("insight", insight_consolidate),
         ("policy_rebuild", policy_rebuild),
         ("mine", mine),
         ("evaluate", evaluate),

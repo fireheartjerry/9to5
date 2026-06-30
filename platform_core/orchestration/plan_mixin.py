@@ -398,6 +398,7 @@ class OrchestratorPlanMixin:
             surfaces.catalog_block,                       # rich cross-surface routing
             lambda: policy.hint(goal, title),
             lambda: retrieval.lessons_block(goal, title),
+            lambda: __import__("learning.insight", fromlist=["insight_block"]).insight_block(goal, title),
             lambda: postmortem.guidance_for(title),
             lambda: knowledge_graph.context_for(title),
             lambda: self._confidenceNudge(title),
