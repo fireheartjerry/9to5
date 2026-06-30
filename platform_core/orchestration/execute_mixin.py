@@ -14,7 +14,11 @@ from typing import TYPE_CHECKING
 
 import config
 import platform_core.core.surfaces as surfaces
-from agents import adversary, verifier
+# adversary + verifier are no longer called directly here (the review/remediation paths moved to
+# adversary_loop), but stay imported as module-level names: they are the shared agents.* module
+# objects that tests patch via ``execute_mixin.verifier.runVerification`` (patching the object here
+# reaches every holder, e.g. evidence_gate / adversary_loop). Kept for that patch-target stability.
+from agents import adversary, verifier  # noqa: F401
 from platform_core.runtime.control import AbortRun
 from notifications import cast
 from notifications import discord_bot as discord
@@ -291,46 +295,11 @@ class OrchestratorExecuteMixin:
                             final: str, exec_cwd: str, bus: "ControlBus",
                             dashboard: "DiscordDashboard", heartbeat_ordinal: int,
                             attempt: int, architect_doc: str) -> "tuple[str | None, bool]":
-        """Trigger adversary review if warranted; run remediation if challenged. Returns (verdict, stub)."""
-        sid = subtask["subtask_id"]
-        triggered, reason = adversary.shouldTrigger(combined, heartbeat_ordinal, attempt)
-        if not triggered:
-            return None, False
-        rv = self._review(subtask["title"], reason, combined,
-                          ollama_chat=self._ollamaChat,
-                          goal=state.meta.get("goal_elaborated") or state.meta.get("goal_raw", ""))
-        _adv_verdict = rv.get("verdict")
-        _adv_stub = rv.get("stub", False)
-        discord.sendEmbed(discord.adversaryTriggeredEmbed(subtask["title"], reason, rv.get("verdict")))
-        cast.speak("adversary", f"⚔️ Reviewing `{sid}` ({subtask['title']}) → "
-                   f"**{discord.formatVerdict(rv.get('verdict'))}**.")
-        cast.duel(subtask["title"], rv.get("verdict"))   # VS-card on a CHALLENGE (T8)
-        # Proactive narration + a rare Moment when the adversary catches something critical.
-        self._narrate(f"⚠️ Adversary flagged something in {sid}. Remediating.")
-        if rv.get("verdict") == "rejected":
-            self._emitMoment(sid, f"⚡ MOMENT — The adversary caught a critical issue in "
-                             f"`{sid}` the plan never anticipated.")
-        with self._state_lock:
-            state.addNotification("adversary_triggered", f"{sid}: {reason} -> {rv['verdict']}")
-            self.obs.writeNote(state.subtaskReviewNoteRel(sid),
-                               self._reviewNote(subtask, reason, rv, combined))
-            state.addAdversaryReview(sid, reason, rv["verdict"],
-                                     state.subtaskReviewNoteRel(sid), stub=rv.get("stub", False))
-        # TEETH: a challenged verdict on a PASSED subtask earns ONE bounded remediation attempt.
-        if (config.ADVERSARY_REMEDIATION_ENABLED and final == "done"
-                and rv.get("verdict") == "challenged" and rv.get("concerns")):
-            if self._remediationUnsafe(exec_cwd):
-                # Skip ONLY a shared tree under parallelism (a revert would clobber peers).
-                LOG.warning("%s: skipping adversary remediation -- shared working tree under "
-                            "parallelism>1 (a revert would clobber peer subtasks)", sid)
-                with self._state_lock:
-                    state.addNotification("adversary_remediation",
-                                          f"{sid}: remediation skipped (shared tree, parallel run)")
-            else:
-                dashboard.update(state, "executing", f"{sid} adversary remediation (1 attempt)")
-                self._remediate(state, subtask, architect_doc, exec_cwd, rv["concerns"],
-                                cancel_check=lambda: bus.isAbort() or self._deadlinePassed(state))
-        return _adv_verdict, _adv_stub
+        """Trigger adversary review if warranted; run remediation if challenged (delegates to
+        adversary_loop to hold the size budget). Returns (verdict, stub)."""
+        from platform_core.orchestration import adversary_loop
+        return adversary_loop.runReview(self, state, subtask, combined, final, exec_cwd, bus,
+                                        dashboard, heartbeat_ordinal, attempt, architect_doc)
 
     def _runSieAndReplan(self, state: TaskState, subtask: dict, spec: dict, combined: str,
                          passed: bool, final: str, architect_doc: str,
