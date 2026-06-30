@@ -14,6 +14,7 @@ RUN/TEST: python -m pytest tests/test_cost_budget.py
 """
 from __future__ import annotations
 
+import threading
 from typing import Any, Optional
 
 import config
@@ -29,6 +30,7 @@ class CostBudget:
     def __init__(self, run_id: str, bus: Any = None) -> None:
         self.run_id = run_id
         self._bus = bus
+        self._lock = threading.Lock()   # concurrent pool workers call add() for their attempt cost
         self._total = 0.0
         self._warned = False
         self._ceiling_hit = False
@@ -39,16 +41,22 @@ class CostBudget:
         try:
             if cost_usd is None:
                 return
-            self._total += float(cost_usd)
-            ceiling = float(getattr(config, "COST_BUDGET_CEILING_USD", 0.0) or 0.0)
-            if ceiling <= 0:
-                return
-            if not self._ceiling_hit and self._total >= ceiling:
-                self._ceiling_hit = True
-                self._emit("ceiling", f"run cost ${self._total:.2f} hit ceiling ${ceiling:.2f}")
-            elif not self._warned and self._total >= ceiling * WARN_FRACTION:
-                self._warned = True
-                self._emit("warn", f"run cost ${self._total:.2f} >= 80% of ${ceiling:.2f}")
+            # Guard the running total + one-shot flags so concurrent adds neither lose total nor
+            # double-fire the warn/ceiling events. The bus emit runs OUTSIDE the lock.
+            pending: "tuple[str, str] | None" = None
+            with self._lock:
+                self._total += float(cost_usd)
+                ceiling = float(getattr(config, "COST_BUDGET_CEILING_USD", 0.0) or 0.0)
+                if ceiling <= 0:
+                    return
+                if not self._ceiling_hit and self._total >= ceiling:
+                    self._ceiling_hit = True
+                    pending = ("ceiling", f"run cost ${self._total:.2f} hit ceiling ${ceiling:.2f}")
+                elif not self._warned and self._total >= ceiling * WARN_FRACTION:
+                    self._warned = True
+                    pending = ("warn", f"run cost ${self._total:.2f} >= 80% of ${ceiling:.2f}")
+            if pending is not None:
+                self._emit(*pending)
         except Exception as e:  # noqa: BLE001 -- budgeting is advisory, never crashes a run
             LOG.warning("cost_budget.add failed (ignored): %s", e)
 
