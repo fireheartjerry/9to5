@@ -153,6 +153,27 @@ class OrchestratorExecuteMixin:
                 resume_session = None   # approach is changing -> start the next attempt fresh
         return vresult, passed, resume_session, failure_feedback
 
+    def _trajectoryRecorder(self, state: TaskState):
+        """Lazily build ONE trajectory Recorder per run (cached on self). Off when disabled."""
+        if not getattr(config, "TRAJECTORY_ENABLED", True):
+            return None
+        rec = getattr(self, "_trajectory", None)
+        if rec is None:
+            try:
+                from platform_core.runtime.trajectory import Recorder
+                rec = self._trajectory = Recorder(state.task_id)
+            except Exception:  # noqa: BLE001
+                rec = None
+        return rec
+
+    def _costBudget(self, state: TaskState):
+        """Lazily build ONE CostBudget per run (cached on self)."""
+        cb = getattr(self, "_cost_budget", None)
+        if cb is None:
+            from platform_core.runtime.cost_budget import CostBudget
+            cb = self._cost_budget = CostBudget(state.task_id)
+        return cb
+
     def _runOneAttempt(self, state: TaskState, subtask: dict, architect_doc: str,
                        exec_cwd: str, bus: "ControlBus", dashboard: "DiscordDashboard",
                        sid: str, verify_spec: "dict | None", failure_feedback: "str | None",
@@ -181,13 +202,39 @@ class OrchestratorExecuteMixin:
         # Live surface feed: tap the Claude subprocess stdout in real time (terminal path only;
         # the browser hands layer doesn't take a feed). Best-effort -- never block a run.
         feed = None
+        recorder = None
         if hands is self._run_claude:
             try:
                 from notifications.event_bus import get_bus
                 from notifications.subprocess_feed import SubprocessFeed
-                feed = SubprocessFeed(get_bus(), sid, time.monotonic())
-            except Exception:  # noqa: BLE001
-                feed = None
+                from platform_core.orchestration.step_sink import makeSink
+                # Plan signature gates resume; recorded on every journal row (Epic 1b consumer).
+                try:
+                    from platform_core.orchestration.step_resume import planSignature
+                    plan_sig = planSignature(state)
+                except Exception:  # noqa: BLE001 -- step_resume lands in Epic 1b; until then plan_sig=""
+                    plan_sig = ""
+                recorder = self._trajectoryRecorder(state)
+                parent_span = None
+                if recorder is not None:
+                    parent_span = recorder.openSpan(
+                        "executor", None, {"sid": sid, "attempt": attempt})
+                    # eliza spawn-link: hand the parent step id to the subprocess so child
+                    # tool spans stitch into this subtask span.
+                    import os as _os
+                    _os.environ["NINE_TO_FIVE_PARENT_TRAJECTORY_STEP_ID"] = str(parent_span)
+                last = {"sid": resume_session}
+
+                def _session_getter():
+                    s = (state.getSubtask(sid) or {}).get("session") or {}
+                    return s.get("resume_session_id") or last.get("sid")
+
+                sink = makeSink(state.task_id, sid, attempt, plan_sig, _session_getter,
+                                recorder=recorder, parent_span_id=parent_span)
+                feed = SubprocessFeed(get_bus(), sid, time.monotonic(), on_step=sink)
+                self._cur_exec_span = parent_span   # closed after the attempt (cost/usage)
+            except Exception:  # noqa: BLE001 -- live feed + journal are best-effort
+                feed, recorder = None, None
         # cancel_check lets a long in-hands wait break early on abort, deadline, or an operator
         # kill-subprocess signal (Spec B: terminate THIS attempt, not the whole run) (CB-9).
         hands_kw = dict(work_dir=exec_cwd, task_state=state, subtask=subtask,
@@ -196,11 +243,22 @@ class OrchestratorExecuteMixin:
                         or self._deadlinePassed(state))
         if feed is not None:
             hands_kw["feed"] = feed
+        result = None
         try:
             result = hands(spec, **hands_kw)
         finally:
             if feed is not None:
                 feed.stop()
+            span = getattr(self, "_cur_exec_span", None)
+            if recorder is not None and span is not None:
+                _res = result if isinstance(result, dict) else {}
+                recorder.closeSpan(span, usage=_res.get("usage"), cost_usd=_res.get("cost_usd"))
+                self._cur_exec_span = None
+                if getattr(config, "COST_BUDGET_ENABLED", False):
+                    try:
+                        self._costBudget(state).add(_res.get("cost_usd"))
+                    except Exception:  # noqa: BLE001
+                        pass
         if bus.isKillSubprocess():
             bus.clearKillSubprocess()
             with self._state_lock:
