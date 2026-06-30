@@ -395,6 +395,14 @@ class OrchestratorExecuteMixin:
             LOG.warning("post-completion enrichment for %s failed (status %s preserved): %s",
                         sid, final, e, exc_info=True)
 
+    def _runSubtaskAttempts(self, state: TaskState, subtask: dict, architect_doc: str,
+                            exec_cwd: str, bus: "ControlBus", dashboard: "DiscordDashboard",
+                            sid: str, verify_spec: "dict | None") -> tuple:
+        """Fork seam: same 6-tuple as _runAttemptLoop. Flag-off => byte-identical (gate in solution_space)."""
+        from platform_core.orchestration import solution_space
+        return solution_space.runSubtaskAttempts(self, state, subtask, architect_doc, exec_cwd,
+                                                 bus, dashboard, sid, verify_spec)
+
     # ===================================================================
     # Phase 3 -- execution (per-subtask unit)
     # ===================================================================
@@ -414,7 +422,7 @@ class OrchestratorExecuteMixin:
                 _checkCodeDivergence(state)
             except Exception:  # noqa: BLE001
                 pass
-        spec, result, vresult, combined, passed, attempt = self._runAttemptLoop(
+        spec, result, vresult, combined, passed, attempt = self._runSubtaskAttempts(
             state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec)
         if spec is None:   # subtask removed mid-attempt-loop
             return "removed"
