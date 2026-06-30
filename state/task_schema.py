@@ -406,3 +406,8 @@ class TaskState:
             if s["status"] == "pending" and not (s.get("depends_on") or []):
                 return s
         return None
+
+    def dependentsOf(self, subtask_id: str) -> list[dict[str, Any]]:
+        """Subtasks whose depends_on includes ``subtask_id`` (used by the dual-ledger cascade reset
+        when a stall replan removes/replaces a subtask)."""
+        return [s for s in self.subtasks if subtask_id in (s.get("depends_on") or [])]
