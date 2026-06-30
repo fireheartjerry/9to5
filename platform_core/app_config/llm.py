@@ -249,6 +249,21 @@ MCP_SERVERS: tuple[str, ...] = tuple(
 BROWSER_LAYER_ENABLED: bool = _envBool("BROWSER_LAYER_ENABLED", False)   # L1 (CDP)
 NATIVE_LAYER_ENABLED: bool = _envBool("NATIVE_LAYER_ENABLED", False)     # L2 (UIA)
 
+# --- Epic 8: Cloud Execution Fabric (all default to today's local-only behavior) ---
+# Master gate, like BROWSER_LAYER_ENABLED: OFF => LocalEnvironment everywhere => byte-for-byte today.
+EXECUTION_FABRIC_ENABLED: bool = _envBool("EXECUTION_FABRIC_ENABLED", False)
+# Default backend when the fabric is enabled and no per-subtask override is authored.
+EXECUTION_BACKEND: str = os.getenv("EXECUTION_BACKEND", "local")
+# Optional risk->backend map, populated only when Epic 4 (semantic action-risk) lands.
+EXECUTION_BACKEND_BY_RISK: dict[str, str] = {}
+# Container image bundling the `claude` CLI (DockerEnvironment); built/pulled out of band.
+DOCKER_EXECUTOR_IMAGE: str = os.getenv("DOCKER_EXECUTOR_IMAGE", "9to5-executor:latest")
+# Remote sub-strategy + host (RemoteEnvironment stubs; empty host => healthCheck False => local).
+EXECUTION_REMOTE_KIND: str = os.getenv("EXECUTION_REMOTE_KIND", "ssh")
+EXECUTION_REMOTE_HOST: str = os.getenv("EXECUTION_REMOTE_HOST", "")
+# Hard cap on a single backend provision (git worktree add / docker run / ssh connect).
+EXECUTION_PROVISION_TIMEOUT_SECONDS: int = _envInt("EXECUTION_PROVISION_TIMEOUT_SECONDS", 120)
+
 # --- Phase 2: Gemini as the second brain ---------------------------------
 GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
