@@ -1,12 +1,98 @@
 """Parallel batch claims + isolates each subtask when WORKTREE_ISOLATION_ENABLED; the
 residual guard only skips remediation on a SHARED tree under parallelism."""
+import threading
+import time
+
 import config
+from platform_core.orchestration import parallel_safety
 from platform_core.orchestration.review_mixin import OrchestratorReviewMixin
+from platform_core.orchestration.run_loop_mixin import OrchestratorRunLoopMixin
 from platform_core.runtime import worktree
+from platform_core.runtime.control import AbortRun
 
 
 class _Guarded(OrchestratorReviewMixin):
     pass
+
+
+class _LoopHost(OrchestratorRunLoopMixin):
+    def __init__(self):
+        self._state_lock = threading.Lock()
+
+
+class _FakeState:
+    def __init__(self):
+        self.meta = {}
+        self.subtasks: list = []
+
+    def getSubtask(self, sid):
+        return {}
+
+    def updateSubtask(self, *a, **k):
+        pass
+
+    def addNotification(self, *a, **k):
+        pass
+
+    def nextActionable(self):
+        return None
+
+
+def test_abort_cleans_every_entered_worktree(monkeypatch):
+    """On AbortRun the batch loop breaks; every ENTERED worktree must still be exited
+    (no leaked worktrees + claims), not just the future that raised."""
+    monkeypatch.setattr(config, "WORKTREE_ISOLATION_ENABLED", True, raising=False)
+    monkeypatch.setattr(parallel_safety, "claim", lambda state, sid: True)
+    entered, exited = [], []
+
+    def _enter(state, sid):
+        path = f"/wt/{sid}"
+        entered.append(path)
+        return path
+
+    def _exit(path, *, merge):
+        exited.append(path)
+
+    monkeypatch.setattr(worktree, "enterWorktree", _enter)
+    monkeypatch.setattr(worktree, "exitWorktree", _exit)
+
+    host = _LoopHost()
+
+    def _fake_exec(state, st, doc, work_dir, bus, dash, position, ctx):
+        if st["subtask_id"] == "st-A":
+            raise AbortRun("operator abort")   # completes first -> triggers the break
+        time.sleep(0.2)                         # still running when the break cancels it
+        return "done"
+
+    host._executeSubtask = _fake_exec
+    batch = [{"subtask_id": "st-A"}, {"subtask_id": "st-B"}]
+    _, abort = host._handleParallelBatch(_FakeState(), batch, "doc", "/wd",
+                                         object(), object(), 0, 2)
+    assert isinstance(abort, AbortRun)
+    assert len(entered) == 2
+    assert set(exited) == set(entered)          # BOTH worktrees cleaned despite the abort
+
+
+def test_gc_orphans_runs_at_loop_start(monkeypatch):
+    """gcOrphans must be wired into run teardown/startup (not dead code): reclaim a prior
+    crash's stale worktrees before scheduling any work."""
+    monkeypatch.setattr(config, "WORKTREE_ISOLATION_ENABLED", True, raising=False)
+    called = []
+    monkeypatch.setattr(worktree, "gcOrphans", lambda state: called.append(state))
+
+    host = _LoopHost()
+    host._deadlinePassed = lambda state: False
+    host._livelockGuard = lambda *a, **k: None
+    host._checkControl = lambda *a, **k: None
+    host._maybeInstinct = lambda *a, **k: None
+
+    class _Bus:
+        def isForceReplan(self):
+            return False
+
+    state = _FakeState()   # nextActionable None + not self-referential -> loop drains, breaks
+    host.runExecutionLoop(state, "doc", "/wd", _Bus(), object(), parallelism=1)
+    assert called and called[0] is state
 
 
 def test_residual_guard_skips_only_shared_tree_under_parallelism(monkeypatch):

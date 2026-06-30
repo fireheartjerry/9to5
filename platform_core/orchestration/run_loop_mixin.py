@@ -172,6 +172,7 @@ class OrchestratorRunLoopMixin:
         with ThreadPoolExecutor(max_workers=parallelism) as pool:
             futures = {}
             cwds = {}
+            handled: set[str] = set()   # sids whose worktree exitWorktree already ran
             for st in batch:
                 sid = st["subtask_id"]
                 if isolate:
@@ -187,25 +188,36 @@ class OrchestratorRunLoopMixin:
                 futures[pool.submit(self._executeSubtask, state, st, architect_doc,
                                     work_dir, bus, dashboard, position, ctx)] = st
             abort = None
-            for f in as_completed(futures):
-                st = futures[f]
-                try:
-                    f.result()
-                except AbortRun as e:
-                    abort = e
-                    for pending in futures:   # stop scheduling the rest of the batch promptly
-                        pending.cancel()
-                    break
-                except Exception as e:  # noqa: BLE001 -- a crashed worker must not strand the subtask
-                    LOG.error("parallel subtask %s crashed: %s", st.get("subtask_id"), e, exc_info=True)
-                    with self._state_lock:
-                        state.updateSubtask(st["subtask_id"], status="failed", completed_at=nowIso())
-                        state.addNotification("subtask_crashed", f"{st.get('subtask_id')}: {e}")
-                finally:
-                    if isolate:
-                        sid = st["subtask_id"]
-                        merged = (state.getSubtask(sid) or {}).get("status") == "done"
-                        worktree.exitWorktree(cwds.get(sid, ""), merge=merged)
+            try:
+                for f in as_completed(futures):
+                    st = futures[f]
+                    try:
+                        f.result()
+                    except AbortRun as e:
+                        abort = e
+                        for pending in futures:   # stop scheduling the rest of the batch promptly
+                            pending.cancel()
+                        break
+                    except Exception as e:  # noqa: BLE001 -- a crashed worker must not strand the subtask
+                        LOG.error("parallel subtask %s crashed: %s", st.get("subtask_id"), e, exc_info=True)
+                        with self._state_lock:
+                            state.updateSubtask(st["subtask_id"], status="failed", completed_at=nowIso())
+                            state.addNotification("subtask_crashed", f"{st.get('subtask_id')}: {e}")
+                    finally:
+                        if isolate:
+                            sid = st["subtask_id"]
+                            merged = (state.getSubtask(sid) or {}).get("status") == "done"
+                            worktree.exitWorktree(cwds.get(sid, ""), merge=merged)
+                            handled.add(sid)
+            finally:
+                # ABORT/early-exit safety: a `break` on AbortRun skips the per-future finally for
+                # cancelled / not-yet-iterated futures, leaking their ENTERED worktrees + claims.
+                # Exit (merge=False, never adopt partial work) every entered-but-unhandled worktree.
+                if isolate:
+                    for sid, ctx in cwds.items():
+                        if sid not in handled:
+                            worktree.exitWorktree(ctx, merge=False)
+                            handled.add(sid)
         # Close thread-local SQLite connections so they don't accumulate across batches (CB-3).
         try:
             experience.close_pool()
@@ -221,6 +233,11 @@ class OrchestratorRunLoopMixin:
         self._parallelism = parallelism
         self._work_dir = work_dir
         self._last_instinct_ts = 0.0   # Spec B: throttle the periodic Nightclaw instinct call
+        # Reclaim stale worktrees left by a PRIOR crash of this task before scheduling any work
+        # (none are in use yet here) -- otherwise gcOrphans would be dead code and orphans pile up.
+        if getattr(config, "WORKTREE_ISOLATION_ENABLED", False):
+            from platform_core.runtime import worktree
+            worktree.gcOrphans(state)
         position = 0
         iters = 0
         no_progress = 0
