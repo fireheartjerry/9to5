@@ -158,16 +158,23 @@ class OrchestratorExecuteMixin:
         return vresult, passed, resume_session, failure_feedback
 
     def _trajectoryRecorder(self, state: TaskState):
-        """Lazily build ONE trajectory Recorder per run (cached on self). Off when disabled."""
+        """Lazily build ONE trajectory Recorder per run (cached on self). Off when disabled.
+        Double-checked under _state_lock so concurrent pool workers construct exactly ONE
+        Recorder per run (otherwise each thread would build a Recorder that races the same
+        <run_id>.json file)."""
         if not getattr(config, "TRAJECTORY_ENABLED", True):
             return None
         rec = getattr(self, "_trajectory", None)
-        if rec is None:
-            try:
-                from platform_core.runtime.trajectory import Recorder
-                rec = self._trajectory = Recorder(state.task_id)
-            except Exception:  # noqa: BLE001
-                rec = None
+        if rec is not None:
+            return rec
+        with self._state_lock:
+            rec = getattr(self, "_trajectory", None)   # re-check inside the lock
+            if rec is None:
+                try:
+                    from platform_core.runtime.trajectory import Recorder
+                    rec = self._trajectory = Recorder(state.task_id)
+                except Exception:  # noqa: BLE001
+                    rec = None
         return rec
 
     def _costBudget(self, state: TaskState):
@@ -207,6 +214,7 @@ class OrchestratorExecuteMixin:
         # the browser hands layer doesn't take a feed). Best-effort -- never block a run.
         feed = None
         recorder = None
+        parent_span = None   # LOCAL (not on self): per-thread so a peer worker can't close it
         if hands is self._run_claude:
             try:
                 from notifications.event_bus import get_bus
@@ -219,14 +227,9 @@ class OrchestratorExecuteMixin:
                 except Exception:  # noqa: BLE001 -- step_resume lands in Epic 1b; until then plan_sig=""
                     plan_sig = ""
                 recorder = self._trajectoryRecorder(state)
-                parent_span = None
                 if recorder is not None:
                     parent_span = recorder.openSpan(
                         "executor", None, {"sid": sid, "attempt": attempt})
-                    # eliza spawn-link: hand the parent step id to the subprocess so child
-                    # tool spans stitch into this subtask span.
-                    import os as _os
-                    _os.environ["NINE_TO_FIVE_PARENT_TRAJECTORY_STEP_ID"] = str(parent_span)
                 last = {"sid": resume_session}
 
                 def _session_getter():
@@ -236,9 +239,8 @@ class OrchestratorExecuteMixin:
                 sink = makeSink(state.task_id, sid, attempt, plan_sig, _session_getter,
                                 recorder=recorder, parent_span_id=parent_span)
                 feed = SubprocessFeed(get_bus(), sid, time.monotonic(), on_step=sink)
-                self._cur_exec_span = parent_span   # closed after the attempt (cost/usage)
             except Exception:  # noqa: BLE001 -- live feed + journal are best-effort
-                feed, recorder = None, None
+                feed, recorder, parent_span = None, None, None
         # cancel_check lets a long in-hands wait break early on abort, deadline, or an operator
         # kill-subprocess signal (Spec B: terminate THIS attempt, not the whole run) (CB-9).
         hands_kw = dict(work_dir=exec_cwd, task_state=state, subtask=subtask,
@@ -247,17 +249,21 @@ class OrchestratorExecuteMixin:
                         or self._deadlinePassed(state))
         if feed is not None:
             hands_kw["feed"] = feed
+        # eliza spawn-link: hand THIS attempt's parent step id to the child subprocess so its tool
+        # spans stitch into this subtask span. Passed per-spawn into the CHILD's env (runClaude
+        # copies os.environ per subprocess) -- never mutating the shared process-global os.environ --
+        # so concurrent pool workers can't clobber each other and no stale id leaks to a later spawn.
+        if hands is self._run_claude:
+            hands_kw["parent_trajectory_step_id"] = parent_span
         result = None
         try:
             result = hands(spec, **hands_kw)
         finally:
             if feed is not None:
                 feed.stop()
-            span = getattr(self, "_cur_exec_span", None)
-            if recorder is not None and span is not None:
+            if recorder is not None and parent_span is not None:
                 _res = result if isinstance(result, dict) else {}
-                recorder.closeSpan(span, usage=_res.get("usage"), cost_usd=_res.get("cost_usd"))
-                self._cur_exec_span = None
+                recorder.closeSpan(parent_span, usage=_res.get("usage"), cost_usd=_res.get("cost_usd"))
                 if getattr(config, "COST_BUDGET_ENABLED", False):
                     try:
                         self._costBudget(state).add(_res.get("cost_usd"))

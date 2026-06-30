@@ -115,7 +115,9 @@ def _prepareEnv(spec: dict, work_dir, task_state, subtask, system_prompt, extra,
 
 def _buildRunConfig(spec: dict, task_state, subtask, resume_session: Optional[str], *,
                     work: str, effort: str, flag, charter: str,
-                    claude_md_path) -> "tuple[list, list | None, dict, int, str]":
+                    claude_md_path,
+                    parent_trajectory_step_id: Optional[str] = None
+                    ) -> "tuple[list, list | None, dict, int, str]":
     """Build CLI command lists, OS env, and process flags. Raises FileNotFoundError on missing CLI.
 
     Returns (fresh_cmd, resume_cmd, env, creationflags, model)."""
@@ -156,6 +158,12 @@ def _buildRunConfig(spec: dict, task_state, subtask, resume_session: Optional[st
             pass
     if subtask is not None and subtask.get("subtask_id"):
         env["NINE_TO_FIVE_SUBTASK_ID"] = str(subtask.get("subtask_id"))
+    # eliza spawn-link: only the CHILD's env carries the parent trajectory step id, so concurrent
+    # workers never race a process-global var. Absent id -> ensure no stale value is inherited.
+    if parent_trajectory_step_id:
+        env["NINE_TO_FIVE_PARENT_TRAJECTORY_STEP_ID"] = str(parent_trajectory_step_id)
+    else:
+        env.pop("NINE_TO_FIVE_PARENT_TRAJECTORY_STEP_ID", None)
     return fresh_cmd, resume_cmd, env, creationflags, model
 
 
@@ -167,7 +175,8 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
               task_state=None, subtask: Optional[dict] = None,
               system_prompt: Optional[str] = None, extra: Optional[str] = None,
               timeout: Optional[int] = None, resume_session: Optional[str] = None,
-              cancel_check=None, feed=None) -> dict:
+              cancel_check=None, feed=None,
+              parent_trajectory_step_id: Optional[str] = None) -> dict:
     """Prepare the environment from the invocation spec, then fire one Claude run.
     Returns result dict with ok/returncode/stdout/stderr/profile/effort/cost_usd/session_id etc.
     ``feed`` (optional SubprocessFeed) taps stdout line-by-line for the live surfaces."""
@@ -192,7 +201,8 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
         fresh_cmd, resume_cmd, env, creationflags, model = _buildRunConfig(
             spec, task_state, subtask, resume_session,
             work=work, effort=effort, flag=flag, charter=ctx["charter"],
-            claude_md_path=claude_md_path)
+            claude_md_path=claude_md_path,
+            parent_trajectory_step_id=parent_trajectory_step_id)
     except FileNotFoundError as e:
         LOG.error("%s", e)
         return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
