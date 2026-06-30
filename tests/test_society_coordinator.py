@@ -83,3 +83,21 @@ def test_worker_crash_contained(tmp_path):
     statuses = {s["subtask_id"]: s["status"] for s in state.subtasks}
     assert statuses["st-001"] == "failed"          # crashed -> failed, peers unaffected
     assert any(m["ok"] for m in msgs)              # the other worker still completed
+
+
+from notifications.event_bus import LiveEventBus
+from society.blackboard import Blackboard as _BB
+from society.coordinator import Coordinator as _Coord
+
+
+def test_blackboard_appends_mirror_to_event_bus(tmp_path):
+    bus = LiveEventBus()
+    state = _state_two_ready()
+    bb = _BB(tmp_path / "m.jsonl")
+    coord = _Coord(state, bb, __import__("threading").Lock(),
+                   work_dir=str(tmp_path), bus=bus)
+    coord.attachBus()                     # wires bus mirror as blackboard.on_append
+    coord.postFacts({"plan": ["x"]})
+    events = bus.history(last_n=10)
+    assert any(e["kind"] == "society" for e in events)
+    assert events[-1]["data"]["kind"] == "facts"

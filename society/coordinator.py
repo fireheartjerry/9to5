@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Optional
 
 import config
+from notifications.event_bus import Event, get_bus
 from society.inbox import makeEntry
 from society.roles import classifyRole
 from society.worker import WorkerAgent
@@ -36,6 +37,23 @@ class Coordinator:
         self._state_lock = state_lock
         self._work_dir = work_dir
         self._bus = bus
+
+    def attachBus(self) -> None:
+        """Wire the event_bus mirror as the blackboard's on_append hook (presentation only)."""
+        self._blackboard._on_append = self._busMirror
+
+    def _busMirror(self, rec: dict) -> None:
+        """Emit a presentation-only mirror Event for every durable blackboard append.
+
+        The blackboard stays the source of truth; event_bus stays ephemeral fan-out."""
+        bus = self._bus or get_bus()
+        try:
+            bus.emit(Event(kind="society",
+                           sid=str(getattr(self._state, "task_id", "")),
+                           text=f"{rec.get('author')} -> {rec.get('to')}: {rec.get('kind')}",
+                           data=rec))
+        except Exception:  # noqa: BLE001 -- the mirror must never break coordination
+            LOG.warning("society bus mirror failed", exc_info=True)
 
     def postFacts(self, facts: dict) -> str:
         """Write the Magentic-One Task-Ledger facts once to the board (kind=facts, to=all)."""
