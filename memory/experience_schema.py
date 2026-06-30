@@ -207,6 +207,16 @@ _SCHEMA: tuple[str, ...] = (
         ts          TEXT,
         UNIQUE(run_id, subtask_id, attempt, step_idx)
     )""",
+    """CREATE TABLE IF NOT EXISTS exp_content (
+        run_id           TEXT,
+        st_id            TEXT,
+        solution_content TEXT,
+        post_mortem      TEXT,
+        importance       REAL,
+        model_id         TEXT,
+        created_at       TEXT,
+        UNIQUE(run_id, st_id)
+    )""",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_run ON subtasks(run_id)",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_passed ON subtasks(verify_passed)",
     "CREATE INDEX IF NOT EXISTS idx_arms_ctx ON policy_arms(context_key)",
@@ -229,11 +239,25 @@ def _ensureColumns(conn: sqlite3.Connection, table: str, cols: dict[str, str]) -
 # Columns added after the initial table DDL (table -> {col: decl}). Applied every
 # schema-ensure so an old db file is upgraded in place. Phases 2/4 extend this.
 _MIGRATIONS: dict[str, dict[str, str]] = {
-    "subtasks": {"adversary_stub": "INTEGER", "provenance": "TEXT"},
+    "subtasks": {"adversary_stub": "INTEGER", "provenance": "TEXT", "importance": "REAL"},
     "prompt_variants": {"provenance": "TEXT"},
     "reflections": {"provenance": "TEXT"},
     "solution_cache": {"provenance": "TEXT"},
 }
+
+
+def _applySchema(conn: sqlite3.Connection) -> None:
+    """Run every ``_SCHEMA`` statement. CREATE TABLE/UNIQUE errors propagate, but a
+    CREATE INDEX over a column a legacy table predates is skipped (an index is a pure
+    optimization -- a missing column must never crash ledger init)."""
+    for stmt in _SCHEMA:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if stmt.lstrip().upper().startswith("CREATE INDEX"):
+                LOG.debug("skipping index (column not present yet): %s", e)
+                continue
+            raise
 
 
 def _applyMigrations(conn: sqlite3.Connection) -> None:
@@ -266,8 +290,7 @@ def _new_conn(key: str, first: bool) -> sqlite3.Connection:
         conn.execute("PRAGMA synchronous=NORMAL")    # per-connection, cheap
         if first:
             conn.execute("PRAGMA journal_mode=WAL")  # persists in the db file -> set once
-            for stmt in _SCHEMA:
-                conn.execute(stmt)
+            _applySchema(conn)
             _applyMigrations(conn)
             _schema_ready.add(key)
     except BaseException:
@@ -306,8 +329,7 @@ def _connect(db_path: Optional[Path] = None) -> Iterator[sqlite3.Connection]:
     elif first:
         # path was reset/recreated under us -> ensure schema on the reused connection
         conn.execute("PRAGMA journal_mode=WAL")
-        for stmt in _SCHEMA:
-            conn.execute(stmt)
+        _applySchema(conn)
         _applyMigrations(conn)
         _schema_ready.add(key)
 
