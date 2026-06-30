@@ -56,7 +56,9 @@ def enterWorktree(state, sid: str) -> str:
             removeWorktree(str(dest))
         branch = _branchFor(task8, sid)
         repo = Path(config.PROJECT_ROOT)
-        _git(["worktree", "add", "-b", branch, str(dest), "HEAD"], repo)
+        # -B (force-reset) not -b: on a re-run/resume the branch wt/<task8>/<sid> already exists
+        # (worktree remove keeps the branch), and -b would fail -> silent loss of isolation.
+        _git(["worktree", "add", "-B", branch, str(dest), "HEAD"], repo)
         LOG.info("worktree: %s -> %s", sid, dest)
         return str(dest)
     except Exception as e:  # noqa: BLE001 -- degrade to the shared tree (today's behavior)

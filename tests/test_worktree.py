@@ -74,6 +74,30 @@ def test_merge_conflict_aborts_not_left_mid_merge(tmp_path, monkeypatch):
     assert r.returncode != 0 and not r.stdout.strip()   # repo is NOT left mid-merge
 
 
+@pytest.mark.skipif(not _has_git(), reason="git not available")
+def test_enter_same_sid_twice_stays_isolated(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(["init", "-b", "main"], repo)
+    _git(["config", "user.email", "t@t"], repo)
+    _git(["config", "user.name", "t"], repo)
+    (repo / "f.txt").write_text("hi", encoding="utf-8")
+    _git(["add", "."], repo)
+    _git(["commit", "-m", "init"], repo)
+    monkeypatch.setattr(worktree.config, "PROJECT_ROOT", repo)
+    monkeypatch.setattr(worktree.config, "STATE_DIR", tmp_path / "state")
+    st = _State("abcdef12-task", repo)
+
+    path1 = worktree.enterWorktree(st, "st-001")
+    assert worktree.isIsolated(path1) is True
+    # First run removes the worktree but the branch wt/abcdef12/st-001 PERSISTS (git keeps it).
+    worktree.exitWorktree(path1, merge=False)
+    # Re-run/resume the SAME sid: -b would fail on the existing branch and fall back to the shared
+    # tree (silent loss of isolation); -B force-resets it so the path is still isolated.
+    path2 = worktree.enterWorktree(st, "st-001")
+    assert worktree.isIsolated(path2) is True
+
+
 def test_enter_failopen_returns_shared(tmp_path, monkeypatch):
     # Point PROJECT_ROOT at a non-git dir -> git errors -> fall back to the shared work_dir.
     monkeypatch.setattr(worktree.config, "PROJECT_ROOT", tmp_path / "nope")
