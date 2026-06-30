@@ -14,43 +14,17 @@ RUN/TEST: python -m pytest tests/test_llm_io_pydantic.py
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
+# Env-coercion helpers live in ``_env`` so the Epic flag sub-module can reuse them
+# without importing this facade (avoids a circular import). Re-exported here as
+# module attributes so existing ``from ...llm import _envBool`` callers keep working.
+from platform_core.app_config._env import _envBool, _envFloat, _envInt  # noqa: F401
+
 _THIS_DIR = Path(__file__).resolve().parent
 load_dotenv(dotenv_path=_THIS_DIR / ".env")
-
-
-def _envBool(key: str, default: bool = False) -> bool:
-    raw = os.getenv(key)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _envInt(key: str, default: int) -> int:
-    raw = os.getenv(key)
-    if raw is None or not str(raw).strip():
-        return default
-    try:
-        return int(str(raw).strip())
-    except (TypeError, ValueError):
-        sys.stderr.write(f"[config] {key}={raw!r} is not an int; using default {default}\n")
-        return default
-
-
-def _envFloat(key: str, default: float) -> float:
-    """float(os.getenv(...)) that never crashes config import (see _envInt)."""
-    raw = os.getenv(key)
-    if raw is None or not str(raw).strip():
-        return default
-    try:
-        return float(str(raw).strip())
-    except (TypeError, ValueError):
-        sys.stderr.write(f"[config] {key}={raw!r} is not a float; using default {default}\n")
-        return default
 
 
 # --- Living Claude Code knowledge base (fetch + injection behaviour) -----
@@ -112,15 +86,8 @@ EXPERIENCE_POOL: bool = _envBool("EXPERIENCE_POOL", True)
 # --- Self-Improvement Engine (SIE) ---------------------------------------
 # Layer 0: the Experience Ledger -- a best-effort SQLite store of every run+subtask.
 EXPERIENCE_LEDGER_ENABLED: bool = _envBool("EXPERIENCE_LEDGER_ENABLED", True)
-# --- Epic 1: durable execution (trajectory / journal / resume / worktree) ---
-# Additive observability defaults ON (no behavior change); the two behavior-changing
-# units ship DARK (OFF) until soaked. All four units fail-open to today's behavior.
-TRAJECTORY_ENABLED: bool = _envBool("TRAJECTORY_ENABLED", True)
-COST_BUDGET_ENABLED: bool = _envBool("COST_BUDGET_ENABLED", False)
-COST_BUDGET_CEILING_USD: float = _envFloat("COST_BUDGET_CEILING_USD", 0.0)  # 0 = no ceiling
-STEP_JOURNAL_ENABLED: bool = _envBool("STEP_JOURNAL_ENABLED", True)
-STEP_RESUME_ENABLED: bool = _envBool("STEP_RESUME_ENABLED", False)
-WORKTREE_ISOLATION_ENABLED: bool = _envBool("WORKTREE_ISOLATION_ENABLED", False)
+# Epic 1 durable-execution flags (TRAJECTORY/COST_BUDGET/STEP_*/WORKTREE) live in
+# llm_epic_flags.py and are re-exported below via ``from .llm_epic_flags import *``.
 # Layer 1 retrieval: local embedding model + injection budget.
 EMBED_MODEL: str = os.getenv("EMBED_MODEL", "nomic-embed-text")
 RETRIEVAL_K: int = _envInt("RETRIEVAL_K", 5)
@@ -249,20 +216,8 @@ MCP_SERVERS: tuple[str, ...] = tuple(
 BROWSER_LAYER_ENABLED: bool = _envBool("BROWSER_LAYER_ENABLED", False)   # L1 (CDP)
 NATIVE_LAYER_ENABLED: bool = _envBool("NATIVE_LAYER_ENABLED", False)     # L2 (UIA)
 
-# --- Epic 8: Cloud Execution Fabric (all default to today's local-only behavior) ---
-# Master gate, like BROWSER_LAYER_ENABLED: OFF => LocalEnvironment everywhere => byte-for-byte today.
-EXECUTION_FABRIC_ENABLED: bool = _envBool("EXECUTION_FABRIC_ENABLED", False)
-# Default backend when the fabric is enabled and no per-subtask override is authored.
-EXECUTION_BACKEND: str = os.getenv("EXECUTION_BACKEND", "local")
-# Optional risk->backend map, populated only when Epic 4 (semantic action-risk) lands.
-EXECUTION_BACKEND_BY_RISK: dict[str, str] = {}
-# Container image bundling the `claude` CLI (DockerEnvironment); built/pulled out of band.
-DOCKER_EXECUTOR_IMAGE: str = os.getenv("DOCKER_EXECUTOR_IMAGE", "9to5-executor:latest")
-# Remote sub-strategy + host (RemoteEnvironment stubs; empty host => healthCheck False => local).
-EXECUTION_REMOTE_KIND: str = os.getenv("EXECUTION_REMOTE_KIND", "ssh")
-EXECUTION_REMOTE_HOST: str = os.getenv("EXECUTION_REMOTE_HOST", "")
-# Hard cap on a single backend provision (git worktree add / docker run / ssh connect).
-EXECUTION_PROVISION_TIMEOUT_SECONDS: int = _envInt("EXECUTION_PROVISION_TIMEOUT_SECONDS", 120)
+# Epic 8 Cloud Execution Fabric flags (EXECUTION_*/DOCKER_EXECUTOR_IMAGE) live in
+# llm_epic_flags.py and are re-exported below via ``from .llm_epic_flags import *``.
 
 # --- Phase 2: Gemini as the second brain ---------------------------------
 GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
@@ -312,33 +267,16 @@ ADVERSARY_PR_HOLD_ENABLED: bool = os.getenv("ADVERSARY_PR_HOLD", "1") != "0"
 MAX_SUBTASK_ATTEMPTS: int = 3        # max executor attempts per subtask (verify-retry)
 MAX_SUBTASKS: int = 8                # hard cap on plan size (anti-runaway / anti-livelock)
 
-# --- Epic 6: solution-space forking (ships dark; CONSERVATIVE OPT-IN) -----
-SOLUTION_FORK_ENABLED:                   bool  = _envBool("SOLUTION_FORK_ENABLED", False)
-SOLUTION_FORK_N:                         int   = _envInt("SOLUTION_FORK_N", 2)
-SOLUTION_FORK_MAX_CONCURRENCY:           int   = _envInt("SOLUTION_FORK_MAX_CONCURRENCY", 2)
-SOLUTION_FORK_COST_CEILING_USD:          float = _envFloat("SOLUTION_FORK_COST_CEILING_USD", 5.0)
-SOLUTION_FORK_BRANCH_COST_ESTIMATE_USD:  float = _envFloat("SOLUTION_FORK_BRANCH_COST_ESTIMATE_USD", 1.0)
-SOLUTION_FORK_GRAFT_ENABLED:             bool  = _envBool("SOLUTION_FORK_GRAFT_ENABLED", False)
-# Judge composite weights (sum to 1.0; facts outweigh rubric opinion).
-W_FACT:   float = _envFloat("SOLUTION_FORK_W_FACT", 0.5)
-W_RUBRIC: float = _envFloat("SOLUTION_FORK_W_RUBRIC", 0.3)
-W_RISK:   float = _envFloat("SOLUTION_FORK_W_RISK", 0.15)
-W_COST:   float = _envFloat("SOLUTION_FORK_W_COST", 0.05)
+# Epic 6 solution-space forking flags (SOLUTION_FORK_*/W_FACT/W_RUBRIC/W_RISK/W_COST)
+# live in llm_epic_flags.py and are re-exported below via ``from .llm_epic_flags import *``.
 
 # --- Verification gate ---------------------------------------------------
 VERIFY_DEFAULT_EXPECT: str = "exit_zero"
 VERIFY_TIMEOUT_SECONDS: int = 120
 
-# --- Epic 2: Trustworthy 7B loop (staged defaults; each layer independently flaggable) ---
-# Dual-ledger planner ships DARK first (A/B vs the current planner on the golden eval suite).
-DUAL_LEDGER_PLANNER_ENABLED: bool = _envBool("DUAL_LEDGER_PLANNER_ENABLED", False)
-# Execution-grounded independent verifier + Evidence Receipt: additive, only DOWNGRADES, on by default.
-INDEPENDENT_VERIFY_ENABLED: bool = _envBool("INDEPENDENT_VERIFY_ENABLED", True)  # code-change subtasks only
-EVIDENCE_RECEIPT_ENABLED: bool = _envBool("EVIDENCE_RECEIPT_ENABLED", True)
-# JSON self-correction: how many times to re-prompt the brain with exact field errors before giving up.
-BRAIN_JSON_RETRY_MAX: int = _envInt("BRAIN_JSON_RETRY_MAX", 2)
-# Dual-ledger stall counter: root-cause replan fires at/above this many consecutive stalls.
-STALL_THRESHOLD: int = _envInt("STALL_THRESHOLD", 2)
+# Epic 2 trustworthy-loop flags (DUAL_LEDGER_PLANNER/INDEPENDENT_VERIFY/EVIDENCE_RECEIPT/
+# BRAIN_JSON_RETRY_MAX/STALL_THRESHOLD) live in llm_epic_flags.py and are re-exported
+# below via ``from .llm_epic_flags import *``.
 
 # --- Run control ---------------------------------------------------------
 CONTROL_MODE_DEFAULT: str = "watch"   # "watch" (autonomous + abort) | "gated" (approval gates)
@@ -347,25 +285,8 @@ CONTROL_MODE_DEFAULT: str = "watch"   # "watch" (autonomous + abort) | "gated" (
 PLAN_GATE_AUTO_APPROVE_SECONDS: float = _envFloat("PLAN_GATE_AUTO_APPROVE_SECONDS", 8)
 DEFAULT_PARALLELISM: int = 1          # >1 runs independent ready subtasks concurrently
 
-# --- Agent Society / Workforce (Epic 5) -- OFF by default -----------------
-# A 9to5-owned multi-agent workforce: coordinator + specialized role workers on a
-# shared blackboard. When False the existing star/parallel path is unchanged.
-SOCIETY_ENABLED: bool = _envBool("SOCIETY_ENABLED", False)
-# Hard cap on concurrent role workers. MUST stay <= run parallelism (anti-runaway).
-SOCIETY_MAX_WORKERS: int = _envInt("SOCIETY_MAX_WORKERS", 3)
-# Max bounded debate rounds before convergence is forced (anti-livelock).
-SOCIETY_DEBATE_MAX_ROUNDS: int = _envInt("SOCIETY_DEBATE_MAX_ROUNDS", 3)
-# Per-run USD budget governor for the workforce; on breach the coordinator stops
-# spawning new workers and finalizes with what landed.
-SOCIETY_TOKEN_BUDGET_USD: float = _envFloat("SOCIETY_TOKEN_BUDGET_USD", 5.0)
-# role -> effort_level key (resolved through MODEL_BY_EFFORT; narrows, never bypasses).
-SOCIETY_ROLE_MODELS: dict[str, str] = {
-    "researcher": os.getenv("SOCIETY_MODEL_RESEARCHER", "low"),
-    "coder":      os.getenv("SOCIETY_MODEL_CODER", "high"),
-    "tester":     os.getenv("SOCIETY_MODEL_TESTER", "default"),
-    "reviewer":   os.getenv("SOCIETY_MODEL_REVIEWER", "high"),
-    "planner":    os.getenv("SOCIETY_MODEL_PLANNER", "default"),
-}
+# Epic 5 Agent Society / Workforce flags (SOCIETY_*) live in llm_epic_flags.py and
+# are re-exported below via ``from .llm_epic_flags import *``.
 
 # --- Claude Code primitives (model routing) ------------------------------
 # Automatic model fallback chain (handed to `claude --fallback-model`).
@@ -494,3 +415,7 @@ _SIE_BOUNDS: dict[str, tuple[float, float]] = {
     "PROMPT_PROMOTE_MIN_USES": (3, 100),
     "CONFIDENCE_DEFER_THRESHOLD": (0.0, 1.0),
 }
+
+# Epic 1/2/5/6/8 feature flags live in a sibling module to keep this file under the
+# size threshold. Re-export them as module attributes so ``config.<FLAG>`` resolves.
+from platform_core.app_config.llm_epic_flags import *  # noqa: E402,F401,F403
