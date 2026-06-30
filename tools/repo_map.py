@@ -54,6 +54,7 @@ REMEDIATION = "Run:  python tools/repo_map.py"
 EXCLUDE_DIRS = {
     "venv", ".git", "__pycache__", ".claude", ".pytest_cache", ".sc-ctx",
     "test-run", "test-run2", "vault", "logs", "docs", "node_modules", ".github",
+    "references",
 }
 
 # Modules whose covering test is not tests/test_<name>.py. dotted-module -> [test paths].

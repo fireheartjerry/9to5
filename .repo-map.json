@@ -486,9 +486,9 @@
         {
           "name": "runClaude",
           "kind": "function",
-          "signature": "(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, system_prompt: Optional[str]=None, extra: Optional[str]=None, timeout: Optional[int]=None, resume_session: Optional[str]=None, cancel_check=None, feed=None) -> dict",
+          "signature": "(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, system_prompt: Optional[str]=None, extra: Optional[str]=None, timeout: Optional[int]=None, resume_session: Optional[str]=None, cancel_check=None, feed=None, parent_trajectory_step_id: Optional[str]=None) -> dict",
           "summary": "Prepare the environment from the invocation spec, then fire one Claude run.",
-          "lineno": 166
+          "lineno": 174
         }
       ],
       "depends_on": [
@@ -1378,6 +1378,7 @@
       ],
       "test": [
         "tests/test_config_robust_env.py",
+        "tests/test_durable_config.py",
         "tests/test_hn_config.py",
         "tests/test_notification_config.py"
       ],
@@ -1451,6 +1452,7 @@
         "learning.wisdom",
         "main",
         "memory.conviction_ledger",
+        "memory.experience_journal",
         "memory.experience_pr",
         "memory.experience_runs",
         "memory.experience_schema",
@@ -1523,6 +1525,7 @@
         "platform_core.orchestration.github",
         "platform_core.orchestration.knowledge_refresh",
         "platform_core.orchestration.llm_mixin",
+        "platform_core.orchestration.parallel_safety",
         "platform_core.orchestration.plan_mixin",
         "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.review_mixin",
@@ -1530,9 +1533,14 @@
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.self_ref_gate",
+        "platform_core.orchestration.step_resume",
+        "platform_core.orchestration.step_sink",
         "platform_core.orchestration.subtask",
         "platform_core.runtime.control",
+        "platform_core.runtime.cost_budget",
         "platform_core.runtime.resilience",
+        "platform_core.runtime.trajectory",
+        "platform_core.runtime.worktree",
         "platform_core.simulator.simulation",
         "scripts.repo_health",
         "selfmod",
@@ -3699,6 +3707,7 @@
         "unannotated"
       ],
       "test": [
+        "tests/test_parallel_safety.py",
         "tests/test_safety_gate_divergence.py",
         "tests/test_verify_shell_safety.py"
       ],
@@ -4027,6 +4036,7 @@
       "exports": [],
       "depends_on": [
         "memory.experience_adapters",
+        "memory.experience_journal",
         "memory.experience_policy",
         "memory.experience_pr",
         "memory.experience_runs",
@@ -4038,6 +4048,7 @@
         "unannotated"
       ],
       "test": [
+        "tests/test_experience_journal.py",
         "tests/test_experience_ledger.py",
         "tests/test_experience_pr.py",
         "tests/test_memory_experience_pr.py"
@@ -4078,6 +4089,8 @@
         "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_phase_mixin",
+        "platform_core.orchestration.step_resume",
+        "platform_core.orchestration.step_sink",
         "state.task_schema"
       ]
     },
@@ -4156,6 +4169,60 @@
         "unannotated"
       ],
       "test": [],
+      "callers": [
+        "memory.experience"
+      ]
+    },
+    "memory.experience_journal": {
+      "path": "memory/experience_journal.py",
+      "purpose": "Experience Ledger -- step-level pending-writes journal (Epic 1, unit a).",
+      "exports": [
+        {
+          "name": "appendStep",
+          "kind": "function",
+          "signature": "(run_id: str, subtask_id: str, attempt: int, step_idx: int, kind: str, tool: str, summary: str, input_obj: Any, plan_sig: str, session_id: str, db_path: Optional[Path]=None) -> None",
+          "summary": "Idempotently upsert one executor step row",
+          "lineno": 28
+        },
+        {
+          "name": "loadSteps",
+          "kind": "function",
+          "signature": "(run_id: str, subtask_id: str, attempt: int, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "All journaled steps for an attempt, ordered by step_idx",
+          "lineno": 57
+        },
+        {
+          "name": "lastStepIdx",
+          "kind": "function",
+          "signature": "(run_id: str, subtask_id: str, attempt: int, db_path: Optional[Path]=None) -> int",
+          "summary": "Highest journaled step_idx for an attempt, or -1 if none / on any error.",
+          "lineno": 71
+        },
+        {
+          "name": "lastAttempt",
+          "kind": "function",
+          "signature": "(run_id: str, subtask_id: str, db_path: Optional[Path]=None) -> int",
+          "summary": "Highest attempt number journaled for a subtask, or 1 if none / on any error.",
+          "lineno": 88
+        },
+        {
+          "name": "markAttemptSuperseded",
+          "kind": "function",
+          "signature": "(run_id: str, subtask_id: str, attempt: int, db_path: Optional[Path]=None) -> None",
+          "summary": "Resume bookkeeping: drop a stale attempt's journal rows so it won't be resumed.",
+          "lineno": 104
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience_schema"
+      ],
+      "side_effects": [
+        "writes step_journal rows in experience.db"
+      ],
+      "test": [
+        "tests/test_experience_journal.py"
+      ],
       "callers": [
         "memory.experience"
       ]
@@ -4399,14 +4466,14 @@
           "kind": "function",
           "signature": "() -> None",
           "summary": "Close every pooled connection across all threads (shutdown / test teardown).",
-          "lineno": 327
+          "lineno": 343
         },
         {
           "name": "init",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> None",
           "summary": "Create the database + schema if absent (idempotent).",
-          "lineno": 343
+          "lineno": 359
         }
       ],
       "depends_on": [
@@ -4419,6 +4486,7 @@
       "callers": [
         "memory.experience",
         "memory.experience_adapters",
+        "memory.experience_journal",
         "memory.experience_policy",
         "memory.experience_pr",
         "memory.experience_runs",
@@ -6605,7 +6673,8 @@
         "notifications.subprocess_feed",
         "notifications.webdash",
         "platform_core.orchestration.execute_mixin",
-        "platform_core.orchestration.run_phase_mixin"
+        "platform_core.orchestration.run_phase_mixin",
+        "platform_core.runtime.cost_budget"
       ]
     },
     "notifications.health_aura": {
@@ -6751,6 +6820,48 @@
       "callers": [
         "human_nature.instinct",
         "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "notifications.jerry_client": {
+      "path": "notifications/jerry_client.py",
+      "purpose": "jerry_client -- thin, zero-dependency bridge from 9to5 to the Jerry decision service.",
+      "exports": [
+        {
+          "name": "buildGateContext",
+          "kind": "function",
+          "signature": "(gate: str, state) -> dict",
+          "summary": "Summarize TaskState into the compact context the Jerry service expects.",
+          "lineno": 36
+        },
+        {
+          "name": "decide",
+          "kind": "function",
+          "signature": "(gate: str, state, *, timeout: float=6.0) -> Optional[dict]",
+          "summary": "Ask the Jerry service for a verb",
+          "lineno": 73
+        },
+        {
+          "name": "advise",
+          "kind": "function",
+          "signature": "(gate: str, state, *, timeout: float=6.0) -> Optional[str]",
+          "summary": "Advisor role: a one-line second opinion to inject into the Ollama brain's",
+          "lineno": 92
+        },
+        {
+          "name": "recordOutcome",
+          "kind": "function",
+          "signature": "(gate: str, predicted: Optional[dict], human_verb: str) -> None",
+          "summary": "Append a shadow-mode comparison line (model vs human)",
+          "lineno": 103
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "appends to logs/jerry_shadow.jsonl"
+      ],
+      "test": [],
+      "callers": [
+        "platform_core.orchestration.control_mixin"
       ]
     },
     "notifications.metrics": {
@@ -8784,7 +8895,9 @@
         "unannotated"
       ],
       "test": [],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.run_loop_mixin"
+      ]
     },
     "platform_core.orchestration.brain_io": {
       "path": "platform_core/orchestration/brain_io.py",
@@ -8834,6 +8947,7 @@
         "notifications.dashboard",
         "notifications.discord_bot",
         "notifications.engagement",
+        "notifications.jerry_client",
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.github",
         "platform_core.orchestration.run_loop",
@@ -8879,8 +8993,13 @@
         "platform_core.core.surfaces",
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.self_ref_gate",
+        "platform_core.orchestration.step_resume",
+        "platform_core.orchestration.step_sink",
         "platform_core.orchestration.subtask",
+        "platform_core.runtime",
         "platform_core.runtime.control",
+        "platform_core.runtime.cost_budget",
+        "platform_core.runtime.trajectory",
         "state.task"
       ],
       "side_effects": [
@@ -8978,6 +9097,50 @@
         "orchestrator"
       ]
     },
+    "platform_core.orchestration.parallel_safety": {
+      "path": "platform_core/orchestration/parallel_safety.py",
+      "purpose": "File-disjointness parallel-safety + atomic CAS claim (Epic 1, unit c; guild port).",
+      "exports": [
+        {
+          "name": "filesTouched",
+          "kind": "function",
+          "signature": "(subtask: dict) -> set[str]",
+          "summary": "Planner-authored file-set",
+          "lineno": 29
+        },
+        {
+          "name": "disjoint",
+          "kind": "function",
+          "signature": "(a: dict, b: dict) -> bool",
+          "summary": "True only if BOTH file-sets are known and share no file",
+          "lineno": 37
+        },
+        {
+          "name": "safeParallelSet",
+          "kind": "function",
+          "signature": "(state, ready: list[dict], limit: int) -> list[dict]",
+          "summary": "Greedily pick ready subtasks whose file-sets are pairwise disjoint + dependency-free.",
+          "lineno": 51
+        },
+        {
+          "name": "claim",
+          "kind": "function",
+          "signature": "(state, sid: str) -> bool",
+          "summary": "Atomic CAS: flip pending->in_progress ONLY if still pending (else lost-race=False).",
+          "lineno": 69
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "claim() flips subtask status via state.updateSubtask"
+      ],
+      "test": [
+        "tests/test_parallel_safety.py"
+      ],
+      "callers": []
+    },
     "platform_core.orchestration.plan_mixin": {
       "path": "platform_core/orchestration/plan_mixin.py",
       "purpose": "Planning mixin for the Orchestrator – subtask plan authoring, spec construction, SIE context.",
@@ -9066,6 +9229,7 @@
         "notifications.discord_bot",
         "platform_core.orchestration.github",
         "platform_core.orchestration.pr_feedback",
+        "platform_core.runtime",
         "state.task"
       ],
       "side_effects": [
@@ -9115,8 +9279,10 @@
         "memory.experience",
         "notifications.dashboard",
         "notifications.discord_bot",
+        "platform_core.orchestration",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.subtask",
+        "platform_core.runtime",
         "platform_core.runtime.control",
         "state.task"
       ],
@@ -9166,6 +9332,7 @@
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.knowledge_refresh",
         "platform_core.orchestration.pr_feedback",
+        "platform_core.orchestration.step_resume",
         "platform_core.orchestration.time_utils",
         "platform_core.runtime.control",
         "state.task"
@@ -9201,6 +9368,73 @@
         "platform_core.orchestration.execute_mixin"
       ]
     },
+    "platform_core.orchestration.step_resume": {
+      "path": "platform_core/orchestration/step_resume.py",
+      "purpose": "Resume-from-last-step reconcile (Epic 1, unit b).",
+      "exports": [
+        {
+          "name": "planSignature",
+          "kind": "function",
+          "signature": "(state) -> str",
+          "summary": "Stable hash over the task graph: each subtask's id, title, depends_on, verify.cmd.",
+          "lineno": 35
+        },
+        {
+          "name": "resumePlan",
+          "kind": "function",
+          "signature": "(state, subtask: dict, steps: list[dict]) -> dict",
+          "summary": "AGX-style reconstruction: a token-budgeted [x]/[->]/[ ] block + stability footer.",
+          "lineno": 53
+        },
+        {
+          "name": "reconcileResume",
+          "kind": "function",
+          "signature": "(state, db_path: Optional[Path]=None) -> None",
+          "summary": "For each in_progress subtask: keep it resumable on a plan-sig match (stash resume_block…",
+          "lineno": 71
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "mutates subtask session/status via state.updateSubtask"
+      ],
+      "test": [
+        "tests/test_step_resume.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "platform_core.orchestration.step_sink": {
+      "path": "platform_core/orchestration/step_sink.py",
+      "purpose": "One on_step callback that fans each executor tool call to BOTH the step journal",
+      "exports": [
+        {
+          "name": "makeSink",
+          "kind": "function",
+          "signature": "(run_id: str, subtask_id: str, attempt: int, plan_sig: str, session_getter: Callable[[], Optional[str]], recorder: Any=None, parent_span_id: Optional[str]=None) -> Callable[[int, str, str, dict], None]",
+          "summary": "Build the on_step(step_idx, tool, summary, input) callback",
+          "lineno": 22
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience"
+      ],
+      "side_effects": [
+        "writes journal rows + trajectory spans"
+      ],
+      "test": [
+        "tests/test_step_sink.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.execute_mixin"
+      ]
+    },
     "platform_core.orchestration.subtask": {
       "path": "platform_core/orchestration/subtask.py",
       "purpose": "Subtask planning helpers and verification utilities for the orchestrator.",
@@ -9214,7 +9448,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_memory_subtask_manager.py"
+        "tests/test_memory_subtask_manager.py",
+        "tests/test_subtask_files_touched.py"
       ],
       "callers": [
         "orchestrator",
@@ -9246,7 +9481,11 @@
         "unannotated"
       ],
       "test": [],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.review_mixin",
+        "platform_core.orchestration.run_loop_mixin"
+      ]
     },
     "platform_core.runtime.control": {
       "path": "platform_core/runtime/control.py",
@@ -9299,6 +9538,32 @@
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "platform_core.runtime.cost_budget": {
+      "path": "platform_core/runtime/cost_budget.py",
+      "purpose": "Swarmclaw-style per-run cost budget (Epic 1, unit d bolt-on).",
+      "exports": [
+        {
+          "name": "CostBudget",
+          "kind": "class",
+          "signature": "",
+          "summary": "Accumulate per-run USD; emit one warn + one ceiling event",
+          "lineno": 27
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.event_bus"
+      ],
+      "side_effects": [
+        "emits Events on the live bus"
+      ],
+      "test": [
+        "tests/test_cost_budget.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.execute_mixin"
       ]
     },
     "platform_core.runtime.enhanced_error_handling": {
@@ -9433,6 +9698,89 @@
       ],
       "test": [
         "tests/test_retry_policy.py"
+      ],
+      "callers": []
+    },
+    "platform_core.runtime.trajectory": {
+      "path": "platform_core/runtime/trajectory.py",
+      "purpose": "Eliza-style file-based JSON span-tree trajectory recorder (Epic 1, unit d).",
+      "exports": [
+        {
+          "name": "Recorder",
+          "kind": "class",
+          "signature": "",
+          "summary": "Append-only JSON span tree for one run",
+          "lineno": 38
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "writes state/trajectories/<run_id>.json"
+      ],
+      "test": [
+        "tests/test_trajectory.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.execute_mixin"
+      ]
+    },
+    "platform_core.runtime.worktree": {
+      "path": "platform_core/runtime/worktree.py",
+      "purpose": "Git-worktree-per-subtask isolation backend (Epic 1, unit c; hermes/guild pattern port).",
+      "exports": [
+        {
+          "name": "enterWorktree",
+          "kind": "function",
+          "signature": "(state, sid: str) -> str",
+          "summary": "`git worktree add` a branch off HEAD into state/.sc-worktrees/<task8>/<sid>.",
+          "lineno": 49
+        },
+        {
+          "name": "collectChanges",
+          "kind": "function",
+          "signature": "(path: str, sid: str) -> None",
+          "summary": "Stage+commit the worktree's working tree so a merge brings the executor's edits back.",
+          "lineno": 70
+        },
+        {
+          "name": "exitWorktree",
+          "kind": "function",
+          "signature": "(path: str, *, merge: bool) -> None",
+          "summary": "On success commit + merge the worktree branch back into the run branch, then remove the",
+          "lineno": 83
+        },
+        {
+          "name": "removeWorktree",
+          "kind": "function",
+          "signature": "(path: str) -> None",
+          "summary": "Path-scoped safe-remove: refuse any path outside state/.sc-worktrees/",
+          "lineno": 113
+        },
+        {
+          "name": "gcOrphans",
+          "kind": "function",
+          "signature": "(state) -> None",
+          "summary": "Remove leftover worktrees for THIS task (TTL/whitelist cleanup)",
+          "lineno": 128
+        },
+        {
+          "name": "isIsolated",
+          "kind": "function",
+          "signature": "(path: str) -> bool",
+          "summary": "True only when ``path`` lives under state/.sc-worktrees/ (an isolated worktree).",
+          "lineno": 140
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "creates/removes git worktrees under state/.sc-worktrees/"
+      ],
+      "test": [
+        "tests/test_worktree.py"
       ],
       "callers": []
     },
@@ -9788,6 +10136,7 @@
       ],
       "test": [
         "tests/test_memory_subtask_manager.py",
+        "tests/test_subtask_files_touched.py",
         "tests/test_task_listrecent.py",
         "tests/test_task_save_concurrent.py",
         "tests/test_task_schema_hn.py"
@@ -10377,77 +10726,77 @@
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> list[Path]",
           "summary": "All first-party .py files (sorted, deterministic), skipping EXCLUDE_DIRS",
-          "lineno": 68
+          "lineno": 69
         },
         {
           "name": "module_dotted",
           "kind": "function",
           "signature": "(path: Path) -> str",
           "summary": "agents/adversary.py -> 'agents.adversary'",
-          "lineno": 83
+          "lineno": 84
         },
         {
           "name": "first_party_roots",
           "kind": "function",
           "signature": "() -> set[str]",
           "summary": "Top-level importable names: every top-level .py stem + every dir holding an __init__.py.",
-          "lineno": 90
+          "lineno": 91
         },
         {
           "name": "parse_module",
           "kind": "function",
           "signature": "(path: Path, roots: set[str]) -> dict",
           "summary": "Extract the per-module record (sans callers, which are computed globally).",
-          "lineno": 212
+          "lineno": 213
         },
         {
           "name": "find_tests",
           "kind": "function",
           "signature": "(dotted: str, name: str) -> list[str]",
           "summary": "Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> glob -> [].",
-          "lineno": 230
+          "lineno": 231
         },
         {
           "name": "build_map",
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> dict",
           "summary": "Full-repo machine index",
-          "lineno": 242
+          "lineno": 243
         },
         {
           "name": "toplevel_import_graph",
           "kind": "function",
           "signature": "() -> dict[str, list[str]]",
           "summary": "{dotted-module: [first-party modules imported at LOAD time]}",
-          "lineno": 271
+          "lineno": 272
         },
         {
           "name": "render_header",
           "kind": "function",
           "signature": "(rec: dict) -> str",
           "summary": "Render the @AI-MAP block (text only, no surrounding quotes).",
-          "lineno": 286
+          "lineno": 287
         },
         {
           "name": "splice_header",
           "kind": "function",
           "signature": "(src: str, header: str) -> Optional[str]",
           "summary": "Return ``src`` with ``header`` placed inside the module docstring (below the prose,",
-          "lineno": 303
+          "lineno": 304
         },
         {
           "name": "write_outputs",
           "kind": "function",
           "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 325
+          "lineno": 326
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: Optional[list[str]]=None) -> int",
           "summary": "",
-          "lineno": 338
+          "lineno": 339
         }
       ],
       "depends_on": [],
