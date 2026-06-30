@@ -121,6 +121,7 @@ Dashboards, Obsidian, ControlBus, learning traces, and Discord events should obs
 | Verification status | verifier result object |
 | Human control | Discord/web UI commands |
 | File safety boundaries | Universe + self-modification guard |
+| Coordination artifacts (Epic 5) | Blackboard — facts/results/proposals/votes (NOT status; task JSON still owns status/claim) |
 | Dashboard display | derived view only |
 
 Discord and web dashboards are windows into state, not state machines.
@@ -251,6 +252,39 @@ Recommended role:
 - eval generator
 - prompt/router optimizer
 - small LoRA/adapter experiment harness
+
+## Workforce topology (Epic 5 — agent society, OFF by default)
+
+The default topology is a star: one Ollama brain plans, one Claude executor acts. Epic 5 adds
+an optional 9to5-owned **multi-agent workforce** behind `config.SOCIETY_ENABLED` (default
+`False`). The `society/` package is a peer of `agents/`/`workflows/`:
+
+- **`society/coordinator.py` — `Coordinator`**: deterministic Python (NOT a new LLM). Posts
+  Task-Ledger facts, selects a file-disjoint batch (Epic-1 CAS seam), spawns one `WorkerAgent`
+  per claim, collects results, detects contested subtasks, and enforces a per-run USD budget
+  governor (`SOCIETY_TOKEN_BUDGET_USD`).
+- **`society/worker.py` — `WorkerAgent`**: role-scoped wrapper over `agents/executor.py::runClaude`.
+  Performs the atomic CAS claim against **task JSON** (single source of truth for status/claim),
+  builds a narrowed `InvocationSpec`, runs in its work_dir, posts a `result` to the blackboard.
+- **`society/blackboard.py` — `Blackboard`**: append-only per-run JSONL coordination surface
+  (threadlock + best-effort cross-process file lock, malformed-line tolerant). Holds ONLY
+  coordination artifacts; every append mirrors to `event_bus` for live surfaces.
+- **`society/roles.py`**, **`society/inbox.py`**, **`society/debate.py`**: role registry +
+  capability router, addressing/cursor helpers, and bounded structured debate
+  (`selectNextSpeaker` + arbiter via `agents/second_brain.py::consult`, round-cap + diff-hash
+  oscillation guard). Debate verdicts are **advisory**; the verifier still gates.
+
+**LOCKED concurrency boundary:** threads + per-worker git worktree filesystem isolation
+(mirrors `run_loop_mixin._handleParallelBatch`), NOT process-per-worker. Run-loop wiring lives
+in `society/society_batch.py` (extracted to keep `run_loop_mixin.py` ≤450); the mixin's
+`_societyGate`/`_handleSocietyBatch` delegate to it. With the flag **off**, the gate is closed
+and the star/parallel path is byte-identical to today.
+
+**Epic-1 co-design (Durable Execution — worktrees + file-disjointness):** Epic 5 ships and is
+fully testable without Epic 1 via named seams with standalone fallbacks — `selectDisjointBatch`
+defaults to deps-only batching (`file_sets_fn=None`), workers default to the shared tree
+(advisory mode, serial), `BlackboardEntry.span_id` stays `None`, and `_remediationUnsafe`
+already encodes the worktree-isolation flip (peer-safe once each worker edits its own tree).
 
 ## Module layout (post-modularization)
 
