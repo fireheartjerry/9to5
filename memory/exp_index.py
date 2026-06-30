@@ -45,6 +45,54 @@ class NullIndex:
         return None
 
 
+class ChromaIndex:
+    """Disk-persistent chromadb collection fed 9to5's OWN nomic-embed-text vectors.
+
+    We pass embeddings explicitly (NOT chroma's default Sentence-Transformers embedder)
+    so the index lives in the SAME space as retrieval.embed and reuses its negative cache.
+    Cosine distance is configured; score = 1 - distance. ~AutoGen StringSimilarityMap port
+    (MIT). Best-effort: any backend error is swallowed so retrieval falls back to the scan."""
+
+    def __init__(self, persist_dir: str) -> None:
+        import chromadb
+        from pathlib import Path
+        Path(persist_dir).mkdir(parents=True, exist_ok=True)
+        self._client = chromadb.PersistentClient(
+            path=persist_dir,
+            settings=chromadb.config.Settings(anonymized_telemetry=False, allow_reset=True))
+        self._col = self._client.get_or_create_collection(
+            name=_collectionName(), metadata={"hnsw:space": "cosine"})
+
+    def addPair(self, uid: str, vec: list[float], payload: dict) -> None:
+        try:
+            meta = {k: v for k, v in (payload or {}).items()
+                    if isinstance(v, (str, int, float, bool)) and v is not None}
+            self._col.upsert(ids=[uid], embeddings=[list(vec)], metadatas=[meta or {"_": ""}])
+        except Exception as e:  # noqa: BLE001
+            LOG.debug("ChromaIndex.addPair failed (ignored): %s", e)
+
+    def query(self, vec: list[float], k: int, threshold: float) -> list[dict]:
+        try:
+            res = self._col.query(query_embeddings=[list(vec)], n_results=max(1, int(k)),
+                                  include=["distances", "metadatas"])
+        except Exception as e:  # noqa: BLE001
+            LOG.debug("ChromaIndex.query failed (ignored): %s", e)
+            return []
+        ids = (res.get("ids") or [[]])[0]
+        dists = (res.get("distances") or [[]])[0]
+        metas = (res.get("metadatas") or [[]])[0]
+        out: list[dict] = []
+        for uid, dist, meta in zip(ids, dists, metas):
+            score = 1.0 - float(dist)        # cosine distance -> similarity
+            if score < threshold:
+                continue
+            out.append({"uid": uid, "score": score, "payload": dict(meta or {})})
+        return out
+
+    def persist(self) -> None:
+        return None                          # PersistentClient writes through automatically
+
+
 def _collectionName() -> str:
     """Embedder-pinned collection name so a model/dim swap starts a fresh space."""
     raw = f"exp_{config.EMBED_MODEL}_{int(config.ANN_EMBED_DIM)}"
@@ -53,8 +101,11 @@ def _collectionName() -> str:
 
 def _buildBackend() -> "AnnIndex":
     """Construct the configured primary backend. Raises if its dependency is absent (the
-    caller catches and falls open to NullIndex). ChromaIndex is added in the next task."""
-    raise ImportError("no ANN backend built yet")
+    caller catches and falls open to NullIndex)."""
+    backend = getattr(config, "ANN_INDEX_BACKEND", "chroma")
+    if backend == "chroma":
+        return ChromaIndex(config.ANN_INDEX_DIR)
+    raise ValueError(f"unknown ANN_INDEX_BACKEND: {backend!r}")
 
 
 _INDEX_SINGLETON: Optional["AnnIndex"] = None
