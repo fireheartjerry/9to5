@@ -269,14 +269,25 @@ def buildCharter(profile: str) -> str:
     return f"[9TO5 EXECUTOR CHARTER -- role: {p['title']}]\n{_COMMON_CHARTER}\n{p['charter']}"
 
 
+def _evolvedBody(target: str, fallback: str) -> str:
+    """Promoted playbook champion if one exists, else the in-code constant (byte-for-byte)."""
+    try:
+        from learning.evolution import candidate
+        body = candidate.champion_body("playbook", target, default=fallback)
+        return body if body else fallback
+    except Exception:  # noqa: BLE001 -- evolution must never break the executor briefing
+        return fallback
+
+
 def buildPlaybook(profile: str) -> str:
     """Richer role playbook rendered as a CLAUDE.md section (auto-read by Claude Code)."""
     p = PROFILES.get(profile) or PROFILES[_DEFAULT_PROFILE]
+    body = _evolvedBody(profile, p["playbook"])
     return (
         f"## Executor playbook — role: {p['title']}\n\n"
         f"(Injected deterministically by 9to5 for every attempt — not optional.)\n\n"
         f"### Non-negotiables (all roles)\n{_COMMON_PLAYBOOK}\n\n"
-        f"{p['playbook']}\n\n"
+        f"{body}\n\n"
         f"> Full expert recommendations: see *Part E — Expert Recommendations* in "
         f"`{config.CLAUDE_KNOWLEDGE_PATH}` (claude_code.md)."
     )
