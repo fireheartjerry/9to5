@@ -49,7 +49,14 @@ def _deadlinePassed(state) -> bool:
 
 def _execCwd(state, sid: "str | None", work_dir: str) -> str:
     """For self-referential runs, give the executor an isolated cwd so the living CLAUDE.md never
-    clobbers the project's own CLAUDE.md.  For non-self-ref runs the cwd IS work_dir."""
+    clobbers the project's own CLAUDE.md.  For non-self-ref runs the cwd IS work_dir.
+
+    Epic 8: when the execution fabric is enabled with a NON-local backend, that backend's
+    provision (e.g. a git worktree) supplies the isolated tree, so the .sc-ctx scratch is
+    skipped -- it would be redundant. Fabric off, or the local backend, keeps today's scratch."""
+    if (config.EXECUTION_FABRIC_ENABLED
+            and (config.EXECUTION_BACKEND or "local") != "local"):
+        return work_dir
     if (state.meta.get("is_self_referential")
             and os.path.abspath(work_dir) == os.path.abspath(str(config.PROJECT_ROOT))):
         ctx = os.path.join(str(config.PROJECT_ROOT), ".sc-ctx", sid or "architect")
