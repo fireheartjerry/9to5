@@ -24,6 +24,8 @@ from notifications import discord_bot as discord
 from platform_core.orchestration.brain_io import _chatJson
 from platform_core.orchestration.run_loop import _asList, _asText, _confidenceNudge, _warmStartHint
 from platform_core.orchestration.subtask import _repairVerify, _singleDeliverable, _strengthenPlanVerifies
+from platform_core.orchestration import dual_ledger_planner as _dlp
+from platform_core.orchestration import plan_shape_check as _shape
 from state.task import TaskState
 
 if TYPE_CHECKING:
@@ -112,6 +114,18 @@ class OrchestratorPlanMixin:
         return _asText(v)
 
     def authorSubtaskPlan(self, goal_elaborated: str, architect_doc: str) -> list[dict]:
+        # Epic 2 (steal #2): dual-ledger planner. Flag-gated; on failure it returns None and we fall
+        # straight through to the legacy one-shot planner below (never worse than today).
+        if config.DUAL_LEDGER_PLANNER_ENABLED:
+            try:
+                ledger = _dlp.authorTaskLedger(self._ollamaChat, goal_elaborated, architect_doc)
+                if ledger is not None and ledger.plan:
+                    subs = _dlp.deriveSubtaskDag(ledger, goal_elaborated)
+                    if subs:
+                        LOG.info("dual-ledger planner authored %d subtasks with depends_on", len(subs))
+                        return subs
+            except Exception as e:  # noqa: BLE001 -- dual-ledger never blocks; legacy path follows
+                LOG.warning("dual-ledger planner failed (%s); using legacy planner", e)
         system = (
             "You are the Planner for 9TO5. Break the specification into the MINIMAL ordered list of "
             "concrete subtasks. For a trivial single-artifact goal (one script/file/function), use EXACTLY "
@@ -190,6 +204,22 @@ class OrchestratorPlanMixin:
                      "layer": max((s.get("layer", 3) for s in subs), default=3),
                      "effort_level": subs[0].get("effort_level", "high"),
                      "verify": subs[0].get("verify")}]
+        # Epic 2 (steal #2): deterministic shape-check with ONE corrective re-prompt (bernstein).
+        if config.DUAL_LEDGER_PLANNER_ENABLED:
+            violations = _shape.checkPlanShape(
+                subs, multi_deliverable=not self._singleDeliverable(goal_elaborated))
+            if violations:
+                LOG.info("plan shape-check found %d violation(s) -> 1 corrective re-prompt",
+                         len(violations))
+                report = _shape.shapeViolationReport(violations)
+                resp = self._ollamaChat(
+                    "You are a 9TO5 plan fixer. Return corrected JSON only, schema {\"subtasks\":[...]}.",
+                    f"Goal:\n{goal_elaborated}\n\nPlan:\n{json.dumps({'subtasks': subs})}\n\n{report}",
+                    want_json=True)
+                fixed = _chatJson(resp)
+                cand = fixed.get("subtasks") if isinstance(fixed, dict) else None
+                if isinstance(cand, list) and cand and all(isinstance(x, dict) for x in cand):
+                    subs = cand   # accept whatever returns -- no infinite loop
         system = (
             "You are a strict reviewer of a 9TO5 subtask plan. Return a CORRECTED plan, JSON only, same "
             'schema {"subtasks":[...]}. Make every verify RELIABLE: each verify.cmd must use ABSOLUTE paths '

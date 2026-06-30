@@ -204,9 +204,18 @@ class OrchestratorRunPhaseMixin:
         dashboard.update(state, "planning", "authoring subtask plan")
         plan = self.critiqueSubtaskPlan(elaborated, self.authorSubtaskPlan(elaborated, architect_doc))
         plan = self._strengthenPlanVerifies(elaborated, plan)
-        for s in plan[:config.MAX_SUBTASKS]:
-            state.addSubtask(s.get("title", "untitled"), s.get("description", ""),
-                             layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))
+        capped = plan[:config.MAX_SUBTASKS]
+        # Epic 2 (steal #2): dual-ledger subtasks carry INDEX-form depends_on -> materialize the real
+        # DAG (resolves indices to st-ids). The legacy off-path keeps the plain addSubtask loop.
+        if config.DUAL_LEDGER_PLANNER_ENABLED and any(
+                any(isinstance(d, int) for d in (s.get("depends_on") or [])) for s in capped):
+            from platform_core.orchestration import dual_ledger_planner as _dlp
+            _dlp.materializeDag(state, [{**s, "verify": verifier.sanitizeVerify(s.get("verify"))}
+                                        for s in capped])
+        else:
+            for s in capped:
+                state.addSubtask(s.get("title", "untitled"), s.get("description", ""),
+                                 layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))
         discord.sendEmbed(discord.planningStartEmbed(state.meta["goal_raw"], state.subtasks))
         cast.speak("planner", f"🗺️ Plan ready — {len(state.subtasks)} subtasks queued. "
                    f"Executor, you're up.", milestone=True)
