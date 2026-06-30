@@ -297,6 +297,19 @@ ADVERSARY_PR_HOLD_ENABLED: bool = os.getenv("ADVERSARY_PR_HOLD", "1") != "0"
 MAX_SUBTASK_ATTEMPTS: int = 3        # max executor attempts per subtask (verify-retry)
 MAX_SUBTASKS: int = 8                # hard cap on plan size (anti-runaway / anti-livelock)
 
+# --- Epic 6: solution-space forking (ships dark; CONSERVATIVE OPT-IN) -----
+SOLUTION_FORK_ENABLED:                   bool  = _envBool("SOLUTION_FORK_ENABLED", False)
+SOLUTION_FORK_N:                         int   = _envInt("SOLUTION_FORK_N", 2)
+SOLUTION_FORK_MAX_CONCURRENCY:           int   = _envInt("SOLUTION_FORK_MAX_CONCURRENCY", 2)
+SOLUTION_FORK_COST_CEILING_USD:          float = _envFloat("SOLUTION_FORK_COST_CEILING_USD", 5.0)
+SOLUTION_FORK_BRANCH_COST_ESTIMATE_USD:  float = _envFloat("SOLUTION_FORK_BRANCH_COST_ESTIMATE_USD", 1.0)
+SOLUTION_FORK_GRAFT_ENABLED:             bool  = _envBool("SOLUTION_FORK_GRAFT_ENABLED", False)
+# Judge composite weights (sum to 1.0; facts outweigh rubric opinion).
+W_FACT:   float = _envFloat("SOLUTION_FORK_W_FACT", 0.5)
+W_RUBRIC: float = _envFloat("SOLUTION_FORK_W_RUBRIC", 0.3)
+W_RISK:   float = _envFloat("SOLUTION_FORK_W_RISK", 0.15)
+W_COST:   float = _envFloat("SOLUTION_FORK_W_COST", 0.05)
+
 # --- Verification gate ---------------------------------------------------
 VERIFY_DEFAULT_EXPECT: str = "exit_zero"
 VERIFY_TIMEOUT_SECONDS: int = 120
