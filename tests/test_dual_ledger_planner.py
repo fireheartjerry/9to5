@@ -78,3 +78,23 @@ def test_update_stall_count_decrements_on_progress_floor_zero():
     prog = {"is_in_loop": {"answer": False}, "is_progress_being_made": {"answer": True}}
     assert dlp.updateStallCount(prog, 0) == 0   # never below zero
     assert dlp.updateStallCount(prog, 2) == 1
+
+
+def test_root_cause_replan_bumps_revision_and_rewrites():
+    led = tl.TaskLedger(given_facts=["old"], plan=["old step"], revision=1)
+    chat = _Chat([
+        '{"root_cause": "wrong assumption", "given_facts": ["new"], "lookup_facts": [], '
+        '"derive_facts": [], "guess_facts": []}',
+        '{"plan": ["new step a", "new step b"]}',
+    ])
+    new_led = dlp.rootCauseReplan(chat, "goal", led, "subtask failed twice")
+    assert new_led is not None
+    assert new_led.revision == 2            # bumped
+    assert new_led.given_facts == ["new"]
+    assert new_led.plan == ["new step a", "new step b"]
+
+
+def test_root_cause_replan_none_on_bad_json_keeps_caller_fallback():
+    led = tl.TaskLedger(plan=["x"], revision=0)
+    chat = _Chat(["junk"] * 6)
+    assert dlp.rootCauseReplan(chat, "goal", led, "fail") is None

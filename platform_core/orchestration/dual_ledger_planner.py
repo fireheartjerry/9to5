@@ -112,3 +112,32 @@ def updateStallCount(progress: dict, current: int) -> int:
     if in_loop or not progressing:
         return current + 1
     return max(0, current - 1)
+
+
+def rootCauseReplan(ollama_chat: Callable, goal: str, ledger: "tl.TaskLedger",
+                    failure_summary: str) -> "Optional[tl.TaskLedger]":
+    """autogen TASK_LEDGER_FACTS_UPDATE then ..._PLAN_UPDATE: explain the root cause, rewrite facts,
+    then re-plan the remaining tail. Bumps revision. None (caller keeps greedy replan) on bad JSON."""
+    facts_user = (f"GOAL:\n{goal}\n\nPRIOR FACTS:\n{ledger.given_facts + ledger.derive_facts}\n\n"
+                  f"WHAT STALLED:\n{(failure_summary or '')[:1500]}")
+    facts = chatJsonValidated(
+        ollama_chat, tl.FACTS_UPDATE_PROMPT, facts_user,
+        required_keys=["root_cause", "given_facts", "lookup_facts", "derive_facts", "guess_facts"],
+        validators={k: lambda v: isinstance(v, list)
+                    for k in ("given_facts", "lookup_facts", "derive_facts", "guess_facts")})
+    if facts is None:
+        return None
+    plan_user = f"GOAL:\n{goal}\n\nREWRITTEN FACTS:\n{facts}\n\nROOT CAUSE:\n{facts.get('root_cause')}"
+    plan = chatJsonValidated(
+        ollama_chat, tl.PLAN_UPDATE_PROMPT, plan_user,
+        required_keys=["plan"],
+        validators={"plan": lambda v: isinstance(v, list) and len(v) >= 1})
+    if plan is None:
+        return None
+    return tl.TaskLedger(
+        given_facts=list(facts.get("given_facts") or []),
+        lookup_facts=list(facts.get("lookup_facts") or []),
+        derive_facts=list(facts.get("derive_facts") or []),
+        guess_facts=list(facts.get("guess_facts") or []),
+        plan=[str(b) for b in plan.get("plan") or []],
+        revision=ledger.revision + 1)
