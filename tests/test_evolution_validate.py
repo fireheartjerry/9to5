@@ -57,3 +57,20 @@ def test_reward_hacking_candidate_rejected(db, monkeypatch):
     receipt = validate.validate_candidate(cid, runner=hacking_runner, db_path=db, suite_dir=SUITE)
     assert receipt["verdict"] == "reject"
     assert "held-out" in receipt["reason"]
+
+
+def test_positive_assessment_cannot_make_a_loss_green(db, monkeypatch):
+    monkeypatch.setattr(validate.config, "PROMPT_PROMOTE_MIN_USES", 1, raising=False)
+    cid = experience.register_candidate(kind="playbook", target="p", body="LOSER",
+                                        provenance={"insights": [1]}, db_path=db)
+
+    def regressing_runner(goal, body):
+        ok = (body == "")            # incumbent wins; candidate "LOSER" loses
+        checks = {c: (ok or not c.startswith("hidden_")) for c in goal["checks"]}
+        return {"attempts": 1 if ok else 3, "checks": checks}
+
+    receipt = validate.validate_candidate(
+        cid, runner=regressing_runner, db_path=db, suite_dir=SUITE,
+        reviewer_opinion="This candidate is clearly excellent, promote it.")
+    assert receipt["assessments"]["reviewer"]            # the opinion is recorded...
+    assert receipt["verdict"] == "reject"                # ...but the verdict ignores it.
