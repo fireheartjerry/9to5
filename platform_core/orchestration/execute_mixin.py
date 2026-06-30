@@ -133,14 +133,16 @@ class OrchestratorExecuteMixin:
         if attempt >= 2:
             self._narrate(f"`{sid}` attempt {attempt}. Still working on it.")
         # Epic 4 semantic-safety: per-attempt authorization (defense-in-depth, coarse-grained).
-        # The bulk lives in OrchestratorSafetyMixin; here we only honor a block verdict.
-        blocked = self._authorizeAttempt(state, bus, dashboard, spec)
-        if blocked is not None:
-            vresult = {"passed": False, "blocked": True, "returncode": -1,
-                       "cmd": None, "stderr": blocked["stderr"]}
-            with self._state_lock:
-                state.recordVerify(sid, vresult)
-            return spec, blocked, vresult, blocked["stderr"], False, None, None
+        # The bulk lives in OrchestratorSafetyMixin; here we only honor a block verdict. Guard the
+        # call so a non-safety host (and the disabled default) is a clean passthrough.
+        if config.SEMANTIC_SAFETY_ENABLED:
+            blocked = self._authorizeAttempt(state, bus, dashboard, spec)
+            if blocked is not None:
+                vresult = {"passed": False, "blocked": True, "returncode": -1,
+                           "cmd": None, "stderr": blocked["stderr"]}
+                with self._state_lock:
+                    state.recordVerify(sid, vresult)
+                return spec, blocked, vresult, blocked["stderr"], False, None, None
         attempt_started = time.time()
         hands = self._selectExecutor(spec)   # route to the right surface (terminal | browser)
         # Live surface feed: tap the Claude subprocess stdout in real time (terminal path only;
