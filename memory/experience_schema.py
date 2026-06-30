@@ -192,9 +192,25 @@ _SCHEMA: tuple[str, ...] = (
         recorded_at          TEXT,
         UNIQUE(run_id, pr_url)
     )""",
+    """CREATE TABLE IF NOT EXISTS step_journal (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id      TEXT,
+        subtask_id  TEXT,
+        attempt     INTEGER,
+        step_idx    INTEGER,
+        kind        TEXT,
+        tool        TEXT,
+        summary     TEXT,
+        input_json  TEXT,
+        plan_sig    TEXT,
+        session_id  TEXT,
+        ts          TEXT,
+        UNIQUE(run_id, subtask_id, attempt, step_idx)
+    )""",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_run ON subtasks(run_id)",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_passed ON subtasks(verify_passed)",
     "CREATE INDEX IF NOT EXISTS idx_arms_ctx ON policy_arms(context_key)",
+    "CREATE INDEX IF NOT EXISTS idx_journal_attempt ON step_journal(run_id, subtask_id, attempt)",
     # Partial index for the retrieval pool query (embedded, verify-passing subtasks).
     "CREATE INDEX IF NOT EXISTS idx_subtasks_embedded ON subtasks(verify_passed) "
     "WHERE embedding IS NOT NULL",
