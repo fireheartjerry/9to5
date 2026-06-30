@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 import config
 import platform_core.core.surfaces as surfaces
 from agents import verifier
+from agents.completion_envelope import COMPLETION_ENVELOPE_INSTRUCTION
 from learning import knowledge_graph, policy, postmortem, prompts, reflection, solution_cache
 from memory import experience, retrieval
 from notifications import discord_bot as discord
@@ -327,6 +328,10 @@ class OrchestratorPlanMixin:
                 spec["prompt"] = f"{spec['prompt']}\n\n{reflection.REQUEST}"
         except Exception:  # noqa: BLE001
             pass
+        # Epic 2 (steal #3): require a CompletionEnvelope so the independent verifier + Evidence
+        # Receipt have a structured claim to judge. Gated; absent envelope => today's heuristic path.
+        if config.INDEPENDENT_VERIFY_ENABLED and spec.get("prompt"):
+            spec["prompt"] = spec["prompt"] + COMPLETION_ENVELOPE_INSTRUCTION
         return spec
 
     def _foldOperatorContext(self, state: TaskState, subtask: dict, spec: dict) -> dict:
