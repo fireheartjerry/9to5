@@ -225,6 +225,18 @@ class OrchestratorRunLoopMixin:
             pass
         return position, abort
 
+    def _societyGate(self, ready: list) -> bool:
+        """True when the Epic-5 workforce should engage (delegates to society.society_batch)."""
+        from society.society_batch import societyGate
+        return societyGate(ready)
+
+    def _handleSocietyBatch(self, state: TaskState, ready: list, work_dir: str,
+                            parallelism: int, run_fn=None) -> "tuple[int, AbortRun | None]":
+        """Route a ready batch through the society Coordinator (extracted to keep size <=450)."""
+        from society.society_batch import handleSocietyBatch
+        return handleSocietyBatch(state, ready, work_dir, parallelism,
+                                  self._state_lock, run_fn=run_fn)
+
     def runExecutionLoop(self, state: TaskState, architect_doc: str, work_dir: str,
                          bus: "ControlBus", dashboard: "DiscordDashboard",
                          parallelism: int = 1) -> None:
@@ -303,8 +315,15 @@ class OrchestratorRunLoopMixin:
                 batch = parallel_safety.safeParallelSet(state, ready, parallelism)
             else:
                 batch = ready[:parallelism]
-            position, abort = self._handleParallelBatch(
-                state, batch, architect_doc, work_dir, bus, dashboard, position, parallelism)
+            if self._societyGate(batch):
+                # Epic 5: 9to5-owned workforce on the blackboard (flag ON, >=2 ready).
+                # Separate `position2` accumulator keeps the OFF-path `position` untouched.
+                position2, abort = self._handleSocietyBatch(
+                    state, batch, work_dir, parallelism)
+                position += position2
+            else:
+                position, abort = self._handleParallelBatch(
+                    state, batch, architect_doc, work_dir, bus, dashboard, position, parallelism)
             if abort is not None:
                 raise abort
 
