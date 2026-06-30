@@ -5,7 +5,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: agents.verifier, config, platform_core.core.epoch
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_memory_subtask_manager.py
+RUN/TEST: python -m pytest tests/test_memory_subtask_manager.py tests/test_subtask_files_touched.py
 """
 from __future__ import annotations
 
