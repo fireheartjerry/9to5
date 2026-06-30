@@ -64,19 +64,33 @@ def enterWorktree(state, sid: str) -> str:
         return _sharedDir(state)
 
 
+def collectChanges(path: str, sid: str) -> None:
+    """Stage+commit the worktree's working tree so a merge brings the executor's edits back.
+    The executor leaves UNCOMMITTED edits -- without this the worktree branch has zero commits and
+    a merge is a no-op, then `worktree remove --force` deletes the work. No-op on a clean tree
+    (nothing to commit)."""
+    p = Path(path)
+    _git(["add", "-A"], p)
+    status = subprocess.run(["git", "status", "--porcelain"], cwd=str(p),
+                            capture_output=True, text=True)
+    if status.stdout.strip():
+        _git(["commit", "-m", f"9TO5 {sid}"], p)
+
+
 def exitWorktree(path: str, *, merge: bool) -> None:
-    """On success merge the worktree branch back into the run branch, then remove the worktree.
-    On failure leave it for inspection. Fail-open; never raises."""
+    """On success commit + merge the worktree branch back into the run branch, then remove the
+    worktree. On failure leave it for inspection. Fail-open; never raises."""
     if not isIsolated(path):
         return
+    repo = Path(config.PROJECT_ROOT)
+    p = Path(path)
     try:
-        repo = Path(config.PROJECT_ROOT)
-        p = Path(path)
         if merge:
             # Branch name == wt/<task8>/<sid> derived from the worktree dir layout.
             sid = p.name
             task8 = p.parent.name
             branch = _branchFor(task8, sid)
+            collectChanges(str(p), sid)   # commit the executor's edits before merging
             _git(["merge", "--no-edit", branch], repo)
         _git(["worktree", "remove", "--force", str(p)], repo)
     except Exception as e:  # noqa: BLE001

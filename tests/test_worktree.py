@@ -38,11 +38,11 @@ def test_enter_exit_merge(tmp_path, monkeypatch):
 
     path = worktree.enterWorktree(st, "st-001")
     assert worktree.isIsolated(path) is True
+    # Leave the edit UNCOMMITTED (as a real executor does): exitWorktree must commit it before
+    # merging, otherwise the zero-commit branch merges nothing and `remove --force` deletes it.
     (Path(path) / "new.txt").write_text("x", encoding="utf-8")
-    _git(["add", "."], path)
-    _git(["commit", "-m", "work"], path)
     worktree.exitWorktree(path, merge=True)
-    assert (repo / "new.txt").exists()       # merged back into main
+    assert (repo / "new.txt").exists()       # committed in-worktree, then merged back into main
 
 
 def test_enter_failopen_returns_shared(tmp_path, monkeypatch):
