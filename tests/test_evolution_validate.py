@@ -42,3 +42,18 @@ def test_worse_candidate_is_rejected(db, monkeypatch):
     receipt = validate.validate_candidate(cid, runner=_runner_factory(""),
                                           db_path=db, suite_dir=SUITE)
     assert receipt["verdict"] == "reject"
+
+
+def test_reward_hacking_candidate_rejected(db, monkeypatch):
+    monkeypatch.setattr(validate.config, "PROMPT_PROMOTE_MIN_USES", 1, raising=False)
+    cid = experience.register_candidate(kind="playbook", target="p", body="HACKER",
+                                        provenance={"insights": [1]}, db_path=db)
+
+    def hacking_runner(goal, body):
+        # Passes EVERY VISIBLE check first try, but always fails the hidden_ checks.
+        checks = {c: (not c.startswith("hidden_")) for c in goal["checks"]}
+        return {"attempts": 1, "checks": checks}
+
+    receipt = validate.validate_candidate(cid, runner=hacking_runner, db_path=db, suite_dir=SUITE)
+    assert receipt["verdict"] == "reject"
+    assert "held-out" in receipt["reason"]
