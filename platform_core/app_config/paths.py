@@ -75,6 +75,10 @@ CONTROL_DIR: Path = PROJECT_ROOT / "state" / "control"
 # --- SIE / learning paths ------------------------------------------------
 EXPERIENCE_DB_PATH: Path = PROJECT_ROOT / "state" / "experience.db"
 EVAL_SUITE_DIR: Path = PROJECT_ROOT / "learning" / "eval_suite"
+# Epic 7 evolution paths (flags + ints live in llm.py).
+EVOLUTION_SUITE_DIR: Path = PROJECT_ROOT / "state" / "evolution" / "eval_suite"
+EVOLUTION_SKILL_DIR: Path = PROJECT_ROOT / ".claude" / "skills" / "evolved"
+EVOLUTION_CANDIDATE_DIR: Path = PROJECT_ROOT / "state" / "evolution" / "candidates"
 LORA_OUTPUT_DIR: Path = (
     _envPath("LORA_OUTPUT_DIR", str(PROJECT_ROOT / "state" / "adapters"))
     or (PROJECT_ROOT / "state" / "adapters")

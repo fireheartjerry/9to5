@@ -193,6 +193,19 @@ SIE_REFLECTION_ENABLED: bool = _envBool("SIE_REFLECTION_ENABLED", True)
 SIE_AUTHORING_CONTEXT: bool = _envBool("SIE_AUTHORING_CONTEXT", True)
 # Epic 7: summed poignancy of new rows that triggers insight consolidation.
 INSIGHT_TRIGGER_BUDGET: float = _envFloat("INSIGHT_TRIGGER_BUDGET", 3.0)
+# Epic 7 evolution -- all default OFF / dormant until explicitly enabled.
+EVOLUTION_ENABLED: bool = _envBool("EVOLUTION_ENABLED", False)
+EVOLUTION_CONSOLIDATE: bool = _envBool("EVOLUTION_CONSOLIDATE", False)
+EVOLUTION_ESCALATE: bool = _envBool("EVOLUTION_ESCALATE", False)
+EVOLUTION_CANARY_FRACTION: float = _envFloat("EVOLUTION_CANARY_FRACTION", 0.1)
+EVOLUTION_ESCALATE_MIN_FAILS: int = _envInt("EVOLUTION_ESCALATE_MIN_FAILS", 3)
+# EVOLUTION_SUITE_DIR / SKILL_DIR / CANDIDATE_DIR live in paths.py (need PROJECT_ROOT).
+EVOLUTION_PINNED_SKILLS: tuple[str, ...] = tuple(
+    s.strip() for s in os.getenv(
+        "EVOLUTION_PINNED_SKILLS",
+        "architect-review,create-pr,deep-audit,deep-research").split(",") if s.strip())
+EVOLUTION_STALE_DAYS: int = _envInt("EVOLUTION_STALE_DAYS", 30)
+EVOLUTION_ARCHIVE_DAYS: int = _envInt("EVOLUTION_ARCHIVE_DAYS", 90)
 # Let 9to5 improve its OWN core loop files during self-referential runs (opt-in).
 SELFMOD_ALLOW_CORE: bool = _envBool("SELFMOD_ALLOW_CORE", False)
 # --- Epic 4 semantic-safety (ship dark; flip ON to enable the layer) ---
