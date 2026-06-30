@@ -44,5 +44,20 @@ def reclaimLosers(branches: list, winner, *, worktree) -> int:
 
 
 def graftRunnerUp(orch, state, subtask, architect_doc, exec_cwd, runner_up, *, enabled: bool) -> None:
-    """Advisory graft of the top runner-up idea (filled in Task 11)."""
+    """Advisory graft: feed the top runner-up's idea to the winner via ONE bounded _remediate pass.
+
+    NOT a git merge of two branches -- _remediate is snapshot-guarded keep-or-revert, so a graft can
+    only keep-or-improve the already-passing winner (spec §3d). Skipped when disabled or no runner-up."""
+    if not enabled or runner_up is None:
+        return None
+    vres = runner_up.vresult or {}
+    idea = (
+        f"A sibling approach also PASSED and did: {vres.get('diff_summary', '(no summary)')}. "
+        f"It flagged: {vres.get('residual_risks', '(none)')}. Incorporate the GOOD idea WITHOUT "
+        f"breaking the passing verification."
+    )
+    try:
+        orch._remediate(state, subtask, architect_doc, exec_cwd, [idea], cancel_check=None)
+    except Exception as e:  # noqa: BLE001 -- graft is advisory; never rolls back a committed winner
+        LOG.warning("runner-up graft failed (winner kept): %s", e)
     return None
