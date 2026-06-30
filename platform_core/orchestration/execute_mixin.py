@@ -9,16 +9,13 @@ RUN/TEST: (no mapped test)
 """
 from __future__ import annotations
 
-import json
 import time
 from typing import TYPE_CHECKING
 
 import config
 import platform_core.core.surfaces as surfaces
-from agents import adversary, second_brain, verifier
+from agents import adversary, verifier
 from platform_core.runtime.control import AbortRun
-from learning import reflection, solution_cache
-from memory import experience
 from notifications import cast
 from notifications import discord_bot as discord
 from platform_core.orchestration.brain_io import _resultText
@@ -45,55 +42,11 @@ class OrchestratorExecuteMixin:
     # ===================================================================
     def _remediate(self, state: TaskState, subtask: dict, architect_doc: str, exec_cwd: str,
                    concerns: list[str], cancel_check=None) -> dict:
-        """Bounded remediation LOOP (up to ADVERSARY_REMEDIATION_MAX_ATTEMPTS) on a subtask that
-        ALREADY passed verification: feed the reviewer's concerns back to the executor, re-verify,
-        then re-review with the second brain; stop when it approves (or attempts run out). Each
-        attempt is snapshot-guarded -- an edit that breaks the artifact is reverted and the prior
-        pass kept, so remediation can only keep or improve. Returns the last verify_result."""
-        sid = subtask["subtask_id"]
-        goal = self._goalText(state)
-        vres: dict = {}
-        attempts = max(1, config.ADVERSARY_REMEDIATION_MAX_ATTEMPTS)
-        # The REAL git edit tree to snapshot/restore. For a self-referential run exec_cwd is the
-        # gitignored .sc-ctx scratch, but the executor edits the project at work_dir via --add-dir --
-        # so snapshotting/restoring exec_cwd was a NO-OP and a broken remediation was never reverted.
-        # work_dir IS the real tree for both self-ref (== PROJECT_ROOT) and non-self-ref runs.
-        from platform_core.runtime import worktree
-        # With worktree isolation, exec_cwd IS this subtask's private tree -> snapshot it so a
-        # revert is peer-safe. Otherwise fall back to the shared work_dir (today's behavior).
-        repo_tree = exec_cwd if worktree.isIsolated(exec_cwd) else (
-            getattr(self, "_work_dir", None) or exec_cwd)
-        for i in range(1, attempts + 1):
-            feedback = ("The work PASSED its acceptance check, but an adversarial reviewer raised "
-                        "concerns. Address these WITHOUT breaking the passing verification:\n- "
-                        + "\n- ".join(concerns))
-            snap = self._gitSnapshot(repo_tree)
-            spec = self.authorInvocationSpec(state, subtask, architect_doc, feedback)
-            result = self._run_claude(spec, work_dir=exec_cwd, task_state=state, subtask=subtask,
-                                      cancel_check=cancel_check)
-            vres = verifier.runVerification(subtask.get("verify"), exec_cwd, result)
-            with self._state_lock:
-                if vres.get("passed"):
-                    state.recordVerify(sid, vres)   # adopt the still-passing post-remediation evidence
-                else:
-                    self._gitRestore(repo_tree, snap)   # revert broken edits so disk == kept pass
-                state.addNotification(
-                    "adversary_remediation",
-                    f"{sid}: remediation {i}/{attempts} "
-                    f"{'verified' if vres.get('passed') else 'did not verify (reverted, prior pass kept)'}")
-            LOG.info("Adversary remediation %d/%d for %s -> %s", i, attempts, sid,
-                     "verified" if vres.get("passed") else "reverted (kept prior pass)")
-            if not vres.get("passed"):
-                break   # a broken attempt was reverted; another try would re-break -- stop
-            # Re-review the remediated output: if the second brain is now satisfied, we're done.
-            combined = ((result or {}).get("stdout", "") + "\n" + (result or {}).get("stderr", "")) \
-                if isinstance(result, dict) else ""
-            rv = self._review(subtask["title"], f"remediation re-review {i}/{attempts}", combined,
-                              ollama_chat=self._ollamaChat, goal=goal)
-            if not second_brain.is_blocking(rv):
-                break
-            concerns = (rv.get("must_fix") or rv.get("concerns") or concerns)[:10]
-        return vres
+        """Bounded adversary remediation LOOP on an already-passed subtask (delegates to
+        adversary_loop to hold the size budget). Returns the last verify_result."""
+        from platform_core.orchestration import adversary_loop
+        return adversary_loop.remediate(self, state, subtask, architect_doc, exec_cwd,
+                                        concerns, cancel_check)
 
     # ===================================================================
     # Phase 3 helpers: one attempt, attempt loop, enrichment sub-steps
@@ -102,64 +55,11 @@ class OrchestratorExecuteMixin:
                           exec_cwd: str, verify_spec: "dict | None", attempt_started: float,
                           sid: str, combined: str, dashboard: "DiscordDashboard",
                           resume_session: "str | None") -> tuple:
-        """Run verify, repair if brittle, record. Returns (vresult, passed, resume_session, failure_feedback)."""
-        # FX-1: synthesize a behavioral verify when none was authored.
-        effective_verify = verify_spec
-        if not (verify_spec or {}).get("cmd"):
-            synth = self._repairVerify(subtask, exec_cwd, attempt_started)
-            if synth:
-                effective_verify = synth
-                LOG.info("%s: no verify authored -> synthesized behavioral check %s", sid, synth["cmd"])
-        vresult = verifier.runVerification(effective_verify, exec_cwd, result)
-        passed = bool(vresult["passed"])
-        if not (effective_verify or {}).get("cmd"):
-            vresult["unverified"] = True   # exit-zero fallback only; no behavioral assertion ran
-        # VERIFY REPAIR: rescue brittle single-fact verifies; strict compound verifies are never rescued.
-        if not passed and not verifier.isStrictVerify(verify_spec):
-            repaired = self._repairVerify(subtask, exec_cwd, attempt_started)
-            same = bool(repaired) and (repaired.get("cmd"), repaired.get("expect")) == \
-                ((verify_spec or {}).get("cmd"), (verify_spec or {}).get("expect"))
-            if repaired and not same:
-                rv = verifier.runVerification(repaired, exec_cwd, result)
-                if rv.get("passed"):
-                    LOG.info("%s: brittle verify repaired -> PASS via %s", sid, repaired["cmd"])
-                    vresult, passed = rv, True
-        if passed and state.meta.get("is_self_referential"):
-            gate_ok, gate_detail = self._selfRefQualityGate(str(config.PROJECT_ROOT))
-            if not gate_ok:
-                passed = False
-                vresult = dict(vresult)
-                vresult.update({
-                    "passed": False,
-                    "returncode": 1,
-                    "stderr": gate_detail,
-                    "quality_gate": "self_ref",
-                })
-                LOG.warning("%s: self-ref quality gate failed after verify pass", sid)
-        # Epic 2 (steal #3): execution-grounded downgrade. Runs ONLY when the deterministic gate
-        # already passed; can never upgrade a fail. MODE-DEPENDENT NOT_VERIFIED handled inside.
-        if passed and config.INDEPENDENT_VERIFY_ENABLED:
-            vresult, passed = self._runEvidenceGate(state, subtask, result, exec_cwd, vresult, sid)
-        with self._state_lock:
-            state.recordVerify(sid, vresult)
-        dashboard.update(state, "verifying",
-                         f"{sid} verify {'PASS' if passed else 'FAIL'} ({vresult.get('cmd') or 'exit'})")
-        failure_feedback: "str | None" = None
-        if not passed:
-            failure_feedback = (
-                f"cmd: {vresult.get('cmd')}\nexpect: {vresult.get('expect')}\n"
-                f"rc: {vresult.get('returncode')}\nstdout:\n{vresult.get('stdout')}\n"
-                f"stderr:\n{vresult.get('stderr')}"
-            )
-            # If the executor asked a human, the Ollama brain answers so the next attempt is autonomous.
-            answer = self._resolveClarifications(state, subtask, combined, dashboard)
-            if answer:
-                failure_feedback += (
-                    "\n\n[ORCHESTRATOR ANSWERS YOUR QUESTIONS -- proceed now, do NOT ask again]\n"
-                    + answer
-                )
-                resume_session = None   # approach is changing -> start the next attempt fresh
-        return vresult, passed, resume_session, failure_feedback
+        """Run verify, repair if brittle, apply downgrades, record (delegates to evidence_gate).
+        Returns (vresult, passed, resume_session, failure_feedback)."""
+        from platform_core.orchestration import evidence_gate
+        return evidence_gate.runAttemptVerify(self, state, subtask, result, exec_cwd, verify_spec,
+                                              attempt_started, sid, combined, dashboard, resume_session)
 
     # ===================================================================
     # Epic 2 (steal #3): execution-grounded evidence gate (thin delegates to evidence_gate)
@@ -410,37 +310,18 @@ class OrchestratorExecuteMixin:
                          passed: bool, final: str, architect_doc: str,
                          dashboard: "DiscordDashboard", adv_verdict: "str | None",
                          adv_stub: bool) -> None:
-        """Capture SIE reflection, memoize passing spec, and trigger adaptive replan."""
-        sid = subtask["subtask_id"]
-        try:
-            reflection.capture(run_id=state.task_id, subtask_id=sid, executor_output=combined,
-                               verify_passed=passed, adversary_verdict=adv_verdict,
-                               adversary_stub=adv_stub)
-            if passed and spec.get("prompt"):
-                solution_cache_spec = json.dumps({k: spec.get(k) for k in
-                    ("prompt", "effort_level", "skills_to_invoke", "subagent") if spec.get(k)})
-                experience.upsert_solution(solution_cache.signature_of(subtask.get("title", "")),
-                                           solution_cache_spec, verify_passed=True,
-                                           provenance='{"origin":"executor"}')
-        except Exception:  # noqa: BLE001 -- learning never affects the run
-            pass
-        # Replan after a PASSED subtask always; after a FAILED one ONLY on a self-improvement run.
-        # Churn (fail -> re-add -> fail) is bounded by the no-progress livelock guard and pending cap.
-        self_ref = bool(state.meta.get("is_self_referential"))
-        replan_ok = final == "done" or (self_ref and final == "failed")
-        if replan_ok and not self._singleDeliverable(state.meta.get("goal_elaborated", "")):
-            with self._state_lock:                       # snapshot for parallel-safety
-                subs_snapshot = list(state.subtasks)
-            decision = self._replan(state.meta["goal_elaborated"], subs_snapshot, subtask, combined,
-                                    self_referential=bool(state.meta.get("is_self_referential")),
-                                    remaining_hours=self._remainingHours(state))
-            if decision.get("action") == "mutate" and (decision.get("add") or decision.get("remove")):
-                dashboard.update(state, "replanning", f"replanning after {sid}")
-                with self._state_lock:
-                    self._applyReplan(state, decision)
-                from notifications import run_arc as _arc
-                self._arcBeat(state, _arc.beat_replan(f"after {sid}"))
-                self._narrate(f"🔁 Replanning after {sid}. Scope was wider than expected.")
+        """Capture SIE reflection, memoize passing spec, and trigger adaptive replan
+        (delegates to dual_ledger_replan to hold the size budget)."""
+        from platform_core.orchestration import dual_ledger_replan as _dlr
+        _dlr.runSieAndReplan(self, state, subtask, spec, combined, passed, final,
+                             architect_doc, dashboard, adv_verdict, adv_stub)
+
+    def _progressLedgerReplan(self, state: TaskState, subtask: dict, combined: str,
+                              architect_doc: str, dashboard: "DiscordDashboard") -> None:
+        """Dual-ledger replan driver: Progress Ledger + stall counter -> one root-cause replan at
+        STALL_THRESHOLD (delegates to dual_ledger_replan). Best-effort."""
+        from platform_core.orchestration import dual_ledger_replan as _dlr
+        _dlr.progressLedgerReplan(self, state, subtask, combined, architect_doc, dashboard)
 
     def _surfaceSubtaskPass(self, state: TaskState, sid: str, attempt: int) -> None:
         """First-verify arc beat (once) + redemption moment after 2+ prior failures. Best-effort."""
