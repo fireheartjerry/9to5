@@ -111,6 +111,19 @@ from memory.experience_solutions import (
     _EXECUTOR_PROVENANCE,
 )
 
+# --------------------------------------------------------------------------- evolution
+from memory.experience_evolution import (
+    record_insight,
+    fetch_insights,
+    register_candidate,
+    fetch_candidates,
+    get_candidate,
+    set_candidate_state,
+    candidate_champion,
+    promote_candidate,
+    candidate_field_stats,
+)
+
 __all__ = [
     # schema / pool
     "init",
@@ -177,6 +190,16 @@ __all__ = [
     "record_reflection",
     "fetch_reflections",
     "_EXECUTOR_PROVENANCE",
+    # evolution
+    "record_insight",
+    "fetch_insights",
+    "register_candidate",
+    "fetch_candidates",
+    "get_candidate",
+    "set_candidate_state",
+    "candidate_champion",
+    "promote_candidate",
+    "candidate_field_stats",
 ]
 
 # --------------------------------------------------------------------------- pr outcomes
