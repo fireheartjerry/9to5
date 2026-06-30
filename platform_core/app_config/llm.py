@@ -137,6 +137,11 @@ ANN_INDEX_DIR: str = os.getenv("ANN_INDEX_DIR", "state/exp_index")
 # Pin the embedding dim into the collection name so a swapped embedder can't silently mix
 # vector spaces (nomic-embed-text is 768-dim). See spec 8 "Embedding dim / mixed spaces".
 ANN_EMBED_DIM: int = _envInt("ANN_EMBED_DIM", 768)
+# Layer-1 rerank weights (gen-agents new_retrieve port: relevance-heavy [0.5, 3, 2]).
+RETRIEVAL_W_RECENCY: float = _envFloat("RETRIEVAL_W_RECENCY", 0.5)
+RETRIEVAL_W_IMPORTANCE: float = _envFloat("RETRIEVAL_W_IMPORTANCE", 3.0)
+RETRIEVAL_W_RELEVANCE: float = _envFloat("RETRIEVAL_W_RELEVANCE", 2.0)
+RETRIEVAL_RECENCY_HALFLIFE_DAYS: float = _envFloat("RETRIEVAL_RECENCY_HALFLIFE_DAYS", 14)
 # Eval harness: golden suite + fitness scalar weights.
 EVAL_FITNESS_WEIGHTS: dict[str, float] = {
     "first_pass_rate": 0.5,
