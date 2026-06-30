@@ -193,6 +193,7 @@ from memory.experience_journal import (
     appendStep,
     loadSteps,
     lastStepIdx,
+    lastAttempt,
     markAttemptSuperseded,
 )
 
@@ -200,6 +201,7 @@ __all__ += [
     "appendStep",
     "loadSteps",
     "lastStepIdx",
+    "lastAttempt",
     "markAttemptSuperseded",
 ]
 

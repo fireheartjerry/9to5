@@ -51,6 +51,25 @@ def test_reconcile_keeps_on_sig_match(tmp_path, monkeypatch):
     es._reset_schema_cache()
 
 
+def test_reconcile_uses_max_attempt_not_one(tmp_path, monkeypatch):
+    from memory import experience_journal as ej
+    db = tmp_path / "experience.db"
+    st = _state(tmp_path, monkeypatch)
+    st.updateSubtask("st-001", status="in_progress")
+    sig = sr.planSignature(st)
+    # attempt 1 has a STALE sig; the REAL crash is attempt 2 with a matching sig. Reconcile must
+    # read attempt 2 (MAX), not the hardcoded attempt 1 -> otherwise it would reset clean.
+    ej.appendStep(st.task_id, "st-001", 1, 0, "tool", "Edit", "old", {}, "STALE", "sess-old",
+                  db_path=db)
+    ej.appendStep(st.task_id, "st-001", 2, 0, "tool", "Edit", "new", {}, sig, "sess-2",
+                  db_path=db)
+    sr.reconcileResume(st, db_path=db)
+    sub = st.getSubtask("st-001")
+    assert sub["session"]["resumable"] is True
+    assert sub["session"]["resume_session_id"] == "sess-2"   # attempt 2, NOT attempt 1
+    es._reset_schema_cache()
+
+
 def test_reconcile_resets_on_sig_mismatch(tmp_path, monkeypatch):
     from memory import experience_journal as ej
     db = tmp_path / "experience.db"

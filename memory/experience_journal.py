@@ -10,6 +10,7 @@ EXPORTS:
   appendStep(run_id: str, subtask_id: str, attempt: int, step_idx: int, kind: str, tool: str, summary: str, input_obj: Any, plan_sig: str, session_id: str, db_path: Optional[Path]=None) -> None  -- Idempotently upsert one executor step row
   loadSteps(run_id: str, subtask_id: str, attempt: int, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- All journaled steps for an attempt, ordered by step_idx
   lastStepIdx(run_id: str, subtask_id: str, attempt: int, db_path: Optional[Path]=None) -> int  -- Highest journaled step_idx for an attempt, or -1 if none / on any error.
+  lastAttempt(run_id: str, subtask_id: str, db_path: Optional[Path]=None) -> int  -- Highest attempt number journaled for a subtask, or 1 if none / on any error.
   markAttemptSuperseded(run_id: str, subtask_id: str, attempt: int, db_path: Optional[Path]=None) -> None  -- Resume bookkeeping: drop a stale attempt's journal rows so it won't be resumed.
 DEPENDS-ON: config, memory.experience_schema
 SIDE-EFFECTS: writes step_journal rows in experience.db
@@ -82,6 +83,22 @@ def lastStepIdx(run_id: str, subtask_id: str, attempt: int,
     except Exception as e:  # noqa: BLE001
         LOG.warning("lastStepIdx failed (ignored): %s", e)
         return -1
+
+
+def lastAttempt(run_id: str, subtask_id: str, db_path: Optional[Path] = None) -> int:
+    """Highest attempt number journaled for a subtask, or 1 if none / on any error.
+    Resume uses this to reconcile the CRASHED attempt (not a hardcoded attempt 1). Fail-open."""
+    try:
+        with _connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT MAX(attempt) AS m FROM step_journal WHERE run_id=? AND subtask_id=?",
+                (run_id, subtask_id)).fetchone()
+        if row is None or row["m"] is None:
+            return 1
+        return int(row["m"])
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("lastAttempt failed (ignored): %s", e)
+        return 1
 
 
 def markAttemptSuperseded(run_id: str, subtask_id: str, attempt: int,

@@ -76,9 +76,16 @@ def reconcileResume(state, db_path: Optional[Path] = None) -> None:
         if s.get("status") != "in_progress":
             continue
         sid = s.get("subtask_id")
+        # Resolve the CRASHED attempt as the MAX attempt journaled for this sid (a retried subtask
+        # crashes on attempt 2+, not 1) -- a hardcoded attempt 1 read an empty/stale journal.
         try:
-            steps = experience.loadSteps(state.task_id, sid, 1, db_path=db_path) \
-                if db_path is not None else experience.loadSteps(state.task_id, sid, 1)
+            attempt = experience.lastAttempt(state.task_id, sid, db_path=db_path) \
+                if db_path is not None else experience.lastAttempt(state.task_id, sid)
+        except Exception:  # noqa: BLE001
+            attempt = 1
+        try:
+            steps = experience.loadSteps(state.task_id, sid, attempt, db_path=db_path) \
+                if db_path is not None else experience.loadSteps(state.task_id, sid, attempt)
         except Exception:  # noqa: BLE001
             steps = []
         row_sig = steps[-1].get("plan_sig") if steps else None
@@ -96,9 +103,9 @@ def reconcileResume(state, db_path: Optional[Path] = None) -> None:
             state.updateSubtask(sid, status="pending", session=sess)
             try:
                 if db_path is not None:
-                    experience.markAttemptSuperseded(state.task_id, sid, 1, db_path=db_path)
+                    experience.markAttemptSuperseded(state.task_id, sid, attempt, db_path=db_path)
                 else:
-                    experience.markAttemptSuperseded(state.task_id, sid, 1)
+                    experience.markAttemptSuperseded(state.task_id, sid, attempt)
             except Exception:  # noqa: BLE001
                 pass
             LOG.info("resume: %s reset clean (sig mismatch / empty journal)", sid)

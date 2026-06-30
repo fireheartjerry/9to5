@@ -57,6 +57,16 @@ def test_append_is_failopen(tmp_path, monkeypatch):
     es._reset_schema_cache()
 
 
+def test_last_attempt_returns_max(tmp_path, monkeypatch):
+    db = _db(tmp_path, monkeypatch)
+    ej.appendStep("run-1", "st-001", 1, 0, "tool", "Edit", "a", {}, "sig", "s", db_path=db)
+    ej.appendStep("run-1", "st-001", 2, 0, "tool", "Edit", "b", {}, "sig", "s", db_path=db)
+    assert ej.lastAttempt("run-1", "st-001", db_path=db) == 2   # MAX(attempt), not the first
+    assert ej.lastAttempt("run-1", "nope", db_path=db) == 1     # none journaled -> fail-open 1
+    es._reset_schema_cache()
+
+
 def test_facade_reexports():
     assert experience.appendStep is ej.appendStep
     assert experience.lastStepIdx is ej.lastStepIdx
+    assert experience.lastAttempt is ej.lastAttempt
