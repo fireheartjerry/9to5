@@ -246,3 +246,44 @@ class AgentDecision:
     needs_frontier_review: bool = False
     needs_human_review: bool = False
     reason: str = ""
+
+
+# ===========================================================================
+# Agent Society / Workforce (Epic 5) cross-module wire types.
+# BlackboardEntry mirrors the society/blackboard.py dataclass exactly (kept in
+# sync by hand). Role specs stay local to society/roles.py.
+# ===========================================================================
+
+
+class BlackboardEntry(TypedDict, total=False):
+    """One append-only coordination artifact on the run blackboard."""
+    entry_id: str
+    key: str                         # logical slot, e.g. "facts" | "result:st-007"
+    kind: str                        # facts|result|question|proposal|vote|handoff|claim
+    author: str                      # role name or "coordinator"
+    to: str                          # "all" | "coordinator" | "<role>"
+    subtask_id: Optional[str]
+    value: dict
+    refs: list[str]                  # ids of entries this responds to (debate threading)
+    span_id: Optional[str]           # Epic 1 trajectory-trace linkage (nullable seam)
+    ts_ns: int
+
+
+class WorkerMessage(TypedDict, total=False):
+    """The structured result a WorkerAgent.run() returns and posts to the board."""
+    role: str
+    subtask_id: str
+    kind: str                        # result | question | proposal | claim
+    ok: bool
+    summary: str
+    refs: list[str]
+    value: dict
+
+
+class DebateVerdict(TypedDict, total=False):
+    """Advisory outcome of a structured debate. The verifier still gates."""
+    resolved: bool
+    winner: Optional[str]            # role name of the prevailing proposal, or None
+    reason: str
+    rounds: int
+    stopped_reason: str              # "consensus" | "round_cap" | "oscillation"
