@@ -142,6 +142,15 @@ RETRIEVAL_W_RECENCY: float = _envFloat("RETRIEVAL_W_RECENCY", 0.5)
 RETRIEVAL_W_IMPORTANCE: float = _envFloat("RETRIEVAL_W_IMPORTANCE", 3.0)
 RETRIEVAL_W_RELEVANCE: float = _envFloat("RETRIEVAL_W_RELEVANCE", 2.0)
 RETRIEVAL_RECENCY_HALFLIFE_DAYS: float = _envFloat("RETRIEVAL_RECENCY_HALFLIFE_DAYS", 14)
+# Layer-2 hierarchical compaction (eliza model-input-budget + agentscope compress + openclaw
+# rubric). Default OFF: the summarizer's extra latency/cost is opt-in until measured. num_ctx is
+# NEVER resized -- compaction trims the PAYLOAD to fit the fixed OLLAMA_NUM_CTX window.
+COMPACTION_ENABLED: bool = _envBool("COMPACTION_ENABLED", False)
+COMPACTION_TRIGGER_RATIO: float = _envFloat("COMPACTION_TRIGGER_RATIO", 0.85)
+COMPACTION_RESERVE_RATIO: float = _envFloat("COMPACTION_RESERVE_RATIO", 0.4)
+COMPACTION_RESERVE_FLOOR: int = _envInt("COMPACTION_RESERVE_FLOOR", 1024)
+COMPACTION_MAX_PASSES: int = _envInt("COMPACTION_MAX_PASSES", 3)
+COMPACTION_OFFLOAD_DIR: str = os.getenv("COMPACTION_OFFLOAD_DIR", "state/compaction")
 # Eval harness: golden suite + fitness scalar weights.
 EVAL_FITNESS_WEIGHTS: dict[str, float] = {
     "first_pass_rate": 0.5,
