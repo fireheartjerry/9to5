@@ -49,6 +49,9 @@ def _composeWorkflowPrompt(definition: dict, base_prompt: str) -> str:
     each phase's outputs into the next, and finally synthesize. A Claude build that
     exposes the Workflow tool may run it natively; either way the structured plan drives
     the same fan-out / verify / synthesize shape the brain intended."""
+    # EPIC 5: when config.SOCIETY_ENABLED, the coordinator REALIZES a parallel-phase workflow
+    # itself as visible 9to5 WorkerAgents (society/coordinator.py) instead of this opaque
+    # Claude-internal Task-tool fan-out. With society OFF this path runs exactly as before.
     if not isinstance(definition, dict):
         return base_prompt
     name = definition.get("name") or "dynamic-workflow"

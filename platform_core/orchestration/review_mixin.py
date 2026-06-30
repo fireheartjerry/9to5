@@ -124,6 +124,10 @@ class OrchestratorReviewMixin:
         from platform_core.runtime import worktree
         if getattr(self, "_parallelism", 1) <= 1:
             return False
+        # EPIC 5 co-design: when SOCIETY_ENABLED, each society WorkerAgent (society/worker.py)
+        # edits inside its OWN per-worker git worktree (Epic 1), so isIsolated(exec_cwd) is
+        # True for it and remediation is peer-safe -- this predicate already encodes the flip,
+        # no Epic-5 change needed. Shared-tree advisory mode stays UNCHANGED below.
         return not worktree.isIsolated(exec_cwd)
 
     @staticmethod

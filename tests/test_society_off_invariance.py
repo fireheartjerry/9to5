@@ -41,3 +41,26 @@ def test_handle_society_batch_delegates_to_coordinator(monkeypatch, tmp_path):
     ready = [s2 for s2 in state.subtasks if s2["status"] == "pending"]
     s._handleSocietyBatch(state, ready, str(tmp_path), parallelism=2)
     assert len(ran) == 2
+
+
+from platform_core.orchestration.review_mixin import OrchestratorReviewMixin
+
+
+class _RStub(OrchestratorReviewMixin):
+    pass
+
+
+def test_remediation_unsafe_sequential_is_safe():
+    s = _RStub()
+    s._parallelism = 1
+    # Co-design with Epic 1: a sequential run has no peers, so a remediation
+    # snapshot/whole-tree-revert is always safe. UNCHANGED by Epic 5.
+    assert s._remediationUnsafe("") is False
+
+
+def test_remediation_unsafe_shared_tree_under_parallelism():
+    s = _RStub()
+    s._parallelism = 3
+    # Until per-worker worktrees isolate each society worker, a parallel run shares the
+    # tree, so a whole-tree remediation revert would clobber peers -> unsafe. UNCHANGED.
+    assert s._remediationUnsafe("") is True
