@@ -129,3 +129,33 @@ def test_drain_streaming_taps_every_line():
     assert any("a.py" in t for t in texts) and any("bash" in t for t in texts)
     # the non-JSON line is stored raw but not emitted as a structured event
     assert any("plain log line" in r["line"] for r in bus.raw_history("st-009"))
+
+
+def test_on_step_callback_fires_with_parsed_event():
+    bus = LiveEventBus()
+    seen = []
+    f = SubprocessFeed(bus, "st-002", time.monotonic(), heartbeat=False,
+                       on_step=lambda idx, tool, summary, inp: seen.append((idx, tool, inp)))
+    f.consume(json.dumps({"type": "tool_use", "name": "Edit", "input": {"file_path": "z.py"}}))
+    f.consume(json.dumps({"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}))
+    assert [s[0] for s in seen] == [0, 1]          # zero-based step_idx
+    assert seen[0][1] == "Edit" and seen[0][2] == {"file_path": "z.py"}
+    assert seen[1][1] == "Bash"
+
+
+def test_on_step_none_is_unchanged_behavior():
+    bus = LiveEventBus()
+    f = SubprocessFeed(bus, "st-003", time.monotonic(), heartbeat=False)   # on_step defaults None
+    f.consume(json.dumps({"type": "tool_use", "name": "Read", "input": {"file_path": "c.py"}}))
+    assert "reading" in _last(bus)["text"]          # feed still works, no callback required
+
+
+def test_on_step_sink_error_never_breaks_consume():
+    bus = LiveEventBus()
+
+    def _boom(*a, **k):
+        raise RuntimeError("sink down")
+
+    f = SubprocessFeed(bus, "st-004", time.monotonic(), heartbeat=False, on_step=_boom)
+    f.consume(json.dumps({"type": "tool_use", "name": "Edit", "input": {"file_path": "z.py"}}))
+    assert "editing" in _last(bus)["text"]          # raw/structured emit still happened

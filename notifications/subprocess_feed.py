@@ -27,11 +27,13 @@ _HEARTBEAT_SECONDS = 30.0
 
 class SubprocessFeed:
     def __init__(self, bus: LiveEventBus, sid: str, started_at: float,
-                 *, heartbeat: bool = True) -> None:
+                 *, heartbeat: bool = True, on_step=None) -> None:
         self.bus = bus
         self.sid = sid
         self.started_at = started_at
         self._tool_calls = 0
+        self._step_idx = 0
+        self._on_step = on_step
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         if heartbeat:
@@ -46,6 +48,20 @@ class SubprocessFeed:
         if event is not None:
             self._tool_calls += 1
             self.bus.emit(event)
+            self._emit_step(event)
+
+    def _emit_step(self, event: Event) -> None:
+        """Tee the parsed tool call to the durable sink (journal/trajectory). Best-effort:
+        a sink failure must never break the live feed."""
+        if self._on_step is None:
+            return
+        try:
+            data = event.data or {}
+            self._on_step(self._step_idx, data.get("tool") or "tool",
+                          event.text, data.get("input") or {})
+            self._step_idx += 1
+        except Exception:  # noqa: BLE001 -- the sink is best-effort, never blocks a run
+            pass
 
     def stop(self) -> None:
         """Signal the heartbeat thread to exit (idempotent; safe to call repeatedly)."""
