@@ -48,3 +48,25 @@ def _makeRetryPrompt(errors: list[str]) -> str:
         "Your previous response was NOT valid for the required schema. Fix EXACTLY these field "
         "errors and respond with ONLY the corrected JSON object (no prose, no fences):\n" + bullets
     )
+
+
+def chatJsonValidated(ollama_chat: Callable, system: str, user: str, *,
+                      required_keys: list[str], validators: Optional[dict] = None,
+                      max_retries: Optional[int] = None) -> Optional[dict]:
+    """Call the brain for JSON, validate its shape, and re-prompt with exact field errors on failure.
+
+    ``ollama_chat`` is a ``(system, user, *, want_json=True) -> resp`` callable (typically
+    ``self._ollamaChat``). Returns the validated dict, or ``None`` when the brain still fails after
+    ``max_retries`` corrective re-prompts (the caller then keeps its existing fallback)."""
+    validators = validators or {}
+    if max_retries is None:
+        max_retries = config.BRAIN_JSON_RETRY_MAX
+    cur_user = user
+    for _ in range(max_retries + 1):
+        resp = ollama_chat(system, cur_user, want_json=True)
+        parsed = parseJsonText(_chatText(resp).strip())
+        errors = _validateShape(parsed, required_keys, validators)
+        if not errors:
+            return parsed
+        cur_user = user + "\n\n" + _makeRetryPrompt(errors)
+    return None
