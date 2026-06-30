@@ -16,6 +16,7 @@ import config
 from agents import clarifier, verifier
 from notifications import discord_bot as discord
 from platform_core.orchestration.brain_io import _chatJson, _chatText, _fitUserToCtx
+from platform_core.orchestration import compaction
 from platform_core.orchestration.knowledge_refresh import injectCapabilities
 from state.task import TaskState
 
@@ -97,7 +98,8 @@ class OrchestratorLlmMixin:
         # num_ctx fixed and TRIM an over-long user payload so the system prompt -- which carries the
         # JSON-schema instruction format="json" relies on -- is never the thing that gets truncated.
         num_ctx = config.OLLAMA_NUM_CTX
-        user = _fitUserToCtx(system, user, num_ctx, config.OLLAMA_GEN_HEADROOM)
+        user = compaction.fitOrCompact(system, user, num_ctx, config.OLLAMA_GEN_HEADROOM,
+                                       summarize=self._summarizeForCompaction)
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         # SIE Layer 5/G: route to a forced tag (adapter A/B eval), else the champion
         # adapter, else the frozen base. Best-effort -- any error falls back to OLLAMA_MODEL.
@@ -139,6 +141,39 @@ class OrchestratorLlmMixin:
                 time.sleep(delay)
                 delay *= 2
         return None
+
+    def _summarizeForCompaction(self, text: str) -> str:
+        """Summarize the oldest payload half for compaction. CRITICAL: calls ollama.chat
+        DIRECTLY at the SAME fixed num_ctx (never via _ollamaChat -> no recursion into
+        fitOrCompact) and never resizes the window. A circuit breaker (COMPACTION_MAX_PASSES
+        consecutive failures) stops a doomed summarize-retry loop; on trip it returns "" so
+        compactPayload falls back to truncation."""
+        if getattr(self, "_compaction_fail_streak", 0) >= config.COMPACTION_MAX_PASSES:
+            return ""
+        num_ctx = config.OLLAMA_NUM_CTX
+        sys_prompt = compaction.MUST_PRESERVE_CONTRACT
+        bounded = _fitUserToCtx(sys_prompt, text, num_ctx, config.OLLAMA_GEN_HEADROOM)
+        try:
+            from learning import finetune
+            model = getattr(self, "_brain_tag_override", None) or finetune.active_brain_tag()
+        except Exception:  # noqa: BLE001
+            model = config.OLLAMA_MODEL
+        try:
+            resp = self.ollama.chat(
+                model=model,
+                messages=[{"role": "system", "content": sys_prompt},
+                          {"role": "user", "content": bounded}],
+                options={"num_ctx": num_ctx}, keep_alive=config.OLLAMA_KEEP_ALIVE)
+            out = _chatText(resp).strip()
+            if not out:
+                self._compaction_fail_streak = getattr(self, "_compaction_fail_streak", 0) + 1
+                return ""
+            self._compaction_fail_streak = 0
+            return out
+        except Exception as e:  # noqa: BLE001
+            LOG.debug("compaction summarize failed (ignored): %s", e)
+            self._compaction_fail_streak = getattr(self, "_compaction_fail_streak", 0) + 1
+            return ""
 
     def _resolveClarifications(self, state: TaskState, subtask: dict, claude_output: str,
                                dashboard: "DiscordDashboard | None" = None) -> "str | None":
