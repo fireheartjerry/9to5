@@ -29,6 +29,15 @@ if TYPE_CHECKING:
 LOG = config.getLogger("orchestrator")
 
 
+def _envHandsKw(hands, run_claude_fn, environment, env_handle) -> dict:
+    """Executor kwargs that route the run INTO the provisioned environment.
+    Only the Claude-CLI hands path takes an environment -- browser/native surfaces are API/UIA,
+    not sandboxable shells -- mirroring how `feed` is attached only on the _run_claude path."""
+    if environment is not None and env_handle is not None and hands is run_claude_fn:
+        return {"environment": environment, "env_handle": env_handle}
+    return {}
+
+
 class OrchestratorExecuteMixin:
     """Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment."""
 
