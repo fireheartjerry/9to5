@@ -392,14 +392,36 @@ def _curriculum_and_report(db_path: Optional[Path]):
 
 
 def _weekly_steps(db_path: Optional[Path]):
-    """Slower tier: prompt (and later adapter) promotion -- gated by the eval harness +
-    field metrics, never premature. Runs automatically; the human only start/abort/checks."""
+    """Slower tier: prompt/adapter promotion + capability evolution -- all gated by the eval
+    harness + field metrics, never premature. Runs automatically; the human only
+    start/abort/checks. The evolution steps are no-ops unless EVOLUTION_* flags are enabled."""
+    def evolve():
+        from learning.evolution import evolver
+        return evolver.propose_candidates(db_path=db_path)
+
+    def evolve_promote():
+        from learning.evolution import promote
+        from learning import eval_runner
+        # active_runner() -> runner(goal)->result (1-arg); the evolution harness needs
+        # runner(goal, body). Wrap to ignore body (no capability-aware runner exists yet).
+        base = eval_runner.active_runner()
+        runner = (lambda goal, body: base(goal)) if base is not None else (
+            lambda goal, body: {"attempts": 1, "checks": {c: True for c in goal.get("checks", [])}})
+        return promote.run_evolution_promotions(runner=runner, db_path=db_path)
+
+    def curate():
+        from learning.evolution import curator
+        return curator.run_curator(db_path=db_path)
+
     return [("prompt_promotion", lambda: _prompt_promotion(db_path)),
             ("lora_distillation", lambda: _lora_distillation(db_path)),
             ("dpo_distillation", lambda: _dpo_distillation(db_path)),
             ("adapter_promotion", lambda: _adapter_promotion(db_path)),
             ("meta_optimize", lambda: _meta_optimize(db_path)),
             ("self_play", lambda: _self_play(db_path)),
+            ("evolve", evolve),
+            ("evolve_promote", evolve_promote),
+            ("curate", curate),
             ("curriculum_and_report", lambda: _curriculum_and_report(db_path))]
 
 
