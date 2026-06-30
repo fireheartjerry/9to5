@@ -106,6 +106,15 @@ blocked = fetch_pr_outcomes(promote_safe=False, limit=20)
 
 See `docs/pr_feedback.md` for the full architecture and deployment instructions.
 
+### Retrieval (Epic 3 — Layer-1/2 memory & context)
+
+`retrieval.lessons_block` now injects REAL solution content (the `exp_content` table) reranked
+by recency+importance+relevance, and degrades to the metadata lessons block when no neighbor
+carries content. All new behavior ships behind default-off flags: `ANN_INDEX_ENABLED`
+(ChromaDB ANN over the O(n) cosine scan), `COMPACTION_ENABLED` (fixed-window payload
+compaction — `num_ctx` is NEVER resized), and `REFLECTION_CONSOLIDATE_ENABLED`
+(importance-triggered episodic→semantic consolidation).
+
 ## Memory change checklist
 
 Before changing memory code:

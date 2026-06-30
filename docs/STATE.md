@@ -187,6 +187,18 @@ When changing state schema:
 5. Add backward compatibility or migration notes if old task files may exist.
 6. Avoid changing status strings casually.
 
+## Layer-1 / Layer-2 derived artifacts (Epic 3)
+
+- `state/exp_index/` — ChromaDB ANN index (derived cache over `state/experience.db`; the
+  embedding BLOB column stays source of truth; rebuild via `retrieval.backfill_embeddings`).
+  Collection name pins `EMBED_MODEL`+dim so an embedder swap starts a fresh space.
+- `state/compaction/ctx-*.txt` — raw context offloaded by the compaction layer; the brain
+  payload carries a `[raw context offloaded to <path>]` breadcrumb. Safe to prune.
+- New tables in `state/experience.db`: `exp_content` (solution_content/post_mortem/importance)
+  and `subtasks.importance` (denormalized salience). All additive via CREATE-IF-NOT-EXISTS.
+- Optional dependency: `chromadb` (Phase 2). Absent wheel -> `NullIndex` fail-open to the O(n)
+  cosine scan; never required for a run.
+
 ## Universe state
 
 Universe lives under:
