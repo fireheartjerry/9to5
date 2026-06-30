@@ -303,7 +303,8 @@ class TaskState:
     def addSubtask(self, title: str, description: str, assigned_to: str = "executor",
                    layer: int = 3, depends_on: Optional[list[str]] = None,
                    verify: Optional[dict] = None,
-                   files_touched: Optional[list[str]] = None) -> dict[str, Any]:
+                   files_touched: Optional[list[str]] = None,
+                   fork_eligible: bool = False) -> dict[str, Any]:
         seq = self._nextSubtaskSeq()
         st: dict[str, Any] = {
             "subtask_id": f"st-{seq:03d}",
@@ -320,6 +321,7 @@ class TaskState:
             "output_ref": None,
             "github_pr": None,
             "verify": verify,
+            "fork_eligible": bool(fork_eligible),   # Epic 6 planner opt-in hint (default-safe)
             "verify_result": None,
             "session": {},
         }
