@@ -14,21 +14,11 @@ from pathlib import Path as _Path
 
 sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
-# Patterns that we refuse to let a Bash tool run. Matched case-insensitively
-# against the raw command string.
-DESTRUCTIVE_PATTERNS = (
-    "rm -rf",
-    "rm -fr",
-    "rmdir /s",
-    "del /f",
-    "del /s",
-    "format ",
-    "DROP TABLE",
-    "git push --force",
-    "git push -f",
-    "mkfs",
-    ":(){",
-    ">/dev/sda",
+# DESTRUCTIVE_PATTERNS now live in the pure classifier so the hook block decision and the
+# orchestrator escalation decision derive from ONE taxonomy. Re-exported so existing callers
+# (`from agents.hooks import DESTRUCTIVE_PATTERNS`) keep working unchanged.
+from platform_core.runtime.action_risk import (  # noqa: E402
+    DESTRUCTIVE_PATTERNS, ActionDescriptor, RiskTier, classifyActionRisk,
 )
 
 
@@ -50,15 +40,13 @@ def blockDestructive(data):
     if not command:
         sys.exit(0)
 
-    lowered = command.lower()
-    matched = None
-    for pat in DESTRUCTIVE_PATTERNS:
-        if pat.lower() in lowered:
-            matched = pat
-            break
-
-    if matched is None:
+    # Shared-taxonomy block decision: classify via the pure classifier; keep the matched-pattern
+    # string for the human-readable reason (parity with the legacy message).
+    tier = classifyActionRisk(ActionDescriptor(tool_name="Bash", command=command))
+    if tier is not RiskTier.DESTRUCTIVE:
         sys.exit(0)
+    lowered = command.lower()
+    matched = next((pat for pat in DESTRUCTIVE_PATTERNS if pat.lower() in lowered), "destructive")
 
     reason = f"Blocked destructive command (matched {matched!r}): {command}"
 
