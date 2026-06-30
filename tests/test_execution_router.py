@@ -72,3 +72,17 @@ def test_finalize_calls_collect_then_teardown():
     summary = router.finalize(env, handle, None, None)
     assert calls == ["collect", "teardown"]
     assert summary == {"backend": "spy", "merged": True}
+
+
+# --- Task 13: backend tag in surfaces_used (SIE learning, non-load-bearing) ---
+import platform_core.core.surfaces as surfaces
+
+
+def test_surfaces_used_tags_backend():
+    used = surfaces.surfaces_used({"prompt": "do x", "execution_backend": "worktree"})
+    assert "backend:worktree" in used
+
+
+def test_surfaces_used_no_backend_tag_by_default():
+    used = surfaces.surfaces_used({"prompt": "do x"})
+    assert not any(t.startswith("backend:") for t in used)

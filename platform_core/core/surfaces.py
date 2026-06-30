@@ -112,6 +112,9 @@ def surfaces_used(spec: dict[str, Any]) -> list[str]:
         used.add(f"mcp:{m.lower()}")
     if any(t in blob.lower() for t in ("http://", "https://", "navigate", "browser")):
         used.add("browser")
+    backend = spec.get("execution_backend")
+    if backend:
+        used.add(f"backend:{str(backend).lower()}")
     if not used:
         used.add("terminal")
     return sorted(used)
