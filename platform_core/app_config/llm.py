@@ -151,6 +151,9 @@ COMPACTION_RESERVE_RATIO: float = _envFloat("COMPACTION_RESERVE_RATIO", 0.4)
 COMPACTION_RESERVE_FLOOR: int = _envInt("COMPACTION_RESERVE_FLOOR", 1024)
 COMPACTION_MAX_PASSES: int = _envInt("COMPACTION_MAX_PASSES", 3)
 COMPACTION_OFFLOAD_DIR: str = os.getenv("COMPACTION_OFFLOAD_DIR", "state/compaction")
+# Optional episodic->semantic consolidation (gen-agents reflect.py). Default OFF, runs off the
+# hot path inside SIE post-run maintenance; never blocks the core retrieval steal.
+REFLECTION_CONSOLIDATE_ENABLED: bool = _envBool("REFLECTION_CONSOLIDATE_ENABLED", False)
 # Eval harness: golden suite + fitness scalar weights.
 EVAL_FITNESS_WEIGHTS: dict[str, float] = {
     "first_pass_rate": 0.5,
