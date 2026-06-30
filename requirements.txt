@@ -8,5 +8,6 @@ python-dotenv>=1.0
 gitpython>=3.1
 requests>=2.31
 google-genai>=1.0    # Gemini second brain transport (agents/gemini_driver.py)
+json-repair>=0.30    # last-resort salvage of truncated/malformed 7B JSON (brain_io.parseJsonText)
 playwright>=1.40     # generic browser surface only (agents/browser_executor.py::_run_actions)
 psutil>=5.9          # process-liveness checks (main.py, notifications/work_launcher.py, learning/sie.py)

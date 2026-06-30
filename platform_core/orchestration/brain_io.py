@@ -47,7 +47,10 @@ def _chatJson(resp):
 
 
 def parseJsonText(text: str):
-    """Parse JSON text, tolerating fences and leading/trailing prose."""
+    """Parse JSON text, tolerating fences and leading/trailing prose.
+
+    Ladder: (1) strict json.loads after fence-strip, (2) first balanced {...} object,
+    (3) json_repair salvage of truncated/malformed 7B output (last resort)."""
     if not text:
         return None
     if text.startswith("```"):
@@ -61,5 +64,22 @@ def parseJsonText(text: str):
         try:
             return json.loads(chunk)
         except Exception:  # noqa: BLE001
-            return None
-    return None
+            pass
+    return _jsonRepairSalvage(text)
+
+
+def _jsonRepairSalvage(text: str):
+    """Last-resort salvage of malformed/truncated JSON via the json_repair pip dep.
+
+    Returns a dict/list only -- a repaired scalar/empty (e.g. from pure prose) yields None so the
+    schema validator above this layer still rejects genuinely-broken output. No-op if json_repair
+    is not installed."""
+    try:
+        from json_repair import repair_json
+    except Exception:  # noqa: BLE001 -- optional dep; degrade to no salvage
+        return None
+    try:
+        repaired = repair_json(text, return_objects=True)
+    except Exception:  # noqa: BLE001
+        return None
+    return repaired if isinstance(repaired, (dict, list)) and repaired else None
