@@ -79,7 +79,8 @@ def collectChanges(path: str, sid: str) -> None:
 
 def exitWorktree(path: str, *, merge: bool) -> None:
     """On success commit + merge the worktree branch back into the run branch, then remove the
-    worktree. On failure leave it for inspection. Fail-open; never raises."""
+    worktree. On a merge conflict abort the merge (never leave the shared repo MERGING) and leave
+    the worktree for inspection. Fail-open; never raises."""
     if not isIsolated(path):
         return
     repo = Path(config.PROJECT_ROOT)
@@ -91,7 +92,16 @@ def exitWorktree(path: str, *, merge: bool) -> None:
             task8 = p.parent.name
             branch = _branchFor(task8, sid)
             collectChanges(str(p), sid)   # commit the executor's edits before merging
-            _git(["merge", "--no-edit", branch], repo)
+            try:
+                _git(["merge", "--no-edit", branch], repo)
+            except Exception:
+                # A conflicting merge leaves the SHARED repo mid-merge -> abort so it is never
+                # stranded in MERGING state, then leave the worktree for inspection (re-raise).
+                try:
+                    _git(["merge", "--abort"], repo)
+                except Exception:  # noqa: BLE001 -- nothing to abort / best-effort
+                    pass
+                raise
         _git(["worktree", "remove", "--force", str(p)], repo)
     except Exception as e:  # noqa: BLE001
         LOG.warning("exitWorktree(%s, merge=%s) failed (%s); leaving for inspection", path, merge, e)

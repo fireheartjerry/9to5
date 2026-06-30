@@ -45,6 +45,35 @@ def test_enter_exit_merge(tmp_path, monkeypatch):
     assert (repo / "new.txt").exists()       # committed in-worktree, then merged back into main
 
 
+@pytest.mark.skipif(not _has_git(), reason="git not available")
+def test_merge_conflict_aborts_not_left_mid_merge(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(["init", "-b", "main"], repo)
+    _git(["config", "user.email", "t@t"], repo)
+    _git(["config", "user.name", "t"], repo)
+    (repo / "f.txt").write_text("base\n", encoding="utf-8")
+    _git(["add", "."], repo)
+    _git(["commit", "-m", "init"], repo)
+    monkeypatch.setattr(worktree.config, "PROJECT_ROOT", repo)
+    monkeypatch.setattr(worktree.config, "STATE_DIR", tmp_path / "state")
+    st = _State("abcdef12-task", repo)
+
+    path = worktree.enterWorktree(st, "st-001")
+    # Worktree edits f.txt one way (uncommitted); main edits the SAME line another way + commits.
+    (Path(path) / "f.txt").write_text("worktree version\n", encoding="utf-8")
+    (repo / "f.txt").write_text("main version\n", encoding="utf-8")
+    _git(["add", "."], repo)
+    _git(["commit", "-m", "main diverges"], repo)
+
+    worktree.exitWorktree(path, merge=True)   # merge conflicts -> must abort, never strand MERGING
+
+    import subprocess as _sp
+    r = _sp.run(["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+                cwd=str(repo), capture_output=True, text=True)
+    assert r.returncode != 0 and not r.stdout.strip()   # repo is NOT left mid-merge
+
+
 def test_enter_failopen_returns_shared(tmp_path, monkeypatch):
     # Point PROJECT_ROOT at a non-git dir -> git errors -> fall back to the shared work_dir.
     monkeypatch.setattr(worktree.config, "PROJECT_ROOT", tmp_path / "nope")
