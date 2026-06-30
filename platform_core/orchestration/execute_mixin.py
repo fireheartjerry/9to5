@@ -28,14 +28,8 @@ if TYPE_CHECKING:
 
 LOG = config.getLogger("orchestrator")
 
-
-def _envHandsKw(hands, run_claude_fn, environment, env_handle) -> dict:
-    """Executor kwargs that route the run INTO the provisioned environment.
-    Only the Claude-CLI hands path takes an environment -- browser/native surfaces are API/UIA,
-    not sandboxable shells -- mirroring how `feed` is attached only on the _run_claude path."""
-    if environment is not None and env_handle is not None and hands is run_claude_fn:
-        return {"environment": environment, "env_handle": env_handle}
-    return {}
+# Epic 8 fabric glue lives in the execution package (keeps this mixin thin); re-export for callers.
+from platform_core.execution.wiring import envHandsKw as _envHandsKw  # noqa: E402
 
 
 class OrchestratorExecuteMixin:
@@ -121,8 +115,9 @@ class OrchestratorExecuteMixin:
     def _runOneAttempt(self, state: TaskState, subtask: dict, architect_doc: str,
                        exec_cwd: str, bus: "ControlBus", dashboard: "DiscordDashboard",
                        sid: str, verify_spec: "dict | None", failure_feedback: "str | None",
-                       resume_session: "str | None", attempt: int) -> tuple:
-        """Plan spec, run executor, combine output, verify. Returns all loop-locals."""
+                       resume_session: "str | None", attempt: int, env_ctx=None) -> tuple:
+        """Plan spec, run executor, combine output, verify. Returns all loop-locals.
+        ``env_ctx`` = optional Epic 8 (environment, handle) tuple; None => today's path."""
         spec = self.authorInvocationSpec(state, subtask, architect_doc, failure_feedback)
         with self._state_lock:
             sess = dict(subtask.get("session") or {})
@@ -191,6 +186,8 @@ class OrchestratorExecuteMixin:
                         resume_session=resume_session,
                         cancel_check=lambda: bus.isAbort() or bus.isKillSubprocess()
                         or self._deadlinePassed(state))
+        environment, env_handle = (env_ctx or (None, None))   # Epic 8: env on Claude-CLI path only
+        hands_kw.update(_envHandsKw(hands, self._run_claude, environment, env_handle))
         if feed is not None:
             hands_kw["feed"] = feed
         # eliza spawn-link: hand THIS attempt's parent step id to the child subprocess so its tool
@@ -255,7 +252,7 @@ class OrchestratorExecuteMixin:
 
     def _runAttemptLoop(self, state: TaskState, subtask: dict, architect_doc: str,
                         exec_cwd: str, bus: "ControlBus", dashboard: "DiscordDashboard",
-                        sid: str, verify_spec: "dict | None") -> tuple:
+                        sid: str, verify_spec: "dict | None", env_ctx=None) -> tuple:
         """Run the verification-attempt loop for one subtask.
 
         Returns (spec, result, vresult, combined, passed, attempt).
@@ -277,7 +274,8 @@ class OrchestratorExecuteMixin:
                                     started_at=subtask.get("started_at") or nowIso())
             spec, result, vresult, combined, passed, resume_session, failure_feedback = \
                 self._runOneAttempt(state, subtask, architect_doc, exec_cwd, bus, dashboard,
-                                    sid, verify_spec, failure_feedback, resume_session, attempt)
+                                    sid, verify_spec, failure_feedback, resume_session, attempt,
+                                    env_ctx)
             self._translateDiscord(bus, state)
             # honor !pause mid-subtask via the SHARED escapable wait (abort / night-mode timeout /
             # deadline) -- the inline loop here previously ignored all three and could wedge an
@@ -406,11 +404,12 @@ class OrchestratorExecuteMixin:
 
     def _runSubtaskAttempts(self, state: TaskState, subtask: dict, architect_doc: str,
                             exec_cwd: str, bus: "ControlBus", dashboard: "DiscordDashboard",
-                            sid: str, verify_spec: "dict | None") -> tuple:
-        """Fork seam: same 6-tuple as _runAttemptLoop. Flag-off => byte-identical (gate in solution_space)."""
+                            sid: str, verify_spec: "dict | None", env_ctx=None) -> tuple:
+        """Fork seam: same 6-tuple as _runAttemptLoop. Flag-off => byte-identical (gate in solution_space).
+        ``env_ctx`` (Epic 8) threads the provisioned env into the LINEAR path only."""
         from platform_core.orchestration import solution_space
         return solution_space.runSubtaskAttempts(self, state, subtask, architect_doc, exec_cwd,
-                                                 bus, dashboard, sid, verify_spec)
+                                                 bus, dashboard, sid, verify_spec, env_ctx=env_ctx)
 
     # ===================================================================
     # Phase 3 -- execution (per-subtask unit)
@@ -431,11 +430,16 @@ class OrchestratorExecuteMixin:
                 _checkCodeDivergence(state)
             except Exception:  # noqa: BLE001
                 pass
+        # Epic 8: provision a per-subtask env (default local; fabric OFF => identity => today).
+        from platform_core.execution import wiring as _env_wiring
+        env, handle, env_ctx, exec_cwd = _env_wiring.provisionForSubtask(state, subtask, exec_cwd)
+        with self._state_lock:
+            subtask["env_handle_meta"] = {"backend": handle.backend, "meta": handle.meta}
         spec, result, vresult, combined, passed, attempt = self._runSubtaskAttempts(
-            state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec)
-        if spec is None:   # subtask removed mid-attempt-loop
-            return "removed"
-        if (state.getSubtask(sid) or {}).get("status") == "removed":
+            state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec,
+            env_ctx=env_ctx)
+        if spec is None or (state.getSubtask(sid) or {}).get("status") == "removed":
+            _env_wiring.finalizeQuietly(env, handle, state, subtask, sid, LOG)   # removed mid-loop
             return "removed"
         # COMMIT the verified outcome FIRST -- it is the source of truth. Everything below
         # (notes, adversary, replan, index) is best-effort enrichment that must never be able to
@@ -456,4 +460,5 @@ class OrchestratorExecuteMixin:
                     else f"⚙️ `{sid}` {subtask['title']} — done ✅"))
         self._postSubtaskEnrich(state, subtask, spec, result, vresult, combined,
                                 passed, final, exec_cwd, architect_doc, bus, dashboard, attempt)
+        _env_wiring.finalizeQuietly(env, handle, state, subtask, sid, LOG)   # Epic 8: collect+teardown
         return final

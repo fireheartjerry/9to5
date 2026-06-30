@@ -72,11 +72,15 @@ def cleanupForkStates(state: TaskState) -> int:
 
 
 def runSubtaskAttempts(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard,
-                       sid, verify_spec) -> tuple:
+                       sid, verify_spec, env_ctx=None) -> tuple:
     """Fork into parallel branches when the subtask is flagged + eligible; else today's linear loop.
 
     Returns the SAME (spec, result, vresult, combined, passed, attempt) tuple either way. Flag-off =>
-    byte-identical to a direct _runAttemptLoop call (the execute_mixin seam, spec §4/locked decision)."""
+    byte-identical to a direct _runAttemptLoop call (the execute_mixin seam, spec §4/locked decision).
+
+    Epic 8: ``env_ctx`` (an (environment, handle) tuple or None) threads the per-subtask provisioned
+    execution environment into the LINEAR loop. Forked branches enter their own worktrees, so they
+    do not receive env_ctx (the fabric env would double-isolate)."""
     projected = config.SOLUTION_FORK_N * config.SOLUTION_FORK_BRANCH_COST_ESTIMATE_USD
     if fork_policy.shouldFork(
             subtask,
@@ -87,7 +91,11 @@ def runSubtaskAttempts(orch, state, subtask, architect_doc, exec_cwd, bus, dashb
             goal_elaborated=state.meta.get("goal_elaborated") or "",
             is_self_referential=bool(state.meta.get("is_self_referential"))):
         return runForked(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec)
-    return orch._runAttemptLoop(state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec)
+    if env_ctx is None:   # no env threaded => byte-identical to today's linear call shape
+        return orch._runAttemptLoop(state, subtask, architect_doc, exec_cwd, bus, dashboard,
+                                    sid, verify_spec)
+    return orch._runAttemptLoop(state, subtask, architect_doc, exec_cwd, bus, dashboard, sid,
+                                verify_spec, env_ctx)
 
 
 def _singleAttempt(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec):
