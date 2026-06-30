@@ -43,6 +43,7 @@ from typing import Any, Optional
 import config
 from memory import experience
 from memory import experience_content
+from memory import exp_index
 
 LOG = config.getLogger("sie.retrieval")
 
@@ -135,14 +136,25 @@ def signature_text(goal: str, title: str = "") -> str:
     return f"{(goal or '').strip()}\n{(title or '').strip()}".strip()
 
 
+def _uid(run_id: str, st_id: str) -> str:
+    """Stable index id for a subtask (collision-free across runs)."""
+    return f"{run_id}::{st_id}"
+
+
 def embed_and_store(run_id: str, st_id: str, goal: str, title: str = "",
                     db_path: Optional[Path] = None) -> bool:
-    """Compute + persist a subtask's embedding (called once the subtask has a signature).
-    Best-effort: a missing embedder simply means this subtask isn't retrievable yet."""
+    """Compute + persist a subtask's embedding AND seed the ANN index (derived cache; the
+    BLOB column stays source of truth). Best-effort."""
     vec = embed(signature_text(goal, title))
     if not vec:
         return False
-    return experience.set_subtask_embedding(run_id, st_id, pack(vec), db_path=db_path)
+    ok = experience.set_subtask_embedding(run_id, st_id, pack(vec), db_path=db_path)
+    try:
+        exp_index.getIndex().addPair(_uid(run_id, st_id), vec,
+                                     {"run_id": run_id, "st_id": st_id, "title": title})
+    except Exception as e:  # noqa: BLE001
+        LOG.debug("index seed skipped (ignored): %s", e)
+    return ok
 
 
 # --------------------------------------------------------------------- top-K
@@ -179,13 +191,26 @@ def retrieve(goal: str, title: str = "", *, k: Optional[int] = None,
 
 def retrieve_content(goal: str, title: str = "", *, k: Optional[int] = None,
                      db_path: Optional[Path] = None) -> list[dict[str, Any]]:
-    """Embed the query, find the top-K similar past successes (O(n) scan for now; Phase 2
-    adds the ANN lookup in front of this), and JOIN each hit to its exp_content row so the
-    caller can render REAL solution content. Best-effort: empty list on any failure."""
+    """Embed the query, look up the ANN index (fallback: O(n) scan), and JOIN each hit to
+    its exp_content row. Best-effort: empty list on any failure."""
     qvec = embed(signature_text(goal, title))
     if not qvec:
         return []
-    neighbors = top_k_similar(qvec, k or config.RETRIEVAL_K, db_path=db_path)
+    k = k or config.RETRIEVAL_K
+    floor = float(getattr(config, "RETRIEVAL_MIN_SCORE", 0.0) or 0.0)
+    neighbors: list[dict[str, Any]] = []
+    try:
+        hits = exp_index.getIndex().query(qvec, k, floor)
+    except Exception:  # noqa: BLE001 -- a broken index never blocks retrieval
+        hits = []
+    if hits:
+        for h in hits:
+            payload = dict(h.get("payload") or {})
+            payload["score"] = h.get("score")
+            payload.setdefault("uid", h.get("uid"))
+            neighbors.append(payload)
+    else:
+        neighbors = top_k_similar(qvec, k, db_path=db_path)
     for n in neighbors:
         row = experience_content.fetchSolutionContent(
             n.get("run_id"), n.get("st_id"), db_path=db_path)
@@ -297,6 +322,12 @@ def backfill_embeddings(db_path: Optional[Path] = None) -> dict[str, int]:
                 break
             continue
         experience.set_subtask_embedding(row["run_id"], row["st_id"], pack(vec), db_path=db_path)
+        try:
+            exp_index.getIndex().addPair(
+                _uid(row["run_id"], row["st_id"]), vec,
+                {"run_id": row["run_id"], "st_id": row["st_id"], "title": row.get("title") or ""})
+        except Exception as e:  # noqa: BLE001
+            LOG.debug("backfill index seed skipped (ignored): %s", e)
         embedded += 1
     LOG.info("embedding backfill: %d embedded, %d skipped", embedded, skipped)
     return {"embedded": embedded, "skipped": skipped}
