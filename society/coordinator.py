@@ -37,6 +37,7 @@ class Coordinator:
         self._state_lock = state_lock
         self._work_dir = work_dir
         self._bus = bus
+        self.spent_usd = 0.0
 
     def attachBus(self) -> None:
         """Wire the event_bus mirror as the blackboard's on_append hook (presentation only)."""
@@ -96,7 +97,11 @@ class Coordinator:
             for f in as_completed(futures):
                 st = futures[f]
                 try:
-                    messages.append(f.result())
+                    msg = f.result()
+                    messages.append(msg)
+                    cost = (msg.get("value") or {}).get("cost_usd")
+                    if isinstance(cost, (int, float)):
+                        self.spent_usd += float(cost)
                 except Exception as e:  # noqa: BLE001 -- a crashed worker must not strand the subtask
                     LOG.error("society worker %s crashed: %s",
                               st.get("subtask_id"), e, exc_info=True)
@@ -115,3 +120,7 @@ class Coordinator:
             if any(v is False for v in verdicts):
                 contested.append(sid)
         return sorted(c for c in contested if c)
+
+    def budgetExceeded(self) -> bool:
+        """True once accumulated worker spend breaches SOCIETY_TOKEN_BUDGET_USD."""
+        return self.spent_usd >= config.SOCIETY_TOKEN_BUDGET_USD

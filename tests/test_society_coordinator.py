@@ -101,3 +101,20 @@ def test_blackboard_appends_mirror_to_event_bus(tmp_path):
     events = bus.history(last_n=10)
     assert any(e["kind"] == "society" for e in events)
     assert events[-1]["data"]["kind"] == "facts"
+
+
+def test_budget_governor_stops_spawning(tmp_path, monkeypatch):
+    import config
+    monkeypatch.setattr(config, "SOCIETY_TOKEN_BUDGET_USD", 0.05)
+    state = _state_two_ready()
+    bb = Blackboard(tmp_path / "g.jsonl")
+    coord = Coordinator(state, bb, threading.Lock(), work_dir=str(tmp_path))
+
+    def fake_run(spec, **kw):
+        return {"ok": True, "returncode": 0, "cost_usd": 0.04}
+
+    ready = [s for s in state.subtasks if s["status"] == "pending"]
+    coord._handleSocietyBatch(ready, parallelism=2, run_fn=fake_run)
+    # two workers each cost 0.04 -> 0.08 > 0.05 budget
+    assert coord.spent_usd >= 0.05
+    assert coord.budgetExceeded() is True
