@@ -96,10 +96,14 @@ _USER_GLOBAL_CLAUDE_MD = Path.home() / ".claude" / "CLAUDE.md"
 _FINGERPRINT_EXCLUDE_DIRS: tuple[Path, ...] = (PROJECT_ROOT / "tests", PROJECT_ROOT / "testing")
 
 # Nested trees that are NOT the running orchestrator's importable self-code: throwaway git worktrees
-# under .claude/worktrees, the VCS dir, and the venv. Without pruning these, rglob pulls a worktree's
-# FULL duplicate of the tree (a second orchestrator.py, config.py, AND its tests/) into the fingerprint
-# set -- polluting epoch hashes and reading as self-divergence whenever such a worktree exists.
-_NON_SELF_TREES: tuple[Path, ...] = (PROJECT_ROOT / ".claude", PROJECT_ROOT / ".git", PROJECT_ROOT / "venv")
+# under .claude/worktrees, the VCS dir, the venv, and the gitignored external `references/` clone of
+# third-party repos. Without pruning these, rglob/os.walk pulls a duplicate tree (a second
+# orchestrator.py, config.py, AND its tests/ + nested .claude/) into the fingerprint set -- polluting
+# epoch hashes and reading as self-divergence whenever such a tree exists. (tools/repo_map.py excludes
+# `references` the same way.)
+_NON_SELF_TREES: tuple[Path, ...] = (
+    PROJECT_ROOT / ".claude", PROJECT_ROOT / ".git", PROJECT_ROOT / "venv", PROJECT_ROOT / "references",
+)
 
 
 def roleOf(path: str | os.PathLike) -> Role:
