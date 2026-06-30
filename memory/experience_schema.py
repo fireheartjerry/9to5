@@ -217,6 +217,35 @@ _SCHEMA: tuple[str, ...] = (
         created_at       TEXT,
         UNIQUE(run_id, st_id)
     )""",
+    """CREATE TABLE IF NOT EXISTS insights (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        scope           TEXT,
+        text            TEXT,
+        poignancy       REAL,
+        support_count   INTEGER,
+        win_rate        REAL,
+        depth           INTEGER DEFAULT 0,
+        provenance_json TEXT,
+        embedding       BLOB,
+        created_at      TEXT,
+        last_seen_at    TEXT,
+        UNIQUE(scope, text)
+    )""",
+    """CREATE TABLE IF NOT EXISTS evolution_candidates (
+        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind               TEXT,
+        target             TEXT,
+        body               TEXT,
+        body_hash          TEXT,
+        parent_champion_id INTEGER,
+        state              TEXT,
+        n                  INTEGER DEFAULT 0,
+        first_pass         INTEGER DEFAULT 0,
+        provenance_json    TEXT,
+        created_at         TEXT,
+        updated_at         TEXT,
+        UNIQUE(kind, target, body_hash)
+    )""",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_run ON subtasks(run_id)",
     "CREATE INDEX IF NOT EXISTS idx_subtasks_passed ON subtasks(verify_passed)",
     "CREATE INDEX IF NOT EXISTS idx_arms_ctx ON policy_arms(context_key)",
@@ -224,6 +253,7 @@ _SCHEMA: tuple[str, ...] = (
     # Partial index for the retrieval pool query (embedded, verify-passing subtasks).
     "CREATE INDEX IF NOT EXISTS idx_subtasks_embedded ON subtasks(verify_passed) "
     "WHERE embedding IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_candidates_target ON evolution_candidates(kind, target, state)",
 )
 
 
@@ -239,9 +269,10 @@ def _ensureColumns(conn: sqlite3.Connection, table: str, cols: dict[str, str]) -
 # Columns added after the initial table DDL (table -> {col: decl}). Applied every
 # schema-ensure so an old db file is upgraded in place. Phases 2/4 extend this.
 _MIGRATIONS: dict[str, dict[str, str]] = {
-    "subtasks": {"adversary_stub": "INTEGER", "provenance": "TEXT", "importance": "REAL"},
+    "subtasks": {"adversary_stub": "INTEGER", "provenance": "TEXT",
+                 "importance": "REAL", "poignancy": "REAL"},
     "prompt_variants": {"provenance": "TEXT"},
-    "reflections": {"provenance": "TEXT"},
+    "reflections": {"provenance": "TEXT", "poignancy": "REAL"},
     "solution_cache": {"provenance": "TEXT"},
 }
 
