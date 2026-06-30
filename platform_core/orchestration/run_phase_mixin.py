@@ -104,9 +104,19 @@ class OrchestratorRunPhaseMixin:
     def _resumeSetup(self, state: TaskState, work_dir: str,
                      bus: "ControlBus", dashboard: "DiscordDashboard") -> str:
         """Un-strand in-progress subtasks and rebuild the architect doc for a resumed run."""
-        for s in state.subtasks:
-            if s["status"] == "in_progress":
-                state.updateSubtask(s["subtask_id"], status="pending")
+        if getattr(config, "STEP_RESUME_ENABLED", False):
+            try:
+                from platform_core.orchestration.step_resume import reconcileResume
+                reconcileResume(state)   # journal-aware: keep resumable on sig-match, else reset
+            except Exception as e:  # noqa: BLE001 -- resume is best-effort; fall back to blind reset
+                LOG.warning("reconcileResume failed (%s); blind-resetting in_progress subtasks", e)
+                for s in state.subtasks:
+                    if s["status"] == "in_progress":
+                        state.updateSubtask(s["subtask_id"], status="pending")
+        else:
+            for s in state.subtasks:
+                if s["status"] == "in_progress":
+                    state.updateSubtask(s["subtask_id"], status="pending")
         architect_doc = self.obs.readNote(state.architectNoteRel()) or "(resumed; architect doc unavailable)"
         prior = "\n".join(
             f"- {s['subtask_id']} [{s['status']}] {s['title']}"
