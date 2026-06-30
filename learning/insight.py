@@ -48,3 +48,65 @@ def should_consolidate(accrued: float, *, budget: Optional[float] = None) -> boo
     """Fire reflection only once accrued poignancy crosses the importance budget."""
     budget = config.INSIGHT_TRIGGER_BUDGET if budget is None else budget
     return float(accrued) >= float(budget)
+
+
+def _family_of(row: dict[str, Any]) -> str:
+    """Task family key. Reuse lessons.family_of when available; fall back to tags/title."""
+    try:
+        from learning import lessons
+        fam = getattr(lessons, "family_of", None)
+        if callable(fam):
+            return f"family:{fam(row)}"
+    except Exception:  # noqa: BLE001
+        pass
+    tags = (row.get("signature_tags") or "").strip()
+    if tags:
+        return f"family:{tags.split(',')[0].strip().lower()}"
+    title = (row.get("title") or "misc").strip().lower()
+    return f"family:{title.split()[0] if title.split() else 'misc'}"
+
+
+def _cluster_recent(db_path: Optional[Path]) -> dict[str, list[dict[str, Any]]]:
+    """Group recent high-poignancy subtasks by family."""
+    clusters: dict[str, list[dict[str, Any]]] = {}
+    for row in experience.fetch_subtasks(db_path=db_path):
+        if score_poignancy(row) < 0.5:
+            continue
+        clusters.setdefault(_family_of(row), []).append(row)
+    return clusters
+
+
+def _principle_text(family: str, rows: list[dict[str, Any]],
+                    brain: Optional[Callable[[str], str]]) -> str:
+    """A durable principle for a cluster. Deterministic template offline; brain refines online."""
+    titles = [r.get("title") or "" for r in rows][:3]
+    base = (f"In {family.split(':', 1)[-1]} work, recurring failures across "
+            f"{len(rows)} subtasks ({'; '.join(t for t in titles if t)}): "
+            "verify before claiming done and read the target before editing.")
+    if brain is None:
+        return base
+    try:
+        refined = brain(f"Summarize the single most salient durable lesson, <=200 chars:\n{base}")
+        return (refined or base).strip()
+    except Exception:  # noqa: BLE001
+        return base
+
+
+def consolidate_insights(*, brain: Optional[Callable[[str], str]] = None,
+                         db_path: Optional[Path] = None) -> dict[str, Any]:
+    """Cluster recent high-poignancy rows by family and write cited insight rows (I6)."""
+    if config.SIE_KILL_SWITCH:
+        return {"skipped": "kill_switch"}
+    written = 0
+    for family, rows in _cluster_recent(db_path).items():
+        if len(rows) < 2:
+            continue
+        text = _principle_text(family, rows, brain)
+        poig = round(sum(score_poignancy(r) for r in rows) / len(rows), 4)
+        prov = {"runs": sorted({r.get("run_id") for r in rows if r.get("run_id")}),
+                "subtasks": [r.get("st_id") or r.get("id") for r in rows]}
+        if experience.record_insight(scope=family, text=text, poignancy=poig,
+                                     support_count=len(rows), provenance=prov,
+                                     db_path=db_path):
+            written += 1
+    return {"written": written}

@@ -15,3 +15,41 @@ def test_score_poignancy_clean_pass_is_low():
 def test_importance_trigger_only_fires_past_budget():
     assert insight.should_consolidate(0.4, budget=1.0) is False
     assert insight.should_consolidate(1.5, budget=1.0) is True
+
+
+from memory import experience
+
+
+@pytest.fixture()
+def db(tmp_path):
+    p = tmp_path / "exp.db"
+    experience._reset_schema_cache()
+    experience.init(p)
+    yield p
+    experience._reset_schema_cache()
+
+
+def _seed_failed_subtask(db, run_id, st_id, title):
+    # Adapted to the REAL record_subtask(run_id, st: dict, db_path) signature: the plan's
+    # kwargs (st_id/verify_passed/attempt_count/adversary_verdict) are derived from this dict
+    # by memory.experience_subtasks._subtask_params -- no invented columns.
+    st = {
+        "subtask_id": st_id,
+        "title": title,
+        "signature_tags": "auth",
+        "verify_result": {"passed": False, "attempt_count": 3},
+        "_adversary_verdict": "challenged",
+    }
+    experience.record_subtask(run_id, st, db_path=db)
+
+
+def test_consolidate_writes_cited_insight(db):
+    experience.record_run({"run_id": "r1", "goal_raw": "harden auth"}, db_path=db)
+    _seed_failed_subtask(db, "r1", "s1", "fix auth token refresh")
+    _seed_failed_subtask(db, "r1", "s2", "fix auth session expiry")
+    out = insight.consolidate_insights(db_path=db)
+    assert out["written"] >= 1
+    rows = experience.fetch_insights(db_path=db)
+    assert rows
+    # I6 provenance: every insight cites the runs/subtasks it derived from.
+    assert "s1" in rows[0]["provenance_json"] or "s2" in rows[0]["provenance_json"]
