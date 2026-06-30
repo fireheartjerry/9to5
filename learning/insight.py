@@ -110,3 +110,54 @@ def consolidate_insights(*, brain: Optional[Callable[[str], str]] = None,
                                      db_path=db_path):
             written += 1
     return {"written": written}
+
+
+_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_LEAD_MARKER_RE = re.compile(r"^[\s>#*\-=`]+")
+_INJECT_LINE_RE = re.compile(
+    r"(?i)^\s*(?:#{1,6}\s|#{1,6}$|system\b|assistant\b|user\b|"
+    r"ignore\s+(?:all\s+)?previous|<\|)")
+
+
+def _sanitize_insight(text: str, *, cap: int = 240) -> str:
+    """Collapse + defang a retrieved insight before it can enter a prompt (loki idea)."""
+    if not text:
+        return ""
+    t = unicodedata.normalize("NFKC", str(text))
+    t = _CTRL_RE.sub(" ", t)
+    kept = [ln for ln in t.splitlines() if not _INJECT_LINE_RE.search(ln)]
+    t = " ".join(" ".join(kept).split())
+    t = _LEAD_MARKER_RE.sub("", t)
+    return t[:cap].strip()
+
+
+def _relevance(goal: str, title: str, row: dict[str, Any]) -> float:
+    """Token-overlap relevance of an insight to the current subtask (cheap, deterministic)."""
+    want = set(re.findall(r"[a-z0-9]+", f"{goal} {title}".lower()))
+    have = set(re.findall(r"[a-z0-9]+", f"{row.get('scope', '')} {row.get('text', '')}".lower()))
+    if not want or not have:
+        return 0.0
+    return len(want & have) / len(want)
+
+
+def insight_block(goal: str, title: str, *, db_path: Optional[Path] = None) -> str:
+    """Top insights ranked by recency*importance*relevance, sanitized. "" on cold ledger."""
+    rows = experience.fetch_insights(db_path=db_path)
+    if not rows:
+        return ""
+    n = len(rows)
+    scored = []
+    for i, row in enumerate(rows):
+        recency = (i + 1) / n  # later id == more recent
+        importance = float(row.get("poignancy") or 0.0)
+        rel = _relevance(goal, title, row)
+        scored.append((recency * 0.3 + importance * 0.4 + rel * 0.3, row))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    lines = []
+    for _, row in scored[:3]:
+        clean = _sanitize_insight(row.get("text") or "")
+        if clean:
+            lines.append(f"- {clean}")
+    if not lines:
+        return ""
+    return "\n\n## Learned principles (insights)\n" + "\n".join(lines) + "\n"
