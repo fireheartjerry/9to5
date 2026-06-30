@@ -40,10 +40,14 @@ class SelfPromotionError(RuntimeError):
     """Raised when a non-independent actor (the brain) tries to crown a champion (I2)."""
 
 
+_FORBIDDEN_PROMOTERS = {"brain", "evolver"}
+
+
 def guard_promotion(actor: str) -> None:
-    """I2: only the independent gate may promote; the brain can only propose."""
-    if actor == "brain":
-        raise SelfPromotionError("the brain may propose challengers but never promote (I2)")
+    """I2: only the independent gate may promote; the brain/evolver can only propose."""
+    if actor in _FORBIDDEN_PROMOTERS:
+        raise SelfPromotionError(
+            f"{actor} may propose challengers but never promote (I2)")
 
 
 def verify_invariants(*, db_path: Optional[Path] = None) -> list[str]:
@@ -64,6 +68,23 @@ def verify_invariants(*, db_path: Optional[Path] = None) -> list[str]:
         champs = experience.fetch_variants(role, "champion", db_path=db_path)
         if len(champs) > 1:
             violations.append(f"I4: {len(champs)} champion prompts for role '{role}'")
+    # I4 (extended): at most one champion skill/playbook candidate per target.
+    for kind in ("skill", "playbook"):
+        champs = experience.fetch_candidates(kind=kind, state="champion", db_path=db_path)
+        for target, c in Counter(c["target"] for c in champs).items():
+            if c > 1:
+                violations.append(f"I4: {c} champion {kind} candidates for target '{target}'")
+    # I8: no champion candidate may target a CORE_PROTECTED_FILES / core-loop path.
+    core = set(getattr(config, "CORE_PROTECTED_FILES", ()))
+    for kind in ("skill", "playbook"):
+        for c in experience.fetch_candidates(kind=kind, state="champion", db_path=db_path):
+            if str(c.get("target") or "") in core:
+                violations.append(f"I8: champion {kind} targets core file '{c['target']}'")
+    # I7: a champion skill candidate must not target a pinned/bundled skill.
+    pinned = set(getattr(config, "EVOLUTION_PINNED_SKILLS", ()))
+    for c in experience.fetch_candidates(kind="skill", state="champion", db_path=db_path):
+        if str(c.get("target") or "") in pinned:
+            violations.append(f"I7: champion skill targets pinned skill '{c['target']}'")
     return violations
 
 
@@ -77,4 +98,10 @@ def panic_to_stock(*, db_path: Optional[Path] = None) -> dict[str, int]:
     n = len(experience.fetch_adapters("champion", db_path=db_path))
     experience.retire_champion_adapter(role=None, db_path=db_path)
     LOG.warning("panic_to_stock: retired %d champion adapter(s)", n)
-    return {"retired": n}
+    retired_caps = 0
+    for kind in ("skill", "playbook"):
+        for c in experience.fetch_candidates(kind=kind, state="champion", db_path=db_path):
+            if experience.set_candidate_state(c["id"], "retired", db_path=db_path):
+                retired_caps += 1
+    LOG.warning("panic_to_stock: retired %d champion capability candidate(s)", retired_caps)
+    return {"retired": n, "retired_capabilities": retired_caps}
