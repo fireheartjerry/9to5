@@ -66,6 +66,18 @@ After changing a danger-zone file:
    - `docs/TESTING.md`
 4. Report remaining risk explicitly.
 
+## Semantic safety (Epic 4 — defense-in-depth)
+
+`platform_core/runtime/action_risk.py` classifies every executor attempt by risk tier
+(read/dry_run/mutating/paid/destructive/unknown). `OrchestratorSafetyMixin._authorizeAction`
+routes it: reads auto-run, mutating/paid meter against `AUTONOMY_ALLOWANCE_USD`, and
+**destructive/unknown hard-block unconditionally** (even autonomous, even under
+`strict_allowance`). It composes ON TOP of the existing path/regex guards
+(`hooks_selfmod`, `hooks_destructive`, universe boundaries, `CORE_PROTECTED_FILES`) — never
+replacing them. Escalation reuses the ControlBus `action_risk` gate via `_handleOtherGate`
+(no parallel channel). Ships dark behind `SEMANTIC_SAFETY_ENABLED` (default False);
+flipping it OFF is a clean revert.
+
 ## Patch warning signs
 
 Flag the patch if it:
