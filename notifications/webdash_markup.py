@@ -37,7 +37,7 @@ MARKUP = r"""<!doctype html><html><head><meta charset="utf-8"><title>9TO5</title
       <input id="search" placeholder="search…" oninput="render()" size="14">
       <span class="toggle lbl" id="lockBtn" onclick="toggleLock()">scroll: lock</span>
     </div>
-    <div class="feed" id="feed" aria-live="polite" aria-label="Live event feed"></div>
+    <div class="feed" id="feed" aria-live="off" aria-label="Live event feed"></div>
   </div>
   <aside class="col" aria-label="Subtasks and narrative">
     <div class="sec">SUBTASKS</div>

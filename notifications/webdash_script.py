@@ -49,7 +49,7 @@ function renderState(r){
   document.getElementById('tunnel').innerHTML=r.tunnel_url?(TUNNEL_ICON+' <a href="'+esc(r.tunnel_url)+'" target="_blank">'+esc(r.tunnel_url)+'</a>'):'';
   const h=r.health||{};
   document.getElementById('auraNum').textContent=(h.score==null?'—':h.score);
-  document.getElementById('auraDot').style.background=h.color||'#555555';
+  document.getElementById('auraDot').style.background=h.color||'#8a8a8a';
   let meta='<div class="sec">MISSION</div>'+kv('codename',m.codename||'RUN')
     +kv('task',(r.meta.task_id||'').slice(0,8))+kv('model',r.model||'—')
     +kv('mode',m.control_mode||'watch')+kv('phase',m.status||'—')
