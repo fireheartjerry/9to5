@@ -91,6 +91,22 @@ class TestSieMaintenance(unittest.TestCase):
         arms = {a["action_json"]: a for a in experience.fetch_arms("discord", db_path=self.db)}
         self.assertEqual(arms['{"effort": "high"}']["pulls"], 3)
 
+    def test_evolve_op_registered(self):
+        out = sie.run_maintenance(force=True, db_path=self.db)
+        self.assertIn("evolve", out["steps"])
+
+    def test_evolve_promote_op_registered(self):
+        out = sie.run_maintenance(force=True, db_path=self.db)
+        self.assertIn("evolve_promote", out["steps"])
+
+    def test_curate_op_registered(self):
+        out = sie.run_maintenance(force=True, db_path=self.db)
+        self.assertIn("curate", out["steps"])
+
+    def test_insight_op_registered(self):
+        out = sie.run_maintenance(force=True, db_path=self.db)
+        self.assertIn("insight", out["steps"])
+
 
 if __name__ == "__main__":
     unittest.main()

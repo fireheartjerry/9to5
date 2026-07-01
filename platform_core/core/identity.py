@@ -103,6 +103,7 @@ _FINGERPRINT_EXCLUDE_DIRS: tuple[Path, ...] = (PROJECT_ROOT / "tests", PROJECT_R
 # `references` the same way.)
 _NON_SELF_TREES: tuple[Path, ...] = (
     PROJECT_ROOT / ".claude", PROJECT_ROOT / ".git", PROJECT_ROOT / "venv", PROJECT_ROOT / "references",
+    PROJECT_ROOT / "fable-rewrite", PROJECT_ROOT / "nightclaw",
 )
 
 

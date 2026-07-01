@@ -216,7 +216,7 @@ The dead local variable `vres_in` (defined but never passed to `runAttemptVerify
 | `tests/test_intuition.py` | 1 fixed | ship-dark monkeypatch isolation |
 | `tests/test_action_risk.py` | 1 fixed | ship-dark monkeypatch isolation |
 | `tests/test_metrics.py` | 2 fixed | task_id added to fixture |
-| `tests/test_sie.py` | 6 (4 ops added) | new SIE operation registry coverage |
+| `tests/test_sie.py` | 10 (4 ops added as individual named tests) | `test_evolve_op_registered`, `test_evolve_promote_op_registered`, `test_curate_op_registered`, `test_insight_op_registered` added to `TestSieMaintenance` |
 | `tests/test_society_config.py` | 1 fixed | ship-dark monkeypatch isolation |
 | `tests/test_solution_fork_config.py` | 1 fixed | ship-dark monkeypatch isolation |
 | `tests/test_terminal_ipc.py` | 5 (pre-existing) | on main since 2026-06-30; passes without change |
@@ -230,7 +230,7 @@ after Issue 5 fix:           7 failed, 3865 passed, 1 skipped
 after ship-dark env fixes:   0 failed, 3873 passed, 1 skipped  ← final state
 ```
 
-Full suite runtime: 79.32 s (3873 tests, 0 failures).
+Full suite runtime: 87.24 s (3873 tests, 0 failures).
 
 ### Verification commands with actual output
 
@@ -253,11 +253,11 @@ $ python tools/dev.py fast
 New SIE operation coverage:
 ```
 $ pytest tests/test_sie.py -v -k "evolve or curate or insight"
-tests/test_sie.py::test_evolve_op_registered PASSED
-tests/test_sie.py::test_evolve_promote_op_registered PASSED
-tests/test_sie.py::test_curate_op_registered PASSED
-tests/test_sie.py::test_insight_op_registered PASSED
-4 passed in 0.18s
+tests/test_sie.py::TestSieMaintenance::test_curate_op_registered PASSED
+tests/test_sie.py::TestSieMaintenance::test_evolve_op_registered PASSED
+tests/test_sie.py::TestSieMaintenance::test_evolve_promote_op_registered PASSED
+tests/test_sie.py::TestSieMaintenance::test_insight_op_registered PASSED
+4 passed in 3.86s
 ```
 
 ### Coverage scope clarification
@@ -289,7 +289,7 @@ which runs the full unit test suite under `pytest` with `-x --tb=short` suppress
 |-------|-----------|------|------|------|
 | Pre-integration baseline (`main`, 2026-07-01 AM) | 3864 | 3856 | 8 | ~106 s |
 | After webdash merge + Issue 5 fix | 3865 | 3858 | 7 | ~98 s |
-| After all fixes (final state) | 3873 | 3873 | 0 | 79.32 s |
+| After all fixes (final state) | 3873 | 3873 | 0 | 87.24 s |
 
 Test suite is **~26 s faster** after the integration. Root cause: `test_run_one_attempt_spans_are_thread_local` previously hung because `SEMANTIC_SAFETY_ENABLED=True` (from live `.env`) caused the test's `_Host` stub to raise `AttributeError` in worker threads, preventing the subprocess from exiting cleanly. The self-ref gate waited 120 s before giving up. After the `monkeypatch` fix the same test subset completes in **2.25 s** — a 98% reduction for that gate path.
 
