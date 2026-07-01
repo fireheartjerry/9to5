@@ -24,15 +24,24 @@ function toast(msg,ok){
   requestAnimationFrame(()=>t.classList.add('show'));
   setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300);},4000);
 }
+let _modalResolve=null;
+function closeModal(result){
+  const root=document.getElementById('modalRoot');
+  root.innerHTML='';
+  if(_modalResolve){const r=_modalResolve;_modalResolve=null;r(result);}
+}
 function confirmModal(msg){
   return new Promise(resolve=>{
+    _modalResolve=resolve;
+    const opener=document.activeElement;
     const root=document.getElementById('modalRoot');
     root.innerHTML='<div class="modal-scrim"><div class="modal" role="alertdialog" aria-modal="true">'
       +'<div>'+esc(msg)+'</div><div class="row2">'
       +'<button class="btn" id="mCancel">Cancel</button>'
       +'<button class="btn danger" id="mOk">Confirm</button></div></div></div>';
-    document.getElementById('mOk').onclick=()=>{root.innerHTML='';resolve(true)};
-    document.getElementById('mCancel').onclick=()=>{root.innerHTML='';resolve(false)};
+    document.getElementById('mOk').onclick=()=>{closeModal(true);opener&&opener.focus&&opener.focus();};
+    document.getElementById('mCancel').onclick=()=>{closeModal(false);opener&&opener.focus&&opener.focus();};
+    document.getElementById('mCancel').focus();
   });
 }
 async function ctl(action,arg,btn){
@@ -40,15 +49,16 @@ async function ctl(action,arg,btn){
     const ok=await confirmModal('Are you sure you want to '+action+' this run? This cannot be undone.');
     if(!ok)return;
   }
-  if(btn)btn.classList.add('busy');
+  if(btn){btn.classList.add('busy');btn.disabled=true;}
   try{
     const res=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-9to5-token':__T},body:JSON.stringify({action,arg})});
-    if(!res.ok)throw new Error('HTTP '+res.status);
+    const body=await res.json();
+    if(!res.ok||body.ok===false)throw new Error(body.error||('HTTP '+res.status));
     toast(action+' sent',true);
   }catch(e){
     toast(action+' failed: '+e.message,false);
   }finally{
-    if(btn)btn.classList.remove('busy');
+    if(btn){btn.classList.remove('busy');btn.disabled=false;}
   }
 }
 function toggleLock(){LOCKED=!LOCKED;document.getElementById('lockBtn').textContent='scroll: '+(LOCKED?'lock':'free');}
