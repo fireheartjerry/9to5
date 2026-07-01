@@ -3,7 +3,6 @@
   "generated_by": "tools/repo_map.py",
   "root": "9to5",
   "first_party_roots": [
-    "C9to5nightclaw",
     "agents",
     "config",
     "conftest",
@@ -30,19 +29,6 @@
     "workflows"
   ],
   "modules": {
-    "C9to5nightclaw": {
-      "path": "C9to5nightclaw.py",
-      "purpose": "Nightclaw — Discord bot entry point for 9TO5.",
-      "exports": [],
-      "depends_on": [
-        "notifications.command_bot"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
     "agents": {
       "path": "agents/__init__.py",
       "purpose": "9TO5 agent roster.",
@@ -525,16 +511,16 @@
         {
           "name": "elaborate",
           "kind": "function",
-          "signature": "(goal_raw: str) -> str",
+          "signature": "(goal_raw: str, work_dir: str | None=None) -> str",
           "summary": "Return the elaborated specification for ``goal_raw`` (never raises",
-          "lineno": 77
+          "lineno": 127
         },
         {
           "name": "extractUniverse",
           "kind": "function",
           "signature": "(goal_raw: str, goal_elaborated: str, work_dir: str) -> dict",
           "summary": "Extract the operating universe (scope boundary) from the goal (with safe defaults).",
-          "lineno": 104
+          "lineno": 162
         }
       ],
       "depends_on": [
@@ -6210,14 +6196,14 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 28
+          "lineno": 29
         },
         {
           "name": "setup",
           "kind": "function",
           "signature": "(bot: dpy_commands.Bot) -> None",
           "summary": "",
-          "lineno": 107
+          "lineno": 118
         }
       ],
       "depends_on": [
@@ -6739,7 +6725,6 @@
         "tests/test_command_bot.py"
       ],
       "callers": [
-        "C9to5nightclaw",
         "nightclaw",
         "nightclaw.__main__"
       ]
@@ -8057,42 +8042,42 @@
           "kind": "function",
           "signature": "() -> dict",
           "summary": "",
-          "lineno": 53
+          "lineno": 58
         },
         {
           "name": "write_nav",
           "kind": "function",
           "signature": "(page_idx: int, mode: str, frozen: bool) -> None",
           "summary": "",
-          "lineno": 65
+          "lineno": 70
         },
         {
           "name": "bump_nav",
           "kind": "function",
           "signature": "(*, delta_page: int=0, toggle_raw: bool=False, toggle_freeze: bool=False, page_count: 'int | None'=None) -> dict",
           "summary": "",
-          "lineno": 71
+          "lineno": 76
         },
         {
           "name": "read_mirror",
           "kind": "function",
           "signature": "() -> dict",
           "summary": "",
-          "lineno": 85
+          "lineno": 90
         },
         {
           "name": "write_mirror",
           "kind": "function",
           "signature": "(body: str, page_count: int, lanes: list) -> None",
           "summary": "",
-          "lineno": 92
+          "lineno": 97
         },
         {
           "name": "clear",
           "kind": "function",
           "signature": "() -> None",
           "summary": "",
-          "lineno": 97
+          "lineno": 102
         }
       ],
       "depends_on": [
@@ -12802,14 +12787,14 @@
           "kind": "function",
           "signature": "() -> 'Optional[TaskState]'",
           "summary": "Prefer the most-recently-STARTED active (non-terminal) task.",
-          "lineno": 118
+          "lineno": 123
         },
         {
           "name": "listRecent",
           "kind": "function",
           "signature": "(n: int=10) -> list[dict[str, Any]]",
           "summary": "Lightweight summaries of recent tasks, newest first",
-          "lineno": 135
+          "lineno": 140
         }
       ],
       "depends_on": [

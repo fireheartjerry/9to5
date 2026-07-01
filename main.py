@@ -265,7 +265,7 @@ def _elaborateGoal(args, work_dir: str):
             print("(continuing in degraded mode — run `python main.py --doctor` for details)\n")
     except Exception:  # noqa: BLE001
         pass
-    elaborated = elaborator.elaborate(goal)
+    elaborated = elaborator.elaborate(goal, work_dir)
     state.setElaboratedGoal(elaborated)
     print("\n===== ELABORATED GOAL =====\n" + elaborated + "\n===========================\n")
     universe = elaborator.extractUniverse(goal, elaborated, work_dir)
