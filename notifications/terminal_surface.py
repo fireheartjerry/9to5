@@ -12,7 +12,7 @@ EXPORTS:
   TerminalSurface  -- Owns one pinned Live Terminal message per run + the adaptive edit loop.
   get_terminal_surface() -> Optional[TerminalSurface]  -- Process-global singleton accessor.
   set_terminal_surface(surface: Optional[TerminalSurface]) -> None  -- Set/clear the singleton.
-DEPENDS-ON: config, notifications.discord_bot, notifications.event_bus, notifications.terminal_render
+DEPENDS-ON: config, notifications.discord_bot, notifications.event_bus, notifications.terminal_ipc, notifications.terminal_render
 SIDE-EFFECTS: TerminalSurface creates/edits/pins Discord messages via notifications.discord_bot
 RUN/TEST: python -m pytest tests/test_terminal_surface.py
 """
@@ -24,6 +24,7 @@ from typing import Optional
 
 import config
 from notifications import discord_bot as discord   # facade: noticeEmbed/createMessage/editMessageResult/pinMessage
+from notifications import terminal_ipc
 from notifications.event_bus import get_bus
 from notifications.terminal_render import render, terminalControlRows
 
@@ -78,7 +79,8 @@ class TerminalSurface:
         self._recreated = False
         self._lock = threading.Lock()
         self._send_lock = threading.Lock()
-        self._task = None              # asyncio.Task, set by start()
+        self._stop = None              # threading.Event, set by start()
+        self._thread = None            # threading.Thread, set by start()
 
     # ---- data ----------------------------------------------------------
     def _lanes(self) -> list:
@@ -130,7 +132,18 @@ class TerminalSurface:
         never recreate; only a genuine 404 recreates, once)."""
         now = time.monotonic() if now is None else now
         try:
-            body = self._body()
+            nav = terminal_ipc.read_nav()
+            self.page_idx = nav["page_idx"]
+            self.mode = nav["mode"]
+            self.frozen = nav["frozen"]
+            lanes = self._lanes()
+            lane, lines, idx = self._active_lane(lanes)
+            body = (render("—", [], {"label": "no live processes"}, page=0, page_count=0,
+                           mode=self.mode, frozen=self.frozen) if lane is None else
+                    render(lane["id"], lines,
+                           {**lane, "elapsed_s": time.monotonic() - self._started_at},
+                           page=idx + 1, page_count=len(lanes), mode=self.mode, frozen=self.frozen))
+            terminal_ipc.write_mirror(body, len(lanes), [l["id"] for l in lanes])
             changed = body != self._last_body
             if not self._throttle.should_edit(now, changed, self.frozen):
                 return
@@ -160,8 +173,8 @@ class TerminalSurface:
 
     # ---- lifecycle -----------------------------------------------------
     def start(self) -> None:
-        """Create + pin the message and launch the async edit loop. Best-effort."""
-        if self._task is not None:
+        """Create + pin the message and launch the daemon edit loop. Best-effort."""
+        if self._thread is not None:
             return
         try:
             with self._send_lock:
@@ -169,24 +182,27 @@ class TerminalSurface:
                 self.message_id = discord.createMessage(embed, components=terminalControlRows())
                 if self.message_id:
                     discord.pinMessage(self.message_id)
-            import asyncio
-            self._task = asyncio.get_event_loop().create_task(self._loop())
+            self._stop = threading.Event()
+            self._thread = threading.Thread(target=self._loop, name="terminal-surface", daemon=True)
+            self._thread.start()
         except Exception:  # noqa: BLE001
             LOG.warning("terminal surface start failed", exc_info=True)
 
-    async def _loop(self) -> None:
-        import asyncio
-        while True:
+    def _loop(self) -> None:
+        while self._stop is not None and not self._stop.wait(0.4):
             self.render_once()
-            await asyncio.sleep(0.4)   # the throttle floor, not this tick, governs edits
 
     def finalize(self) -> None:
-        """Freeze the surface at run end (leave the message as a static record)."""
+        """Freeze + stop the loop at run end; clear the bridge files. Best-effort."""
         self.frozen = True
         try:
-            task = self._task
-            if task is not None:
-                task.cancel()
+            if self._stop is not None:
+                self._stop.set()
+            self.render_once()          # one last frozen frame
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            terminal_ipc.clear()
         except Exception:  # noqa: BLE001
             pass
 

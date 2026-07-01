@@ -259,6 +259,15 @@ class OrchestratorRunPhaseMixin:
             pass
         import orchestrator as _orch_mod  # deferred: avoids circular at import time; tests patch here
         web_url = _orch_mod.startWebDashboard(state.task_id)
+        try:
+            from notifications.terminal_surface import TerminalSurface, set_terminal_surface
+            from notifications import terminal_ipc as _tipc
+            _tipc.clear()                      # fresh bridge for this run
+            _surface = TerminalSurface()
+            set_terminal_surface(_surface)
+            _surface.start()
+        except Exception:  # noqa: BLE001 -- terminal surface is best-effort
+            pass
         # Hyper-robust public tunnel alongside the local dashboard (non-blocking; URL via callback).
         try:
             from notifications.tunnel import TunnelManager
@@ -417,6 +426,14 @@ class OrchestratorRunPhaseMixin:
         except Exception:  # noqa: BLE001
             LOG.warning("dashboard unpin failed", exc_info=True)
         self._stopTunnel()
+        try:
+            from notifications.terminal_surface import get_terminal_surface, set_terminal_surface
+            _t = get_terminal_surface()
+            if _t is not None:
+                _t.finalize()
+            set_terminal_surface(None)
+        except Exception:  # noqa: BLE001
+            pass
         _webdash_mod.stopWebDashboard()
         self._cleanupScaffolding(work_dir)   # never leave 9to5 scratch dirs in the user's project
         # Fire throttled SIE learning passes off-thread so they never slow teardown.
