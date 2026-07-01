@@ -9,7 +9,7 @@ RUN/TEST: tests/test_webdash_page_split.py
 """
 from __future__ import annotations
 
-MARKUP = r"""<!doctype html><html><head><meta charset="utf-8"><title>9TO5</title><style>{styles}</style></head><body>
+MARKUP = r"""<!doctype html><html><head><meta charset="utf-8"><title>9TO5</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' fill='%23000'/%3E%3Ctext x='4' y='18' font-family='monospace' font-size='16' fill='%2300d4aa'%3E%3E_%3C/text%3E%3C/svg%3E"><style>{styles}</style></head><body>
 <a class="skip-link" href="#feed">Skip to live feed</a>
 <header>
   <span class="crumb">9TO5 ▸ <span id="codename">—</span> ▸ <span id="status">—</span></span>

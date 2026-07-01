@@ -90,6 +90,10 @@ async function expandRaw(sid,el){
   let lines=[];try{lines=await (await fetch('/api/raw?sid='+encodeURIComponent(sid))).json();}catch(e){}
   const d=document.createElement('div');d.className='raw';
   d.textContent=(lines||[]).map(r=>r.line).join('\n');el.after(d);d.scrollTop=d.scrollHeight;
+  const copyBtn=document.createElement('button');
+  copyBtn.className='btn';copyBtn.textContent='Copy';copyBtn.style.marginBottom='4px';
+  copyBtn.onclick=()=>navigator.clipboard.writeText(d.textContent).then(()=>toast('Copied raw output',true)).catch(()=>toast('Copy failed',false));
+  d.before(copyBtn);
 }
 function kv(k,v){return '<div class="kv"><span class="k">'+esc(k)+'</span><span class="val">'+esc(v)+'</span></div>';}
 function renderState(r){
@@ -97,6 +101,7 @@ function renderState(r){
   const m=r.meta;
   document.getElementById('codename').textContent=m.codename||'RUN';
   document.getElementById('status').textContent=(m.status||'').toUpperCase();
+  document.title='9TO5 · '+(m.codename||'RUN')+' · '+(m.status||'').toUpperCase();
   document.getElementById('goal').textContent=m.goal_raw||'';
   document.getElementById('tunnel').innerHTML=r.tunnel_url?(TUNNEL_ICON+' <a href="'+esc(r.tunnel_url)+'" target="_blank">'+esc(r.tunnel_url)+'</a>'):'';
   const h=r.health||{};
@@ -125,9 +130,29 @@ function renderState(r){
   }).join('')||'<div class="muted">—</div>';
   document.getElementById('arc').textContent=r.arc&&r.arc.length?r.arc.map(b=>b.text).join('\n'):'—';
   const cv=r.intelligence_curve||[];
-  document.getElementById('curve').innerHTML=cv.map(d=>'<span class="lbl">'+esc(d.domain)+'</span><span class="bar" style="width:'+Math.max(4,(d.pct||0))+'px"></span><span class="live">'+esc(d.pct)+'%</span>').join(' ')||'<span class="muted">accumulating…</span>';
+  if(!cv.length){
+    document.getElementById('curve').innerHTML='<span class="muted">accumulating…</span>';
+  }else{
+    const rowH=14,w=260;
+    const bars=cv.map((d,i)=>{
+      const y=i*rowH, bw=Math.max(2,(d.pct||0)/100*w);
+      return '<title>'+esc(d.domain)+': '+esc(d.pct)+'%</title>'
+        +'<text x="0" y="'+(y+9)+'" class="lbl" font-size="9">'+esc(d.domain)+'</text>'
+        +'<rect x="70" y="'+y+'" width="'+bw+'" height="9" fill="var(--accent-teal)"><title>'+esc(d.pct)+'%</title></rect>'
+        +'<text x="'+(70+bw+4)+'" y="'+(y+9)+'" class="live" font-size="9">'+esc(d.pct)+'%</text>';
+    }).join('');
+    document.getElementById('curve').innerHTML='<svg width="100%" height="'+(cv.length*rowH)+'" role="img" aria-label="Intelligence curve">'+bars+'</svg>';
+  }
 }
 function fmt(s){s=Math.max(0,s|0);let h=s/3600|0,m=(s%3600)/60|0,x=s%60;return h+'h'+String(m).padStart(2,'0')+'m'+String(x).padStart(2,'0')+'s';}
 async function poll(){try{const r=await (await fetch('/api/state')).json();renderState(r);}catch(e){}}
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();document.getElementById('search').focus();}
+  else if(e.key==='Escape'){
+    if(document.querySelector('.modal-scrim')){closeModal(false);return;}
+    const open=document.querySelector('.sub[data-open="1"]');
+    if(open)open.click();
+  }
+});
 startSSE();poll();setInterval(poll,2000);
 """
