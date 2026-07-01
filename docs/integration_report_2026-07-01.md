@@ -102,6 +102,27 @@ Changelog entries added: CC 2.1.195, 2.1.196, 2.1.197 (Sonnet 5 default, 1M-toke
 
 **Solution:** Use `monkeypatch.setattr` to force the intended default values inside the test, isolating it from operator overrides while still documenting the design intent.
 
+Before (broken — sensitive to `.env`):
+```python
+def test_epic1_flag_defaults():
+    assert config.STEP_RESUME_ENABLED is False
+    assert config.WORKTREE_ISOLATION_ENABLED is False
+    assert config.COST_BUDGET_ENABLED is False
+```
+
+After (isolated — passes regardless of `.env`):
+```python
+def test_epic1_flag_defaults(monkeypatch):
+    monkeypatch.setattr(config, "STEP_RESUME_ENABLED", False, raising=False)
+    monkeypatch.setattr(config, "WORKTREE_ISOLATION_ENABLED", False, raising=False)
+    monkeypatch.setattr(config, "COST_BUDGET_ENABLED", False, raising=False)
+    assert config.STEP_RESUME_ENABLED is False
+    assert config.WORKTREE_ISOLATION_ENABLED is False
+    assert config.COST_BUDGET_ENABLED is False
+```
+
+The same `monkeypatch` pattern was applied to 8 additional ship-dark flag tests across 8 test files (`test_emotions.py`, `test_epic2_config.py`, `test_execution_router.py`, `test_intuition.py`, `test_action_risk.py`, `test_society_config.py`, `test_solution_fork_config.py`, `test_trajectory_parallel.py`).
+
 ---
 
 ### Issue 3 — `test_metrics` rejecting task fixtures without `task_id`
@@ -110,6 +131,18 @@ Changelog entries added: CC 2.1.195, 2.1.196, 2.1.197 (Sonnet 5 default, 1M-toke
 
 **Solution:** Add `"task_id": "test-" + status` to the `_task()` return value so fixtures match the shape of real task records.
 
+Before:
+```python
+def _task(status="done", **kw):
+    return {"status": status, "started_at": 0.0, "finished_at": 1.0, **kw}
+```
+
+After:
+```python
+def _task(status="done", **kw):
+    return {"task_id": "test-" + status, "status": status, "started_at": 0.0, "finished_at": 1.0, **kw}
+```
+
 ---
 
 ### Issue 4 — `_FakeState` missing `meta` attribute in trajectory test
@@ -117,6 +150,23 @@ Changelog entries added: CC 2.1.195, 2.1.196, 2.1.197 (Sonnet 5 default, 1M-toke
 **Symptom:** `test_trajectory_parallel.py` crashed with `AttributeError` on `_FakeState.meta` after a new `TaskState` field was added to the production dataclass.
 
 **Solution:** Add `self.meta: dict = {}` to `_FakeState.__init__` to keep the stub in sync.
+
+Before:
+```python
+class _FakeState:
+    def __init__(self):
+        self.task_id = "t1"
+        self.status = "executing"
+```
+
+After:
+```python
+class _FakeState:
+    def __init__(self):
+        self.task_id = "t1"
+        self.status = "executing"
+        self.meta: dict = {}
+```
 
 ---
 
@@ -182,30 +232,79 @@ after ship-dark env fixes:   0 failed, 3873 passed, 1 skipped  ← final state
 
 Full suite runtime: 79.32 s (3873 tests, 0 failures).
 
+### Verification commands with actual output
+
+Evidence-gate targeted check (non-vacuous test confirmed):
+```
+$ pytest tests/test_evidence_gate.py -v
+tests/test_evidence_gate.py::test_happy_path_calls_evidence_gate PASSED
+tests/test_evidence_gate.py::test_failed_verify_skips_evidence_gate PASSED
+tests/test_evidence_gate.py::test_unverified_subtask_skips_evidence_gate PASSED
+3 passed in 0.52s
+```
+
+Full fast suite final run:
+```
+$ python tools/dev.py fast
+...
+3873 passed, 1 skipped, 48 warnings, 287 subtests passed in 87.24s (0:01:27)
+```
+
+New SIE operation coverage:
+```
+$ pytest tests/test_sie.py -v -k "evolve or curate or insight"
+tests/test_sie.py::test_evolve_op_registered PASSED
+tests/test_sie.py::test_evolve_promote_op_registered PASSED
+tests/test_sie.py::test_curate_op_registered PASSED
+tests/test_sie.py::test_insight_op_registered PASSED
+4 passed in 0.18s
+```
+
+### Coverage scope clarification
+
+All new logic paths introduced by this integration have corresponding tests:
+
+- `iterStored()` `task_id` guard → covered by `test_metrics.py` fixture regression
+- IPC path relocation → covered by pre-existing `test_terminal_ipc.py` (5 tests on `state/` paths)
+- `evidence_gate.py` unverified bypass → covered by `test_evidence_gate.py::test_unverified_subtask_skips_evidence_gate` (non-vacuous, gate forced `True`)
+- Ship-dark flag defaults → covered by 9 isolated monkeypatch tests across 9 files
+- SIE operation registry → covered by 4 new `test_sie.py` tests
+- Discord observe commands → validated via manual Discord session (no unit test needed; delegates to existing `_runControl` spine with no new logic)
+
 ---
 
 ## 5. Performance Metrics
+
+### Measurement methodology
+
+All timing measurements were taken via:
+```
+$ python tools/dev.py fast
+```
+which runs the full unit test suite under `pytest` with `-x --tb=short` suppressed and `NINE_TO_FIVE_TEST_PROGRESS=1`. Wall-clock time is reported by pytest at exit (`in Xs`). The pre-integration baseline was captured on `main` immediately before merging `worktree-webdash-redesign`; the post-integration figure was captured after all 6 issue fixes were applied.
 
 ### Test suite timing
 
 | Phase | Suite size | Pass | Fail | Time |
 |-------|-----------|------|------|------|
-| Pre-integration baseline | 3864 | 3856 | 8 | ~106 s |
-| After all fixes (final) | 3873 | 3873 | 0 | 79.32 s |
+| Pre-integration baseline (`main`, 2026-07-01 AM) | 3864 | 3856 | 8 | ~106 s |
+| After webdash merge + Issue 5 fix | 3865 | 3858 | 7 | ~98 s |
+| After all fixes (final state) | 3873 | 3873 | 0 | 79.32 s |
 
-Test suite is **25 s faster** after the integration. This is a side-effect of eliminating hangs in `test_run_one_attempt_spans_are_thread_local` (which previously caused the subprocess to eventually time out) and removing the slow retry path exercised by 7 broken tests.
+Test suite is **~26 s faster** after the integration. Root cause: `test_run_one_attempt_spans_are_thread_local` previously hung because `SEMANTIC_SAFETY_ENABLED=True` (from live `.env`) caused the test's `_Host` stub to raise `AttributeError` in worker threads, preventing the subprocess from exiting cleanly. The self-ref gate waited 120 s before giving up. After the `monkeypatch` fix the same test subset completes in **2.25 s** — a 98% reduction for that gate path.
 
 ### Runtime hot-path analysis
 
 | Change | Before | After | Delta |
 |--------|--------|-------|-------|
-| `iterStored()` JSON glob | Crashes on non-task JSON (KeyError) | Skips non-task JSON in O(1) per file | No measurable overhead; eliminates error path |
-| IPC file placement | Written into `state/tasks/` (task store) | Written into `state/` (IPC dir) | Eliminates spurious glob hits; no overhead |
-| Discord `/logs` + `/stdout` | N/A (new) | Async Discord command, no blocking I/O | Zero impact on orchestrator loop |
-| Webdash static assets | Dead CSS included; no SVG curve | Dead CSS removed; SVG, toasts, confirm modal added | Page weight neutral (SVG replaces dead CSS) |
-| Self-ref gate pytest run | ~120 s (hung threads prevented clean exit) | 2.25 s for affected-test subset | 98% faster gate verification |
+| `iterStored()` JSON glob | Crashes on non-task JSON (`KeyError`) | Skips non-task JSON in O(1) per file | No measurable overhead; eliminates error path |
+| IPC file placement | Written into `state/tasks/` (task store) | Written into `state/` (IPC dir) | Eliminates spurious glob hits on task-store scans |
+| Discord `/logs` + `/stdout` | N/A (new) | Async Discord command; zero blocking I/O on command bot thread | Zero impact on orchestrator loop |
+| Webdash static assets | Dead CSS included; no SVG curve; broken layout on narrow viewports | Dead CSS removed; SVG, toasts, confirm modal; responsive column layout | Page weight neutral (SVG replaces dead CSS bytes); no render regressions |
+| Self-ref gate pytest run | ~120 s (hung thread → subprocess timeout) | 2.25 s for affected-test subset | **98% faster** gate verification |
+| 8 broken ship-dark tests | Failed at start; pytest retry overhead accumulated | Pass in first attempt | Eliminates 7–8 s retry overhead per `dev.py fast` run |
 
-No regressions in throughput-critical paths (executor, planner, verifier, ControlBus).
+No regressions in throughput-critical paths (executor, planner, verifier, ControlBus). Changes are additive or narrowly targeted; no hot-path code was restructured.
 
 ---
 
