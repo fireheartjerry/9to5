@@ -84,25 +84,25 @@ class TerminalSurface:
     def _lanes(self) -> list:
         return get_bus().lanes()
 
-    def _active_lane(self):
-        lanes = self._lanes()
+    def _active_lane(self, lanes):
         if not lanes:
-            return None, []
-        self.page_idx = clamp_page(self.page_idx, len(lanes))
-        lane = lanes[self.page_idx]
+            return None, [], 0
+        with self._lock:
+            self.page_idx = clamp_page(self.page_idx, len(lanes))
+            idx = self.page_idx
+        lane = lanes[idx]
         raw = get_bus().raw_history(lane["id"], last_n=200)
-        lines = [r["line"] for r in raw]
-        return lane, lines
+        return lane, [r["line"] for r in raw], idx
 
     def _body(self) -> str:
-        lane, lines = self._active_lane()
         lanes = self._lanes()
+        lane, lines, idx = self._active_lane(lanes)
         if lane is None:
             return render("—", [], {"label": "no live processes"}, page=0, page_count=0,
                           mode=self.mode, frozen=self.frozen)
         meta = dict(lane)
         meta["elapsed_s"] = time.monotonic() - self._started_at
-        return render(lane["id"], lines, meta, page=self.page_idx + 1,
+        return render(lane["id"], lines, meta, page=idx + 1,
                       page_count=len(lanes), mode=self.mode, frozen=self.frozen)
 
     # ---- navigation (called by the view) -------------------------------
@@ -161,6 +161,8 @@ class TerminalSurface:
     # ---- lifecycle -----------------------------------------------------
     def start(self) -> None:
         """Create + pin the message and launch the async edit loop. Best-effort."""
+        if self._task is not None:
+            return
         try:
             with self._send_lock:
                 embed = discord.noticeEmbed(self._body(), title=_TITLE)
@@ -181,9 +183,12 @@ class TerminalSurface:
     def finalize(self) -> None:
         """Freeze the surface at run end (leave the message as a static record)."""
         self.frozen = True
-        task = self._task
-        if task is not None:
-            task.cancel()
+        try:
+            task = self._task
+            if task is not None:
+                task.cancel()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 _SURFACE: Optional[TerminalSurface] = None
