@@ -92,7 +92,10 @@ async function expandRaw(sid,el){
   d.textContent=(lines||[]).map(r=>r.line).join('\n');el.after(d);d.scrollTop=d.scrollHeight;
   const copyBtn=document.createElement('button');
   copyBtn.className='btn';copyBtn.textContent='Copy';copyBtn.style.marginBottom='4px';
-  copyBtn.onclick=()=>navigator.clipboard.writeText(d.textContent).then(()=>toast('Copied raw output',true)).catch(()=>toast('Copy failed',false));
+  copyBtn.onclick=()=>{
+    if(!navigator.clipboard){toast('Copy not supported',false);return;}
+    navigator.clipboard.writeText(d.textContent).then(()=>toast('Copied raw output',true)).catch(()=>toast('Copy failed',false));
+  };
   d.before(copyBtn);
 }
 function kv(k,v){return '<div class="kv"><span class="k">'+esc(k)+'</span><span class="val">'+esc(v)+'</span></div>';}
@@ -135,11 +138,11 @@ function renderState(r){
   }else{
     const rowH=14,w=260;
     const bars=cv.map((d,i)=>{
-      const y=i*rowH, bw=Math.max(2,(d.pct||0)/100*w);
+      const y=i*rowH, pctNum=Number(d.pct)||0, bw=Math.min(w,Math.max(2,pctNum/100*w));
       return '<title>'+esc(d.domain)+': '+esc(d.pct)+'%</title>'
-        +'<text x="0" y="'+(y+9)+'" class="lbl" font-size="9">'+esc(d.domain)+'</text>'
+        +'<text x="0" y="'+(y+9)+'" class="lbl" fill="var(--accent-amber)" font-size="9">'+esc(d.domain)+'</text>'
         +'<rect x="70" y="'+y+'" width="'+bw+'" height="9" fill="var(--accent-teal)"><title>'+esc(d.pct)+'%</title></rect>'
-        +'<text x="'+(70+bw+4)+'" y="'+(y+9)+'" class="live" font-size="9">'+esc(d.pct)+'%</text>';
+        +'<text x="'+(70+bw+4)+'" y="'+(y+9)+'" class="live" fill="var(--accent-teal)" font-size="9">'+esc(d.pct)+'%</text>';
     }).join('');
     document.getElementById('curve').innerHTML='<svg width="100%" height="'+(cv.length*rowH)+'" role="img" aria-label="Intelligence curve">'+bars+'</svg>';
   }

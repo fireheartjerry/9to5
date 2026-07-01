@@ -62,7 +62,6 @@ header .tunnel{color:#00d4aa}
 .sub .st{float:right;text-transform:uppercase;letter-spacing:.5px}
 .raw{background:var(--bg-raw);border:1px solid var(--border);max-height:220px;overflow:auto;font-size:11px;color:#9a9a9a;padding:4px;margin:4px 0;white-space:pre-wrap}
 .curve{border-top:1px solid var(--border);padding:6px 10px;height:64px;overflow:auto}
-.bar{display:inline-block;height:9px;background:#00d4aa;vertical-align:middle;margin:0 6px}
 .arc{color:#c8c8c8;white-space:pre-wrap;font-size:12px}
 .wtrail{font-size:12px;color:#c8c8c8}
 .toggle{cursor:pointer}
