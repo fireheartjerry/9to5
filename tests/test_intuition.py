@@ -78,8 +78,10 @@ def test_snap_similarity_included_in_fusion():
 # route — dual-process routing
 # ---------------------------------------------------------------------------
 
-def test_route_default_shortcut_off_always_deliberate():
-    """HN_INTUITION_SHORTCUT defaults False → deliberate regardless of p or ood."""
+def test_route_default_shortcut_off_always_deliberate(monkeypatch):
+    """HN_INTUITION_SHORTCUT intended default is False → deliberate regardless of p or ood.
+    monkeypatch isolates from live .env so the test verifies design intent."""
+    monkeypatch.setattr(config, "HN_INTUITION_SHORTCUT", False, raising=False)
     s = snap("backend", {"p_true": 0.99, "self_consistency": 0.99, "similarity": 0.99})
     # Don't pass shortcut_enabled → falls back to config (False)
     assert route(s) == "deliberate"

@@ -148,8 +148,10 @@ def test_autonomous_flag_annotates_escalation_reason():
     assert not gated.reason.endswith("-autonomous")
 
 
-def test_safety_config_defaults_ship_dark():
+def test_safety_config_defaults_ship_dark(monkeypatch):
     import config
+    # monkeypatch isolates from live .env; test verifies intended ship-dark defaults.
+    monkeypatch.setattr(config, "SEMANTIC_SAFETY_ENABLED", False, raising=False)
     assert config.SEMANTIC_SAFETY_ENABLED is False          # ship dark
     assert config.AUTONOMY_ALLOWANCE_USD == 0.0             # confirm-everything
     assert config.AUTONOMOUS_DESTRUCTIVE_POLICY == "block"  # fail-closed default

@@ -102,6 +102,7 @@ class _FakeState:
         self.task_id = task_id
         self.subtasks: list = []
         self._subs: dict = {}
+        self.meta: dict = {}
 
     def updateSubtask(self, sid, **kw):
         self._subs.setdefault(sid, {}).update(kw)
@@ -132,6 +133,9 @@ class _FakeDash:
 def test_run_one_attempt_spans_are_thread_local(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "TRAJECTORY_ENABLED", True, raising=False)
     monkeypatch.setattr(config, "COST_BUDGET_ENABLED", False, raising=False)
+    # Ship-dark: ensure the semantic-safety gate never calls _authorizeAttempt on
+    # the bare _Host stub (which doesn't implement it), regardless of live .env.
+    monkeypatch.setattr(config, "SEMANTIC_SAFETY_ENABLED", False, raising=False)
     os.environ.pop(_ENV_KEY, None)
 
     costs = {"st-A": 0.11, "st-B": 0.22}

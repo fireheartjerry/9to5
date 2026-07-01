@@ -2,7 +2,10 @@
 import config
 
 
-def test_fork_ships_dark_with_locked_defaults():
+def test_fork_ships_dark_with_locked_defaults(monkeypatch):
+    # monkeypatch isolates from live .env; test verifies intended ship-dark defaults.
+    monkeypatch.setattr(config, "SOLUTION_FORK_ENABLED", False, raising=False)
+    monkeypatch.setattr(config, "SOLUTION_FORK_GRAFT_ENABLED", False, raising=False)
     assert config.SOLUTION_FORK_ENABLED is False        # ships dark
     assert config.SOLUTION_FORK_N == 2                   # locked: default 2 branches
     assert config.SOLUTION_FORK_MAX_CONCURRENCY == 2

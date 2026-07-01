@@ -10,7 +10,8 @@ from notifications import metrics
 
 
 def _task(status, subs):
-    return {"meta": {"status": status, "started_at": "2026-06-22T09:00:00+00:00"},
+    return {"task_id": "test-" + status,
+            "meta": {"status": status, "started_at": "2026-06-22T09:00:00+00:00"},
             "plan": {"subtasks": subs}}
 
 

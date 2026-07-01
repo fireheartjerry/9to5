@@ -110,9 +110,14 @@ def iterStored():
     """
     for f in config.STATE_DIR.glob("*.json"):
         try:
-            yield f, json.loads(f.read_text(encoding="utf-8"))
+            data = json.loads(f.read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001
             continue
+        # Skip non-task JSON that shares the store (e.g. terminal_mirror.json) --
+        # a task is identified by its task_id; anything else is not ours to yield.
+        if not isinstance(data, dict) or "task_id" not in data:
+            continue
+        yield f, data
 
 
 def loadLatest() -> "Optional[TaskState]":

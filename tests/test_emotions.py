@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import inspect
 
+import config
 from human_nature.emotions import bias_appraisal, couple, regulate
 
 
@@ -19,8 +20,10 @@ from human_nature.emotions import bias_appraisal, couple, regulate
 # couple() — affect → behavior/comms coupling
 # ---------------------------------------------------------------------------
 
-def test_behavior_is_none_when_flag_off_by_default():
-    """HN_EMOTIONS_BEHAVIOR defaults False; behavior must be None."""
+def test_behavior_is_none_when_flag_off_by_default(monkeypatch):
+    """HN_EMOTIONS_BEHAVIOR intended default is False; behavior must be None.
+    monkeypatch isolates from live .env so the test verifies design intent."""
+    monkeypatch.setattr(config, "HN_EMOTIONS_BEHAVIOR", False, raising=False)
     for label in ("frustration", "curiosity", "anxiety", "boredom", "satisfaction", "neutral"):
         result = couple(label, {})
         assert result["behavior"] is None, f"expected None for {label}, got {result['behavior']}"

@@ -10694,21 +10694,21 @@
           "kind": "function",
           "signature": "(work_dir: str) -> dict",
           "summary": "Best-effort, re-derivable git facts for the receipt: head sha, working-tree diff text, …",
-          "lineno": 98
+          "lineno": 101
         },
         {
           "name": "runEvidenceGate",
           "kind": "function",
           "signature": "(orch, state, subtask: dict, result: dict, exec_cwd: str, vresult: dict, sid: str) -> 'tuple[dict, bool]'",
           "summary": "For a code-change subtask that PASSED the deterministic gate: run the independent verif…",
-          "lineno": 138
+          "lineno": 141
         },
         {
           "name": "persistReceipt",
           "kind": "function",
           "signature": "(orch, state, sid: str, receipt: dict) -> None",
           "summary": "Write the Evidence Receipt as a per-subtask Obsidian note (durable audit artifact).",
-          "lineno": 194
+          "lineno": 197
         }
       ],
       "depends_on": [

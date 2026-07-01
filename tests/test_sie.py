@@ -51,7 +51,8 @@ class TestSieMaintenance(unittest.TestCase):
                          {"embeddings", "pr_consolidate", "consolidate", "policy_rebuild",
                           "mine", "evaluate", "prompt_promotion", "lora_distillation",
                           "dpo_distillation", "adapter_promotion", "meta_optimize",
-                          "self_play", "curriculum_and_report"})
+                          "self_play", "curriculum_and_report",
+                          "evolve", "evolve_promote", "curate", "insight"})
         self.assertTrue(sie._state_path().exists())
         # This run deliberately uses an EMPTY eval suite (EVAL_SUITE_DIR -> nosuite) to stay offline
         # and fast; an empty suite is honestly reported as 'empty_suite', never falsely 'scored'.

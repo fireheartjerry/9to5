@@ -15,6 +15,9 @@ state/sie_state.json
 # Phase 2 second brain (Gemini): trust telemetry log
 state/adversary_trust.jsonl
 state/audit.jsonl
+# Live Terminal cross-process IPC bridge (runtime data)
+state/terminal_nav.json
+state/terminal_mirror.json
 # Leftover ChatGPT Chromium profile from the pre-Gemini browser layer (runtime data; safe to delete)
 state/chatgpt_profile/
 # Scratch dumps
@@ -37,3 +40,4 @@ C:\\supercritical/
 !.agents/**
 !.claude/**
 references/
+.env.backup

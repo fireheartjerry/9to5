@@ -71,7 +71,10 @@ def runAttemptVerify(orch, state, subtask: dict, result: dict, exec_cwd: str,
             LOG.warning("%s: self-ref quality gate failed after verify pass", sid)
     # Epic 2 (steal #3): execution-grounded downgrade. Runs ONLY when the deterministic gate
     # already passed; can never upgrade a fail. MODE-DEPENDENT NOT_VERIFIED handled inside.
-    if passed and config.INDEPENDENT_VERIFY_ENABLED:
+    # Skip for unverified subtasks (no verify cmd = exit-zero fallback only, not a code-change
+    # subtask). gitDiffFacts runs inside the repo and sees pre-existing dirty files, causing
+    # false has_code_change=True on branches with in-progress work.
+    if passed and config.INDEPENDENT_VERIFY_ENABLED and not vresult.get("unverified"):
         vresult, passed = runEvidenceGate(orch, state, subtask, result, exec_cwd, vresult, sid)
     with orch._state_lock:
         state.recordVerify(sid, vresult)
