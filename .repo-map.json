@@ -3,6 +3,7 @@
   "generated_by": "tools/repo_map.py",
   "root": "9to5",
   "first_party_roots": [
+    "C9to5nightclaw",
     "agents",
     "config",
     "conftest",
@@ -29,6 +30,19 @@
     "workflows"
   ],
   "modules": {
+    "C9to5nightclaw": {
+      "path": "C9to5nightclaw.py",
+      "purpose": "Nightclaw — Discord bot entry point for 9TO5.",
+      "exports": [],
+      "depends_on": [
+        "notifications.command_bot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "agents": {
       "path": "agents/__init__.py",
       "purpose": "9TO5 agent roster.",
@@ -174,62 +188,63 @@
           "kind": "function",
           "signature": "(spec_or_prompt, *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, resume_session: Optional[str]=None, **_kw) -> dict",
           "summary": "Execute a browser subtask",
-          "lineno": 139
+          "lineno": 141
         },
         {
           "name": "get_session",
           "kind": "function",
           "signature": "()",
           "summary": "Lazily build the process-wide GeminiSession (does NOT open a client yet).",
-          "lineno": 168
+          "lineno": 170
         },
         {
           "name": "probe",
           "kind": "function",
           "signature": "() -> bool",
           "summary": "Health-probe the Gemini session",
-          "lineno": 177
+          "lineno": 179
         },
         {
           "name": "startConversation",
           "kind": "function",
           "signature": "(goal: str, task_id: str) -> None",
           "summary": "Start the single run conversation.",
-          "lineno": 182
+          "lineno": 184
         },
         {
           "name": "closeSession",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Close + tear down the Gemini session.",
-          "lineno": 187
+          "lineno": 189
         },
         {
           "name": "preflightLogin",
           "kind": "function",
           "signature": "(timeout_s: int=300, poll_s: int=3) -> bool",
           "summary": "Verify Gemini is reachable before a run relies on it",
-          "lineno": 193
+          "lineno": 195
         },
         {
           "name": "sessionAsk",
           "kind": "function",
           "signature": "(message: str, *, expect_json: bool=False) -> Optional[str]",
           "summary": "Ask Gemini one message through the run session",
-          "lineno": 201
+          "lineno": 203
         },
         {
           "name": "askGemini",
           "kind": "function",
           "signature": "(message: str, *, runner=None, expect_json: bool=False) -> Optional[str]",
           "summary": "Send one ``message`` to Gemini and return the reply text.",
-          "lineno": 208
+          "lineno": 210
         }
       ],
       "depends_on": [
         "agents.executor",
         "agents.gemini_driver",
-        "config"
+        "config",
+        "notifications.lane_feed"
       ],
       "side_effects": [
         "unannotated"
@@ -928,26 +943,27 @@
           "kind": "function",
           "signature": "(app: str, steps: list[dict[str, Any]]) -> list[dict[str, Any]]",
           "summary": "Build a canonical action list from a high-level recipe",
-          "lineno": 125
+          "lineno": 127
         },
         {
           "name": "runNative",
           "kind": "function",
           "signature": "(spec_or_prompt, *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, resume_session: Optional[str]=None, **_kw) -> dict",
           "summary": "Execute a native UI subtask",
-          "lineno": 131
+          "lineno": 133
         },
         {
           "name": "selectForSurface",
           "kind": "function",
           "signature": "(terminal_fn, spec: dict)",
           "summary": "Routing helper: return runNative when surface=native and NATIVE_LAYER_ENABLED,",
-          "lineno": 152
+          "lineno": 154
         }
       ],
       "depends_on": [
         "agents.executor",
-        "config"
+        "config",
+        "notifications.lane_feed"
       ],
       "side_effects": [
         "unannotated"
@@ -1656,6 +1672,8 @@
         "notifications.predictive",
         "notifications.reflection_post",
         "notifications.slash",
+        "notifications.terminal_ipc",
+        "notifications.terminal_surface",
         "notifications.theme",
         "notifications.tunnel",
         "notifications.tunnel_providers",
@@ -4383,17 +4401,19 @@
           "kind": "function",
           "signature": "(resp) -> str",
           "summary": "``resp['message']['content']`` as text",
-          "lineno": 46
+          "lineno": 54
         },
         {
           "name": "responseJson",
           "kind": "function",
           "signature": "(resp)",
           "summary": "Parse the JSON body of a chat response",
-          "lineno": 89
+          "lineno": 100
         }
       ],
-      "depends_on": [],
+      "depends_on": [
+        "notifications.lane_feed"
+      ],
       "side_effects": [
         "unannotated"
       ],
@@ -5839,6 +5859,19 @@
       "test": [],
       "callers": []
     },
+    "nightclaw.__main__": {
+      "path": "nightclaw/__main__.py",
+      "purpose": "Nightclaw bot launcher (python -m nightclaw)",
+      "exports": [],
+      "depends_on": [
+        "notifications.command_bot"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "notifications": {
       "path": "notifications/__init__.py",
       "purpose": "Discord notifications + command bot (see notifications.discord_bot).",
@@ -6348,14 +6381,14 @@
           "kind": "function",
           "signature": "()",
           "summary": "Construct (but do not run) the NightclawBot",
-          "lineno": 121
+          "lineno": 123
         },
         {
           "name": "runBot",
           "kind": "function",
           "signature": "() -> None",
           "summary": "",
-          "lineno": 190
+          "lineno": 192
         }
       ],
       "depends_on": [
@@ -6365,6 +6398,7 @@
         "notifications.icons",
         "notifications.views",
         "notifications.views_feedback",
+        "notifications.views_terminal",
         "platform_core.runtime.control"
       ],
       "side_effects": [
@@ -6628,6 +6662,7 @@
         "tests/test_config_robust_env.py",
         "tests/test_dashboard_bus.py",
         "tests/test_event_bus.py",
+        "tests/test_event_bus_lanes.py",
         "tests/test_memory_robustness.py",
         "tests/test_notification_bus.py"
       ],
@@ -6704,7 +6739,9 @@
         "tests/test_command_bot.py"
       ],
       "callers": [
-        "nightclaw"
+        "C9to5nightclaw",
+        "nightclaw",
+        "nightclaw.__main__"
       ]
     },
     "notifications.commands": {
@@ -6802,6 +6839,7 @@
         "notifications.slash",
         "notifications.views_control",
         "notifications.views_run",
+        "notifications.views_terminal",
         "notifications.work_launcher",
         "platform_core.orchestration.control_mixin"
       ]
@@ -6976,6 +7014,8 @@
         "notifications.dashboard",
         "notifications.icons",
         "notifications.reflection_post",
+        "notifications.terminal_surface",
+        "notifications.views_terminal",
         "platform_core.orchestration.adversary_loop",
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.execute_mixin",
@@ -7408,35 +7448,42 @@
           "kind": "class",
           "signature": "",
           "summary": "A structured, fan-out event",
-          "lineno": 40
+          "lineno": 41
         },
         {
           "name": "RawLine",
           "kind": "class",
           "signature": "",
           "summary": "One raw stdout line tagged with its subtask id.",
-          "lineno": 60
+          "lineno": 61
+        },
+        {
+          "name": "LaneMeta",
+          "kind": "class",
+          "signature": "",
+          "summary": "Bookkeeping for one lane (a well-known sid: 'brain', 'orchestrator', 'st-001'...).",
+          "lineno": 72
         },
         {
           "name": "LiveEventBus",
           "kind": "class",
           "signature": "",
           "summary": "Ring-buffered pub/sub bus",
-          "lineno": 70
+          "lineno": 80
         },
         {
           "name": "get_bus",
           "kind": "function",
           "signature": "() -> LiveEventBus",
           "summary": "Process-global singleton",
-          "lineno": 151
+          "lineno": 186
         },
         {
           "name": "reset_bus",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Drop the singleton so the next ``get_bus`` builds a fresh one (test hook).",
-          "lineno": 161
+          "lineno": 196
         }
       ],
       "depends_on": [],
@@ -7449,8 +7496,10 @@
       "callers": [
         "notifications.commands",
         "notifications.dashboard",
+        "notifications.lane_feed",
         "notifications.narration",
         "notifications.subprocess_feed",
+        "notifications.terminal_surface",
         "notifications.webdash",
         "platform_core.execution.router",
         "platform_core.orchestration.execute_mixin",
@@ -7644,6 +7693,42 @@
       "test": [],
       "callers": [
         "platform_core.orchestration.control_mixin"
+      ]
+    },
+    "notifications.lane_feed": {
+      "path": "notifications/lane_feed.py",
+      "purpose": "Best-effort producer taps that feed a layer's output into the LiveEventBus as a lane.",
+      "exports": [
+        {
+          "name": "laneTap",
+          "kind": "function",
+          "signature": "(lane: str, line: str) -> None",
+          "summary": "Publish one raw terminal line for ``lane``",
+          "lineno": 19
+        },
+        {
+          "name": "registerLane",
+          "kind": "function",
+          "signature": "(lane: str, label: str='') -> None",
+          "summary": "Set a friendly label for ``lane`` before its first line",
+          "lineno": 27
+        }
+      ],
+      "depends_on": [
+        "notifications.event_bus"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_lane_feed.py"
+      ],
+      "callers": [
+        "agents.browser_executor",
+        "agents.native_executor",
+        "llm_io",
+        "platform_core.orchestration.run_loop_mixin",
+        "platform_core.orchestration.run_phase_mixin"
       ]
     },
     "notifications.metrics": {
@@ -7961,6 +8046,156 @@
       ],
       "callers": [
         "platform_core.orchestration.execute_mixin"
+      ]
+    },
+    "notifications.terminal_ipc": {
+      "path": "notifications/terminal_ipc.py",
+      "purpose": "Filesystem bridge for the Live Terminal paginator across the bot <-> orchestrator",
+      "exports": [
+        {
+          "name": "read_nav",
+          "kind": "function",
+          "signature": "() -> dict",
+          "summary": "",
+          "lineno": 53
+        },
+        {
+          "name": "write_nav",
+          "kind": "function",
+          "signature": "(page_idx: int, mode: str, frozen: bool) -> None",
+          "summary": "",
+          "lineno": 65
+        },
+        {
+          "name": "bump_nav",
+          "kind": "function",
+          "signature": "(*, delta_page: int=0, toggle_raw: bool=False, toggle_freeze: bool=False, page_count: 'int | None'=None) -> dict",
+          "summary": "",
+          "lineno": 71
+        },
+        {
+          "name": "read_mirror",
+          "kind": "function",
+          "signature": "() -> dict",
+          "summary": "",
+          "lineno": 85
+        },
+        {
+          "name": "write_mirror",
+          "kind": "function",
+          "signature": "(body: str, page_count: int, lanes: list) -> None",
+          "summary": "",
+          "lineno": 92
+        },
+        {
+          "name": "clear",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "",
+          "lineno": 97
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "writes state/terminal_nav.json + state/terminal_mirror.json"
+      ],
+      "test": [
+        "tests/test_terminal_ipc.py"
+      ],
+      "callers": [
+        "notifications.terminal_surface",
+        "notifications.views_terminal",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "notifications.terminal_render": {
+      "path": "notifications/terminal_render.py",
+      "purpose": "Pure renderer for the Discord Live Terminal surface. No I/O; never raises.",
+      "exports": [
+        {
+          "name": "render",
+          "kind": "function",
+          "signature": "(lane_id: str, lines: Optional[list], meta: Optional[dict], *, page: int, page_count: int, mode: str, frozen: bool) -> str",
+          "summary": "Return the Discord message body for one lane",
+          "lineno": 47
+        },
+        {
+          "name": "terminalControlRows",
+          "kind": "function",
+          "signature": "() -> list",
+          "summary": "Raw Discord action-row dicts for a REST-created/edited message",
+          "lineno": 94
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/test_terminal_render.py"
+      ],
+      "callers": [
+        "notifications.terminal_surface",
+        "notifications.views_terminal"
+      ]
+    },
+    "notifications.terminal_surface": {
+      "path": "notifications/terminal_surface.py",
+      "purpose": "Live Terminal surface manager for Discord. Owns one pinned message per run and an",
+      "exports": [
+        {
+          "name": "clamp_page",
+          "kind": "function",
+          "signature": "(idx: int, count: int) -> int",
+          "summary": "Bound a page index to a valid lane slot",
+          "lineno": 36
+        },
+        {
+          "name": "EditThrottle",
+          "kind": "class",
+          "signature": "",
+          "summary": "Governs how often the surface may edit its message",
+          "lineno": 43
+        },
+        {
+          "name": "TerminalSurface",
+          "kind": "class",
+          "signature": "",
+          "summary": "Owns one pinned Live Terminal message per run + the adaptive edit loop.",
+          "lineno": 68
+        },
+        {
+          "name": "get_terminal_surface",
+          "kind": "function",
+          "signature": "() -> Optional[TerminalSurface]",
+          "summary": "",
+          "lineno": 214
+        },
+        {
+          "name": "set_terminal_surface",
+          "kind": "function",
+          "signature": "(surface: Optional[TerminalSurface]) -> None",
+          "summary": "",
+          "lineno": 218
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.discord_bot",
+        "notifications.event_bus",
+        "notifications.terminal_ipc",
+        "notifications.terminal_render"
+      ],
+      "side_effects": [
+        "TerminalSurface creates/edits/pins Discord messages via notifications.discord_bot"
+      ],
+      "test": [
+        "tests/test_terminal_surface.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.run_phase_mixin"
       ]
     },
     "notifications.theme": {
@@ -8332,6 +8567,35 @@
       "test": [],
       "callers": [
         "notifications.views"
+      ]
+    },
+    "notifications.views_terminal": {
+      "path": "notifications/views_terminal.py",
+      "purpose": "Persistent Discord view for the Live Terminal surface: ◀ Prev · ⏸ Freeze · Raw ·",
+      "exports": [
+        {
+          "name": "TerminalView",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 40
+        }
+      ],
+      "depends_on": [
+        "notifications.commands",
+        "notifications.discord_bot",
+        "notifications.terminal_ipc",
+        "notifications.terminal_render"
+      ],
+      "side_effects": [
+        "writes nav intent via notifications.terminal_ipc",
+        "reads the mirror for snapshots"
+      ],
+      "test": [
+        "tests/test_views_terminal.py"
+      ],
+      "callers": [
+        "notifications.bot.core"
       ]
     },
     "notifications.visuals": {
@@ -10966,6 +11230,7 @@
         "memory.experience",
         "notifications.dashboard",
         "notifications.discord_bot",
+        "notifications.lane_feed",
         "platform_core.orchestration",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.subtask",
@@ -11008,9 +11273,12 @@
         "notifications.discord_bot",
         "notifications.event_bus",
         "notifications.icons",
+        "notifications.lane_feed",
         "notifications.narration",
         "notifications.reflection_post",
         "notifications.run_arc",
+        "notifications.terminal_ipc",
+        "notifications.terminal_surface",
         "notifications.tunnel",
         "notifications.visuals",
         "notifications.webdash",
