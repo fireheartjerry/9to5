@@ -43,7 +43,7 @@ header .tunnel{color:#00d4aa}
 .btn.go:hover{border-color:#00d4aa;color:#00d4aa}
 .aura{margin-left:auto;display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:.5px}
 .aura .dot{width:11px;height:11px;border-radius:50%;display:inline-block;background:#00d4aa;transition:opacity var(--motion-med) ease-out}
-.cols{display:grid;grid-template-columns:230px 1fr 300px;height:calc(100vh - 132px)}
+.cols{display:flex;height:calc(100vh - 132px)}
 .col{border-right:1px solid var(--border);overflow:auto;padding:8px 10px}
 .col:last-child{border-right:none}
 .sec{color:var(--accent-amber);text-transform:uppercase;letter-spacing:1px;margin:12px 0 4px;font-size:11px}
@@ -93,7 +93,10 @@ header .tunnel{color:#00d4aa}
 .col::-webkit-scrollbar{width:8px}
 .col::-webkit-scrollbar-thumb{background:var(--border)}
 .sec{position:sticky;top:0;background:var(--bg);z-index:1}
-.cols .col:nth-child(1),.cols .col:nth-child(2){resize:horizontal;overflow:auto;min-width:160px;max-width:60vw}
+.cols>.col:nth-child(1){flex:0 0 230px}
+.cols>.col:nth-child(2){flex:1 1 auto}
+.cols>.col:nth-child(3){flex:0 0 300px}
+.cols .col:nth-child(1),.cols .col:nth-child(2){resize:horizontal;min-width:160px;max-width:60vw}
 @media (max-width:960px){
   .cols{display:block;height:auto}
   .tabbar{display:flex;border-bottom:1px solid var(--border)}
@@ -106,6 +109,9 @@ header .tunnel{color:#00d4aa}
   #tab-meta:checked~main .col:nth-child(1),
   #tab-feed:checked~main .col:nth-child(2),
   #tab-subs:checked~main .col:nth-child(3){display:block}
+  #tab-meta:focus-visible~.tabbar label[for="tab-meta"],
+  #tab-feed:focus-visible~.tabbar label[for="tab-feed"],
+  #tab-subs:focus-visible~.tabbar label[for="tab-subs"]{outline:2px solid var(--accent-teal);outline-offset:2px}
 }
 @media (min-width:961px){.tabbar{display:none}}
 """
