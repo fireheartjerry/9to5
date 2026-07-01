@@ -11,6 +11,7 @@ from __future__ import annotations
 
 SCRIPT = r"""
 const __T="__WEBDASH_TOKEN__";
+const TUNNEL_ICON='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="4" width="20" height="14" rx="1"/><path d="M8 21h8M12 17v4"/></svg>';
 let EVENTS=[], LOCKED=true;
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 async function ctl(action,arg){try{await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-9to5-token':__T},body:JSON.stringify({action,arg})});}catch(e){}}
@@ -45,7 +46,7 @@ function renderState(r){
   document.getElementById('codename').textContent=m.codename||'RUN';
   document.getElementById('status').textContent=(m.status||'').toUpperCase();
   document.getElementById('goal').textContent=m.goal_raw||'';
-  document.getElementById('tunnel').innerHTML=r.tunnel_url?('🖥 <a href="'+esc(r.tunnel_url)+'" target="_blank">'+esc(r.tunnel_url)+'</a>'):'';
+  document.getElementById('tunnel').innerHTML=r.tunnel_url?(TUNNEL_ICON+' <a href="'+esc(r.tunnel_url)+'" target="_blank">'+esc(r.tunnel_url)+'</a>'):'';
   const h=r.health||{};
   document.getElementById('auraNum').textContent=(h.score==null?'—':h.score);
   document.getElementById('auraDot').style.background=h.color||'#555555';

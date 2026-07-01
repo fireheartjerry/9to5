@@ -10,7 +10,21 @@ RUN/TEST: tests/test_webdash_page_split.py
 from __future__ import annotations
 
 STYLES = r"""
-:root{color-scheme:dark}
+:root{
+  color-scheme:dark;
+  --bg:#000000;
+  --bg-raw:#050505;
+  --fg:#e8e8e8;
+  --accent-teal:#00d4aa;
+  --accent-amber:#ff9f00;
+  --err:#ff4444;
+  --muted:#8a8a8a;
+  --border:#222222;
+  --border-faint:#111111;
+  --radius:0px;
+  --motion-fast:150ms;
+  --motion-med:250ms;
+}
 *{box-sizing:border-box}
 body{margin:0;background:#000000;color:#e8e8e8;font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
 a{color:#00d4aa;text-decoration:none}
@@ -18,7 +32,7 @@ a{color:#00d4aa;text-decoration:none}
 .val{color:#e8e8e8}
 .live{color:#00d4aa}
 .err{color:#ff4444}
-.muted{color:#555555}
+.muted{color:var(--muted)}
 header{border-bottom:1px solid #222222;padding:6px 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 header .crumb{color:#ff9f00;font-weight:700;letter-spacing:1px}
 header .goal{color:#e8e8e8;flex:1;min-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -42,9 +56,9 @@ header .tunnel{color:#00d4aa}
 .feed{font-size:12px}
 .row{padding:1px 0;border-bottom:1px solid #111111;white-space:pre-wrap;word-break:break-word}
 .row.moment{border-left:3px solid #ff9f00;padding-left:6px}
-.row.heartbeat{color:#555555}
+.row.heartbeat{color:var(--muted)}
 .row.err{color:#ff4444}
-.row .ts{color:#555555;margin-right:6px}
+.row .ts{color:var(--muted);margin-right:6px}
 .sub{padding:3px 0;border-bottom:1px solid #111111;cursor:pointer}
 .sub .st{float:right;text-transform:uppercase;letter-spacing:.5px}
 .raw{background:#050505;border:1px solid #222222;max-height:220px;overflow:auto;font-size:11px;color:#9a9a9a;padding:4px;margin:4px 0;white-space:pre-wrap}
@@ -53,4 +67,7 @@ header .tunnel{color:#00d4aa}
 .arc{color:#c8c8c8;white-space:pre-wrap;font-size:12px}
 .wtrail{font-size:12px;color:#c8c8c8}
 .toggle{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent-teal);outline-offset:2px}
+.skip-link{position:absolute;left:-9999px;top:0;background:var(--accent-teal);color:#000;padding:6px 10px;z-index:1000}
+.skip-link:focus{left:8px;top:8px}
 """

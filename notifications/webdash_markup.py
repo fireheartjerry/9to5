@@ -10,21 +10,22 @@ RUN/TEST: tests/test_webdash_page_split.py
 from __future__ import annotations
 
 MARKUP = r"""<!doctype html><html><head><meta charset="utf-8"><title>9TO5</title><style>{styles}</style></head><body>
+<a class="skip-link" href="#feed">Skip to live feed</a>
 <header>
   <span class="crumb">9TO5 ▸ <span id="codename">—</span> ▸ <span id="status">—</span></span>
   <span class="goal" id="goal"></span>
   <span class="tunnel" id="tunnel"></span>
 </header>
-<div class="ctrlbar">
-  <button class="btn danger" onclick="ctl('abort')">Abort</button>
-  <button class="btn" onclick="ctl('pause')">Pause</button>
-  <button class="btn" onclick="ctl('resume')">Resume</button>
-  <button class="btn go" onclick="ctl('approve')">Approve</button>
-  <button class="btn danger" onclick="ctl('reject')">Reject</button>
+<nav class="ctrlbar" aria-label="Run controls">
+  <button class="btn danger" onclick="ctl('abort')" aria-label="Abort run">Abort</button>
+  <button class="btn" onclick="ctl('pause')" aria-label="Pause run">Pause</button>
+  <button class="btn" onclick="ctl('resume')" aria-label="Resume run">Resume</button>
+  <button class="btn go" onclick="ctl('approve')" aria-label="Approve step">Approve</button>
+  <button class="btn danger" onclick="ctl('reject')" aria-label="Reject step">Reject</button>
   <span class="aura"><span class="dot" id="auraDot"></span><span id="auraNum">—</span> Health</span>
-</div>
-<div class="cols">
-  <div class="col" id="meta"></div>
+</nav>
+<main class="cols">
+  <div class="col" id="meta" aria-label="Mission and progress"></div>
   <div class="col">
     <div class="feedbar">
       <select id="kind" onchange="render()">
@@ -36,16 +37,16 @@ MARKUP = r"""<!doctype html><html><head><meta charset="utf-8"><title>9TO5</title
       <input id="search" placeholder="search…" oninput="render()" size="14">
       <span class="toggle lbl" id="lockBtn" onclick="toggleLock()">scroll: lock</span>
     </div>
-    <div class="feed" id="feed"></div>
+    <div class="feed" id="feed" aria-live="polite" aria-label="Live event feed"></div>
   </div>
-  <div class="col">
+  <aside class="col" aria-label="Subtasks and narrative">
     <div class="sec">SUBTASKS</div>
     <div id="subs"></div>
     <div class="sec">NARRATIVE ARC</div>
     <div class="arc" id="arc">—</div>
-  </div>
-</div>
-<div class="curve">
+  </aside>
+</main>
+<div class="curve" role="img" aria-label="Intelligence curve chart">
   <span class="sec">INTELLIGENCE CURVE</span> <span id="curve"></span>
 </div>
 <script>{script}</script></body></html>"""
