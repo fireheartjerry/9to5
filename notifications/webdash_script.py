@@ -102,6 +102,7 @@ function renderState(r){
   const h=r.health||{};
   document.getElementById('auraNum').textContent=(h.score==null?'—':h.score);
   document.getElementById('auraDot').style.background=h.color||'#8a8a8a';
+  document.querySelector('.aura').classList.toggle('degraded', (h.score!=null && h.score<50));
   let meta='<div class="sec">MISSION</div>'+kv('codename',m.codename||'RUN')
     +kv('task',(r.meta.task_id||'').slice(0,8))+kv('model',r.model||'—')
     +kv('mode',m.control_mode||'watch')+kv('phase',m.status||'—')

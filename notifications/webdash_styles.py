@@ -37,12 +37,12 @@ header .crumb{color:var(--accent-amber);font-weight:700;letter-spacing:1px}
 header .goal{color:#e8e8e8;flex:1;min-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 header .tunnel{color:#00d4aa}
 .ctrlbar{border-bottom:1px solid var(--border);padding:5px 10px;display:flex;align-items:center;gap:6px}
-.btn{background:#000;border:1px solid var(--border);color:#e8e8e8;padding:3px 9px;cursor:pointer;font:inherit;text-transform:uppercase;letter-spacing:.5px}
+.btn{background:#000;border:1px solid var(--border);color:#e8e8e8;padding:3px 9px;cursor:pointer;font:inherit;text-transform:uppercase;letter-spacing:.5px;transition:border-color var(--motion-fast) ease-out,color var(--motion-fast) ease-out}
 .btn:hover{border-color:var(--accent-amber);color:var(--accent-amber)}
 .btn.danger:hover{border-color:var(--err);color:var(--err)}
 .btn.go:hover{border-color:#00d4aa;color:#00d4aa}
 .aura{margin-left:auto;display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:.5px}
-.aura .dot{width:11px;height:11px;border-radius:50%;display:inline-block;background:#00d4aa}
+.aura .dot{width:11px;height:11px;border-radius:50%;display:inline-block;background:#00d4aa;transition:opacity var(--motion-med) ease-out}
 .cols{display:grid;grid-template-columns:230px 1fr 300px;height:calc(100vh - 132px)}
 .col{border-right:1px solid var(--border);overflow:auto;padding:8px 10px}
 .col:last-child{border-right:none}
@@ -53,7 +53,7 @@ header .tunnel{color:#00d4aa}
 .feedbar{display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap}
 .feedbar select,.feedbar input{background:#000;border:1px solid var(--border);color:#e8e8e8;font:inherit;padding:2px 6px}
 .feed{font-size:12px}
-.row{padding:1px 0;border-bottom:1px solid var(--border-faint);white-space:pre-wrap;word-break:break-word}
+.row{padding:1px 0;border-bottom:1px solid var(--border-faint);white-space:pre-wrap;word-break:break-word;animation:rowIn var(--motion-fast) ease-out}
 .row.moment{border-left:3px solid var(--accent-amber);padding-left:6px}
 .row.heartbeat{color:var(--muted)}
 .row.err{color:var(--err)}
@@ -84,4 +84,9 @@ header .tunnel{color:#00d4aa}
 .pill.reconnecting .dot{background:var(--accent-amber);animation:pulse 1.2s ease-in-out infinite}
 .pill.offline .dot{background:var(--err)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes rowIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.aura.degraded .dot{animation:pulse 2s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important}
+}
 """
