@@ -39,6 +39,12 @@ def test_render_never_raises_on_bad_input():
     assert isinstance(body, str) and body
 
 
+def test_render_caps_length_even_with_huge_lane_id_and_count():
+    body = render("X" * 3000, ["a"], {"line_count": 10 ** 3000},
+                  page=1, page_count=1, mode="summary", frozen=False)
+    assert len(body) <= 1900
+
+
 def test_control_rows_have_stable_ids():
     from notifications.terminal_render import TERM_CUSTOM_IDS, terminalControlRows
     assert TERM_CUSTOM_IDS == {
