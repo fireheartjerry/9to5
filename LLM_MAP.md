@@ -58,7 +58,7 @@ tests/
 | Task state | `state/task.py`, `state/tasks/` | Task JSON structure and persistence |
 | Memory | `memory/obsidian.py` | Obsidian REST API + disk fallback |
 | Discord dashboard | `notifications/dashboard.py`, `notifications/discord_bot.py` | Live embed and milestone embeds |
-| Web dashboard | `notifications/webdash.py` | Local web UI and controls |
+| Web dashboard | `notifications/webdash.py`, `webdash_page.py`, `webdash_styles.py`, `webdash_markup.py`, `webdash_script.py` | Local web UI and controls (page split by content-type) |
 | Gateway bot | `notifications/command_bot.py`, `notifications/bot/` | Discord gateway command bot / cogs |
 | Nightclaw surfaces | `notifications/*`, especially `bot/`, `ask.py`, `cast.py`, `engagement.py`, `ops.py` | Bot, cogs, dashboards, engagement, UI |
 | Learning / SIE | `learning/` (32 modules: `trace*`, `policy.py`, `finetune.py`, `promotion.py`, `rollout.py`, …) | Consumes traces, proposes improvements — **downstream only**, never mutates a live run |
