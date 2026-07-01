@@ -8714,16 +8714,17 @@
       ],
       "test": [
         "tests/test_bloomberg_webdash.py",
-        "tests/test_webdash_control.py"
+        "tests/test_webdash_control.py",
+        "tests/test_webdash_page_split.py"
       ],
       "callers": [
         "orchestrator",
         "platform_core.orchestration.run_phase_mixin"
       ]
     },
-    "notifications.webdash_page": {
-      "path": "notifications/webdash_page.py",
-      "purpose": "Bloomberg-terminal HTML page for the live web dashboard (data only, no logic).",
+    "notifications.webdash_markup": {
+      "path": "notifications/webdash_markup.py",
+      "purpose": "HTML skeleton for the Bloomberg-terminal web dashboard (data only, no logic).",
       "exports": [],
       "depends_on": [],
       "side_effects": [
@@ -8731,7 +8732,52 @@
       ],
       "test": [],
       "callers": [
+        "notifications.webdash_page"
+      ]
+    },
+    "notifications.webdash_page": {
+      "path": "notifications/webdash_page.py",
+      "purpose": "Bloomberg-terminal HTML page for the live web dashboard (data only, no logic).",
+      "exports": [],
+      "depends_on": [
+        "notifications.webdash_markup",
+        "notifications.webdash_script",
+        "notifications.webdash_styles"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/test_webdash_page_split.py"
+      ],
+      "callers": [
         "notifications.webdash"
+      ]
+    },
+    "notifications.webdash_script": {
+      "path": "notifications/webdash_script.py",
+      "purpose": "JS for the Bloomberg-terminal web dashboard (data only, no logic).",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.webdash_page"
+      ]
+    },
+    "notifications.webdash_styles": {
+      "path": "notifications/webdash_styles.py",
+      "purpose": "CSS for the Bloomberg-terminal web dashboard (data only, no logic).",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.webdash_page"
       ]
     },
     "notifications.work_launcher": {
