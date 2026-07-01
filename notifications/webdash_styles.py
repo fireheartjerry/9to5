@@ -112,5 +112,5 @@ input[name="tab"]{position:absolute;left:-9999px}
   #tab-feed:focus-visible~.tabbar label[for="tab-feed"],
   #tab-subs:focus-visible~.tabbar label[for="tab-subs"]{outline:2px solid var(--accent-teal);outline-offset:2px}
 }
-@media (min-width:961px){.tabbar{display:none}}
+@media (min-width:961px){.tabbar{display:none}input[name="tab"]{visibility:hidden}}
 """
