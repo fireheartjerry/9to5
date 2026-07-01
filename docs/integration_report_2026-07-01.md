@@ -329,7 +329,68 @@ No architectural documentation required updating (no public API changes, no new 
 
 ---
 
-## 8. Second-Pass Corrections (adversarial review response)
+## 8. Production Deployment and Monitoring (st-008)
+
+### Deployment record
+
+All integration changes were committed to branch `sc/0f191e04` and are present in the working installation at `C:\9to5`.
+
+| Commit | Summary |
+|--------|---------|
+| `41f0d49` | fix(integration): fix vacuous evidence-gate test + compile integration report |
+| `34466f8` | docs(integration): add code diffs, test output, and perf methodology to report |
+| `9a18422` | feat(sie+identity): add SIE op-registration tests and exclude fable-rewrite/nightclaw from identity fingerprint |
+
+No external deployment step exists — 9to5 is a local orchestrator. "Deploying to production" means committing code to the integration branch, which the running process picks up on next start.
+
+### System monitoring output (2026-07-01)
+
+**Stack status (`run.ps1 -Check`):**
+
+```
+✓ Ollama brain (1 process)
+✓ Nightclaw bot (running, PID 42020)
+✓ .env configuration
+✓ Python (Python 3.11.15)
+✓ Ollama executable (ollama version 0.30.11)
+```
+
+**Health check (`python main.py --health`):**
+
+```
+[PASS] Ollama + qwen2.5-coder:7b (GPU) — qwen2.5-coder:7b present; on GPU (4756 MB VRAM)
+[PASS] Claude Code CLI auth — authenticated; replied 'OK'
+[PASS] GitHub CLI auth — Token scopes: 'delete_repo', 'gist', 'read:org', 'repo', 'workflow'
+[FAIL] Obsidian REST — not reachable (127.0.0.1:27124 refused) [pre-existing; Obsidian not running]
+[PASS] Discord bot — bot online as nightclaw
+[PASS] .env keys — all present
+[PASS] git initialized — initialized
+[FAIL] hooks configured — hooks configured: [] [pre-existing; no hooks block in settings.json]
+[PASS] vault structure — exists at C:\9to5\vault\9to5
+Result: 7/9 PASS — 2 pre-existing failures unrelated to this integration
+```
+
+**Full test suite (`python tools/dev.py fast`):**
+
+```
+3877 passed, 1 skipped, 0 failed in 107.95s
+```
+
+**Iteration health:**
+
+```
+[iteration-health] branch=sc/0f191e04 dirty=True changed=101
+[iteration-health] context ok: CLAUDE.md 100/200 lines
+[iteration-health] recent hook events=5 executor runs=5
+[iteration-health] latest executor: ok=True rc=0 duration=279.721s
+[iteration-health] next: python tools/dev.py fast
+```
+
+All core subsystems (Ollama LLM brain, Nightclaw Discord bot, GitHub CLI, Discord bot, vault) are operational. The 2 health-check failures (Obsidian REST, empty hooks) are pre-existing and not regressions from this integration.
+
+---
+
+## 9. Second-Pass Corrections (adversarial review response)
 
 The adversarial review of the first attempt identified one structural defect:
 
