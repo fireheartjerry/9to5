@@ -529,8 +529,10 @@ class EditThrottle:
         self._next_ok = now + self.floor
 
     def note_429(self, now: float, retry_after: float) -> None:
+        # Honor Retry-After for the next-allowed time; still DOUBLE the floor so the
+        # steady-state cadence backs off. (retry_after governs WHEN, floor governs PACE.)
         self.floor = min(self._cap, self.floor * 2)
-        self._next_ok = now + max(retry_after, self.floor)
+        self._next_ok = now + max(retry_after, 0.0)
 ```
 
 - [ ] **Step 4: Run test to verify it passes**

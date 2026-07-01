@@ -86,6 +86,34 @@ The live Discord dashboard should:
 - clamp verbose fields
 - avoid treating display payload as canonical state
 
+## Live Terminal (paginated, cross-process)
+
+A second pinned surface streams the raw terminal of every sub-process as a paginated
+message with ◀ Prev · ⏸ Freeze · Raw · Next ▶ · 📷 Snapshot buttons.
+
+- **Pages = lanes.** Every layer publishes one line per action to the `LiveEventBus` as a
+  named lane via `notifications/lane_feed.py:laneTap(lane, line)`: `brain` (`llm_io.py`),
+  `orchestrator` (`run_loop_mixin`/`run_phase_mixin`), `browser` (`agents/browser_executor.py`),
+  `native` (`agents/native_executor.py`), and each subtask `st-NNN` (already via
+  `SubprocessFeed`). `LiveEventBus.lanes()` returns them in first-activity order.
+- **Rendering** is a pure function, `notifications/terminal_render.py:render(...)` — header
+  (page x/N, lane, running/idle, elapsed) + one fenced block of the newest lines + footer;
+  hard-capped ≤1900 chars; never raises.
+- **Surface** (`notifications/terminal_surface.py:TerminalSurface`) runs in a **daemon
+  thread inside the orchestrator process** (same place as the web dashboard). Its
+  `EditThrottle` edits the pinned message only on content change, ≥1.2s floor, backing off
+  on `transient` (429/5xx) and honoring Retry-After; a genuine 404 recreates once. Only the
+  viewed page is ever edited — N sub-processes cost the same as one.
+- **Cross-process buttons.** The buttons are handled by the *bot* process; the surface lives
+  in the *orchestrator* process. They bridge through the filesystem
+  (`notifications/terminal_ipc.py`): the view writes nav intent to `state/terminal_nav.json`
+  (`bump_nav`), the surface reads it each tick and writes a mirror
+  (`state/terminal_mirror.json`: body + page_count + lane ids) that the view reads for
+  snapshots and page clamping. Nav latency ≈ one tick (~0.4s). `TerminalView` is a persistent
+  view (`timeout=None`, `term_*` custom_ids) registered in `notifications/bot/core.py`, so it
+  survives multi-hour runs and bot restarts. Deep browser/native telemetry still lives on the
+  web dashboard (`/api/raw`).
+
 ## Commands
 
 ### Slash commands (Discord app_commands)

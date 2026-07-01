@@ -19,7 +19,7 @@ EXPORTS:
   nativeActions(app: str, steps: list[dict[str, Any]]) -> list[dict[str, Any]]  -- Build a canonical action list from a high-level recipe
   runNative(spec_or_prompt, *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, resume_session: Optional[str]=None, **_kw) -> dict  -- Execute a native UI subtask
   selectForSurface(terminal_fn, spec: dict)  -- Routing helper: return runNative when surface=native and NATIVE_LAYER_ENABLED,
-DEPENDS-ON: agents.executor, config
+DEPENDS-ON: agents.executor, config, notifications.lane_feed
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """

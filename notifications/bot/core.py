@@ -16,7 +16,7 @@ EXPORTS:
   handleCommand(content: str) -> str  -- Parse + apply a '!' command against the latest task
   buildBot()  -- Construct (but do not run) the NightclawBot
   runBot() -> None
-DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, notifications.views_feedback, platform_core.runtime.control
+DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, notifications.views_feedback, notifications.views_terminal, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_simulation_core.py tests/test_skill_gap_analysis_core.py
 """

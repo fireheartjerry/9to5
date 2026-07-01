@@ -15,7 +15,7 @@ dict-or-attr pattern for embeddings; these helpers bring chat extraction in line
 EXPORTS:
   responseText(resp) -> str  -- ``resp['message']['content']`` as text
   responseJson(resp)  -- Parse the JSON body of a chat response
-DEPENDS-ON: (stdlib only)
+DEPENDS-ON: notifications.lane_feed
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_llm_io_pydantic.py
 """

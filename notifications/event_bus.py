@@ -13,10 +13,8 @@ per subtask. Producers never block: a full SSE queue drops the event for that ta
 EXPORTS:
   Event  -- A structured, fan-out event
   RawLine  -- One raw stdout line tagged with its subtask id.
-  LaneMeta  -- Bookkeeping for one lane (a well-known sid: 'brain', 'orchestrator', 'st-001'...)
+  LaneMeta  -- Bookkeeping for one lane (a well-known sid: 'brain', 'orchestrator', 'st-001'...).
   LiveEventBus  -- Ring-buffered pub/sub bus
-  LiveEventBus.register_lane(sid, label='') -> None  -- Pre-create a lane or set its friendly label
-  LiveEventBus.lanes() -> list[dict]  -- Ordered (first-activity) lane snapshots for the paginator
   get_bus() -> LiveEventBus  -- Process-global singleton
   reset_bus() -> None  -- Drop the singleton so the next ``get_bus`` builds a fresh one (test hook).
 DEPENDS-ON: (stdlib only)

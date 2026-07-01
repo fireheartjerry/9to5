@@ -28,7 +28,7 @@ EXPORTS:
   preflightLogin(timeout_s: int=300, poll_s: int=3) -> bool  -- Verify Gemini is reachable before a run relies on it
   sessionAsk(message: str, *, expect_json: bool=False) -> Optional[str]  -- Ask Gemini one message through the run session
   askGemini(message: str, *, runner=None, expect_json: bool=False) -> Optional[str]  -- Send one ``message`` to Gemini and return the reply text.
-DEPENDS-ON: agents.executor, agents.gemini_driver, config
+DEPENDS-ON: agents.executor, agents.gemini_driver, config, notifications.lane_feed
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_browser_executor.py tests/test_phase2_cdp_adversary.py
 """
