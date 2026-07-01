@@ -91,6 +91,8 @@ def _run_actions(actions: list[dict[str, Any]], *, timeout_ms: int = 30000,
             page.set_default_timeout(timeout_ms)
             for i, act in enumerate(actions):
                 kind = (act.get("action") or "").lower()
+                from notifications.lane_feed import laneTap
+                laneTap("browser", f"{kind}: {str(act.get('url') or act.get('selector') or act)[:80]}")
                 if kind == "goto":
                     page.goto(act["url"])
                     lines.append(f"goto {act['url']} -> {page.title()!r}")

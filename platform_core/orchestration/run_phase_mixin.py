@@ -333,6 +333,8 @@ class OrchestratorRunPhaseMixin:
             for n in (state.data.get("notifications", []) or []))
         all_done = total > 0 and done == total
         final_status = "done" if (all_done and not held_broken and not dropped_planned) else "partial"
+        from notifications.lane_feed import laneTap
+        laneTap("orchestrator", f"phase: {final_status}")
         state.setStatus(final_status)
         self.writeIndex(state)
         pr_link = pr.get("url") or f"skipped: {pr.get('reason', '')}"

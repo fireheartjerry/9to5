@@ -280,6 +280,9 @@ class OrchestratorRunLoopMixin:
                     if cont:
                         continue
                     break
+                from notifications.lane_feed import laneTap
+                laneTap("orchestrator", f"loop: {subtask.get('subtask_id', '?')} "
+                                         f"{str(subtask.get('title', ''))[:60]}")
                 position += 1
                 try:
                     self._executeSubtask(state, subtask, architect_doc, work_dir,

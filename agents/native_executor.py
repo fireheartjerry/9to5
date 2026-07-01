@@ -74,6 +74,8 @@ def _run_native_actions(actions: list[dict[str, Any]], *,
     window = None
     for i, act in enumerate(actions):
         kind = (act.get("action") or "").lower()
+        from notifications.lane_feed import laneTap
+        laneTap("native", f"{kind}: {str(act.get('app') or act.get('title') or act)[:80]}")
         try:
             if kind == "launch":
                 app = pywinauto.Application(backend="uia").start(act["app"])

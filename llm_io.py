@@ -43,11 +43,22 @@ def _field(obj, key):
     return val
 
 
+def _tap_brain(prompt_summary: str, response_summary: str) -> None:
+    """Best-effort: publish one terminal-lane line for a completed brain call."""
+    from notifications.lane_feed import laneTap
+
+    laneTap("brain", f"→ {str(prompt_summary)[:90]}")
+    laneTap("brain", f"← {str(response_summary)[:90]}")
+
+
 def responseText(resp) -> str:
     """``resp['message']['content']`` as text. '' for ANY malformed shape (dict or pydantic)."""
     try:
         content = _field(_field(resp, "message"), "content")
-        return content if isinstance(content, str) else ""
+        text = content if isinstance(content, str) else ""
+        if text:
+            _tap_brain("(prompt)", text)
+        return text
     except Exception:  # noqa: BLE001
         return ""
 
