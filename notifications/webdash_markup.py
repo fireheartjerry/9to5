@@ -25,6 +25,14 @@ MARKUP = r"""<!doctype html><html><head><meta charset="utf-8"><title>9TO5</title
   <button class="btn danger" onclick="ctl('reject',null,this)" aria-label="Reject step">Reject</button>
   <span class="aura"><span class="dot" id="auraDot"></span><span id="auraNum">—</span> Health</span>
 </nav>
+<input type="radio" name="tab" id="tab-meta" checked>
+<input type="radio" name="tab" id="tab-feed">
+<input type="radio" name="tab" id="tab-subs">
+<div class="tabbar">
+  <label for="tab-meta">Meta</label>
+  <label for="tab-feed">Feed</label>
+  <label for="tab-subs">Subtasks</label>
+</div>
 <main class="cols">
   <div class="col" id="meta" aria-label="Mission and progress"></div>
   <div class="col">

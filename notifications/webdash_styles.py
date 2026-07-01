@@ -89,4 +89,23 @@ header .tunnel{color:#00d4aa}
 @media (prefers-reduced-motion: reduce){
   *{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important}
 }
+.col{scrollbar-color:var(--border) var(--bg);scrollbar-width:thin}
+.col::-webkit-scrollbar{width:8px}
+.col::-webkit-scrollbar-thumb{background:var(--border)}
+.sec{position:sticky;top:0;background:var(--bg);z-index:1}
+.cols .col:nth-child(1),.cols .col:nth-child(2){resize:horizontal;overflow:auto;min-width:160px;max-width:60vw}
+@media (max-width:960px){
+  .cols{display:block;height:auto}
+  .tabbar{display:flex;border-bottom:1px solid var(--border)}
+  .tabbar label{flex:1;text-align:center;padding:6px;cursor:pointer;text-transform:uppercase;font-size:11px;letter-spacing:.5px;color:var(--muted)}
+  input[name="tab"]{position:absolute;left:-9999px}
+  .col{display:none;height:auto;max-height:70vh}
+  #tab-meta:checked~.tabbar label[for="tab-meta"],
+  #tab-feed:checked~.tabbar label[for="tab-feed"],
+  #tab-subs:checked~.tabbar label[for="tab-subs"]{color:var(--accent-teal)}
+  #tab-meta:checked~main .col:nth-child(1),
+  #tab-feed:checked~main .col:nth-child(2),
+  #tab-subs:checked~main .col:nth-child(3){display:block}
+}
+@media (min-width:961px){.tabbar{display:none}}
 """
