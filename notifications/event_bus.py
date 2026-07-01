@@ -13,7 +13,10 @@ per subtask. Producers never block: a full SSE queue drops the event for that ta
 EXPORTS:
   Event  -- A structured, fan-out event
   RawLine  -- One raw stdout line tagged with its subtask id.
+  LaneMeta  -- Bookkeeping for one lane (a well-known sid: 'brain', 'orchestrator', 'st-001'...)
   LiveEventBus  -- Ring-buffered pub/sub bus
+  LiveEventBus.register_lane(sid, label='') -> None  -- Pre-create a lane or set its friendly label
+  LiveEventBus.lanes() -> list[dict]  -- Ordered (first-activity) lane snapshots for the paginator
   get_bus() -> LiveEventBus  -- Process-global singleton
   reset_bus() -> None  -- Drop the singleton so the next ``get_bus`` builds a fresh one (test hook).
 DEPENDS-ON: (stdlib only)
@@ -67,6 +70,15 @@ class RawLine:
         return {"sid": self.sid, "line": self.line, "ts": self.ts}
 
 
+@dataclass
+class LaneMeta:
+    """Bookkeeping for one lane (a well-known sid: 'brain', 'orchestrator', 'st-001'...)."""
+    id: str
+    label: str = ""
+    last_ts: float = field(default_factory=time.monotonic)
+    line_count: int = 0
+
+
 class LiveEventBus:
     """Ring-buffered pub/sub bus. Thread-safe; producers never block on slow consumers."""
 
@@ -77,6 +89,7 @@ class LiveEventBus:
         self._sse_queues: list[queue.Queue] = []
         self._discord_feed: Any = None
         self._lock = threading.Lock()
+        self._lanes: dict[str, LaneMeta] = {}
 
     # ---- producers ------------------------------------------------------
     def emit_raw(self, sid: str, line: str) -> None:
@@ -88,6 +101,11 @@ class LiveEventBus:
             if ring is None:
                 ring = self._per_sid[sid] = deque(maxlen=_PER_SID_MAX)
             ring.append(rl)
+            meta = self._lanes.get(sid)
+            if meta is None:
+                meta = self._lanes[sid] = LaneMeta(id=sid)
+            meta.last_ts = rl.ts
+            meta.line_count += 1
 
     def emit(self, event: Event) -> None:
         """Append a structured event and fan it out to all SSE subscribers + Discord."""
@@ -142,6 +160,25 @@ class LiveEventBus:
             ring = self._per_sid.get(sid)
             lines = list(ring) if ring is not None else []
         return [r.to_dict() for r in lines[-last_n:]]
+
+    # ---- lanes ------------------------------------------------------------
+    def register_lane(self, sid: str, label: str = "") -> None:
+        """Pre-create a lane (or set its friendly label) before its first line."""
+        with self._lock:
+            meta = self._lanes.get(sid)
+            if meta is None:
+                self._lanes[sid] = LaneMeta(id=sid, label=label)
+            elif label:
+                meta.label = label
+
+    def lanes(self) -> list[dict[str, Any]]:
+        """Ordered (first-activity) lane snapshots for the paginator."""
+        now = time.monotonic()
+        with self._lock:
+            metas = list(self._lanes.values())
+        return [{"id": m.id, "label": m.label, "last_ts": m.last_ts,
+                 "line_count": m.line_count, "idle_s": max(0.0, now - m.last_ts)}
+                for m in metas]
 
 
 _BUS: Optional[LiveEventBus] = None
