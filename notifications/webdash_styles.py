@@ -69,4 +69,19 @@ header .tunnel{color:#00d4aa}
 :focus-visible{outline:2px solid var(--accent-teal);outline-offset:2px}
 .skip-link{position:absolute;left:-9999px;top:0;background:var(--accent-teal);color:#000;padding:6px 10px;z-index:1000}
 .skip-link:focus{left:8px;top:8px}
+.modal-scrim{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal{background:var(--bg);border:1px solid var(--border);padding:16px;max-width:360px;transition:opacity var(--motion-fast) ease-out}
+.modal .row2{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+.toasts{position:fixed;right:10px;bottom:10px;display:flex;flex-direction:column;gap:6px;z-index:200}
+.toast{border:1px solid var(--border);background:var(--bg);padding:6px 10px;font-size:12px;opacity:0;transform:translateY(6px);transition:opacity var(--motion-med) ease-out,transform var(--motion-med) ease-out}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast.ok{border-color:var(--accent-teal);color:var(--accent-teal)}
+.toast.fail{border-color:var(--err);color:var(--err)}
+.btn.busy{opacity:.5;pointer-events:none}
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+.pill .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.pill.live .dot{background:var(--accent-teal)}
+.pill.reconnecting .dot{background:var(--accent-amber);animation:pulse 1.2s ease-in-out infinite}
+.pill.offline .dot{background:var(--err)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 """

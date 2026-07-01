@@ -15,13 +15,14 @@ MARKUP = r"""<!doctype html><html><head><meta charset="utf-8"><title>9TO5</title
   <span class="crumb">9TO5 ▸ <span id="codename">—</span> ▸ <span id="status">—</span></span>
   <span class="goal" id="goal"></span>
   <span class="tunnel" id="tunnel"></span>
+  <span class="pill live" id="connPill"><span class="dot"></span><span id="connText">live</span></span>
 </header>
 <nav class="ctrlbar" aria-label="Run controls">
-  <button class="btn danger" onclick="ctl('abort')" aria-label="Abort run">Abort</button>
-  <button class="btn" onclick="ctl('pause')" aria-label="Pause run">Pause</button>
-  <button class="btn" onclick="ctl('resume')" aria-label="Resume run">Resume</button>
-  <button class="btn go" onclick="ctl('approve')" aria-label="Approve step">Approve</button>
-  <button class="btn danger" onclick="ctl('reject')" aria-label="Reject step">Reject</button>
+  <button class="btn danger" onclick="ctl('abort',null,this)" aria-label="Abort run">Abort</button>
+  <button class="btn" onclick="ctl('pause',null,this)" aria-label="Pause run">Pause</button>
+  <button class="btn" onclick="ctl('resume',null,this)" aria-label="Resume run">Resume</button>
+  <button class="btn go" onclick="ctl('approve',null,this)" aria-label="Approve step">Approve</button>
+  <button class="btn danger" onclick="ctl('reject',null,this)" aria-label="Reject step">Reject</button>
   <span class="aura"><span class="dot" id="auraDot"></span><span id="auraNum">—</span> Health</span>
 </nav>
 <main class="cols">
@@ -49,4 +50,7 @@ MARKUP = r"""<!doctype html><html><head><meta charset="utf-8"><title>9TO5</title
 <div class="curve" role="img" aria-label="Intelligence curve chart">
   <span class="sec">INTELLIGENCE CURVE</span> <span id="curve"></span>
 </div>
-<script>{script}</script></body></html>"""
+<script>{script}</script>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<div id="modalRoot"></div>
+</body></html>"""

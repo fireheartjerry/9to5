@@ -14,7 +14,43 @@ const __T="__WEBDASH_TOKEN__";
 const TUNNEL_ICON='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="4" width="20" height="14" rx="1"/><path d="M8 21h8M12 17v4"/></svg>';
 let EVENTS=[], LOCKED=true;
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-async function ctl(action,arg){try{await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-9to5-token':__T},body:JSON.stringify({action,arg})});}catch(e){}}
+const DESTRUCTIVE=new Set(['abort','reject']);
+function toast(msg,ok){
+  const box=document.getElementById('toasts');
+  const t=document.createElement('div');
+  t.className='toast '+(ok?'ok':'fail');
+  t.textContent=msg;
+  box.appendChild(t);
+  requestAnimationFrame(()=>t.classList.add('show'));
+  setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300);},4000);
+}
+function confirmModal(msg){
+  return new Promise(resolve=>{
+    const root=document.getElementById('modalRoot');
+    root.innerHTML='<div class="modal-scrim"><div class="modal" role="alertdialog" aria-modal="true">'
+      +'<div>'+esc(msg)+'</div><div class="row2">'
+      +'<button class="btn" id="mCancel">Cancel</button>'
+      +'<button class="btn danger" id="mOk">Confirm</button></div></div></div>';
+    document.getElementById('mOk').onclick=()=>{root.innerHTML='';resolve(true)};
+    document.getElementById('mCancel').onclick=()=>{root.innerHTML='';resolve(false)};
+  });
+}
+async function ctl(action,arg,btn){
+  if(DESTRUCTIVE.has(action)){
+    const ok=await confirmModal('Are you sure you want to '+action+' this run? This cannot be undone.');
+    if(!ok)return;
+  }
+  if(btn)btn.classList.add('busy');
+  try{
+    const res=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-9to5-token':__T},body:JSON.stringify({action,arg})});
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    toast(action+' sent',true);
+  }catch(e){
+    toast(action+' failed: '+e.message,false);
+  }finally{
+    if(btn)btn.classList.remove('busy');
+  }
+}
 function toggleLock(){LOCKED=!LOCKED;document.getElementById('lockBtn').textContent='scroll: '+(LOCKED?'lock':'free');}
 function rowClass(e){return e.kind==='moment'?'row moment':e.kind==='heartbeat'?'row heartbeat':'row';}
 function render(){
@@ -25,12 +61,18 @@ function render(){
   if(LOCKED)f.scrollTop=f.scrollHeight;
 }
 function pushEvent(e){EVENTS.push(e);if(EVENTS.length>2200)EVENTS=EVENTS.slice(-2000);render();}
+function setConn(state){
+  const pill=document.getElementById('connPill');
+  pill.className='pill '+state;
+  document.getElementById('connText').textContent=state;
+}
 function startSSE(){
   try{
     const es=new EventSource('/api/events');
+    es.onopen=()=>setConn('live');
     es.onmessage=ev=>{try{pushEvent(JSON.parse(ev.data));}catch(e){}};
-    es.onerror=()=>{es.close();setTimeout(startSSE,3000);};
-  }catch(e){setTimeout(startSSE,3000);}
+    es.onerror=()=>{setConn('reconnecting');es.close();setTimeout(startSSE,3000);};
+  }catch(e){setConn('offline');setTimeout(startSSE,3000);}
 }
 async function expandRaw(sid,el){
   if(el.dataset.open==='1'){el.dataset.open='0';const n=el.nextSibling;if(n&&n.className==='raw')n.remove();el.textContent='▼ EXPAND RAW STDOUT';return;}
