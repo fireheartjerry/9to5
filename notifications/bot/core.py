@@ -79,10 +79,12 @@ async def _setupPersistentViews(bot) -> None:  # pragma: no cover
         pass
     from notifications import views
     from notifications.views_feedback import FeedbackView
+    from notifications.views_terminal import TerminalView
     from notifications.bot.ui.dynamic import SubtaskButton
     bot.add_view(views.ControlPanelView())   # persistent: matches cp_* anywhere
     bot.add_view(views.BlockedView())         # persistent: matches sc_*
     bot.add_view(FeedbackView())              # persistent: matches fb_* (Subsystem C feedback)
+    bot.add_view(TerminalView())              # persistent: matches term_* (Live Terminal paginator)
     bot.add_dynamic_items(SubtaskButton)      # stateless per-subtask skip/inspect (Tier 2)
 
 
