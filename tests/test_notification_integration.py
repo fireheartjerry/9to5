@@ -194,6 +194,10 @@ class TestDashboardTaskStateLifecycle(unittest.TestCase):
     def _mock_discord(self):
         patches = [
             mock.patch.object(config, "DISCORD_DASHBOARD", True),
+            # This class exercises the classic embed dashboard (createMessage/message_id).
+            # Pin CV2 off so start()/update() take the legacy path regardless of the
+            # DASHBOARD_CV2 default; the CV2 cockpit path is covered elsewhere.
+            mock.patch.object(config, "DASHBOARD_CV2", False),
             mock.patch("notifications.discord_bot.editMessage", return_value=True),
             mock.patch("notifications.discord_bot.editMessageResult", return_value="ok"),
             mock.patch("notifications.discord_bot.createMessage", return_value="msg-1"),
