@@ -41,6 +41,9 @@ C:\\supercritical/
 !.claude/**
 references/
 .env.backup
+# Second-instance bot secret (separate Discord app token) — NEVER commit
+.env.nightclaw2
+logs2/
 # Quarantine trees: nested worktree clone + untracked bot package (excluded from
 # repo_map/identity scans; kept out of git status). See mega-upgrade plan.
 fable-rewrite/
