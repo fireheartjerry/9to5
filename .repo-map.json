@@ -4456,7 +4456,7 @@
           "kind": "function",
           "signature": "() -> int",
           "summary": "",
-          "lineno": 336
+          "lineno": 368
         }
       ],
       "depends_on": [
