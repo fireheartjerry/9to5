@@ -22,8 +22,13 @@ from pathlib import Path
 
 import config
 
-NAV_PATH: Path = config.STATE_DIR / "terminal_nav.json"
-MIRROR_PATH: Path = config.STATE_DIR / "terminal_mirror.json"
+# NOTE: these live in state/ (STATE_DIR.parent), NOT the task store STATE_DIR
+# (state/tasks/). loadLatest()/iterStored() glob STATE_DIR/*.json and treat every
+# hit as a TaskState; a loose terminal_mirror.json in there is picked up as the
+# "latest task" and blows up on state.task_id (KeyError). Keep IPC out of the store.
+_IPC_DIR: Path = config.STATE_DIR.parent
+NAV_PATH: Path = _IPC_DIR / "terminal_nav.json"
+MIRROR_PATH: Path = _IPC_DIR / "terminal_mirror.json"
 
 _NAV_DEFAULT = {"page_idx": 0, "mode": "summary", "frozen": False}
 _MIRROR_DEFAULT = {"body": "", "page_count": 0, "lanes": []}
