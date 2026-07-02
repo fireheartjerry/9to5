@@ -4,6 +4,9 @@
   "root": "9to5",
   "first_party_roots": [
     "agents",
+    "check_bugs",
+    "check_code_changes",
+    "check_workflow",
     "config",
     "conftest",
     "human_nature",
@@ -1440,7 +1443,7 @@
           "kind": "function",
           "signature": "(verify: Optional[dict], work_dir: str, executor_result: dict) -> dict",
           "summary": "Return a verify_result dict: {passed, cmd, expect, returncode, stdout, stderr}.",
-          "lineno": 180
+          "lineno": 205
         }
       ],
       "depends_on": [
@@ -4456,7 +4459,7 @@
           "kind": "function",
           "signature": "() -> int",
           "summary": "",
-          "lineno": 368
+          "lineno": 405
         }
       ],
       "depends_on": [
@@ -4470,6 +4473,7 @@
         "platform_core.ops.external_project",
         "platform_core.ops.health",
         "platform_core.orchestration",
+        "platform_core.orchestration.run_loop",
         "platform_core.runtime.control",
         "platform_core.runtime.resilience",
         "platform_core.simulator.chaos",
@@ -6362,7 +6366,7 @@
           "kind": "function",
           "signature": "(bot: dpy_commands.Bot) -> None",
           "summary": "",
-          "lineno": 218
+          "lineno": 220
         }
       ],
       "depends_on": [
@@ -8885,7 +8889,7 @@
         {
           "name": "buildResumeArgv",
           "kind": "function",
-          "signature": "(task_id: str) -> list[str]",
+          "signature": "(task_id: str, retry_failed: bool=False) -> list[str]",
           "summary": "",
           "lineno": 306
         },
@@ -8894,28 +8898,28 @@
           "kind": "function",
           "signature": "(task_id: str) -> bool",
           "summary": "",
-          "lineno": 310
+          "lineno": 313
         },
         {
           "name": "spawnResume",
           "kind": "function",
-          "signature": "(task_id: str) -> int",
+          "signature": "(task_id: str, retry_failed: bool=False) -> int",
           "summary": "",
-          "lineno": 314
+          "lineno": 317
         },
         {
           "name": "launchOrError",
           "kind": "function",
           "signature": "(req: WorkRequest) -> str",
           "summary": "Validate -> block-if-active -> spawn -> confirm",
-          "lineno": 318
+          "lineno": 321
         },
         {
           "name": "resumeOrError",
           "kind": "function",
-          "signature": "(task_id: str) -> str",
+          "signature": "(task_id: str, retry_failed: bool=False) -> str",
           "summary": "Resume an existing task by id (block if a run is active)",
-          "lineno": 365
+          "lineno": 368
         }
       ],
       "depends_on": [
@@ -11426,6 +11430,7 @@
       ],
       "test": [],
       "callers": [
+        "main",
         "orchestrator",
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.control_review_mixin",

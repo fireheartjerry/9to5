@@ -13,11 +13,11 @@ EXPORTS:
   activeRun() -> Optional[TaskState]  -- The latest task iff it's still active
   newestTaskSince(ts: float) -> Optional[str]  -- task_id of the newest state file created at/after `ts` (with ~2s mtime fuzz for filesys…
   spawn(req: WorkRequest) -> int
-  buildResumeArgv(task_id: str) -> list[str]
+  buildResumeArgv(task_id: str, retry_failed: bool=False) -> list[str]
   taskExists(task_id: str) -> bool
-  spawnResume(task_id: str) -> int
+  spawnResume(task_id: str, retry_failed: bool=False) -> int
   launchOrError(req: WorkRequest) -> str  -- Validate -> block-if-active -> spawn -> confirm
-  resumeOrError(task_id: str) -> str  -- Resume an existing task by id (block if a run is active)
+  resumeOrError(task_id: str, retry_failed: bool=False) -> str  -- Resume an existing task by id (block if a run is active)
 DEPENDS-ON: config, notifications.commands, platform_core.ops.external_project, platform_core.orchestration, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_work_launcher.py
