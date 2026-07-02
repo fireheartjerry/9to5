@@ -1,0 +1,53 @@
+{
+  "use_workflow": true,
+  "workflow_name": "Advanced Bug-Fixing Workflow",
+  "version": "1.0",
+  "workflow_definition": [
+    {
+      "step_name": "Identify Critical Bugs",
+      "tools_to_use": ["security-reviewer"],
+      "prompt": "Identify all critical bugs in the codebase. List them in state/bug_reports.txt with details such as file paths, line numbers, and descriptions.",
+      "deliverables": ["state/bug_reports.txt"],
+      "effort": "medium"
+    },
+    {
+      "step_name": "Fix Identified Bugs",
+      "tools_to_use": [],
+      "prompt": "Apply code changes to fix identified bugs. Ensure no destructive edits are made.",
+      "pre_tool_hooks": ["block_destructive"],
+      "post_tool_hooks": ["write_obsidian/log_all"],
+      "effort": "high"
+    },
+    {
+      "step_name": "Write Unit Tests",
+      "tools_to_use": [],
+      "prompt": "Create unit tests for each bug fix to ensure they pass. Save new tests in the tests/ directory.",
+      "deliverables": ["tests/"],
+      "effort": "medium"
+    },
+    {
+      "step_name": "Write Integration Tests",
+      "tools_to_use": [],
+      "prompt": "Create integration tests to validate the bug fixes in different parts of the system. Save new tests in the tests/ directory.",
+      "deliverables": ["tests/"],
+      "effort": "medium"
+    },
+    {
+      "step_name": "Update Documentation",
+      "tools_to_use": [],
+      "prompt": "Document the bug fixing process and any new changes or fixes in docs/bug_fixing_report.md.",
+      "deliverables": ["docs/bug_fixing_report.md"],
+      "effort": "medium"
+    }
+  ],
+  "acceptance_criteria": [
+    "state/bug_reports.txt exists and is non-empty",
+    "docs/bug_fixing_report.md exists and is non-empty",
+    "All tests pass"
+  ],
+  "constraints": [
+    "No destructive edits",
+    "High effort level",
+    "Complete within 24 hours"
+  ]
+}
