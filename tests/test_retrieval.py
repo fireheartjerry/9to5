@@ -50,6 +50,22 @@ class TestRetrieval(unittest.TestCase):
         }, db_path=self.db)
         experience.set_subtask_embedding("r1", st_id, retrieval.pack(vec), db_path=self.db)
 
+    def test_write_path_and_backfill_share_embedText_seam(self):
+        # B26: the live write path and the nightly backfill must compose their vector through the
+        # SAME _embedText(goal, title) helper, or backfilled rows land in a different vector space.
+        with mock.patch.object(retrieval, "_embedText", return_value=[1.0, 0.0]) as m:
+            retrieval.embed_and_store("r1", "st-live", "the goal", "the title", db_path=self.db)
+        m.assert_called_once_with("the goal", "the title")
+
+        # Seed a passing, un-embedded row; backfill must route through _embedText too.
+        experience.record_subtask("r1", {
+            "subtask_id": "st-bf", "title": "backfill title", "status": "done",
+            "verify_result": {"passed": True}, "session": {"attempts": 1},
+        }, db_path=self.db)
+        with mock.patch.object(retrieval, "_embedText", return_value=[1.0, 0.0]) as m2:
+            retrieval.backfill_embeddings(db_path=self.db)
+        m2.assert_any_call("", "backfill title")
+
     def test_top_k_ranks_by_similarity(self):
         self._seed("st-001", [1.0, 0.0, 0.0])
         self._seed("st-002", [0.0, 1.0, 0.0])

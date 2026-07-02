@@ -11,12 +11,9 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 
-from dotenv import load_dotenv
-
-_THIS_DIR = Path(__file__).resolve().parent
-load_dotenv(dotenv_path=_THIS_DIR / ".env")
+# config.py loads the root ``.env`` before star-importing this module, so no local
+# ``load_dotenv`` is needed (the old one targeted a nonexistent ``app_config/.env``).
 
 
 def _envBool(key: str, default: bool = False) -> bool:

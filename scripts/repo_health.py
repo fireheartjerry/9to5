@@ -93,7 +93,7 @@ def gather() -> dict:
         "optional_services": _optionalServices(),
         "suggested_commands": [
             "python tools/dev.py check <file>      # fast lint+type+affected-tests for one file",
-            "python -m unittest discover -s tests -v   # full suite (CI-canonical)",
+            "python -m pytest tests -q            # full suite (CI-canonical)",
             "python -m pytest -m 'not slow' -q     # fast lane",
             "python tools/repo_map.py --check      # AI-nav drift check",
         ],

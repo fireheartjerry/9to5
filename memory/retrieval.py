@@ -143,11 +143,19 @@ def _uid(run_id: str, st_id: str) -> str:
     return f"{run_id}::{st_id}"
 
 
+def _embedText(goal: str, title: str = "") -> Optional[list[float]]:
+    """The single embedding-composition seam: BOTH the live write path (embed_and_store) and the
+    nightly backfill compose their vector here, so a backfilled row lands in the SAME vector space
+    as a live-embedded row and the query. Embedding two different texts (title-only vs goal+title)
+    would silently split the space and starve retrieval of matches."""
+    return embed(signature_text(goal, title))
+
+
 def embed_and_store(run_id: str, st_id: str, goal: str, title: str = "",
                     db_path: Optional[Path] = None) -> bool:
     """Compute + persist a subtask's embedding AND seed the ANN index (derived cache; the
     BLOB column stays source of truth). Best-effort."""
-    vec = embed(signature_text(goal, title))
+    vec = _embedText(goal, title)
     if not vec:
         return False
     ok = experience.set_subtask_embedding(run_id, st_id, pack(vec), db_path=db_path)
@@ -317,8 +325,9 @@ def backfill_embeddings(db_path: Optional[Path] = None) -> dict[str, int]:
         if row.get("embedding") or row.get("verify_passed") != 1:
             skipped += 1
             continue
-        # The goal text isn't on the subtask row; title is the strongest available signal.
-        vec = embed(signature_text(row.get("title") or "", ""))
+        # The goal text isn't on the subtask row; title is the strongest available signal. Route
+        # through the SAME _embedText seam as the live path so both share one vector space.
+        vec = _embedText("", row.get("title") or "")
         if not vec:
             skipped += 1
             if embedded == 0:          # embedder dead on first try -> bail, don't spin

@@ -5,6 +5,7 @@ from unittest import mock
 
 import knowledge
 import platform_core.knowledge_base.compress as knowledge_compress
+import platform_core.knowledge_base.scraper as scraper
 
 
 class TestPureHelpers(unittest.TestCase):
@@ -60,6 +61,33 @@ class TestInjectCapabilities(unittest.TestCase):
         knowledge.setCapabilities("")
         with mock.patch.object(knowledge_compress, "ensureCapabilities", return_value=""):
             self.assertEqual(knowledge.injectCapabilities("SYS"), "SYS")
+
+
+def _writeSkill(path, name):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"---\nname: {name}\ndescription: d\n---\nbody", encoding="utf-8")
+
+
+def test_scan_excludes_nested_worktrees(tmp_path):
+    """B33: scanLocalClaude must not descend into .claude/worktrees/** (nested repo copies)."""
+    root = tmp_path / ".claude"
+    _writeSkill(root / "skills" / "real" / "SKILL.md", "real-skill")
+    _writeSkill(root / "worktrees" / "wt" / ".claude" / "skills" / "foreign" / "SKILL.md",
+                "foreign-skill")
+    inv = scraper.scanLocalClaude(roots=(root,))
+    names = {s["name"] for s in inv["skills"]}
+    assert "real-skill" in names
+    assert "foreign-skill" not in names          # nested worktree surface not counted
+
+
+def test_scan_excludes_vendored_subprojects(tmp_path):
+    """B33: vendored sub-projects (fable-rewrite/**, nightclaw/**) are excluded too."""
+    root = tmp_path / ".claude"
+    _writeSkill(root / "skills" / "keep" / "SKILL.md", "keep")
+    _writeSkill(root / "nightclaw" / ".claude" / "skills" / "drop" / "SKILL.md", "drop")
+    inv = scraper.scanLocalClaude(roots=(root,))
+    names = {s["name"] for s in inv["skills"]}
+    assert "keep" in names and "drop" not in names
 
 
 if __name__ == "__main__":

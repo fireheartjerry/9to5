@@ -83,6 +83,13 @@ def checkAndNotify() -> list[str]:
     critical_events = monitoring.get_critical_events()
 
     for alert in alerts:
+        # Late-detection critical alerts are surfaced BOTH here (via
+        # tracker.get_alerts()) and in the dedicated critical-events loop below.
+        # Handling them in both places fired two Discord notifications under two
+        # dedup keys for a single event. The critical-events loop owns them, so
+        # skip them here and let that loop fire exactly once.
+        if alert.get("type") == "critical_event_late_detection":
+            continue
         key = _alertKey(alert)
         if _shouldFire(key, now):
             _markFired(key, now)

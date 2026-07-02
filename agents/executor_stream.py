@@ -195,6 +195,23 @@ def _drainStreaming(proc, run_prompt: str, feed, timeout: int) -> "tuple[str, st
 
     wt = threading.Thread(target=_writer, name="claude-stdin", daemon=True)
     wt.start()
+
+    # Drain stderr concurrently on its own daemon thread. Reading it only AFTER the stdout
+    # loop deadlocks when the child fills the ~64KB stderr pipe buffer before stdout EOF:
+    # the child blocks on its stderr write, so stdout never reaches EOF and the drain hangs.
+    err_chunks: list[str] = []
+
+    def _drainErr():
+        try:
+            if proc.stderr:
+                for chunk in proc.stderr:
+                    err_chunks.append(chunk)
+        except Exception:  # noqa: BLE001 -- a stderr hiccup must never break the drain
+            pass
+
+    et = threading.Thread(target=_drainErr, name="claude-stderr", daemon=True)
+    et.start()
+
     out_lines: list[str] = []
     try:
         for line in proc.stdout:   # blocks until EOF (process exit or tree-kill closes the pipe)
@@ -205,11 +222,9 @@ def _drainStreaming(proc, run_prompt: str, feed, timeout: int) -> "tuple[str, st
                 pass
     finally:
         timer.cancel()
-    try:
-        err = proc.stderr.read() or ""
-    except Exception:  # noqa: BLE001
-        err = ""
     proc.wait()
+    et.join(timeout=5.0)   # stderr reaches EOF once the child exits; bounded so we never wedge
+    err = "".join(err_chunks)
     wt.join(timeout=1.0)
     out = "".join(out_lines)
     if timed_out["v"]:

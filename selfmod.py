@@ -49,10 +49,15 @@ def core_files_changed(work_dir: str) -> list[str]:
         return []
 
 
+# pytest (not `unittest discover`): the conftest sandbox is pytest-only, so bare unittest fires
+# REAL Discord/Ollama side effects. `-x` fails fast; `-q` keeps the captured tail small.
+DEFAULT_TEST_COMMAND = ["python", "-m", "pytest", "tests", "-x", "-q"]
+
+
 def _default_test_runner(work_dir: str) -> tuple[bool, str]:
     """Run the project test suite in a fresh interpreter; return (passed, tail-of-output)."""
     try:
-        r = subprocess.run(["python", "-m", "unittest", "discover", "-s", "tests"],
+        r = subprocess.run(DEFAULT_TEST_COMMAND,
                            cwd=work_dir, capture_output=True, text=True, timeout=1800)
         out = (r.stdout or "") + (r.stderr or "")
         return r.returncode == 0, out[-1500:]

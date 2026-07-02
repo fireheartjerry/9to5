@@ -24,6 +24,7 @@ from typing import Any, Optional
 
 import config
 from memory import experience
+from memory.experience_schema import _WRITE_LOCK, _connect, _nowIso
 
 LOG = config.getLogger("sie.lessons")
 
@@ -71,8 +72,7 @@ def consolidate(*, db_path: Optional[Path] = None, write_digest: bool = True,
         if r.get("verify_passed") == 1:
             cell[1] += 1
 
-    experience.clear_lessons(db_path=db_path)
-    emitted = 0
+    new_lessons: list[tuple[str, str, str, int, float]] = []
     for fam, by_effort in cells.items():
         support = sum(c[0] for c in by_effort.values())
         if support < config.LESSONS_MIN_SUPPORT:
@@ -86,14 +86,33 @@ def consolidate(*, db_path: Optional[Path] = None, write_digest: bool = True,
             continue
         text = (f"For '{fam}' tasks, effort={best} passed {rates[best]:.0%} "
                 f"vs effort={worst} at {rates[worst]:.0%}; prefer {best}.")
-        if experience.upsert_lesson("effort", fam, text, support_count=support,
-                                    win_rate=rates[best], db_path=db_path):
-            emitted += 1
+        new_lessons.append(("effort", fam, text, support, rates[best]))
+    emitted = _rebuild_lessons(new_lessons, db_path=db_path)
 
     if write_digest:
         _write_digest(_digest_path(digest_path), db_path=db_path)
     LOG.info("consolidation: %d families, %d lessons", len(cells), emitted)
     return {"families": len(cells), "lessons": emitted}
+
+
+def _rebuild_lessons(new_lessons: list[tuple[str, str, str, int, float]], *,
+                     db_path: Optional[Path] = None) -> int:
+    """Atomically replace the ``lessons`` table: DELETE + all INSERTs run in ONE transaction on
+    ONE connection, so a failure mid-rebuild rolls back and leaves the PRIOR lessons intact --
+    never a half-cleared table. Mirrors experience_policy.upsert_lesson but shares a single txn.
+    Returns the number of lessons written."""
+    now = _nowIso()
+    with _WRITE_LOCK, _connect(db_path) as conn:
+        conn.execute("DELETE FROM lessons")
+        for scope, fam, text, support, win_rate in new_lessons:
+            conn.execute(
+                """INSERT INTO lessons (scope, signature_tags, text, support_count, win_rate, last_seen_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(scope, signature_tags, text) DO UPDATE SET
+                     support_count=excluded.support_count, win_rate=excluded.win_rate,
+                     last_seen_at=excluded.last_seen_at""",
+                (scope, fam, text, int(support), float(win_rate), now))
+    return len(new_lessons)
 
 
 def _write_digest(path: Path, *, db_path: Optional[Path] = None) -> None:

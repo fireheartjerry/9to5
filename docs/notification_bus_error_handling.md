@@ -12,9 +12,11 @@
 `NotificationBus.emit()` takes a snapshot of registered surfaces under the
 lock, then iterates outside the lock so that surfaces may themselves call
 `bus.register()` without deadlocking.  Every `surface.handle()` call is
-wrapped in a `try/except BaseException` block.  A surface that raises for
-**any** reason is logged and skipped; the event is delivered to all remaining
-surfaces.  The caller (`orchestrator.py`) **never** sees the exception.
+wrapped in a `try/except Exception` block.  A surface that raises an ordinary
+`Exception` is logged and skipped; the event is delivered to all remaining
+surfaces.  The caller (`orchestrator.py`) **never** sees an ordinary exception.
+A `BaseException` (`KeyboardInterrupt` / `SystemExit`) is deliberately **NOT**
+caught, so interrupt and shutdown signals propagate to the caller.
 
 ```python
 # notifications/bus.py — emit() core loop (abridged)
@@ -24,8 +26,8 @@ with self._lock:
 for surface in snapshot:
     try:
         surface.handle(event_type, payload)
-    except BaseException:                    # surface errors must never reach callers
-        _log.exception(
+    except Exception:                        # ordinary errors must never reach callers
+        _log.exception(                      # BaseException is NOT caught -> it propagates
             "surface %r raised on event %r — suppressed", surface, event_type
         )
 ```
@@ -34,30 +36,31 @@ for surface in snapshot:
 
 | Situation | Result |
 |---|---|
-| Surface A raises; surfaces B and C remain | B and C still receive the event |
+| Surface A raises `Exception`; surfaces B and C remain | B and C still receive the event |
 | Surface raises `RuntimeError` | Logged at WARNING with full traceback; caller unaffected |
-| Surface raises `KeyboardInterrupt` | **suppressed** per-surface (see below) |
-| Surface raises `SystemExit` | **suppressed** per-surface (see below) |
+| Surface raises `KeyboardInterrupt` | **NOT suppressed** — propagates to the caller (see below) |
+| Surface raises `SystemExit` | **NOT suppressed** — propagates to the caller (see below) |
 | No surfaces registered | Silent no-op; `emit()` returns immediately |
 
 ---
 
 ## KeyboardInterrupt and SystemExit inside a surface
 
-`BaseException` (not `Exception`) is caught deliberately.  `Exception` would
-let `KeyboardInterrupt` and `SystemExit` propagate; catching `BaseException`
-prevents that.
+`Exception` (not `BaseException`) is caught deliberately.  Catching
+`BaseException` would swallow `KeyboardInterrupt` and `SystemExit`; catching
+only `Exception` lets those propagate.
 
 This means `KeyboardInterrupt` and `SystemExit` raised *inside* a surface's
-`handle()` method are **suppressed** — they do not reach the caller.  A
-surface that calls `sys.exit()` or whose thread receives a SIGINT while inside
-`handle()` cannot kill or interrupt the orchestrator run loop.
+`handle()` method are **NOT suppressed** — they propagate to the caller.  A
+surface that receives a SIGINT while inside `handle()`, or that raises
+`SystemExit`, will interrupt/stop the run loop as expected rather than being
+silently eaten.
 
-**Implication for surface authors:** do not assume `KeyboardInterrupt` or
-`SystemExit` will propagate out of `handle()` — they are **suppressed** just
-like any other exception.  Graceful shutdown signals must flow through
-`ControlBus` (write an `abort` or `pause` command to the control file), not
-through exceptions raised inside surfaces.
+**Implication for surface authors:** an ordinary `Exception` raised from
+`handle()` is **suppressed** and isolated per-surface, but `KeyboardInterrupt`
+and `SystemExit` will propagate.  For a controlled, cooperative shutdown prefer
+`ControlBus` (write an `abort` or `pause` command to the control file); do not
+rely on raising an ordinary `Exception` to stop a run — that is suppressed.
 
 ---
 
@@ -80,7 +83,7 @@ suppressed** and propagate normally.
 
 | Condition | Level | Logger | Method | Notes |
 |---|---|---|---|---|
-| Surface raises `BaseException` | `WARNING` | `notifications.bus` | `exception()` | One record per failing surface per `emit()` call; includes full traceback |
+| Surface raises `Exception` | `WARNING` | `notifications.bus` | `exception()` | One record per failing surface per `emit()` call; includes full traceback. `BaseException` is not logged here — it propagates. |
 | Successful emission | *(silent)* | — | — | No log output for the happy path |
 
 `exception()` is used (not `warning()`) so the full traceback is embedded in
@@ -147,9 +150,10 @@ raises `TypeError`.
   suppressed; the caller never sees it.  Use an out-of-band mechanism (a
   shared flag, a `ControlBus` write) if a surface needs to communicate a
   fatal condition upstream.
-- **Do not rely on `KeyboardInterrupt` or `SystemExit` propagating from
-  `handle()`.** They are suppressed by the `BaseException` catch in `emit()`.
-  For graceful shutdown, write to `ControlBus` (`abort`/`pause`) instead.
+- **`KeyboardInterrupt` and `SystemExit` raised from `handle()` propagate.**
+  Only ordinary `Exception`s are suppressed by the `Exception` catch in `emit()`.
+  For a cooperative shutdown, prefer writing to `ControlBus` (`abort`/`pause`)
+  rather than raising, so the run stops at the next safe boundary.
 - **Do not call `bus.emit()` inside `handle()`.** `emit()` takes a snapshot
   under `self._lock` and iterates outside it; calling `emit()` recursively
   from within `handle()` will attempt to re-acquire `self._lock`, which is a
@@ -167,7 +171,7 @@ raises `TypeError`.
 | Module-level singleton `BUS = NotificationBus()` at import time | Surfaces can't be re-registered cleanly on resilience restart; import-time side effects are hard to test |
 | Raising from `handle()` to abort a run | Exception is swallowed by `emit()`; orchestrator run loop never sees it |
 | Calling `bus.emit()` inside `handle()` | Acquires the same non-reentrant lock → immediate deadlock; recursive emission is not guarded against |
-| Catching `BaseException` inside `handle()` and re-raising `SystemExit` | Still suppressed by the outer `BaseException` catch in `emit()` |
+| Raising `SystemExit`/`KeyboardInterrupt` from `handle()` to abort mid-emit | These `BaseException`s are NOT suppressed — they propagate and stop the emit loop; use `ControlBus` for a cooperative stop instead |
 | Storing a reference to `self._surfaces` directly | The internal list is mutated under lock; reading it unsafely is a data race |
 
 ---

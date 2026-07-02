@@ -52,9 +52,9 @@ class _Fail:
 
 
 class _SlowFail:
-    """Raises a non-standard exception type."""
+    """Raises a BaseException (SystemExit) — B17: this must propagate, not be swallowed."""
     def handle(self, event_type: str, payload: dict) -> None:
-        raise SystemExit(1)  # extreme — must still be caught
+        raise SystemExit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -305,17 +305,14 @@ class TestModuleImportHealth(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestErrorHandlingRobustness(unittest.TestCase):
-    def test_system_exit_in_surface_caught(self):
-        """Even SystemExit must not propagate out of bus.emit."""
+    def test_system_exit_in_surface_propagates(self):
+        """B17: SystemExit (a BaseException) must propagate out of bus.emit, not be swallowed."""
         bus = NotificationBus()
         bus.register(_SlowFail())
         cap = _Cap()
         bus.register(cap)
-        try:
+        with self.assertRaises(SystemExit):
             bus.emit("replan", {})
-        except SystemExit:
-            self.fail("bus.emit let SystemExit propagate")
-        self.assertEqual(len(cap.calls), 1)
 
     def test_exception_in_surface_does_not_corrupt_payload(self):
         bus = NotificationBus()

@@ -52,7 +52,9 @@ CATEGORIES: dict[str, dict] = {
         "keep_dir": True,
     },
     "logs": {
-        "paths": [ROOT / "logs"],
+        # Honor the configured LOG_PATH (may be redirected off INSTALL_ROOT/logs) so a
+        # wipe targets the logs actually being written, not a stale hardcoded dir.
+        "paths": [config.LOG_PATH],
         "label": "Execution logs",
     },
     "learning": {

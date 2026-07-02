@@ -67,8 +67,27 @@ class TestApplyControl(unittest.TestCase):
 
 
 class TestControlToken(unittest.TestCase):
-    """The /api/control POST endpoint must require the per-run token embedded in the served page,
-    so another local process / a cross-origin page can't drive a live run."""
+    """B14: the control token must never be served in the page (it would leak over the public
+    tunnel). The served page is view-only; /api/control requires the console-only control token."""
+
+    def test_page_never_serves_control_token(self):
+        import urllib.request
+        config_patch = mock.patch.object(config, "WEB_DASHBOARD", True)
+        config_patch.start()
+        self.addCleanup(config_patch.stop)
+        url = webdash.startWebDashboard("task-token", port=8791)
+        if not url:
+            self.skipTest("could not bind the dashboard port")
+        self.addCleanup(webdash.stopWebDashboard)
+        token = webdash._CONTROL_TOKEN
+        self.assertTrue(token, "no control token was generated")
+        page = urllib.request.urlopen(url, timeout=3).read().decode()
+        # The real control token must not appear anywhere in the served HTML.
+        self.assertNotIn(token, page, "control token leaked into served page HTML")
+        # The token placeholder must be blanked, not left unsubstituted with a live token.
+        m = re.search(r'const __T="([^"]*)"', page)
+        self.assertTrue(m, "token placeholder missing from page")
+        self.assertEqual(m.group(1), "", "page embedded a control token")
 
     def test_token_gates_post(self):
         import urllib.request
@@ -80,10 +99,7 @@ class TestControlToken(unittest.TestCase):
         if not url:
             self.skipTest("could not bind the dashboard port")
         self.addCleanup(webdash.stopWebDashboard)
-        page = urllib.request.urlopen(url, timeout=3).read().decode()
-        m = re.search(r'const __T="([^"]+)"', page)
-        self.assertTrue(m and m.group(1) != "__WEBDASH_TOKEN__", "page did not embed a real token")
-        token = m.group(1)
+        token = webdash._CONTROL_TOKEN
 
         def post(headers):
             req = urllib.request.Request(
@@ -96,7 +112,7 @@ class TestControlToken(unittest.TestCase):
 
         self.assertEqual(post({}), 403, "tokenless control POST was not forbidden")
         self.assertEqual(post({"X-9to5-Token": "wrong"}), 403, "bad token was accepted")
-        self.assertEqual(post({"X-9to5-Token": token}), 200, "valid token was rejected")
+        self.assertEqual(post({"X-9to5-Token": token}), 200, "valid console token was rejected")
 
 
 if __name__ == "__main__":

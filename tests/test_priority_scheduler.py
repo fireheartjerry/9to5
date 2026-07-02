@@ -177,6 +177,38 @@ class TestCancellation(unittest.TestCase):
     def test_cancel_unknown_returns_false(self) -> None:
         self.assertFalse(self.sched.cancel("does-not-exist"))
 
+    def test_cancel_releases_dependents(self) -> None:
+        # B34: A blocks B; cancelling A must release B (never leave it waiting on
+        # a dependency that can never complete).
+        a = self.sched.enqueue("A")
+        self.sched.enqueue("B", depends_on=[a.job_id])
+        self.assertTrue(self.sched.cancel(a.job_id))
+        self.assertEqual(self.sched.queued_count, 0)  # B released, not stuck
+        self.assertIsNone(self.sched.next())          # nothing runnable remains
+
+    def test_cancel_releases_dependents_transitively(self) -> None:
+        a = self.sched.enqueue("A")
+        b = self.sched.enqueue("B", depends_on=[a.job_id])
+        self.sched.enqueue("C", depends_on=[b.job_id])
+        self.sched.cancel(a.job_id)
+        self.assertEqual(self.sched.queued_count, 0)  # B and C released too
+
+
+class TestCompleteHygiene(unittest.TestCase):
+    """complete() ignores unknown ids (B35)."""
+
+    def test_complete_unknown_id_is_noop(self) -> None:
+        sched = WorkflowScheduler(max_concurrent=2)
+        sched.complete("never-enqueued")
+        self.assertEqual(len(sched._completed), 0)  # unknown id not recorded
+
+    def test_complete_known_id_is_recorded(self) -> None:
+        sched = WorkflowScheduler(max_concurrent=2)
+        sched.enqueue("wf", job_id="known")
+        job = sched.next()
+        sched.complete(job.job_id)
+        self.assertIn("known", sched._completed)
+
 
 class TestEdgeCases(unittest.TestCase):
     def test_empty_queue_returns_none(self) -> None:

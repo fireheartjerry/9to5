@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -337,9 +338,26 @@ class OrchestratorControlMixin:
     def _goalText(self, state: TaskState) -> str:
         return orchestrator_run_loop._goalText(state)
 
-    def _worthGptReview(self, output: str) -> bool:
+    def _reviewHashLock(self) -> threading.Lock:
+        lk = getattr(self, "_review_hash_lock", None)
+        if lk is None:
+            lk = self._review_hash_lock = threading.Lock()
+        return lk
+
+    def _reviewHashes(self) -> dict:
+        hs = getattr(self, "_review_hashes", None)
+        if hs is None:
+            hs = self._review_hashes = {}
+        return hs
+
+    def _worthGptReview(self, output: str, sid: "str | None" = None, *, commit: bool = True) -> bool:
         """Cost guard: skip a GPT call on trivially-short or near-duplicate executor output (the
-        adversary fires many times per run; GPT quota is finite). Non-subtask touchpoints bypass."""
+        adversary fires many times per run; GPT quota is finite). Non-subtask touchpoints bypass.
+
+        Dedup is PER-SUBTASK (keyed by ``sid``) under a lock so parallel workers don't race the
+        cursor -- two different subtasks with identical output no longer suppress each other. Pass
+        ``commit=False`` to only test worth and have the caller record the hash via ``_markGptReviewed``
+        AFTER the review actually succeeds, so a FAILED review never suppresses the next identical output."""
         text = (output or "").strip()
         min_chars = config.GEMINI_MIN_OUTPUT_CHARS
         try:
@@ -354,10 +372,22 @@ class OrchestratorControlMixin:
         if len(text) < min_chars:
             return False
         h = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()
-        if h == self._last_review_hash:
-            return False
-        self._last_review_hash = h
+        with self._reviewHashLock():
+            if self._reviewHashes().get(sid) == h:
+                return False
+            if commit:
+                self._reviewHashes()[sid] = h
         return True
+
+    def _markGptReviewed(self, output: str, sid: "str | None" = None) -> None:
+        """Record ``output``'s hash for ``sid`` AFTER a review completes, so a review that raised
+        or failed does not dedup (suppress) the next identical output for that subtask."""
+        text = (output or "").strip()
+        if not text:
+            return
+        h = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()
+        with self._reviewHashLock():
+            self._reviewHashes()[sid] = h
 
     def _consult(self, state: TaskState, review_type: str, title: str, reason: str,
                  content: str, *, worth: bool = True) -> dict:

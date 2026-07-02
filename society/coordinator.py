@@ -89,7 +89,10 @@ class Coordinator:
         messages: list = []
         with ThreadPoolExecutor(max_workers=max(1, parallelism)) as pool:
             futures = {}
-            for st in batch:
+            for i, st in enumerate(batch):
+                if self.budgetExceeded():
+                    self._postBudgetStop(batch[i:])
+                    break
                 role = classifyRole(st, hint=st.get("assigned_role", ""),
                                     work_profile=(self._state.meta or {}).get("work_profile"))
                 worker = WorkerAgent(role, st, self._work_dir, self._blackboard,
@@ -121,6 +124,16 @@ class Coordinator:
             if any(v is False for v in verdicts):
                 contested.append(sid)
         return sorted(c for c in contested if c)
+
+    def _postBudgetStop(self, skipped: list) -> None:
+        """Post one `budget` entry recording the spend breach + skipped subtask ids."""
+        LOG.warning("society budget exceeded (%.4f >= %.4f USD); skipping %d subtask(s)",
+                    self.spent_usd, config.SOCIETY_TOKEN_BUDGET_USD, len(skipped))
+        self._blackboard.append(makeEntry(
+            kind="budget", author="coordinator", to="all",
+            value={"spent_usd": self.spent_usd,
+                   "budget_usd": float(config.SOCIETY_TOKEN_BUDGET_USD),
+                   "skipped": [s.get("subtask_id") for s in skipped]}))
 
     def budgetExceeded(self) -> bool:
         """True once accumulated worker spend breaches SOCIETY_TOKEN_BUDGET_USD."""

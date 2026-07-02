@@ -568,5 +568,22 @@ class TestConcurrentBusEmission(unittest.TestCase):
         self.assertEqual(len(cap.calls), 40)
 
 
+class TestOwnerMentionsSnowflakeType(unittest.TestCase):
+    """B19: allowed_mentions must carry the owner snowflake as a JSON string, not an int
+    (a bare int can exceed JS safe-int range and Discord rejects/mangles it)."""
+
+    def test_owner_mention_is_string(self):
+        from notifications import discord_client
+        with mock.patch.object(config, "DISCORD_HUMAN_USER_ID", "123456789012345678"):
+            am = discord_client._ownerMentions()
+        self.assertEqual(am["users"], ["123456789012345678"])
+        self.assertIsInstance(am["users"][0], str)
+
+    def test_non_numeric_owner_yields_empty(self):
+        from notifications import discord_client
+        with mock.patch.object(config, "DISCORD_HUMAN_USER_ID", ""):
+            self.assertEqual(discord_client._ownerMentions()["users"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

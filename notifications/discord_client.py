@@ -48,7 +48,9 @@ def _authHeadersMultipart() -> dict:
 def _ownerMentions() -> dict:
     """allowed_mentions that can never expand past the configured owner."""
     oid = (config.DISCORD_HUMAN_USER_ID or "").strip()
-    return {"parse": [], "users": [int(oid)] if oid.isdigit() else []}
+    # Discord snowflakes must be JSON strings, not ints (a bare int can exceed JS safe-int range
+    # and Discord rejects/mangles it); keep the numeric string as-is.
+    return {"parse": [], "users": [oid] if oid.isdigit() else []}
 
 
 def _request(method: str, path: str, *, json: Optional[dict] = None,

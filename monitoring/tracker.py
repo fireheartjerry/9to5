@@ -31,7 +31,7 @@ from typing import Optional
 SUCCESS_RATE_MIN: float = 0.90
 MAX_DELAY_SECONDS: float = 300.0
 MAX_RETRIES: int = 3
-CRITICAL_DETECTION_WINDOW_SECS: float = 60.0
+CRITICAL_DETECTION_WINDOW_SECS: float = 120.0
 
 _lock = threading.Lock()
 _records: list[dict] = []
@@ -139,8 +139,18 @@ def _filterRecords(workflow_id: Optional[str]) -> list[dict]:
 
 
 def _refreshAlerts() -> None:
-    """Recompute alert list from current _records. Called under _lock."""
+    """Recompute alert list from current _records. Called under _lock.
+
+    Critical-event late-detection alerts are produced by ``record_critical_event``
+    and are NOT derivable from ``_records``; preserve them so a subsequent
+    ``record_execution`` refresh does not wipe them.
+    """
+    preserved = [
+        a for a in _alerts
+        if a.get("type") == "critical_event_late_detection"
+    ]
     _alerts.clear()
+    _alerts.extend(preserved)
 
     if not _records:
         return

@@ -55,6 +55,54 @@ def _result(spec: dict, *, ok: bool, is_error: bool, stdout: str = "", stderr: s
     }
 
 
+def _execNativeAction(act: dict[str, Any], i: int, app, window, *,
+                      timeout_ms: int, screenshot_dir: Optional[str]) -> tuple:
+    """Execute one UIA action; return (app, window, transcript_line). Raises on failure."""
+    import pywinauto  # type: ignore  -- cached; guaranteed installed past _run_native_actions' guard
+    kind = (act.get("action") or "").lower()
+    from notifications.lane_feed import laneTap
+    laneTap("native", f"{kind}: {str(act.get('app') or act.get('title') or act)[:80]}")
+    if kind == "launch":
+        app = pywinauto.Application(backend="uia").start(act["app"])
+        return app, window, f"launch {act['app']!r}"
+    if kind == "connect":
+        app = pywinauto.Application(backend="uia").connect(title_re=act.get("app", ".*"))
+        return app, window, f"connect to {act.get('app')!r}"
+    if kind == "find":
+        if app is None:
+            raise RuntimeError("no app connected; use 'launch' or 'connect' first")
+        window = app.window(title=act.get("title"), control_type=act.get("control_type"))
+        window.wait("ready", timeout=timeout_ms / 1000)
+        return app, window, f"find {act.get('title')!r} [{act.get('control_type')}]"
+    if kind == "click":
+        ctrl = window.child_window(title=act.get("title"), control_type=act.get("control_type"))
+        ctrl.click_input()
+        return app, window, f"click {act.get('title')!r}"
+    if kind == "type":
+        ctrl = window or app.top_window()
+        ctrl.type_keys(act.get("text", ""), with_spaces=True)
+        return app, window, f"type {repr(act.get('text', ''))[:40]}"
+    if kind == "press":
+        ctrl = window or app.top_window()
+        ctrl.type_keys(act.get("key", ""), with_spaces=True)
+        return app, window, f"press {act.get('key')!r}"
+    if kind == "extract":
+        ctrl = window or app.top_window()
+        return app, window, f"extract:\n{ctrl.window_text()[:2000]}"
+    if kind == "screenshot":
+        name = act.get("path") or f"native-screenshot-{i}.png"
+        sd = screenshot_dir or str(NATIVE_SCREENSHOT_DIR)
+        Path(sd).mkdir(parents=True, exist_ok=True)   # create the target dir before saving
+        path = str(Path(sd) / name)
+        (window or app.top_window()).capture_as_image().save(path)
+        return app, window, f"screenshot -> {path}"
+    if kind == "close":
+        target = app or pywinauto.Application(backend="uia").connect(title_re=act.get("app", ".*"))
+        target.kill()
+        return app, window, f"close {act.get('app')!r}"
+    return app, window, f"(skipped unknown action {kind!r})"
+
+
 def _run_native_actions(actions: list[dict[str, Any]], *,
                         timeout_ms: int = NATIVE_ACTION_TIMEOUT_MS,
                         screenshot_dir: Optional[str] = None) -> str:
@@ -62,9 +110,10 @@ def _run_native_actions(actions: list[dict[str, Any]], *,
     NativeUnavailable if pywinauto is not installed (caller degrades cleanly).
 
     Supported actions: launch, connect, find, click, type, press, extract,
-    screenshot, close. Each transcript line records the action + observable result."""
+    screenshot, close. Each transcript line records the action + observable result.
+    On any action failure the launched app is terminated so no orphan window leaks."""
     try:
-        import pywinauto  # type: ignore
+        import pywinauto  # type: ignore  # noqa: F401
     except Exception as e:  # noqa: BLE001
         raise NativeUnavailable(
             "native layer unavailable: `pip install pywinauto`") from e
@@ -73,53 +122,17 @@ def _run_native_actions(actions: list[dict[str, Any]], *,
     app = None
     window = None
     for i, act in enumerate(actions):
-        kind = (act.get("action") or "").lower()
-        from notifications.lane_feed import laneTap
-        laneTap("native", f"{kind}: {str(act.get('app') or act.get('title') or act)[:80]}")
         try:
-            if kind == "launch":
-                app = pywinauto.Application(backend="uia").start(act["app"])
-                lines.append(f"launch {act['app']!r}")
-            elif kind == "connect":
-                app = pywinauto.Application(backend="uia").connect(title_re=act.get("app", ".*"))
-                lines.append(f"connect to {act.get('app')!r}")
-            elif kind == "find":
-                if app is None:
-                    raise RuntimeError("no app connected; use 'launch' or 'connect' first")
-                window = app.window(title=act.get("title"), control_type=act.get("control_type"))
-                window.wait("ready", timeout=timeout_ms / 1000)
-                lines.append(f"find {act.get('title')!r} [{act.get('control_type')}]")
-            elif kind == "click":
-                ctrl = window.child_window(title=act.get("title"), control_type=act.get("control_type"))
-                ctrl.click_input()
-                lines.append(f"click {act.get('title')!r}")
-            elif kind == "type":
-                ctrl = window or app.top_window()
-                ctrl.type_keys(act.get("text", ""), with_spaces=True)
-                text_preview = repr(act.get("text", ""))[:40]
-                lines.append(f"type {text_preview}")
-            elif kind == "press":
-                ctrl = window or app.top_window()
-                ctrl.type_keys(act.get("key", ""), with_spaces=True)
-                lines.append(f"press {act.get('key')!r}")
-            elif kind == "extract":
-                ctrl = window or app.top_window()
-                text = ctrl.window_text()[:2000]
-                lines.append(f"extract:\n{text}")
-            elif kind == "screenshot":
-                name = act.get("path") or f"native-screenshot-{i}.png"
-                sd = screenshot_dir or str(NATIVE_SCREENSHOT_DIR)
-                path = str(Path(sd) / name)
-                (window or app.top_window()).capture_as_image().save(path)
-                lines.append(f"screenshot -> {path}")
-            elif kind == "close":
-                target = app or pywinauto.Application(backend="uia").connect(title_re=act.get("app", ".*"))
-                target.kill()
-                lines.append(f"close {act.get('app')!r}")
-            else:
-                lines.append(f"(skipped unknown action {kind!r})")
+            app, window, line = _execNativeAction(
+                act, i, app, window, timeout_ms=timeout_ms, screenshot_dir=screenshot_dir)
+            lines.append(line)
         except Exception as e:  # noqa: BLE001
-            lines.append(f"ERROR in action {i} ({kind!r}): {e}")
+            lines.append(f"ERROR in action {i}: {e}")
+            if app is not None:   # terminate the launched app so it does not leak on failure
+                try:
+                    app.kill()
+                except Exception:  # noqa: BLE001
+                    pass
             raise
     return "\n".join(lines)
 

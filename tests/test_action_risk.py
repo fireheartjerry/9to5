@@ -86,6 +86,17 @@ def test_empty_bash_is_unknown():
     assert classifyActionRisk(A(tool_name="Bash", command="   ")) is RiskTier.UNKNOWN
 
 
+# --- B27: fail-closed ordering -- a write signal beats a dry-run marker ---
+@pytest.mark.parametrize("cmd", [
+    "rm foo.txt --dry-run",          # rm is a write verb; --dry-run must NOT downgrade it
+    "git checkout main --dry-run",   # git checkout mutates the tree
+    "mv a b --check",                # mv + a dry-run-ish marker
+    "sed -i 's/a/b/' f.py --dry-run",
+])
+def test_mutating_bash_with_dry_run_marker_stays_mutating(cmd):
+    assert classifyActionRisk(A(command=cmd)) is RiskTier.MUTATING
+
+
 from platform_core.runtime.action_risk import decideAuthorization
 
 
@@ -170,3 +181,38 @@ def test_controlbus_has_action_risk_gate_and_spend_default(tmp_path, monkeypatch
     assert data["autonomy_spent_usd"] == 0.0
     bus.decide("action_risk", "approve")
     assert bus.getDecision("action_risk") == "approve"
+
+
+def test_mutating_bash_with_dry_run_marker_is_not_auto_authorized():
+    # B27 end-to-end: the mutating classification must route to escalation, never auto-authorize.
+    d = D(A(command="rm foo.txt --dry-run"), allowance=1_000_000.0)
+    assert not d.auto_authorize and d.escalate
+    assert d.tier is RiskTier.MUTATING
+
+
+def test_controlbus_clear_takes_locks_and_resets(tmp_path, monkeypatch):
+    # B30: clear() must reset the bus UNDER both locks (via _mutate), not a bare _write that
+    # bypasses the cross-process sidecar and the in-process lock.
+    import contextlib
+    import config
+    from platform_core.runtime import control as controlmod
+    from platform_core.runtime.control import ControlBus
+    monkeypatch.setattr(config, "CONTROL_DIR", tmp_path, raising=False)
+    bus = ControlBus("task-clear")
+    bus.requestAbort()
+    assert bus.isAbort()
+
+    calls: list[str] = []
+    real_lock = controlmod._fileLock
+
+    @contextlib.contextmanager
+    def _spy(target, timeout=5.0):
+        calls.append(str(target))
+        with real_lock(target, timeout) as acquired:
+            yield acquired
+
+    monkeypatch.setattr(controlmod, "_fileLock", _spy)
+    bus.clear()
+    assert calls, "clear() must acquire the cross-process file lock"
+    assert bus.isAbort() is False                 # reset to blank
+    assert bus.load()["autonomy_spent_usd"] == 0.0

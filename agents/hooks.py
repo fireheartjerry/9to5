@@ -38,20 +38,68 @@ except Exception:
 # ---------------------------------------------------------------------------
 # Sub-module imports -- heavy logic lives in focused modules; this file is the
 # thin dispatcher layer that wires hook names to handlers.
+#
+# These top-level imports are ONLY a compatibility facade (callers/tests do
+# `from agents.hooks import selfModificationGuard`). They are wrapped so a broken
+# guard sub-module can never crash the dispatcher at import time. The DISPATCH path
+# re-imports each guard lazily inside main() and, for a BLOCKING guard, fails CLOSED
+# (exit 2) on any import/exec error -- so a defeated guard can never silently allow.
 # ---------------------------------------------------------------------------
-from agents.hooks_destructive import blockDestructive, DESTRUCTIVE_PATTERNS  # noqa: E402,F401
-from agents.hooks_obsidian import writeObsidian  # noqa: E402,F401
-from agents.hooks_selfmod import (  # noqa: E402,F401
-    selfModificationGuard,
-    _classifyPath,
-    _scanDiff,
-    _shouldBlock,
-    _resolveState,
-    _boundarySetFor,
-    _coreLockFor,
-    _envTaskRequested,
-    _bashHitsBoundary,
-)
+try:
+    from agents.hooks_destructive import blockDestructive, DESTRUCTIVE_PATTERNS  # noqa: E402,F401
+except Exception:  # noqa: BLE001
+    blockDestructive = None  # type: ignore[assignment]
+    DESTRUCTIVE_PATTERNS = ()  # type: ignore[assignment]
+try:
+    from agents.hooks_obsidian import writeObsidian  # noqa: E402,F401
+except Exception:  # noqa: BLE001
+    writeObsidian = None  # type: ignore[assignment]
+try:
+    from agents.hooks_selfmod import (  # noqa: E402,F401
+        selfModificationGuard,
+        _classifyPath,
+        _scanDiff,
+        _shouldBlock,
+        _resolveState,
+        _boundarySetFor,
+        _coreLockFor,
+        _envTaskRequested,
+        _bashHitsBoundary,
+    )
+except Exception:  # noqa: BLE001
+    selfModificationGuard = None  # type: ignore[assignment]
+    _classifyPath = _scanDiff = _shouldBlock = _resolveState = None  # type: ignore[assignment]
+    _boundarySetFor = _coreLockFor = _envTaskRequested = _bashHitsBoundary = None  # type: ignore[assignment]
+
+# Hook names that BLOCK a tool call (exit 2). Every other hook is non-blocking (exit 0).
+_BLOCKING_HOOKS = ("block_destructive", "self_modification_guard")
+
+
+def _importBlockingGuard(hook_name):
+    """Import a BLOCKING guard handler lazily. Raises if the sub-module import fails."""
+    if hook_name == "block_destructive":
+        from agents.hooks_destructive import blockDestructive as _fn  # noqa: F811
+    else:
+        from agents.hooks_selfmod import selfModificationGuard as _fn  # noqa: F811
+    return _fn
+
+
+def _runBlockingGuard(hook_name, data):
+    """Run a BLOCKING guard, failing CLOSED (exit 2) on any import or exec error.
+
+    A broken guard import previously left the dispatcher failing OPEN (the tool ran).
+    For a boundary/destructive guard that is unsafe: exit 2 so the tool call is blocked."""
+    try:
+        guard = _importBlockingGuard(hook_name)
+        guard(data)  # the guard itself exits 0 (allow) or 2 (block)
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001
+        try:
+            sys.stderr.write(f"{hook_name}: guard failed to load/execute, failing closed: {e}\n")
+        except Exception:  # noqa: BLE001
+            pass
+        sys.exit(2)
 
 LOG_PATH = r"C:\9to5\logs\hooks.log"
 
@@ -123,8 +171,8 @@ def main():
     hook_name = sys.argv[1] if len(sys.argv) > 1 else ""
     data = _readEvent()
 
-    if hook_name == "block_destructive":
-        blockDestructive(data)
+    if hook_name in _BLOCKING_HOOKS:
+        _runBlockingGuard(hook_name, data)
     elif hook_name == "write_obsidian":
         writeObsidian(data)
     elif hook_name == "discord_notify":
@@ -133,8 +181,6 @@ def main():
         logAll(data)
     elif hook_name in ("log_telemetry", "user_prompt_telemetry", "stop_telemetry"):
         logTelemetry(data)
-    elif hook_name == "self_modification_guard":
-        selfModificationGuard(data)
     else:
         sys.exit(0)
 

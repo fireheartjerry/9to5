@@ -162,6 +162,22 @@ class OrchestratorRunLoopMixin:
                 pass
             raise AbortRun("execution loop guard tripped (livelock)")
 
+    @staticmethod
+    def _reapWorktrees(worktree, cwds: dict, fut_by_sid: dict, handled: set,
+                       *, defer_running: bool) -> None:
+        """Exit (merge=False, never adopt partial work) every entered-but-unhandled worktree. When
+        ``defer_running`` is True, SKIP futures still running so we don't delete a tree a live worker
+        is writing -- those are reaped on a later call once the pool has joined (B3)."""
+        for sid, ctx in cwds.items():
+            if sid in handled:
+                continue
+            if defer_running:
+                fut = fut_by_sid.get(sid)
+                if fut is not None and not fut.done():
+                    continue   # still running -> defer to post-shutdown cleanup
+            worktree.exitWorktree(ctx, merge=False)
+            handled.add(sid)
+
     def _handleParallelBatch(self, state: TaskState, batch: list, architect_doc: str,
                              work_dir: str, bus: "ControlBus", dashboard: "DiscordDashboard",
                              position: int, parallelism: int) -> "tuple[int, AbortRun | None]":
@@ -169,10 +185,12 @@ class OrchestratorRunLoopMixin:
         from platform_core.orchestration import parallel_safety
         from platform_core.runtime import worktree
         isolate = getattr(config, "WORKTREE_ISOLATION_ENABLED", False)
+        futures = {}
+        cwds = {}
+        fut_by_sid: dict[str, object] = {}
+        handled: set[str] = set()   # sids whose worktree exitWorktree already ran
+        abort = None
         with ThreadPoolExecutor(max_workers=parallelism) as pool:
-            futures = {}
-            cwds = {}
-            handled: set[str] = set()   # sids whose worktree exitWorktree already ran
             for st in batch:
                 sid = st["subtask_id"]
                 if isolate:
@@ -185,9 +203,10 @@ class OrchestratorRunLoopMixin:
                     ctx = self._execCwd(state, sid, work_dir)
                 cwds[sid] = ctx
                 position += 1
-                futures[pool.submit(self._executeSubtask, state, st, architect_doc,
-                                    work_dir, bus, dashboard, position, ctx)] = st
-            abort = None
+                fut = pool.submit(self._executeSubtask, state, st, architect_doc,
+                                  work_dir, bus, dashboard, position, ctx)
+                futures[fut] = st
+                fut_by_sid[sid] = fut
             try:
                 for f in as_completed(futures):
                     st = futures[f]
@@ -211,13 +230,14 @@ class OrchestratorRunLoopMixin:
                             handled.add(sid)
             finally:
                 # ABORT/early-exit safety: a `break` on AbortRun skips the per-future finally for
-                # cancelled / not-yet-iterated futures, leaking their ENTERED worktrees + claims.
-                # Exit (merge=False, never adopt partial work) every entered-but-unhandled worktree.
+                # cancelled/not-yet-iterated futures, leaking their ENTERED worktrees + claims. Reap
+                # only DONE ones here; a still-RUNNING future's worktree is DEFERRED to post-shutdown
+                # (below) -- exiting it now would delete a tree a live worker is still writing (B3).
                 if isolate:
-                    for sid, ctx in cwds.items():
-                        if sid not in handled:
-                            worktree.exitWorktree(ctx, merge=False)
-                            handled.add(sid)
+                    self._reapWorktrees(worktree, cwds, fut_by_sid, handled, defer_running=True)
+        # Pool has now fully shut down (running futures joined) -> safe to exit deferred worktrees (B3).
+        if isolate:
+            self._reapWorktrees(worktree, cwds, fut_by_sid, handled, defer_running=False)
         # Close thread-local SQLite connections so they don't accumulate across batches (CB-3).
         try:
             experience.close_pool()
@@ -372,7 +392,10 @@ class OrchestratorRunLoopMixin:
         for add in (adds if isinstance(adds, list) else []):
             if not isinstance(add, dict):
                 continue
-            title = (add.get("title") or "untitled").strip()
+            # The 7B brain sometimes emits a non-string truthy title (int / dict). ``.strip()`` on
+            # that would raise and flip the just-completed subtask to failed, so coerce first.
+            raw = add.get("title")
+            title = (raw if isinstance(raw, str) else "untitled").strip() or "untitled"
             if title.lower() in live_titles:
                 diff.append(f"(skipped duplicate add '{title}')")
                 continue

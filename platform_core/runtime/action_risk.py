@@ -110,14 +110,18 @@ def classifyActionRisk(action: ActionDescriptor) -> RiskTier:
     # 4. Read-only tools.
     if tool in _READ_TOOLS:
         return RiskTier.READ
-    # 5. Bash -- distinguish dry-run / mutating / read; ambiguous-empty -> UNKNOWN.
+    # 5. Bash -- distinguish mutating / dry-run / read; ambiguous-empty -> UNKNOWN.
+    # FAIL-CLOSED ordering: a write signal wins over a dry-run marker, so a mutating
+    # command that merely carries "--dry-run"/"--check" (e.g. "rm foo --dry-run") is
+    # never mis-tagged DRY_RUN and auto-authorized. Dry-run allowance applies only to
+    # genuinely non-mutating commands.
     if tool == "Bash":
         if not cmd.strip():
             return RiskTier.UNKNOWN
-        if _DRY_RUN_RE.search(cmd_low):
-            return RiskTier.DRY_RUN
         if _isWritingBash(cmd, cmd_low):
             return RiskTier.MUTATING
+        if _DRY_RUN_RE.search(cmd_low):
+            return RiskTier.DRY_RUN
         return RiskTier.READ
     # 6. Anything else -- fail-closed.
     return RiskTier.UNKNOWN
