@@ -333,6 +333,38 @@ def _freshRun(args, work_dir: str) -> int:
     return _setupAndRun(args, result, work_dir)
 
 
+def _resolveWorkDir(args) -> "str | int":
+    """Resolve the run's work_dir (clone repo / validate --work-dir / fence a sim-run).
+    Returns the work_dir path, or an int exit code on a resolution error."""
+    if args.repo_ref and not args.repo_url:
+        print("--repo-ref requires --repo-url")
+        return 2
+    if args.repo_url and args.work_dir:
+        print("--repo-url and --work-dir are mutually exclusive")
+        return 2
+    if args.repo_url:
+        try:
+            from platform_core.ops.external_project import cloneRepo
+            args.work_dir = str(cloneRepo(args.repo_url, args.repo_ref))
+            print(f"Cloned repo -> {args.work_dir}")
+        except Exception as e:  # noqa: BLE001
+            print(f"--repo-url clone failed: {e}")
+            return 2
+    # A user-chosen --work-dir must exist (9to5 operates on YOUR project tree, not its own root).
+    if args.work_dir and not Path(args.work_dir).is_dir():
+        print(f"--work-dir does not exist or is not a directory: {args.work_dir}")
+        return 2
+    if getattr(args, "sim_run", False) and not args.work_dir:
+        # A sim-run edits nothing (simulation executor), so keep it OUT of the repo root: an
+        # isolated temp work_dir prevents self-referential detection from creating/committing a
+        # branch. The live surfaces (Discord/web/control) still run — only the work_dir is fenced.
+        import tempfile
+        work_dir = tempfile.mkdtemp(prefix="9to5-simrun-")
+        LOG.info("SIM-RUN work_dir fenced to %s (no self-ref git branch)", work_dir)
+        return work_dir
+    return args.work_dir or str(config.PROJECT_ROOT)
+
+
 def main() -> int:
     # `@9to5 <goal>` chat-style shorthand -> rewrite to `--goal "..." --auto-approve`.
     argv = _applyMentionShorthand(sys.argv[1:])
@@ -371,33 +403,9 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001
             LOG.warning("startup knowledge refresh failed (non-fatal): %s", e)
 
-    if args.repo_ref and not args.repo_url:
-        print("--repo-ref requires --repo-url")
-        return 2
-    if args.repo_url and args.work_dir:
-        print("--repo-url and --work-dir are mutually exclusive")
-        return 2
-    if args.repo_url:
-        try:
-            from platform_core.ops.external_project import cloneRepo
-            args.work_dir = str(cloneRepo(args.repo_url, args.repo_ref))
-            print(f"Cloned repo -> {args.work_dir}")
-        except Exception as e:  # noqa: BLE001
-            print(f"--repo-url clone failed: {e}")
-            return 2
-
-    # A user-chosen --work-dir must exist (9to5 operates on YOUR project tree, not its own root).
-    if args.work_dir and not Path(args.work_dir).is_dir():
-        print(f"--work-dir does not exist or is not a directory: {args.work_dir}")
-        return 2
-    work_dir = args.work_dir or str(config.PROJECT_ROOT)
-    if getattr(args, "sim_run", False) and not args.work_dir:
-        # A sim-run edits nothing (simulation executor), so keep it OUT of the repo root: an
-        # isolated temp work_dir prevents self-referential detection from creating/committing a
-        # branch. The live surfaces (Discord/web/control) still run — only the work_dir is fenced.
-        import tempfile
-        work_dir = tempfile.mkdtemp(prefix="9to5-simrun-")
-        LOG.info("SIM-RUN work_dir fenced to %s (no self-ref git branch)", work_dir)
+    work_dir = _resolveWorkDir(args)
+    if isinstance(work_dir, int):        # a resolution error surfaced as an exit code
+        return work_dir
     if config.WEB_DASHBOARD:
         print(f"Live web dashboard -> http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/  "
               f"(control: terminal / Discord !abort / web buttons)")
