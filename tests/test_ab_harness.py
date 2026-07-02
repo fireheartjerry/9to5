@@ -131,7 +131,6 @@ class TestCompare:
 
     def test_autouse_fixture_also_isolates(self):
         """config.AB_HARNESS_DB_PATH points at tmp so default-path calls are safe."""
-        import config
         # The _isolate_ab_harness_db autouse fixture replaces the real path;
         # compare() with no db_path should be able to run without touching real state.
         result = compare()

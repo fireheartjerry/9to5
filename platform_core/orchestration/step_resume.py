@@ -21,7 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import config
 from memory import experience
@@ -59,7 +59,7 @@ def resumePlan(state, subtask: dict, steps: list[dict]) -> dict:
     for s in steps:
         lines.append(f"- [x] step {s.get('step_idx')}: {s.get('tool')} -- {s.get('summary')}")
     lines.append(f"- [→] step {current_idx}: (resume here)")
-    lines.append(f"- [ ] remaining steps as needed")
+    lines.append("- [ ] remaining steps as needed")
     lines.append("")
     lines.append(_FOOTER)
     block = "\n".join(lines)[:_RESUME_BLOCK_MAX]

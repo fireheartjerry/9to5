@@ -5,7 +5,6 @@ chat is injectable. No writes to the real state/.
 """
 from __future__ import annotations
 
-from pathlib import Path
 
 from human_nature.self_state import get_competence, new_self_state
 from human_nature.consolidation import run_cycle

@@ -118,7 +118,7 @@ def progressLedgerStep(ollama_chat: Callable, goal: str, recent: str) -> Optiona
     """One tiny per-step Progress Ledger call (autogen ORCHESTRATOR_PROGRESS_LEDGER_PROMPT, minus
     next_speaker -- 9to5 is a star topology). Returns the validated 4-key dict, or None."""
     user = f"GOAL:\n{goal}\n\nMOST RECENT OUTCOME:\n{(recent or '')[:2000]}"
-    _obj = lambda v: isinstance(v, dict) and "answer" in v
+    def _obj(v): return isinstance(v, dict) and "answer" in v
     return chatJsonValidated(
         ollama_chat, tl.PROGRESS_LEDGER_PROMPT, user,
         required_keys=["is_request_satisfied", "is_in_loop",

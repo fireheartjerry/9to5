@@ -12,7 +12,6 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from memory.conviction_ledger import track_record
 from human_nature.instinct import maybe_flag
 
 

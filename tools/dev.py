@@ -54,11 +54,11 @@ import size_audit  # noqa: E402
 
 from dev_checks import (  # noqa: E402
     REPO_ROOT, PY, _run,
-    _progress_env,  # re-exported for backward compat (test_dev_commands.py)
+    _progress_env,  # noqa: F401 -- re-exported for backward compat (test_dev_commands.py)
     cmd_lint, cmd_typecheck, cmd_check, cmd_test, cmd_fast, cmd_ci_local,
 )
 from dev_reports import (  # noqa: E402
-    _run_tee,  # re-exported for backward compat (test_dev_commands.py)
+    _run_tee,  # noqa: F401 -- re-exported for backward compat (test_dev_commands.py)
     cmd_slow_report, cmd_heartbeat_test, cmd_context_check,
     cmd_iteration_health, cmd_outline, cmd_where, cmd_watch,
 )

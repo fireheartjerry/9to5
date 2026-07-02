@@ -24,7 +24,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from platform_core.core.contracts import WorkflowDefinition, WorkflowPhase, WorkflowAgent  # noqa: E402
+from platform_core.core.contracts import WorkflowDefinition  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

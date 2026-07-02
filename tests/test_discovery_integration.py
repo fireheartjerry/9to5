@@ -1,6 +1,5 @@
 """Integration: discovery runs before architect in _freshRunPhase."""
 from unittest import mock
-import pytest
 
 
 def _make_minimal_state(goal="improve everything"):

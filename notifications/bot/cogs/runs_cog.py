@@ -18,7 +18,6 @@ from discord.ext import commands as dpy_commands
 
 import config
 from notifications import audit, branding, work_launcher
-from notifications import commands as spine
 from notifications import slash
 from platform_core.orchestration import work_profile as work_profile_mod
 from state.task import TaskState

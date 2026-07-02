@@ -1,6 +1,5 @@
 """App-emoji icon system: render PNGs offline + ensureIcons provisioning logic (monkeypatched
 REST, no network) + graceful empty fallback."""
-import json
 import unittest
 
 import config

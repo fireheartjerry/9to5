@@ -35,8 +35,7 @@ def test_provision_records_host_and_ephemeral_caps():
 def test_wraplauncher_prefixes_ssh():
     with mock.patch.object(config, "EXECUTION_REMOTE_HOST", "box.example"), \
          mock.patch.object(config, "EXECUTION_REMOTE_KIND", "ssh"):
-        env = rm.RemoteEnvironment()
-        h = env.provision.__wrapped__ if hasattr(env.provision, "__wrapped__") else None
+        _env = rm.RemoteEnvironment()
     # build a handle directly to test wrapLauncher in isolation
     from platform_core.execution.environment import EnvHandle
     handle = EnvHandle(work_dir="/remote/work", backend="remote",

@@ -21,7 +21,6 @@ RUN/TEST: python -m pytest tests/test_eval_runner.py
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Callable, Optional
 
 import config

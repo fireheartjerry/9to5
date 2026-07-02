@@ -177,7 +177,6 @@ class DiscordDashboard:
         else:
             verify_txt = "—"
 
-        emoji = _PHASE_EMOJI.get(phase, "")
         paused = m.get("status") == "paused"
         hint = "!resume" if paused else commands.footerHelp()
         return {

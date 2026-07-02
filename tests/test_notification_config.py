@@ -106,7 +106,6 @@ class TestStatusColors(unittest.TestCase):
             color = config.STATUS_COLORS[status]
             red = (color >> 16) & 0xFF
             green = (color >> 8) & 0xFF
-            blue = color & 0xFF
             with self.subTest(status=status):
                 self.assertGreater(red, green, f"{status} should be red-dominant")
 

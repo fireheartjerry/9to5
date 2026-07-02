@@ -11,9 +11,11 @@ class RecordingWorktree:
 
     def enterWorktree(self, state, tag): return f"/wt/{tag}"
     def exitWorktree(self, path, merge=False):
-        self.exited.append((path, merge)); return {"merged": merge}
+        self.exited.append((path, merge))
+        return {"merged": merge}
     def removeWorktree(self, path):
-        self.removed.append(path); return True
+        self.removed.append(path)
+        return True
     def gcOrphans(self, state): return 0
     def isIsolated(self, path): return True
 

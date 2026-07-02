@@ -24,7 +24,6 @@ RUN/TEST: python -m pytest tests/test_trace_replay.py
 """
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
 import sys

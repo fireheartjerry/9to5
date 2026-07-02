@@ -1,4 +1,3 @@
-import pytest
 from agents.discovery.models import Finding, DiscoveryReport
 
 

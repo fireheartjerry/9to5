@@ -21,7 +21,7 @@ class TestConcurrentWrites(unittest.TestCase):
         self._patch.stop()
 
     def test_many_threads_hammering_the_bus_never_raise(self):
-        bus = ControlBus("race-task")
+        _bus = ControlBus("race-task")
         errors: list[Exception] = []
 
         def worker(n: int) -> None:
@@ -29,7 +29,8 @@ class TestConcurrentWrites(unittest.TestCase):
             try:
                 for i in range(40):
                     if n % 3 == 0:
-                        b.requestPause(); b.clearPause()
+                        b.requestPause()
+                        b.clearPause()
                     elif n % 3 == 1:
                         b.pushOp({"op": "add", "title": f"{n}-{i}"})
                     else:

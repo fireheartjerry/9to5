@@ -9,10 +9,10 @@ def test_lanes_report_order_count_and_label():
     bus.emit_raw("brain", "response << ok")
 
     lanes = bus.lanes()
-    ids = [l["id"] for l in lanes]
+    ids = [lane["id"] for lane in lanes]
     assert ids == ["brain", "orchestrator"]  # register_lane created 'brain' first
 
-    brain = next(l for l in lanes if l["id"] == "brain")
+    brain = next(lane for lane in lanes if lane["id"] == "brain")
     assert brain["label"] == "Ollama brain"
     assert brain["line_count"] == 2
     assert brain["idle_s"] >= 0.0

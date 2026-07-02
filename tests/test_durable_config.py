@@ -1,6 +1,5 @@
 # tests/test_durable_config.py
 """Epic 1 durable-execution config flags exist with safe defaults."""
-from unittest import mock
 
 import config
 

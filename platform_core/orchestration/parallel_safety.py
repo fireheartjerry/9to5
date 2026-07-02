@@ -19,7 +19,6 @@ RUN/TEST: python -m pytest tests/test_parallel_safety.py
 """
 from __future__ import annotations
 
-from typing import Any
 
 import config
 

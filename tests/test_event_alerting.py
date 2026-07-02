@@ -132,7 +132,7 @@ class TestThresholdAlerts(unittest.TestCase):
     def test_healthy_success_rate_no_alert(self):
         for _ in range(10):
             monitoring.record_execution("wf-healthy", True, 10.0)
-        with mock.patch("monitoring.alerter._notifyAlert") as mock_notify:
+        with mock.patch("monitoring.alerter._notifyAlert"):
             fired = alerter.checkAndNotify()
         self.assertFalse(any("low_success_rate" in k for k in fired))
 
@@ -145,7 +145,7 @@ class TestThresholdAlerts(unittest.TestCase):
 
     def test_delay_within_threshold_no_alert(self):
         monitoring.record_execution("wf-fast", True, 10.0)
-        with mock.patch("monitoring.alerter._notifyAlert") as mock_notify:
+        with mock.patch("monitoring.alerter._notifyAlert"):
             fired = alerter.checkAndNotify()
         self.assertFalse(any("high_avg_delay" in k for k in fired))
 
@@ -158,7 +158,7 @@ class TestThresholdAlerts(unittest.TestCase):
 
     def test_retries_below_threshold_no_alert(self):
         monitoring.record_execution("wf-ok", True, 5.0, retries=MAX_RETRIES - 1)
-        with mock.patch("monitoring.alerter._notifyAlert") as mock_notify:
+        with mock.patch("monitoring.alerter._notifyAlert"):
             fired = alerter.checkAndNotify()
         self.assertFalse(any("max_retries_exceeded" in k for k in fired))
 

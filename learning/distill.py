@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import config
-from learning import dataset, eval_harness
+from learning import dataset
 from memory import experience
 
 LOG = config.getLogger("sie.distill")

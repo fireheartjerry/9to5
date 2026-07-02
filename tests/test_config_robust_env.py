@@ -31,7 +31,9 @@ class TestEnvHelpers(unittest.TestCase):
 
 class _EnvCtx:
     def __init__(self, k, v): self.k, self.v = k, v
-    def __enter__(self): self._old = os.environ.get(self.k); os.environ[self.k] = self.v
+    def __enter__(self):
+        self._old = os.environ.get(self.k)
+        os.environ[self.k] = self.v
     def __exit__(self, *a):
         if self._old is None:
             os.environ.pop(self.k, None)

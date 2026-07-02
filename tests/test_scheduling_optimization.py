@@ -22,7 +22,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from workflows.scheduler import WorkflowJob, WorkflowScheduler
+from workflows.scheduler import WorkflowScheduler
 
 
 class TestPriorityDispatchMinimizesDelay(unittest.TestCase):
@@ -152,7 +152,7 @@ class TestCancellationAvoidsWastedSlots(unittest.TestCase):
 
     def test_cancelled_job_does_not_occupy_slot(self) -> None:
         bad = self.sched.enqueue("stale")
-        good = self.sched.enqueue("live")
+        self.sched.enqueue("live")
         self.sched.cancel(bad.job_id)
         job = self.sched.next()
         self.assertEqual(job.workflow_name, "live")

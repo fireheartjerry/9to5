@@ -1,7 +1,5 @@
 """Tests for the GPU compute router + GPU-routed training backends."""
-import tempfile
 import unittest
-from pathlib import Path
 from unittest import mock
 
 import config

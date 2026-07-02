@@ -30,7 +30,7 @@ if str(_ROOT) not in sys.path:
 
 import config
 import notifications.audit as audit
-from notifications.bus import NotificationBus, NotificationSurface
+from notifications.bus import NotificationBus
 from notifications.entry import VALID_KINDS, isValid, makeEntry, validate
 
 

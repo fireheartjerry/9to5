@@ -1,6 +1,5 @@
 import json
 from unittest import mock
-import pytest
 
 from agents.discovery import synthesis as syn_mod
 from agents.discovery.models import Finding, DiscoveryReport

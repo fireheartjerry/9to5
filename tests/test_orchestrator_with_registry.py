@@ -18,7 +18,6 @@ from agents.workflow_resolver import resolveWorkflowDefinition  # noqa: E402
 from src.workflow_registry import (  # noqa: E402
     REGISTRY,
     WorkflowRegistry,
-    WorkflowNotFoundError,
 )
 
 

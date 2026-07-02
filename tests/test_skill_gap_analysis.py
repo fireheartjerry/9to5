@@ -3,7 +3,6 @@ import importlib.util
 import io
 import json
 import pathlib
-import sys
 import tempfile
 import unittest
 from collections import Counter
@@ -336,7 +335,6 @@ class TestYamlConfig(unittest.TestCase):
 
     def test_yaml_import_guarded(self):
         """The yaml import must be guarded so ImportError doesn't crash the module."""
-        import importlib
         import builtins
         real_import = builtins.__import__
 

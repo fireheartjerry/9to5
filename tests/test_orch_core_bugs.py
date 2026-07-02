@@ -15,7 +15,6 @@ import threading
 import time
 from unittest import mock
 
-import pytest
 
 import config
 import llm_io

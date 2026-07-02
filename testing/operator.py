@@ -15,7 +15,6 @@ from __future__ import annotations
 import time
 from typing import Callable, Optional
 
-import config
 from platform_core.runtime.control import ControlBus
 from notifications import commands
 from notifications import webdash

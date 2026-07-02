@@ -28,7 +28,6 @@ def test_must_preserve_contract_lists_identifiers():
 import re
 from pathlib import Path
 
-import pytest
 
 
 def _identifier_summary(text):

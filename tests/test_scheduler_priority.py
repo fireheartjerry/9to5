@@ -16,7 +16,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from workflows.scheduler import WorkflowJob, WorkflowScheduler
+from workflows.scheduler import WorkflowScheduler
 
 
 class TestPriorityOrdering(unittest.TestCase):
@@ -139,7 +139,7 @@ class TestDependencies(unittest.TestCase):
         a = self.sched.enqueue("prereq")
         j = self.sched.next()
         self.sched.complete(j.job_id)
-        b = self.sched.enqueue("follower", depends_on=[a.job_id])
+        self.sched.enqueue("follower", depends_on=[a.job_id])
         result = self.sched.next()
         self.assertIsNotNone(result)
         self.assertEqual(result.workflow_name, "follower")
@@ -171,7 +171,7 @@ class TestSlotManagement(unittest.TestCase):
         sched.enqueue("y")
         j1 = sched.next()
         self.assertEqual(sched.running_count, 1)
-        j2 = sched.next()
+        sched.next()
         self.assertEqual(sched.running_count, 2)
         sched.complete(j1.job_id)
         self.assertEqual(sched.running_count, 1)
@@ -187,7 +187,7 @@ class TestCancellation(unittest.TestCase):
     def test_cancelled_job_skipped_by_next(self) -> None:
         sched = WorkflowScheduler(max_concurrent=4)
         bad = sched.enqueue("gone")
-        good = sched.enqueue("keep")
+        sched.enqueue("keep")
         sched.cancel(bad.job_id)
         popped = sched.next()
         self.assertEqual(popped.workflow_name, "keep")

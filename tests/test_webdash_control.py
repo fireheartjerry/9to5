@@ -2,14 +2,12 @@
 import re
 import tempfile
 import unittest
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
 import config
 from platform_core.runtime.control import ControlBus
 from notifications import webdash
-from state.task import TaskState
 
 
 class TestApplyControl(unittest.TestCase):

@@ -29,7 +29,10 @@ if TYPE_CHECKING:
 
 LOG = config.getLogger("orchestrator")
 
-# Epic 8 fabric glue lives in the execution package (keeps this mixin thin); re-export for callers.
+# Epic 8 fabric glue lives in the execution package (keeps this mixin thin). The single-attempt
+# runner that consumes _envHandsKw now lives in execute_attempt_mixin, but this module keeps the
+# re-export so callers/tests importing `execute_mixin._envHandsKw` continue to resolve it.
+from platform_core.execution.wiring import envHandsKw as _envHandsKw  # noqa: E402,F401
 
 
 class OrchestratorExecuteMixin(OrchestratorExecuteAttemptMixin):

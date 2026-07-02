@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from typing import Optional
 
-import config
 from notifications import cv2
 from notifications import theme
 

@@ -70,8 +70,8 @@ class TestDryRun(unittest.TestCase):
         st = TaskState.create("build a calculator", 1.0)
         st.setElaboratedGoal("build a calculator")
         st.save()
-        fail = lambda *a, **k: {"ok": False, "returncode": 1, "stdout": "could not do it",
-                                "is_error": True, "session_id": None}
+        def fail(*a, **k): return {"ok": False, "returncode": 1, "stdout": "could not do it",
+                                   "is_error": True, "session_id": None}
         orch = Orchestrator(brain=simulation.SimBrain(2), obs=simulation.SimObs(),
                             run_claude=fail, replan=simulation.simReplan, review=simulation.simReview)
         summary = orch.runFull(st, work_dir=str(self.work), auto_pr=False, control_mode="watch")

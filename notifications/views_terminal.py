@@ -20,7 +20,6 @@ import discord
 
 from notifications import commands
 from notifications import terminal_ipc
-from notifications.terminal_render import TERM_CUSTOM_IDS   # single source of the ids
 
 
 async def _ack(interaction: "discord.Interaction") -> bool:

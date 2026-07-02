@@ -7,10 +7,8 @@ to point at a temp DB, so tests are hermetic and can run in any order.
 from __future__ import annotations
 
 import sys
-import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 # Ensure the project root is on sys.path so `import config` works when this
 # file is run directly as `python tests/test_memory_subtask_manager.py`.

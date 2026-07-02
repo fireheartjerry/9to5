@@ -16,7 +16,6 @@ import pathlib
 import sys
 import unittest
 from collections import Counter
-from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
 # Load the module under test (filename contains hyphens → importlib required)

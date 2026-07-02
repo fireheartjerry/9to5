@@ -1,11 +1,10 @@
 """Migration test: a pre-existing ledger gains exp_content + subtasks.importance idempotently."""
 import sqlite3
-from pathlib import Path
 
 import pytest
 
 import config
-from memory import experience, experience_schema
+from memory import experience
 
 
 @pytest.fixture()

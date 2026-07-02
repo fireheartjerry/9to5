@@ -15,7 +15,7 @@ def _setup():
     st = TaskState.create("g", 1.0)
     a = st.addSubtask("a", "da")                              # st-001
     b = st.addSubtask("b", "db", depends_on=[a["subtask_id"]])  # st-002 pending dependent
-    c = st.addSubtask("c", "dc", depends_on=[b["subtask_id"]])  # st-003 transitive dependent
+    st.addSubtask("c", "dc", depends_on=[b["subtask_id"]])  # st-003 transitive dependent
     orch = Orchestrator()
     orch.obs = mock.Mock()
     return orch, st, p

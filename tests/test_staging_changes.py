@@ -102,7 +102,7 @@ class TestRetryTaskBehavior(unittest.TestCase):
 
 class TestWorkflowRegistryImports(unittest.TestCase):
     def test_registry_module_imports(self):
-        from src.workflow_registry import WorkflowRegistry, WorkflowNotFoundError, WorkflowValidationError, REGISTRY
+        from src.workflow_registry import WorkflowRegistry, REGISTRY
         self.assertIsInstance(REGISTRY, WorkflowRegistry)
 
     def test_workflow_resolver_imports(self):

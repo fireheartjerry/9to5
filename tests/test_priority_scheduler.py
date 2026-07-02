@@ -124,7 +124,7 @@ class TestSlotAllocation(unittest.TestCase):
         sched.enqueue("y")
         j1 = sched.next()
         self.assertEqual(sched.running_count, 1)
-        j2 = sched.next()
+        sched.next()
         self.assertEqual(sched.running_count, 2)
         sched.complete(j1.job_id)
         self.assertEqual(sched.running_count, 1)
@@ -162,7 +162,7 @@ class TestCancellation(unittest.TestCase):
 
     def test_cancelled_job_skipped_by_next(self) -> None:
         bad = self.sched.enqueue("gone")
-        good = self.sched.enqueue("keep")
+        self.sched.enqueue("keep")
         self.sched.cancel(bad.job_id)
         popped = self.sched.next()
         self.assertEqual(popped.workflow_name, "keep")

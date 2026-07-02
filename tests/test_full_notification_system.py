@@ -9,12 +9,11 @@ Acceptance:   exit code 0 iff all tests pass.
 from __future__ import annotations
 
 import json
-import logging
 import sys
 import tempfile
 import threading
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 

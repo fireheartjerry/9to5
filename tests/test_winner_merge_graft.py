@@ -7,7 +7,8 @@ from platform_core.orchestration import fork_seams as fs
 class SpyOrch:
     def __init__(self): self.remediate_calls = []
     def _remediate(self, state, subtask, architect_doc, exec_cwd, concerns, cancel_check=None):
-        self.remediate_calls.append(concerns); return {"passed": True}
+        self.remediate_calls.append(concerns)
+        return {"passed": True}
 
 
 def _runner_up():

@@ -5,7 +5,6 @@ imports are permitted in psyche_commands.py.
 """
 from __future__ import annotations
 
-import pytest
 
 from human_nature.self_state import new_self_state, set_affect
 from human_nature.character_vector import new_character_vector, TRAITS
