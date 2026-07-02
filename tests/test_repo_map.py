@@ -16,6 +16,8 @@ import sys
 import unittest
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
@@ -138,7 +140,7 @@ class TestLayering(unittest.TestCase):
         self.assertFalse(offenders, f"orchestrator dependencies that back-import orchestrator: {offenders}")
 
 
-@unittest.skipIf(repo_map is None, "tools/repo_map.py not importable")
+@pytest.mark.skipif(repo_map is None, reason="tools/repo_map.py not importable")
 class TestFindTestsRecursive:
     def test_finds_test_in_subdirectory(self, tmp_path, monkeypatch):
         tests_dir = tmp_path / "tests"

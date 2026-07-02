@@ -66,7 +66,7 @@ def _fast_sleep(monkeypatch):
 # Directory placement IS the marker -- no filename-substring magic.
 def pytest_collection_modifyitems(config, items):  # noqa: ARG001 -- pytest hook signature
     for item in items:
-        path = str(getattr(item, "fspath", "")).replace("\\", "/").lower()
+        path = str(item.path).replace("\\", "/").lower()
         if "/tests/slow/" in path:
             item.add_marker(pytest.mark.slow)
             # Slow tests (e.g. 150-iteration fuzz property tests) legitimately exceed the
