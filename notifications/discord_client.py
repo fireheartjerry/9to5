@@ -144,12 +144,15 @@ def _embedLen(embed: dict) -> int:
 
 
 def _clampEmbed(embed: dict) -> dict:
-    """Guarantee a sendable embed: per-field clamp (no oversize field can 400 the whole message),
-    <=25 fields, and a 6000-total budget enforced by shrinking the LARGEST field value first so the
-    dashboard's dynamic tail rows are never silently dropped."""
+    """Guarantee a sendable embed: title + per-field clamp (no oversize part can 400 the whole
+    message), <=25 fields, and a hard 6000-total budget. The budget is enforced by shrinking the
+    largest field VALUE first (dashboard tail rows survive longest), then the largest field NAME,
+    then dropping trailing fields — so a many-long-names embed can never exceed the total limit."""
     if not isinstance(embed, dict):
         return embed
     e = dict(embed)
+    if isinstance(e.get("title"), str):
+        e["title"] = truncate(e["title"], config.DISCORD_MAX_EMBED_TITLE)
     if isinstance(e.get("description"), str):
         e["description"] = truncate(e["description"], config.DISCORD_MAX_EMBED_DESC)
     fields = e.get("fields")
@@ -163,16 +166,32 @@ def _clampEmbed(embed: dict) -> dict:
             nf["value"] = truncate(nf.get("value", ""), config.DISCORD_MAX_FIELD_VALUE) or "—"
             clamped.append(nf)
         e["fields"] = clamped
-        guard = 0
-        while _embedLen(e) > config.DISCORD_EMBED_TOTAL_MAX and guard < 50:
-            guard += 1
-            over = _embedLen(e) - config.DISCORD_EMBED_TOTAL_MAX
-            biggest = max(e["fields"], key=lambda f: len(str(f.get("value", ""))), default=None)
-            if biggest is None or len(str(biggest.get("value", ""))) <= 8:
-                break
-            cur_len = len(str(biggest["value"]))
-            biggest["value"] = truncate(biggest["value"], max(8, cur_len - over - 1))
+        _shrinkEmbedToBudget(e)
     return e
+
+
+def _shrinkEmbedToBudget(e: dict) -> None:
+    """Mutate ``e`` in place until _embedLen(e) <= the total budget: shrink largest value, then
+    largest name, then drop the last field as a final fallback (guaranteed to terminate)."""
+    guard = 0
+    while _embedLen(e) > config.DISCORD_EMBED_TOTAL_MAX and guard < 200:
+        guard += 1
+        over = _embedLen(e) - config.DISCORD_EMBED_TOTAL_MAX
+        fields = e["fields"]
+        val = max(fields, key=lambda f: len(str(f.get("value", ""))), default=None)
+        if val is not None and len(str(val.get("value", ""))) > 8:
+            cur = len(str(val["value"]))
+            val["value"] = truncate(val["value"], max(8, cur - over - 1))
+            continue
+        nm = max(fields, key=lambda f: len(str(f.get("name", ""))), default=None)
+        if nm is not None and len(str(nm.get("name", ""))) > 1:
+            cur = len(str(nm.get("name", "")))
+            nm["name"] = truncate(nm["name"], max(1, cur - over - 1))
+            continue
+        if fields:                       # values + names at floor: drop a trailing field
+            fields.pop()
+            continue
+        break                            # no fields left; title/description already clamped
 
 
 def _cv2TextLen(components) -> int:

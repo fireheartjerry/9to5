@@ -212,20 +212,19 @@ def test_oversized_embed_clamped():
     assert len(clamped["description"]) <= config.DISCORD_MAX_EMBED_DESC
 
 
-def test_embed_clamp_field_name_budget_gap_is_documented():
-    """KNOWN GAP (notifications/discord_client._clampEmbed): the 6000-char total is enforced only by
-    shrinking field VALUES, never field NAMES, so 25 max-length (256-char) names alone total 6400 and
-    the embed stays over budget -- Discord would reject it with HTTP 400. Owned by P3; documented here
-    so the regression is visible. Update this assertion once the clamp also bounds names/title."""
+def test_embed_clamp_field_name_budget_is_enforced():
+    """Regression for the former name-heavy budget gap: _clampEmbed now shrinks field NAMES (and, as a
+    last resort, drops trailing fields) once value-shrinking is exhausted, so even 40 max-length names
+    stay within Discord's 6000-char total instead of 400-ing the whole message."""
     h = _fresh()
-    embed = {"description": "D" * 100,
+    embed = {"title": "T" * 400, "description": "D" * 100,
              "fields": [{"name": "n" * 400, "value": "v" * 10} for _ in range(40)]}
     clamped = h.attemptEmbed(embed)
-    # Per-field + count guarantees DO hold today:
     assert len(clamped["fields"]) <= 25
     assert all(len(f["name"]) <= config.DISCORD_MAX_FIELD_NAME for f in clamped["fields"])
-    # The aggregate budget does NOT hold in this pathological name-heavy case (the gap):
-    assert _dc._embedLen(clamped) > config.DISCORD_EMBED_TOTAL_MAX
+    assert len(clamped["title"]) <= config.DISCORD_MAX_EMBED_TITLE
+    # The aggregate budget now holds even in the pathological name-heavy case:
+    assert _dc._embedLen(clamped) <= config.DISCORD_EMBED_TOTAL_MAX
 
 
 @pytest.mark.parametrize("garbage", [
