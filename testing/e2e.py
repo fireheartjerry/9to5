@@ -15,6 +15,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Optional
 
 import config
@@ -59,6 +60,34 @@ _FORCED = {"WEB_DASHBOARD": False, "DISCORD_DASHBOARD": False,
            "DUAL_LEDGER_PLANNER_ENABLED": False}
 
 
+def _isolateState() -> dict:
+    """Point the state/control/heartbeat tree at a scenario-scoped temp dir (mirrors
+    tests/conftest._isolate_state -- this harness runs OUTSIDE pytest, so without it every
+    scenario wrote task files into the REAL state/tasks, and the self-modification guard's
+    loadLatest() fallback then enforced a finished e2e scenario's universe on the next
+    interactive session). Returns the {attr: saved_value} map for restore."""
+    from platform_core.runtime import control_store
+    base = Path(tempfile.mkdtemp(prefix="9to5-e2e-state-"))
+    saved = {}
+    for attr, sub in (("STATE_DIR", "state_tasks"), ("CONTROL_DIR", "state_control"),
+                      ("HEARTBEAT_DIR", "state_heartbeats"), ("LAUNCH_DIR", "state_launch"),
+                      ("IPC_DIR", "state_ipc")):
+        saved[attr] = getattr(config, attr)
+        d = base / sub
+        d.mkdir(parents=True, exist_ok=True)
+        setattr(config, attr, d)
+    saved["_DB_OVERRIDE"] = getattr(control_store, "_DB_OVERRIDE", None)
+    control_store._DB_OVERRIDE = base / "control.db"
+    return saved
+
+
+def _restoreState(saved: dict) -> None:
+    from platform_core.runtime import control_store
+    control_store._DB_OVERRIDE = saved.pop("_DB_OVERRIDE", None)
+    for attr, val in saved.items():
+        setattr(config, attr, val)
+
+
 def runScenario(name: str, goal: str, script: Callable[[VirtualOperator], None], *,
                 expect_status: str = "done", mode: str = "gated", n_subtasks: int = 2,
                 surface: str = "web", timeout: float = 15.0, review=None,
@@ -66,6 +95,7 @@ def runScenario(name: str, goal: str, script: Callable[[VirtualOperator], None],
     saved = {k: getattr(config, k) for k in _FORCED}
     for k, v in _FORCED.items():
         setattr(config, k, v)
+    saved_state = _isolateState()
     # WEB_DASHBOARD / CLAUDE_DOC_FETCH are run-scoped flags (R12): platform_core readers
     # (e.g. knowledge_refresh) resolve them via settings.runFlags(), which a shadow on the
     # root config module does not reach -- force + restore the flag object too.
@@ -110,6 +140,7 @@ def runScenario(name: str, goal: str, script: Callable[[VirtualOperator], None],
                               err or box.get("error"), thread.is_alive(), round(time.time() - t0, 2),
                               box.get("summary") or {})
     finally:
+        _restoreState(saved_state)
         for k, v in saved.items():
             setattr(config, k, v)
         for k, v in saved_flags.items():
@@ -191,6 +222,14 @@ def buildSuite() -> list:
 
 
 def runSuite() -> list:
+    # Pre-warm the one-time per-process work (offline capabilities build) OUTSIDE any
+    # scenario, so scenario 1 doesn't spend most of its 15s operator budget on it on a
+    # cold runner. Best-effort: a failure here surfaces in the scenario itself.
+    try:
+        import knowledge
+        knowledge.ensureCapabilities()
+    except Exception:  # noqa: BLE001
+        pass
     results = []
     for _name, runner in buildSuite():
         results.append(runner())
