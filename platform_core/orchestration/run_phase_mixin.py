@@ -20,7 +20,7 @@ from platform_core.orchestration.brain_io import _resultText
 from platform_core.orchestration.knowledge_refresh import refreshClaudeKnowledge
 from platform_core.orchestration.run_phase_surface_mixin import OrchestratorRunPhaseSurfaceMixin
 from platform_core.orchestration.time_utils import _elapsedSince, _fmtElapsed
-from state.task import TaskState, nowIso
+from state.task import TaskState
 
 if TYPE_CHECKING:
     from platform_core.runtime.control import ControlBus

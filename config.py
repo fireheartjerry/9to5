@@ -1,6 +1,6 @@
 """9TO5 -- central configuration.
 
-Loads environment from ``C:\9to5\.env`` and exposes typed, ALL_CAPS
+Loads environment from ``C:\\9to5\\.env`` and exposes typed, ALL_CAPS
 constants plus a few helper functions (camelCase). Nothing here hardcodes a
 secret or path; every value originates from the ``.env`` file.
 
@@ -62,7 +62,7 @@ from platform_core.app_config.llm import _SIE_BOUNDS  # noqa: E402
 
 # _envInt / _envFloat are private helpers tested directly via ``config._envInt``
 # in test_config_robust_env.py -- import them explicitly so they remain accessible.
-from platform_core.app_config.llm import _envInt, _envFloat  # noqa: E402
+from platform_core.app_config.llm import _envInt, _envFloat  # noqa: E402,F401  (re-exported as config._envInt)
 
 # Pull in the public names that are referenced by the functions below but
 # are defined in sub-modules (the star imports put them in this module's
@@ -134,11 +134,11 @@ _load_overrides()
 def validateEnv() -> list[str]:
     """Return the names of required-but-missing environment values."""
     missing: list[str] = []
-    if not OBSIDIAN_API_KEY:  # type: ignore[name-defined]  # re-exported from config_llm
+    if not OBSIDIAN_API_KEY:  # type: ignore[name-defined]  # noqa: F405  (re-exported from app_config.llm via *)
         missing.append("OBSIDIAN_API_KEY")
-    if not DISCORD_BOT_TOKEN:  # type: ignore[name-defined]  # re-exported from config_discord
+    if not DISCORD_BOT_TOKEN:  # type: ignore[name-defined]  # noqa: F405  (re-exported from app_config.discord via *)
         missing.append("DISCORD_BOT_TOKEN")
-    if not DISCORD_CHANNEL_ID:  # type: ignore[name-defined]  # re-exported from config_discord
+    if not DISCORD_CHANNEL_ID:  # type: ignore[name-defined]  # noqa: F405  (re-exported from app_config.discord via *)
         missing.append("DISCORD_CHANNEL_ID")
     return missing
 
@@ -156,7 +156,7 @@ def _configureLogging() -> None:
         return
     # Honor NINE_TO_FIVE_LOG_DIR so tests (and alternate deploys) can redirect the FILE log away
     # from the real logs/9to5.log; fall back to the configured LOG_PATH when unset.
-    log_dir = Path(os.getenv("NINE_TO_FIVE_LOG_DIR") or LOG_PATH)  # type: ignore[name-defined]  # LOG_PATH from config_paths
+    log_dir = Path(os.getenv("NINE_TO_FIVE_LOG_DIR") or LOG_PATH)  # type: ignore[name-defined]  # noqa: F405  (LOG_PATH from app_config.paths via *)
     log_dir.mkdir(parents=True, exist_ok=True)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     base = logging.getLogger("9to5")

@@ -371,7 +371,6 @@ def run_maintenance_async(**kwargs):
 
 def _test_pr_consolidate() -> None:
     """Acceptance test: seed a temp DB, run pr_consolidate, assert invariants."""
-    import sys
     import tempfile
 
     tmp = Path(tempfile.mktemp(suffix="_sie_test.db"))

@@ -1,6 +1,6 @@
 """9TO5 deterministic hook dispatcher.
 
-Claude Code invokes this as:  python agents\hooks.py <hook_name>
+Claude Code invokes this as:  python agents\\hooks.py <hook_name>
 with a JSON event object piped on STDIN.
 
 This file MUST be robust: it NEVER crashes Claude Code. Every handler is wrapped
@@ -20,7 +20,6 @@ RUN/TEST: python -m pytest tests/test_hooks_action_risk_parity.py tests/test_hoo
 
 import sys
 import json
-import os
 
 # Make "import config" (and other project modules) work regardless of cwd.
 # Derive the repo root from THIS file's location so hooks always adds ITS OWN tree,

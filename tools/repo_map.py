@@ -346,7 +346,12 @@ def splice_header(src: str, header: str) -> Optional[str]:
     lines = src.splitlines(keepends=True)
     start = sum(len(lines[i]) for i in range(node.lineno - 1)) + node.col_offset
     end = sum(len(lines[i]) for i in range(node.end_lineno - 1)) + node.end_col_offset
-    new_literal = '"""' + new_content + '"""'
+    # Escape backslashes so Windows paths in prose/RUN-TEST lines (e.g. venv\Scripts, C:\9to5)
+    # do not become invalid escape sequences (W605) in the emitted non-raw docstring. This is
+    # value-preserving: ast.get_docstring unescapes them back to single backslashes on re-read,
+    # so header extraction and the drift check stay byte-stable across regenerations.
+    literal_body = new_content.replace("\\", "\\\\")
+    new_literal = '"""' + literal_body + '"""'
     return src[:start] + new_literal + src[end:]
 
 

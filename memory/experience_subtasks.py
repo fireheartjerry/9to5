@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import config
-from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _j, _nowIso
+from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _j
 
 
 def _subtask_params(run_id: str, st: dict[str, Any]) -> dict[str, Any]:

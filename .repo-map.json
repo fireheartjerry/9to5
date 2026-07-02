@@ -750,28 +750,28 @@
           "kind": "function",
           "signature": "(data)",
           "summary": "Notification: forward the message to Discord as a compact embed.",
-          "lineno": 119
+          "lineno": 118
         },
         {
           "name": "logAll",
           "kind": "function",
           "signature": "(data)",
           "summary": "PostToolUse / any: append one JSON line {time, tool_name} to the log.",
-          "lineno": 136
+          "lineno": 135
         },
         {
           "name": "logTelemetry",
           "kind": "function",
           "signature": "(data)",
           "summary": "Any Claude hook: append compact non-blocking iteration telemetry.",
-          "lineno": 156
+          "lineno": 155
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "()",
           "summary": "Dispatch to the requested handler based on argv[1].",
-          "lineno": 169
+          "lineno": 168
         }
       ],
       "depends_on": [
@@ -4459,7 +4459,7 @@
           "kind": "function",
           "signature": "() -> int",
           "summary": "",
-          "lineno": 314
+          "lineno": 317
         }
       ],
       "depends_on": [
@@ -9960,8 +9960,7 @@
         "tests/test_resume_wiring.py"
       ],
       "callers": [
-        "platform_core.orchestration.execute_attempt_mixin",
-        "platform_core.orchestration.execute_mixin"
+        "platform_core.orchestration.execute_attempt_mixin"
       ]
     },
     "platform_core.knowledge_base": {
@@ -10922,7 +10921,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment.",
-          "lineno": 36
+          "lineno": 35
         }
       ],
       "depends_on": [
@@ -10933,7 +10932,6 @@
         "notifications.dashboard",
         "notifications.discord_bot",
         "platform_core.execution",
-        "platform_core.execution.wiring",
         "platform_core.orchestration",
         "platform_core.orchestration.execute_attempt_mixin",
         "platform_core.orchestration.self_ref_gate",
@@ -11251,7 +11249,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles subtask plan authoring, invocation spec construction, and SIE authoring context.",
-          "lineno": 39
+          "lineno": 37
         }
       ],
       "depends_on": [
@@ -11263,8 +11261,7 @@
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.plan_spec_mixin",
         "platform_core.orchestration.run_loop",
-        "platform_core.orchestration.subtask",
-        "state.task"
+        "platform_core.orchestration.subtask"
       ],
       "side_effects": [
         "unannotated"
@@ -12768,21 +12765,21 @@
           "kind": "function",
           "signature": "(work_dir: str) -> list[str]",
           "summary": "Core protected files with uncommitted changes in ``work_dir`` (or []).",
-          "lineno": 38
+          "lineno": 37
         },
         {
           "name": "revert_core",
           "kind": "function",
           "signature": "(work_dir: str, files: list[str]) -> None",
           "summary": "Revert the given core files to HEAD (discard the breaking self-edit).",
-          "lineno": 68
+          "lineno": 67
         },
         {
           "name": "safety_gate",
           "kind": "function",
           "signature": "(work_dir: str, *, is_self_referential: bool, test_runner: Optional[Callable[[str], tuple[bool, str]]]=None, code_diverged: bool=False) -> dict[str, Any]",
           "summary": "Run the post-run core-change safety gate",
-          "lineno": 101
+          "lineno": 100
         }
       ],
       "depends_on": [
@@ -13149,7 +13146,6 @@
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.knowledge_refresh",
         "platform_core.orchestration.llm_mixin",
-        "platform_core.orchestration.plan_mixin",
         "platform_core.orchestration.plan_spec_mixin",
         "platform_core.orchestration.review_mixin",
         "platform_core.orchestration.run_loop_mixin",
@@ -13788,14 +13784,14 @@
           "kind": "function",
           "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 354
+          "lineno": 359
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: Optional[list[str]]=None) -> int",
           "summary": "",
-          "lineno": 367
+          "lineno": 372
         }
       ],
       "depends_on": [],

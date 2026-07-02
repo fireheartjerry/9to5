@@ -1,11 +1,11 @@
 """9TO5 entrypoint -- Step 0 / Step 0.5 + launch the autonomous run.
 
 Usage:
-    venv\Scripts\python main.py --goal "..." --hours 1
-    venv\Scripts\python main.py --goal "..." --hours 1 --auto-approve
-    venv\Scripts\python main.py --goal "..." --mode gated --parallel 2
-    venv\Scripts\python main.py --resume <task_id>
-    venv\Scripts\python main.py                                   # prompts for goal
+    venv\\Scripts\\python main.py --goal "..." --hours 1
+    venv\\Scripts\\python main.py --goal "..." --hours 1 --auto-approve
+    venv\\Scripts\\python main.py --goal "..." --mode gated --parallel 2
+    venv\\Scripts\\python main.py --resume <task_id>
+    venv\\Scripts\\python main.py                                   # prompts for goal
 
 The launching terminal is itself a control console (mirrors Discord): type
 abort | pause | resume | skip <id> | add <text> | approve | reject | status.
@@ -68,11 +68,14 @@ def _startTerminalControl(task_id: str) -> threading.Thread:
             low = cmd.lower().lstrip("!")
             try:
                 if low in ("abort", "stop", "quit"):
-                    bus.requestAbort(); print("[ctl] abort requested", flush=True)
+                    bus.requestAbort()
+                    print("[ctl] abort requested", flush=True)
                 elif low == "pause":
-                    bus.requestPause(); print("[ctl] paused", flush=True)
+                    bus.requestPause()
+                    print("[ctl] paused", flush=True)
                 elif low == "resume":
-                    bus.clearPause(); print("[ctl] resumed", flush=True)
+                    bus.clearPause()
+                    print("[ctl] resumed", flush=True)
                 elif low in ("approve", "reject"):
                     gate = bus.getPendingGate()
                     if gate:
