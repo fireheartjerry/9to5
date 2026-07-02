@@ -8,7 +8,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-_spec = importlib.util.spec_from_file_location("trace_replay_cli", _ROOT / "agents" / "trace-replay.py")
+_spec = importlib.util.spec_from_file_location("trace_replay_cli", _ROOT / "agents" / "trace_replay_cli.py")
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 

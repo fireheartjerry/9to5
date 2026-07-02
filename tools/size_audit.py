@@ -103,9 +103,16 @@ def _print_function_buckets(functions: list[dict]) -> None:
 
 def main(args: list[str]) -> int:
     files, functions = collect()
+    violations = [r for r in files if r["bucket"] == "must_split"]
+    violations += [r for r in functions if r["bucket"] == "must_split"]
     if "--json" in args:
         print(json.dumps({"files": files, "functions": functions}, indent=2))
-        return 0
+        return 1 if violations else 0
     _print_file_buckets(files)
     _print_function_buckets(functions)
-    return 0
+    return 1 if violations else 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main(sys.argv[1:]))

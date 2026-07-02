@@ -7,7 +7,7 @@ Covers:
   - buildStepSpec()      (enhancement)
 
   workflow:
-  - runWorkflow()        (subprocess mocked)
+  - runWorkflow()        (tracing mocked; replay runs in-process)
   - getDecisionPoints()  (enhancement)
 """
 from __future__ import annotations
@@ -37,31 +37,34 @@ _REQUIRED_SPEC_KEYS = frozenset({
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _make_proc(stdout: str, returncode: int = 0, stderr: str = "") -> mock.MagicMock:
-    proc = mock.MagicMock()
-    proc.returncode = returncode
-    proc.stdout = stdout
-    proc.stderr = stderr
-    return proc
+def _ev(event: str, subtask: str, second: int) -> dict:
+    return {
+        "ts": f"2026-01-01T00:00:{second:02d}+00:00",
+        "run_id": "r1",
+        "subtask_id": subtask,
+        "event": event,
+    }
 
 
-_GOOD_JSON = json.dumps({
-    "run_id": "run_good",
-    "total_events": 8,
-    "divergence_count": 2,
-    "high_activity_count": 1,
-    "parallel_moments": 0,
-    "divergences": [
-        {
-            "offset": "T+1.00s",
-            "event": "executor_failed",
-            "subtask": "st-001",
-            "kind": "FAIL",
-            "fields": "exit_code='1'",
-            "ts": 1000.0,
-        }
-    ],
-})
+# 8 events, 2 divergences (both FAIL), no high-activity subtask, no parallel moments.
+_GOOD_EVENTS: list = [
+    _ev("run_started", "st-001", 0),
+    _ev("executor_failed", "st-001", 1),
+    _ev("verification_failed", "st-001", 2),
+    _ev("verify_passed", "st-001", 3),
+    _ev("step_started", "st-002", 4),
+    _ev("step_finished", "st-002", 5),
+    _ev("verify_passed", "st-002", 6),
+    _ev("run_completed", "st-002", 7),
+]
+
+
+def _patch_tracing(events=_GOOD_EVENTS, recent=("r1",)):
+    """Patch both tracing seams used by the in-process replay."""
+    return (
+        mock.patch.object(tr.tracing, "recentRunIds", return_value=list(recent)),
+        mock.patch.object(tr.tracing, "readEvents", return_value=events),
+    )
 
 
 # ── DEFAULT_INVOCATION_SPEC ────────────────────────────────────────────────────
@@ -221,46 +224,38 @@ class TestBuildStepSpec(unittest.TestCase):
         self.assertEqual(step["_meta"]["mode"], "step")
 
 
-# ── runWorkflow (mocked subprocess) ──────────────────────────────────────────
+# ── runWorkflow (in-process replay, tracing mocked) ──────────────────────────
 
 class TestRunWorkflow(unittest.TestCase):
 
+    def _run(self, events=_GOOD_EVENTS, recent=("r1",), **kw) -> dict:
+        p_recent, p_read = _patch_tracing(events, recent)
+        with p_recent, p_read:
+            return tr.runWorkflow(**kw)
+
     def test_ok_true_on_success(self):
-        with mock.patch.object(tr.tracing, "recentRunIds", return_value=["r1"]), \
-             mock.patch("subprocess.run", return_value=_make_proc(_GOOD_JSON)):
-            result = tr.runWorkflow()
-        self.assertTrue(result["ok"])
+        self.assertTrue(self._run()["ok"])
 
-    def test_divergence_count_parsed(self):
-        with mock.patch.object(tr.tracing, "recentRunIds", return_value=["r1"]), \
-             mock.patch("subprocess.run", return_value=_make_proc(_GOOD_JSON)):
-            result = tr.runWorkflow()
-        self.assertEqual(result["divergence_count"], 2)
+    def test_divergence_count_computed(self):
+        self.assertEqual(self._run()["divergence_count"], 2)
 
-    def test_high_activity_count_parsed(self):
-        with mock.patch.object(tr.tracing, "recentRunIds", return_value=["r1"]), \
-             mock.patch("subprocess.run", return_value=_make_proc(_GOOD_JSON)):
-            result = tr.runWorkflow()
+    def test_high_activity_count_computed(self):
+        # 12 events in one subtask exceeds the fallback threshold of 10.
+        # No calibration runs (recent=()) so the fallback threshold applies.
+        busy = [_ev("step_started", "st-busy", i) for i in range(12)]
+        result = self._run(events=busy, recent=(), run_id="r1")
         self.assertEqual(result["high_activity_count"], 1)
 
-    def test_total_events_parsed(self):
-        with mock.patch.object(tr.tracing, "recentRunIds", return_value=["r1"]), \
-             mock.patch("subprocess.run", return_value=_make_proc(_GOOD_JSON)):
-            result = tr.runWorkflow()
-        self.assertEqual(result["total_events"], 8)
+    def test_total_events_computed(self):
+        self.assertEqual(self._run()["total_events"], 8)
 
-    def test_divergences_list_parsed(self):
-        with mock.patch.object(tr.tracing, "recentRunIds", return_value=["r1"]), \
-             mock.patch("subprocess.run", return_value=_make_proc(_GOOD_JSON)):
-            result = tr.runWorkflow()
+    def test_divergences_list_computed(self):
+        result = self._run()
         self.assertIsInstance(result["divergences"], list)
-        self.assertEqual(len(result["divergences"]), 1)
+        self.assertEqual(len(result["divergences"]), 2)
 
     def test_error_is_none_on_success(self):
-        with mock.patch.object(tr.tracing, "recentRunIds", return_value=["r1"]), \
-             mock.patch("subprocess.run", return_value=_make_proc(_GOOD_JSON)):
-            result = tr.runWorkflow()
-        self.assertIsNone(result["error"])
+        self.assertIsNone(self._run()["error"])
 
     def test_no_traces_returns_no_traces_error(self):
         with mock.patch.object(tr.tracing, "recentRunIds", return_value=[]):
@@ -273,96 +268,75 @@ class TestRunWorkflow(unittest.TestCase):
             result = tr.runWorkflow()
         self.assertEqual(result["divergence_count"], 0)
 
-    def test_subprocess_nonzero_exit_sets_ok_false(self):
-        proc = _make_proc("", returncode=1, stderr="some error")
+    def test_read_error_sets_ok_false(self):
         with mock.patch.object(tr.tracing, "recentRunIds", return_value=["r1"]), \
-             mock.patch("subprocess.run", return_value=proc):
+             mock.patch.object(tr.tracing, "readEvents", side_effect=OSError("some error")):
             result = tr.runWorkflow()
         self.assertFalse(result["ok"])
         self.assertIsNotNone(result["error"])
 
-    def test_timeout_sets_ok_false(self):
-        import subprocess as sp
-        with mock.patch.object(tr.tracing, "recentRunIds", return_value=["r1"]), \
-             mock.patch("subprocess.run", side_effect=sp.TimeoutExpired(cmd=[], timeout=60)):
-            result = tr.runWorkflow()
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["error"], "timeout")
-
-    def test_json_parse_error_sets_ok_false(self):
-        proc = _make_proc("not valid json at all")
-        with mock.patch.object(tr.tracing, "recentRunIds", return_value=["r1"]), \
-             mock.patch("subprocess.run", return_value=proc):
-            result = tr.runWorkflow()
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["error"], "json_parse_error")
-
-    def test_json_after_log_lines_parsed(self):
-        stdout_with_preamble = "INFO loading trace\nDEBUG calibrating\n" + _GOOD_JSON
-        proc = _make_proc(stdout_with_preamble)
-        with mock.patch.object(tr.tracing, "recentRunIds", return_value=["r1"]), \
-             mock.patch("subprocess.run", return_value=proc):
-            result = tr.runWorkflow()
+    def test_malformed_events_do_not_crash(self):
+        weird = [{"event": "verify_passed"}, {"ts": "not-a-ts", "event": "x"}, {}]
+        result = self._run(events=weird)
         self.assertTrue(result["ok"])
-        self.assertEqual(result["divergence_count"], 2)
+        self.assertEqual(result["total_events"], 3)
 
     def test_explicit_run_id_skips_recent_check(self):
-        with mock.patch.object(tr.tracing, "recentRunIds", return_value=[]), \
-             mock.patch("subprocess.run", return_value=_make_proc(_GOOD_JSON)):
-            result = tr.runWorkflow(run_id="explicit_run")
+        result = self._run(recent=(), run_id="explicit_run")
         self.assertTrue(result["ok"])
+        self.assertEqual(result["run_id"], "explicit_run")
 
     def test_result_has_raw_key(self):
-        with mock.patch.object(tr.tracing, "recentRunIds", return_value=["r1"]), \
-             mock.patch("subprocess.run", return_value=_make_proc(_GOOD_JSON)):
-            result = tr.runWorkflow()
+        result = self._run()
         self.assertIn("raw", result)
+        self.assertEqual(json.loads(result["raw"])["divergence_count"], 2)
 
-    def test_parallel_moments_parsed(self):
-        payload = dict(json.loads(_GOOD_JSON))
-        payload["parallel_moments"] = 3
-        with mock.patch.object(tr.tracing, "recentRunIds", return_value=["r1"]), \
-             mock.patch("subprocess.run", return_value=_make_proc(json.dumps(payload))):
-            result = tr.runWorkflow()
-        self.assertEqual(result["parallel_moments"], 3)
+    def test_parallel_moments_computed(self):
+        # Two subtasks emitting at the same timestamp -> one parallel moment.
+        events = [
+            _ev("step_started", "st-A", 1),
+            _ev("step_started", "st-B", 1),
+            _ev("verify_passed", "st-A", 2),
+        ]
+        result = self._run(events=events)
+        self.assertEqual(result["parallel_moments"], 1)
 
 
 # ── getDecisionPoints (enhancement) ──────────────────────────────────────────
 
 class TestGetDecisionPoints(unittest.TestCase):
 
-    def _run_with_good_json(self, **kwargs):
-        with mock.patch.object(tr.tracing, "recentRunIds", return_value=["r1"]), \
-             mock.patch("subprocess.run", return_value=_make_proc(_GOOD_JSON)):
+    def _run_with_good_events(self, **kwargs):
+        p_recent, p_read = _patch_tracing()
+        with p_recent, p_read:
             return tr.getDecisionPoints(**kwargs)
 
     def test_ok_true_on_success(self):
-        result = self._run_with_good_json()
+        result = self._run_with_good_events()
         self.assertTrue(result["ok"])
 
     def test_decision_points_key_present(self):
-        result = self._run_with_good_json()
+        result = self._run_with_good_events()
         self.assertIn("decision_points", result)
 
     def test_decision_points_is_list(self):
-        result = self._run_with_good_json()
+        result = self._run_with_good_events()
         self.assertIsInstance(result["decision_points"], list)
 
     def test_decision_points_matches_divergences(self):
-        result = self._run_with_good_json()
-        raw = json.loads(_GOOD_JSON)
-        self.assertEqual(len(result["decision_points"]), len(raw["divergences"]))
+        result = self._run_with_good_events()
+        self.assertEqual(len(result["decision_points"]), 2)
 
     def test_total_events_propagated(self):
-        result = self._run_with_good_json()
+        result = self._run_with_good_events()
         self.assertEqual(result["total_events"], 8)
 
     def test_run_id_propagated(self):
-        result = self._run_with_good_json()
-        self.assertEqual(result["run_id"], "run_good")
+        result = self._run_with_good_events()
+        self.assertEqual(result["run_id"], "r1")
 
     def test_error_none_on_success(self):
-        result = self._run_with_good_json()
+        result = self._run_with_good_events()
         self.assertIsNone(result["error"])
 
     def test_no_traces_returns_empty_decision_points(self):
@@ -380,36 +354,34 @@ class TestGetDecisionPoints(unittest.TestCase):
             result = tr.getDecisionPoints()
         self.assertEqual(result["error"], "no_traces")
 
-    def test_subprocess_failure_propagates(self):
-        proc = _make_proc("", returncode=1, stderr="kaboom")
+    def test_read_failure_propagates(self):
         with mock.patch.object(tr.tracing, "recentRunIds", return_value=["r1"]), \
-             mock.patch("subprocess.run", return_value=proc):
+             mock.patch.object(tr.tracing, "readEvents", side_effect=OSError("kaboom")):
             result = tr.getDecisionPoints()
         self.assertFalse(result["ok"])
         self.assertIsNotNone(result["error"])
 
     def test_decision_points_entry_has_kind(self):
-        result = self._run_with_good_json()
+        result = self._run_with_good_events()
         for dp in result["decision_points"]:
             with self.subTest(dp=dp):
                 self.assertIn("kind", dp)
 
     def test_decision_points_entry_has_event(self):
-        result = self._run_with_good_json()
+        result = self._run_with_good_events()
         for dp in result["decision_points"]:
             with self.subTest(dp=dp):
                 self.assertIn("event", dp)
 
     def test_explicit_run_id_forwarded(self):
-        with mock.patch.object(tr.tracing, "recentRunIds", return_value=[]), \
-             mock.patch("subprocess.run", return_value=_make_proc(_GOOD_JSON)):
-            result = tr.getDecisionPoints(run_id="explicit_dp")
+        result = self._run_with_good_events(run_id="explicit_dp")
         self.assertTrue(result["ok"])
+        self.assertEqual(result["run_id"], "explicit_dp")
 
     def test_limit_param_accepted(self):
-        result = self._run_with_good_json(limit=3)
+        result = self._run_with_good_events(limit=3)
         self.assertIn("decision_points", result)
 
     def test_calibrate_limit_param_accepted(self):
-        result = self._run_with_good_json(calibrate_limit=5)
+        result = self._run_with_good_events(calibrate_limit=5)
         self.assertIn("decision_points", result)

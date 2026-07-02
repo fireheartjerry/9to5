@@ -1,9 +1,9 @@
 # tests/test_society_coordinator.py
-"""Coordinator: facts post, disjoint batch seam, parallel spawn, collect, contest detect."""
+"""Coordinator: disjoint batch seam, parallel spawn, collect, budget gate, bus mirror."""
 import threading
 
-from society.blackboard import Blackboard
-from society.coordinator import Coordinator
+from society.blackboard import Blackboard, makeEntry
+from society.coordinator import Coordinator, busMirror
 from state.task import TaskState
 
 
@@ -12,15 +12,6 @@ def _state_two_ready():
     st.addSubtask("Implement a.py", "edit a.py")
     st.addSubtask("Write tests for a", "pytest a")
     return st
-
-
-def test_post_facts_writes_facts_entry(tmp_path):
-    state = _state_two_ready()
-    bb = Blackboard(tmp_path / "c.jsonl")
-    coord = Coordinator(state, bb, threading.Lock(), work_dir=str(tmp_path))
-    coord.postFacts({"given": ["x"], "plan": ["do x"]})
-    rows = bb.readAll()
-    assert rows[-1]["kind"] == "facts" and rows[-1]["to"] == "all"
 
 
 def test_select_disjoint_batch_deps_only_seam(tmp_path):
@@ -59,15 +50,6 @@ def test_handle_society_batch_runs_workers_and_collects(tmp_path):
     assert {s["status"] for s in state.subtasks} == {"in_progress"}  # claimed; verifier lands later
 
 
-def test_detect_contested_flags_failed_result(tmp_path):
-    state = _state_two_ready()
-    bb = Blackboard(tmp_path / "c.jsonl")
-    coord = Coordinator(state, bb, threading.Lock(), work_dir=str(tmp_path))
-    msgs = [{"role": "coder", "subtask_id": "st-001", "ok": True},
-            {"role": "reviewer", "subtask_id": "st-001", "ok": False}]
-    assert coord.detectContested(msgs) == ["st-001"]
-
-
 def test_worker_crash_contained(tmp_path):
     state = _state_two_ready()
     bb = Blackboard(tmp_path / "c.jsonl")
@@ -86,24 +68,22 @@ def test_worker_crash_contained(tmp_path):
 
 
 from notifications.event_bus import LiveEventBus
-from society.blackboard import Blackboard as _BB
-from society.coordinator import Coordinator as _Coord
 
 
 def test_blackboard_appends_mirror_to_event_bus(tmp_path):
+    """on_append travels through the Blackboard constructor (forTask seam), not attachBus."""
     bus = LiveEventBus()
-    state = _state_two_ready()
-    bb = _BB(tmp_path / "m.jsonl")
-    coord = _Coord(state, bb, __import__("threading").Lock(),
-                   work_dir=str(tmp_path), bus=bus)
-    coord.attachBus()                     # wires bus mirror as blackboard.on_append
-    coord.postFacts({"plan": ["x"]})
+    bb = Blackboard.forTask("task-mirror", base_dir=tmp_path,
+                            on_append=busMirror("task-mirror", bus=bus))
+    bb.append(makeEntry(kind="facts", author="coordinator", to="all",
+                        value={"plan": ["x"]}))
     events = bus.history(last_n=10)
     assert any(e["kind"] == "society" for e in events)
     assert events[-1]["data"]["kind"] == "facts"
+    assert events[-1]["sid"] == "task-mirror"
 
 
-def test_budget_governor_stops_spawning(tmp_path, monkeypatch):
+def test_budget_governor_accumulates_spend(tmp_path, monkeypatch):
     import config
     monkeypatch.setattr(config, "SOCIETY_TOKEN_BUDGET_USD", 0.05)
     state = _state_two_ready()
@@ -118,3 +98,73 @@ def test_budget_governor_stops_spawning(tmp_path, monkeypatch):
     # two workers each cost 0.04 -> 0.08 > 0.05 budget
     assert coord.spent_usd >= 0.05
     assert coord.budgetExceeded() is True
+
+
+def test_budget_gate_refuses_spawn_and_posts_budget_entry(tmp_path, monkeypatch):
+    """HARD pre-spawn gate: at/over budget -> no worker spawns, one `budget` entry."""
+    import config
+    monkeypatch.setattr(config, "SOCIETY_TOKEN_BUDGET_USD", 0.05)
+    state = _state_two_ready()
+    bb = Blackboard(tmp_path / "g.jsonl")
+    coord = Coordinator(state, bb, threading.Lock(), work_dir=str(tmp_path))
+    coord.spent_usd = 0.05          # already at the budget line
+    ran = []
+
+    def fake_run(spec, **kw):
+        ran.append(kw["subtask"]["subtask_id"])
+        return {"ok": True, "returncode": 0}
+
+    ready = [s for s in state.subtasks if s["status"] == "pending"]
+    msgs = coord._handleSocietyBatch(ready, parallelism=2, run_fn=fake_run)
+    assert ran == [] and msgs == []                       # nothing spawned
+    assert {s["status"] for s in state.subtasks} == {"pending"}   # nothing claimed
+    rows = bb.readAll()
+    assert len(rows) == 1 and rows[0]["kind"] == "budget"
+    assert sorted(rows[0]["value"]["skipped"]) == sorted(s["subtask_id"] for s in ready)
+    assert rows[0]["value"]["budget_usd"] == 0.05
+
+
+def test_handle_society_batch_seeds_prior_spend_run_wide(tmp_path, monkeypatch):
+    """society_batch seeds spent_usd from earlier result entries -> gate trips run-wide."""
+    import config
+    from society import society_batch
+    monkeypatch.setattr(config, "SOCIETY_TOKEN_BUDGET_USD", 0.05)
+    monkeypatch.setattr("platform_core.app_config.paths.BLACKBOARD_DIR", tmp_path)
+    state = _state_two_ready()
+    # A previous batch already posted a result costing 0.06 (> 0.05 budget).
+    bb = Blackboard.forTask(state.task_id, base_dir=tmp_path)
+    bb.append(makeEntry(kind="result", author="coder", to="coordinator",
+                        subtask_id="st-000",
+                        value={"kind": "result", "ok": True,
+                               "value": {"cost_usd": 0.06}}))
+    ran = []
+
+    def fake_run(spec, **kw):
+        ran.append(kw["subtask"]["subtask_id"])
+        return {"ok": True, "returncode": 0}
+
+    ready = [s for s in state.subtasks if s["status"] == "pending"]
+    started, abort = society_batch.handleSocietyBatch(
+        state, ready, str(tmp_path), 2, threading.Lock(), run_fn=fake_run)
+    assert ran == [] and started == 0 and abort is None
+    assert any(r["kind"] == "budget" for r in bb.readAll())
+
+
+def test_lost_claim_not_counted_as_loop_progress(tmp_path, monkeypatch):
+    """kind='claim' (lost claim) messages never ran -> excluded from count_started."""
+    from society import society_batch
+    monkeypatch.setattr("platform_core.app_config.paths.BLACKBOARD_DIR", tmp_path)
+    state = _state_two_ready()
+    # st-001 is already claimed elsewhere -> its worker loses the CAS claim.
+    state.updateSubtask("st-001", status="in_progress", claimed_by="other")
+    ran = []
+
+    def fake_run(spec, **kw):
+        ran.append(kw["subtask"]["subtask_id"])
+        return {"ok": True, "returncode": 0}
+
+    ready = list(state.subtasks)   # pass both: one claimable, one lost
+    started, _ = society_batch.handleSocietyBatch(
+        state, ready, str(tmp_path), 2, threading.Lock(), run_fn=fake_run)
+    assert ran == ["st-002"]
+    assert started == 1            # the lost claim is NOT progress

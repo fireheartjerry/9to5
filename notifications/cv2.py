@@ -18,16 +18,13 @@ EXPORTS:
   text(content: str) -> dict
   separator(divider: bool=True, spacing: int=1) -> dict
   media_gallery(urls: list) -> dict
-  elapsedStr(started_at) -> str
-  etaStr(started_at, done: int, total: int) -> str
   buildCockpit(state, phase: str, *, events: Optional[list]=None, model: Optional[str]=None, effort: str='default', image_url: Optional[str]=None) -> tuple[list, int]  -- Return ``(components, flags)`` for the live cockpit
-DEPENDS-ON: config, notifications.branding, notifications.discord_bot, notifications.health_aura, notifications.icons, notifications.theme
+DEPENDS-ON: config, notifications.branding, notifications.discord_bot, notifications.health_aura, notifications.icons, notifications.theme, platform_core.core.clock
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_cv2.py
 """
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional
 
 import config
@@ -35,6 +32,7 @@ from notifications import branding
 from notifications import discord_bot as discord
 from notifications import icons
 from notifications import theme
+from platform_core.core.clock import elapsedStr, etaStr  # noqa: F401 -- re-exported (public API)
 
 # ---- component constructors -------------------------------------------------
 def container(children: list, accent: Optional[int] = None, spoiler: bool = False) -> dict:
@@ -58,47 +56,8 @@ def media_gallery(urls: list) -> dict:
     return {"type": 12, "items": [{"media": {"url": u}} for u in urls]}
 
 
-# ---- duration helpers (pure; mirror dashboard's, kept local to avoid a cycle) ----
-def elapsedStr(started_at) -> str:
-    if not started_at:
-        return "—"
-    try:
-        start = datetime.fromisoformat(str(started_at))
-        now = datetime.now(start.tzinfo) if start.tzinfo else datetime.now()
-        secs = max(0, int((now - start).total_seconds()))
-    except Exception:  # noqa: BLE001
-        return "—"
-    h, rem = divmod(secs, 3600)
-    mins = rem // 60
-    if h:
-        return f"{h}h {mins}m"
-    if mins:
-        return f"{mins}m"
-    return f"{secs}s"
-
-
-def etaStr(started_at, done: int, total: int) -> str:
-    remaining = total - done
-    if remaining <= 0 or done <= 0 or not started_at:
-        return "—"
-    try:
-        start = datetime.fromisoformat(str(started_at))
-        now = datetime.now(start.tzinfo) if start.tzinfo else datetime.now()
-        elapsed = (now - start).total_seconds()
-    except Exception:  # noqa: BLE001
-        return "—"
-    if elapsed <= 0:
-        return "—"
-    eta = int((elapsed / done) * remaining)
-    h, rem = divmod(eta, 3600)
-    mins = rem // 60
-    if h:
-        return f"~{h}h {mins}m"
-    if mins:
-        return f"~{mins}m"
-    return f"~{eta}s"
-
-
+# ---- duration helpers: single source is platform_core.core.clock (elapsedStr/etaStr
+# re-exported above; they used to be local mirrors of dashboard's copies) ----
 def _healthToken(state) -> str:
     """Composite health aura as a colored-dot + number token for the cockpit."""
     try:

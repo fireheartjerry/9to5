@@ -30,6 +30,47 @@ def test_secret_family_target_is_destructive():
     assert classifyActionRisk(A(command="cat .env.production")) is RiskTier.DESTRUCTIVE
 
 
+# --- R7: anchored command-position taxonomy (ONE source for hooks + executor pre-scan) ---
+@pytest.mark.parametrize("cmd", [
+    "sudo rm -rf /", "doas rm -rf /home", "echo hi && rm -rf /tmp/x",
+    "ls; rmdir /s foo", "true | del /s q", "first line\nrm -rf ~", "cd /x; sudo mkfs /dev/sdb",
+])
+def test_destructive_with_privilege_prefix_or_chaining_is_destructive(cmd):
+    assert classifyActionRisk(A(command=cmd)) is RiskTier.DESTRUCTIVE
+
+
+@pytest.mark.parametrize("cmd", [
+    "please format the output nicely",       # 'format ' substring, prose
+    "explain what the del /s flag does",     # 'del /s' substring, prose
+    "the docs mention rm -rf as an example",  # 'rm -rf' substring, prose
+    "perform a git push to main",            # no force flag
+])
+def test_prose_containing_pattern_words_is_not_destructive(cmd):
+    """The substring false-positive class is gone: pattern words in prose never classify
+    DESTRUCTIVE (they may still be MUTATING via write-verb markers -- that does not block)."""
+    assert classifyActionRisk(A(command=cmd)) is not RiskTier.DESTRUCTIVE
+
+
+def test_scan_destructive_is_the_one_shared_source():
+    """Both enforcement layers consume the SAME scanner object (dual enforcement, one taxonomy)."""
+    from platform_core.runtime.action_risk import scanDestructive
+    from agents.executor_env import scanDestructive as env_scan
+    assert env_scan is scanDestructive
+    assert scanDestructive("sudo rm -rf /") == ["rm -rf"]
+    assert scanDestructive("please format the output nicely") == []
+
+
+def test_selfmod_helpers_come_from_the_shared_taxonomy():
+    from platform_core.runtime.action_risk import bashReadsSecret, isWritingBash
+    assert bashReadsSecret("cat .env")
+    assert bashReadsSecret("grep SECRET .env.production")
+    assert not bashReadsSecret("cat .envrc")
+    assert not bashReadsSecret("echo hello")
+    assert isWritingBash("echo x > out.txt")
+    assert isWritingBash("git reset --hard HEAD")
+    assert not isWritingBash("ls -la")
+
+
 # --- READ / DRY_RUN ---
 @pytest.mark.parametrize("tool", ["Read", "Glob", "Grep", "NotebookRead"])
 def test_read_tools_are_read(tool):

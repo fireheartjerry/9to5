@@ -70,6 +70,10 @@ OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 # bug was never this number -- it was that subprocess timeout on Windows left node grandchildren
 # orphaned (work continued + drain blocked ~200s); executor._killProcessTree now kills the tree.
 CLAUDE_CLI_TIMEOUT_SECONDS: int = _envInt("CLAUDE_CLI_TIMEOUT_SECONDS", 600)
+# R6 operator-kill: cadence (seconds) of the in-flight cancel watcher that polls the
+# abort/kill/deadline signal while a Claude subprocess runs. Bounds !kill/!abort latency
+# to ~one poll interval (previously: up to the full CLAUDE_CLI_TIMEOUT_SECONDS).
+CANCEL_POLL_SECONDS: float = _envFloat("CANCEL_POLL_SECONDS", 2.0)
 
 # --- Obsidian Local REST API (service config; paths live in config_paths) ---
 OBSIDIAN_API_KEY: str = os.getenv("OBSIDIAN_API_KEY", "")

@@ -87,8 +87,9 @@ wait amortising it).
 ## When NOT to use
 
 - **One-off tasks** — just run the prompt directly.
-- **Programmatic retry inside 9TO5** — use `retryTask` from `error_handling.py`
-  instead; `/loop` is a CLI-level feature, not a Python API.
+- **Programmatic retry inside 9TO5** — use
+  `platform_core.runtime.resilience.run_with_recovery` instead; `/loop` is a
+  CLI-level feature, not a Python API.
 - **Hard real-time requirements** — `/loop` fires approximately on schedule;
   it is not a precise timer.
 
@@ -99,7 +100,7 @@ wait amortising it).
 | Wrong | Right |
 |-------|-------|
 | `subprocess.run(["claude", "/loop", ...])` | Type `/loop` directly in Claude Code |
-| Calling `/loop` from a 9TO5 orchestrator Python function | Use `retryTask` for programmatic retry |
+| Calling `/loop` from a 9TO5 orchestrator Python function | Use `resilience.run_with_recovery` for programmatic retry |
 | Setting interval to exactly `300` s | Use 270 s (cache-warm) or 1200 s+ (cache-miss amortised) |
 | Swallowing exceptions in the loop body | Re-raise or emit `subtask_failed` so the orchestrator tracks failures |
 
@@ -126,13 +127,10 @@ except Exception as exc:
     raise   # non-zero exit signals failure to CC
 ```
 
-For retryable operations, use `retryTask` before the failure bubbles up:
-
-```python
-from error_handling import retryTask, MAX_RETRIES, RetryExhausted
-
-result = retryTask(fetch_data, args=(url,), max_retries=MAX_RETRIES)
-```
+Run-level crash recovery is owned by
+`platform_core.runtime.resilience.run_with_recovery(run_fn, state)`, which
+auto-resumes a crashed 9TO5 run from committed state with exponential backoff.
+Inside a loop body, catch-and-re-raise (above) is sufficient.
 
 ---
 
@@ -143,7 +141,7 @@ scheduling mechanisms:
 
 | Need | Use |
 |------|-----|
-| Retry a failing subtask | `retryTask` / `MAX_SUBTASK_ATTEMPTS` |
+| Retry a failing subtask | `resilience.run_with_recovery` / `MAX_SUBTASK_ATTEMPTS` |
 | Schedule a recurring 9TO5 run | Cron + `python main.py` |
 | Watch an external resource from Claude Code | `/loop` |
 | Self-paced autonomous Claude Code monitoring | `/loop` (no interval) |

@@ -11,20 +11,19 @@ EXPORTS:
   iterStored()  -- Yield ``(path, data)`` for every readable task JSON in the store.
   loadLatest() -> 'Optional[TaskState]'  -- Prefer the most-recently-STARTED active (non-terminal) task.
   listRecent(n: int=10) -> list[dict[str, Any]]  -- Lightweight summaries of recent tasks, newest first
-DEPENDS-ON: config, state.task_schema
+DEPENDS-ON: config, platform_core.core, state.task_schema
 SIDE-EFFECTS: writes state/tasks/<id>.json
 RUN/TEST: (no mapped test)
 """
 from __future__ import annotations
 
 import json
-import os
 import threading
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 import config
+from platform_core.core import fsio
 
 if TYPE_CHECKING:
     from state.task_schema import TaskState
@@ -32,26 +31,6 @@ if TYPE_CHECKING:
 # Serializes concurrent save() calls within this process so the temp-file
 # write + os.replace swap never interleave.
 _SAVE_LOCK = threading.Lock()
-
-# Windows-only flakiness: os.replace raises PermissionError (WinError 5) when the
-# destination is momentarily held by another handle. A short bounded retry makes the
-# atomic swap reliable instead of crashing the whole run.
-_REPLACE_RETRIES: int = 8
-_REPLACE_BACKOFF_BASE: float = 0.02  # 20ms, 40ms, 80ms, ... (capped) -> ~1.3s worst case
-
-
-def _atomicReplace(tmp: Path, dest: Path) -> None:
-    """os.replace(tmp, dest) with bounded backoff retry on transient Windows lock."""
-    delay = _REPLACE_BACKOFF_BASE
-    for attempt in range(1, _REPLACE_RETRIES + 1):
-        try:
-            os.replace(tmp, dest)
-            return
-        except PermissionError:
-            if attempt >= _REPLACE_RETRIES:
-                raise
-            time.sleep(min(delay, 0.4))
-            delay *= 2
 
 
 def save(state: "TaskState") -> Path:
@@ -65,22 +44,9 @@ def save(state: "TaskState") -> Path:
         # Serialize INSIDE the lock: another thread mutating state.data while json.dumps
         # walks it raises "changed size during iteration".
         payload = json.dumps(state.data, indent=2, ensure_ascii=False)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        # UNIQUE temp per writer (pid+thread+rand) so concurrent processes each have their
-        # own source; avoids the FileNotFoundError when two processes race to os.replace
-        # the same fixed temp name. Mirrors ControlBus._write.
-        tmp = p.with_suffix(
-            f".{os.getpid()}-{threading.get_ident()}-{os.urandom(4).hex()}.json.tmp"
-        )
-        try:
-            tmp.write_text(payload, encoding="utf-8")
-            _atomicReplace(tmp, p)
-        except Exception:
-            try:
-                tmp.unlink()
-            except OSError:
-                pass
-            raise
+        # Kernel swap: unique pid-thread-rand temp + bounded Windows backoff, so
+        # concurrent processes never race a shared temp name.
+        fsio.atomicWriteText(p, payload)
     return p
 
 

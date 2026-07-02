@@ -1,11 +1,9 @@
 """Bug-fix regression suite for st-072.
 
-Covers three verified bugs:
+Covers two verified bugs:
   1. test_compute: GPU-detection mock missing — default_trainer returned a callable
      on GPU hosts instead of None.
-  2. notification bus: emit() iterated _surfaces while the lock was held, blocking
-     surfaces that re-register during emit; snapshot-then-release pattern fixes it.
-  3. notification entry: makeEntry() lacked entry_id / seq fields required by the
+  2. notification entry: makeEntry() lacked entry_id / seq fields required by the
      updated schema (REQUIRED_KEYS), so validate() would report errors on fresh entries.
 
 Run directly: ``python tests/test_bug_fixes.py``  (expects exit 0).
@@ -49,70 +47,7 @@ class TestDefaultTrainerGpuGuard(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Bug 2: NotificationBus thread safety — emit uses snapshot, not live list
-# ---------------------------------------------------------------------------
-
-class TestNotificationBusThreadSafety(unittest.TestCase):
-    """emit() must snapshot _surfaces before iterating to avoid lock re-entrance."""
-
-    def setUp(self):
-        from notifications.bus import NotificationBus
-        self.bus = NotificationBus()
-
-    def test_emit_delivers_to_all_registered_surfaces(self):
-        received = []
-
-        class _Surf:
-            def handle(self, event_type, payload):
-                received.append((event_type, payload))
-
-        s1, s2 = _Surf(), _Surf()
-        self.bus.register(s1)
-        self.bus.register(s2)
-        self.bus.emit("test_event", {"x": 1})
-        self.assertEqual(len(received), 2)
-        self.assertEqual(received[0], ("test_event", {"x": 1}))
-
-    def test_surface_count_property(self):
-        class _Surf:
-            def handle(self, et, p): pass
-
-        self.assertEqual(self.bus.surface_count, 0)
-        self.bus.register(_Surf())
-        self.assertEqual(self.bus.surface_count, 1)
-
-    def test_emit_suppresses_surface_exception(self):
-        class _BrokenSurf:
-            def handle(self, et, p):
-                raise RuntimeError("broken surface")
-
-        class _GoodSurf:
-            def __init__(self): self.called = False
-            def handle(self, et, p): self.called = True
-
-        good = _GoodSurf()
-        self.bus.register(_BrokenSurf())
-        self.bus.register(good)
-        self.bus.emit("e", {})
-        self.assertTrue(good.called, "good surface must receive event even if prior surface raised")
-
-    def test_register_is_thread_safe(self):
-        import threading
-
-        class _Surf:
-            def handle(self, et, p): pass
-
-        threads = [threading.Thread(target=lambda: self.bus.register(_Surf()))
-                   for _ in range(20)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-        self.assertEqual(self.bus.surface_count, 20)
-
-
-# ---------------------------------------------------------------------------
-# Bug 3: makeEntry produces entries that pass validate() (entry_id + seq present)
+# Bug 2: makeEntry produces entries that pass validate() (entry_id + seq present)
 # ---------------------------------------------------------------------------
 
 class TestNotificationEntrySchema(unittest.TestCase):

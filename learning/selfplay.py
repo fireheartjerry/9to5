@@ -14,19 +14,19 @@ See the spec (subsystem C + meta-loop).
 EXPORTS:
   in_work_window(now: Optional[datetime]=None) -> bool  -- Self-play only fires inside the configured work window (default 9-17, the 9-to-5).
   run(*, launch_fn: Optional[LaunchFn]=None, is_busy: Optional[Callable[[], bool]]=None, db_path: Optional[Path]=None, now: Optional[datetime]=None) -> dict[str, Any]  -- Maybe launch one self-play run
-DEPENDS-ON: config, learning.curriculum
+DEPENDS-ON: config, learning.curriculum, platform_core.core
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 import config
 from learning import curriculum
+from platform_core.core import fsio
 
 LOG = config.getLogger("sie.selfplay")
 
@@ -43,21 +43,19 @@ def _today() -> str:
 
 def _count_today() -> int:
     try:
-        data = json.loads(_state_path().read_text(encoding="utf-8"))
-        return int(data.get(_today(), 0))
+        data = fsio.loadJson(_state_path(), default={})
+        return int(data.get(_today(), 0)) if isinstance(data, dict) else 0
     except Exception:  # noqa: BLE001
         return 0
 
 
 def _bump_today() -> None:
+    def _bump(data):
+        cur = data.get(_today(), 0) if isinstance(data, dict) else 0
+        return {_today(): int(cur) + 1}   # keep only today
+
     try:
-        p = _state_path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        data = {}
-        if p.exists():
-            data = json.loads(p.read_text(encoding="utf-8"))
-        data = {_today(): int(data.get(_today(), 0)) + 1}   # keep only today
-        p.write_text(json.dumps(data), encoding="utf-8")
+        fsio.updateJson(_state_path(), _bump, default={}, indent=None)
     except Exception as e:  # noqa: BLE001
         LOG.debug("selfplay state bump failed (ignored): %s", e)
 

@@ -17,34 +17,6 @@ class TestDeploymentChanges(unittest.TestCase):
     """Verify all deliverables from the feat/frontier-discord-ui branch are in place."""
 
     # ------------------------------------------------------------------
-    # agents/orchestration_pipeline.py — resolveWorkflow added
-    # ------------------------------------------------------------------
-
-    def test_resolve_workflow_importable(self):
-        mod = importlib.import_module("agents.orchestration_pipeline")
-        self.assertTrue(
-            callable(getattr(mod, "resolveWorkflow", None)),
-            "resolveWorkflow must be exported from agents.orchestration_pipeline",
-        )
-
-    def test_resolve_workflow_dict_passthrough(self):
-        from agents.orchestration_pipeline import resolveWorkflow
-        result = resolveWorkflow({"name": "test", "steps": []})
-        self.assertTrue(result.ok, "resolveWorkflow should accept inline dicts")
-        self.assertIn("workflow_definition", result.payload)
-
-    def test_resolve_workflow_unknown_name_returns_error(self):
-        from agents.orchestration_pipeline import resolveWorkflow
-        result = resolveWorkflow("__nonexistent_workflow__")
-        self.assertFalse(result.ok, "resolveWorkflow should return ok=False for unknown names")
-
-    def test_resolve_workflow_bad_type_returns_error(self):
-        from agents.orchestration_pipeline import resolveWorkflow
-        result = resolveWorkflow(42)
-        self.assertFalse(result.ok)
-        self.assertIn("expected", result.error)
-
-    # ------------------------------------------------------------------
     # agents/verifier.py — _normalizeWorkDir added
     # ------------------------------------------------------------------
 
@@ -89,21 +61,12 @@ class TestDeploymentChanges(unittest.TestCase):
         self.assertTrue(script.exists(), "validate_workflows.py must exist at repo root")
 
     # ------------------------------------------------------------------
-    # docs/notification_system.md — error handling section present
+    # docs/notification_system.md — /loop command documented
     # ------------------------------------------------------------------
-
-    def test_notification_doc_error_handling_section(self):
-        doc = REPO_ROOT / "docs" / "notification_system.md"
-        self.assertTrue(doc.exists(), "docs/notification_system.md must exist")
-        text = doc.read_text(encoding="utf-8")
-        self.assertIn("## Orchestrator error handling", text,
-                      "notification_system.md must contain error-handling section")
-        self.assertIn("retryTask", text)
-        self.assertIn("MAX_RETRIES", text)
-        self.assertIn("RetryExhausted", text)
 
     def test_notification_doc_loop_command(self):
         doc = REPO_ROOT / "docs" / "notification_system.md"
+        self.assertTrue(doc.exists(), "docs/notification_system.md must exist")
         text = doc.read_text(encoding="utf-8")
         self.assertIn("/loop is a CC slash command", text)
 

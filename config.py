@@ -23,9 +23,9 @@ EXPORTS:
   set_override(knob: str, value) -> bool  -- Persist + live-apply a meta-optimizer knob change (whitelisted knobs only).
   validateEnv() -> list[str]  -- Return the names of required-but-missing environment values.
   getLogger(name: str='9to5') -> logging.Logger  -- Return a child of the configured ``9to5`` logger.
-DEPENDS-ON: platform_core.app_config.discord, platform_core.app_config.human_nature, platform_core.app_config.llm, platform_core.app_config.paths
+DEPENDS-ON: platform_core.app_config.discord, platform_core.app_config.llm, platform_core.app_config.paths
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_config_robust_env.py tests/test_durable_config.py tests/test_epic2_config.py tests/test_hn_config.py tests/test_notification_config.py tests/test_society_config.py tests/test_solution_fork_config.py
+RUN/TEST: python -m pytest tests/test_config_robust_env.py tests/test_durable_config.py tests/test_epic2_config.py tests/test_notification_config.py tests/test_society_config.py tests/test_solution_fork_config.py
 """
 from __future__ import annotations
 
@@ -53,7 +53,6 @@ load_dotenv(dotenv_path=_THIS_DIR / ".env")
 from platform_core.app_config.paths import *    # noqa: E402, F401, F403
 from platform_core.app_config.discord import *  # noqa: E402, F401, F403
 from platform_core.app_config.llm import *      # noqa: E402, F401, F403
-from platform_core.app_config.human_nature import *  # noqa: E402, F401, F403
 
 # _SIE_BOUNDS starts with _ so it is excluded from star imports; import it
 # explicitly because set_override / _load_overrides (below) need it.

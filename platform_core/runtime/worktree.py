@@ -14,7 +14,7 @@ EXPORTS:
   removeWorktree(path: str) -> None  -- Path-scoped safe-remove: refuse any path outside state/.sc-worktrees/
   gcOrphans(state) -> None  -- Remove leftover worktrees for THIS task (TTL/whitelist cleanup)
   isIsolated(path: str) -> bool  -- True only when ``path`` lives under state/.sc-worktrees/ (an isolated worktree).
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.core
 SIDE-EFFECTS: creates/removes git worktrees under state/.sc-worktrees/
 RUN/TEST: python -m pytest tests/test_worktree.py
 """
@@ -25,6 +25,7 @@ import subprocess
 from pathlib import Path
 
 import config
+from platform_core.core import git_io
 
 LOG = config.getLogger("runtime.worktree")
 
@@ -34,8 +35,9 @@ def _worktreesRoot() -> Path:
 
 
 def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(["git"] + args, cwd=str(cwd), check=True,
-                          capture_output=True, text=True)
+    # Kernel wrapper: GIT_TERMINAL_PROMPT=0 + stdin=DEVNULL + a hard timeout, so a
+    # credential prompt or wedged git can never hang the run (this wrapper had NO timeout).
+    return git_io.runGit(*args, cwd=cwd, check=True, timeout=config.GIT_TIMEOUT_SECONDS)
 
 
 def _branchFor(task8: str, sid: str) -> str:
@@ -74,8 +76,8 @@ def collectChanges(path: str, sid: str) -> None:
     (nothing to commit)."""
     p = Path(path)
     _git(["add", "-A"], p)
-    status = subprocess.run(["git", "status", "--porcelain"], cwd=str(p),
-                            capture_output=True, text=True)
+    status = git_io.runGit("status", "--porcelain", cwd=p,
+                           timeout=config.GIT_TIMEOUT_SECONDS)
     if status.stdout.strip():
         _git(["commit", "-m", f"9TO5 {sid}"], p)
 

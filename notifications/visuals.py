@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from notifications.visuals_components import available  # noqa: F401
 from notifications.visuals_cards import (  # noqa: F401
-    progressCard, burndownChart, duelCard, timelapseGif, runReplayGif,
+    progressCard, duelCard, timelapseGif, runReplayGif,
 )
 
-__all__ = ["available", "progressCard", "burndownChart", "duelCard",
+__all__ = ["available", "progressCard", "duelCard",
            "timelapseGif", "runReplayGif"]

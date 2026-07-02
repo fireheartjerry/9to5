@@ -50,6 +50,7 @@ from memory.obsidian import writeClaudioMd
 from agents.executor_env import (  # noqa: F401
     normalizeSpec, effortFlag, scanDestructive,
     _composePrompt, _alertBlocked,
+    composeRunSettings, buildHookCtxEnv,
 )
 from agents.executor_session import (  # noqa: F401
     _SESSION_LIMIT_STATE, _isRateLimitError, _waitForSessionReset,
@@ -125,8 +126,15 @@ def _buildRunConfig(spec: dict, task_state, subtask, resume_session: Optional[st
     base_cmd = launcher + ["--print", "--dangerously-skip-permissions"]
     if config.EXECUTOR_OUTPUT_JSON:
         base_cmd += ["--output-format", "json"]
-    if config.CLAUDE_SETTINGS_PATH.exists():
-        base_cmd += ["--settings", str(config.CLAUDE_SETTINGS_PATH)]
+    # Guard hooks must be registered for EVERY executor run: compose the per-run settings file
+    # (base settings + generated guard-hook block; survives a missing/corrupt base) instead of
+    # trusting the repo settings.json to still carry the hooks.
+    try:
+        base_cmd += ["--settings", str(composeRunSettings())]
+    except Exception as e:  # noqa: BLE001 -- fall back to the raw settings file, never skip guards silently
+        LOG.warning("composeRunSettings failed (%s); falling back to raw settings path", e)
+        if config.CLAUDE_SETTINGS_PATH.exists():
+            base_cmd += ["--settings", str(config.CLAUDE_SETTINGS_PATH)]
     # Smart model routing: pick the cheapest model that can handle this effort level.
     # low→haiku, default/high→sonnet, xhigh/ultracode→opus. Overridable via MODEL_* env vars.
     model = config.MODEL_BY_EFFORT.get(effort, config.MODEL_BY_EFFORT.get("default", config.PRIMARY_MODEL))
@@ -154,6 +162,12 @@ def _buildRunConfig(spec: dict, task_state, subtask, resume_session: Optional[st
     # state-FILE path is exported too, so the hook (whose hardcoded config.STATE_DIR may point at a
     # different root in a worktree run) loads the right task without a STATE_DIR mismatch.
     env = os.environ.copy()
+    # ONE channel for guard-hook context: boundaries + log/alert paths (see executor_env.buildHookCtxEnv).
+    try:
+        universe = (getattr(task_state, "meta", None) or {}).get("universe") or {}
+        env["NINE_TO_FIVE_HOOK_CTX"] = buildHookCtxEnv(universe.get("hard_boundaries") or [])
+    except Exception:  # noqa: BLE001 -- guards fall back to their own config resolution
+        pass
     if task_state is not None and getattr(task_state, "task_id", None):
         env["NINE_TO_FIVE_TASK_ID"] = str(task_state.task_id)
         env["NINE_TO_FIVE_PROJECT_ROOT"] = str(config.PROJECT_ROOT)
@@ -205,8 +219,8 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
     work, effort, flag = ctx["work"], ctx["effort"], ctx["flag"]
     profile, playbook_md, claude_md_path = ctx["profile"], ctx["playbook_md"], ctx["claude_md_path"]
     full_prompt, resume_prompt, is_resume = ctx["full_prompt"], ctx["resume_prompt"], ctx["is_resume"]
-    # block_destructive guardrail: headless mode bypasses Claude hooks so we enforce it here.
-    # Scan the ACTUAL prompt sent (includes folded claude_md_inject on resume retries).
+    # block_destructive guardrail (headless mode bypasses Claude hooks, so enforce here):
+    # scan the ACTUAL prompt sent -- includes the resume-folded claude_md_inject.
     prompt_to_send = resume_prompt if is_resume else full_prompt
     if "block_destructive" in (spec.get("pre_tool_hooks") or []):
         hits = scanDestructive(prompt_to_send)
@@ -227,11 +241,12 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
         return {"ok": False, "returncode": -1, "stdout": "", "stderr": str(e),
                 "effort": effort, "effort_flag": flag, "spec": spec, "claude_md_path": claude_md_path}
     # Epic 8: route the built run_cmd(s) INTO a provisioned environment (None => identity).
-    fresh_cmd, resume_cmd, work = _applyEnvironment(
-        fresh_cmd, resume_cmd, work, environment, env_handle)
-    run_kw = dict(work=work, timeout=timeout, env=env, creationflags=creationflags,
-                  spec=spec, effort=effort, flag=flag, profile=profile,
-                  playbook_md=playbook_md, claude_md_path=claude_md_path, model=model, feed=feed)
+    fresh_cmd, resume_cmd, work = _applyEnvironment(fresh_cmd, resume_cmd, work, environment, env_handle)
+    # R6: cancel_check rides into EVERY runSubprocess call (fresh/resume/rate-limit-retry) so
+    # the in-flight watcher can tree-kill within ~CANCEL_POLL_SECONDS of !kill/!abort/deadline.
+    run_kw = dict(work=work, timeout=timeout, env=env, creationflags=creationflags, spec=spec,
+                  effort=effort, flag=flag, profile=profile, playbook_md=playbook_md,
+                  claude_md_path=claude_md_path, model=model, feed=feed, cancel_check=cancel_check)
     if not is_resume:
         result = runSubprocess(fresh_cmd, full_prompt, **run_kw)
     else:
@@ -241,8 +256,7 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
         if config.EXECUTOR_OUTPUT_JSON and result.get("is_error") is None and isinstance(rc, int) and rc > 0:
             LOG.warning("resume launch yielded no envelope (rc=%s) -- retrying once on a fresh session", rc)
             result = runSubprocess(fresh_cmd, full_prompt, **run_kw)
-    # Session token limit: wait out the window then retry on a fresh session.
-    # BOUNDED + abort/deadline-aware (CB-4/9); re-arm each round to guarantee a real wait.
+    # Session token limit: BOUNDED wait-out + fresh-session retry; abort/deadline-aware (CB-4/9).
     tries = 0
     while _isRateLimitError(result) and tries < config.SESSION_LIMIT_MAX_RETRIES:
         if cancel_check is not None:
@@ -256,7 +270,6 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
         if not _waitForSessionReset(cancel_check):
             break   # cancelled mid-wait -> return still-error result to caller
         tries += 1
-        LOG.info("Retrying subtask on fresh session after session reset (try %d/%d)",
-                 tries, config.SESSION_LIMIT_MAX_RETRIES)
+        LOG.info("Retrying on fresh session after reset (try %d/%d)", tries, config.SESSION_LIMIT_MAX_RETRIES)
         result = runSubprocess(fresh_cmd, full_prompt, **run_kw)
     return result

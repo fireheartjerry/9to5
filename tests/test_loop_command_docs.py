@@ -24,9 +24,6 @@ REQUIRED_TERMS = [
     "interval",
     "self-paced",
     "/loop 5m",
-    "retryTask",
-    "MAX_RETRIES",
-    "RetryExhausted",
     "subprocess",
     "Ctrl-C",
 ]
@@ -65,7 +62,3 @@ class TestLoopCommandDocs(unittest.TestCase):
     def test_self_paced_mode_documented(self):
         self.assertIn("ScheduleWakeup", self.text,
                       "Self-paced mode must reference ScheduleWakeup")
-
-    def test_retry_documented(self):
-        self.assertIn("retryTask", self.text,
-                      "docs/loop_command.md must document retryTask as the programmatic retry alternative")

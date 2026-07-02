@@ -1,7 +1,7 @@
 """Shared env-coercion helpers for the app_config sub-modules.
 
 Single home for the never-crash env readers used by ``llm.py`` and
-``llm_epic_flags.py`` (and re-exported by ``llm`` for ``human_nature.py``).
+``llm_epic_flags.py`` (and re-exported by ``llm``).
 Kept separate so the Epic feature-flag module can use them without importing
 its sibling ``llm`` facade (avoids a circular import).
 

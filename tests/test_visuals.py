@@ -32,11 +32,6 @@ class VisualsEnabled(unittest.TestCase):
         self.assertTrue(out.startswith(PNG))
         self.assertGreater(len(out), 200)
 
-    def test_burndown_is_png(self):
-        out = visuals.burndownChart(_StubState())
-        self.assertIsInstance(out, bytes)
-        self.assertTrue(out.startswith(PNG))
-
     def test_timelapse_is_gif(self):
         f1 = visuals.progressCard(_StubState(("pending",)))
         f2 = visuals.progressCard(_StubState(("done",)))
@@ -61,5 +56,4 @@ class VisualsDisabled(unittest.TestCase):
         st = _StubState()
         self.assertFalse(visuals.available())
         self.assertIsNone(visuals.progressCard(st))
-        self.assertIsNone(visuals.burndownChart(st))
         self.assertIsNone(visuals.timelapseGif([b"x"]))

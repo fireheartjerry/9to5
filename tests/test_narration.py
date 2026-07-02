@@ -1,6 +1,6 @@
-"""Tests for proactive narration, moment detection, and attention-mode detection."""
+"""Tests for proactive narration, moments, and attention-mode detection."""
 from notifications.event_bus import LiveEventBus
-from notifications.narration import MomentDetector, Narrator, detect_mode, emit_moment
+from notifications.narration import Narrator, detect_mode, emit_moment
 
 
 def test_rate_limit():
@@ -21,25 +21,6 @@ def test_force_bypasses_rate_limit():
     n._sink = lambda text, role: True
     assert n.narrate("a") is True
     assert n.narrate("b", force=True) is True   # forced through despite the window
-
-
-def test_perfect_run_moment():
-    assert MomentDetector().perfect_run(0, 0) is not None
-    assert MomentDetector().perfect_run(1, 0) is None
-    assert MomentDetector().perfect_run(0, 2) is None
-
-
-def test_redemption_moment():
-    md = MomentDetector()
-    assert md.redemption(3, True) is not None     # passed on attempt 3 (2 prior failures)
-    assert md.redemption(2, True) is None         # only 1 prior failure
-    assert md.redemption(3, False) is None        # did not pass
-
-
-def test_scope_expanded_moment():
-    md = MomentDetector()
-    assert md.scope_expanded(5, 2) is not None
-    assert md.scope_expanded(2, 2) is None
 
 
 def test_detect_mode():

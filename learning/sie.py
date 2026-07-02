@@ -18,7 +18,7 @@ run, and two overlapping runs can't double-process. See the spec (meta-loop / X1
 EXPORTS:
   run_maintenance(*, reason: str='post-run', force: bool=False, throttle_seconds: float=DEFAULT_THROTTLE_SECONDS, db_path: Optional[Path]=None) -> dict[str, Any]  -- Run the throttled learning passes once (idempotent, best-effort, locked).
   run_maintenance_async(**kwargs)  -- Start maintenance on a daemon thread and RETURN the thread so the caller can join it wi…
-DEPENDS-ON: config, learning.adapter_promotion, learning.bootstrap, learning.curriculum, learning.eval_runner, learning.evolution, learning.finetune, learning.meta_opt, learning.promotion, learning.release, learning.selfplay, learning.sie_steps, memory.experience, notifications.work_launcher
+DEPENDS-ON: config, learning.adapter_promotion, learning.bootstrap, learning.curriculum, learning.eval_runner, learning.evolution, learning.finetune, learning.meta_opt, learning.promotion, learning.release, learning.selfplay, learning.sie_steps, memory.experience, notifications.work_launcher, platform_core.core
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_sie.py
 """
@@ -32,15 +32,14 @@ _repo_root = str(_Path(__file__).resolve().parent.parent)
 if _repo_root not in _sys.path:
     _sys.path.insert(0, _repo_root)
 
-import json
 import os
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
 import config
 from memory import experience
+from platform_core.core import fsio
 
 LOG = config.getLogger("sie.orchestrator")
 
@@ -59,17 +58,13 @@ def _lock_path() -> Path:
 
 
 def _read_state() -> dict[str, Any]:
-    try:
-        return json.loads(_state_path().read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001 -- missing/corrupt -> start fresh
-        return {}
+    data = fsio.loadJson(_state_path(), default=None)   # corrupt -> warned, not silent
+    return data if isinstance(data, dict) else {}
 
 
 def _write_state(data: dict[str, Any]) -> None:
     try:
-        p = _state_path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        fsio.atomicWriteJson(_state_path(), data, indent=2)
     except Exception as e:  # noqa: BLE001
         LOG.warning("sie state write failed (ignored): %s", e)
 
@@ -95,21 +90,12 @@ def _lock_owner_alive(lp: Path) -> bool:
 def _acquire_lock() -> Optional[Path]:
     """O_EXCL lock so two concurrent runs never run maintenance at once. A stale lock is reclaimed
     when it is older than 1h (a wedged pass) OR its owning PID is dead (an orphaned lock from a
-    process that exited mid-maintenance). Returns the lock path, or None if held by a live owner."""
+    process that exited mid-maintenance). Returns the lock path, or None if held by a live owner.
+    The kernel's re-stat-before-unlink closes the old remove-fresh-lock race."""
     lp = _lock_path()
-    try:
-        lp.parent.mkdir(parents=True, exist_ok=True)
-        if lp.exists() and (time.time() - lp.stat().st_mtime > 3600 or not _lock_owner_alive(lp)):
-            lp.unlink(missing_ok=True)  # reclaim a stale or orphaned lock
-        fd = os.open(str(lp), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(fd, str(os.getpid()).encode())
-        os.close(fd)
-        return lp
-    except FileExistsError:
-        return None
-    except Exception as e:  # noqa: BLE001
-        LOG.debug("sie lock unavailable (ignored): %s", e)
-        return None
+    got = fsio.tryAcquireLock(lp, stale_after=3600,
+                              owner_alive=lambda _pid: _lock_owner_alive(lp))
+    return lp if got else None
 
 
 def _due(state: dict[str, Any], throttle_seconds: float) -> bool:

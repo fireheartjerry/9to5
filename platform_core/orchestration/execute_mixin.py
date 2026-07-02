@@ -89,10 +89,8 @@ class OrchestratorExecuteMixin:
         evidence_gate.persistReceipt(self, state, sid, receipt)
 
     def _trajectoryRecorder(self, state: TaskState):
-        """Lazily build ONE trajectory Recorder per run (cached on self). Off when disabled.
-        Double-checked under _state_lock so concurrent pool workers construct exactly ONE
-        Recorder per run (otherwise each thread would build a Recorder that races the same
-        <run_id>.json file)."""
+        """Lazily build ONE trajectory Recorder per run (cached on self; double-checked under
+        _state_lock so concurrent pool workers can't race the same <run_id>.json). Off when disabled."""
         if not getattr(config, "TRAJECTORY_ENABLED", True):
             return None
         rec = getattr(self, "_trajectory", None)
@@ -127,8 +125,7 @@ class OrchestratorExecuteMixin:
         spec.setdefault("run_intent_policy", state.meta.get("run_intent_policy"))
         with self._state_lock:
             sess = dict(subtask.get("session") or {})
-            # FX-20: record the model the executor will ACTUALLY route to by effort (low->haiku,
-            # default/high->sonnet, xhigh/ultracode->opus) -- not a hardcoded opus.
+            # FX-20: record the model the executor will ACTUALLY route to by effort.
             routed_model = config.MODEL_BY_EFFORT.get(
                 (spec.get("effort_level") or "default").lower(), config.PRIMARY_MODEL)
             sess.update({"effort": spec.get("effort_level"), "model": routed_model,
@@ -144,9 +141,8 @@ class OrchestratorExecuteMixin:
                          effort=spec.get("effort_level"))
         if attempt >= 2:
             self._narrate(f"`{sid}` attempt {attempt}. Still working on it.")
-        # Epic 4 semantic-safety: per-attempt authorization (defense-in-depth, coarse-grained).
-        # The bulk lives in OrchestratorSafetyMixin; here we only honor a block verdict. Guard the
-        # call so a non-safety host (and the disabled default) is a clean passthrough.
+        # Epic 4 semantic-safety: per-attempt authorization (bulk in OrchestratorSafetyMixin;
+        # here we only honor a block verdict; disabled default is a clean passthrough).
         if config.SEMANTIC_SAFETY_ENABLED:
             blocked = self._authorizeAttempt(state, bus, dashboard, spec)
             if blocked is not None:
@@ -157,8 +153,7 @@ class OrchestratorExecuteMixin:
                 return spec, blocked, vresult, blocked["stderr"], False, None, None
         attempt_started = time.time()
         hands = self._selectExecutor(spec)   # route to the right surface (terminal | browser)
-        # Live surface feed: tap the Claude subprocess stdout in real time (terminal path only;
-        # the browser hands layer doesn't take a feed). Best-effort -- never block a run.
+        # Live surface feed: tap Claude stdout in real time (terminal path only; best-effort).
         feed = None
         recorder = None
         parent_span = None   # LOCAL (not on self): per-thread so a peer worker can't close it
@@ -204,10 +199,8 @@ class OrchestratorExecuteMixin:
         hands_kw.update(_envHandsKw(hands, self._run_claude, environment, env_handle))
         if feed is not None:
             hands_kw["feed"] = feed
-        # eliza spawn-link: hand THIS attempt's parent step id to the child subprocess so its tool
-        # spans stitch into this subtask span. Passed per-spawn into the CHILD's env (runClaude
-        # copies os.environ per subprocess) -- never mutating the shared process-global os.environ --
-        # so concurrent pool workers can't clobber each other and no stale id leaks to a later spawn.
+        # eliza spawn-link: hand THIS attempt's parent step id to the child via its OWN env copy
+        # (runClaude copies os.environ per spawn) -- concurrent pool workers can't clobber it.
         if hands is self._run_claude:
             hands_kw["parent_trajectory_step_id"] = parent_span
         result = None
@@ -248,6 +241,12 @@ class OrchestratorExecuteMixin:
         stderr_text = _resultText(result, "stderr")
         if stderr_text:
             combined += "\n[stderr]\n" + stderr_text
+        # R6: operator kill = CONTROL FLOW, not a failed attempt: skip verify, keep the incoming
+        # failure_feedback unsynthesized; the loop's control branch handles abort/pause/slot.
+        if result.get("subtype") == "operator_killed":
+            vresult = {"passed": False, "operator_killed": True, "cmd": None,
+                       "returncode": result.get("returncode"), "stderr": stderr_text}
+            return spec, result, vresult, combined, False, resume_session, failure_feedback
         vresult, passed, resume_session, failure_feedback = self._runAttemptVerify(
             state, subtask, result, exec_cwd, verify_spec, attempt_started,
             sid, combined, dashboard, resume_session)
@@ -291,14 +290,19 @@ class OrchestratorExecuteMixin:
                                     sid, verify_spec, failure_feedback, resume_session, attempt,
                                     env_ctx)
             self._translateDiscord(bus, state)
-            # honor !pause mid-subtask via the SHARED escapable wait (abort / night-mode timeout /
-            # deadline) -- the inline loop here previously ignored all three and could wedge an
-            # unattended night run forever (CB-1).
+            # honor !pause mid-subtask via the SHARED escapable wait (abort / night-mode
+            # timeout / deadline), so a !pause can never wedge an unattended run (CB-1).
             self._waitWhilePaused(state, bus, dashboard, label=f"{sid} paused")
             if bus.isAbort():
                 raise AbortRun("abort requested")
             if (state.getSubtask(sid) or {}).get("status") == "removed":
                 return None, None, None, None, False, attempt
+            # R6: an operator kill never burns an attempt slot; a deadline-driven cancel must
+            # stop respawning attempts the watcher would instantly re-kill.
+            if isinstance(result, dict) and result.get("subtype") == "operator_killed":
+                attempt -= 1
+                if self._deadlinePassed(state):
+                    break
         return spec, result, vresult, combined, passed, attempt
 
     def _runAdversaryReview(self, state: TaskState, subtask: dict, combined: str,

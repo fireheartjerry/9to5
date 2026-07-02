@@ -4,14 +4,19 @@
 EXPORTS:
   normalizeSpec(spec_or_prompt: Union[dict, str, None]) -> dict  -- Accept a full invocation spec dict OR a bare prompt string
   effortFlag(effort_level: str) -> Optional[str]
-  scanDestructive(text: str) -> list[str]
-DEPENDS-ON: agents.workflow_resolver, config, notifications.discord_bot
-SIDE-EFFECTS: unannotated
+  buildHooksBlock(project_root=None) -> dict  -- Generate the Claude-settings ``hooks`` block from HOOKS_SPEC (absolute hook path).
+  settingsHasGuardHooks(settings: dict) -> bool  -- True when every HOOKS_SPEC guard is registered in the settings' hooks block.
+  composeRunSettingsDict(base_settings_path=None) -> dict  -- Per-run settings dict: base settings merged with the generated hooks block.
+  composeRunSettings(base_settings_path=None, out_path=None) -> Path  -- Write the per-run --settings file (see composeRunSettingsDict) and return its path.
+  buildHookCtxEnv(boundaries=None) -> str  -- JSON for the NINE_TO_FIVE_HOOK_CTX env var: ONE channel for hook context (boundaries +
+DEPENDS-ON: agents.workflow_resolver, config, notifications.discord_bot, platform_core.runtime.action_risk
+SIDE-EFFECTS: composeRunSettings writes the per-run settings JSON
 RUN/TEST: (no mapped test)
 """
 from __future__ import annotations
 
-import re
+import json
+from pathlib import Path
 from typing import Optional, Union
 
 import config
@@ -123,22 +128,117 @@ def effortFlag(effort_level: str) -> Optional[str]:
     return config.EFFORT_FLAG_MAP.get((effort_level or "default").lower())
 
 
-# Headless `claude --print --dangerously-skip-permissions` does NOT run .claude
-# hooks or permissions, so 9TO5 enforces the block_destructive guardrail
-# here, in plumbing we control (deterministic, always-on in autonomous mode).
-# Match destructive commands at a COMMAND POSITION (start of line, or after a shell separator)
-# with word boundaries -- so benign prose like "format the output" or "run rm later" never blocks.
-# An optional sudo/doas privilege prefix is consumed so `sudo rm -rf /` is still caught at command
-# position (this only ADDS matches over already-destructive commands -- no new false positives).
-_DESTRUCTIVE_RE = re.compile(
-    r"(?:^|[\n;&|`]\s*)(?:sudo\s+|doas\s+)?(rm\s+-[rf]{2}\b|rmdir\s+/s\b|del\s+/[fsq]\b|format\s+[a-z]:|"
-    r"drop\s+table\b|git\s+push\s+(?:--force\b|-f\b)|mkfs\b|:\(\)\s*\{|>\s*/dev/sd[a-z])",
-    re.IGNORECASE | re.MULTILINE,
+# Headless `claude --print --dangerously-skip-permissions` may NOT run .claude hooks or
+# permissions, so 9TO5 KEEPS this pre-scan enforcement layer in plumbing we control
+# (deterministic, always-on in autonomous mode) -- defense in depth ALONGSIDE the registered
+# PreToolUse hooks, never instead of them. The pattern SOURCE is the one shared taxonomy in
+# platform_core.runtime.action_risk (anchored command-position regex with sudo/doas and
+# chained-command handling), so the two enforcement layers can never drift apart.
+from platform_core.runtime.action_risk import (  # noqa: E402
+    DESTRUCTIVE_COMMAND_RE as _DESTRUCTIVE_RE,  # compat alias for existing callers
+    scanDestructive,
 )
 
+# ---------------------------------------------------------------------------
+# Guard-hook registration -- single source: HOOKS_SPEC.
+# The repo .claude/settings.json (interactive sessions) and the per-run --settings file
+# (executor runs) both derive from THIS constant, and platform_core/ops/health.py hard-fails
+# when either is missing the block -- registration cannot silently drift back to hooks={}.
+# ---------------------------------------------------------------------------
+HOOKS_SPEC: tuple[tuple[str, str, str], ...] = (
+    # (claude_settings_event, tool_matcher, agents/hooks.py hook name)
+    ("PreToolUse", "Bash", "block_destructive"),
+    ("PreToolUse", "Bash|Edit|Write|MultiEdit", "self_modification_guard"),
+)
 
-def scanDestructive(text: str) -> list[str]:
-    return [m.group(1).strip() for m in _DESTRUCTIVE_RE.finditer(text or "")]
+# Own-tree root (NOT config.PROJECT_ROOT): hooks must target THIS checkout's agents/hooks.py
+# under any worktree, mirroring hooks.py's own sys.path rule (see tests/test_hooks_self_path.py).
+_OWN_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _hookInterpreter() -> str:
+    """Prefer the venv python (absolute, dep-complete) when it exists; else PATH python.
+    Guard hooks are stdlib+action_risk only by design, so bare `python` still guards."""
+    try:
+        venv_py = getattr(config, "VENV_PYTHON", None)
+        if venv_py and Path(venv_py).exists():
+            return '"' + str(venv_py).replace("\\", "/") + '"'
+    except Exception:  # noqa: BLE001
+        pass
+    return "python"
+
+
+def buildHooksBlock(project_root=None) -> dict:
+    """Generate the Claude-settings ``hooks`` block from HOOKS_SPEC (absolute hook path)."""
+    root = Path(project_root) if project_root else _OWN_ROOT
+    hooks_py = str(root / "agents" / "hooks.py").replace("\\", "/")
+    py = _hookInterpreter()
+    events: dict = {}
+    for event, matcher, hook_name in HOOKS_SPEC:
+        events.setdefault(event, []).append({
+            "matcher": matcher,
+            "hooks": [{"type": "command", "command": f'{py} "{hooks_py}" {hook_name}'}],
+        })
+    return events
+
+
+def settingsHasGuardHooks(settings: dict) -> bool:
+    """True when every HOOKS_SPEC guard is registered in the settings' hooks block."""
+    hooks = (settings or {}).get("hooks") or {}
+    if not isinstance(hooks, dict):
+        return False
+    for event, _matcher, hook_name in HOOKS_SPEC:
+        blob = json.dumps(hooks.get(event) or [])
+        if "hooks.py" not in blob or hook_name not in blob:
+            return False
+    return True
+
+
+def composeRunSettingsDict(base_settings_path=None) -> dict:
+    """Per-run settings dict: base settings merged with the generated hooks block.
+
+    The guard-hook block is ALWAYS injected -- even when the base file is missing, unreadable,
+    or lost its hooks -- so an executor run can never launch without the guards registered.
+    Model/effort keys and permissions pass through untouched."""
+    path = Path(base_settings_path) if base_settings_path else Path(config.CLAUDE_SETTINGS_PATH)
+    base: dict = {}
+    try:
+        if path.exists():
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                base = loaded
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("composeRunSettings: unreadable base settings %s (%s); regenerating", path, e)
+    merged = dict(base.get("hooks") or {}) if isinstance(base.get("hooks"), dict) else {}
+    for event, entries in buildHooksBlock().items():
+        existing = list(merged.get(event) or [])
+        for entry in entries:
+            hook_name = entry["hooks"][0]["command"].rsplit(" ", 1)[-1]
+            blob = json.dumps(existing)
+            if "hooks.py" not in blob or hook_name not in blob:
+                existing.append(entry)
+        merged[event] = existing
+    base["hooks"] = merged
+    return base
+
+
+def composeRunSettings(base_settings_path=None, out_path=None) -> Path:
+    """Write the per-run --settings file (see composeRunSettingsDict) and return its path."""
+    out = Path(out_path) if out_path else (Path(config.LOG_PATH) / "claude_run_settings.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(composeRunSettingsDict(base_settings_path), indent=2),
+                   encoding="utf-8")
+    return out
+
+
+def buildHookCtxEnv(boundaries=None) -> str:
+    """JSON for the NINE_TO_FIVE_HOOK_CTX env var: ONE channel for hook context (boundaries +
+    log/alert paths from config) so guard entrypoints need no config import of their own."""
+    return json.dumps({
+        "log_path": str(Path(config.LOG_PATH) / "hooks.log"),
+        "guard_alerts": str(Path(config.LOG_PATH) / "guard_alerts.jsonl"),
+        "boundaries": [str(b) for b in (boundaries or [])],
+    })
 
 
 def _alertBlocked(reason: str) -> None:

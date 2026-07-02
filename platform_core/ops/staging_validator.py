@@ -32,7 +32,6 @@ _CRITICAL_MODULES = [
     "state.task",
     "agents.verifier",
     "agents.executor",
-    "agents.orchestration_pipeline",
 ]
 
 # Steps that must appear in the main CI workflow.

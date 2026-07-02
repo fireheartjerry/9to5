@@ -137,19 +137,6 @@ def _isolate_experience_db(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
-def _isolate_conviction_db(monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "CONVICTION_DB_PATH", tmp_path / "conviction.db", raising=False)
-    yield
-
-
-@pytest.fixture(autouse=True)
-def _isolate_ab_harness_db(monkeypatch, tmp_path):
-    """Point the A/B harness at a per-test tmp DB (mirrors _isolate_conviction_db)."""
-    monkeypatch.setattr(config, "AB_HARNESS_DB_PATH", tmp_path / "ab_runs.db", raising=False)
-    yield
-
-
-@pytest.fixture(autouse=True)
 def _no_real_browser(monkeypatch):
     """Never let a test drive the real generic browser (CDP) layer.
 

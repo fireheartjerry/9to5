@@ -1,7 +1,7 @@
 """Tests for agents/trace_replay.py optimized workflow.
 
 Validates the invocation spec structure, buildSpec() output, and
-runWorkflow() behaviour (mocked for subprocess / tracing calls).
+runWorkflow() behaviour (tracing calls mocked; replay runs in-process).
 
 Acceptance command: python C:\\9to5\\tests\\test_trace_replay_workflow.py
 """
@@ -143,126 +143,94 @@ class TestRunWorkflowNoTraces(unittest.TestCase):
         self.assertEqual(len(result["divergences"]), 0)
 
     def test_explicit_run_id_skips_tracing_check(self):
-        # When a run_id is supplied and tracing returns nothing, we still proceed
-        # to subprocess — mock subprocess to avoid real exec.
-        fake_json = json.dumps({
-            "run_id": "explicit-run",
-            "divergence_count": 0,
-            "high_activity_count": 0,
-            "parallel_moments": 0,
-            "total_events": 1,
-            "divergences": [],
-        })
-        proc = mock.MagicMock()
-        proc.returncode = 0
-        proc.stdout = fake_json
-        proc.stderr = ""
+        # When a run_id is supplied and tracing returns nothing, we still replay
+        # that run's events in-process.
+        events = [_ev("run_completed", "st-A", 0)]
         with mock.patch.object(_wf.tracing, "recentRunIds", return_value=[]):
-            with mock.patch("subprocess.run", return_value=proc):
+            with mock.patch.object(_wf.tracing, "readEvents", return_value=events):
                 result = _wf.runWorkflow(run_id="explicit-run")
         self.assertTrue(result["ok"])
         self.assertEqual(result["run_id"], "explicit-run")
 
 
-# ── runWorkflow — subprocess path ─────────────────────────────────────────────
+# ── runWorkflow — in-process replay path ─────────────────────────────────────
 
-class TestRunWorkflowSubprocess(unittest.TestCase):
+def _ev(event: str, subtask: str, second: int) -> dict:
+    return {
+        "ts": f"2026-01-01T00:00:{second:02d}+00:00",
+        "run_id": "run-001",
+        "subtask_id": subtask,
+        "event": event,
+    }
 
-    def _make_proc(self, report: dict, returncode: int = 0) -> mock.MagicMock:
-        proc = mock.MagicMock()
-        proc.returncode = returncode
-        proc.stdout = json.dumps(report)
-        proc.stderr = ""
-        return proc
 
-    def _run(self, report: dict, returncode: int = 0, recent=None, **kw) -> dict:
+class TestRunWorkflowInProcess(unittest.TestCase):
+
+    def _run(self, events: list, recent=None, **kw) -> dict:
         if recent is None:
             recent = ["run-001"]
-        proc = self._make_proc(report, returncode)
         with mock.patch.object(_wf.tracing, "recentRunIds", return_value=recent):
-            with mock.patch("subprocess.run", return_value=proc):
+            with mock.patch.object(_wf.tracing, "readEvents", return_value=events):
                 return _wf.runWorkflow(**kw)
 
-    def _report(self, **overrides) -> dict:
-        base = {
-            "run_id": "run-001",
-            "divergence_count": 0,
-            "high_activity_count": 0,
-            "parallel_moments": 0,
-            "total_events": 2,
-            "divergences": [],
-        }
-        base.update(overrides)
-        return base
-
     def test_clean_run_ok(self):
-        result = self._run(self._report())
+        result = self._run([_ev("run_completed", "st-A", 0), _ev("verify_passed", "st-A", 1)])
         self.assertTrue(result["ok"])
         self.assertIsNone(result["error"])
+        self.assertEqual(result["divergence_count"], 0)
 
-    def test_divergence_count_propagated(self):
-        result = self._run(self._report(divergence_count=3))
+    def test_divergence_count_computed(self):
+        events = [
+            _ev("verification_failed", "st-A", 0),
+            _ev("replan_triggered", "st-A", 1),
+            _ev("adversary_challenged", "st-B", 2),
+            _ev("verify_passed", "st-B", 3),
+        ]
+        result = self._run(events)
         self.assertEqual(result["divergence_count"], 3)
 
-    def test_high_activity_count_propagated(self):
-        result = self._run(self._report(high_activity_count=2))
-        self.assertEqual(result["high_activity_count"], 2)
-
-    def test_total_events_propagated(self):
-        result = self._run(self._report(total_events=7))
+    def test_total_events_computed(self):
+        events = [_ev("verify_passed", "st-A", i) for i in range(7)]
+        result = self._run(events)
         self.assertEqual(result["total_events"], 7)
 
-    def test_divergences_list_propagated(self):
-        divs = [{"offset": "T+0.00s", "event": "verify_fail", "subtask": "s", "kind": "FAIL"}]
-        result = self._run(self._report(divergences=divs, divergence_count=1))
-        self.assertEqual(result["divergences"], divs)
+    def test_high_activity_count_computed(self):
+        # 12 events in one subtask exceeds the fallback threshold of 10.
+        # No calibration runs (recent=[]) so the fallback threshold applies.
+        events = [_ev("step_started", "st-busy", i) for i in range(12)]
+        result = self._run(events, recent=[], run_id="run-001")
+        self.assertEqual(result["high_activity_count"], 1)
 
-    def test_subprocess_error_captured(self):
-        proc = mock.MagicMock()
-        proc.returncode = 1
-        proc.stdout = ""
-        proc.stderr = "something failed"
+    def test_divergence_entries_have_expected_fields(self):
+        result = self._run([_ev("verification_failed", "st-A", 0)])
+        self.assertEqual(len(result["divergences"]), 1)
+        entry = result["divergences"][0]
+        for key in ("offset", "event", "subtask", "kind"):
+            self.assertIn(key, entry)
+        self.assertEqual(entry["kind"], "FAIL")
+
+    def test_read_error_captured(self):
         with mock.patch.object(_wf.tracing, "recentRunIds", return_value=["run-001"]):
-            with mock.patch("subprocess.run", return_value=proc):
+            with mock.patch.object(_wf.tracing, "readEvents",
+                                   side_effect=RuntimeError("disk gone")):
                 result = _wf.runWorkflow()
         self.assertFalse(result["ok"])
-        self.assertIsNotNone(result["error"])
+        self.assertIn("disk gone", result["error"])
 
-    def test_json_parse_error_captured(self):
-        proc = mock.MagicMock()
-        proc.returncode = 0
-        proc.stdout = "not json at all"
-        proc.stderr = ""
-        with mock.patch.object(_wf.tracing, "recentRunIds", return_value=["run-001"]):
-            with mock.patch("subprocess.run", return_value=proc):
-                result = _wf.runWorkflow()
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["error"], "json_parse_error")
+    def test_no_events_for_run(self):
+        result = self._run([])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["error"], "no_events")
+        self.assertEqual(result["run_id"], "run-001")
 
-    def test_timeout_captured(self):
-        import subprocess as _sp
-        with mock.patch.object(_wf.tracing, "recentRunIds", return_value=["run-001"]):
-            with mock.patch("subprocess.run", side_effect=_sp.TimeoutExpired("cmd", 60)):
-                result = _wf.runWorkflow()
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["error"], "timeout")
-
-    def test_run_id_resolved_from_json(self):
-        result = self._run(self._report(run_id="resolved-run"))
+    def test_run_id_resolved_from_recent(self):
+        result = self._run([_ev("verify_passed", "st-A", 0)], recent=["resolved-run"])
         self.assertEqual(result["run_id"], "resolved-run")
 
-    def test_log_prefix_before_json_handled(self):
-        # Script may emit log lines before the JSON block; parser must skip them.
-        report = self._report(divergence_count=1)
-        proc = mock.MagicMock()
-        proc.returncode = 0
-        proc.stdout = "[trace-replay] Calibrated threshold=10 from 2 run(s)\n" + json.dumps(report)
-        proc.stderr = ""
-        with mock.patch.object(_wf.tracing, "recentRunIds", return_value=["run-001"]):
-            with mock.patch("subprocess.run", return_value=proc):
-                result = _wf.runWorkflow()
-        self.assertTrue(result["ok"])
-        self.assertEqual(result["divergence_count"], 1)
+    def test_raw_is_json_report(self):
+        result = self._run([_ev("verification_failed", "st-A", 0)])
+        report = json.loads(result["raw"])
+        self.assertEqual(report["divergence_count"], 1)
 
 
 # ── Optimization properties ───────────────────────────────────────────────────
@@ -286,8 +254,8 @@ class TestWorkflowOptimizations(unittest.TestCase):
         spec = _wf.buildSpec()
         self.assertEqual(spec["_meta"]["calibrate_limit"], 20)
 
-    def test_no_traces_does_not_spawn_subprocess(self):
+    def test_no_traces_does_not_read_events(self):
         with mock.patch.object(_wf.tracing, "recentRunIds", return_value=[]):
-            with mock.patch("subprocess.run") as mock_run:
+            with mock.patch.object(_wf.tracing, "readEvents") as mock_read:
                 _wf.runWorkflow()
-        mock_run.assert_not_called()
+        mock_read.assert_not_called()

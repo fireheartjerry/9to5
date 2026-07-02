@@ -22,6 +22,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from platform_core.orchestration.pr_feedback import (
+    _fetchReviews,
     _parsePRSlug,
     _writeLedger,
     capturePRFeedback,
@@ -171,6 +172,39 @@ class TestCapturePRFeedbackReview(unittest.TestCase):
         self.assertEqual(result["review_state"], "none")
         # CI passed, no blocking reviews → promote_safe
         self.assertTrue(result["promote_safe"])
+
+
+# ---------------------------------------------------------------------------
+# _fetchReviews — jq regression (live bug: '.[].{state,body}' is INVALID jq, so the
+# call always failed and review state silently degraded to 'none')
+# ---------------------------------------------------------------------------
+
+class TestFetchReviewsJq(unittest.TestCase):
+    @mock.patch("platform_core.orchestration.pr_feedback._gh")
+    def test_reviews_jq_is_valid_and_state_parses(self, mock_gh):
+        captured: dict = {}
+
+        def fake_gh(args):
+            captured["args"] = list(args)
+            return 0, "\n".join([
+                json.dumps({"state": "CHANGES_REQUESTED", "body": "fix this"}),
+                json.dumps({"state": "APPROVED", "body": ""}),
+            ])
+
+        mock_gh.side_effect = fake_gh
+        out = _fetchReviews("acme", "repo", "42")
+        # Regression: previously ALWAYS 'none' because gh rejected the jq filter.
+        self.assertEqual(out["state"], "changes_requested")
+        self.assertEqual(out["feedback"], ["fix this"])
+        jq = captured["args"][captured["args"].index("--jq") + 1]
+        self.assertEqual(jq, ".[] | {state, body}")
+        self.assertNotIn(".[].{", jq)   # the invalid form must never come back
+
+    @mock.patch("platform_core.orchestration.pr_feedback._gh")
+    def test_reviews_all_approved(self, mock_gh):
+        mock_gh.return_value = (0, json.dumps({"state": "APPROVED", "body": "LGTM"}))
+        out = _fetchReviews("acme", "repo", "42")
+        self.assertEqual(out["state"], "approved")
 
 
 # ---------------------------------------------------------------------------

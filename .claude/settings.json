@@ -14,5 +14,26 @@
       "Read(.env)"
     ]
   },
-  "hooks": {}
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:/9to5/fable-rewrite/agents/hooks.py\" block_destructive"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:/9to5/fable-rewrite/agents/hooks.py\" self_modification_guard"
+          }
+        ]
+      }
+    ]
+  }
 }

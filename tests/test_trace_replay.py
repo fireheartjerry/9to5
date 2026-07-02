@@ -1,4 +1,4 @@
-"""Tests for agents/trace-replay.py divergence detection logic.
+"""Tests for agents/trace_replay_cli.py divergence detection logic.
 
 Acceptance command: python C:\\9to5\\tests\\test_trace_replay.py
 """
@@ -15,7 +15,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 _spec = importlib.util.spec_from_file_location(
-    "trace_replay", _ROOT / "agents" / "trace-replay.py"
+    "trace_replay", _ROOT / "agents" / "trace_replay_cli.py"
 )
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)

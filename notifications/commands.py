@@ -262,7 +262,9 @@ def _applyIntelCommand(bus: ControlBus, state: TaskState, cmd: Command) -> Optio
         return f"Deadline extension queued: +{cmd.arg.strip()}"
     if n == "kill":
         bus.requestKillSubprocess()
-        return "Kill signal sent — the current Claude attempt will be terminated."
+        return (f"Kill signal sent — the in-flight Claude attempt's process tree will be "
+                f"killed within ~{config.CANCEL_POLL_SECONDS:g}s. The run continues; the "
+                "killed attempt does not burn a retry slot.")
     if n == "inject":
         if not cmd.arg.strip():
             return "usage: `!inject <text>`"

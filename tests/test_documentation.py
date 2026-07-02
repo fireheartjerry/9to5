@@ -7,7 +7,6 @@ DOC = pathlib.Path(__file__).parent.parent / "docs" / "notification_system.md"
 
 REQUIRED_SECTIONS = [
     "## Architecture overview",
-    "## NotificationBus",
     "## NotificationEntry schema",
     "## Discord live dashboard",
     "## Discord milestone embeds",
@@ -22,7 +21,6 @@ REQUIRED_SECTIONS = [
 ]
 
 REQUIRED_TERMS = [
-    "NotificationBus",
     "NotificationEntry",
     "makeEntry",
     "validate",
@@ -65,18 +63,6 @@ class TestNotificationSystemDoc(unittest.TestCase):
         self.assertIn("/loop is a CC slash command", self.text,
                       "docs/notification_system.md must document that /loop is a CC slash command")
         print("/loop is a CC slash command")
-
-    def test_error_handling_documented(self):
-        self.assertIn("## Orchestrator error handling", self.text,
-                      "docs/notification_system.md must have an 'Orchestrator error handling' section")
-        self.assertIn("retryTask", self.text,
-                      "docs/notification_system.md must document retryTask")
-        self.assertIn("MAX_RETRIES", self.text,
-                      "docs/notification_system.md must document MAX_RETRIES")
-        self.assertIn("RetryExhausted", self.text,
-                      "docs/notification_system.md must document RetryExhausted")
-        print("New error handling mechanism is documented with examples")
-
 
 class TestPRFeedbackDoc(unittest.TestCase):
     """Validates that docs/pr_feedback.md exists and covers required sections."""

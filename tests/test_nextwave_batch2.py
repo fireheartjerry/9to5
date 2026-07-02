@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 import config
-from learning import (adapter_ops, knowledge_graph, meta_opt, postmortem,
+from learning import (knowledge_graph, meta_opt, postmortem,
                       reflection, solution_cache, toolsmith)
 from memory import experience
 
@@ -120,16 +120,3 @@ class TestResearchTrack(_Base):
             self._sub(f"st-{i}", passed=False, title="api task")
         sugg = meta_opt.suggest(db_path=self.db)
         self.assertTrue(any(s["knob"] == "MAX_SUBTASK_ATTEMPTS" for s in sugg))
-
-    def test_adapter_soup_plan_and_overfit_signal(self):
-        a = experience.register_adapter(base_model="b", tag="t-a", role="planner",
-                                        lora_path="/a", db_path=self.db)
-        b = experience.register_adapter(base_model="b", tag="t-b", role="replanner",
-                                        lora_path="/b", db_path=self.db)
-        experience.promote_adapter(a, db_path=self.db)
-        experience.promote_adapter(b, db_path=self.db)
-        self.assertEqual(len(adapter_ops.merge_plan(db_path=self.db)), 2)
-        self.assertEqual(adapter_ops.soup(db_path=self.db)["skipped"], "no_merger")
-        for v in (0.1, 0.3, 0.5, 0.7, 0.9):
-            experience.record_eval({"fitness": v}, db_path=self.db)
-        self.assertTrue(adapter_ops.overfit_signal(recent=5, db_path=self.db)["suspect"])

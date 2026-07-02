@@ -15,7 +15,6 @@ if str(_ROOT) not in sys.path:
 
 import config
 from notifications.entry import VALID_KINDS, REQUIRED_KEYS
-from notifications.bus import NotificationBus, NotificationSurface
 
 
 # ---------------------------------------------------------------------------
@@ -166,46 +165,12 @@ class TestNotificationEntryConfig(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# NotificationBus protocol
-# ---------------------------------------------------------------------------
-
-class TestNotificationBusContract(unittest.TestCase):
-    def test_surface_protocol_is_runtime_checkable(self):
-        class _Good:
-            def handle(self, event_type: str, payload: dict) -> None:
-                pass
-        self.assertIsInstance(_Good(), NotificationSurface)
-
-    def test_surface_isolation_in_bus(self):
-        class _Bad:
-            def handle(self, event_type, payload):
-                raise RuntimeError("boom")
-        bus = NotificationBus()
-        bus.register(_Bad())
-        bus.emit("complete", {})  # must not raise
-
-    def test_bus_emits_to_all_surfaces(self):
-        received = []
-        class _Cap:
-            def handle(self, et, p):
-                received.append(et)
-        bus = NotificationBus()
-        bus.register(_Cap())
-        bus.register(_Cap())
-        bus.emit("planning_start", {})
-        self.assertEqual(len(received), 2)
-
-
-# ---------------------------------------------------------------------------
 # Module import platform_core.ops.health as health
 # ---------------------------------------------------------------------------
 
 class TestNotificationImports(unittest.TestCase):
     def test_notifications_entry_importable(self):
         import notifications.entry  # noqa: F401
-
-    def test_notifications_bus_importable(self):
-        import notifications.bus  # noqa: F401
 
     def test_notifications_audit_importable(self):
         import notifications.audit  # noqa: F401

@@ -21,24 +21,24 @@ Turn a dead log into a live debugging session. Extract cause from effect without
 
 ## 9TO5 built-in tool
 
-`agents/trace-replay.py` automates Phases 1–5 for any 9TO5 run trace stored under
+`agents/trace_replay_cli.py` automates Phases 1–5 for any 9TO5 run trace stored under
 `logs/runs/`:
 
 ```sh
 # replay the most recent run
-python agents/trace-replay.py
+python agents/trace_replay_cli.py
 
 # replay a specific run
-python agents/trace-replay.py --run-id <RUN_ID>
+python agents/trace_replay_cli.py --run-id <RUN_ID>
 
 # show calibrated high-activity threshold and exit
-python agents/trace-replay.py --calibrate
+python agents/trace_replay_cli.py --calibrate
 
 # validate internal logic against synthetic fixtures
-python agents/trace-replay.py --self-test
+python agents/trace_replay_cli.py --self-test
 
 # limit how many recent runs are considered when no --run-id is given
-python agents/trace-replay.py --limit 10
+python agents/trace_replay_cli.py --limit 10
 ```
 
 | Flag | Default | Description |

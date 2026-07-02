@@ -101,6 +101,7 @@ class _FakeState:
     def __init__(self, task_id):
         self.task_id = task_id
         self.subtasks: list = []
+        self.meta: dict = {}          # _runOneAttempt reads meta (e.g. work_profile)
         self._subs: dict = {}
 
     def updateSubtask(self, sid, **kw):

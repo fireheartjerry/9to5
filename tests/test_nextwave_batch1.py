@@ -45,25 +45,10 @@ class TestHumanFeedback(_Base):
 
 
 class TestConfidence(_Base):
-    def _seed(self, passed, attempts, n):
-        for i in range(n):
-            experience.record_subtask("r1", {
-                "subtask_id": f"{int(passed)}-{attempts}-{i}", "title": "t", "status": "done",
-                "verify_result": {"passed": passed}, "session": {"attempts": attempts}},
-                db_path=self.db)
-
-    def test_calibrator_separates_and_recommends(self):
-        self._seed(True, 1, 30)
-        self._seed(False, 3, 30)
-        cal = confidence.fit_from_ledger(db_path=self.db, epochs=400)
-        p_easy = confidence.predict(cal, {"verify_passed": 1, "attempt_count": 1})
-        self.assertEqual(confidence.recommend(0.1), "escalate")
-        self.assertIn(confidence.recommend(p_easy), ("proceed", "fast"))
-
-    def test_should_escalate_low_conf(self):
-        cal = confidence.fit_from_ledger(db_path=self.db)  # empty -> ~0.5
-        out = confidence.should_escalate(cal, {"verify_passed": 0}, threshold=0.9)
-        self.assertTrue(out)
+    def test_recommend_thresholds(self):
+        self.assertEqual(confidence.recommend(0.1, threshold=0.4), "escalate")
+        self.assertEqual(confidence.recommend(0.5, threshold=0.4), "proceed")
+        self.assertEqual(confidence.recommend(0.9, threshold=0.4), "fast")
 
     def test_prior_success_is_family_first_pass_rate(self):
         for i in range(4):

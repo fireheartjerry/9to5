@@ -1,7 +1,7 @@
 """Infrastructure contracts for the 9TO5 notification system (st-006 / st-061).
 
 Covers embed clamping, dashboard event deque, rate-limit circuit breaker,
-surface isolation (Gap 1), snapshot TTL cache (Gap 4), and bus surface-count.
+and the snapshot TTL cache (Gap 4).
 """
 from __future__ import annotations
 
@@ -19,26 +19,6 @@ if str(_ROOT) not in sys.path:
 import config
 import notifications.discord_bot as d
 from notifications import dashboard as dash
-from notifications.bus import NotificationBus
-
-
-# ---------------------------------------------------------------------------
-# Shared test surface helpers
-# ---------------------------------------------------------------------------
-
-class _CaptureSurface:
-    """Test surface that records calls."""
-    def __init__(self):
-        self.calls: list[tuple[str, dict]] = []
-
-    def handle(self, event_type: str, payload: dict) -> None:
-        self.calls.append((event_type, payload))
-
-
-class _FailingSurface:
-    """Test surface that always raises."""
-    def handle(self, event_type: str, payload: dict) -> None:
-        raise RuntimeError("surface intentionally failed")
 
 
 # ---------------------------------------------------------------------------
@@ -147,41 +127,6 @@ class TestRateLimitCircuitBreakerContract(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Contract 5: Surface isolation — bus must never propagate surface exceptions
-# ---------------------------------------------------------------------------
-
-class TestNotificationBusContract(unittest.TestCase):
-    def test_emit_reaches_registered_surface(self):
-        bus = NotificationBus()
-        cap = _CaptureSurface()
-        bus.register(cap)
-        bus.emit("subtask_done", {"subtask_id": "st-001"})
-        self.assertEqual(len(cap.calls), 1)
-        self.assertEqual(cap.calls[0][0], "subtask_done")
-
-    def test_failing_surface_does_not_raise(self):
-        bus = NotificationBus()
-        bus.register(_FailingSurface())
-        cap = _CaptureSurface()
-        bus.register(cap)
-        bus.emit("subtask_done", {"subtask_id": "st-002"})  # must not raise
-        self.assertEqual(len(cap.calls), 1)  # second surface still called
-
-    def test_multiple_surfaces_all_called(self):
-        bus = NotificationBus()
-        surfaces = [_CaptureSurface() for _ in range(3)]
-        for s in surfaces:
-            bus.register(s)
-        bus.emit("blocked", {"reason": "unclear"})
-        for s in surfaces:
-            self.assertEqual(len(s.calls), 1)
-
-    def test_empty_bus_emit_is_noop(self):
-        bus = NotificationBus()
-        bus.emit("anything", {})  # must not raise
-
-
-# ---------------------------------------------------------------------------
 # Contract 6: Snapshot cache TTL contract (Gap 4 design)
 # ---------------------------------------------------------------------------
 
@@ -255,45 +200,3 @@ class TestSnapshotCacheContract(unittest.TestCase):
         time.sleep(0.1)
         _cached_snapshot("t1", _builder, ttl=0.05)
         self.assertEqual(call_count, 2)
-
-
-# ---------------------------------------------------------------------------
-# Contract 10: NotificationBus.surface_count and concurrent emit safety
-# ---------------------------------------------------------------------------
-
-class TestNotificationBusSurfaceCount(unittest.TestCase):
-    def test_initial_surface_count_is_zero(self):
-        bus = NotificationBus()
-        self.assertEqual(bus.surface_count, 0)
-
-    def test_surface_count_increments_on_register(self):
-        bus = NotificationBus()
-        bus.register(_CaptureSurface())
-        bus.register(_CaptureSurface())
-        self.assertEqual(bus.surface_count, 2)
-
-    def test_concurrent_emits_do_not_raise(self):
-        bus = NotificationBus()
-        cap = _CaptureSurface()
-        bus.register(cap)
-        errors: list[Exception] = []
-
-        def _emit(n: int):
-            try:
-                for i in range(20):
-                    bus.emit(f"event_{n}_{i}", {"i": i})
-            except Exception as e:  # noqa: BLE001
-                errors.append(e)
-
-        threads = [threading.Thread(target=_emit, args=(k,)) for k in range(5)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-        self.assertEqual(errors, [])
-        self.assertEqual(len(cap.calls), 100)  # 5 threads × 20 emits
-
-    def test_failing_surface_does_not_affect_surface_count(self):
-        bus = NotificationBus()
-        bus.register(_FailingSurface())
-        self.assertEqual(bus.surface_count, 1)

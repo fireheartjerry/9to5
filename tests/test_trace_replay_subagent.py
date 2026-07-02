@@ -1,8 +1,8 @@
-"""Tests for agents/trace-replay.py (CLI) and agents/trace_replay.py — merged.
+"""Tests for agents/trace_replay_cli.py (CLI) and agents/trace_replay.py — merged.
 
 Covers:
   extract:
-  - _extractDecisionPoints in agents/trace-replay.py (CLI module)
+  - _extractDecisionPoints in agents/trace_replay_cli.py (CLI module)
 
   spec_gdp:
   - buildStepSpec: step-mode invocation spec builder.
@@ -27,7 +27,7 @@ if str(_ROOT) not in sys.path:
 
 # Load trace-replay.py CLI module (hyphenated filename requires spec loader).
 _cli_spec = importlib.util.spec_from_file_location(
-    "trace_replay_cli", _ROOT / "agents" / "trace-replay.py"
+    "trace_replay_cli", _ROOT / "agents" / "trace_replay_cli.py"
 )
 _cli = importlib.util.module_from_spec(_cli_spec)
 _cli_spec.loader.exec_module(_cli)
@@ -290,31 +290,24 @@ class TestBuildStepSpecGDP(unittest.TestCase):
 @pytest.mark.test_cli_features
 class TestGetDecisionPointsGDP(unittest.TestCase):
 
-    def _run_gdp(self, run_id=None, recent=None, proc_report=None, returncode=0) -> dict:
-        """Helper: patch tracing + subprocess, then call getDecisionPoints."""
+    @staticmethod
+    def _event(event: str, subtask: str, second: int) -> dict:
+        return {
+            "ts": f"2026-01-01T00:00:{second:02d}+00:00",
+            "run_id": "run-001",
+            "subtask_id": subtask,
+            "event": event,
+        }
+
+    def _run_gdp(self, run_id=None, recent=None, events=None) -> dict:
+        """Helper: patch tracing, then call getDecisionPoints (replay is in-process)."""
         if recent is None:
             recent = []
         with mock.patch.object(_wf.tracing, "recentRunIds", return_value=recent):
-            if proc_report is None:
+            if events is None:
                 return _wf.getDecisionPoints(run_id=run_id)
-            proc = mock.MagicMock()
-            proc.returncode = returncode
-            proc.stdout = json.dumps(proc_report)
-            proc.stderr = ""
-            with mock.patch("subprocess.run", return_value=proc):
+            with mock.patch.object(_wf.tracing, "readEvents", return_value=events):
                 return _wf.getDecisionPoints(run_id=run_id)
-
-    def _base_report(self, **overrides) -> dict:
-        base = {
-            "run_id": "run-001",
-            "divergence_count": 0,
-            "high_activity_count": 0,
-            "parallel_moments": 0,
-            "total_events": 2,
-            "divergences": [],
-        }
-        base.update(overrides)
-        return base
 
     def test_returns_dict(self):
         result = self._run_gdp()
@@ -342,47 +335,34 @@ class TestGetDecisionPointsGDP(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertIn(key, result)
 
-    def test_divergences_propagated_as_decision_points(self):
-        divs = [
-            {"offset": "T+0.00s", "event": "verify_fail", "subtask": "s",
-             "kind": "FAIL", "fields": "", "ts": 0.0},
-        ]
-        report = self._base_report(divergences=divs, divergence_count=1)
-        result = self._run_gdp(recent=["run-001"], proc_report=report)
+    def test_divergences_surfaced_as_decision_points(self):
+        events = [self._event("verification_failed", "st-A", 0),
+                  self._event("verify_passed", "st-A", 1)]
+        result = self._run_gdp(recent=["run-001"], events=events)
         self.assertTrue(result["ok"])
-        self.assertEqual(result["decision_points"], divs)
+        self.assertEqual(len(result["decision_points"]), 1)
+        self.assertEqual(result["decision_points"][0]["kind"], "FAIL")
 
     def test_total_events_propagated(self):
-        report = self._base_report(total_events=9)
-        result = self._run_gdp(recent=["run-001"], proc_report=report)
+        events = [self._event("verify_passed", "st-A", i) for i in range(9)]
+        result = self._run_gdp(recent=["run-001"], events=events)
         self.assertEqual(result["total_events"], 9)
 
-    def test_subprocess_error_ok_false(self):
-        proc = mock.MagicMock()
-        proc.returncode = 1
-        proc.stdout = ""
-        proc.stderr = "crash"
+    def test_read_error_ok_false(self):
         with mock.patch.object(_wf.tracing, "recentRunIds", return_value=["run-001"]):
-            with mock.patch("subprocess.run", return_value=proc):
+            with mock.patch.object(_wf.tracing, "readEvents",
+                                   side_effect=RuntimeError("crash")):
                 result = _wf.getDecisionPoints()
         self.assertFalse(result["ok"])
         self.assertIsNotNone(result["error"])
 
-    def test_subprocess_timeout_ok_false(self):
-        import subprocess as _sp
-        with mock.patch.object(_wf.tracing, "recentRunIds", return_value=["run-001"]):
-            with mock.patch("subprocess.run", side_effect=_sp.TimeoutExpired("cmd", 60)):
-                result = _wf.getDecisionPoints()
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["error"], "timeout")
-
     def test_run_id_propagated(self):
-        report = self._base_report(run_id="my-run")
-        result = self._run_gdp(recent=["my-run"], proc_report=report)
+        events = [self._event("verify_passed", "st-A", 0)]
+        result = self._run_gdp(recent=["my-run"], events=events)
         self.assertEqual(result["run_id"], "my-run")
 
     def test_empty_divergences_gives_empty_decision_points(self):
-        report = self._base_report(divergences=[])
-        result = self._run_gdp(recent=["run-001"], proc_report=report)
+        events = [self._event("verify_passed", "st-A", 0)]
+        result = self._run_gdp(recent=["run-001"], events=events)
         self.assertTrue(result["ok"])
         self.assertEqual(result["decision_points"], [])

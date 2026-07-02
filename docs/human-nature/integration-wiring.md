@@ -1,5 +1,10 @@
 # Human-Nature Layer — Integration Wiring Checklist
 
+> **Code removed 2026-07-02 (R3-human-nature-amputation):** the `human_nature/` package,
+> `memory/conviction_ledger.py`, and the `HN_*` config knobs were deleted from the tree
+> (zero production imports). The full implementation is recoverable at pre-deletion commit
+> `a7b1b2d`. These specs remain the source of truth for any revival.
+
 **Status:** Ready for merge-time insertion into the run loop (Spec A + Spec B must land first).
 **Key guarantee:** ALL wiring is behind `config.HUMAN_NATURE_ENABLED` (default `False`).
 Until the flag is explicitly set, the merged run loop is byte-identical to pre-layer behaviour.

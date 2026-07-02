@@ -22,17 +22,17 @@ EXPORTS:
   is_stalled(state: TaskState, *, max_idle_seconds: float) -> bool  -- True if no subtask has completed within ``max_idle_seconds`` (a hung run).
   pick_resume_task() -> Optional[str]  -- The most-recent interrupted (non-terminal) task to auto-resume, or None.
   run_with_recovery(run_fn: Callable[[TaskState], dict], state: TaskState, *, max_restarts: Optional[int]=None, backoff_base: float=2.0, sleep: Callable[[float], None]=time.sleep, reload_state: Optional[Callable[[str], TaskState]]=None) -> dict  -- Run ``run_fn(state)`` and auto-resume it on crash until the task is terminal, the
-DEPENDS-ON: config, state.task
+DEPENDS-ON: config, platform_core.core.clock, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_resilience.py
 """
 from __future__ import annotations
 
 import time
-from datetime import datetime
 from typing import Any, Callable, Optional
 
 import config
+from platform_core.core.clock import RunClock, elapsedSecondsSince, parseIso
 from state.task import TaskState
 
 LOG = config.getLogger("resilience")
@@ -42,18 +42,11 @@ _TERMINAL = ("done", "complete", "aborted", "partial", "blocked", "failed")
 
 def remaining_seconds(state: TaskState) -> Optional[float]:
     """Seconds until the deadline (negative once passed); None if unparseable."""
-    deadline = state.meta.get("deadline_at")
-    if not deadline:
-        return None
-    try:
-        return (datetime.fromisoformat(deadline) - datetime.now().astimezone()).total_seconds()
-    except Exception:  # noqa: BLE001
-        return None
+    return RunClock(state.meta.get("deadline_at")).remainingSeconds()
 
 
 def deadline_passed(state: TaskState) -> bool:
-    rem = remaining_seconds(state)
-    return rem is not None and rem <= 0
+    return RunClock(state.meta.get("deadline_at")).passed()
 
 
 def is_terminal(state: TaskState) -> bool:
@@ -69,13 +62,9 @@ def last_progress_at(state: TaskState) -> Optional[str]:
 def is_stalled(state: TaskState, *, max_idle_seconds: float) -> bool:
     """True if no subtask has completed within ``max_idle_seconds`` (a hung run)."""
     ts = last_progress_at(state)
-    if not ts:
+    if not ts or parseIso(ts) is None:
         return False
-    try:
-        idle = (datetime.now().astimezone() - datetime.fromisoformat(ts)).total_seconds()
-    except Exception:  # noqa: BLE001
-        return False
-    return idle >= max_idle_seconds
+    return elapsedSecondsSince(ts) >= max_idle_seconds
 
 
 def pick_resume_task() -> Optional[str]:
