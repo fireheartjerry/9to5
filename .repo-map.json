@@ -4459,7 +4459,7 @@
           "kind": "function",
           "signature": "() -> int",
           "summary": "",
-          "lineno": 405
+          "lineno": 397
         }
       ],
       "depends_on": [
@@ -9140,7 +9140,9 @@
       "purpose": "CLI argument helpers for main.py.",
       "exports": [],
       "depends_on": [
-        "config"
+        "config",
+        "orchestrator.refreshClaudeKnowledge",
+        "platform_core.ops.doctor"
       ],
       "side_effects": [
         "none"
@@ -10219,7 +10221,8 @@
         "tests/test_doctor.py"
       ],
       "callers": [
-        "main"
+        "main",
+        "platform_core.cli.main_cli"
       ]
     },
     "platform_core.ops.external_project": {

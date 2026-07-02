@@ -29,7 +29,12 @@ from pathlib import Path
 import config
 from agents import elaborator
 from platform_core.runtime.control import ControlBus
-from platform_core.cli.main_cli import _applyMentionShorthand, _parseArgs
+from platform_core.cli.main_cli import (
+    _applyMentionShorthand,
+    _interceptDoctorCommand,
+    _interceptRefreshCommand,
+    _parseArgs,
+)
 from platform_core.orchestration import work_profile
 from memory.obsidian import ObsidianClient
 from orchestrator import Orchestrator, refreshClaudeKnowledge
@@ -48,19 +53,6 @@ def _buildRunOrchestrator(args):
         return simulation.buildOrchestrator()
     return Orchestrator()
 
-
-def _runRefreshCommand() -> int:
-    """`python main.py /refresh` -- manually rebuild the living Claude Code knowledge
-    base (scrape latest docs + scan installed .claude + product-self-knowledge), overwrite
-    claude_code.md, and recompute the injected CLAUDE CODE CAPABILITIES summary."""
-    config.ensureDirs()
-    print("Refreshing Claude Code knowledge base (fetching latest docs + scanning .claude)...")
-    summary = refreshClaudeKnowledge(force=True)
-    print(f"\nKnowledge written -> {config.CLAUDE_KNOWLEDGE_PATH}")
-    print(f"Injected CLAUDE CODE CAPABILITIES summary: {len(summary)} chars\n")
-    print("===== CLAUDE CODE CAPABILITIES (injected into every Ollama prompt) =====")
-    print(summary)
-    return 0
 
 _CTL_HELP = ("[terminal control] commands: abort | pause | resume | skip <st-00N> | "
              "add <text> | approve | reject | status | help")
@@ -407,13 +399,12 @@ def main() -> int:
     argv = _applyMentionShorthand(sys.argv[1:])
 
     # Intercept before argparse (which would reject bare "/refresh" / "--doctor" tokens).
-    if any(a.lstrip("-/").lower() == "refresh" for a in argv):
-        return _runRefreshCommand()
-    if any(a.lstrip("-/").lower() == "doctor" for a in argv):
-        import platform_core.ops.doctor as doctor
-        report = doctor.run()
-        print(doctor.render(report))
-        return 0 if report["ready"] else 1
+    refresh_code = _interceptRefreshCommand(argv)
+    if refresh_code is not None:
+        return refresh_code
+    doctor_code = _interceptDoctorCommand(argv)
+    if doctor_code is not None:
+        return doctor_code
 
     args = _parseArgs(argv)
 
