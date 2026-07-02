@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 
 import config
 
@@ -42,9 +43,12 @@ class TestImportSurvivesMalformedEnv(unittest.TestCase):
     def test_config_import_does_not_crash_on_garbage(self):
         env = {**os.environ, "OLLAMA_TIMEOUT_SECONDS": "garbage", "OBSIDIAN_PORT": "",
                "CLAUDE_DOC_FETCH_BUDGET_SECONDS": "xx"}
+        # Import config from THIS test file's repo root (where config.py lives) -- config.PROJECT_ROOT
+        # can mis-resolve to a sub-dir with no config.py when the repo runs from a worktree.
+        repo_root = Path(__file__).resolve().parents[1]
         r = subprocess.run(
             [sys.executable, "-c", "import config; print(config.OLLAMA_TIMEOUT_SECONDS, config.OBSIDIAN_PORT)"],
-            cwd=str(config.PROJECT_ROOT), env=env, capture_output=True, text=True, timeout=60)
+            cwd=str(repo_root), env=env, capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, f"config import crashed on malformed .env:\n{r.stderr}")
         self.assertEqual(r.stdout.strip(), "180 27124")   # both fell back to their defaults
 

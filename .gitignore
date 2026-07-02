@@ -41,3 +41,17 @@ C:\\supercritical/
 !.claude/**
 references/
 .env.backup
+# Quarantine trees: nested worktree clone + untracked bot package (excluded from
+# repo_map/identity scans; kept out of git status). See mega-upgrade plan.
+fable-rewrite/
+nightclaw/
+# Local launcher scripts (untracked, machine-specific)
+run.bat
+run.ps1
+.env.example.vars.txt
+# Stray state tree created when PROJECT_ROOT mis-resolves (guarded by B28 fix)
+platform_core/app_config/state/
+platform_core/app_config/logs/
+platform_core/app_config/vault/
+platform_core/app_config/.sc-ctx/
+platform_core/app_config/.claude/

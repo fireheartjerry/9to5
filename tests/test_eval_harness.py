@@ -61,7 +61,10 @@ class TestSuiteAndRun(unittest.TestCase):
         self.dir.rmdir()
 
     def test_load_suite_reads_real_golden_goals(self):
-        goals = eh.load_suite()   # the shipped learning/eval_suite
+        # Resolve the shipped suite from THIS test file's repo root (not config.EVAL_SUITE_DIR,
+        # which mis-resolves to a sub-dir when the repo runs from a worktree with no .env).
+        suite = Path(__file__).resolve().parents[1] / "learning" / "eval_suite"
+        goals = eh.load_suite(suite)   # the shipped learning/eval_suite
         self.assertGreaterEqual(len(goals), 1)
         self.assertTrue(all("verify" in g and g["verify"].get("held_out") for g in goals))
 

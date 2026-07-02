@@ -26,7 +26,10 @@ class TestCoherence(unittest.TestCase):
         self.assertGreater(st.meta["state_epoch"], first)
 
     def test_no_importlib_reload_in_resilience_source(self):
-        src = (Path(config.PROJECT_ROOT) / "platform_core" / "runtime" / "resilience.py").read_text(encoding="utf-8")
+        # Resolve the source from THIS test file's repo root, not config.PROJECT_ROOT (which
+        # mis-resolves to a sub-dir when the repo runs from a worktree with no .env).
+        repo_root = Path(__file__).resolve().parents[1]
+        src = (repo_root / "platform_core" / "runtime" / "resilience.py").read_text(encoding="utf-8")
         # In-process restart must keep the pinned bytecode; self-edits adopt only on a
         # fresh process. A reload would re-enter edited code incoherently.
         self.assertNotIn("importlib.reload", src)

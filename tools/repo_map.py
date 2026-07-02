@@ -30,6 +30,7 @@ from __future__ import annotations
 # ==== IMPORTS ====
 import argparse
 import ast
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -66,19 +67,46 @@ MANUAL_TEST_MAP: dict[str, list[str]] = {
 
 
 # ==== FILE DISCOVERY ====
+def _git_tracked_py_files() -> Optional[list[Path]]:
+    """Git-tracked ``*.py`` paths under REPO_ROOT, or None when git is unavailable / not a repo.
+
+    Tracked-only discovery keeps untracked scratch files and nested ``.claude/worktrees`` clones (a
+    second orchestrator.py/config.py + its own tests/) out of the map -- the filesystem walk pulled
+    those in and produced phantom modules / drift. EXCLUDE_DIRS filtering is still applied on top."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "ls-files", "-z", "--", "*.py"],
+            capture_output=True, text=True, timeout=30)
+    except Exception:  # noqa: BLE001 -- git missing / not installed
+        return None
+    if proc.returncode != 0:
+        return None
+    return [REPO_ROOT / rel for rel in proc.stdout.split("\0") if rel]
+
+
 def iter_py_files(only: Optional[str] = None) -> list[Path]:
     """All first-party .py files (sorted, deterministic), skipping EXCLUDE_DIRS. ``only`` limits
-    to one or more comma-separated top-level path prefixes (e.g. 'agents' or 'agents,tools')."""
+    to one or more comma-separated top-level path prefixes (e.g. 'agents' or 'agents,tools').
+
+    Discovery uses the git-tracked set so untracked scratch/worktree clones never enter the map;
+    falls back to a filesystem walk when git is unavailable (old/partial checkout)."""
     prefixes = [s.strip().rstrip("/") for s in only.split(",")] if only else []
+    tracked = _git_tracked_py_files()
+    candidates = tracked if tracked is not None else list(REPO_ROOT.rglob("*.py"))
     out: list[Path] = []
-    for p in sorted(REPO_ROOT.rglob("*.py")):
-        rel = p.relative_to(REPO_ROOT)
+    for p in candidates:
+        try:
+            rel = p.relative_to(REPO_ROOT)
+        except ValueError:
+            continue
         if any(part in EXCLUDE_DIRS for part in rel.parts):
             continue
         if prefixes and rel.parts[0] not in prefixes:
             continue
+        if not p.exists():   # a tracked-but-locally-deleted file must not break parsing
+            continue
         out.append(p)
-    return out
+    return sorted(out)
 
 
 def module_dotted(path: Path) -> str:

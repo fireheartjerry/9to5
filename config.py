@@ -30,6 +30,7 @@ RUN/TEST: python -m pytest tests/test_config_robust_env.py tests/test_durable_co
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -153,11 +154,14 @@ def _configureLogging() -> None:
     global _LOGGER_CONFIGURED
     if _LOGGER_CONFIGURED:
         return
-    LOG_PATH.mkdir(parents=True, exist_ok=True)  # type: ignore[name-defined]  # from config_paths
+    # Honor NINE_TO_FIVE_LOG_DIR so tests (and alternate deploys) can redirect the FILE log away
+    # from the real logs/9to5.log; fall back to the configured LOG_PATH when unset.
+    log_dir = Path(os.getenv("NINE_TO_FIVE_LOG_DIR") or LOG_PATH)  # type: ignore[name-defined]  # LOG_PATH from config_paths
+    log_dir.mkdir(parents=True, exist_ok=True)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     base = logging.getLogger("9to5")
     base.setLevel(logging.INFO)
-    fh = logging.FileHandler(LOG_PATH / "9to5.log", encoding="utf-8")  # type: ignore[name-defined]
+    fh = logging.FileHandler(log_dir / "9to5.log", encoding="utf-8")
     fh.setFormatter(fmt)
     ch = logging.StreamHandler()
     ch.setFormatter(fmt)
