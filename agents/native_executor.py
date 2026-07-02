@@ -21,7 +21,7 @@ EXPORTS:
   selectForSurface(terminal_fn, spec: dict)  -- Routing helper: return runNative when surface=native and NATIVE_LAYER_ENABLED,
 DEPENDS-ON: agents.executor, config, notifications.lane_feed
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_native_executor_cleanup.py
 """
 from __future__ import annotations
 

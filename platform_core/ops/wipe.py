@@ -8,7 +8,7 @@ EXPORTS:
   restartBot() -> None  -- Spawn a FRESH detached bot process, then exit this one
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_wipe.py
 """
 from __future__ import annotations
 

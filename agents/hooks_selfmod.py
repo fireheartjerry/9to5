@@ -5,7 +5,7 @@ EXPORTS:
   selfModificationGuard(data)  -- PreToolUse: block edits to hard boundaries and core loop files
 DEPENDS-ON: config, notifications.discord_bot, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_hooks_selfmod_writes.py
 """
 from __future__ import annotations
 

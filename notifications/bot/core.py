@@ -18,7 +18,7 @@ EXPORTS:
   runBot() -> None
 DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, notifications.views_feedback, notifications.views_terminal, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_simulation_core.py tests/test_skill_gap_analysis_core.py
+RUN/TEST: python -m pytest tests/test_orch_core_bugs.py tests/test_simulation_core.py tests/test_skill_gap_analysis_core.py
 """
 from __future__ import annotations
 

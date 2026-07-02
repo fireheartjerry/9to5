@@ -11,7 +11,7 @@ Pure-stdlib, offline-testable. See the spec (Layer 2).
 EXPORTS:
   family_of(title: str, signature_tags: Optional[str]=None) -> str  -- Coarse task-family key
   consolidate(*, db_path: Optional[Path]=None, write_digest: bool=True, digest_path: Optional[Path]=None) -> dict[str, Any]  -- Rebuild the ``lessons`` table from the ledger and (optionally) write the digest.
-DEPENDS-ON: config, memory.experience
+DEPENDS-ON: config, memory.experience, memory.experience_schema
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_lessons.py
 """

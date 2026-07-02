@@ -16,7 +16,7 @@ EXPORTS:
   dashboard_line(task_id: Optional[str]=None) -> str  -- One compact line for the live Discord dashboard / logs.
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_adversary_trust.py
 """
 from __future__ import annotations
 
