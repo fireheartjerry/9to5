@@ -1,0 +1,4 @@
+{
+ "count": 138,
+ "note": "bare 'except Exception: pass/continue' sites; may only go down (see platform_core/core/best_effort.py)"
+}

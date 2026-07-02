@@ -15,6 +15,7 @@ Use for syntax/import/config sanity.
 Examples:
 
 ```bash
+python -m compileall -q tests               # tests must parse (CI runs this before pytest)
 python -m compileall .                      # syntax/parse check
 python -m pytest -m "not slow" -q           # fast lane (excludes slow/integration)
 ```
@@ -23,6 +24,9 @@ Canonical commands in THIS repo (there is no `scripts/check.py`): the fast inner
 loop is `python tools/dev.py check <file>` (lint + typecheck + affected tests +
 repo-map drift for one file). Tests live FLAT under `tests/test_*.py` — there are
 no `tests/verification/`, `tests/control/`, or `tests/integration/` subdirs.
+
+Test files never carry `@AI-MAP` headers: `tools/repo_map.py` neither indexes nor
+header-splices `tests/` (a bad splice there corrupted the suite — 2026-07 incident).
 
 ### Tier 1: focused module tests
 
@@ -93,11 +97,16 @@ python tools/dev.py context-check                # Claude-facing context budget 
 python tools/dev.py iteration-health             # recent LLM/test-loop health summary
 python tools/dev.py bench-iteration --dry-run    # list validated iteration benchmark tasks
 python tools/dev.py size-audit                   # file/function line-count budget audit
+python tools/dev.py swallow-ratchet              # bare except-swallow count vs baseline (only goes DOWN)
 ```
 
-> Run tests via **pytest**, not bare `unittest`: the per-test sandbox (offline Discord/Ollama/
-> browser) lives in `tests/conftest.py`, which `unittest` does not load — so bare `unittest` can
-> fire real side effects from a live local `.env`.
+> The suite is **pytest-only**. Never run bare `unittest`: the per-test sandbox (offline
+> Discord/Ollama/browser) lives in `tests/conftest.py`, which `unittest` does not load — so
+> bare `unittest` can fire real side effects from a live local `.env`. This footgun is
+> enforced: `python tools/dev.py ci-local` includes a **no-unittest-main gate** (no test
+> file may carry a `unittest.main()` runner block), plus `compileall -q tests` and the
+> **swallow-ratchet** gate (`tools/swallow_baseline.json` — bare `except Exception: pass`
+> count may only decrease; lower it with `--update`).
 
 #### CI lanes (`.github/workflows/tests.yml`)
 
@@ -109,6 +118,9 @@ python tools/dev.py size-audit                   # file/function line-count budg
 | Push to `main` with core changes | fast lane, py3.12 |
 | PR with core changes | fast lane py3.11+3.12, slow lane py3.12, dry-run smoke, E2E smoke |
 | Nightly/manual | exhaustive slow lane + smoke commands |
+
+The fast job runs `python -m compileall -q tests` BEFORE pytest so corrupt test
+files fail in seconds, not at collection.
 
 `concurrency: cancel-in-progress` kills superseded runs; installs use `uv`. Dev/test deps
 (`pytest`, `pytest-xdist`, `pytest-timeout`) live in `requirements-dev.txt`.

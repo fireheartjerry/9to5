@@ -192,7 +192,13 @@ class OrchestratorReviewMixin:
         if config.ADVERSARY_PR_HOLD_ENABLED and blocking:
             concerns = "; ".join(review.get("must_fix") or review.get("concerns") or ["challenged"])
             state.addNotification("pr_feedback", f"adversary flagged: {concerns}"[:300])
-            return True, f"adversary flagged: {concerns}"[:300]
+            if getattr(config, "NIGHT_MODE", False):
+                # Hands-off overnight run: a healthy (non-degraded, checked above) run still
+                # ships, clearly annotated, so the morning review has a concrete PR surface.
+                return True, f"night mode: shipped despite adversary flag: {concerns}"[:300]
+            # HOLD means hold: a blocking pre-PR verdict actually stops the PR
+            # (the flag's whole contract); annotate-and-open gave the adversary no teeth.
+            return False, f"HOLD: adversary flagged: {concerns}"[:300]
         return True, ""
 
     def _prePrSuiteGate(self, state: TaskState, work_dir: str) -> "tuple[bool, str]":

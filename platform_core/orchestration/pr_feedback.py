@@ -184,6 +184,81 @@ def _fetchReviews(owner: str, repo: str, pr_number: str) -> dict[str, Any]:
     return {"state": agg_state, "feedback": feedback}
 
 
+def _recordFeedbackRow(record_feedback, run_id: str, subtask_id: Optional[str],
+                       pr_url: str, result: dict[str, Any]) -> bool:
+    """Adapter-level feedback label so the learning loop knows about CI / review outcomes.
+    Returns the success flag; never raises."""
+    try:
+        record_feedback(
+            kind="pr_ci",
+            run_id=run_id,
+            subtask_id=subtask_id,
+            target=pr_url,
+            after=json.dumps(result),
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        LOG.error("pr_feedback: record_feedback failed: %s", exc)
+        return False
+
+
+def _recordReflectionRow(record_reflection, run_id: str, subtask_id: Optional[str],
+                         pr_url: str, result: dict[str, Any]) -> bool:
+    """Reflection keyed to the subtask so retrieval can surface it in future runs.
+    Returns the success flag; never raises."""
+    promote_safe = result.get("promote_safe", False)
+    ci_status = result.get("ci_status", "unknown")
+    review_state = result.get("review_state", "none")
+    review_feedback = result.get("review_feedback") or []
+
+    approach = (
+        f"PR created at {pr_url}. "
+        f"CI: {ci_status}. Review: {review_state}. "
+        f"promote_safe={promote_safe}."
+    )
+    reusable_recipe = (
+        "After PR creation: poll CI check-runs until completion, fetch review state, "
+        "block promotion when CI fails or reviews request changes."
+    )
+    spec_feedback = "; ".join(review_feedback) if review_feedback else None
+    verify_critique = f"ci_status={ci_status}, review={review_state}"
+    confidence = 0.9 if promote_safe else 0.3
+
+    if not subtask_id:
+        LOG.debug("pr_feedback: no subtask_id; skipping record_reflection")
+        return True  # not applicable — not a failure
+    try:
+        record_reflection(
+            run_id=run_id,
+            subtask_id=subtask_id,
+            role="executor",
+            teacher="github_ci",
+            trusted=promote_safe,
+            approach=approach[:500],
+            reusable_recipe=reusable_recipe[:500],
+            spec_feedback=spec_feedback[:400] if spec_feedback else None,
+            verify_critique=verify_critique[:300],
+            confidence=confidence,
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        LOG.error("pr_feedback: record_reflection failed: %s", exc)
+        return False
+
+
+def _recordPROutcomeRow(run_id: str, subtask_id: Optional[str], pr_url: str,
+                        result: dict[str, Any]) -> bool:
+    """Structured PR outcome row — independent of record_feedback/record_reflection so a
+    failure in memory.experience does not also drop the PR outcome record."""
+    try:
+        from memory.experience_pr import record_pr_outcome
+        record_pr_outcome(run_id, pr_url, result, subtask_id=subtask_id)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        LOG.error("pr_feedback: record_pr_outcome failed — PR outcome data may be lost: %s", exc)
+        return False
+
+
 def _writeLedger(run_id: str, subtask_id: Optional[str], pr_url: str,
                  result: dict[str, Any]) -> dict[str, bool]:
     """Write to experience ledger (record_feedback + record_reflection + record_pr_outcome).
@@ -201,71 +276,84 @@ def _writeLedger(run_id: str, subtask_id: Optional[str], pr_url: str,
     except Exception as exc:  # noqa: BLE001
         LOG.error("pr_feedback: could not import memory.experience (%s); skipping feedback/reflection writes", exc)
         # Still attempt record_pr_outcome independently below.
-
     else:
-        # Adapter-level feedback label so the learning loop knows about CI / review outcomes.
-        try:
-            record_feedback(
-                kind="pr_ci",
-                run_id=run_id,
-                subtask_id=subtask_id,
-                target=pr_url,
-                after=json.dumps(result),
-            )
-            status["feedback_ok"] = True
-        except Exception as exc:  # noqa: BLE001
-            LOG.error("pr_feedback: record_feedback failed: %s", exc)
+        status["feedback_ok"] = _recordFeedbackRow(record_feedback, run_id, subtask_id,
+                                                   pr_url, result)
+        status["reflection_ok"] = _recordReflectionRow(record_reflection, run_id, subtask_id,
+                                                       pr_url, result)
 
-        # Reflection keyed to the subtask so retrieval can surface it in future runs.
-        promote_safe = result.get("promote_safe", False)
-        ci_status = result.get("ci_status", "unknown")
-        review_state = result.get("review_state", "none")
-        review_feedback = result.get("review_feedback") or []
-
-        approach = (
-            f"PR created at {pr_url}. "
-            f"CI: {ci_status}. Review: {review_state}. "
-            f"promote_safe={promote_safe}."
-        )
-        reusable_recipe = (
-            "After PR creation: poll CI check-runs until completion, fetch review state, "
-            "block promotion when CI fails or reviews request changes."
-        )
-        spec_feedback = "; ".join(review_feedback) if review_feedback else None
-        verify_critique = f"ci_status={ci_status}, review={review_state}"
-        confidence = 0.9 if promote_safe else 0.3
-
-        if subtask_id:
-            try:
-                record_reflection(
-                    run_id=run_id,
-                    subtask_id=subtask_id,
-                    role="executor",
-                    teacher="github_ci",
-                    trusted=promote_safe,
-                    approach=approach[:500],
-                    reusable_recipe=reusable_recipe[:500],
-                    spec_feedback=spec_feedback[:400] if spec_feedback else None,
-                    verify_critique=verify_critique[:300],
-                    confidence=confidence,
-                )
-                status["reflection_ok"] = True
-            except Exception as exc:  # noqa: BLE001
-                LOG.error("pr_feedback: record_reflection failed: %s", exc)
-        else:
-            LOG.debug("pr_feedback: no subtask_id; skipping record_reflection")
-            status["reflection_ok"] = True  # not applicable — not a failure
-
-    # Structured PR outcome row — independent of record_feedback/record_reflection so a
-    # failure in memory.experience does not also drop the PR outcome record.
-    try:
-        from memory.experience_pr import record_pr_outcome
-        record_pr_outcome(run_id, pr_url, result, subtask_id=subtask_id)
-        status["pr_outcome_ok"] = True
-    except Exception as exc:  # noqa: BLE001
-        LOG.error("pr_feedback: record_pr_outcome failed — PR outcome data may be lost: %s", exc)
-
+    status["pr_outcome_ok"] = _recordPROutcomeRow(run_id, subtask_id, pr_url, result)
     return status
+
+
+def _collectPRResult(owner: str, repo: str, pr_number: str, pr_url: str, run_id: str,
+                     subtask_id: Optional[str], poll_attempts: int,
+                     poll_interval: int) -> dict[str, Any]:
+    """Fetch CI + review state and assemble the feedback result dict (promote_safe included)."""
+    sha = _fetchHeadSHA(owner, repo, pr_number)
+    ci: dict[str, Any]
+    if sha:
+        ci = _pollCIStatus(owner, repo, sha, poll_attempts, poll_interval)
+    else:
+        LOG.warning("pr_feedback: could not fetch head SHA; CI status unknown")
+        ci = {"status": "unknown", "summary": "Could not fetch head commit SHA", "runs": []}
+
+    reviews = _fetchReviews(owner, repo, pr_number)
+
+    ci_passed = ci["status"] == "passed"
+    review_blocks = reviews["state"] in _BLOCK_REVIEW_STATES
+    promote_safe = ci_passed and not review_blocks
+
+    result: dict[str, Any] = {
+        "ok": True,
+        "pr_url": pr_url,
+        "ci_status": ci["status"],
+        "ci_summary": ci["summary"],
+        "review_state": reviews["state"],
+        "review_feedback": reviews["feedback"],
+        "promote_safe": promote_safe,
+        "provenance": {
+            "origin": "pr_feedback",
+            "owner": owner,
+            "repo": repo,
+            "pr_number": pr_number,
+            "head_sha": sha,
+            "run_id": run_id,
+            "subtask_id": subtask_id,
+        },
+    }
+
+    if not promote_safe:
+        LOG.warning(
+            "pr_feedback: promote_safe=False for %s (ci=%s, review=%s)",
+            pr_url, ci["status"], reviews["state"],
+        )
+    return result
+
+
+def _writeLedgerWithRetry(run_id: str, subtask_id: Optional[str], pr_url: str,
+                          result: dict[str, Any]) -> None:
+    """Write the ledger rows, then retry a failed PR-outcome write (mutates ``result``).
+
+    Caller-level retry: if the PR outcome write failed inside _writeLedger, attempt it
+    again here (max 2 retries) before giving up so a transient DB error doesn't
+    silently drop the outcome record.  We retry only record_pr_outcome — not the
+    full _writeLedger — to avoid duplicating feedback/reflection rows.
+    """
+    ledger_status = _writeLedger(run_id, subtask_id, pr_url, result)
+    result["ledger_pr_outcome_ok"] = ledger_status.get("pr_outcome_ok", False)
+
+    if not result["ledger_pr_outcome_ok"]:
+        for _attempt in range(2):
+            try:
+                from memory.experience_pr import record_pr_outcome
+                ok = record_pr_outcome(run_id, pr_url, result, subtask_id=subtask_id)
+                if ok:
+                    result["ledger_pr_outcome_ok"] = True
+                    LOG.info("pr_feedback: record_pr_outcome succeeded on retry %d", _attempt + 1)
+                    break
+            except Exception as retry_exc:  # noqa: BLE001
+                LOG.warning("pr_feedback: record_pr_outcome retry %d failed: %s", _attempt + 1, retry_exc)
 
 
 # ---------------------------------------------------------------------------
@@ -308,64 +396,9 @@ def capturePRFeedback(
     LOG.info("pr_feedback: capturing feedback for %s/%s#%s", owner, repo, pr_number)
 
     try:
-        sha = _fetchHeadSHA(owner, repo, pr_number)
-        ci: dict[str, Any]
-        if sha:
-            ci = _pollCIStatus(owner, repo, sha, poll_attempts, poll_interval)
-        else:
-            LOG.warning("pr_feedback: could not fetch head SHA; CI status unknown")
-            ci = {"status": "unknown", "summary": "Could not fetch head commit SHA", "runs": []}
-
-        reviews = _fetchReviews(owner, repo, pr_number)
-
-        ci_passed = ci["status"] == "passed"
-        review_blocks = reviews["state"] in _BLOCK_REVIEW_STATES
-        promote_safe = ci_passed and not review_blocks
-
-        result: dict[str, Any] = {
-            "ok": True,
-            "pr_url": pr_url,
-            "ci_status": ci["status"],
-            "ci_summary": ci["summary"],
-            "review_state": reviews["state"],
-            "review_feedback": reviews["feedback"],
-            "promote_safe": promote_safe,
-            "provenance": {
-                "origin": "pr_feedback",
-                "owner": owner,
-                "repo": repo,
-                "pr_number": pr_number,
-                "head_sha": sha,
-                "run_id": run_id,
-                "subtask_id": subtask_id,
-            },
-        }
-
-        if not promote_safe:
-            LOG.warning(
-                "pr_feedback: promote_safe=False for %s (ci=%s, review=%s)",
-                pr_url, ci["status"], reviews["state"],
-            )
-
-        ledger_status = _writeLedger(run_id, subtask_id, pr_url, result)
-        result["ledger_pr_outcome_ok"] = ledger_status.get("pr_outcome_ok", False)
-
-        # Caller-level retry: if the PR outcome write failed inside _writeLedger, attempt it
-        # again here (max 2 retries) before giving up so a transient DB error doesn't
-        # silently drop the outcome record.  We retry only record_pr_outcome — not the
-        # full _writeLedger — to avoid duplicating feedback/reflection rows.
-        if not result["ledger_pr_outcome_ok"]:
-            for _attempt in range(2):
-                try:
-                    from memory.experience_pr import record_pr_outcome
-                    ok = record_pr_outcome(run_id, pr_url, result, subtask_id=subtask_id)
-                    if ok:
-                        result["ledger_pr_outcome_ok"] = True
-                        LOG.info("pr_feedback: record_pr_outcome succeeded on retry %d", _attempt + 1)
-                        break
-                except Exception as retry_exc:  # noqa: BLE001
-                    LOG.warning("pr_feedback: record_pr_outcome retry %d failed: %s", _attempt + 1, retry_exc)
-
+        result = _collectPRResult(owner, repo, pr_number, pr_url, run_id, subtask_id,
+                                  poll_attempts, poll_interval)
+        _writeLedgerWithRetry(run_id, subtask_id, pr_url, result)
         return result
 
     except Exception as exc:  # noqa: BLE001

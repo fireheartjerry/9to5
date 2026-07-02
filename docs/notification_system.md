@@ -553,28 +553,14 @@ for subtask in pending_subtasks:
 
 ### Wiring surfaces at run start
 
-```python
-# main.py / orchestrator.py — surface registration order matters for logging
-bus = NotificationBus()
-
-dash = DiscordDashboard()
-milestone = DiscordMilestone()
-webdash = WebdashSurface(state)
-
-bus.register(dash)       # live embed — registered first; highest priority
-bus.register(milestone)  # discrete embeds
-bus.register(webdash)    # 1-second TTL JSON snapshot
-
-# Start the web dashboard daemon thread
-webdash.start()
-
-# Kick off the live Discord embed (creates + pins)
-dash.start(state, phase="starting", state_lock=rw_lock)
-```
-
-After this block, every `bus.emit()` call fans out to all three surfaces in
-registration order.  A surface that raises is skipped; the others still receive
-the event.
+Surfaces are wired **directly** (the `NotificationBus` fan-out layer was removed —
+see *NotificationBus (removed)* above). The orchestrator run preamble
+(`platform_core/orchestration/run_phase_mixin.py`) constructs `DiscordDashboard`,
+starts the web dashboard (`notifications/webdash.py`), and calls each surface
+explicitly (`dashboard.update(state, phase, detail)` etc.); live streaming events
+fan out through the process-global `notifications/event_bus.py` (`get_bus()`).
+Every surface call is best-effort: an exception in one surface is caught and
+logged, never propagated into the run loop.
 
 ### Adding a custom surface
 

@@ -22,7 +22,7 @@ EXPORTS:
   is_stalled(state: TaskState, *, max_idle_seconds: float) -> bool  -- True if no subtask has completed within ``max_idle_seconds`` (a hung run).
   pick_resume_task() -> Optional[str]  -- The most-recent interrupted (non-terminal) task to auto-resume, or None.
   run_with_recovery(run_fn: Callable[[TaskState], dict], state: TaskState, *, max_restarts: Optional[int]=None, backoff_base: float=2.0, sleep: Callable[[float], None]=time.sleep, reload_state: Optional[Callable[[str], TaskState]]=None, bus=None) -> dict  -- Run ``run_fn(state)`` and auto-resume it on crash until the task is terminal, the
-DEPENDS-ON: config, platform_core.core.clock, platform_core.runtime.control, state.task
+DEPENDS-ON: config, platform_core.core.best_effort, platform_core.core.clock, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_resilience.py
 """
@@ -32,6 +32,7 @@ import time
 from typing import Any, Callable, Optional
 
 import config
+from platform_core.core.best_effort import best_effort
 from platform_core.core.clock import RunClock, elapsedSecondsSince, parseIso
 from state.task import TaskState
 
@@ -77,11 +78,9 @@ def pick_resume_task() -> Optional[str]:
 
 def _abortRequested(bus) -> bool:
     """Best-effort bus abort check -- a broken bus must never kill recovery."""
-    try:
+    with best_effort("control_bus.abort_check", log=LOG):
         return bool(bus is not None and bus.isAbort())
-    except Exception:  # noqa: BLE001
-        LOG.debug("bus abort check failed (treated as no-abort)", exc_info=True)
-        return False
+    return False   # broken bus -> treated as no-abort
 
 
 # Consecutive reload_state failures tolerated before recovery gives up with diagnostics.
@@ -90,12 +89,10 @@ _RELOAD_STRIKES: int = 3
 
 def _defaultBus(state: TaskState):
     """The task's ControlBus, or None when unavailable (degraded mode, not a death)."""
-    try:
+    with best_effort("control_bus.open", log=LOG):
         from platform_core.runtime.control import ControlBus
         return ControlBus(state.task_id)
-    except Exception:  # noqa: BLE001
-        LOG.warning("ControlBus unavailable for recovery abort checks", exc_info=True)
-        return None
+    return None   # degraded mode: recovery proceeds without abort checks
 
 
 def _reloadCommitted(state: TaskState, reload_state, strikes: int):
@@ -193,8 +190,6 @@ def run_with_recovery(run_fn: Callable[[TaskState], dict], state: TaskState, *,
 def _finalize_partial(state: TaskState, *, status: str = "partial",
                       reason: str = "") -> None:
     """Best-effort: mark a non-terminal interrupted run as a deliverable, never crash."""
-    try:
+    with best_effort("state.finalize_partial", log=LOG):
         if state.meta.get("status") not in _TERMINAL:
             state.setStatus(status, blocked_reason=reason or None)
-    except Exception as e:  # noqa: BLE001
-        LOG.debug("finalize_partial failed (ignored): %s", e)

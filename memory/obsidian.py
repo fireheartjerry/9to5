@@ -13,13 +13,14 @@ EXPORTS:
   flushRest(timeout: Optional[float]=None) -> None  -- Wait for queued REST syncs to drain (used on shutdown / before resume reads).
   writeClaudioMd(task_state, subtask: Optional[dict], additional_context: str='', work_dir: Optional[str]=None, executor_playbook: str='') -> Path  -- Write a fresh per-subtask CLAUDE.md to the working directory.
   ObsidianClient
-DEPENDS-ON: config, platform_core.core
+DEPENDS-ON: config, platform_core.core, platform_core.core.best_effort
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_obsidian_atomic_claude_md.py tests/test_obsidian_write.py
 """
 from __future__ import annotations
 
 import atexit
+import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -30,6 +31,7 @@ import urllib3
 
 import config
 from platform_core.core import fsio
+from platform_core.core.best_effort import best_effort, recordDegradation
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -54,15 +56,16 @@ def _restPool() -> ThreadPoolExecutor:
 
 
 def _restPut(base_url: str, headers: dict, rel_path: str, content: str) -> None:
-    """Best-effort REST sync to Obsidian (runs in the background pool)."""
-    try:
+    """Best-effort REST sync to Obsidian (runs in the background pool). Disk already
+    has the note; REST is a bonus, so failures are swallowed (but counted). level=DEBUG:
+    a closed vault is an expected daily condition, not an alarm -- the DEGRADATIONS
+    registry still counts it for the run-end summary."""
+    with best_effort("obsidian.rest_sync", log=LOG, level=logging.DEBUG):
         r = requests.put(f"{base_url}/vault/{rel_path}", data=content.encode("utf-8"),
                          headers={**headers, "Content-Type": "text/markdown"},
                          verify=False, timeout=10)
         if not (200 <= r.status_code < 300):
             LOG.debug("REST PUT %s -> %s (disk copy already written)", rel_path, r.status_code)
-    except Exception as e:  # noqa: BLE001 -- disk already has it; REST is a bonus
-        LOG.debug("REST PUT %s failed (%s); disk copy already written", rel_path, e)
 
 
 def flushRest(timeout: Optional[float] = None) -> None:
@@ -172,12 +175,10 @@ class ObsidianClient:
             disk = self._writeDisk(rel_path, content)
             result = {"ok": True, "via": "disk", "rel_path": rel_path, "disk_path": str(disk)}
         except Exception as e:  # noqa: BLE001 -- never raise into the run (documented contract)
-            LOG.error("writeNote disk write failed for %s: %s", rel_path, e)
+            recordDegradation("obsidian.disk_write", e, log=LOG, level=logging.ERROR)
             result = {"ok": False, "via": "none", "rel_path": rel_path, "error": str(e)}
-        try:
+        with best_effort("obsidian.rest_pool", log=LOG):   # background sync is a bonus
             _restPool().submit(_restPut, self.base_url, dict(self.headers), rel_path, content)
-        except Exception:  # noqa: BLE001 -- background sync is a bonus, never load-bearing
-            pass
         return result
 
     def _writeNoteSync(self, rel_path: str, content: str) -> dict:
@@ -199,12 +200,10 @@ class ObsidianClient:
 
     def readNote(self, rel_path: str) -> Optional[str]:
         url = f"{self.base_url}/vault/{rel_path}"
-        try:
+        with best_effort("obsidian.rest_read", log=LOG, level=logging.DEBUG):
             r = requests.get(url, headers=self.headers, verify=False, timeout=10)
             if 200 <= r.status_code < 300:
                 return r.text
-        except Exception:  # noqa: BLE001
-            pass
         p = self._diskPath(rel_path)
         if p.exists():
             return p.read_text(encoding="utf-8")
@@ -220,8 +219,8 @@ class ObsidianClient:
                 with p.open("a", encoding="utf-8") as fh:
                     fh.write(content)
                 return {"ok": True, "via": "disk-append", "rel_path": rel_path, "disk_path": str(p)}
-            except Exception as e:  # noqa: BLE001
-                LOG.warning("appendNote disk-append failed (%s); read+rewrite fallback", e)
+            except Exception as e:  # noqa: BLE001 -- fallback still needs to run; count it
+                recordDegradation("obsidian.disk_append", e, log=LOG)
                 existing = self.readNote(rel_path) or ""
                 return self.writeNote(rel_path, existing + content)
 

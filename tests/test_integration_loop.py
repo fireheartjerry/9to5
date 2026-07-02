@@ -70,6 +70,11 @@ class TestExecutionLoop(unittest.TestCase):
         return obs
 
     def _orch(self, **kw):
+        # review seam injected: this suite targets the LOOP; without it the default
+        # dual-brain reviewer sees the FakeBrain's junk output as garbled -> CHALLENGED
+        # (R10 fail-closed) and remediation re-runs every 3rd subtask.
+        kw.setdefault("review", lambda *a, **k: {"verdict": "approved", "concerns": [],
+                                                 "notes": "test stub", "stub": True})
         return Orchestrator(brain=FakeBrain(), obs=self._obs(), run_claude=self._fake_run_claude,
                             replan=lambda *a, **k: {"action": "keep", "add": [], "remove": []},
                             **kw)

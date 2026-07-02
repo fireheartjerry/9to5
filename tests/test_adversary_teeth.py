@@ -22,11 +22,13 @@ class TestPrGate(unittest.TestCase):
     def test_no_pr_flag_skips(self):
         self.assertEqual(self.orch._prGate({"verdict": "approved"}, False, self.state), (False, "--no-pr"))
 
-    def test_challenged_opens_pr_with_concerns(self):
+    def test_challenged_holds_pr_with_concerns(self):
+        # HOLD flag on + blocking challenge -> the PR is actually held;
+        # night mode is the only sanctioned ship-anyway escape (tested in test_horizon_fill).
         create, reason = self.orch._prGate(
             {"verdict": "challenged", "concerns": ["secret leak", "no rollback"]}, True, self.state)
-        self.assertTrue(create)
-        self.assertIn("flagged", reason)
+        self.assertFalse(create)
+        self.assertIn("HOLD", reason)
         self.assertIn("secret leak", reason)
 
     def test_challenged_respects_disable_flag(self):

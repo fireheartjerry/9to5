@@ -110,10 +110,11 @@ See `docs/pr_feedback.md` for the full architecture and deployment instructions.
 
 `retrieval.lessons_block` now injects REAL solution content (the `exp_content` table) reranked
 by recency+importance+relevance, and degrades to the metadata lessons block when no neighbor
-carries content. All new behavior ships behind default-off flags: `ANN_INDEX_ENABLED`
-(ChromaDB ANN over the O(n) cosine scan), `COMPACTION_ENABLED` (fixed-window payload
-compaction — `num_ctx` is NEVER resized), and `REFLECTION_CONSOLIDATE_ENABLED`
-(importance-triggered episodic→semantic consolidation).
+carries content. New behavior ships behind default-off flags: `ANN_INDEX_ENABLED`
+(ChromaDB ANN over the O(n) cosine scan; `memory/exp_index.py`) and `COMPACTION_ENABLED`
+(fixed-window payload compaction — `num_ctx` is NEVER resized).
+`memory/reflection_consolidate.py` was deleted in the 2026-07-01 rewrite (zero production
+callers); its `REFLECTION_CONSOLIDATE_ENABLED` flag is inert.
 
 ## Memory change checklist
 

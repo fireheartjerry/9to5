@@ -11,7 +11,7 @@ EXPORTS:
   counts(db_path: Optional[Path]=None) -> dict[str, int]  -- Row counts per table
   backfill_from_store(db_path: Optional[Path]=None) -> dict[str, int]  -- Seed the ledger from the existing task-JSON store so months-long learning never
   compare_run(task_id: str, db_path: Optional[Path]=None) -> dict[str, Any]  -- This run vs the rolling average of prior terminal runs
-DEPENDS-ON: config, memory.experience_schema, memory.experience_subtasks, state.task
+DEPENDS-ON: config, memory.experience_schema, memory.experience_subtasks, platform_core.core.best_effort, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -23,6 +23,7 @@ from typing import Any, Optional
 
 import config
 from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _j, _nowIso
+from platform_core.core.best_effort import best_effort
 
 _TERMINAL = ("done", "complete", "aborted", "partial", "blocked", "failed")
 
@@ -34,7 +35,7 @@ def record_run(run: dict[str, Any], db_path: Optional[Path] = None) -> bool:
     if not isinstance(run, dict) or not (run.get("run_id") or "").strip():
         LOG.warning("record_run: missing or empty run_id, skipping")
         return False
-    try:
+    with best_effort("ledger.runs", log=LOG):   # ledger must never break a run
         with _WRITE_LOCK, _connect(db_path) as conn:
             conn.execute(
                 """INSERT INTO runs
@@ -68,9 +69,7 @@ def record_run(run: dict[str, Any], db_path: Optional[Path] = None) -> bool:
                 },
             )
         return True
-    except Exception as e:  # noqa: BLE001 -- ledger must never break a run
-        LOG.warning("record_run failed (ignored): %s", e)
-        return False
+    return False
 
 
 def sync_run(state_data: dict[str, Any], db_path: Optional[Path] = None) -> bool:
@@ -98,7 +97,7 @@ def record_eval(score: dict[str, Any], *, suite_version: str = "v1",
                 prompt_set_id: Optional[str] = None, adapter_id: Optional[str] = None,
                 passed_gate: Optional[bool] = None, db_path: Optional[Path] = None) -> Optional[int]:
     """Append an eval-harness result row; returns its rowid (or None on failure)."""
-    try:
+    with best_effort("ledger.eval_runs", log=LOG):
         with _WRITE_LOCK, _connect(db_path) as conn:
             cur = conn.execute(
                 """INSERT INTO eval_runs
@@ -108,9 +107,7 @@ def record_eval(score: dict[str, Any], *, suite_version: str = "v1",
                  None if passed_gate is None else int(passed_gate)),
             )
             return int(cur.lastrowid)
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("record_eval failed (ignored): %s", e)
-        return None
+    return None
 
 
 def fetch_runs(db_path: Optional[Path] = None) -> list[dict[str, Any]]:
@@ -230,7 +227,8 @@ def compare_run(task_id: str, db_path: Optional[Path] = None) -> dict[str, Any]:
     display strings (+ a numeric ``raw`` block). Sources metrics from the task-JSON store,
     which is authoritative for replans/adversary/innovation the ledger does not column."""
     from state.task import TaskState  # lazy: avoid import cycle
-    try:
+    ok = False
+    with best_effort("ledger.compare_run", log=LOG):   # best-effort, never blocks a run
         this_state = TaskState.loadSafe(task_id)
         this = _run_metrics(this_state.data) if this_state is not None else {}
         priors: list[dict[str, float]] = []
@@ -240,8 +238,8 @@ def compare_run(task_id: str, db_path: Optional[Path] = None) -> dict[str, Any]:
             if (data.get("meta", {}) or {}).get("status") in _COMPARE_TERMINAL:
                 priors.append(_run_metrics(data))
         avg = {k: _avg([p.get(k) for p in priors]) for k in ("pace", "innovation", "adversary", "replans")}
-    except Exception as e:  # noqa: BLE001 -- comparative is best-effort, never blocks a run
-        LOG.warning("compare_run failed (ignored): %s", e)
+        ok = True
+    if not ok:
         return {"pace": "n/a", "innovation": "n/a", "adversary": "n/a", "replans": "n/a", "raw": {}}
 
     def _pct(v):

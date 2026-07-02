@@ -15,7 +15,7 @@ EXPORTS:
   decide(gate: str, state, *, timeout: float=6.0) -> Optional[dict]  -- Ask the Jerry service for a verb
   advise(gate: str, state, *, timeout: float=6.0) -> Optional[str]  -- Advisor role: a one-line second opinion to inject into the Ollama brain's
   recordOutcome(gate: str, predicted: Optional[dict], human_verb: str) -> None  -- Append a shadow-mode comparison line (model vs human)
-DEPENDS-ON: (stdlib only)
+DEPENDS-ON: platform_core.core.best_effort
 SIDE-EFFECTS: appends to logs/jerry_shadow.jsonl
 RUN/TEST: (no mapped test)
 """
@@ -23,11 +23,12 @@ from __future__ import annotations
 
 import json
 import os
-import time
 import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+from platform_core.core.best_effort import best_effort  # stdlib-only kernel: keeps this torch-free
 
 SERVICE_URL = os.getenv("JERRY_URL", "http://127.0.0.1:8008")
 SHADOW_LOG = Path(__file__).resolve().parent.parent / "logs" / "jerry_shadow.jsonl"
@@ -35,7 +36,7 @@ SHADOW_LOG = Path(__file__).resolve().parent.parent / "logs" / "jerry_shadow.jso
 
 def buildGateContext(gate: str, state) -> dict:
     """Summarize TaskState into the compact context the Jerry service expects."""
-    try:
+    with best_effort("jerry.gate_context"):
         m = getattr(state, "meta", {}) or {}
         subs = [s for s in (getattr(state, "subtasks", []) or [])
                 if s.get("status") != "removed"]
@@ -65,9 +66,8 @@ def buildGateContext(gate: str, state) -> dict:
             "current": (f"{cur['subtask_id']} {cur.get('title','')}" if cur else ""),
             "subtasks": sub_lines, "events": events, "errors": errors,
         }
-    except Exception:
-        return {"goal": "", "status": "?", "progress": "?", "current": "",
-                "subtasks": [], "events": [], "errors": []}
+    return {"goal": "", "status": "?", "progress": "?", "current": "",
+            "subtasks": [], "events": [], "errors": []}
 
 
 def decide(gate: str, state, *, timeout: float = 6.0) -> Optional[dict]:
@@ -75,7 +75,7 @@ def decide(gate: str, state, *, timeout: float = 6.0) -> Optional[dict]:
 
     None means 'service unavailable / undecided' -> caller uses the human gate.
     """
-    try:
+    with best_effort("jerry.decide"):
         ctx = buildGateContext(gate, state)
         body = json.dumps({"gate": gate, "context": ctx}).encode("utf-8")
         req = urllib.request.Request(f"{SERVICE_URL}/decide", data=body, method="POST",
@@ -85,8 +85,7 @@ def decide(gate: str, state, *, timeout: float = 6.0) -> Optional[dict]:
         if isinstance(out, dict) and out.get("verb") and out.get("verb") != "none":
             return out
         return None
-    except Exception:
-        return None
+    return None
 
 
 def advise(gate: str, state, *, timeout: float = 6.0) -> Optional[str]:
@@ -102,7 +101,7 @@ def advise(gate: str, state, *, timeout: float = 6.0) -> Optional[str]:
 
 def recordOutcome(gate: str, predicted: Optional[dict], human_verb: str) -> None:
     """Append a shadow-mode comparison line (model vs human). Never raises."""
-    try:
+    with best_effort("jerry.record_outcome"):
         rec = {
             "ts": datetime.now().isoformat(timespec="seconds"),
             "gate": gate,
@@ -115,5 +114,3 @@ def recordOutcome(gate: str, predicted: Optional[dict], human_verb: str) -> None
         SHADOW_LOG.parent.mkdir(parents=True, exist_ok=True)
         with SHADOW_LOG.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    except Exception:
-        pass

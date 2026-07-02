@@ -224,9 +224,9 @@ class OrchestratorPlanMixin:
         self._selfref_prompt_cache[state.task_id] = prompt
         return prompt
 
-    def authorInvocationSpec(self, state: TaskState, subtask: dict, architect_doc: str,
-                             failure_feedback: "str | None" = None) -> dict:
-        """Ollama authors the JSON invocation spec for ONE subtask (the brain's core act)."""
+    def _invocationUserPrompt(self, state: TaskState, subtask: dict, architect_doc: str,
+                              failure_feedback: "str | None") -> str:
+        """Build the brain's USER prompt for ONE subtask spec (SIE context prepended)."""
         verify = subtask.get("verify") or {}
         user = (
             f"Overall goal (elaborated):\n{state.meta['goal_elaborated']}\n\n"
@@ -246,23 +246,28 @@ class OrchestratorPlanMixin:
         # SIE: prepend everything the engine has learned for this kind of subtask
         # (lessons, policy prior, failure modes, codebase notes, a prior solution, and a
         # low-confidence escalation nudge). All best-effort + no-op when empty.
-        user = self._sieAuthoringContext(state, subtask) + user
+        return self._sieAuthoringContext(state, subtask) + user
+
+    def _invocationSystemPrompt(self, state: TaskState) -> str:
+        """Select the SYSTEM prompt: self-ref philosophy vs the prompt-registry constitution."""
         if state.meta.get("is_self_referential"):
-            system_prompt = self._selfRefSystemPrompt(state)
-        else:
-            # SIE Layer 3: source the constitution from the prompt registry. Byte-identical
-            # to ORCHESTRATOR_CONSTITUTION until a challenger is promoted; tag the run so
-            # the promotion gate has per-variant field metrics. Best-effort.
-            system_prompt = prompts.get("orchestrator", ORCHESTRATOR_CONSTITUTION)
-            try:
-                cid = prompts.champion_id("orchestrator", ORCHESTRATOR_CONSTITUTION)
-                if cid is not None:
-                    experience.tag_run_prompt(state.task_id, str(cid))
-            except Exception:  # noqa: BLE001 -- tagging is best-effort
-                pass
-        resp = self._ollamaChat(system_prompt, user, act="invocation_spec", want_json=True)
-        spec = _chatJson(resp)
-        spec = self._sanitizeSpec(spec if isinstance(spec, dict) else {}, subtask)
+            return self._selfRefSystemPrompt(state)
+        # SIE Layer 3: source the constitution from the prompt registry. Byte-identical
+        # to ORCHESTRATOR_CONSTITUTION until a challenger is promoted; tag the run so
+        # the promotion gate has per-variant field metrics. Best-effort.
+        system_prompt = prompts.get("orchestrator", ORCHESTRATOR_CONSTITUTION)
+        try:
+            cid = prompts.champion_id("orchestrator", ORCHESTRATOR_CONSTITUTION)
+            if cid is not None:
+                experience.tag_run_prompt(state.task_id, str(cid))
+        except Exception:  # noqa: BLE001 -- tagging is best-effort
+            pass
+        return system_prompt
+
+    def _finalizeInvocationSpec(self, state: TaskState, subtask: dict, spec: dict,
+                                failure_feedback: "str | None") -> dict:
+        """Deterministic post-passes on the sanitized spec: failure-feedback fold (FX-6),
+        operator context, work-profile guidance, SIE reflection, CompletionEnvelope."""
         # FX-6: the brain frequently returns EMPTY, so failure_feedback (and the clarifier answer it
         # carries) -- which was only interpolated into the brain's USER prompt -- is LOST: the sanitized
         # spec is just the bare description and the executor repeats the same mistake. Fold the feedback
@@ -298,6 +303,16 @@ class OrchestratorPlanMixin:
         if config.INDEPENDENT_VERIFY_ENABLED and spec.get("prompt"):
             spec["prompt"] = spec["prompt"] + COMPLETION_ENVELOPE_INSTRUCTION
         return spec
+
+    def authorInvocationSpec(self, state: TaskState, subtask: dict, architect_doc: str,
+                             failure_feedback: "str | None" = None) -> dict:
+        """Ollama authors the JSON invocation spec for ONE subtask (the brain's core act)."""
+        user = self._invocationUserPrompt(state, subtask, architect_doc, failure_feedback)
+        system_prompt = self._invocationSystemPrompt(state)
+        resp = self._ollamaChat(system_prompt, user, act="invocation_spec", want_json=True)
+        spec = _chatJson(resp)
+        spec = self._sanitizeSpec(spec if isinstance(spec, dict) else {}, subtask)
+        return self._finalizeInvocationSpec(state, subtask, spec, failure_feedback)
 
     def _foldOperatorContext(self, state: TaskState, subtask: dict, spec: dict) -> dict:
         """Deterministically fold operator intents + injected context + effort override into the

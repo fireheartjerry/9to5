@@ -15,6 +15,7 @@ Subcommands:
   iteration-health      summarize recent iteration metrics and next validation hints
   bench-iteration       run/list the iteration benchmark suite
   size-audit            bucket tracked Python files and functions by line count
+  swallow-ratchet       bare except-swallow count vs baseline (--update to lower it)
   affected              print pytest targets for `git diff` (delegates to affected_tests.py)
   watch [files]         re-run affected tests on .py changes
   outline <file>        signatures + docstring-first-lines + anchors only
@@ -54,11 +55,12 @@ import size_audit  # noqa: E402
 
 from dev_checks import (  # noqa: E402
     REPO_ROOT, PY, _run,
-    _progress_env,  # re-exported for backward compat (test_dev_commands.py)
+    _progress_env,  # noqa: F401 -- re-exported for backward compat (test_dev_commands.py)
     cmd_lint, cmd_typecheck, cmd_check, cmd_test, cmd_fast, cmd_ci_local,
+    cmd_swallow_ratchet,
 )
 from dev_reports import (  # noqa: E402
-    _run_tee,  # re-exported for backward compat (test_dev_commands.py)
+    _run_tee,  # noqa: F401 -- re-exported for backward compat (test_dev_commands.py)
     cmd_slow_report, cmd_heartbeat_test, cmd_context_check,
     cmd_iteration_health, cmd_outline, cmd_where, cmd_watch,
 )
@@ -108,6 +110,7 @@ COMMANDS = {
     "affected": cmd_affected, "watch": cmd_watch,
     "outline": cmd_outline, "where": cmd_where, "lint": cmd_lint, "typecheck": cmd_typecheck,
     "run": cmd_run, "dryrun": cmd_dryrun, "e2e": cmd_e2e, "codemod": cmd_codemod,
+    "swallow-ratchet": cmd_swallow_ratchet,
 }
 
 

@@ -362,18 +362,48 @@ def setOverride(knob: str, value: Any) -> tuple[bool, bool]:
 # ---------------------------------------------------------------------------
 
 _LOGGER_CONFIGURED = False
+_LOG_MAX_BYTES = 10 * 1024 * 1024   # 10MB per file, 5 rotated backups
+_LOG_BACKUP_COUNT = 5
+
+
+def _logLevelFromEnv() -> int:
+    """NINE_TO_FIVE_LOG_LEVEL env knob (DEBUG/INFO/WARNING/ERROR/CRITICAL or a number);
+    unset or unparseable -> INFO. This is what finally makes LOG.debug diagnostics reachable."""
+    raw = (os.getenv("NINE_TO_FIVE_LOG_LEVEL") or "").strip().upper()
+    if not raw:
+        return logging.INFO
+    if raw.isdigit():
+        return int(raw)
+    level = logging.getLevelName(raw)
+    return level if isinstance(level, int) else logging.INFO
 
 
 def _configureLogging() -> None:
     global _LOGGER_CONFIGURED
     if _LOGGER_CONFIGURED:
         return
+    from logging.handlers import RotatingFileHandler
+
+    class _SharedLogRotatingHandler(RotatingFileHandler):
+        """Multi-process safe on Windows: the orchestrator, gateway bot, and web
+        dashboard all hold 9to5.log, so rollover's os.rename can hit WinError 32.
+        Skip that rotation attempt (the file grows past the cap until the sole
+        holder rotates) instead of spraying 'Logging error' tracebacks per emit."""
+
+        def rotate(self, source: str, dest: str) -> None:
+            try:
+                super().rotate(source, dest)
+            except OSError:
+                pass
+
     log_dir = settings().paths.LOG_PATH
     log_dir.mkdir(parents=True, exist_ok=True)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     base = logging.getLogger("9to5")
-    base.setLevel(logging.INFO)
-    fh = logging.FileHandler(log_dir / "9to5.log", encoding="utf-8")
+    base.setLevel(_logLevelFromEnv())
+    fh = _SharedLogRotatingHandler(log_dir / "9to5.log", maxBytes=_LOG_MAX_BYTES,
+                                   backupCount=_LOG_BACKUP_COUNT, encoding="utf-8",
+                                   delay=True)
     fh.setFormatter(fmt)
     ch = logging.StreamHandler()
     ch.setFormatter(fmt)

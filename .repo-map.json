@@ -889,12 +889,13 @@
           "kind": "function",
           "signature": "(data)",
           "summary": "PostToolUse: log the edited file path to the in-progress subtask note.",
-          "lineno": 21
+          "lineno": 22
         }
       ],
       "depends_on": [
         "agents.hooks_selfmod",
-        "memory.obsidian"
+        "memory.obsidian",
+        "platform_core.core.best_effort"
       ],
       "side_effects": [
         "unannotated"
@@ -3766,32 +3767,33 @@
           "kind": "function",
           "signature": "(*, attempt_count: Any=None, adversary_verdict: Any=None, cost_usd: Any=None) -> float",
           "summary": "Write-time salience: a noisy first-pass subtask that EVENTUALLY passed, or a",
-          "lineno": 27
+          "lineno": 28
         },
         {
           "name": "recordSolutionContent",
           "kind": "function",
           "signature": "(run_id: str, st_id: str, *, solution_content: str, post_mortem: str, importance: float, model_id: Optional[str], db_path: Optional[Path]=None) -> bool",
           "summary": "Upsert one ``exp_content`` row keyed by ``(run_id, st_id)``",
-          "lineno": 60
+          "lineno": 61
         },
         {
           "name": "recordFromSubtask",
           "kind": "function",
           "signature": "(run_id: str, st: dict[str, Any], db_path: Optional[Path]=None) -> bool",
           "summary": "Convenience: extract content + compute importance from ``st`` then store",
-          "lineno": 85
+          "lineno": 84
         },
         {
           "name": "fetchSolutionContent",
           "kind": "function",
           "signature": "(run_id: str, st_id: str, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]",
           "summary": "The stored content row for ``(run_id, st_id)``, or None",
-          "lineno": 103
+          "lineno": 102
         }
       ],
       "depends_on": [
-        "memory.experience_schema"
+        "memory.experience_schema",
+        "platform_core.core.best_effort"
       ],
       "side_effects": [
         "unannotated"
@@ -3895,40 +3897,41 @@
           "kind": "function",
           "signature": "(run_id: str, subtask_id: str, attempt: int, step_idx: int, kind: str, tool: str, summary: str, input_obj: Any, plan_sig: str, session_id: str, db_path: Optional[Path]=None) -> None",
           "summary": "Idempotently upsert one executor step row",
-          "lineno": 28
+          "lineno": 29
         },
         {
           "name": "loadSteps",
           "kind": "function",
           "signature": "(run_id: str, subtask_id: str, attempt: int, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "All journaled steps for an attempt, ordered by step_idx",
-          "lineno": 57
+          "lineno": 56
         },
         {
           "name": "lastStepIdx",
           "kind": "function",
           "signature": "(run_id: str, subtask_id: str, attempt: int, db_path: Optional[Path]=None) -> int",
           "summary": "Highest journaled step_idx for an attempt, or -1 if none / on any error.",
-          "lineno": 71
+          "lineno": 68
         },
         {
           "name": "lastAttempt",
           "kind": "function",
           "signature": "(run_id: str, subtask_id: str, db_path: Optional[Path]=None) -> int",
           "summary": "Highest attempt number journaled for a subtask, or 1 if none / on any error.",
-          "lineno": 88
+          "lineno": 83
         },
         {
           "name": "markAttemptSuperseded",
           "kind": "function",
           "signature": "(run_id: str, subtask_id: str, attempt: int, db_path: Optional[Path]=None) -> None",
           "summary": "Resume bookkeeping: drop a stale attempt's journal rows so it won't be resumed.",
-          "lineno": 104
+          "lineno": 97
         }
       ],
       "depends_on": [
         "config",
-        "memory.experience_schema"
+        "memory.experience_schema",
+        "platform_core.core.best_effort"
       ],
       "side_effects": [
         "writes step_journal rows in experience.db"
@@ -4097,69 +4100,70 @@
           "kind": "function",
           "signature": "(run: dict[str, Any], db_path: Optional[Path]=None) -> bool",
           "summary": "Upsert a run row keyed by ``run_id``",
-          "lineno": 30
+          "lineno": 31
         },
         {
           "name": "sync_run",
           "kind": "function",
           "signature": "(state_data: dict[str, Any], db_path: Optional[Path]=None) -> bool",
           "summary": "Best-effort upsert of the run row from a TaskState's lean ``data`` dict.",
-          "lineno": 76
+          "lineno": 75
         },
         {
           "name": "record_eval",
           "kind": "function",
           "signature": "(score: dict[str, Any], *, suite_version: str='v1', prompt_set_id: Optional[str]=None, adapter_id: Optional[str]=None, passed_gate: Optional[bool]=None, db_path: Optional[Path]=None) -> Optional[int]",
           "summary": "Append an eval-harness result row",
-          "lineno": 97
+          "lineno": 96
         },
         {
           "name": "fetch_runs",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "",
-          "lineno": 116
+          "lineno": 113
         },
         {
           "name": "gold_examples",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "First-attempt, verify-passing, **really** adversary-approved subtasks",
-          "lineno": 121
+          "lineno": 118
         },
         {
           "name": "fitness_series",
           "kind": "function",
           "signature": "(limit: int=90, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "Recent eval-harness scores, oldest-first",
-          "lineno": 134
+          "lineno": 131
         },
         {
           "name": "counts",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
           "summary": "Row counts per table",
-          "lineno": 150
+          "lineno": 147
         },
         {
           "name": "backfill_from_store",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
           "summary": "Seed the ledger from the existing task-JSON store so months-long learning never",
-          "lineno": 157
+          "lineno": 154
         },
         {
           "name": "compare_run",
           "kind": "function",
           "signature": "(task_id: str, db_path: Optional[Path]=None) -> dict[str, Any]",
           "summary": "This run vs the rolling average of prior terminal runs",
-          "lineno": 228
+          "lineno": 225
         }
       ],
       "depends_on": [
         "config",
         "memory.experience_schema",
         "memory.experience_subtasks",
+        "platform_core.core.best_effort",
         "state.task"
       ],
       "side_effects": [
@@ -4175,22 +4179,30 @@
       "purpose": "Experience Ledger schema, connection pool, and shared utilities.",
       "exports": [
         {
+          "name": "ledger_health",
+          "kind": "function",
+          "signature": "() -> dict[str, dict]",
+          "summary": "Swallowed-failure counts for every 'ledger.*' best_effort surface this process:",
+          "lineno": 28
+        },
+        {
           "name": "close_pool",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Close every pooled connection across all threads (shutdown / test teardown).",
-          "lineno": 396
+          "lineno": 399
         },
         {
           "name": "init",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> None",
           "summary": "Create the database + schema if absent (idempotent).",
-          "lineno": 412
+          "lineno": 420
         }
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.core.best_effort"
       ],
       "side_effects": [
         "unannotated"
@@ -4278,48 +4290,49 @@
           "kind": "function",
           "signature": "(run_id: str, st: dict[str, Any], db_path: Optional[Path]=None) -> bool",
           "summary": "Upsert a subtask row keyed by ``(run_id, st_id)``",
-          "lineno": 63
+          "lineno": 64
         },
         {
           "name": "sync_subtask",
           "kind": "function",
           "signature": "(state_data: dict[str, Any], st: dict[str, Any], db_path: Optional[Path]=None) -> bool",
           "summary": "Best-effort upsert of one subtask, enriching it with position + the latest",
-          "lineno": 118
+          "lineno": 117
         },
         {
           "name": "set_subtask_embedding",
           "kind": "function",
           "signature": "(run_id: str, st_id: str, blob: bytes, db_path: Optional[Path]=None) -> bool",
           "summary": "Attach an embedding BLOB to an existing subtask row (Layer 1 retrieval)",
-          "lineno": 168
+          "lineno": 165
         },
         {
           "name": "set_subtask_importance",
           "kind": "function",
           "signature": "(run_id: str, st_id: str, importance: float, db_path: Optional[Path]=None) -> bool",
           "summary": "Denormalize write-time salience onto the subtask row (so rerank has it even for",
-          "lineno": 181
+          "lineno": 176
         },
         {
           "name": "embedded_subtasks",
           "kind": "function",
           "signature": "(only_passed: bool=True, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "Subtask rows that carry an embedding",
-          "lineno": 195
+          "lineno": 188
         },
         {
           "name": "fetch_subtasks",
           "kind": "function",
           "signature": "(run_id: Optional[str]=None, *, limit: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "",
-          "lineno": 209
+          "lineno": 200
         }
       ],
       "depends_on": [
         "config",
         "memory.experience_content",
-        "memory.experience_schema"
+        "memory.experience_schema",
+        "platform_core.core.best_effort"
       ],
       "side_effects": [
         "unannotated"
@@ -4363,26 +4376,27 @@
           "kind": "function",
           "signature": "(timeout: Optional[float]=None) -> None",
           "summary": "Wait for queued REST syncs to drain (used on shutdown / before resume reads).",
-          "lineno": 68
+          "lineno": 71
         },
         {
           "name": "writeClaudioMd",
           "kind": "function",
           "signature": "(task_state, subtask: Optional[dict], additional_context: str='', work_dir: Optional[str]=None, executor_playbook: str='') -> Path",
           "summary": "Write a fresh per-subtask CLAUDE.md to the working directory.",
-          "lineno": 77
+          "lineno": 80
         },
         {
           "name": "ObsidianClient",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 147
+          "lineno": 150
         }
       ],
       "depends_on": [
         "config",
-        "platform_core.core"
+        "platform_core.core",
+        "platform_core.core.best_effort"
       ],
       "side_effects": [
         "unannotated"
@@ -5685,7 +5699,7 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 54
+          "lineno": 56
         }
       ],
       "depends_on": [
@@ -5698,6 +5712,7 @@
         "notifications.health_aura",
         "notifications.visuals",
         "platform_core.core",
+        "platform_core.core.best_effort",
         "state.task"
       ],
       "side_effects": [
@@ -6231,8 +6246,8 @@
         "notifications.terminal_surface",
         "notifications.webdash",
         "platform_core.execution.router",
-        "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.run_phase_mixin",
+        "platform_core.orchestration.step_sink",
         "platform_core.runtime.cost_budget",
         "society.coordinator"
       ]
@@ -6390,7 +6405,7 @@
           "kind": "function",
           "signature": "(gate: str, state) -> dict",
           "summary": "Summarize TaskState into the compact context the Jerry service expects.",
-          "lineno": 36
+          "lineno": 37
         },
         {
           "name": "decide",
@@ -6404,17 +6419,19 @@
           "kind": "function",
           "signature": "(gate: str, state, *, timeout: float=6.0) -> Optional[str]",
           "summary": "Advisor role: a one-line second opinion to inject into the Ollama brain's",
-          "lineno": 92
+          "lineno": 91
         },
         {
           "name": "recordOutcome",
           "kind": "function",
           "signature": "(gate: str, predicted: Optional[dict], human_verb: str) -> None",
           "summary": "Append a shadow-mode comparison line (model vs human)",
-          "lineno": 103
+          "lineno": 102
         }
       ],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.core.best_effort"
+      ],
       "side_effects": [
         "appends to logs/jerry_shadow.jsonl"
       ],
@@ -6455,7 +6472,7 @@
         "agents.browser_executor",
         "agents.native_executor",
         "llm_io",
-        "platform_core.orchestration.run_loop_mixin",
+        "platform_core.orchestration.run_loop",
         "platform_core.orchestration.run_phase_mixin"
       ]
     },
@@ -6743,7 +6760,7 @@
         "tests/test_subprocess_feed.py"
       ],
       "callers": [
-        "platform_core.orchestration.execute_mixin"
+        "platform_core.orchestration.step_sink"
       ]
     },
     "notifications.terminal_ipc": {
@@ -7397,14 +7414,14 @@
           "kind": "function",
           "signature": "(task_id: str, port: Optional[int]=None) -> Optional[str]",
           "summary": "Start the dashboard in a daemon thread",
-          "lineno": 299
+          "lineno": 297
         },
         {
           "name": "stopWebDashboard",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Shut down the running dashboard server (frees the port)",
-          "lineno": 322
+          "lineno": 320
         }
       ],
       "depends_on": [
@@ -7413,6 +7430,7 @@
         "notifications.event_bus",
         "notifications.health_aura",
         "notifications.webdash_page",
+        "platform_core.core.best_effort",
         "platform_core.runtime.control",
         "state.task"
       ],
@@ -7930,7 +7948,7 @@
           "kind": "function",
           "signature": "(name: str='9to5') -> logging.Logger",
           "summary": "Return a child of the configured ``9to5`` logger.",
-          "lineno": 386
+          "lineno": 416
         }
       ],
       "depends_on": [
@@ -8005,6 +8023,75 @@
         "platform_core.runtime.trajectory",
         "platform_core.runtime.worktree",
         "state.task_io"
+      ]
+    },
+    "platform_core.core.best_effort": {
+      "path": "platform_core/core/best_effort.py",
+      "purpose": "best_effort() degradation kernel: swallowed failures counted, logged, surfaced.",
+      "exports": [
+        {
+          "name": "best_effort",
+          "kind": "function",
+          "signature": "(name: str, *, log: Optional[logging.Logger]=None, level: int=logging.WARNING) -> Iterator[None]",
+          "summary": "Swallow ``Exception`` from the wrapped block",
+          "lineno": 42
+        },
+        {
+          "name": "recordDegradation",
+          "kind": "function",
+          "signature": "(name: str, exc: Exception, *, log: Optional[logging.Logger]=None, level: int=logging.WARNING) -> None",
+          "summary": "Count + log a swallowed exception",
+          "lineno": 58
+        },
+        {
+          "name": "degradationSummary",
+          "kind": "function",
+          "signature": "() -> dict[str, dict]",
+          "summary": "Snapshot copy of the registry: {name: {count, last_error, last_at}}.",
+          "lineno": 81
+        },
+        {
+          "name": "degradationLine",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "One aggregated human line, grouped by surface (the segment before the first",
+          "lineno": 87
+        },
+        {
+          "name": "resetDegradations",
+          "kind": "function",
+          "signature": "(*, warnings: bool=False) -> None",
+          "summary": "Clear the registry so the next run's summary is per-run",
+          "lineno": 101
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "mutates the module-level DEGRADATIONS registry",
+        "emits log records"
+      ],
+      "test": [
+        "tests/test_best_effort.py"
+      ],
+      "callers": [
+        "agents.hooks_obsidian",
+        "memory.experience_content",
+        "memory.experience_journal",
+        "memory.experience_runs",
+        "memory.experience_schema",
+        "memory.experience_subtasks",
+        "memory.obsidian",
+        "notifications.dashboard",
+        "notifications.jerry_client",
+        "notifications.webdash",
+        "platform_core.ops.doctor",
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.evidence_gate",
+        "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.run_loop_mixin",
+        "platform_core.orchestration.run_phase_mixin",
+        "platform_core.orchestration.run_phase_outcome",
+        "platform_core.runtime.resilience"
       ]
     },
     "platform_core.core.clock": {
@@ -9215,61 +9302,69 @@
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "The local brain",
-          "lineno": 37
+          "lineno": 38
         },
         {
           "name": "check_claude_cli",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "The Claude Code hands",
-          "lineno": 55
+          "lineno": 56
         },
         {
           "name": "check_embedder",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "Local embedder for retrieval (degraded feature: no retrieval until present).",
-          "lineno": 64
+          "lineno": 65
         },
         {
           "name": "check_git",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "Git repo",
-          "lineno": 83
+          "lineno": 84
         },
         {
           "name": "check_gh",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "GitHub CLI",
-          "lineno": 98
+          "lineno": 99
         },
         {
           "name": "check_gpu",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "GPU",
-          "lineno": 106
+          "lineno": 107
+        },
+        {
+          "name": "check_degradations",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Surfaces swallowed best_effort failures recorded this process (structured",
+          "lineno": 115
         },
         {
           "name": "run",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "Run every preflight check",
-          "lineno": 114
+          "lineno": 126
         },
         {
           "name": "render",
           "kind": "function",
           "signature": "(report: dict[str, Any]) -> str",
           "summary": "",
-          "lineno": 122
+          "lineno": 134
         }
       ],
       "depends_on": [
         "config",
-        "learning.compute"
+        "learning.compute",
+        "platform_core.core.best_effort"
       ],
       "side_effects": [
         "unannotated"
@@ -9471,6 +9566,7 @@
         "platform_core.orchestration.llm_mixin",
         "platform_core.orchestration.plan_mixin",
         "platform_core.orchestration.review_mixin",
+        "platform_core.orchestration.run_loop",
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.solution_space",
@@ -9649,7 +9745,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles Discord control polling, approval gates, Obsidian index, and second-opinion rev…",
-          "lineno": 35
+          "lineno": 36
         }
       ],
       "depends_on": [
@@ -9661,6 +9757,7 @@
         "notifications.discord_bot",
         "notifications.engagement",
         "notifications.jerry_client",
+        "platform_core.core.best_effort",
         "platform_core.orchestration",
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.github",
@@ -9811,28 +9908,28 @@
           "kind": "function",
           "signature": "(orch, state, subtask: dict, result: dict, exec_cwd: str, verify_spec, attempt_started: float, sid: str, combined: str, dashboard, resume_session) -> tuple",
           "summary": "Run verify, repair if brittle, apply the self-ref + evidence-gate downgrades, record.",
-          "lineno": 33
+          "lineno": 110
         },
         {
           "name": "gitDiffFacts",
           "kind": "function",
           "signature": "(work_dir: str) -> dict",
           "summary": "Best-effort, re-derivable git facts for the receipt: head sha, working-tree diff text, …",
-          "lineno": 111
+          "lineno": 144
         },
         {
           "name": "runEvidenceGate",
           "kind": "function",
           "signature": "(orch, state, subtask: dict, result: dict, exec_cwd: str, vresult: dict, sid: str) -> 'tuple[dict, bool]'",
           "summary": "For a code-change subtask that PASSED the deterministic gate: run the independent verif…",
-          "lineno": 151
+          "lineno": 184
         },
         {
           "name": "persistReceipt",
           "kind": "function",
           "signature": "(orch, state, sid: str, receipt: dict) -> None",
           "summary": "Write the Evidence Receipt as a per-subtask Obsidian note (durable audit artifact).",
-          "lineno": 220
+          "lineno": 253
         }
       ],
       "depends_on": [
@@ -9842,6 +9939,7 @@
         "agents.verification",
         "agents.verifier",
         "config",
+        "platform_core.core.best_effort",
         "platform_core.orchestration"
       ],
       "side_effects": [
@@ -9898,15 +9996,13 @@
         "notifications.cast",
         "notifications.dashboard",
         "notifications.discord_bot",
-        "notifications.event_bus",
-        "notifications.subprocess_feed",
+        "platform_core.core.best_effort",
         "platform_core.core.surfaces",
         "platform_core.execution",
         "platform_core.execution.wiring",
         "platform_core.orchestration",
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.self_ref_gate",
-        "platform_core.orchestration.step_resume",
         "platform_core.orchestration.step_sink",
         "platform_core.orchestration.subtask",
         "platform_core.runtime",
@@ -10320,7 +10416,7 @@
           "kind": "function",
           "signature": "(pr_url: str, run_id: str, subtask_id: Optional[str]=None, *, poll_attempts: int=6, poll_interval: int=30) -> dict[str, Any]",
           "summary": "Poll GitHub CI + review state for ``pr_url`` and write the result to the experience led…",
-          "lineno": 275
+          "lineno": 363
         }
       ],
       "depends_on": [
@@ -10383,8 +10479,12 @@
         "learning.confidence",
         "learning.solution_cache",
         "notifications.discord_bot",
+        "notifications.lane_feed",
         "platform_core.core",
-        "platform_core.core.clock"
+        "platform_core.core.clock",
+        "platform_core.orchestration",
+        "platform_core.runtime.control",
+        "state.task"
       ],
       "side_effects": [
         "unannotated"
@@ -10406,7 +10506,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles the execution loop, backfill, livelock guard, and replan application.",
-          "lineno": 33
+          "lineno": 34
         }
       ],
       "depends_on": [
@@ -10415,7 +10515,7 @@
         "memory.experience",
         "notifications.dashboard",
         "notifications.discord_bot",
-        "notifications.lane_feed",
+        "platform_core.core.best_effort",
         "platform_core.orchestration",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.subtask",
@@ -10441,7 +10541,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles run lifecycle phases: resume, fresh run, preamble, phase 4, teardown.",
-          "lineno": 33
+          "lineno": 34
         }
       ],
       "depends_on": [
@@ -10465,6 +10565,7 @@
         "notifications.visuals",
         "notifications.webdash",
         "orchestrator",
+        "platform_core.core.best_effort",
         "platform_core.orchestration",
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.knowledge_refresh",
@@ -10491,49 +10592,49 @@
           "kind": "function",
           "signature": "(orch, state, e: BaseException, web_url, dashboard) -> dict",
           "summary": "Handle AbortRun/KeyboardInterrupt: persist aborted status and notify.",
-          "lineno": 34
+          "lineno": 36
         },
         {
           "name": "handleRunCrash",
           "kind": "function",
           "signature": "(orch, state, e: Exception, web_url, dashboard) -> dict",
           "summary": "Handle unexpected crash: persist 'crashed' (non-terminal) status so recovery can resume.",
-          "lineno": 61
+          "lineno": 60
         },
         {
           "name": "phase4PrCapture",
           "kind": "function",
           "signature": "(orch, state, pr: dict) -> dict",
           "summary": "Capture CI + review feedback for a created PR into the experience ledger.",
-          "lineno": 86
+          "lineno": 81
         },
         {
           "name": "finalizeSurfaces",
           "kind": "function",
           "signature": "(orch, state, status: str, done: int, total: int, elapsed: str) -> None",
           "summary": "Run-end surfaces: arc final beat, perfect-run moment, self-reflection post.",
-          "lineno": 116
+          "lineno": 112
         },
         {
           "name": "postGrowth",
           "kind": "function",
           "signature": "(orch) -> None",
           "summary": "Spec B: post a short '!growth' learning summary to Discord at teardown (best-effort).",
-          "lineno": 140
+          "lineno": 134
         },
         {
           "name": "maybeInstinct",
           "kind": "function",
           "signature": "(orch, state, bus) -> None",
           "summary": "Throttled trigger for the periodic instinct call",
-          "lineno": 151
+          "lineno": 143
         },
         {
           "name": "runInstinct",
           "kind": "function",
           "signature": "(orch, state) -> None",
           "summary": "",
-          "lineno": 172
+          "lineno": 162
         }
       ],
       "depends_on": [
@@ -10545,6 +10646,7 @@
         "notifications.instinct",
         "notifications.reflection_post",
         "notifications.run_arc",
+        "platform_core.core.best_effort",
         "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.time_utils"
       ],
@@ -10711,8 +10813,8 @@
         "tests/test_step_resume.py"
       ],
       "callers": [
-        "platform_core.orchestration.execute_mixin",
-        "platform_core.orchestration.run_phase_mixin"
+        "platform_core.orchestration.run_phase_mixin",
+        "platform_core.orchestration.step_sink"
       ]
     },
     "platform_core.orchestration.step_sink": {
@@ -10724,12 +10826,22 @@
           "kind": "function",
           "signature": "(run_id: str, subtask_id: str, attempt: int, plan_sig: str, session_getter: Callable[[], Optional[str]], recorder: Any=None, parent_span_id: Optional[str]=None, profile_meta: Optional[dict]=None) -> Callable[[int, str, str, dict], None]",
           "summary": "Build the on_step(step_idx, tool, summary, input) callback",
-          "lineno": 22
+          "lineno": 24
+        },
+        {
+          "name": "buildAttemptFeed",
+          "kind": "function",
+          "signature": "(orch, state, sid: str, attempt: int, resume_session: Optional[str]) -> tuple",
+          "summary": "Wire the live surface feed for ONE Claude-CLI attempt: step-journal sink + trajectory",
+          "lineno": 60
         }
       ],
       "depends_on": [
         "config",
-        "memory.experience"
+        "memory.experience",
+        "notifications.event_bus",
+        "notifications.subprocess_feed",
+        "platform_core.orchestration.step_resume"
       ],
       "side_effects": [
         "writes journal rows + trajectory spans"
@@ -11119,6 +11231,7 @@
         "orchestrator",
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.run_loop",
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.safety_mixin",
@@ -11340,53 +11453,54 @@
           "kind": "function",
           "signature": "(state: TaskState) -> Optional[float]",
           "summary": "Seconds until the deadline (negative once passed)",
-          "lineno": 43
+          "lineno": 44
         },
         {
           "name": "deadline_passed",
           "kind": "function",
           "signature": "(state: TaskState) -> bool",
           "summary": "",
-          "lineno": 48
+          "lineno": 49
         },
         {
           "name": "is_terminal",
           "kind": "function",
           "signature": "(state: TaskState) -> bool",
           "summary": "",
-          "lineno": 52
+          "lineno": 53
         },
         {
           "name": "last_progress_at",
           "kind": "function",
           "signature": "(state: TaskState) -> Optional[str]",
           "summary": "ISO timestamp of the most recent subtask completion (progress heartbeat).",
-          "lineno": 56
+          "lineno": 57
         },
         {
           "name": "is_stalled",
           "kind": "function",
           "signature": "(state: TaskState, *, max_idle_seconds: float) -> bool",
           "summary": "True if no subtask has completed within ``max_idle_seconds`` (a hung run).",
-          "lineno": 62
+          "lineno": 63
         },
         {
           "name": "pick_resume_task",
           "kind": "function",
           "signature": "() -> Optional[str]",
           "summary": "The most-recent interrupted (non-terminal) task to auto-resume, or None.",
-          "lineno": 70
+          "lineno": 71
         },
         {
           "name": "run_with_recovery",
           "kind": "function",
           "signature": "(run_fn: Callable[[TaskState], dict], state: TaskState, *, max_restarts: Optional[int]=None, backoff_base: float=2.0, sleep: Callable[[float], None]=time.sleep, reload_state: Optional[Callable[[str], TaskState]]=None, bus=None) -> dict",
           "summary": "Run ``run_fn(state)`` and auto-resume it on crash until the task is terminal, the",
-          "lineno": 122
+          "lineno": 119
         }
       ],
       "depends_on": [
         "config",
+        "platform_core.core.best_effort",
         "platform_core.core.clock",
         "platform_core.runtime.control",
         "state.task"
@@ -11956,6 +12070,7 @@
         "platform_core.orchestration.llm_mixin",
         "platform_core.orchestration.plan_mixin",
         "platform_core.orchestration.review_mixin",
+        "platform_core.orchestration.run_loop",
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.safety_mixin",
@@ -12248,63 +12363,63 @@
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 68
+          "lineno": 70
         },
         {
           "name": "cmd_size_audit",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 72
+          "lineno": 74
         },
         {
           "name": "cmd_affected",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 76
+          "lineno": 78
         },
         {
           "name": "cmd_map",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 80
+          "lineno": 82
         },
         {
           "name": "cmd_run",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 84
+          "lineno": 86
         },
         {
           "name": "cmd_dryrun",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 88
+          "lineno": 90
         },
         {
           "name": "cmd_e2e",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 93
+          "lineno": 95
         },
         {
           "name": "cmd_codemod",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 97
+          "lineno": 99
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: list[str]) -> int",
           "summary": "",
-          "lineno": 114
+          "lineno": 117
         }
       ],
       "depends_on": [],
@@ -12325,47 +12440,61 @@
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 66
+          "lineno": 69
         },
         {
           "name": "cmd_typecheck",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 71
+          "lineno": 74
         },
         {
           "name": "cmd_check",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "Fail-fast gate chain: ruff -> typecheck(changed) -> affected tests -> repo-map drift.",
-          "lineno": 79
+          "lineno": 82
         },
         {
           "name": "cmd_test",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 135
+          "lineno": 138
         },
         {
           "name": "cmd_fast",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 139
+          "lineno": 142
+        },
+        {
+          "name": "count_swallow_sites",
+          "kind": "function",
+          "signature": "() -> dict[str, int]",
+          "summary": "Per-file count of bare 'except Exception: pass/continue' swallow sites.",
+          "lineno": 191
+        },
+        {
+          "name": "cmd_swallow_ratchet",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "Ratchet gate: bare swallow count may only go DOWN vs the recorded baseline.",
+          "lineno": 206
         },
         {
           "name": "cmd_ci_local",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "Run the local CI gates in cheapest useful order.",
-          "lineno": 173
+          "lineno": 244
         }
       ],
       "depends_on": [],
       "side_effects": [
-        "unannotated"
+        "--update rewrites tools/swallow_baseline.json"
       ],
       "test": [],
       "callers": []

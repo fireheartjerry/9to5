@@ -129,9 +129,12 @@ verify.cmd   (shell command)
 verify.expect  ∈  exit_zero
                |  stdout_contains:<text>
                |  stdout_regex:<pattern>
-               |  stdout_contains_all:<t1>|||<t2>|||...   (multi-requirement)
-               |  stdout_regex_all:<p1>|||<p2>|||...      (multi-requirement)
+               |  stdout_contains_all:<t1>||<t2>||...   (multi-requirement)
+               |  stdout_regex_all:<p1>||<p2>||...      (multi-requirement)
 ```
+All `stdout_*` modes ALSO require exit code 0. Evaluation is strict: a verify without
+an `expect` is rejected by the sanitizer, and results flow through the typed Receipt
+pipeline (`agents/verification.py`).
 **Work-dir normalization:** self-referential runs set the subtask `--work-dir` to a
 `.sc-ctx/<sid>` scratch dir, but verify commands are authored relative to the repo root.
 Before running, the verifier re-roots to `INSTALL_ROOT` when the command's referenced path
@@ -244,20 +247,19 @@ subtasks done/total, success rate %, elapsed time, replan count, adversary count
 | Type | Passes when |
 |------|-------------|
 | `exit_zero` | Command exits with code 0 |
-| `stdout_contains:<text>` | stdout includes the literal text |
-| `stdout_regex:<pattern>` | stdout matches the regex pattern |
-| `stdout_contains_all:<t1>|||<t2>` | stdout includes **all** listed texts |
-| `stdout_regex_all:<p1>|||<p2>` | stdout matches **all** listed patterns |
+| `stdout_contains:<text>` | stdout includes the literal text AND exit code 0 |
+| `stdout_regex:<pattern>` | stdout matches the regex pattern AND exit code 0 |
+| `stdout_contains_all:<t1>||<t2>` | stdout includes **all** `||`-separated texts AND exit code 0 |
+| `stdout_regex_all:<p1>||<p2>` | stdout matches **all** `||`-separated patterns AND exit code 0 |
 
 Multi-requirement types (`_all`) assert every deliverable of a multi-goal subtask
-in a single verify command. Introduced in `fix/multi-requirement-verify`.
+in a single verify command.
 
-**Test-runner override:** when the verify command is a self-asserting test suite
-(`pytest`, `python -m unittest`, or a `test_*.py` / `*_test.py` script — but **not**
-`python -c` inline snippets) and it exits 0, the subtask **passes regardless of a
-content `expect`**. A green suite's own assertions are the verification; a brain-guessed
-`stdout_contains` needle must not false-FAIL correct work whose runner reports success to
-stderr (e.g. unittest's `OK`).
+**No test-runner override (removed 2026-07-01, R10):** the old special case — a verify
+command that looked like a test suite passing on exit 0 regardless of a content
+`expect` — is dead. `verdictFor(rc, output, expect)` (`agents/verification.py`) is a
+pure function with no cmd-shape special cases; a green suite with a wrong stdout
+needle FAILS. The brain authors `exit_zero` for test suites instead of guessing needles.
 
 ---
 
@@ -298,25 +300,15 @@ stderr (e.g. unittest's `OK`).
 | `nightclaw.py` | Repo-root entrypoint: `python nightclaw.py` starts the gateway bot |
 | `workflows/registry.py` | Loads and validates `WorkflowDefinition` JSON files from `workflows/definitions/` |
 | `workflows/definitions/*.json` | Built-in workflow templates (see below) |
-| `scheduling/recurring.py` | Recurring task scheduler — priority queue + EDF, 5-minute SLA tracking |
-| `workflows/scheduler.py` | Priority min-heap with deadline-aware slot allocation (used by `scheduling/`) |
 
 ---
 
-## Recurring task scheduling
+## Recurring task scheduling (removed 2026-07-01)
 
-9TO5 includes a scheduling layer that fires recurring tasks (health checks, alert
-scans, metrics flushes) on fixed intervals and guarantees an average start delay of
-< 5 minutes.
-
-Key design points:
-- **Priority + EDF**: higher-priority tasks dispatch first; earliest-deadline breaks ties.
-- **Fixed-interval re-enqueue**: only one fire per missed interval on restart — no thundering herd.
-- **Slot-cap concurrency**: `max_concurrent` limits simultaneous executions.
-- **SLA tracking**: `average_delay_seconds()` exposes the running mean; > 300 s means slot starvation.
-- **Overdue detection**: `overdue_jobs()` surfaces tasks that missed their deadline window.
-
-See **`docs/scheduling.md`** for the full pattern reference and operating parameters.
+The standalone `scheduling/` package and `workflows/scheduler.py` were deleted —
+never integrated, zero production callers. Recurring 9TO5 runs are launched
+externally (cron / Task Scheduler + `python main.py`); in-run sequencing is owned
+by the orchestrator. See `docs/scheduling.md` for the removal record.
 
 ---
 

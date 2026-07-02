@@ -97,6 +97,35 @@ class TestDryRun(unittest.TestCase):
         summary = orch.runFull(st, work_dir=str(self.work), auto_pr=False, control_mode="watch")
         self.assertEqual(summary["status"], "done")   # sanitizeSpec saved it
 
+    def test_raising_obsidian_stub_completes_with_degraded_surfaces_line(self):
+        # R11: a dead Obsidian must not break the run (never-raise contract), but it must
+        # no longer be SILENT -- the final summary carries the aggregated degradation line.
+        from platform_core.core.best_effort import resetDegradations
+
+        class RaisingObs:
+            """Obsidian double whose every method raises (vault hard-down)."""
+            def writeNote(self, rel_path, content):
+                raise ConnectionError("obsidian is down")
+
+            def appendNote(self, rel_path, content):
+                raise ConnectionError("obsidian is down")
+
+            def readNote(self, rel_path):
+                raise ConnectionError("obsidian is down")
+
+        resetDegradations(warnings=True)
+        st = TaskState.create("build a calculator", 1.0)
+        st.setElaboratedGoal("build a calculator")
+        st.save()
+        orch = Orchestrator(brain=simulation.SimBrain(2), obs=RaisingObs(),
+                            run_claude=simulation.simRunClaude, replan=simulation.simReplan,
+                            review=simulation.simReview)
+        summary = orch.runFull(st, work_dir=str(self.work), auto_pr=False, control_mode="watch")
+        self.assertEqual(summary["status"], "done")   # the run still completes
+        self.assertTrue(all(s["status"] == "done" for s in summary["subtasks"]))
+        self.assertIn("degraded surfaces:", summary.get("degraded_surfaces", ""))
+        self.assertIn("obsidian", summary["degraded_surfaces"])
+
     def test_run_is_not_self_referential_in_temp_dir(self):
         # guards the dry-run side-effect fix: a temp work_dir must not trip self-ref detection
         st = TaskState.create("build a calculator", 1.0)

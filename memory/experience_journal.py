@@ -12,7 +12,7 @@ EXPORTS:
   lastStepIdx(run_id: str, subtask_id: str, attempt: int, db_path: Optional[Path]=None) -> int  -- Highest journaled step_idx for an attempt, or -1 if none / on any error.
   lastAttempt(run_id: str, subtask_id: str, db_path: Optional[Path]=None) -> int  -- Highest attempt number journaled for a subtask, or 1 if none / on any error.
   markAttemptSuperseded(run_id: str, subtask_id: str, attempt: int, db_path: Optional[Path]=None) -> None  -- Resume bookkeeping: drop a stale attempt's journal rows so it won't be resumed.
-DEPENDS-ON: config, memory.experience_schema
+DEPENDS-ON: config, memory.experience_schema, platform_core.core.best_effort
 SIDE-EFFECTS: writes step_journal rows in experience.db
 RUN/TEST: python -m pytest tests/test_experience_journal.py
 """
@@ -23,6 +23,7 @@ from typing import Any, Optional
 
 import config
 from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _j, _nowIso
+from platform_core.core.best_effort import best_effort
 
 
 def appendStep(run_id: str, subtask_id: str, attempt: int, step_idx: int, kind: str,
@@ -33,7 +34,7 @@ def appendStep(run_id: str, subtask_id: str, attempt: int, step_idx: int, kind: 
         return
     if not (run_id or "").strip() or not (subtask_id or "").strip():
         return
-    try:
+    with best_effort("ledger.step_journal", log=LOG):   # journaling never crashes a run
         with _WRITE_LOCK, _connect(db_path) as conn:
             conn.execute(
                 """INSERT INTO step_journal
@@ -49,29 +50,25 @@ def appendStep(run_id: str, subtask_id: str, attempt: int, step_idx: int, kind: 
                  "step_idx": int(step_idx), "kind": kind, "tool": tool, "summary": summary,
                  "input_json": _j(input_obj), "plan_sig": plan_sig,
                  "session_id": session_id, "ts": _nowIso()})
-    except Exception as e:  # noqa: BLE001 -- journaling never crashes a run
-        LOG.warning("appendStep failed (ignored): %s", e)
     return None
 
 
 def loadSteps(run_id: str, subtask_id: str, attempt: int,
               db_path: Optional[Path] = None) -> list[dict[str, Any]]:
     """All journaled steps for an attempt, ordered by step_idx. Empty on any error."""
-    try:
+    with best_effort("ledger.step_journal_read", log=LOG):
         with _connect(db_path) as conn:
             rows = conn.execute(
                 "SELECT * FROM step_journal WHERE run_id=? AND subtask_id=? AND attempt=? "
                 "ORDER BY step_idx", (run_id, subtask_id, int(attempt)))
             return [dict(r) for r in rows]
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("loadSteps failed (ignored): %s", e)
-        return []
+    return []
 
 
 def lastStepIdx(run_id: str, subtask_id: str, attempt: int,
                 db_path: Optional[Path] = None) -> int:
     """Highest journaled step_idx for an attempt, or -1 if none / on any error."""
-    try:
+    with best_effort("ledger.step_journal_read", log=LOG):
         with _connect(db_path) as conn:
             row = conn.execute(
                 "SELECT MAX(step_idx) AS m FROM step_journal "
@@ -80,15 +77,13 @@ def lastStepIdx(run_id: str, subtask_id: str, attempt: int,
         if row is None or row["m"] is None:
             return -1
         return int(row["m"])
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("lastStepIdx failed (ignored): %s", e)
-        return -1
+    return -1
 
 
 def lastAttempt(run_id: str, subtask_id: str, db_path: Optional[Path] = None) -> int:
     """Highest attempt number journaled for a subtask, or 1 if none / on any error.
     Resume uses this to reconcile the CRASHED attempt (not a hardcoded attempt 1). Fail-open."""
-    try:
+    with best_effort("ledger.step_journal_read", log=LOG):
         with _connect(db_path) as conn:
             row = conn.execute(
                 "SELECT MAX(attempt) AS m FROM step_journal WHERE run_id=? AND subtask_id=?",
@@ -96,20 +91,16 @@ def lastAttempt(run_id: str, subtask_id: str, db_path: Optional[Path] = None) ->
         if row is None or row["m"] is None:
             return 1
         return int(row["m"])
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("lastAttempt failed (ignored): %s", e)
-        return 1
+    return 1
 
 
 def markAttemptSuperseded(run_id: str, subtask_id: str, attempt: int,
                           db_path: Optional[Path] = None) -> None:
     """Resume bookkeeping: drop a stale attempt's journal rows so it won't be resumed.
     Best-effort; never raises."""
-    try:
+    with best_effort("ledger.step_journal", log=LOG):
         with _WRITE_LOCK, _connect(db_path) as conn:
             conn.execute(
                 "DELETE FROM step_journal WHERE run_id=? AND subtask_id=? AND attempt=?",
                 (run_id, subtask_id, int(attempt)))
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("markAttemptSuperseded failed (ignored): %s", e)
     return None

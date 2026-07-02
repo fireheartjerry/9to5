@@ -4,7 +4,7 @@ A personal **autonomous AI orchestrator** that runs long-horizon engineering
 tasks at **zero marginal API cost** by using a local model as its brain and the
 Claude Code CLI as its hands.
 
-- **Brain** — Ollama `qwen2.5:7b` (local). Authors every prompt, plans, replans.
+- **Brain** — Ollama `qwen2.5-coder:7b` (local). Authors every prompt, plans, replans.
 - **Hands** — Claude Code CLI (`claude --print --dangerously-skip-permissions`),
   one fresh subprocess per step. Never decides anything.
 - **Memory** — Obsidian vault (Local REST API, with disk-write fallback).
@@ -24,7 +24,7 @@ Native (Layer 2) come later.
 venv\Scripts\python -m pip install -r requirements.txt
 
 # Required, running locally:
-#   - Ollama serving qwen2.5:7b   (ollama serve; ollama pull qwen2.5:7b)
+#   - Ollama serving qwen2.5-coder:7b   (ollama serve; ollama pull qwen2.5-coder:7b)
 #   - Claude Code CLI on PATH     (claude --version)
 #   - Obsidian + Local REST API   (open the `9to5` vault for REST;
 #                                   otherwise notes fall back to disk)
@@ -63,9 +63,10 @@ venv\Scripts\python -m notifications.command_bot
 
 **Verification gate:** the brain authors a `verify` `{cmd, expect}` per subtask;
 a subtask is only `done` when its command passes (`exit_zero` / `stdout_contains:` /
-`stdout_regex:`, plus the compound `stdout_contains_all:` / `stdout_regex_all:` that
-assert every deliverable of a multi-requirement goal), otherwise the executor is
-re-prompted with the failure and retried up to 3×.
+`stdout_regex:`, plus the compound `stdout_contains_all:` / `stdout_regex_all:` with
+`||`-separated needles that assert every deliverable of a multi-requirement goal —
+all stdout modes ALSO require exit 0, and there is no test-runner special case),
+otherwise the executor is re-prompted with the failure and retried up to 3×.
 
 ## Tests
 ```powershell
@@ -73,8 +74,8 @@ re-prompted with the failure and retried up to 3×.
 venv\Scripts\python -m pytest -n auto -q
 ```
 The command is single-sourced as `FULL_SUITE` in `tools/repo_map_render.py`.
-GitHub Actions runs the same suite on every push/PR (`.github/workflows/tests.yml`,
-Python 3.11 + 3.12).
+GitHub Actions runs path-aware lanes (`.github/workflows/tests.yml`): fast lane on
+push (py3.12); fast (py3.11+3.12) + slow + smoke on PRs; `compileall -q tests` first.
 
 ## Layout
 | Path | Role |
@@ -82,7 +83,7 @@ Python 3.11 + 3.12).
 | `main.py` | entrypoint: goal input, elaboration approval, launch |
 | `orchestrator.py` | brain (Ollama) + core loop (architect→plan→verify→exec→PR) |
 | `config.py` | env/config + logging + UTF-8 stdio |
-| `platform_core/runtime/control.py` | `ControlBus` — file-backed cross-process control (abort/pause/gates/ops) |
+| `platform_core/runtime/control.py` | `ControlBus` — SQLite-backed (`state/control.db`) cross-process control (abort/pause/gates/ops) |
 | `agents/` | elaborator, architect, executor, adversary, replanner, **verifier**, clarifier, playbook |
 | `state/task.py` | lean task-state model + JSON persistence |
 | `memory/obsidian.py` | REST-first, disk-fallback note writer/reader |

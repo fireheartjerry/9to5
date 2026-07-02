@@ -13,9 +13,10 @@ EXPORTS:
   check_git() -> dict[str, Any]  -- Git repo
   check_gh() -> dict[str, Any]  -- GitHub CLI
   check_gpu() -> dict[str, Any]  -- GPU
+  check_degradations() -> dict[str, Any]  -- Surfaces swallowed best_effort failures recorded this process (structured
   run() -> dict[str, Any]  -- Run every preflight check
   render(report: dict[str, Any]) -> str
-DEPENDS-ON: config, learning.compute
+DEPENDS-ON: config, learning.compute, platform_core.core.best_effort
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_doctor.py
 """
@@ -111,10 +112,21 @@ def check_gpu() -> dict[str, Any]:
                   detail=info.get("name") or "no CUDA GPU (training auto-skips)")
 
 
+def check_degradations() -> dict[str, Any]:
+    """Surfaces swallowed best_effort failures recorded this process (structured
+    degradation data, not string-matching). Clean on a fresh preflight process."""
+    from platform_core.core.best_effort import degradationLine
+    line = degradationLine()
+    if not line:
+        return _check("Degraded surfaces", True, hard=False, detail="none recorded")
+    return _check("Degraded surfaces", False, hard=False, detail=line,
+                  fix="check logs/9to5.log for best_effort[...] warnings")
+
+
 def run() -> dict[str, Any]:
     """Run every preflight check. Returns {checks, ready, blockers}."""
     checks = [check_ollama(), check_claude_cli(), check_embedder(), check_git(),
-              check_gh(), check_gpu()]
+              check_gh(), check_gpu(), check_degradations()]
     blockers = [c for c in checks if c["hard"] and not c["ok"]]
     return {"checks": checks, "ready": not blockers, "blockers": blockers}
 

@@ -3,7 +3,13 @@
 Living doc tracking bottlenecks and fixes to speed up every feedback loop in 9TO5
 (GitHub CI, local test runs, and the autonomous orchestrate→execute→verify loop).
 
-Status: **initial findings captured; full multi-surface audit pending.**
+Status: **shipped (see Results); sections below are dated findings/history.**
+
+> **Update 2026-07-01 (first-principles rewrite):** the `unittest` references below are
+> historical — the suite is pytest-only, and `python tools/dev.py ci-local` now also runs
+> `compileall -q tests`, a no-unittest-main gate, and the swallow-ratchet gate
+> (`tools/swallow_baseline.json`). CI's fast job compiles `tests/` before pytest.
+> `monitoring/` and `scheduling/` (referenced in Surface 4) were deleted as dead code.
 
 ---
 
@@ -205,9 +211,9 @@ the fingerprint walk to 0.057s, making the "4 walks/run" cost ~0.2s. Adding cach
 - `test_notification_integration.py::...test_start_creates_message_and_records_id` — from other
   uncommitted `notifications/*` work on this branch (fails identically with this work reverted).
 
-**Follow-ups (not done, out of surgical scope):** stale `unittest discover` references in
-`scripts/repo_health.py:96` and `tools/repo_map.py:368` should move to the pytest command when the
-repo-map is next regenerated.
+**Follow-ups:** ~~stale `unittest discover` references in `scripts/repo_health.py` and
+`tools/repo_map.py`~~ — DONE in the 2026-07-01 rewrite; pytest is the single-sourced
+runner (`FULL_SUITE` in `tools/repo_map_render.py`).
 
 ---
 

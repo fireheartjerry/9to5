@@ -17,7 +17,7 @@ Routes:
 EXPORTS:
   startWebDashboard(task_id: str, port: Optional[int]=None) -> Optional[str]  -- Start the dashboard in a daemon thread
   stopWebDashboard() -> None  -- Shut down the running dashboard server (frees the port)
-DEPENDS-ON: config, memory.experience, notifications.event_bus, notifications.health_aura, notifications.webdash_page, platform_core.runtime.control, state.task
+DEPENDS-ON: config, memory.experience, notifications.event_bus, notifications.health_aura, notifications.webdash_page, platform_core.core.best_effort, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_bloomberg_webdash.py tests/test_webdash_control.py
 """
@@ -34,6 +34,7 @@ import config
 from notifications.event_bus import get_bus
 from notifications.health_aura import aura_color, compute_health
 from notifications.webdash_page import PAGE as _PAGE
+from platform_core.core.best_effort import best_effort, degradationLine, degradationSummary
 from platform_core.runtime.control import GATES, ControlBus
 from state.task import TaskState
 
@@ -45,15 +46,14 @@ _SSE_STOP = threading.Event()
 # --------------------------------------------------------------------------- payload builders
 def _raw_payload(sid: str) -> str:
     """JSON list of the last 500 raw stdout lines for ``sid`` (for /api/raw)."""
-    try:
+    with best_effort("webdash.raw_payload", log=LOG):
         return json.dumps(get_bus().raw_history(sid, last_n=500))
-    except Exception:  # noqa: BLE001
-        return "[]"
+    return "[]"
 
 
 def _wisdom_trail(goal: str) -> list:
     """Top-3 past-run lessons relevant to ``goal`` (keyword match over SIE reflections)."""
-    try:
+    with best_effort("webdash.wisdom_trail", log=LOG):
         from memory import experience
         rows = experience.fetch_reflections()
         tokens = {w for w in (goal or "").lower().split() if len(w) > 3}
@@ -67,13 +67,12 @@ def _wisdom_trail(goal: str) -> list:
             scored.append((score, {"summary": summary[:80], "run": str(r.get("run_id") or "")[:8]}))
         scored.sort(key=lambda x: x[0], reverse=True)
         return [s[1] for s in scored[:3] if s[0] > 0] or [s[1] for s in scored[:3]]
-    except Exception:  # noqa: BLE001
-        return []
+    return []
 
 
 def _intelligence_curve() -> list:
     """Domain-by-domain confidence (best-effort; [] when the ledger has nothing usable)."""
-    try:
+    with best_effort("webdash.intelligence_curve", log=LOG):
         from memory import experience
         rows = experience.fetch_subtasks() if hasattr(experience, "fetch_subtasks") else []
         buckets: dict[str, list] = {}
@@ -87,8 +86,7 @@ def _intelligence_curve() -> list:
                for d, v in buckets.items() if len(v) >= 2]
         out.sort(key=lambda x: x["pct"], reverse=True)
         return out[:6]
-    except Exception:  # noqa: BLE001
-        return []
+    return []
 
 
 def _discovery_block(meta: dict) -> Optional[dict]:
@@ -109,23 +107,21 @@ def _derive_model(state: TaskState) -> str:
 
 
 def _comparative(task_id: str) -> Optional[dict]:
-    try:
+    with best_effort("webdash.comparative", log=LOG):
         from memory import experience
         c = experience.compare_run(task_id)
         return {k: c.get(k) for k in ("pace", "innovation", "adversary", "replans")}
-    except Exception:  # noqa: BLE001
-        return None
+    return None
 
 
 def _timing(meta: dict) -> "tuple[float, float]":
     from datetime import datetime
-    try:
+    with best_effort("webdash.timing", log=LOG):
         started = datetime.fromisoformat(meta["started_at"])
         deadline = datetime.fromisoformat(meta["deadline_at"])
         now = datetime.now().astimezone()
         return (now - started).total_seconds(), (deadline - now).total_seconds()
-    except Exception:  # noqa: BLE001
-        return 0.0, 0.0
+    return 0.0, 0.0
 
 
 def _snapshot(task_id: str) -> dict:
@@ -158,6 +154,8 @@ def _snapshot(task_id: str) -> dict:
         "wisdom_trail": _wisdom_trail(state.meta.get("goal_raw") or ""),
         "intelligence_curve": _intelligence_curve(),
         "comparative": _comparative(task_id),
+        "degradations": degradationSummary(),
+        "degraded_line": degradationLine(),
         "subtasks": [
             {
                 "subtask_id": s["subtask_id"],
@@ -324,9 +322,7 @@ def stopWebDashboard() -> None:
     global _SERVER
     _SSE_STOP.set()   # release any blocked SSE reader threads
     if _SERVER is not None:
-        try:
+        with best_effort("webdash.shutdown", log=LOG):
             _SERVER.shutdown()
             _SERVER.server_close()
-        except Exception:  # noqa: BLE001
-            pass
         _SERVER = None
