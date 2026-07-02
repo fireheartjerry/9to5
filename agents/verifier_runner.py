@@ -30,7 +30,14 @@ def _cap(text: Optional[str]) -> str:
 
 # ==== SHELL RUNNER ====
 
-def _runShell(cmd: str, work_dir: str) -> subprocess.CompletedProcess:
+def _verifyTimeoutSeconds(cmd: str) -> int:
+    """A pytest/unittest suite run legitimately needs more wall-clock than a narrow python -c
+    check; sharing one tight cap made a broad test-runner verify fail on TimeoutExpired even
+    while the suite was still making real progress (never an actual regression signal)."""
+    return config.VERIFY_SUITE_TIMEOUT_SECONDS if _isTestRunner(cmd) else config.VERIFY_TIMEOUT_SECONDS
+
+
+def _runShell(cmd: str, work_dir: str, timeout: int) -> subprocess.CompletedProcess:
     """Run a verify command string via the native shell (cmd.exe on Windows).
 
     Verifies are constrained to ``python <path>`` shapes, so the native shell is
@@ -50,7 +57,7 @@ def _runShell(cmd: str, work_dir: str) -> subprocess.CompletedProcess:
                             cwd=work_dir, creationflags=creationflags,
                             start_new_session=(os.name != "nt"))
     try:
-        out, err = proc.communicate(timeout=config.VERIFY_TIMEOUT_SECONDS)
+        out, err = proc.communicate(timeout=timeout)
         return subprocess.CompletedProcess(cmd, proc.returncode, out or "", err or "")
     except subprocess.TimeoutExpired:
         _killProcessTree(proc.pid)
@@ -159,6 +166,24 @@ def _normalizeWorkDir(cmd: str, work_dir: str) -> str:
     return work_dir
 
 
+def _verifyScriptMissing(cmd: str, work_dir: str) -> bool:
+    """True when cmd's first path-like argument is a literal .py script that doesn't exist in
+    work_dir, PROJECT_ROOT, or INSTALL_ROOT. Catches a brain-authored verify that references a
+    helper script (e.g. ``python check_unit_tests.py``) which was never actually created: running
+    it would fail with FileNotFoundError on every attempt, burning all MAX_SUBTASK_ATTEMPTS
+    retries on a structural authoring defect rather than a real regression."""
+    candidate = _extractVerifyPath(cmd)
+    if not candidate or not candidate.endswith(".py"):
+        return False
+    if any(ch in candidate for ch in "*?[]"):   # glob pattern -- existence isn't a literal check
+        return False
+    path = Path(candidate)
+    if path.is_absolute():
+        return not path.exists()
+    return not any((Path(root) / path).exists()
+                   for root in (work_dir, config.PROJECT_ROOT, config.INSTALL_ROOT))
+
+
 def _isTestRunner(cmd: str) -> bool:
     """True when the command's own exit code is authoritative verification:
     pytest/unittest, or a ``test_*.py`` / ``*_test.py`` script. Inline ``python -c``
@@ -195,9 +220,22 @@ def runVerification(verify: Optional[dict], work_dir: str, executor_result: dict
         }
 
     work_dir = _normalizeWorkDir(cmd, work_dir)
-    LOG.info("Verifying: %s  (expect: %s)", cmd, expect)
+    if _verifyScriptMissing(cmd, work_dir):
+        passed = bool(executor_result.get("ok"))
+        LOG.warning("Verify script missing on disk (%s) -- falling back to executor exit status: %s",
+                    cmd, "PASS" if passed else "FAIL")
+        return {
+            "passed": passed,
+            "cmd": cmd,
+            "expect": "executor_exit_zero (verify script missing)",
+            "returncode": executor_result.get("returncode"),
+            "stdout": "",
+            "stderr": "" if passed else _cap(executor_result.get("stderr")),
+        }
+    timeout = _verifyTimeoutSeconds(cmd)
+    LOG.info("Verifying: %s  (expect: %s, timeout: %ss)", cmd, expect, timeout)
     try:
-        proc = _runShell(cmd, work_dir)
+        proc = _runShell(cmd, work_dir, timeout)
         # Fold stderr into haystack ONLY when the program exited cleanly (rc==0).
         haystack = (proc.stdout or "") + (("\n" + (proc.stderr or "")) if proc.returncode == 0 else "")
         passed = _evaluate(expect, proc.returncode, haystack)
@@ -214,7 +252,7 @@ def runVerification(verify: Optional[dict], work_dir: str, executor_result: dict
         }
     except subprocess.TimeoutExpired:
         result = {"passed": False, "cmd": cmd, "expect": expect, "returncode": -1,
-                  "stdout": "", "stderr": f"verify TIMEOUT after {config.VERIFY_TIMEOUT_SECONDS}s"}
+                  "stdout": "", "stderr": f"verify TIMEOUT after {timeout}s"}
     except Exception as e:  # noqa: BLE001
         result = {"passed": False, "cmd": cmd, "expect": expect, "returncode": -1,
                   "stdout": "", "stderr": f"verify error: {e}"}

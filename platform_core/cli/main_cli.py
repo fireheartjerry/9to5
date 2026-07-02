@@ -62,6 +62,13 @@ def _parseArgs(argv: list[str]) -> "argparse.Namespace":
     parser.add_argument("--parallel", type=int, default=config.DEFAULT_PARALLELISM,
                         help="Run up to N independent (deps-satisfied) subtasks concurrently.")
     parser.add_argument("--resume", help="Resume an existing task by its task_id.")
+    parser.add_argument("--resume-extend-hours", type=float, default=None,
+                        help="On --resume, extend an already-passed deadline by this many hours "
+                             "(default: the task's original time horizon).")
+    parser.add_argument("--retry-failed", action="store_true",
+                        help="On --resume, reset every 'failed' subtask back to 'pending' so it "
+                             "is retried. Opt-in: subtasks failed for a structural reason (e.g. a "
+                             "missing verify script) will just fail the same way again.")
     parser.add_argument("--web-port", type=int, default=config.WEB_DASHBOARD_PORT, help="Web dashboard port.")
     parser.add_argument("--no-web", action="store_true", help="Disable the local web dashboard.")
     parser.add_argument("--task-id", help="Alias for --resume: restore + continue a task by id.")

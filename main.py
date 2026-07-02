@@ -186,6 +186,40 @@ def _resolveOrphan(args) -> None:
         pass
 
 
+def _extendResumeDeadline(state: TaskState, extend_hours: "float | None") -> None:
+    """A resumed task's deadline_at is loaded as-is from disk, so a run that already hit its
+    time horizon would re-hit it on the very first loop tick (finalizing as 'partial' again,
+    forever). If the deadline has already passed -- or the caller explicitly asked for an
+    extension -- push it out to now + hours, using the existing extendDeadline() delta API."""
+    from datetime import datetime, timedelta
+    from platform_core.orchestration.run_loop import _deadlinePassed
+    if extend_hours is None and not _deadlinePassed(state):
+        return
+    hours = extend_hours if extend_hours is not None else state.meta.get("time_horizon_hours", 1.0)
+    try:
+        old_deadline = datetime.fromisoformat(state.meta["deadline_at"])
+        new_deadline = datetime.now().astimezone() + timedelta(hours=float(hours))
+        state.extendDeadline((new_deadline - old_deadline).total_seconds())
+        LOG.info("Resume: deadline extended to %s (+%.2fh horizon)", state.meta["deadline_at"], hours)
+    except Exception as e:  # noqa: BLE001 -- extension is best-effort; never block a resume
+        LOG.warning("deadline extension on resume failed (%s); resuming with existing deadline_at", e)
+
+
+def _retryFailedSubtasks(state: TaskState) -> int:
+    """Reset every 'failed' subtask back to 'pending' so the run loop's ready-set selector
+    (which only ever picks 'pending' work -- see subtask._readySet) retries it. Opt-in only:
+    a subtask that failed for a structural reason (e.g. a verify command referencing a script
+    that doesn't exist) will just fail the same way again -- this does not fix root causes."""
+    n = 0
+    for s in list(state.subtasks):
+        if s["status"] == "failed":
+            state.updateSubtask(s["subtask_id"], status="pending")
+            n += 1
+    if n:
+        LOG.info("Resume: reset %d failed subtask(s) back to pending for retry", n)
+    return n
+
+
 def _resumeRun(args) -> int:
     """Load a task and resume it under the resilience supervisor."""
     try:
@@ -193,6 +227,9 @@ def _resumeRun(args) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"Cannot resume {args.resume}: {e}")
         return 2
+    _extendResumeDeadline(state, getattr(args, "resume_extend_hours", None))
+    if getattr(args, "retry_failed", False):
+        _retryFailedSubtasks(state)
     # Re-stamp the liveness beacon immediately so a concurrent activeRun() never mis-aborts this run.
     state.meta["run_pid"] = os.getpid()
     state.save()

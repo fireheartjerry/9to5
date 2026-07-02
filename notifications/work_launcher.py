@@ -300,16 +300,19 @@ def spawn(req: WorkRequest) -> int:
     return _spawnArgv(buildArgv(req), "work")
 
 
-def buildResumeArgv(task_id: str) -> list[str]:
-    return [str(config.VENV_PYTHON), str(config.PROJECT_ROOT / "main.py"), "--resume", task_id]
+def buildResumeArgv(task_id: str, retry_failed: bool = False) -> list[str]:
+    argv = [str(config.VENV_PYTHON), str(config.PROJECT_ROOT / "main.py"), "--resume", task_id]
+    if retry_failed:
+        argv.append("--retry-failed")
+    return argv
 
 
 def taskExists(task_id: str) -> bool:
     return (config.STATE_DIR / f"{task_id}.json").exists()
 
 
-def spawnResume(task_id: str) -> int:
-    return _spawnArgv(buildResumeArgv(task_id), "resume")
+def spawnResume(task_id: str, retry_failed: bool = False) -> int:
+    return _spawnArgv(buildResumeArgv(task_id, retry_failed=retry_failed), "resume")
 
 
 def launchOrError(req: WorkRequest) -> str:
@@ -359,17 +362,20 @@ def launchOrError(req: WorkRequest) -> str:
     return msg
 
 
-def resumeOrError(task_id: str) -> str:
-    """Resume an existing task by id (block if a run is active). Returns the user message."""
+def resumeOrError(task_id: str, retry_failed: bool = False) -> str:
+    """Resume an existing task by id (block if a run is active). Returns the user message.
+    retry_failed: also reset 'failed' subtasks back to 'pending' so they're retried -- opt-in,
+    since a subtask that failed for a structural reason will just fail the same way again."""
     if not taskExists(task_id):
         return f"❌ No such task `{task_id}`."
     active = activeRun()
     if active is not None:
         return f"⛔ A run is already active (`{active.task_id[:8]}`). Abort it first."
     try:
-        pid = spawnResume(task_id)
+        pid = spawnResume(task_id, retry_failed=retry_failed)
     except Exception as e:  # noqa: BLE001
         LOG.exception("resume spawn failed")
         return f"❌ Resume failed: {e}"
     web = f"http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/"
-    return f"♻️ Resuming `{task_id[:8]}` (pid {pid})\n{web}"
+    suffix = " (retrying failed subtasks)" if retry_failed else ""
+    return f"♻️ Resuming `{task_id[:8]}`{suffix} (pid {pid})\n{web}"

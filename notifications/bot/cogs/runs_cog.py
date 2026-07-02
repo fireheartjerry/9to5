@@ -187,17 +187,19 @@ class RunsCog(dpy_commands.Cog):
         await interaction.followup.send(embed=slash._embed(branding.runEmbed(state)), ephemeral=False)
 
     @app_commands.command(name="resume", description="Resume a paused run, or resume a prior run by id")
-    @app_commands.describe(task_id="(optional) prior task id to resume; omit to unpause the current run")
+    @app_commands.describe(task_id="(optional) prior task id to resume; omit to unpause the current run",
+                           retry_failed="Also retry subtasks that failed (default: only pending ones continue)")
     @app_commands.autocomplete(task_id=slash._taskAutocomplete)
     @slash.COOLDOWN
-    async def resume(self, interaction, task_id: "str | None" = None) -> None:  # noqa: ANN001
+    async def resume(self, interaction, task_id: "str | None" = None,
+                     retry_failed: bool = False) -> None:  # noqa: ANN001
         if not slash._ownerOk(interaction):
             return await interaction.response.send_message("Not authorized.", ephemeral=True)
         if not task_id:
             return await slash._runControl(interaction, "resume")
         await interaction.response.defer(ephemeral=False)
         audit.record(interaction.user.id, "resume", task_id, "slash")
-        reply = await asyncio.to_thread(work_launcher.resumeOrError, task_id)
+        reply = await asyncio.to_thread(work_launcher.resumeOrError, task_id, retry_failed)
         await interaction.followup.send(reply[:slash.MAX_REPLY], ephemeral=False)
 
     @app_commands.command(name="create-pr", description="Manually create a PR for any completed run (bypasses test gate)")

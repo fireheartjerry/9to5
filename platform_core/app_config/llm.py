@@ -273,6 +273,10 @@ MAX_SUBTASKS: int = 8                # hard cap on plan size (anti-runaway / ant
 # --- Verification gate ---------------------------------------------------
 VERIFY_DEFAULT_EXPECT: str = "exit_zero"
 VERIFY_TIMEOUT_SECONDS: int = 120
+# A pytest/unittest suite verify legitimately needs more wall-clock than a narrow python -c
+# one-liner; sharing the 120s cap made a broad test-runner verify TimeoutExpired-fail even
+# while the suite was still making real progress (never an actual regression signal).
+VERIFY_SUITE_TIMEOUT_SECONDS: int = 300
 
 # Epic 2 trustworthy-loop flags (DUAL_LEDGER_PLANNER/INDEPENDENT_VERIFY/EVIDENCE_RECEIPT/
 # BRAIN_JSON_RETRY_MAX/STALL_THRESHOLD) live in llm_epic_flags.py and are re-exported
