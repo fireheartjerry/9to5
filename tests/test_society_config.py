@@ -1,9 +1,16 @@
-"""Epic 5 config knobs exist with safe OFF defaults and re-export through config."""
+"""Epic 5 config knobs exist with safe OFF defaults and re-export through config.
+
+R12: the OFF guarantee is asserted on the CODED default (env key scrubbed) --
+a production install .env may legitimately enable the society layer.
+"""
 import config
+from platform_core.app_config.settings import EpicFlags
 
 
-def test_society_disabled_by_default():
-    assert config.SOCIETY_ENABLED is False
+def test_society_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("SOCIETY_ENABLED", raising=False)
+    assert EpicFlags().SOCIETY_ENABLED is False
+    assert isinstance(config.SOCIETY_ENABLED, bool)   # facade exposure
 
 
 def test_society_numeric_defaults():

@@ -1,31 +1,24 @@
-"""Regression test for the ControlBus concurrent-write race: a shared temp filename made
-two simultaneous writers collide on os.replace (FileNotFoundError). The bus is explicitly
-multi-writer (run + Discord bot + web dashboard), so this must be safe under contention."""
-import tempfile
+"""ControlBus over SQLite: the bus is explicitly multi-writer (orchestrator run, Discord
+gateway bot, web dashboard, terminal thread), so it must stay correct under thread AND
+real-process contention -- no lost abort, no lost/duplicated op, no lost decision. The
+old JSON-file bus needed sidecar locks and identity dedup; here BEGIN IMMEDIATE
+transactions and UNIQUE(task_id, source_msg_id) make those properties structural."""
+import multiprocessing
 import threading
 import unittest
 from pathlib import Path
-from unittest import mock
 
-import config
+from platform_core.runtime import control_store
 from platform_core.runtime.control import ControlBus
 
 
 class TestConcurrentWrites(unittest.TestCase):
-    def setUp(self):
-        self.dir = Path(tempfile.mkdtemp())
-        self._patch = mock.patch.object(config, "CONTROL_DIR", self.dir)
-        self._patch.start()
-
-    def tearDown(self):
-        self._patch.stop()
-
     def test_many_threads_hammering_the_bus_never_raise(self):
-        bus = ControlBus("race-task")
+        ControlBus("race-task")
         errors: list[Exception] = []
 
         def worker(n: int) -> None:
-            b = ControlBus("race-task")   # each "process" opens its own handle (same file)
+            b = ControlBus("race-task")   # each "process" opens its own handle (same db)
             try:
                 for i in range(40):
                     if n % 3 == 0:
@@ -42,56 +35,70 @@ class TestConcurrentWrites(unittest.TestCase):
         for t in threads:
             t.start()
         for t in threads:
-            t.join(timeout=20)
+            t.join(timeout=30)
         self.assertEqual(errors, [])
 
-    def test_no_lost_update_when_sidecar_lock_is_bypassed(self):
-        """When the cross-process O_EXCL sidecar is bypassed (timeout/orphaned holder), an in-process
-        lock must STILL serialize same-process writers so no field update is silently clobbered --
-        otherwise a queued Abort or approve/reject decision can be lost and the run never stops."""
-        import contextlib
-        import platform_core.runtime.control as control
-
-        @contextlib.contextmanager
-        def _bypassed(*_a, **_k):
-            yield False   # simulate _fileLock giving up without holding the lock
-
-        bus = ControlBus("lost-update")
+    def test_no_lost_update_under_thread_contention(self):
+        """N threads mutate DISTINCT keys simultaneously plus one abort: every write must
+        land (the old file bus could clobber a queued abort/decision in a bypassed-lock
+        read-modify-write window; SQLite transactions make that impossible)."""
         n = 24
         barrier = threading.Barrier(n)
 
         def worker(i: int) -> None:
             b = ControlBus("lost-update")
-            barrier.wait()           # maximize the interleave on the unguarded RMW
+            barrier.wait()           # maximize the interleave
             if i == 0:
                 b.requestAbort()
             b.decide(f"gate{i}", "approve")   # each thread sets a DISTINCT key
 
-        with mock.patch.object(control, "_fileLock", _bypassed):
-            threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join(timeout=20)
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
 
         final = ControlBus("lost-update").load()
-        self.assertTrue(final["abort"], "abort was silently lost under a bypassed sidecar lock")
+        self.assertTrue(final["abort"], "abort was silently lost under contention")
         missing = [f"gate{i}" for i in range(n) if final["decisions"].get(f"gate{i}") != "approve"]
-        self.assertEqual(missing, [], f"decisions lost to a clobbering RMW: {missing}")
-        # the file is still valid JSON after the storm
-        self.assertIsInstance(bus.load(), dict)
+        self.assertEqual(missing, [], f"decisions lost to a clobbering write: {missing}")
 
-    def test_pushop_dedups_identical_ops(self):
-        """The gateway bot and the in-run poller both push the SAME op for one Discord message; an
-        identical op already queued must not be duplicated (one '!add' must not create two subtasks)."""
-        bus = ControlBus("op-dedup")
-        bus.pushOp({"op": "add", "title": "x"})
-        bus.pushOp({"op": "add", "title": "x"})   # duplicate of the same message
-        self.assertEqual(len(bus.drainOps()), 1)
-        # distinct ops are all kept
-        bus.pushOp({"op": "add", "title": "a"})
-        bus.pushOp({"op": "skip", "subtask_id": "st-003"})
-        self.assertEqual(len(bus.drainOps()), 2)
+    def test_no_op_lost_or_duplicated_while_draining(self):
+        """Pushers race a concurrent drainer: every pushed op is drained exactly once."""
+        bus = ControlBus("drain-race")
+        n_pushers, per = 6, 30
+        drained: list[dict] = []
+        stop = threading.Event()
+
+        def pusher(n: int) -> None:
+            b = ControlBus("drain-race")
+            for i in range(per):
+                b.pushOp({"op": "add", "title": f"{n}-{i}"})
+
+        def drainer() -> None:
+            b = ControlBus("drain-race")
+            while not stop.is_set():
+                drained.extend(b.drainOps())
+
+        d = threading.Thread(target=drainer)
+        d.start()
+        threads = [threading.Thread(target=pusher, args=(n,)) for n in range(n_pushers)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        stop.set()
+        d.join(timeout=30)
+        drained.extend(bus.drainOps())   # sweep anything still queued
+        titles = [o["title"] for o in drained]
+        self.assertEqual(len(titles), n_pushers * per, "an op was lost or duplicated")
+        self.assertEqual(len(set(titles)), n_pushers * per, "an op was drained twice")
+
+    def test_drain_returns_ops_in_push_order(self):
+        bus = ControlBus("op-order")
+        for i in range(10):
+            bus.pushOp({"op": "add", "title": f"t{i}"})
+        self.assertEqual([o["title"] for o in bus.drainOps()], [f"t{i}" for i in range(10)])
 
     def test_clearForRunStart_preserves_user_control(self):
         """A fresh run resets only the run cursor; an abort/pause/decision the user issued during the
@@ -112,13 +119,86 @@ class TestConcurrentWrites(unittest.TestCase):
         self.assertIsNone(d["seen_discord_id"])       # run-cursor reset
         self.assertIsNone(d["pending_gate"])          # run-cursor reset
 
-    def test_corrupt_bus_rebuilds_so_abort_still_lands(self):
-        """A persistently corrupt bus file must NOT permanently no-op mutations -- otherwise an
-        aborting run could never stop. The mutation rebuilds from blank and lands."""
-        bus = ControlBus("corrupt-task")
-        bus.path.write_text("{ not valid json ::::::", encoding="utf-8")   # corrupt the file
-        bus.requestAbort()
-        self.assertTrue(ControlBus("corrupt-task").isAbort(), "abort lost on a corrupt bus")
-        self.assertIsInstance(ControlBus("corrupt-task").load(), dict)
-        # no temp files were left behind
-        self.assertEqual(list(self.dir.glob("*.tmp")), [])
+
+class TestSourceMsgDedup(unittest.TestCase):
+    """R8 dedup semantics: keyed by the ORIGIN MESSAGE, not by op identity."""
+
+    def test_same_source_msg_twice_is_one_op(self):
+        """The gateway bot and the degraded REST poller ingest the SAME Discord message:
+        one op, not two (UNIQUE(task_id, source_msg_id))."""
+        bus = ControlBus("msg-dedup")
+        bus.pushOp({"op": "add", "title": "x"}, source_msg_id="111")
+        bus.pushOp({"op": "add", "title": "x"}, source_msg_id="111")
+        self.assertEqual(len(bus.drainOps()), 1)
+
+    def test_two_identical_messages_are_two_ops(self):
+        """A user legitimately typing '!retry' twice (two message ids) retries twice --
+        the old whole-op identity dedup swallowed the second one."""
+        bus = ControlBus("msg-dedup2")
+        bus.pushOp({"op": "retry"}, source_msg_id="201")
+        bus.pushOp({"op": "retry"}, source_msg_id="202")
+        self.assertEqual(len(bus.drainOps()), 2)
+
+    def test_ops_without_source_id_never_dedup(self):
+        """Web dashboard / terminal / launcher pushes carry no message id: identical
+        bodies are all kept (NULLs are distinct under SQLite UNIQUE)."""
+        bus = ControlBus("no-id")
+        bus.pushOp({"op": "add", "title": "x"})
+        bus.pushOp({"op": "add", "title": "x"})
+        self.assertEqual(len(bus.drainOps()), 2)
+
+
+# ---------------------------------------------------------------------------
+# TRUE cross-process contention (multiprocessing spawn -> real OS processes)
+# ---------------------------------------------------------------------------
+def _procWorker(db_path: str, idx: int, per: int) -> None:
+    """Real-process worker: hammer pushOp/flags on the SHARED db; worker 0 fires the abort
+    mid-storm. Must run at module top level (spawn pickling)."""
+    from platform_core.runtime import control_store as cs
+    from platform_core.runtime.control import ControlBus as CB
+    cs._DB_OVERRIDE = Path(db_path)
+    bus = CB("xproc")
+    for i in range(per):
+        bus.pushOp({"op": "add", "title": f"p{idx}-{i}"})
+        if idx == 0 and i == per // 2:
+            bus.requestAbort()
+        if i % 25 == 0:
+            bus.setSeen(f"{idx}-{i}")
+
+
+class TestCrossProcess(unittest.TestCase):
+    def test_two_real_processes_never_lose_an_abort_or_an_op(self):
+        """Two real OS processes hammer the bus while this process drains concurrently:
+        the abort is always visible afterwards and every op is drained exactly once --
+        the failure mode the old sidecar-lock bus could not exclude."""
+        per = 200
+        db = str(control_store._dbPath())
+        # Touch the store so the db FILE exists before any child connects: a child seeing a
+        # missing db would run the one-shot legacy migration against the REAL state/control/.
+        ControlBus("xproc").isPaused()
+        drained: list[dict] = []
+        stop = threading.Event()
+
+        def drainer() -> None:
+            b = ControlBus("xproc")
+            while not stop.is_set():
+                drained.extend(b.drainOps())
+
+        d = threading.Thread(target=drainer)
+        d.start()
+        ctx = multiprocessing.get_context("spawn")
+        procs = [ctx.Process(target=_procWorker, args=(db, idx, per)) for idx in range(2)]
+        for p in procs:
+            p.start()
+        for p in procs:
+            p.join(timeout=120)
+        stop.set()
+        d.join(timeout=30)
+        self.assertTrue(all(p.exitcode == 0 for p in procs),
+                        f"worker process failed: {[p.exitcode for p in procs]}")
+        bus = ControlBus("xproc")
+        drained.extend(bus.drainOps())
+        titles = [o["title"] for o in drained]
+        self.assertEqual(len(titles), 2 * per, "an op was lost across processes")
+        self.assertEqual(len(set(titles)), 2 * per, "an op was duplicated across processes")
+        self.assertTrue(bus.isAbort(), "the abort fired by a real process was lost")

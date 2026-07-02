@@ -3,7 +3,7 @@
 Covers:
 - health._ollama() with malformed Ollama responses
 - health._discord() with non-JSON Discord response
-- control.ControlBus._readRaw() with non-dict JSON content
+- control.ControlBus robustness against garbage rows in the SQLite store
 - state.task.TaskState.load() with non-dict JSON content
 - webdash do_POST with null/non-string action in payload
 """
@@ -122,51 +122,50 @@ class TestDiscordHealthRobustness(unittest.TestCase):
 # control module
 # ---------------------------------------------------------------------------
 
-class TestControlBusNonDictJson(unittest.TestCase):
-    """_readRaw() must treat a non-dict JSON file as corrupt and retry/blank."""
-
-    def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp())
-        self._patch = mock.patch.object(config, "CONTROL_DIR", self.tmpdir)
-        self._patch.start()
-
-    def tearDown(self):
-        self._patch.stop()
-        for p in self.tmpdir.glob("*"):
-            p.unlink(missing_ok=True)
-        self.tmpdir.rmdir()
+class TestControlBusRobustness(unittest.TestCase):
+    """Garbage rows in the SQLite control store must degrade to safe defaults, never crash
+    a poll loop (the old JSON-file bus had a whole corrupt-rebuild ladder for this)."""
 
     def _bus(self, task_id: str = "t-robustness"):
         from platform_core.runtime.control import ControlBus
         return ControlBus(task_id)
 
-    def test_json_array_treated_as_corrupt_returns_blank(self):
-        """If the control file contains a JSON array, load() must return a safe blank state."""
-        from platform_core.runtime.control import ControlBus, _blank
-        task_id = "t-array"
-        path = self.tmpdir / f"{task_id}.json"
-        path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
-        bus = ControlBus.__new__(ControlBus)
-        bus.task_id = task_id
-        bus.path = path
-        data = bus.load()
+    def test_garbage_flag_value_reads_as_default(self):
+        """A non-JSON value smuggled into the flags table reads as the default, not a crash."""
+        from platform_core.runtime import control_store
+        bus = self._bus("t-badflag")
+        bus.requestPause()   # ensure db/schema exist
+        conn = control_store._connect()
+        try:
+            conn.execute("INSERT OR REPLACE INTO flags VALUES ('t-badflag','abort','{oops','x')")
+        finally:
+            conn.close()
+        self.assertFalse(bus.isAbort())
+        self.assertIsInstance(bus.load(), dict)
+
+    def test_garbage_op_row_is_skipped(self):
+        """An unparseable ops row is dropped by drain/load, and good ops still flow."""
+        from platform_core.runtime import control_store
+        bus = self._bus("t-badop")
+        bus.pushOp({"op": "retry"})
+        conn = control_store._connect()
+        try:
+            conn.execute("INSERT INTO ops(task_id, op_json, source_msg_id, created_at) "
+                         "VALUES ('t-badop', 'not json at all', NULL, 'x')")
+        finally:
+            conn.close()
+        self.assertEqual(bus.load()["plan_ops"], [{"op": "retry"}])
+        self.assertEqual(bus.drainOps(), [{"op": "retry"}])
+
+    def test_fresh_bus_loads_blank(self):
+        from platform_core.runtime.control import _blank
+        data = self._bus("t-fresh").load()
         blank = _blank()
         self.assertEqual(data["abort"], blank["abort"])
         self.assertEqual(data["pause"], blank["pause"])
+        self.assertEqual(data["decisions"], blank["decisions"])
 
-    def test_json_null_treated_as_corrupt_returns_blank(self):
-        """A null JSON value must not propagate to callers."""
-        from platform_core.runtime.control import ControlBus, _blank
-        task_id = "t-null"
-        path = self.tmpdir / f"{task_id}.json"
-        path.write_text("null", encoding="utf-8")
-        bus = ControlBus.__new__(ControlBus)
-        bus.task_id = task_id
-        bus.path = path
-        data = bus.load()
-        self.assertFalse(data["abort"])
-
-    def test_valid_json_dict_loads_correctly(self):
+    def test_valid_abort_roundtrips(self):
         bus = self._bus("t-valid")
         bus.requestAbort()
         data = bus.load()

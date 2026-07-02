@@ -133,6 +133,9 @@ class _FakeDash:
 def test_run_one_attempt_spans_are_thread_local(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "TRAJECTORY_ENABLED", True, raising=False)
     monkeypatch.setattr(config, "COST_BUDGET_ENABLED", False, raising=False)
+    # R12: a production install .env may enable the Epic 4 semantic-safety layer; this
+    # test's fake host has no _authorizeAttempt and only exercises span thread-locality.
+    monkeypatch.setattr(config, "SEMANTIC_SAFETY_ENABLED", False, raising=False)
     os.environ.pop(_ENV_KEY, None)
 
     costs = {"st-A": 0.11, "st-B": 0.22}

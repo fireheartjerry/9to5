@@ -111,7 +111,8 @@ class TestApplyCommand(unittest.TestCase):
         with mock.patch.object(type(st), "setControlMode",
                                side_effect=AssertionError("bot wrote task JSON directly")):
             out = commands.applyCommand(bus, st, commands.Command("mode", "gated"))
-        bus.pushOp.assert_called_once_with({"op": "set_mode", "mode": "gated"})
+        bus.pushOp.assert_called_once_with({"op": "set_mode", "mode": "gated"},
+                                           source_msg_id=None)
         self.assertIn("gated", out)
 
     def test_mode_rejects_garbage(self):

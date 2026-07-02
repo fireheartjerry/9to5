@@ -45,7 +45,11 @@ class ScenarioResult:
 # `unittest discover` bypasses it). Mirrors conftest._no_real_discord so the harness is hermetic.
 _FORCED = {"WEB_DASHBOARD": False, "DISCORD_DASHBOARD": False,
            "CLAUDE_DOC_FETCH": False, "DISCORD_POLL_SECONDS": 0.02,
-           "DISCORD_BOT_TOKEN": "", "DISCORD_CHANNEL_ID": 0}
+           "DISCORD_BOT_TOKEN": "", "DISCORD_CHANNEL_ID": 0,
+           # The virtual operator IS a human at the controls: night mode (which a
+           # production .env may enable) would auto-resume pauses and drop the PR hold,
+           # breaking the very interactions these scenarios script.
+           "NIGHT_MODE": False}
 
 
 def runScenario(name: str, goal: str, script: Callable[[VirtualOperator], None], *,
@@ -55,6 +59,16 @@ def runScenario(name: str, goal: str, script: Callable[[VirtualOperator], None],
     saved = {k: getattr(config, k) for k in _FORCED}
     for k, v in _FORCED.items():
         setattr(config, k, v)
+    # WEB_DASHBOARD / CLAUDE_DOC_FETCH are run-scoped flags (R12): platform_core readers
+    # (e.g. knowledge_refresh) resolve them via settings.runFlags(), which a shadow on the
+    # root config module does not reach -- force + restore the flag object too.
+    from platform_core.app_config import settings as _app_settings
+    flags = _app_settings.runFlags()
+    saved_flags = {"WEB_DASHBOARD": flags.WEB_DASHBOARD, "CLAUDE_DOC_FETCH": flags.CLAUDE_DOC_FETCH,
+                   "NIGHT_MODE": flags.NIGHT_MODE}
+    flags.WEB_DASHBOARD = False
+    flags.CLAUDE_DOC_FETCH = False
+    flags.NIGHT_MODE = False
     box: dict = {}
     t0 = time.time()
     try:
@@ -91,6 +105,8 @@ def runScenario(name: str, goal: str, script: Callable[[VirtualOperator], None],
     finally:
         for k, v in saved.items():
             setattr(config, k, v)
+        for k, v in saved_flags.items():
+            setattr(flags, k, v)
 
 
 # --------------------------------------------------------------------------

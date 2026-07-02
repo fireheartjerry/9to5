@@ -189,13 +189,24 @@ def test_autonomous_flag_annotates_escalation_reason():
     assert not gated.reason.endswith("-autonomous")
 
 
-def test_safety_config_defaults_ship_dark():
+def test_safety_config_defaults_ship_dark(monkeypatch):
+    # R12: assert the CODED defaults (env scrubbed) -- a production install .env may
+    # legitimately enable the semantic-safety layer / grant an allowance.
     import config
-    assert config.SEMANTIC_SAFETY_ENABLED is False          # ship dark
-    assert config.AUTONOMY_ALLOWANCE_USD == 0.0             # confirm-everything
-    assert config.AUTONOMOUS_DESTRUCTIVE_POLICY == "block"  # fail-closed default
-    assert isinstance(config.AUTONOMOUS_DESTRUCTIVE_ALLOWANCE_USD, float)
-    assert isinstance(config.CLAUDE_ATTEMPT_COST_HINT_USD, float)
+    for k in ("SEMANTIC_SAFETY_ENABLED", "AUTONOMY_ALLOWANCE_USD",
+              "AUTONOMOUS_DESTRUCTIVE_POLICY", "AUTONOMOUS_DESTRUCTIVE_ALLOWANCE_USD",
+              "CLAUDE_ATTEMPT_COST_HINT_USD"):
+        monkeypatch.delenv(k, raising=False)
+    from platform_core.app_config.llm import buildSieCfg
+    sie = buildSieCfg()
+    assert sie.SEMANTIC_SAFETY_ENABLED is False          # ship dark
+    assert sie.AUTONOMY_ALLOWANCE_USD == 0.0             # confirm-everything
+    assert sie.AUTONOMOUS_DESTRUCTIVE_POLICY == "block"  # fail-closed default
+    assert sie.AUTONOMOUS_DESTRUCTIVE_ALLOWANCE_USD == 0.0
+    assert sie.CLAUDE_ATTEMPT_COST_HINT_USD == 0.0
+    # Facade exposure stays live (env-layered).
+    assert isinstance(config.SEMANTIC_SAFETY_ENABLED, bool)
+    assert isinstance(config.AUTONOMY_ALLOWANCE_USD, float)
 
 
 def test_controlbus_has_action_risk_gate_and_spend_default(tmp_path, monkeypatch):

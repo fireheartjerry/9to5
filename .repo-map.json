@@ -1547,39 +1547,42 @@
     },
     "config": {
       "path": "config.py",
-      "purpose": "9TO5 -- central configuration.",
+      "purpose": "9TO5 -- central configuration facade over the typed registry.",
       "exports": [
+        {
+          "name": "reload",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Rebuild the registry from the current env + overrides file (tests).",
+          "lineno": 76
+        },
         {
           "name": "set_override",
           "kind": "function",
           "signature": "(knob: str, value) -> bool",
           "summary": "Persist + live-apply a meta-optimizer knob change (whitelisted knobs only).",
-          "lineno": 87
+          "lineno": 85
         },
         {
           "name": "validateEnv",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Return the names of required-but-missing environment values.",
-          "lineno": 132
-        },
-        {
-          "name": "getLogger",
-          "kind": "function",
-          "signature": "(name: str='9to5') -> logging.Logger",
-          "summary": "Return a child of the configured ``9to5`` logger.",
-          "lineno": 169
+          "lineno": 102
         }
       ],
       "depends_on": [
-        "platform_core.app_config.discord",
-        "platform_core.app_config.llm",
-        "platform_core.app_config.paths"
+        "platform_core.app_config",
+        "platform_core.app_config._env",
+        "platform_core.app_config.paths",
+        "platform_core.app_config.settings"
       ],
       "side_effects": [
-        "unannotated"
+        "reconfigures stdout/stderr to UTF-8",
+        "set_override writes state/sie_overrides.json"
       ],
       "test": [
+        "tests/test_config_bootstrap.py",
         "tests/test_config_robust_env.py",
         "tests/test_durable_config.py",
         "tests/test_epic2_config.py",
@@ -1720,9 +1723,6 @@
         "platform_core.execution.backends.worktree",
         "platform_core.execution.router",
         "platform_core.execution.security",
-        "platform_core.knowledge_base.builder",
-        "platform_core.knowledge_base.compress",
-        "platform_core.knowledge_base.scraper",
         "platform_core.ops.doctor",
         "platform_core.ops.external_project",
         "platform_core.ops.health",
@@ -1742,7 +1742,6 @@
         "platform_core.orchestration.fork_policy",
         "platform_core.orchestration.github",
         "platform_core.orchestration.judge_panel",
-        "platform_core.orchestration.knowledge_refresh",
         "platform_core.orchestration.llm_mixin",
         "platform_core.orchestration.parallel_safety",
         "platform_core.orchestration.plan_mixin",
@@ -1762,6 +1761,7 @@
         "platform_core.orchestration.subtask",
         "platform_core.orchestration.winner_merge",
         "platform_core.runtime.control",
+        "platform_core.runtime.control_store",
         "platform_core.runtime.cost_budget",
         "platform_core.runtime.heartbeat",
         "platform_core.runtime.resilience",
@@ -1930,7 +1930,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/test_config_bootstrap.py"
+      ],
       "callers": [
         "learning.sie"
       ]
@@ -3510,7 +3512,7 @@
           "kind": "function",
           "signature": "() -> int",
           "summary": "",
-          "lineno": 324
+          "lineno": 329
         }
       ],
       "depends_on": [
@@ -3519,6 +3521,7 @@
         "memory.obsidian",
         "orchestrator.Orchestrator",
         "orchestrator.refreshClaudeKnowledge",
+        "platform_core.app_config",
         "platform_core.cli.main_cli",
         "platform_core.core",
         "platform_core.ops.doctor",
@@ -5149,23 +5152,23 @@
         {
           "name": "handleCommand",
           "kind": "function",
-          "signature": "(content: str) -> str",
+          "signature": "(content: str, source_msg_id: 'str | None'=None) -> str",
           "summary": "Parse + apply a '!' command against the latest task",
-          "lineno": 52
+          "lineno": 66
         },
         {
           "name": "buildBot",
           "kind": "function",
           "signature": "()",
           "summary": "Construct (but do not run) the NightclawBot",
-          "lineno": 123
+          "lineno": 142
         },
         {
           "name": "runBot",
           "kind": "function",
           "signature": "() -> None",
           "summary": "",
-          "lineno": 195
+          "lineno": 214
         }
       ],
       "depends_on": [
@@ -5541,9 +5544,9 @@
         {
           "name": "applyCommand",
           "kind": "function",
-          "signature": "(bus: ControlBus, state: TaskState, cmd: Command) -> str",
+          "signature": "(bus: ControlBus, state: TaskState, cmd: Command, *, source_msg_id: Optional[str]=None) -> str",
           "summary": "Perform the bus mutation and return human markdown text ('' for silent control ops).",
-          "lineno": 285
+          "lineno": 288
         }
       ],
       "depends_on": [
@@ -7627,22 +7630,61 @@
     },
     "platform_core.app_config": {
       "path": "platform_core/app_config/__init__.py",
-      "purpose": "Configuration domain modules re-exported by the public :mod:`config` facade.",
+      "purpose": "Typed config registry package -- the in-platform config surface.",
       "exports": [],
       "depends_on": [],
       "side_effects": [
-        "unannotated"
+        "none"
       ],
       "test": [],
-      "callers": []
+      "callers": [
+        "config",
+        "main",
+        "platform_core.app_config.discord",
+        "platform_core.app_config.llm",
+        "platform_core.app_config.paths",
+        "platform_core.knowledge_base.builder",
+        "platform_core.knowledge_base.compress",
+        "platform_core.knowledge_base.scraper",
+        "platform_core.orchestration.knowledge_refresh"
+      ]
     },
     "platform_core.app_config._env": {
       "path": "platform_core/app_config/_env.py",
-      "purpose": "Shared env-coercion helpers for the app_config sub-modules.",
-      "exports": [],
+      "purpose": "Env bootstrap + never-crash env-coercion helpers (single home for BOTH).",
+      "exports": [
+        {
+          "name": "locateRepoRoot",
+          "kind": "function",
+          "signature": "() -> Path",
+          "summary": "Repo root = nearest ancestor of THIS FILE containing ``.git`` (dir or worktree",
+          "lineno": 48
+        },
+        {
+          "name": "installRoot",
+          "kind": "function",
+          "signature": "() -> Path",
+          "summary": "Install root from the process env (INSTALL_ROOT) or the C:\\9to5 default.",
+          "lineno": 59
+        },
+        {
+          "name": "loadEnvOnce",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Load ``.env`` exactly once per process: INSTALL_ROOT/.env first (durable install",
+          "lineno": 65
+        },
+        {
+          "name": "projectRoot",
+          "kind": "function",
+          "signature": "() -> Path",
+          "summary": "This checkout's root",
+          "lineno": 90
+        }
+      ],
       "depends_on": [],
       "side_effects": [
-        "unannotated"
+        "loadEnvOnce mutates os.environ from .env files (never overriding existing keys)"
       ],
       "test": [
         "tests/test_completion_envelope.py",
@@ -7652,80 +7694,259 @@
         "tests/test_executor_wrap_env.py"
       ],
       "callers": [
+        "config",
+        "platform_core.app_config.discord",
         "platform_core.app_config.llm",
-        "platform_core.app_config.llm_epic_flags"
+        "platform_core.app_config.paths",
+        "platform_core.app_config.settings"
       ]
     },
     "platform_core.app_config.discord": {
       "path": "platform_core/app_config/discord.py",
-      "purpose": "9TO5 Discord bot credentials, limits, branding, and surface flags.",
-      "exports": [],
-      "depends_on": [],
+      "purpose": "9TO5 Discord credentials, limits, branding, surface flags: the ``DiscordCfg`` domain.",
+      "exports": [
+        {
+          "name": "DiscordCfg",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 31
+        },
+        {
+          "name": "buildDiscordCfg",
+          "kind": "function",
+          "signature": "() -> DiscordCfg",
+          "summary": "Construct from env",
+          "lineno": 111
+        }
+      ],
+      "depends_on": [
+        "platform_core.app_config",
+        "platform_core.app_config._env"
+      ],
       "side_effects": [
-        "unannotated"
+        "none"
       ],
       "test": [
         "tests/test_discord_rest.py",
         "tests/test_discord_surfaces.py"
       ],
       "callers": [
-        "config"
+        "platform_core.app_config.settings"
       ]
     },
     "platform_core.app_config.llm": {
       "path": "platform_core/app_config/llm.py",
-      "purpose": "9TO5 LLM / orchestration / SIE / adversary / executor constants.",
-      "exports": [],
+      "purpose": "9TO5 brain/executor/SIE constants: ``OllamaCfg``, ``ClaudeCliCfg``, ``SieCfg`` domains.",
+      "exports": [
+        {
+          "name": "OllamaCfg",
+          "kind": "class",
+          "signature": "",
+          "summary": "Local Ollama brain + the Gemini second brain.",
+          "lineno": 37
+        },
+        {
+          "name": "buildOllamaCfg",
+          "kind": "function",
+          "signature": "() -> OllamaCfg",
+          "summary": "",
+          "lineno": 72
+        },
+        {
+          "name": "ClaudeCliCfg",
+          "kind": "class",
+          "signature": "",
+          "summary": "Claude Code CLI executor: timeouts, model/effort routing, doc-fetch, playbook.",
+          "lineno": 95
+        },
+        {
+          "name": "buildClaudeCliCfg",
+          "kind": "function",
+          "signature": "() -> ClaudeCliCfg",
+          "summary": "",
+          "lineno": 153
+        },
+        {
+          "name": "SieCfg",
+          "kind": "class",
+          "signature": "",
+          "summary": "SIE/learning + Obsidian service + adversary + orchestration/run-control knobs.",
+          "lineno": 159
+        },
+        {
+          "name": "buildSieCfg",
+          "kind": "function",
+          "signature": "() -> SieCfg",
+          "summary": "",
+          "lineno": 323
+        }
+      ],
       "depends_on": [
-        "platform_core.app_config._env",
-        "platform_core.app_config.llm_epic_flags"
+        "platform_core.app_config",
+        "platform_core.app_config._env"
       ],
       "side_effects": [
-        "unannotated"
+        "none"
       ],
       "test": [
         "tests/test_llm_compaction_numctx.py",
         "tests/test_llm_io_pydantic.py"
       ],
       "callers": [
-        "config"
-      ]
-    },
-    "platform_core.app_config.llm_epic_flags": {
-      "path": "platform_core/app_config/llm_epic_flags.py",
-      "purpose": "9TO5 Epic feature-flag constants (durable exec, trust loop, fabric, society...).",
-      "exports": [],
-      "depends_on": [
-        "platform_core.app_config._env"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": [
-        "platform_core.app_config.llm"
+        "platform_core.app_config.settings"
       ]
     },
     "platform_core.app_config.paths": {
       "path": "platform_core/app_config/paths.py",
-      "purpose": "9TO5 file-system paths and directory helpers.",
+      "purpose": "9TO5 file-system paths: the frozen ``PathsCfg`` domain of the config registry.",
       "exports": [
+        {
+          "name": "PathsCfg",
+          "kind": "class",
+          "signature": "",
+          "summary": "Every 9TO5 path constant (plus the audit rotation size that rides with them).",
+          "lineno": 28
+        },
+        {
+          "name": "buildPathsCfg",
+          "kind": "function",
+          "signature": "() -> PathsCfg",
+          "summary": "Compute every path from env (after loadEnvOnce) + the repo-root bootstrap.",
+          "lineno": 79
+        },
         {
           "name": "ensureDirs",
           "kind": "function",
           "signature": "() -> None",
-          "summary": "Create every directory 9TO5 needs (idempotent).",
-          "lineno": 126
+          "summary": "Create every directory 9TO5 needs (idempotent)",
+          "lineno": 118
         }
       ],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.app_config",
+        "platform_core.app_config._env"
+      ],
       "side_effects": [
-        "unannotated"
+        "ensureDirs creates the runtime directory tree"
       ],
       "test": [],
       "callers": [
         "config",
+        "platform_core.app_config.settings",
         "society.society_batch"
+      ]
+    },
+    "platform_core.app_config.settings": {
+      "path": "platform_core/app_config/settings.py",
+      "purpose": "Typed config registry: buildSettings() layers coded defaults < .env < sie_overrides.json.",
+      "exports": [
+        {
+          "name": "EpicFlags",
+          "kind": "class",
+          "signature": "",
+          "summary": "Epic 1/2/5/6/8 feature flags (formerly llm_epic_flags.py).",
+          "lineno": 59
+        },
+        {
+          "name": "PromptsCfg",
+          "kind": "class",
+          "signature": "",
+          "summary": "The big authored prompt/brief strings (env-overridable where they always were).",
+          "lineno": 160
+        },
+        {
+          "name": "Settings",
+          "kind": "class",
+          "signature": "",
+          "summary": "The whole typed registry: one frozen composite per process (swap-on-override).",
+          "lineno": 174
+        },
+        {
+          "name": "buildSettings",
+          "kind": "function",
+          "signature": "() -> Settings",
+          "summary": "Fresh registry: coded defaults < .env (loadEnvOnce) < sie_overrides.json.",
+          "lineno": 221
+        },
+        {
+          "name": "settings",
+          "kind": "function",
+          "signature": "() -> Settings",
+          "summary": "The process-wide registry singleton (lazy, thread-safe).",
+          "lineno": 235
+        },
+        {
+          "name": "allNames",
+          "kind": "function",
+          "signature": "() -> list[str]",
+          "summary": "Every legacy ALL_CAPS constant name the registry serves (for the facade __all__/__dir__…",
+          "lineno": 260
+        },
+        {
+          "name": "lookup",
+          "kind": "function",
+          "signature": "(name: str) -> Any",
+          "summary": "Constant by legacy name",
+          "lineno": 265
+        },
+        {
+          "name": "lookupDomain",
+          "kind": "function",
+          "signature": "(domains: tuple[str, ...], name: str) -> Any",
+          "summary": "lookup() restricted to the given domains (PEP 562 seam for the domain modules).",
+          "lineno": 275
+        },
+        {
+          "name": "RunFlags",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 295
+        },
+        {
+          "name": "runFlags",
+          "kind": "function",
+          "signature": "() -> RunFlags",
+          "summary": "The run-scoped flag singleton, seeded from the registry's coded/env defaults.",
+          "lineno": 305
+        },
+        {
+          "name": "reload",
+          "kind": "function",
+          "signature": "() -> Settings",
+          "summary": "Rebuild the registry from the current env + overrides file and reseed run flags.",
+          "lineno": 319
+        },
+        {
+          "name": "setOverride",
+          "kind": "function",
+          "signature": "(knob: str, value: Any) -> tuple[bool, bool]",
+          "summary": "Live-apply + persist a whitelisted, bounds-checked SIE knob.",
+          "lineno": 333
+        },
+        {
+          "name": "getLogger",
+          "kind": "function",
+          "signature": "(name: str='9to5') -> logging.Logger",
+          "summary": "Return a child of the configured ``9to5`` logger.",
+          "lineno": 386
+        }
+      ],
+      "depends_on": [
+        "platform_core.app_config._env",
+        "platform_core.app_config.discord",
+        "platform_core.app_config.llm",
+        "platform_core.app_config.paths",
+        "platform_core.core"
+      ],
+      "side_effects": [
+        "setOverride writes sie_overrides.json",
+        "getLogger creates LOG_PATH + 9to5.log"
+      ],
+      "test": [],
+      "callers": [
+        "config"
       ]
     },
     "platform_core.cli": {
@@ -7775,6 +7996,7 @@
         "notifications.dashboard",
         "notifications.terminal_ipc",
         "notifications.work_launcher",
+        "platform_core.app_config.settings",
         "platform_core.orchestration.github",
         "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.run_loop",
@@ -7855,6 +8077,7 @@
         "notifications.cv2",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.time_utils",
+        "platform_core.runtime.control_store",
         "platform_core.runtime.heartbeat",
         "platform_core.runtime.resilience"
       ]
@@ -8817,18 +9040,18 @@
           "kind": "function",
           "signature": "(prior_doc: str, fetched: dict, local: dict, psk: dict, *, refreshed_at: str, sources: list[str], recs: Optional[dict]=None) -> str",
           "summary": "Fold prior self-analysis + live docs + local capability surface +",
-          "lineno": 150
+          "lineno": 151
         },
         {
           "name": "diffHeadings",
           "kind": "function",
           "signature": "(prior_doc: str, new_doc: str) -> dict",
           "summary": "Naive 'what changed' delta on top-level headings (for the refresh log).",
-          "lineno": 164
+          "lineno": 165
         }
       ],
       "depends_on": [
-        "config",
+        "platform_core.app_config",
         "platform_core.knowledge_base.scraper"
       ],
       "side_effects": [
@@ -8851,39 +9074,39 @@
           "kind": "function",
           "signature": "(unified_doc: str, local: dict, fetched: dict, max_chars: Optional[int]=None, recs: Optional[dict]=None) -> str",
           "summary": "Distill the unified reference into the structured ``CLAUDE CODE CAPABILITIES``",
-          "lineno": 132
+          "lineno": 133
         },
         {
           "name": "setCapabilities",
           "kind": "function",
           "signature": "(summary: str) -> None",
           "summary": "Cache the compressed CLAUDE CODE CAPABILITIES summary (called by the full refresh).",
-          "lineno": 179
+          "lineno": 180
         },
         {
           "name": "getCapabilities",
           "kind": "function",
           "signature": "() -> str",
           "summary": "",
-          "lineno": 185
+          "lineno": 186
         },
         {
           "name": "ensureCapabilities",
           "kind": "function",
           "signature": "() -> str",
           "summary": "Lazily build the capabilities summary OFFLINE (no web fetch) from the on-disk",
-          "lineno": 189
+          "lineno": 190
         },
         {
           "name": "injectCapabilities",
           "kind": "function",
           "signature": "(system_prompt: str) -> str",
           "summary": "Prepend the cached CLAUDE CODE CAPABILITIES block to ANY brain system prompt.",
-          "lineno": 214
+          "lineno": 215
         }
       ],
       "depends_on": [
-        "config",
+        "platform_core.app_config",
         "platform_core.knowledge_base.builder",
         "platform_core.knowledge_base.scraper"
       ],
@@ -8904,39 +9127,39 @@
           "kind": "function",
           "signature": "(enabled: bool=True, timeout: Optional[int]=None) -> dict",
           "summary": "Scrape current Claude Code docs + changelog IN PARALLEL",
-          "lineno": 118
+          "lineno": 120
         },
         {
           "name": "injectableDoc",
           "kind": "function",
           "signature": "(text: str, *, name: str) -> str",
           "summary": "Gate a knowledge-doc for injection into the brain prompt.",
-          "lineno": 224
+          "lineno": 226
         },
         {
           "name": "scanLocalClaude",
           "kind": "function",
           "signature": "(roots: Optional[tuple]=None) -> dict",
           "summary": "Recursively read every installed ``.claude`` surface",
-          "lineno": 344
+          "lineno": 346
         },
         {
           "name": "readProductSelfKnowledge",
           "kind": "function",
           "signature": "(roots: Optional[tuple]=None) -> dict",
           "summary": "Locate + read the product-self-knowledge skill (Claude Code's own current",
-          "lineno": 375
+          "lineno": 377
         },
         {
           "name": "readRecommendations",
           "kind": "function",
           "signature": "(path: Optional[Path]=None) -> dict",
           "summary": "Read the expert recommendations doc (how 9to5 should wield Claude Code)",
-          "lineno": 395
+          "lineno": 397
         }
       ],
       "depends_on": [
-        "config",
+        "platform_core.app_config",
         "platform_core.core.provenance"
       ],
       "side_effects": [
@@ -9426,7 +9649,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles Discord control polling, approval gates, Obsidian index, and second-opinion rev…",
-          "lineno": 34
+          "lineno": 35
         }
       ],
       "depends_on": [
@@ -9443,6 +9666,7 @@
         "platform_core.orchestration.github",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.subtask",
+        "platform_core.runtime",
         "platform_core.runtime.control",
         "selfmod",
         "state.task"
@@ -9894,13 +10118,13 @@
           "kind": "function",
           "signature": "(obs: 'ObsidianClient | None'=None, *, fetch_web: bool | None=None, log_session: bool=True, force: bool=False) -> str",
           "summary": "Refresh and cache Claude Code capabilities for Ollama brain prompts.",
-          "lineno": 42
+          "lineno": 44
         }
       ],
       "depends_on": [
-        "config",
         "knowledge",
         "memory.obsidian",
+        "platform_core.app_config",
         "state.task"
       ],
       "side_effects": [
@@ -10727,12 +10951,15 @@
         "notifications.bot.core",
         "platform_core.execution.backends.worktree",
         "platform_core.orchestration.adversary_loop",
+        "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.fork_seams",
         "platform_core.orchestration.review_mixin",
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_phase_mixin",
-        "platform_core.orchestration.safety_mixin"
+        "platform_core.orchestration.safety_mixin",
+        "platform_core.runtime.autonomy_allowance",
+        "platform_core.runtime.control"
       ]
     },
     "platform_core.runtime.action_risk": {
@@ -10813,13 +11040,13 @@
     },
     "platform_core.runtime.autonomy_allowance": {
       "path": "platform_core/runtime/autonomy_allowance.py",
-      "purpose": "Run-scoped monotonic autonomy-allowance ledger over ControlBus (Epic 4 unit b).",
+      "purpose": "Run-scoped monotonic autonomy-allowance ledger over the SQLite control store (Epic 4 unit b).",
       "exports": [
         {
           "name": "spent",
           "kind": "function",
           "signature": "(bus) -> float",
-          "summary": "Current run-scoped autonomy spend (0.0 on a fresh/unreadable bus).",
+          "summary": "Current run-scoped autonomy spend (0.0 on a fresh/unreadable ledger).",
           "lineno": 26
         },
         {
@@ -10830,9 +11057,11 @@
           "lineno": 34
         }
       ],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.runtime"
+      ],
       "side_effects": [
-        "writes the shared ControlBus file"
+        "writes the control_store ledger table"
       ],
       "test": [
         "tests/test_autonomy_allowance.py"
@@ -10841,31 +11070,33 @@
     },
     "platform_core.runtime.control": {
       "path": "platform_core/runtime/control.py",
-      "purpose": "ControlBus -- file-backed, cross-process run control.",
+      "purpose": "ControlBus -- transactional, cross-process run control over SQLite.",
       "exports": [
         {
           "name": "AbortRun",
           "kind": "class",
           "signature": "",
           "summary": "Raised inside the orchestrator when an abort has been requested.",
-          "lineno": 117
+          "lineno": 31
         },
         {
           "name": "ControlBus",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 139
+          "lineno": 56
         }
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.runtime"
       ],
       "side_effects": [
-        "unannotated"
+        "reads/writes state/control.db via control_store"
       ],
       "test": [
         "tests/test_control_concurrency.py",
+        "tests/test_control_store.py",
         "tests/test_fuzz_control.py",
         "tests/test_granular_controls.py",
         "tests/test_webdash_control.py"
@@ -10893,6 +11124,108 @@
         "platform_core.orchestration.safety_mixin",
         "platform_core.runtime.resilience"
       ]
+    },
+    "platform_core.runtime.control_store": {
+      "path": "platform_core/runtime/control_store.py",
+      "purpose": "Transactional SQLite backing store for the run control plane (``state/control.db``).",
+      "exports": [
+        {
+          "name": "setFlag",
+          "kind": "function",
+          "signature": "(task_id: str, key: str, value: Any) -> None",
+          "summary": "",
+          "lineno": 197
+        },
+        {
+          "name": "getFlag",
+          "kind": "function",
+          "signature": "(task_id: str, key: str, default: Any=None) -> Any",
+          "summary": "",
+          "lineno": 203
+        },
+        {
+          "name": "setDecision",
+          "kind": "function",
+          "signature": "(task_id: str, gate: str, verdict: str) -> None",
+          "summary": "",
+          "lineno": 216
+        },
+        {
+          "name": "getDecision",
+          "kind": "function",
+          "signature": "(task_id: str, gate: str) -> Optional[str]",
+          "summary": "",
+          "lineno": 222
+        },
+        {
+          "name": "clearDecision",
+          "kind": "function",
+          "signature": "(task_id: str, gate: str) -> None",
+          "summary": "",
+          "lineno": 229
+        },
+        {
+          "name": "pushOp",
+          "kind": "function",
+          "signature": "(task_id: str, op: dict, source_msg_id: Optional[str]=None) -> bool",
+          "summary": "Queue one plan op",
+          "lineno": 235
+        },
+        {
+          "name": "drainOps",
+          "kind": "function",
+          "signature": "(task_id: str) -> list[dict]",
+          "summary": "Atomically remove and return all queued ops in push order (DELETE ..",
+          "lineno": 247
+        },
+        {
+          "name": "meterSpend",
+          "kind": "function",
+          "signature": "(task_id: str, attempt_id: Optional[str], usd: float) -> None",
+          "summary": "Append one committed spend",
+          "lineno": 265
+        },
+        {
+          "name": "spentTotal",
+          "kind": "function",
+          "signature": "(task_id: str) -> float",
+          "summary": "",
+          "lineno": 276
+        },
+        {
+          "name": "snapshot",
+          "kind": "function",
+          "signature": "(task_id: str) -> dict",
+          "summary": "One-connection read of everything ControlBus.load() surfaces (ops are PEEKED,",
+          "lineno": 284
+        },
+        {
+          "name": "clearTask",
+          "kind": "function",
+          "signature": "(task_id: str) -> None",
+          "summary": "Full transactional reset of one task's control state (including its ledger).",
+          "lineno": 309
+        },
+        {
+          "name": "clearRunStart",
+          "kind": "function",
+          "signature": "(task_id: str) -> None",
+          "summary": "Reset ONLY the run-execution cursor (queued ops, Discord poll cursor, pending gate)",
+          "lineno": 316
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.core.clock"
+      ],
+      "side_effects": [
+        "creates/writes state/control.db",
+        "renames legacy state/control/*.json once"
+      ],
+      "test": [
+        "tests/test_control_store.py"
+      ],
+      "callers": []
     },
     "platform_core.runtime.cost_budget": {
       "path": "platform_core/runtime/cost_budget.py",

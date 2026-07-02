@@ -7,7 +7,7 @@ State schema and source-of-truth rules for 9TO5.
 | Concern | Canonical source |
 |---|---|
 | Current run/task state | `state/tasks/<task_id>.json` or canonical state store |
-| Control commands | `ControlBus` under `state/control/` |
+| Control commands | `ControlBus` over SQLite `state/control.db` |
 | Persistent notes/context | Obsidian + disk fallback |
 | Execution transcript | logs / task notes / traces |
 | Verification status | verifier result object |
@@ -153,17 +153,30 @@ updating `lifecycle.py`, its tests, and dashboard consumers.
 
 ## ControlBus
 
-`ControlBus` lives in:
+`ControlBus` (`platform_core/runtime/control.py`) is a thin facade over the transactional
+SQLite store `platform_core/runtime/control_store.py`:
 
 ```txt
-platform_core/runtime/control.py
+state/control.db        (WAL, busy_timeout=30s; tables: flags, decisions, ops, ledger)
 ```
 
-It stores one JSON per task under:
+Every mutation is one `BEGIN IMMEDIATE` transaction on a per-call connection — SQLite is
+the cross-process serializer (no sidecar locks, no atomic-replace retries). The legacy
+`state/control/<task_id>.json` mailboxes are retired: the first time a `control.db` is
+created, any remaining files are imported one-shot and renamed `*.json.migrated`.
 
-```txt
-state/control/
-```
+Ingestion authority: the **gateway bot owns Discord ingestion**; the in-run REST poller
+(`control_mixin._translateDiscord`) engages only while `heartbeat.isBotAlive()` is False
+(logged once per transition). Every ingested `!` command carries its Discord message id
+into `pushOp(op, source_msg_id=...)` — `UNIQUE(task_id, source_msg_id)` makes the same
+message ingested twice ONE op, while two identical user messages (two ids) are two ops
+(so `!retry` twice retries twice; the old whole-op identity dedup is gone).
+
+The autonomy spend ledger is a `ledger` table (`attempt_id UNIQUE`, `spent = SUM(usd)`):
+idempotent per attempt and structurally impossible to zero by a corrupt-rebuild.
+
+Gate waits go through `bus.waitDecision(gate, timeout, poll)` — one shared wait with
+abort / timeout / deadline-escape / night-mode escapes instead of per-caller sleep loops.
 
 It is shared by:
 

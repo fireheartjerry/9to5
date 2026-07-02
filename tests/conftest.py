@@ -124,6 +124,18 @@ def _isolate_state(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_control_db(monkeypatch, tmp_path):
+    """R8: pin the SQLite control store (state/control.db) to a per-test database. The store
+    derives its path from ``config.STATE_DIR`` at call time -- already per-test via
+    ``_isolate_state`` -- but tests that re-patch STATE_DIR/CONTROL_DIR mid-test (unittest
+    setUp with mkdtemp) would otherwise move the db mid-flight; the explicit override keeps
+    ONE stable per-test control.db. Cross-process tests pass this path to their workers."""
+    from platform_core.runtime import control_store
+    monkeypatch.setattr(control_store, "_DB_OVERRIDE", tmp_path / "control.db", raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _no_real_discord(monkeypatch):
     """Run every test as if Discord is unconfigured -> no live REST calls, no 429 throttling."""
     monkeypatch.setattr(config, "DISCORD_BOT_TOKEN", "")

@@ -15,7 +15,7 @@ EXPORTS:
   ensure_all() -> dict  -- Run the full bootstrap once
 DEPENDS-ON: config, learning.compute
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_config_bootstrap.py
 """
 from __future__ import annotations
 

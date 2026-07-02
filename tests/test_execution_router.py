@@ -7,15 +7,23 @@ from platform_core.execution import router
 from platform_core.execution.backends.local import LocalEnvironment
 
 
-def test_execution_config_defaults_to_today():
-    assert config.EXECUTION_FABRIC_ENABLED is False     # master gate OFF by default
-    assert config.EXECUTION_BACKEND == "local"          # default backend
+def test_execution_config_defaults_to_today(monkeypatch):
+    # R12: assert the CODED defaults (env scrubbed) -- a production install .env may
+    # legitimately enable the fabric; the router behavior tests below cover both states.
+    for k in ("EXECUTION_FABRIC_ENABLED", "EXECUTION_BACKEND", "EXECUTION_REMOTE_KIND",
+              "DOCKER_EXECUTOR_IMAGE", "EXECUTION_PROVISION_TIMEOUT_SECONDS"):
+        monkeypatch.delenv(k, raising=False)
+    from platform_core.app_config.settings import EpicFlags
+    flags = EpicFlags()
+    assert flags.EXECUTION_FABRIC_ENABLED is False      # master gate OFF by default
+    assert flags.EXECUTION_BACKEND == "local"           # default backend
+    assert flags.EXECUTION_BACKEND_BY_RISK == {}        # empty until Epic 4 lands
+    assert flags.EXECUTION_REMOTE_KIND in ("ssh", "modal", "daytona", "e2b")
+    assert flags.EXECUTION_PROVISION_TIMEOUT_SECONDS > 0
+    # Facade exposure stays live (env-layered).
     assert isinstance(config.EXECUTION_BACKEND_BY_RISK, dict)
-    assert config.EXECUTION_BACKEND_BY_RISK == {}        # empty until Epic 4 lands
     assert isinstance(config.DOCKER_EXECUTOR_IMAGE, str) and config.DOCKER_EXECUTOR_IMAGE
-    assert config.EXECUTION_REMOTE_KIND in ("ssh", "modal", "daytona", "e2b")
     assert isinstance(config.EXECUTION_PROVISION_TIMEOUT_SECONDS, int)
-    assert config.EXECUTION_PROVISION_TIMEOUT_SECONDS > 0
 
 
 def test_select_returns_local_when_fabric_disabled():
