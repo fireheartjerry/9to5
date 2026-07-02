@@ -72,7 +72,7 @@ class TestSurfaceContractAndDispatch(unittest.TestCase):
     def test_dispatcher_defaults_to_terminal(self):
         import orchestrator
         orch = orchestrator.Orchestrator.__new__(orchestrator.Orchestrator)
-        sentinel = lambda *a, **k: {"ok": True}
+        def sentinel(*a, **k): return {"ok": True}
         orch._run_claude = sentinel
         with mock.patch.object(config, "BROWSER_LAYER_ENABLED", True):
             self.assertIs(orch._selectExecutor({"surface": "terminal"}), sentinel)

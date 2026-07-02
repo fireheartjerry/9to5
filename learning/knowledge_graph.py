@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import config
 from learning.lessons import family_of

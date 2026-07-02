@@ -26,7 +26,17 @@ from pathlib import Path
 
 import config
 
-PROJECT_ROOT: Path = Path(config.PROJECT_ROOT).resolve()
+# The running orchestrator's self-code root. Resolve it from THIS module's own on-disk location so a
+# worktree / CI clone still fingerprints the RIGHT tree: config.PROJECT_ROOT mis-resolves to a
+# sub-dir when the repo runs with no ``.env`` to pin it, which would make selfCodeFiles() walk the
+# wrong tree and drop every real loop module. identity.py lives at
+# ``<root>/platform_core/core/identity.py`` -> parents[2] is the repo root.
+_SELF_ROOT: Path = Path(__file__).resolve().parents[2]
+_CFG_ROOT: Path = Path(config.PROJECT_ROOT).resolve()
+# Trust an explicitly-configured root only when it actually IS this module's tree (real installs pin
+# PROJECT_ROOT via .env and the two agree); otherwise fall back to the file-derived root -- never a
+# cwd or ``C:\9to5`` literal assumption.
+PROJECT_ROOT: Path = _CFG_ROOT if _CFG_ROOT == _SELF_ROOT else _SELF_ROOT
 
 
 @lru_cache(maxsize=None)
@@ -102,7 +112,8 @@ _FINGERPRINT_EXCLUDE_DIRS: tuple[Path, ...] = (PROJECT_ROOT / "tests", PROJECT_R
 # epoch hashes and reading as self-divergence whenever such a tree exists. (tools/repo_map.py excludes
 # `references` the same way.)
 _NON_SELF_TREES: tuple[Path, ...] = (
-    PROJECT_ROOT / ".claude", PROJECT_ROOT / ".git", PROJECT_ROOT / "venv", PROJECT_ROOT / "references",
+    PROJECT_ROOT / ".claude", PROJECT_ROOT / ".claude" / "worktrees",
+    PROJECT_ROOT / ".git", PROJECT_ROOT / "venv", PROJECT_ROOT / "references",
     PROJECT_ROOT / "fable-rewrite", PROJECT_ROOT / "nightclaw",
 )
 

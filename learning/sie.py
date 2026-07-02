@@ -74,33 +74,55 @@ def _write_state(data: dict[str, Any]) -> None:
         LOG.warning("sie state write failed (ignored): %s", e)
 
 
-def _lock_owner_alive(lp: Path) -> bool:
-    """True if the PID written in the lock file is still running. Maintenance runs on a DAEMON
-    thread, so a process that exits (or is killed) while a pass is mid-flight leaves the lock with
-    a dead owner -- which otherwise blocks ALL maintenance until the 1h staleness reclaim. If the
-    owner can't be determined, assume alive (never steal a lock we can't prove is dead)."""
+def _owner_pid(lp: Path) -> Optional[int]:
+    """The PID recorded in the lock file, or None when it's absent/unreadable/garbage."""
     try:
-        pid = int((lp.read_text(encoding="utf-8") or "").strip())
-    except Exception:  # noqa: BLE001 -- unreadable/garbage owner -> conservative
+        return int((lp.read_text(encoding="utf-8") or "").strip())
+    except Exception:  # noqa: BLE001 -- unreadable/garbage owner -> unknown
+        return None
+
+
+def _lock_owner_alive(lp: Path) -> bool:
+    """True if the lock's owner is alive OR its liveness is UNKNOWN (unreadable pid, or psutil
+    unavailable). Returns False ONLY when a readable PID is proven dead by psutil. Maintenance runs
+    on a DAEMON thread, so a process that exits mid-pass leaves the lock with a dead owner -- which
+    must be reclaimed. A single mockable seam (tests patch this)."""
+    pid = _owner_pid(lp)
+    if pid is None:
         return True
     if pid == os.getpid():
         return True
     try:
         import psutil
         return psutil.pid_exists(pid)
-    except Exception:  # noqa: BLE001 -- psutil missing/errored -> conservative
+    except Exception:  # noqa: BLE001 -- psutil missing/errored -> unknown, assume alive
         return True
 
 
+def _should_reclaim(lp: Path) -> bool:
+    """Whether a pre-existing lock may be stolen. Reclaim ONLY when the recorded owner is proven
+    dead (psutil), or -- as a wedged-pass safety net -- when the owner is UNKNOWN (unreadable pid)
+    and the lock is older than 1h. A lock held by a LIVE owner is NEVER stolen, however old it is
+    (the old time-only rule wrongly killed a long-running, still-live maintenance pass)."""
+    if not _lock_owner_alive(lp):
+        return True                                  # proven dead -> reclaim immediately
+    if _owner_pid(lp) is None:                        # owner unknowable -> only once stale
+        try:
+            return time.time() - lp.stat().st_mtime > 3600
+        except OSError:
+            return False
+    return False                                     # live, readable owner -> keep
+
+
 def _acquire_lock() -> Optional[Path]:
-    """O_EXCL lock so two concurrent runs never run maintenance at once. A stale lock is reclaimed
-    when it is older than 1h (a wedged pass) OR its owning PID is dead (an orphaned lock from a
-    process that exited mid-maintenance). Returns the lock path, or None if held by a live owner."""
+    """O_EXCL lock so two concurrent runs never run maintenance at once. A lock is reclaimed only
+    when its owning PID is proven dead (an orphaned lock), or when an unreadable owner has gone
+    stale (>1h). Returns the lock path, or None if held by a live owner."""
     lp = _lock_path()
     try:
         lp.parent.mkdir(parents=True, exist_ok=True)
-        if lp.exists() and (time.time() - lp.stat().st_mtime > 3600 or not _lock_owner_alive(lp)):
-            lp.unlink(missing_ok=True)  # reclaim a stale or orphaned lock
+        if lp.exists() and _should_reclaim(lp):
+            lp.unlink(missing_ok=True)  # reclaim a dead-owner or stale orphaned lock
         fd = os.open(str(lp), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.write(fd, str(os.getpid()).encode())
         os.close(fd)
@@ -349,7 +371,6 @@ def run_maintenance_async(**kwargs):
 
 def _test_pr_consolidate() -> None:
     """Acceptance test: seed a temp DB, run pr_consolidate, assert invariants."""
-    import sys
     import tempfile
 
     tmp = Path(tempfile.mktemp(suffix="_sie_test.db"))

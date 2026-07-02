@@ -215,8 +215,6 @@ class TestWriteLedger(unittest.TestCase):
              mock.patch("platform_core.orchestration.pr_feedback.record_reflection",
                         mock_refl, create=True):
             # Patch the import inside _writeLedger
-            import platform_core.orchestration.pr_feedback as mod
-            original_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else None
 
             result = {
                 "ok": True,

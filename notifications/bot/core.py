@@ -18,7 +18,7 @@ EXPORTS:
   runBot() -> None
 DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, notifications.views_feedback, notifications.views_terminal, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_simulation_core.py tests/test_skill_gap_analysis_core.py
+RUN/TEST: python -m pytest tests/test_orch_core_bugs.py tests/test_simulation_core.py tests/test_skill_gap_analysis_core.py
 """
 from __future__ import annotations
 
@@ -147,7 +147,9 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
             LOG.info("Nightclaw online as %s", self.user)
 
         async def on_message(self, message: "discord.Message") -> None:
-            if message.author == self.user or not message.content.strip().startswith("!"):
+            # Ignore ALL bot authors (not just ourselves): with an unset owner allowlist any
+            # other bot could otherwise drive the '!' control surface.
+            if message.author.bot or not message.content.strip().startswith("!"):
                 return
             if not spine.isAuthorized(message.author.id):
                 LOG.info("ignored '!' command from unauthorized user %s", message.author.id)

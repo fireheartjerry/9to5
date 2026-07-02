@@ -4,6 +4,15 @@ Recommendations for custom hooks, scripts, and skills that make 9TO5 safer and f
 
 These are not all mandatory on day one. Add them incrementally when useful. Because apparently asking every subprocess to remember every invariant forever is not a stable engineering strategy.
 
+> **Hook registration is live and CI-guarded.** The Claude executor passes
+> `--settings <repo>/.claude/settings.json`, whose `hooks.PreToolUse` block registers
+> `block_destructive` and `self_modification_guard` (Bash) and `self_modification_guard`
+> (Edit/Write/MultiEdit), plus `PostToolUse` telemetry. A prior commit had stripped this to
+> `"hooks": {}`, silently disabling every guard; `tests/test_hooks_registration.py` now asserts
+> that the registrations in `settings.json` and the handlers in `agents/hooks.py` stay in parity,
+> so a future strip fails CI. Blocking guards fail **closed**: if a guard sub-module can't be
+> imported, the dispatch exits non-zero (blocks the tool call) rather than allowing it.
+
 ## Recommended hooks
 
 ### 1. Pre-edit hard-boundary guard

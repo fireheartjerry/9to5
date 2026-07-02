@@ -12,16 +12,41 @@ Run: python -m pytest tests/test_monitoring.py
      python C:\9to5\tests\test_monitoring.py
 """
 import sys
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # Ensure repo root is importable whether invoked via pytest or directly.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+import config
 import monitoring
-from monitoring.tracker import MAX_DELAY_SECONDS, MAX_RETRIES, SUCCESS_RATE_MIN
+import monitoring.alerter as alerter
+from monitoring.tracker import (
+    CRITICAL_DETECTION_WINDOW_SECS,
+    MAX_DELAY_SECONDS,
+    MAX_RETRIES,
+    SUCCESS_RATE_MIN,
+)
+
+_SAVED_DISCORD: dict = {}
+
+
+def setUpModule():
+    """Sandbox Discord so no notify path can fire a live REST call, even under bare
+    ``python tests/test_monitoring.py`` (which bypasses the pytest-only fixture)."""
+    _SAVED_DISCORD["token"] = config.DISCORD_BOT_TOKEN
+    _SAVED_DISCORD["channel"] = config.DISCORD_CHANNEL_ID
+    config.DISCORD_BOT_TOKEN = ""
+    config.DISCORD_CHANNEL_ID = 0
+
+
+def tearDownModule():
+    config.DISCORD_BOT_TOKEN = _SAVED_DISCORD.get("token", config.DISCORD_BOT_TOKEN)
+    config.DISCORD_CHANNEL_ID = _SAVED_DISCORD.get("channel", config.DISCORD_CHANNEL_ID)
 
 
 class TestSuccessRate(unittest.TestCase):
@@ -169,6 +194,73 @@ class TestGetAlertsSnapshot(unittest.TestCase):
         alerts = monitoring.get_alerts()
         alerts.append({"type": "fake"})
         self.assertNotEqual(monitoring.get_alerts(), alerts)
+
+
+class TestCriticalDetectionWindow(unittest.TestCase):
+    """B45: the detection window constant is 120s (2 minutes), matching every doc/spec."""
+
+    def test_window_is_120_seconds(self):
+        self.assertEqual(CRITICAL_DETECTION_WINDOW_SECS, 120.0)
+
+
+class TestCriticalAlertSurvivesRefresh(unittest.TestCase):
+    """B44: a late-detection critical alert must not be wiped by a later execution refresh."""
+
+    def setUp(self):
+        monitoring.reset()
+
+    def tearDown(self):
+        monitoring.reset()
+
+    def _lateCritical(self):
+        old_ts = time.time() - (CRITICAL_DETECTION_WINDOW_SECS + 30.0)
+        monitoring.record_critical_event("evt-late", "system_failure", occurred_at=old_ts)
+
+    def test_late_critical_alert_present_after_record(self):
+        self._lateCritical()
+        types = [a["type"] for a in monitoring.get_alerts()]
+        self.assertIn("critical_event_late_detection", types)
+
+    def test_late_critical_alert_survives_normal_execution(self):
+        self._lateCritical()
+        # A subsequent healthy execution triggers _refreshAlerts(); the critical alert
+        # must survive because it is NOT derivable from execution records.
+        monitoring.record_execution("w1", True, 10.0)
+        alerts = monitoring.get_alerts()
+        crit = [a for a in alerts if a["type"] == "critical_event_late_detection"]
+        self.assertEqual(len(crit), 1)
+        self.assertEqual(crit[0]["event_id"], "evt-late")
+
+    def test_in_window_critical_adds_no_alert(self):
+        monitoring.record_critical_event("evt-now", "system_failure", occurred_at=time.time())
+        types = [a["type"] for a in monitoring.get_alerts()]
+        self.assertNotIn("critical_event_late_detection", types)
+
+
+class TestLateCriticalSingleAlert(unittest.TestCase):
+    """B46: a single late-detected critical event must fire exactly one Discord notification."""
+
+    def setUp(self):
+        monitoring.reset()
+        alerter.resetState()
+
+    def tearDown(self):
+        monitoring.reset()
+        alerter.resetState()
+
+    def test_single_notification_per_late_event(self):
+        old_ts = time.time() - (CRITICAL_DETECTION_WINDOW_SECS + 30.0)
+        monitoring.record_critical_event("evt-dup", "oom_kill", occurred_at=old_ts)
+        with mock.patch("monitoring.alerter._notifyAlert") as mock_alert, \
+                mock.patch("monitoring.alerter._notifyCriticalEvent") as mock_crit:
+            fired = alerter.checkAndNotify()
+        # Exactly one notification total for this event, under one dedup key.
+        self.assertEqual(mock_crit.call_count, 1)
+        crit_keys = [k for k in fired if "evt-dup" in k]
+        self.assertEqual(len(crit_keys), 1)
+        # The generic alert path must not also fire for the same critical event.
+        for c in mock_alert.call_args_list:
+            self.assertNotEqual(c[0][0].get("type"), "critical_event_late_detection")
 
 
 if __name__ == "__main__":

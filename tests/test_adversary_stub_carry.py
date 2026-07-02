@@ -1,4 +1,8 @@
-import os, shutil, stat, tempfile, unittest
+import os
+import shutil
+import stat
+import tempfile
+import unittest
 from pathlib import Path
 from unittest import mock
 
@@ -9,7 +13,8 @@ from memory import experience
 def _forceRmtree(path):
     def _onerror(func, p, _exc):
         try:
-            os.chmod(p, stat.S_IWRITE); func(p)
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
         except Exception:
             pass
     shutil.rmtree(path, onerror=_onerror)
@@ -17,14 +22,18 @@ def _forceRmtree(path):
 
 class TestStubCarry(unittest.TestCase):
     def setUp(self):
-        self.dir = Path(tempfile.mkdtemp()); self.db = self.dir / "experience.db"
-        self.state_dir = self.dir / "state"; self.state_dir.mkdir()
+        self.dir = Path(tempfile.mkdtemp())
+        self.db = self.dir / "experience.db"
+        self.state_dir = self.dir / "state"
+        self.state_dir.mkdir()
         mock.patch.object(config, "EXPERIENCE_DB_PATH", self.db).start()
         mock.patch.object(config, "EXPERIENCE_LEDGER_ENABLED", True).start()
         mock.patch.object(config, "STATE_DIR", self.state_dir).start()
 
     def tearDown(self):
-        mock.patch.stopall(); experience._reset_schema_cache(); _forceRmtree(self.dir)
+        mock.patch.stopall()
+        experience._reset_schema_cache()
+        _forceRmtree(self.dir)
 
     def test_stub_review_persists_adversary_stub_1(self):
         from state.task import TaskState

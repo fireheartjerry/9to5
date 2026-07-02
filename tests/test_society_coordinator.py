@@ -118,3 +118,41 @@ def test_budget_governor_stops_spawning(tmp_path, monkeypatch):
     # two workers each cost 0.04 -> 0.08 > 0.05 budget
     assert coord.spent_usd >= 0.05
     assert coord.budgetExceeded() is True
+
+
+def test_worker_lands_failed_status_out_of_pending(tmp_path):
+    # B36: a not-ok worker result must land a terminal 'failed' status so the run
+    # loop never livelocks on a subtask stuck 'in_progress'.
+    state = _state_two_ready()
+    bb = Blackboard(tmp_path / "wf.jsonl")
+    coord = Coordinator(state, bb, threading.Lock(), work_dir=str(tmp_path))
+
+    def fail_run(spec, **kw):
+        return {"ok": False, "returncode": 1, "stdout": "boom"}
+
+    ready = [s for s in state.subtasks if s["status"] == "pending"]
+    coord._handleSocietyBatch(ready, parallelism=2, run_fn=fail_run)
+    assert {s["status"] for s in state.subtasks} == {"failed"}
+
+
+def test_budget_gate_skips_spawn_when_already_over(tmp_path, monkeypatch):
+    # B37: the pre-spawn gate consults budgetExceeded() before every spawn; once
+    # accumulated spend is over budget no further workers are spawned.
+    import config
+    monkeypatch.setattr(config, "SOCIETY_TOKEN_BUDGET_USD", 0.05)
+    state = _state_two_ready()
+    bb = Blackboard(tmp_path / "bg.jsonl")
+    coord = Coordinator(state, bb, threading.Lock(), work_dir=str(tmp_path))
+    coord.spent_usd = 0.06  # already over budget before the batch starts
+    ran = []
+
+    def fake_run(spec, **kw):
+        ran.append(kw["subtask"]["subtask_id"])
+        return {"ok": True, "returncode": 0}
+
+    ready = [s for s in state.subtasks if s["status"] == "pending"]
+    msgs = coord._handleSocietyBatch(ready, parallelism=2, run_fn=fake_run)
+    assert ran == []   # gate blocked every spawn
+    assert msgs == []
+    rows = bb.readAll()
+    assert rows[-1]["kind"] == "budget"  # a budget-stop entry was posted

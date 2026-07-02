@@ -3,9 +3,7 @@
 Verifies that only provenance-stamped (scrape/human) docs are injectable into
 the brain prompt; unstamped or executor-stamped docs are quarantined to "".
 """
-import tempfile
 import unittest
-from pathlib import Path
 
 import knowledge
 

@@ -5,7 +5,7 @@ Thin shells over work_launcher + branding (see notifications.slash helpers).
 EXPORTS:
   RunsCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.branding, notifications.commands, notifications.discord_bot, notifications.slash, notifications.views, notifications.work_launcher, orchestrator.Orchestrator, platform_core.orchestration, state.task
+DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.branding, notifications.discord_bot, notifications.slash, notifications.views, notifications.work_launcher, orchestrator.Orchestrator, platform_core.orchestration, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -18,7 +18,6 @@ from discord.ext import commands as dpy_commands
 
 import config
 from notifications import audit, branding, work_launcher
-from notifications import commands as spine
 from notifications import slash
 from platform_core.orchestration import work_profile as work_profile_mod
 from state.task import TaskState
@@ -105,6 +104,7 @@ class RunsCog(dpy_commands.Cog):
                            repo_url="Clone this repo into a managed workspace",
                            repo_ref="Branch, tag, or ref to check out with repo_url",
                            night_mode="Zero human interaction — no pings, no holds, auto-resume pauses",
+                           sim="Token-light: simulated run over the live surfaces (zero API cost)",
                            profile_preset="Nightclaw work-profile preset",
                            work_profile="Custom axes, e.g. stability=80,evidence=90")
     @app_commands.choices(mode=[app_commands.Choice(name="watch", value="watch"),
@@ -119,6 +119,7 @@ class RunsCog(dpy_commands.Cog):
                    work_dir: "str | None" = None, repo_url: "str | None" = None,
                    repo_ref: "str | None" = None,
                    night_mode: "bool | None" = None,
+                   sim: "bool | None" = None,
                    profile_preset: "app_commands.Choice[str] | None" = None,
                    work_profile: "str | None" = None) -> None:  # noqa: ANN001
         if not slash._ownerOk(interaction):
@@ -128,7 +129,7 @@ class RunsCog(dpy_commands.Cog):
             return await interaction.response.send_modal(WorkModal())
         await interaction.response.defer(ephemeral=False)
 
-        if config.GEMINI_ENABLED:
+        if config.GEMINI_ENABLED and not sim:
             from agents import browser_executor
             await interaction.followup.send("Checking Gemini reachability…", ephemeral=False)
             reachable = await asyncio.to_thread(browser_executor.preflightLogin, 300, 3)
@@ -143,7 +144,7 @@ class RunsCog(dpy_commands.Cog):
             goal=goal, hours=work_launcher.parseHours(hours),
             mode=(mode.value if mode else "watch"), parallel=parallel or 1,
             work_dir=work_dir or None, repo_url=repo_url or None, repo_ref=repo_ref or None,
-            night_mode=bool(night_mode),
+            night_mode=bool(night_mode), sim=bool(sim),
             work_profile=(work_profile or (profile_preset.value if profile_preset else None)))
         audit.record(interaction.user.id, "work", None, "slash")
         reply = await asyncio.to_thread(work_launcher.launchOrError, req)

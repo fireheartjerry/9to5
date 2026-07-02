@@ -156,7 +156,7 @@ class TestControlBusNonDictJson(unittest.TestCase):
 
     def test_json_null_treated_as_corrupt_returns_blank(self):
         """A null JSON value must not propagate to callers."""
-        from platform_core.runtime.control import ControlBus, _blank
+        from platform_core.runtime.control import ControlBus
         task_id = "t-null"
         path = self.tmpdir / f"{task_id}.json"
         path.write_text("null", encoding="utf-8")

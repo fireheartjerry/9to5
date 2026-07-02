@@ -20,8 +20,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from scheduling.recurring import MAX_DELAY_SECONDS, RecurringScheduler, RecurringTask
-from workflows.scheduler import WorkflowJob
+from scheduling.recurring import MAX_DELAY_SECONDS, RecurringScheduler
 
 
 class TestAverageDelayUnderFiveMinutes(unittest.TestCase):

@@ -58,9 +58,18 @@ def _run_env(cmd: list[str], *, env: dict[str, str] | None = None,
 
 
 # ==== GATES ====
+def _exists(path: str) -> bool:
+    """True if the path resolves to a real file (absolute, or relative to REPO_ROOT)."""
+    p = Path(path)
+    return p.exists() or (REPO_ROOT / path).exists()
+
+
 def _py_files(args: list[str]) -> list[str]:
     files = [a for a in args if not a.startswith("-") and a.endswith(".py")]
-    return files or affected_tests._git_changed()
+    files = files or affected_tests._git_changed()
+    # Drop deleted/renamed-away paths: feeding them to ruff/mypy makes the gate fail after any
+    # deletion for a file that no longer exists on disk.
+    return [f for f in files if _exists(f)]
 
 
 def cmd_lint(args: list[str]) -> int:

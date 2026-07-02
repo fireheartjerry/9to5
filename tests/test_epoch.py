@@ -1,6 +1,7 @@
 # tests/test_epoch.py
 """Primitive 2 -- the per-run epoch pin + self.code fingerprint."""
-import tempfile, unittest
+import tempfile
+import unittest
 from pathlib import Path
 from unittest import mock
 

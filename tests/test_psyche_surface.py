@@ -6,7 +6,6 @@ self_state without crashing.
 """
 from __future__ import annotations
 
-import pytest
 from human_nature.self_state import new_self_state, set_affect
 from human_nature.psyche_surface import render_discord, render_web
 

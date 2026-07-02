@@ -72,5 +72,8 @@ def test_two_workers_one_winner(tmp_path):
 
     t1 = threading.Thread(target=attempt, args=("coder",))
     t2 = threading.Thread(target=attempt, args=("tester",))
-    t1.start(); t2.start(); t1.join(); t2.join()
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
     assert len(wins) == 1  # exactly one worker ever owns the subtask

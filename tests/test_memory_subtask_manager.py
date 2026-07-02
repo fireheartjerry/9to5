@@ -7,10 +7,8 @@ to point at a temp DB, so tests are hermetic and can run in any order.
 from __future__ import annotations
 
 import sys
-import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 # Ensure the project root is on sys.path so `import config` works when this
 # file is run directly as `python tests/test_memory_subtask_manager.py`.
@@ -363,6 +361,42 @@ class TestMarkHelpers(unittest.TestCase):
         self.assertEqual(stats.total, 2)
         self.assertEqual(stats.passed, 1)
         self.assertAlmostEqual(stats.pass_rate, 0.5)
+
+
+# ---------------------------------------------------------------------------
+# B22: partial upsert must NOT null out pre-existing fields
+# ---------------------------------------------------------------------------
+
+class TestPartialUpsertPreservesFields(unittest.TestCase):
+    def setUp(self):
+        from memory import experience
+        experience._reset_schema_cache()
+        self._db = Path(":memory:")
+        config.EXPERIENCE_LEDGER_ENABLED = True
+
+    def tearDown(self):
+        from memory import experience
+        experience.close_pool()
+        config.EXPERIENCE_LEDGER_ENABLED = True
+
+    def test_mark_done_preserves_title_position_ended_at(self):
+        from memory import experience, subtask_manager
+        run_id, st_id = "run-b22", "st-1"
+        # Full insert: title, position, and completed_at (ended_at) all populated.
+        experience.record_subtask(run_id, {
+            "subtask_id": st_id, "title": "wire discord embed", "_position": 4,
+            "status": "running", "completed_at": "2026-07-02T10:00:00",
+        }, db_path=self._db)
+        # Partial update via markDone: carries only subtask_id/status/verify_result.
+        subtask_manager.markDone(run_id, st_id, db_path=self._db)
+        rows = experience.fetch_subtasks(run_id, db_path=self._db)
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["title"], "wire discord embed")
+        self.assertEqual(row["position"], 4)
+        self.assertEqual(row["ended_at"], "2026-07-02T10:00:00")
+        self.assertEqual(row["verify_passed"], 1)   # the partial update DID apply
+        self.assertEqual(row["status"], "done")
 
 
 # ---------------------------------------------------------------------------

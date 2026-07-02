@@ -139,6 +139,25 @@ Examples:
 - real Claude Code subprocess smoke
 - real Obsidian REST API write
 
+#### Nightclaw offline replay (substitutes a second live gateway)
+
+Only one `DISCORD_BOT_TOKEN` exists, so a second live bot cannot be started to exercise the
+`!` control surface. `platform_core/simulator/bot_replay.py` is the safe offline substitute:
+it feeds synthetic gateway messages through the pure command spine
+(`notifications/commands.py`) against an in-memory `ControlBus`, mirroring BOTH real consumers
+of a Discord message (the gateway `on_message` path and the in-run REST poller). The token is
+blank so the REST chokepoint (`notifications/discord_client._request`) short-circuits to a
+no-op — nothing touches the network. Use it instead of spinning up a second gateway.
+
+```bash
+python -m pytest tests/test_bot_replay.py -q
+```
+
+The matrix covers: every registered `!` command, malformed/unicode-garbage args, unauthorized
+and bot-author senders, duplicate/dedup, cursor-based stale replay, pause/resume/abort races,
+oversized reply/embed clamping, dual-consumer double-apply, the REST 429→401 breaker/latch, and
+the watchdog stale path.
+
 ## Preferred test-selection flow
 
 1. Identify changed module.

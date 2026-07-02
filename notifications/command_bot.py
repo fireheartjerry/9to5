@@ -5,7 +5,7 @@ The gateway now lives in :mod:`notifications.bot.core` -- a
 cogs. This module preserves the historical public surface + entrypoint so
 existing callers, docs, tests, and ``wipe.restartBot`` keep working unchanged::
 
-    venv\Scripts\python -m notifications.command_bot     # still runs the gateway
+    venv\\Scripts\\python -m notifications.command_bot     # still runs the gateway
     from notifications import command_bot
     command_bot.handleCommand("!status")                   # pure spine caller
     command_bot.runCommandBot()                            # start the gateway

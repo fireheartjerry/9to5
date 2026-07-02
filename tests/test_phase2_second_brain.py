@@ -52,7 +52,7 @@ class TestConsultChain(unittest.TestCase):
         mock.patch.stopall()
 
     def test_gpt_tier_when_gemini_ok(self):
-        ask = lambda m: json.dumps({"verdict": "approved", "concerns": []})
+        def ask(m): return json.dumps({"verdict": "approved", "concerns": []})
         rv = second_brain.consult("subtask", title="t", trigger_reason="r", content="out",
                                    browser_ask=ask, session_ok=True, worth=True)
         self.assertEqual(rv["tier"], "gpt")          # "gpt" denotes the external strong critic
@@ -61,7 +61,7 @@ class TestConsultChain(unittest.TestCase):
 
     def test_falls_to_ollama_when_gemini_stubs(self):
         # browser_ask returns junk -> reviewViaBrowser stubs -> chain must try Ollama.
-        chat = lambda system, user, *, want_json=False: {
+        def chat(system, user, *, want_json=False): return {
             "message": {"content": json.dumps({"verdict": "approved", "concerns": []})}}
         rv = second_brain.consult("subtask", title="t", trigger_reason="r", content="out",
                                    browser_ask=lambda m: "not json", ollama_chat=chat,

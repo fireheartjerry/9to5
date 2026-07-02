@@ -1,5 +1,4 @@
 """Independent verifier: verdict from an envelope, gating, and a read-only spawn that NEVER auto-passes."""
-from unittest import mock
 
 from agents import completion_envelope as ce
 from agents import independent_verifier as iv

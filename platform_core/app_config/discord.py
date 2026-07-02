@@ -11,12 +11,9 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 
-from dotenv import load_dotenv
-
-_THIS_DIR = Path(__file__).resolve().parent
-load_dotenv(dotenv_path=_THIS_DIR / ".env")
+# config.py loads the root ``.env`` before star-importing this module, so no local
+# ``load_dotenv`` is needed (the old one targeted a nonexistent ``app_config/.env``).
 
 
 def _envBool(key: str, default: bool = False) -> bool:
@@ -50,6 +47,7 @@ DISCORD_GUILD_ID: int = int(_RAW_GUILD) if _RAW_GUILD.isdigit() else 0
 # --- Discord hard limits (single source of truth for all truncation/clamping) ---
 DISCORD_MAX_CONTENT: int = 2000
 DISCORD_MAX_EMBED_DESC: int = 4096
+DISCORD_MAX_EMBED_TITLE: int = 256
 DISCORD_MAX_FIELD_NAME: int = 256
 DISCORD_MAX_FIELD_VALUE: int = 1024
 DISCORD_EMBED_TOTAL_MAX: int = 6000

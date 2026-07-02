@@ -5,10 +5,11 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: config, notifications.discord_bot
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_executor_session_lock.py
 """
 from __future__ import annotations
 
+import threading
 import time
 
 import config
@@ -16,6 +17,27 @@ import config
 LOG = config.getLogger("executor.session")
 
 _SESSION_LIMIT_STATE: dict = {"first_hit_at": None}
+# The state is a process-global raced by concurrent workers; guard every read/write.
+_SESSION_STATE_LOCK = threading.Lock()
+
+
+def _registerFirstHit(now: float) -> float:
+    """Atomically read-or-initialise ``first_hit_at``; return the winning timestamp.
+
+    Concurrency-safe: if two workers hit the limit at once only the first sets the
+    window and both observe the same reset baseline (no lost/duplicated wait window)."""
+    with _SESSION_STATE_LOCK:
+        first_hit = _SESSION_LIMIT_STATE.get("first_hit_at")
+        if first_hit is None:
+            _SESSION_LIMIT_STATE["first_hit_at"] = now
+            first_hit = now
+        return first_hit
+
+
+def _clearSessionState() -> None:
+    """Atomically clear the pause window once the session token limit has reset."""
+    with _SESSION_STATE_LOCK:
+        _SESSION_LIMIT_STATE["first_hit_at"] = None
 
 
 def _isRateLimitError(result: dict) -> bool:
@@ -38,16 +60,13 @@ def _waitForSessionReset(cancel_check=None) -> bool:
     or the work-horizon deadline (CB-9). On cancel we leave ``first_hit_at`` set (budget is still
     exhausted) and hand control back to the caller."""
     now = time.time()
-    first_hit = _SESSION_LIMIT_STATE.get("first_hit_at")
-    if first_hit is None:
-        _SESSION_LIMIT_STATE["first_hit_at"] = now
-        first_hit = now
+    first_hit = _registerFirstHit(now)
 
     reset_at = first_hit + config.SESSION_LIMIT_PAUSE_SECONDS
     remaining = reset_at - now
 
     if remaining <= 0:
-        _SESSION_LIMIT_STATE["first_hit_at"] = None
+        _clearSessionState()
         LOG.info("Session token window already elapsed -- resuming immediately")
         return True
 
@@ -77,7 +96,7 @@ def _waitForSessionReset(cancel_check=None) -> bool:
         LOG.info("Rate-limit pause: %.0f min remaining until session reset", remaining / 60)
         time.sleep(min(check_interval, max(remaining, 1)))
 
-    _SESSION_LIMIT_STATE["first_hit_at"] = None
+    _clearSessionState()
     LOG.info("Session token limit reset -- resuming")
     try:
         from notifications import discord_bot as discord

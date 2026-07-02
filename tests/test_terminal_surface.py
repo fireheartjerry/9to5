@@ -70,17 +70,22 @@ def test_nav_wraps_and_clamps_to_live_lanes(monkeypatch):
     get_bus().emit_raw("orchestrator", "a")
     get_bus().emit_raw("brain", "b")          # 2 lanes now
     assert s.page_idx == 0
-    s.next(); assert s.page_idx == 1
-    s.next(); assert s.page_idx == 1          # clamped at last lane
-    s.prev(); assert s.page_idx == 0
+    s.next()
+    assert s.page_idx == 1
+    s.next()
+    assert s.page_idx == 1          # clamped at last lane
+    s.prev()
+    assert s.page_idx == 0
 
 
 def test_toggle_raw_and_freeze(monkeypatch):
     s, _ = _fresh_surface(monkeypatch)
     assert s.mode == "summary"
-    s.toggle_raw(); assert s.mode == "raw"
+    s.toggle_raw()
+    assert s.mode == "raw"
     assert s.frozen is False
-    s.toggle_freeze(); assert s.frozen is True
+    s.toggle_freeze()
+    assert s.frozen is True
 
 
 def test_render_once_edits_only_on_change(monkeypatch):

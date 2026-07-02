@@ -1,6 +1,5 @@
 import json
 from unittest import mock
-import pytest
 
 from agents.discovery import lenses as lenses_mod
 from agents.discovery.models import Finding

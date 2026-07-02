@@ -9,12 +9,11 @@ Acceptance:   exit code 0 iff all tests pass.
 from __future__ import annotations
 
 import json
-import logging
 import sys
 import tempfile
 import threading
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -148,7 +147,9 @@ class TestFullPipelineSmoke(unittest.TestCase):
             bus.register(_Cap())
             self.assertEqual(bus.surface_count, i)
 
-    def test_system_exit_in_surface_never_propagates(self):
+    def test_system_exit_in_surface_propagates(self):
+        # B17: BaseException (SystemExit/KeyboardInterrupt) must NOT be swallowed by a surface;
+        # only ordinary Exceptions are isolated. A shutdown signal has to reach the caller.
         class _SysExitSurface:
             def handle(self, et: str, p: dict) -> None:
                 raise SystemExit(42)
@@ -157,11 +158,8 @@ class TestFullPipelineSmoke(unittest.TestCase):
         bus.register(_SysExitSurface())
         cap = _Cap()
         bus.register(cap)
-        try:
+        with self.assertRaises(SystemExit):
             bus.emit("complete", {})
-        except SystemExit:
-            self.fail("SystemExit propagated out of bus.emit")
-        self.assertEqual(len(cap.calls), 1)
 
     def test_isvalid_gate_pattern(self):
         """Only valid entries are emitted (guard pattern used in production)."""

@@ -6,10 +6,19 @@ from platform_core.orchestration import fork_seams as fs
 
 
 class FakeWorktree:
-    def __init__(self): self.entered = []; self.exited = []; self.removed = []
-    def enterWorktree(self, state, tag): self.entered.append(tag); return f"/wt/{tag}"
-    def exitWorktree(self, path, merge=False): self.exited.append((path, merge)); return {"merged": merge}
-    def removeWorktree(self, path): self.removed.append(path); return True
+    def __init__(self):
+        self.entered = []
+        self.exited = []
+        self.removed = []
+    def enterWorktree(self, state, tag):
+        self.entered.append(tag)
+        return f"/wt/{tag}"
+    def exitWorktree(self, path, merge=False):
+        self.exited.append((path, merge))
+        return {"merged": merge}
+    def removeWorktree(self, path):
+        self.removed.append(path)
+        return True
     def gcOrphans(self, state): return 0
     def isIsolated(self, path): return True
 

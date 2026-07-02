@@ -4,7 +4,6 @@ RUN: python -m pytest tests/test_autonomy.py -v
 """
 from __future__ import annotations
 
-import pytest
 from human_nature.autonomy import cap_to, ceiling, revoke_on_miscalibration
 
 

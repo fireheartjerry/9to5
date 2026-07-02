@@ -49,7 +49,7 @@ class StepResult:
 # ---------------------------------------------------------------------------
 # Canonical pipeline step registry (definitions in orchestration_pipeline_registry)
 # ---------------------------------------------------------------------------
-from agents.orchestration_pipeline_registry import (  # noqa: E402
+from agents.orchestration_pipeline_registry import (  # noqa: E402, F401 -- re-exported (test_refactored_scripts imports these)
     PipelineStep, PIPELINE_STEPS, STEP_NAMES, stepFor, executionOrder,
 )
 

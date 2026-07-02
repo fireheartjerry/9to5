@@ -18,7 +18,12 @@ class TestE2EOperator(unittest.TestCase):
         self._patches = [
             mock.patch.object(config, "STATE_DIR", self.dir / "tasks"),
             mock.patch.object(config, "CONTROL_DIR", self.dir / "control"),
-            mock.patch("orchestrator.refreshClaudeKnowledge", lambda *a, **k: ""),
+            # _runPreamble calls refreshClaudeKnowledge via the name bound INTO run_phase_mixin
+            # (from ...knowledge_refresh import refreshClaudeKnowledge), so patch THAT name -- patching
+            # orchestrator.refreshClaudeKnowledge was a no-op and let the real ~16s refresh run,
+            # pushing the plan gate past the operator's waitForGate timeout (flaky abort/gate tests).
+            mock.patch("platform_core.orchestration.run_phase_mixin.refreshClaudeKnowledge",
+                       lambda *a, **k: ""),
             mock.patch("orchestrator.startWebDashboard", lambda *a, **k: None),
         ]
         for p in self._patches:

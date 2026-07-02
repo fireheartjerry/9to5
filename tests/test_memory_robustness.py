@@ -207,7 +207,7 @@ class TestRecordRunValidation(unittest.TestCase):
         from memory import experience
         self.exp = experience
         # Use an in-memory DB path (temp file that doesn't persist)
-        import tempfile, os
+        import tempfile
         self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.tmp.close()
         self.db = Path(self.tmp.name)

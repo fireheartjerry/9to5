@@ -1,7 +1,6 @@
 """rerank: recency + importance + relevance, pure functions, fail-open on bad input."""
 from datetime import datetime, timedelta, timezone
 
-import config
 from memory import retrieval_rank
 
 

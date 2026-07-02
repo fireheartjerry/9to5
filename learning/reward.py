@@ -20,7 +20,7 @@ RUN/TEST: python -m pytest tests/test_reward.py
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any
 
 import config
 

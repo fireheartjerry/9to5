@@ -194,6 +194,10 @@ class TestDashboardTaskStateLifecycle(unittest.TestCase):
     def _mock_discord(self):
         patches = [
             mock.patch.object(config, "DISCORD_DASHBOARD", True),
+            # This class exercises the classic embed dashboard (createMessage/message_id).
+            # Pin CV2 off so start()/update() take the legacy path regardless of the
+            # DASHBOARD_CV2 default; the CV2 cockpit path is covered elsewhere.
+            mock.patch.object(config, "DASHBOARD_CV2", False),
             mock.patch("notifications.discord_bot.editMessage", return_value=True),
             mock.patch("notifications.discord_bot.editMessageResult", return_value="ok"),
             mock.patch("notifications.discord_bot.createMessage", return_value="msg-1"),
@@ -566,6 +570,23 @@ class TestConcurrentBusEmission(unittest.TestCase):
 
         self.assertEqual(errors, [])
         self.assertEqual(len(cap.calls), 40)
+
+
+class TestOwnerMentionsSnowflakeType(unittest.TestCase):
+    """B19: allowed_mentions must carry the owner snowflake as a JSON string, not an int
+    (a bare int can exceed JS safe-int range and Discord rejects/mangles it)."""
+
+    def test_owner_mention_is_string(self):
+        from notifications import discord_client
+        with mock.patch.object(config, "DISCORD_HUMAN_USER_ID", "123456789012345678"):
+            am = discord_client._ownerMentions()
+        self.assertEqual(am["users"], ["123456789012345678"])
+        self.assertIsInstance(am["users"][0], str)
+
+    def test_non_numeric_owner_yields_empty(self):
+        from notifications import discord_client
+        with mock.patch.object(config, "DISCORD_HUMAN_USER_ID", ""):
+            self.assertEqual(discord_client._ownerMentions()["users"], [])
 
 
 if __name__ == "__main__":

@@ -6,6 +6,10 @@ to the ControlBus. The live feed is pushed over Server-Sent Events from the Live
 (zero polling lag); metadata/subtasks poll ``/api/state``; per-subtask raw stdout is fetched
 from ``/api/raw``. Runs in a daemon thread started by the orchestrator; dies with the process.
 
+The page is served view-only; control POSTs require a per-run control token that is printed
+to the local console/log at startup and is never embedded in the served HTML (so it cannot
+leak over the public tunnel).
+
 Routes:
   GET  /              -> Bloomberg HTML page (SSE + poll)
   GET  /api/state     -> JSON snapshot {meta, subtasks, health, arc, wisdom_trail, ...}
@@ -40,6 +44,7 @@ from state.task import TaskState
 LOG = config.getLogger("webdash")
 
 _SSE_STOP = threading.Event()
+_CONTROL_TOKEN = ""  # per-run control token; printed to local console/log ONLY, never served in HTML
 
 
 # --------------------------------------------------------------------------- payload builders
@@ -200,7 +205,10 @@ def _applyControl(task_id: str, action: str, arg: Optional[str]) -> dict:
 
 
 class _DashboardHandler(BaseHTTPRequestHandler):
-    """Per-run handler; ``task_id``/``token`` are bound as class attrs by ``_makeHandler``."""
+    """Per-run handler; ``task_id``/``token`` are bound as class attrs by ``_makeHandler``.
+
+    ``token`` is the control token (console/log only); it is never embedded in served HTML.
+    """
     task_id: str = ""
     token: str = ""
 
@@ -256,15 +264,20 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             sid = (parse_qs(urlparse(self.path).query).get("sid") or [""])[0]
             self._send(200, _raw_payload(sid).encode("utf-8"), "application/json")
         else:
-            self._send(200, _PAGE.replace("__WEBDASH_TOKEN__", self.token).encode("utf-8"),
+            # View-only render: the control token is NEVER embedded in the served page
+            # (it would leak over the public tunnel). Placeholder is blanked; control
+            # POSTs require the token printed to the local console/log at startup.
+            self._send(200, _PAGE.replace("__WEBDASH_TOKEN__", "").encode("utf-8"),
                        "text/html; charset=utf-8")
 
     def do_POST(self):  # noqa: N802
         if not self.path.startswith("/api/control"):
             self._send(404, b"{}", "application/json")
             return
-        # CSRF / local-process guard: require the per-run token embedded in the served page.
-        if self.token and self.headers.get("X-9to5-Token") != self.token:
+        # Control gate: require the per-run control token that was printed to the local
+        # console/log at startup. It is never served in HTML, so a tunnel/cross-origin
+        # visitor cannot obtain it. Reject when the token is unset or mismatched.
+        if not self.token or self.headers.get("X-9to5-Token") != self.token:
             self._send(403, b'{"ok":false,"error":"forbidden"}', "application/json")
             return
         try:
@@ -305,7 +318,9 @@ def startWebDashboard(task_id: str, port: Optional[int] = None) -> Optional[str]
     _SSE_STOP.clear()
     port = port or config.WEB_DASHBOARD_PORT
     import secrets
-    token = secrets.token_urlsafe(16)   # per-run control token, embedded only in the served page
+    global _CONTROL_TOKEN
+    _CONTROL_TOKEN = secrets.token_urlsafe(16)   # per-run control token; console/log only, never in HTML
+    token = _CONTROL_TOKEN
     try:
         server = ThreadingHTTPServer(("127.0.0.1", port), _makeHandler(task_id, token))
     except OSError as e:
@@ -316,13 +331,17 @@ def startWebDashboard(task_id: str, port: Optional[int] = None) -> Optional[str]
     thread.start()
     url = f"http://127.0.0.1:{port}/"
     LOG.info("Web dashboard at %s", url)
+    # Control token is surfaced ONLY here (local console/log); it is never embedded in the page.
+    LOG.info("Web dashboard control token (local only): %s", token)
+    print(f"[webdash] control token (local only, do not share): {token}", flush=True)
     return url
 
 
 def stopWebDashboard() -> None:
     """Shut down the running dashboard server (frees the port). Safe to call repeatedly."""
-    global _SERVER
+    global _SERVER, _CONTROL_TOKEN
     _SSE_STOP.set()   # release any blocked SSE reader threads
+    _CONTROL_TOKEN = ""
     if _SERVER is not None:
         try:
             _SERVER.shutdown()

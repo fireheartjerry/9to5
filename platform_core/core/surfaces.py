@@ -23,7 +23,7 @@ RUN/TEST: python -m pytest tests/test_surfaces.py
 from __future__ import annotations
 
 import re
-from typing import Any, Optional
+from typing import Any
 
 import config
 
@@ -89,9 +89,9 @@ def catalog_block() -> str:
         lines.append(f"- Skills: {', '.join(a['skill'][:12])}")
     if a["subagent"]:
         lines.append(f"- Subagents: {', '.join(a['subagent'][:12])}")
-    lines.append(f"- Terminal/CLI: yes (git, gh, build tools)"
-                 + (f"  · Browser: yes" if a["browser"] else "")
-                 + (f"  · Native apps: yes" if a["native"] else ""))
+    lines.append("- Terminal/CLI: yes (git, gh, build tools)"
+                 + ("  · Browser: yes" if a["browser"] else "")
+                 + ("  · Native apps: yes" if a["native"] else ""))
     _catalog_cache = "\n".join(lines) + "\n\n"
     return _catalog_cache
 

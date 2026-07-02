@@ -98,7 +98,7 @@ def test_intensity_decays_on_successive_different_updates():
 
 
 def test_reattending_same_content_refreshes_to_one():
-    from human_nature.attention_schema import AttentionSchema, DECAY
+    from human_nature.attention_schema import AttentionSchema
 
     ast = AttentionSchema()
     ast.update(_winner("topic"))   # intensity = 1.0

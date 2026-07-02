@@ -1,6 +1,8 @@
 # tests/test_identity.py
 """The SELF manifest: canonicalization + role classification."""
-import os, tempfile, unittest
+import os
+import tempfile
+import unittest
 from pathlib import Path
 
 import platform_core.core.identity as identity
@@ -41,7 +43,6 @@ class TestRoleOf(unittest.TestCase):
 
     def test_symlink_into_config_classifies_as_target_role(self):
         # Evasion: a link whose basename is innocuous still classifies by its real target.
-        import os, tempfile
         link = identity.PROJECT_ROOT / "_tmp_link_identity.py"
         try:
             os.symlink(identity.PROJECT_ROOT / "config.py", link)
@@ -53,7 +54,6 @@ class TestRoleOf(unittest.TestCase):
             link.unlink()
 
     def test_outside_tree_is_other_content(self):
-        import tempfile
         self.assertEqual(identity.roleOf(tempfile.gettempdir()), identity.Role.OTHER_CONTENT)
 
 

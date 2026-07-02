@@ -22,11 +22,11 @@ class TestPrGate(unittest.TestCase):
     def test_no_pr_flag_skips(self):
         self.assertEqual(self.orch._prGate({"verdict": "approved"}, False, self.state), (False, "--no-pr"))
 
-    def test_challenged_opens_pr_with_concerns(self):
+    def test_challenged_holds_pr_with_concerns(self):
         create, reason = self.orch._prGate(
             {"verdict": "challenged", "concerns": ["secret leak", "no rollback"]}, True, self.state)
-        self.assertTrue(create)
-        self.assertIn("flagged", reason)
+        self.assertFalse(create)   # a blocking challenge HOLDS the PR (day mode, non-degraded)
+        self.assertIn("HOLD", reason)
         self.assertIn("secret leak", reason)
 
     def test_challenged_respects_disable_flag(self):

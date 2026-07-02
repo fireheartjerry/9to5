@@ -80,6 +80,14 @@ def _parseArgs(argv: list[str]) -> "argparse.Namespace":
     parser.add_argument("--health", action="store_true", help="Run environment health checks and exit.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Simulate a full run with no external services (offline; for testing).")
+    parser.add_argument("--chaos", nargs="?", type=int, const=0, default=None,
+                        help="With --dry-run, use chaos doubles (seeded fault injection). "
+                             "Optional integer seed (default 0).")
+    parser.add_argument("--sim-run", action="store_true",
+                        help="Token-light run: full lifecycle over the LIVE surfaces (Discord "
+                             "dashboard, web, control gates) but brain/executor/replan/review are "
+                             "simulation doubles -- zero Claude/Ollama/Gemini API cost. Exercises "
+                             "the bot end-to-end for free.")
     parser.add_argument("--e2e", action="store_true",
                         help="Run the virtual-operator end-to-end test suite (a scripted 'human' "
                              "drives full simulated runs through the real control surfaces) and exit.")

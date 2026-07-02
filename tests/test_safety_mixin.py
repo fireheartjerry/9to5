@@ -3,7 +3,6 @@ import types
 import pytest
 import config
 from platform_core.runtime.control import ControlBus, AbortRun
-from platform_core.runtime import autonomy_allowance as al
 from platform_core.runtime.action_risk import ActionDescriptor
 from platform_core.orchestration.safety_mixin import OrchestratorSafetyMixin
 

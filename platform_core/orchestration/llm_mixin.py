@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import config
 from agents import clarifier, verifier
 from notifications import discord_bot as discord
-from platform_core.orchestration.brain_io import _chatJson, _chatText, _fitUserToCtx
+from platform_core.orchestration.brain_io import _chatText, _fitUserToCtx
 from platform_core.orchestration import compaction
 from platform_core.orchestration.knowledge_refresh import injectCapabilities
 from state.task import TaskState

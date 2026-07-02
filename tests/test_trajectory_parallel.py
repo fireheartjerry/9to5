@@ -11,10 +11,52 @@ import os
 import threading
 import time
 
+import json
+
 import config
 from platform_core.orchestration.execute_mixin import OrchestratorExecuteMixin
 from platform_core.runtime import trajectory
 from platform_core.runtime.trajectory import Recorder
+
+
+# ---------------------------------------------------------------------------
+# B29: _flush uses a UNIQUE temp per flush (pid+tid+counter) then os.replace, so
+#      concurrent writers never race on a shared ".json.tmp".
+# ---------------------------------------------------------------------------
+def test_flush_uses_unique_temp_name_per_flush(tmp_path, monkeypatch):
+    rec = Recorder("run-uniq", root=tmp_path)
+    seen: list[str] = []
+    real_replace = trajectory.os.replace
+
+    def _cap(src, dst):
+        seen.append(str(src))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(trajectory.os, "replace", _cap)
+    for _ in range(5):
+        rec.openSpan("tool", None, {})
+    assert len(seen) >= 5
+    assert len(seen) == len(set(seen))                 # every flush used a DISTINCT temp path
+
+
+def test_concurrent_flushes_leave_valid_complete_file(tmp_path):
+    rec = Recorder("run-flush", root=tmp_path)
+
+    def _worker(n):
+        for i in range(15):
+            sid = rec.openSpan("tool", None, {"n": n, "i": i})
+            rec.closeSpan(sid, cost_usd=float(n))
+
+    threads = [threading.Thread(target=_worker, args=(k,)) for k in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    data = json.loads((tmp_path / "run-flush.json").read_text(encoding="utf-8"))
+    assert data["run_id"] == "run-flush"
+    assert len(data["spans"]) == 8 * 15               # no flush silently dropped a span
+    assert not list(tmp_path.glob("*.tmp"))           # no leftover temp files
 
 _ENV_KEY = "NINE_TO_FIVE_PARENT_TRAJECTORY_STEP_ID"
 

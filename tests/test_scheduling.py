@@ -124,7 +124,7 @@ class TestSlotCap(unittest.TestCase):
         sched.enqueue("b")
         j1 = sched.next()
         self.assertEqual(sched.running_count, 1)
-        j2 = sched.next()
+        sched.next()
         self.assertEqual(sched.running_count, 2)
         sched.complete(j1.job_id)
         self.assertEqual(sched.running_count, 1)
@@ -173,7 +173,7 @@ class TestOverdueJobs(unittest.TestCase):
         self.assertEqual(overdue[0].workflow_name, "wf1")
 
     def test_running_jobs_excluded_from_overdue(self):
-        job = self.sched.enqueue("wf1", deadline=time.time() - 1)
+        self.sched.enqueue("wf1", deadline=time.time() - 1)
         self.sched.next()  # start it
         self.assertEqual(self.sched.overdueJobs(), [])
 

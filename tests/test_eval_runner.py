@@ -78,7 +78,7 @@ class TestAdapterPromotion(unittest.TestCase):
         self.assertEqual(adapter_promotion.run(db_path=self.db)["skipped"], "no_evaluator")
 
     def test_promotes_better_challenger(self):
-        aid = experience.register_adapter(base_model="b", tag="9to5-brain:v1", lora_path="/x",
+        experience.register_adapter(base_model="b", tag="9to5-brain:v1", lora_path="/x",
                                           db_path=self.db)
         # Champion = base (no champion adapter) at fitness 0.5; challenger at 0.8.
         fit = {"qwen2.5-coder:7b": 0.5, "9to5-brain:v1": 0.8}

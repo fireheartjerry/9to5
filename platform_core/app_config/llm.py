@@ -97,6 +97,12 @@ RETRIEVAL_MIN_SCORE: float = _envFloat("RETRIEVAL_MIN_SCORE", 0.35)
 # Layer-1 content injection: budget for the REAL solution-content block (separate from
 # the metadata RETRIEVAL_MAX_TOKENS so content can be richer without starving lessons).
 RETRIEVAL_CONTENT_MAX_TOKENS: int = _envInt("RETRIEVAL_CONTENT_MAX_TOKENS", 700)
+# Layer-1 failure-aware retrieval: alongside similar PASSED subtasks, surface up to
+# RETRIEVAL_FAILURES_K similar past FAILED subtasks as distinctly-tagged warnings so the
+# brain avoids re-walking known dead-ends. Reuses the SAME embedding scan (no new store)
+# and shares the RETRIEVAL_MAX_TOKENS budget. Flag OFF -> injection byte-identical to before.
+RETRIEVAL_FAILURES_ENABLED: bool = _envBool("RETRIEVAL_FAILURES_ENABLED", True)
+RETRIEVAL_FAILURES_K: int = _envInt("RETRIEVAL_FAILURES_K", 2)
 # Layer-1 ANN index (drop-in over the O(n) cosine scan; fail-open to the scan).
 ANN_INDEX_ENABLED: bool = _envBool("ANN_INDEX_ENABLED", False)
 ANN_INDEX_BACKEND: str = os.getenv("ANN_INDEX_BACKEND", "chroma")

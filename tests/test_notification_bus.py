@@ -44,15 +44,19 @@ class TestNotificationBusErrorHandling(unittest.TestCase):
         self.assertEqual(len(good.calls), 1)
         self.assertEqual(good.calls[0][0], "replan")
 
-    def test_keyboard_interrupt_inside_surface_suppressed(self):
+    def test_keyboard_interrupt_inside_surface_propagates(self):
+        # B17: BaseException (interrupt/shutdown) must NOT be eaten by a surface.
         bus = NotificationBus()
         bus.register(_RaisingSurface(KeyboardInterrupt()))
-        bus.emit("complete", {})
+        with self.assertRaises(KeyboardInterrupt):
+            bus.emit("complete", {})
 
-    def test_system_exit_inside_surface_suppressed(self):
+    def test_system_exit_inside_surface_propagates(self):
+        # B17: SystemExit must propagate so shutdown is never silently swallowed.
         bus = NotificationBus()
         bus.register(_RaisingSurface(SystemExit(1)))
-        bus.emit("aborted", {})
+        with self.assertRaises(SystemExit):
+            bus.emit("aborted", {})
 
     def test_error_logged_as_warning(self):
         bus = NotificationBus()

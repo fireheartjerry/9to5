@@ -1,6 +1,5 @@
 # tests/test_durable_config.py
 """Epic 1 durable-execution config flags exist with safe defaults."""
-from unittest import mock
 
 import config
 
@@ -19,3 +18,10 @@ def test_epic1_flag_defaults(monkeypatch):
     assert config.WORKTREE_ISOLATION_ENABLED is False
     assert config.COST_BUDGET_ENABLED is False
     assert isinstance(config.COST_BUDGET_CEILING_USD, float)
+
+
+def test_project_root_resolves_to_repo_root_with_main():
+    # B28: PROJECT_ROOT must default to the real repo/checkout root (contains main.py),
+    # NOT the platform_core/app_config package dir.
+    from pathlib import Path
+    assert (Path(config.PROJECT_ROOT) / "main.py").exists()

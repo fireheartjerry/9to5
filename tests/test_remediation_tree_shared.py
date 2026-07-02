@@ -1,5 +1,4 @@
 """Regression: with worktree isolation, remediation runs under parallelism (no shared-tree skip)."""
-import config
 from platform_core.orchestration.review_mixin import OrchestratorReviewMixin
 from platform_core.runtime import worktree
 

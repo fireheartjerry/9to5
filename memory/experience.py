@@ -129,6 +129,7 @@ __all__ = [
     "init",
     "close_pool",
     "_connect",
+    "_ensureColumns",
     "_reset_schema_cache",
     "_db_path",
     "_nowIso",

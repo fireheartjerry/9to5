@@ -50,6 +50,56 @@ _ARCHITECT_PROMPT_SYSTEM = (
 )
 
 
+def _discoveryBlock(discovery_report) -> str:
+    """Render the DiscoveryReport context block injected into the architect prompt ("" if absent)."""
+    if discovery_report is None:
+        return ""
+    import json as _json
+    try:
+        report_dict = discovery_report.to_dict()
+        n = len(report_dict.get("findings") or [])
+        ratio = report_dict.get("innovation_ratio", 0)
+        theme = report_dict.get("theme_suggestion", "")
+        return (
+            f"\n\nDISCOVERY REPORT (auto-generated, {n} findings, "
+            f"innovation ratio: {ratio*100:.0f}%):\n"
+            + _json.dumps(report_dict, indent=2, ensure_ascii=False)[:4000]
+            + f"\n\nSuggested theme: \"{theme}\"\n\n"
+            "Your job:\n"
+            "1. Select a coherent set of the highest-impact findings\n"
+            "2. Synthesize them into ONE architectural narrative — a single story this PR will tell\n"
+            "3. Prioritize transformative findings over incremental ones\n"
+            "4. The result should feel like something an ambitious engineer chose, not a chore list\n\n"
+            "Avoid picking unrelated items. One bold PR beats five safe ones."
+        )
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _profileBlock(work_profile) -> str:
+    """Render the work-profile guidance block for the architect ("" if absent/on error)."""
+    if work_profile is None:
+        return ""
+    try:
+        from platform_core.orchestration import work_profile as _wp
+        return "\n\n" + _wp.guidance_block(work_profile, context="architect")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _fallbackArchitectPrompt(goal_elaborated: str, discovery_block: str, profile_block: str) -> str:
+    """FX-12: deterministic GOAL-BEARING prompt used when the local 7B brain returns EMPTY, so the
+    goal always reaches the architect (returning "" would design for nothing + re-fire empty)."""
+    return (
+        "Produce a thorough architecture and design document for the following specification. "
+        "Cover the approach, the modules/files to add or change, data flow, key dependencies, "
+        "risks, and an ORDERED implementation outline.\n\nSpecification:\n"
+        + (goal_elaborated or "").strip()
+        + discovery_block
+        + profile_block
+    )
+
+
 def authorArchitectPrompt(goal_elaborated: str, chat=None, discovery_report=None,
                           work_profile=None) -> str:
     """Ollama authors the prompt that will be sent to Claude Code CLI.
@@ -61,35 +111,8 @@ def authorArchitectPrompt(goal_elaborated: str, chat=None, discovery_report=None
     """
     LOG.info("Authoring architecture prompt via %s", config.OLLAMA_MODEL)
 
-    discovery_block = ""
-    if discovery_report is not None:
-        import json as _json
-        try:
-            report_dict = discovery_report.to_dict()
-            n = len(report_dict.get("findings") or [])
-            ratio = report_dict.get("innovation_ratio", 0)
-            theme = report_dict.get("theme_suggestion", "")
-            discovery_block = (
-                f"\n\nDISCOVERY REPORT (auto-generated, {n} findings, "
-                f"innovation ratio: {ratio*100:.0f}%):\n"
-                + _json.dumps(report_dict, indent=2, ensure_ascii=False)[:4000]
-                + f"\n\nSuggested theme: \"{theme}\"\n\n"
-                "Your job:\n"
-                "1. Select a coherent set of the highest-impact findings\n"
-                "2. Synthesize them into ONE architectural narrative — a single story this PR will tell\n"
-                "3. Prioritize transformative findings over incremental ones\n"
-                "4. The result should feel like something an ambitious engineer chose, not a chore list\n\n"
-                "Avoid picking unrelated items. One bold PR beats five safe ones."
-            )
-        except Exception:  # noqa: BLE001
-            discovery_block = ""
-    profile_block = ""
-    if work_profile is not None:
-        try:
-            from platform_core.orchestration import work_profile as _wp
-            profile_block = "\n\n" + _wp.guidance_block(work_profile, context="architect")
-        except Exception:  # noqa: BLE001
-            profile_block = ""
+    discovery_block = _discoveryBlock(discovery_report)
+    profile_block = _profileBlock(work_profile)
 
     user = (
         f"Specification:\n{goal_elaborated}"
@@ -111,20 +134,9 @@ def authorArchitectPrompt(goal_elaborated: str, chat=None, discovery_report=None
     # shapes (None / non-dict message / non-string content). The old isinstance(dict) gate made
     # every real (pydantic) reply look empty -> this always fell to the deterministic fallback.
     prompt = llm_io.responseText(resp).strip()
-    # FX-12: the local 7B brain frequently returns EMPTY here. Returning "" would send the architect
-    # Claude a prompt with NO specification (it would design for nothing, and the orchestrator's retry
-    # would re-fire the same empty prompt). Fall back to a deterministic GOAL-BEARING prompt so the
-    # goal always reaches the architect even with a dead brain.
     if not prompt:
         LOG.warning("architect-prompt brain output empty -> deterministic goal-bearing fallback")
-        prompt = (
-            "Produce a thorough architecture and design document for the following specification. "
-            "Cover the approach, the modules/files to add or change, data flow, key dependencies, "
-            "risks, and an ORDERED implementation outline.\n\nSpecification:\n"
-            + (goal_elaborated or "").strip()
-            + discovery_block
-            + profile_block
-        )
+        prompt = _fallbackArchitectPrompt(goal_elaborated, discovery_block, profile_block)
     elif discovery_block:
         # Always append the discovery context so it reaches the architect Claude even when the
         # Ollama brain authored a brief prompt that did not repeat the findings verbatim.

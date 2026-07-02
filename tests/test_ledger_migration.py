@@ -1,5 +1,9 @@
 """The idempotent ADD COLUMN migration helper for the Experience Ledger."""
-import os, shutil, stat, tempfile, unittest
+import os
+import shutil
+import stat
+import tempfile
+import unittest
 from pathlib import Path
 from unittest import mock
 
@@ -10,7 +14,8 @@ from memory import experience
 def _forceRmtree(path):
     def _onerror(func, p, _exc):
         try:
-            os.chmod(p, stat.S_IWRITE); func(p)
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
         except Exception:
             pass
     shutil.rmtree(path, onerror=_onerror)

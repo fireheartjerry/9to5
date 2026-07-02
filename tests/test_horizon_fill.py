@@ -138,14 +138,17 @@ class TestPrGateDegraded(unittest.TestCase):
         self.assertTrue(self.orch._runIsDegraded(self.state))
 
     def test_degraded_when_majority_failed(self):
-        self.state.addSubtask("a", "d"); self.state.addSubtask("b", "d"); self.state.addSubtask("c", "d")
+        self.state.addSubtask("a", "d")
+        self.state.addSubtask("b", "d")
+        self.state.addSubtask("c", "d")
         self.state.updateSubtask("st-001", status="done")
         self.state.updateSubtask("st-002", status="failed")
         self.state.updateSubtask("st-003", status="failed")
         self.assertTrue(self.orch._runIsDegraded(self.state))   # 1/3 done < half
 
     def test_healthy_run_not_degraded(self):
-        self.state.addSubtask("a", "d"); self.state.updateSubtask("st-001", status="done")
+        self.state.addSubtask("a", "d")
+        self.state.updateSubtask("st-001", status="done")
         self.assertFalse(self.orch._runIsDegraded(self.state))
 
     def test_night_mode_opens_pr_for_degraded_run(self):
@@ -187,7 +190,8 @@ class TestPrGateDegraded(unittest.TestCase):
         self.assertEqual(run.call_count, 4)
 
     def test_night_mode_ships_healthy_challenged_run(self):
-        self.state.addSubtask("a", "d"); self.state.updateSubtask("st-001", status="done")
+        self.state.addSubtask("a", "d")
+        self.state.updateSubtask("st-001", status="done")
         review = {"verdict": "challenged", "concerns": ["minor"]}
         with mock.patch.object(config, "NIGHT_MODE", True), \
                 mock.patch.object(config, "ADVERSARY_PR_HOLD_ENABLED", True):

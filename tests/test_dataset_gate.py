@@ -1,8 +1,6 @@
 """Unit tests for the SIE data-quality & safety gate (learning/dataset.py)."""
 import unittest
-from unittest import mock
 
-import config
 from learning import dataset
 
 

@@ -57,3 +57,13 @@ def test_validate_mounts_blocks_host_network():
 def test_validate_mounts_allows_none_network():
     pol = CapabilityPolicy.resolve(None, None)
     validateMounts(pol, ["/project/repo"], network_mode="none")   # no raise
+
+
+def test_system_root_matched_by_segment_not_substring():
+    # B32: '/etc' must block as a WHOLE path segment, not a bare substring that also
+    # matches '/data/etcd/x' (etcd) or '/data/devel' (dev).
+    pol = CapabilityPolicy.resolve(None, None)
+    with pytest.raises(MountSecurityError):
+        validateMounts(pol, ["/etc/passwd"])
+    validateMounts(pol, ["/data/etcd/x"])     # 'etcd' != 'etc' segment -> allowed
+    validateMounts(pol, ["/data/devel/y"])    # 'devel' != 'dev' segment -> allowed

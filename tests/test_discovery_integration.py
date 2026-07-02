@@ -1,6 +1,5 @@
 """Integration: discovery runs before architect in _freshRunPhase."""
 from unittest import mock
-import pytest
 
 
 def _make_minimal_state(goal="improve everything"):
@@ -16,6 +15,7 @@ def test_discovery_called_before_architect(tmp_path):
 
     call_order = []
     fake_report = mock.Mock()
+    fake_report.findings = []   # a real DiscoveryReport.findings is a list; _runDiscoveryPhase does len(report.findings)
     fake_report.to_dict.return_value = {
         "theme_suggestion": "t", "findings": [], "innovation_ratio": 0.5
     }

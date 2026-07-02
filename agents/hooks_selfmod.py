@@ -5,7 +5,7 @@ EXPORTS:
   selfModificationGuard(data)  -- PreToolUse: block edits to hard boundaries and core loop files
 DEPENDS-ON: config, notifications.discord_bot, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_hooks_selfmod_writes.py
 """
 from __future__ import annotations
 
@@ -195,7 +195,14 @@ def _parseBashGuardInput(tool_input: dict) -> tuple:
         r"\b(mv|cp|rm|tee|dd|truncate|del|erase|unlink|shred|ren|rename|move|copy)\b", low)
     interp_write = (re.search(r"\b(python3?|py|perl|node|ruby|pwsh|powershell)\b\s*-[ce]\b", low)
                     or ">>" in bash_cmd or "-delete" in low)
-    if not (redirect_or_git or write_cmd or interp_write):
+    # PowerShell write cmdlets (case-folded in `low`) that create/overwrite/delete files.
+    ps_write = re.search(
+        r"\b(set-content|out-file|add-content|new-item|remove-item|clear-content)\b", low)
+    # Downloaders that write a fetched file to disk (curl -o/-O, iwr -OutFile, wget).
+    downloader = (re.search(r"\bcurl\b[^\n]*\s-o\b", low)
+                  or re.search(r"\biwr\b[^\n]*-outfile", low)
+                  or re.search(r"\bwget\b", low))
+    if not (redirect_or_git or write_cmd or interp_write or ps_write or downloader):
         return bash_cmd, False, True  # read-only -- safe
     return bash_cmd, False, False
 

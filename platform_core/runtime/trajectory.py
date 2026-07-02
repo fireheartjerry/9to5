@@ -44,6 +44,7 @@ class Recorder:
         self._lock = threading.Lock()
         self._spans: dict[str, dict[str, Any]] = {}
         self._order: list[str] = []
+        self._flush_seq = 0   # bumped per flush for a unique temp name (cross-writer race)
 
     def _path(self) -> Path:
         return self._root / f"{self.run_id}.json"
@@ -87,6 +88,18 @@ class Recorder:
         payload = {"run_id": self.run_id,
                    "spans": [self._spans[s] for s in self._order]}
         path = self._path()
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
-        os.replace(tmp, path)
+        # UNIQUE temp per flush (pid+tid+counter) then os.replace, mirroring control.py:
+        # a shared ".json.tmp" raced across concurrent writers -- two flushes wrote the same
+        # temp and the second os.replace hit FileNotFoundError once the first had moved it.
+        tmp = path.with_name(
+            f"{path.name}.{os.getpid()}-{threading.get_ident()}-{self._flush_seq}.tmp")
+        self._flush_seq += 1
+        try:
+            tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
+            os.replace(tmp, path)
+        except Exception:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            raise

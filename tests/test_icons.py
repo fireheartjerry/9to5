@@ -1,6 +1,5 @@
 """App-emoji icon system: render PNGs offline + ensureIcons provisioning logic (monkeypatched
 REST, no network) + graceful empty fallback."""
-import json
 import unittest
 
 import config
@@ -77,6 +76,31 @@ class Provision(unittest.TestCase):
         self.assertEqual(icons.icon("done"), "<:nc_done:111>")
         self.assertTrue(icons.prefix("done").endswith(" "))
         self.assertEqual(icons.prefix("nope"), "")
+
+    def test_transient_failure_is_not_latched(self):
+        """B18: a first call that fails (no app id) must NOT cache an empty map; the next call,
+        now succeeding, provisions icons instead of short-circuiting on the empty cache."""
+        orig = discord._request
+
+        def failing(method, path, **kw):
+            if path == "/applications/@me":
+                class R:
+                    status_code = 500
+                    def json(self):
+                        return {}
+                return R()
+            return orig(method, path, **kw)
+
+        icons._MAP = None
+        icons._APP_ID = None
+        discord._request = failing
+        first = icons.ensureIcons()
+        self.assertEqual(first, {})                 # failed
+        self.assertIsNone(icons._MAP)               # and was NOT latched
+        discord._request = orig                     # transient failure clears
+        second = icons.ensureIcons()
+        self.assertTrue(second)                     # now populated
+        self.assertEqual(second["done"], "<:nc_done:111>")
 
 
 if __name__ == "__main__":

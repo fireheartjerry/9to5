@@ -15,7 +15,7 @@ EXPORTS:
   ControlBus
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_control_concurrency.py tests/test_fuzz_control.py tests/test_granular_controls.py tests/test_webdash_control.py
+RUN/TEST: python -m pytest tests/test_bot_control_auth.py tests/test_control_concurrency.py tests/test_fuzz_control.py tests/test_granular_controls.py tests/test_webdash_control.py
 """
 from __future__ import annotations
 
@@ -312,7 +312,13 @@ class ControlBus:
 
     # ---- lifecycle ------------------------------------------------------
     def clear(self) -> None:
-        self._write(_blank())
+        # Reset the whole bus to blank UNDER both locks (like every other mutation): a bare
+        # self._write bypassed _PROCESS_LOCK and the cross-process sidecar, so a concurrent
+        # writer (Discord bot / web dashboard) could interleave and clobber this reset.
+        def _f(d: dict[str, Any]) -> None:
+            d.clear()
+            d.update(_blank())
+        self._mutate(_f)
 
     def clearForRunStart(self) -> None:
         """Reset only the run-execution cursor for a fresh run, PRESERVING any control the user

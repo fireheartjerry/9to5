@@ -5,7 +5,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: agents.verifier, config, platform_core.core.epoch
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_memory_subtask_manager.py tests/test_subtask_files_touched.py
+RUN/TEST: python -m pytest tests/test_memory_subtask_manager.py tests/test_subtask_files_touched.py tests/test_subtask_note.py
 """
 from __future__ import annotations
 
@@ -102,6 +102,17 @@ def _repairVerify(subtask: dict, exec_cwd: str, t0: float = 0.0) -> "dict | None
     return None
 
 
+def _asBlock(value) -> str:
+    """Coerce a result/verify channel to a stripped string for a markdown code block.
+
+    Executor results are best-effort dicts whose stdout/stderr can be non-strings
+    (a malformed run — or the fuzz harness — yields ints/lists/None); calling
+    ``.strip()`` on those raised AttributeError and crashed note enrichment."""
+    if value is None:
+        return ""
+    return (value if isinstance(value, str) else str(value)).strip()
+
+
 def _subtaskNote(state, subtask: dict, spec: dict, result: dict,
                  vresult: "dict | None") -> str:
     """Build the Obsidian markdown note for a completed subtask."""
@@ -111,7 +122,7 @@ def _subtaskNote(state, subtask: dict, spec: dict, result: dict,
             f"## Verification\n\n- **Passed:** {vresult.get('passed')}\n"
             f"- **Command:** `{vresult.get('cmd')}`  (expect: {vresult.get('expect')})\n"
             f"- **Return code:** {vresult.get('returncode')}\n\n"
-            f"```\n{(vresult.get('stdout') or '').strip()}\n{(vresult.get('stderr') or '').strip()}\n```\n\n"
+            f"```\n{_asBlock(vresult.get('stdout'))}\n{_asBlock(vresult.get('stderr'))}\n```\n\n"
         )
     wf = spec.get("workflow_definition") if spec.get("use_workflow") else None
     spec_block = (
@@ -134,8 +145,8 @@ def _subtaskNote(state, subtask: dict, spec: dict, result: dict,
         f"- **Return code:** {result.get('returncode')}\n"
         f"{telem}\n"
         f"{verify_block}{spec_block}"
-        f"## Executor (Claude Code CLI) output\n\n```\n{(result.get('stdout') or '').strip()}\n```\n\n"
-        + (f"## stderr\n\n```\n{result['stderr'].strip()}\n```\n" if result.get("stderr") else "")
+        f"## Executor (Claude Code CLI) output\n\n```\n{_asBlock(result.get('stdout'))}\n```\n\n"
+        + (f"## stderr\n\n```\n{_asBlock(result.get('stderr'))}\n```\n" if result.get("stderr") else "")
     )
 
 

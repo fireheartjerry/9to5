@@ -19,7 +19,7 @@ RUN/TEST: python -m pytest tests/test_exp_index.py
 from __future__ import annotations
 
 import re
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import Optional, Protocol, runtime_checkable
 
 import config
 

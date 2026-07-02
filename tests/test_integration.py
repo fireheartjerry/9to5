@@ -9,7 +9,6 @@ from __future__ import annotations
 import copy
 from unittest.mock import MagicMock
 
-import pytest
 
 import config
 from human_nature import integration

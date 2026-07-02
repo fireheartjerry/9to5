@@ -13,11 +13,13 @@ import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-# Locate + load .env (lives next to this file -- idempotent if already loaded)
+# config.py loads the root ``.env`` first (before star-importing this module), so no
+# local ``load_dotenv`` is needed -- and the old one pointed at a nonexistent
+# ``platform_core/app_config/.env`` anyway. ``_THIS_DIR`` = this package dir.
 _THIS_DIR = Path(__file__).resolve().parent
-load_dotenv(dotenv_path=_THIS_DIR / ".env")
+# Real repo/checkout root (…/platform_core/app_config -> parents[1]); honors PROJECT_ROOT
+# override. Independent of INSTALL_ROOT so a worktree checkout resolves to its own root.
+_REPO_ROOT = _THIS_DIR.parents[1]
 
 
 def _envPath(key: str, default: str | None = None) -> Path | None:
@@ -44,7 +46,7 @@ def _envInt(key: str, default: int) -> int:
 
 
 # --- core paths ----------------------------------------------------------
-PROJECT_ROOT: Path = _envPath("PROJECT_ROOT", str(_THIS_DIR)) or _THIS_DIR
+PROJECT_ROOT: Path = _envPath("PROJECT_ROOT", str(_REPO_ROOT)) or _REPO_ROOT
 LOG_PATH: Path = _envPath("LOG_PATH", str(PROJECT_ROOT / "logs")) or (PROJECT_ROOT / "logs")
 
 # Install root (durable home of vault/logs/knowledge), independent of worktree.
@@ -74,6 +76,15 @@ CONTROL_DIR: Path = PROJECT_ROOT / "state" / "control"
 
 # --- Agent Society / Workforce (Epic 5) blackboard -----------------------
 BLACKBOARD_DIR: Path = PROJECT_ROOT / "state" / "blackboard"
+
+# --- State retention sweep (best-effort GC of per-run artifacts) ----------
+# The blackboard/compaction dirs accumulate one file per run and were never pruned;
+# terminal task/control JSON is archived (never deleted) past a longer horizon.
+RETENTION_ENABLED: bool = _envBool("RETENTION_ENABLED", True)
+RETENTION_KEEP_RECENT: int = _envInt("RETENTION_KEEP_RECENT", 10)
+RETENTION_MAX_AGE_DAYS: int = _envInt("RETENTION_MAX_AGE_DAYS", 14)
+RETENTION_ARCHIVE_AGE_DAYS: int = _envInt("RETENTION_ARCHIVE_AGE_DAYS", 30)
+ARCHIVE_DIR: Path = PROJECT_ROOT / "state" / "archive"
 
 # --- SIE / learning paths ------------------------------------------------
 EXPERIENCE_DB_PATH: Path = PROJECT_ROOT / "state" / "experience.db"

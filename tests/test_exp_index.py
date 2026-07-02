@@ -56,7 +56,8 @@ class _FakeIndex:
         import math
         def cos(a, b):
             dot = sum(x * y for x, y in zip(a, b))
-            na = math.sqrt(sum(x * x for x in a)); nb = math.sqrt(sum(y * y for y in b))
+            na = math.sqrt(sum(x * x for x in a))
+            nb = math.sqrt(sum(y * y for y in b))
             return dot / (na * nb) if na and nb else 0.0
         scored = [{"uid": u, "score": cos(vec, v), "payload": p} for u, v, p in self._rows]
         scored = [s for s in scored if s["score"] >= threshold]

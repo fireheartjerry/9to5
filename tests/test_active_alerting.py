@@ -16,7 +16,6 @@ Run: python C:/9to5/tests/test_active_alerting.py
 from __future__ import annotations
 
 import sys
-import threading
 import time
 import unittest
 from pathlib import Path
@@ -103,7 +102,7 @@ class TestHighAvgDelayAlert(unittest.TestCase):
 
     def test_does_not_fire_when_delay_within_threshold(self):
         monitoring.record_execution("w1", True, 1.0)
-        with mock.patch("monitoring.alerter._notifyAlert") as mock_notify:
+        with mock.patch("monitoring.alerter._notifyAlert"):
             fired = alerter.checkAndNotify()
         self.assertFalse(any("high_avg_delay" in k for k in fired))
 
@@ -124,13 +123,13 @@ class TestMaxRetriesAlert(unittest.TestCase):
 
     def test_fires_when_retries_above_threshold(self):
         monitoring.record_execution("w-retry2", True, 1.0, retries=MAX_RETRIES + 2)
-        with mock.patch("monitoring.alerter._notifyAlert") as mock_notify:
+        with mock.patch("monitoring.alerter._notifyAlert"):
             fired = alerter.checkAndNotify()
         self.assertTrue(any("max_retries_exceeded:w-retry2" in k for k in fired))
 
     def test_does_not_fire_below_threshold(self):
         monitoring.record_execution("w-ok", True, 1.0, retries=MAX_RETRIES - 1)
-        with mock.patch("monitoring.alerter._notifyAlert") as mock_notify:
+        with mock.patch("monitoring.alerter._notifyAlert"):
             fired = alerter.checkAndNotify()
         self.assertFalse(any("max_retries_exceeded" in k for k in fired))
 
@@ -312,7 +311,7 @@ class TestMultipleAlertsSimultaneous(unittest.TestCase):
             fired = alerter.checkAndNotify()
         types_fired = set(fired)
         self.assertIn("low_success_rate", types_fired)
-        self.assertIn(f"max_retries_exceeded:w1", types_fired)
+        self.assertIn("max_retries_exceeded:w1", types_fired)
         self.assertGreaterEqual(mock_notify.call_count, 2)
 
 

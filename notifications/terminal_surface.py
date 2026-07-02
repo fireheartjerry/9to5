@@ -143,7 +143,7 @@ class TerminalSurface:
                     render(lane["id"], lines,
                            {**lane, "elapsed_s": time.monotonic() - self._started_at},
                            page=idx + 1, page_count=len(lanes), mode=self.mode, frozen=self.frozen))
-            terminal_ipc.write_mirror(body, len(lanes), [l["id"] for l in lanes])
+            terminal_ipc.write_mirror(body, len(lanes), [lane["id"] for lane in lanes])
             changed = body != self._last_body
             if not self._throttle.should_edit(now, changed, self.frozen):
                 return

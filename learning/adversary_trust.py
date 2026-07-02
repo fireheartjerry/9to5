@@ -16,13 +16,13 @@ EXPORTS:
   dashboard_line(task_id: Optional[str]=None) -> str  -- One compact line for the live Discord dashboard / logs.
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_adversary_trust.py
 """
 from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Optional
 
 import config
 
@@ -65,10 +65,21 @@ def _rows() -> list[dict]:
         path = config.ADVERSARY_TRUST_LOG
         if not path.exists():
             return []
-        return [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        lines = path.read_text(encoding="utf-8").splitlines()
     except Exception as e:  # noqa: BLE001
         LOG.warning("trust log unreadable: %s", e)
         return []
+    # Parse per line so ONE torn/partial JSONL row (e.g. an interrupted append) is skipped
+    # instead of sinking the entire log -- trust telemetry must degrade, never disappear.
+    out: list[dict] = []
+    for ln in lines:
+        if not ln.strip():
+            continue
+        try:
+            out.append(json.loads(ln))
+        except Exception:  # noqa: BLE001 -- skip a corrupt line, keep the good ones
+            LOG.debug("trust log: skipping unparseable line")
+    return out
 
 
 def summary(task_id: Optional[str] = None) -> dict:

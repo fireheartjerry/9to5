@@ -137,22 +137,48 @@ class WorkflowScheduler:
             return result
 
     def complete(self, job_id: str) -> None:
-        """Mark a running job as finished, freeing its slot."""
+        """Mark a known (running or queued) job as finished, freeing its slot.
+
+        Unknown ids -- never enqueued, or already completed/cancelled -- are
+        ignored so ``_completed`` cannot grow without bound from bogus calls.
+        """
         with self._lock:
+            if job_id not in self._running and job_id not in self._jobs:
+                return  # unknown id; nothing to record
             self._running.discard(job_id)
             self._jobs.pop(job_id, None)
             self._completed.add(job_id)
 
     def cancel(self, job_id: str) -> bool:
-        """Remove a queued (not yet started) job.  Returns True if found."""
+        """Remove a queued (not yet started) job.  Returns True if found.
+
+        Cancelling a job that other queued jobs depend on would otherwise leave
+        those dependents waiting forever on a dependency that can never complete.
+        So dependents are released transitively (dropped from the queue) too.
+        """
         with self._lock:
             if job_id in self._running:
                 return False  # already running; use complete() when done
-            if job_id in self._jobs:
-                del self._jobs[job_id]
-                # Heap entry orphaned; cleaned up lazily in next()
-                return True
-            return False
+            if job_id not in self._jobs:
+                return False
+            self._releaseDependents(job_id)
+            # Heap entries orphaned; cleaned up lazily in next()
+            return True
+
+    def _releaseDependents(self, job_id: str) -> None:
+        """Drop *job_id* and every queued job transitively depending on it.
+
+        Caller must hold ``self._lock``.  Running dependents are left untouched.
+        """
+        pending = [job_id]
+        while pending:
+            jid = pending.pop()
+            if jid in self._running or jid not in self._jobs:
+                continue
+            del self._jobs[jid]
+            for other_id, other in self._jobs.items():
+                if other_id not in self._running and jid in other.depends_on:
+                    pending.append(other_id)
 
     def overdueJobs(self) -> list[WorkflowJob]:
         """Return queued (not yet started) jobs whose deadline has passed."""
