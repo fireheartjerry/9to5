@@ -94,28 +94,28 @@
           "kind": "function",
           "signature": "(review_type: str='subtask') -> str",
           "summary": "The system prompt for a given touchpoint: the one schema + a type-specific lead-in.",
-          "lineno": 81
+          "lineno": 80
         },
         {
           "name": "isCdpTransient",
           "kind": "function",
           "signature": "(exc: BaseException) -> bool",
           "summary": "True when ``exc`` looks like a transient CDP/network hiccup worth retrying.",
-          "lineno": 87
+          "lineno": 86
         },
         {
           "name": "shouldTrigger",
           "kind": "function",
           "signature": "(executor_output: str, subtask_position: int, attempt_count: int=1, pre_pr: bool=False) -> tuple[bool, str]",
           "summary": "Return ``(triggered, reason)``.",
-          "lineno": 93
+          "lineno": 92
         },
         {
           "name": "review",
           "kind": "function",
           "signature": "(subtask_title: str, trigger_reason: str, executor_output: str, *, ollama_chat: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict",
           "summary": "Critique the executor output and return a verdict dict.",
-          "lineno": 231
+          "lineno": 230
         }
       ],
       "depends_on": [
@@ -1263,28 +1263,28 @@
           "kind": "function",
           "signature": "(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict",
           "summary": "Return an invocation spec dict tuned for this run.",
-          "lineno": 76
+          "lineno": 75
         },
         {
           "name": "runWorkflow",
           "kind": "function",
           "signature": "(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict",
           "summary": "Execute the trace-replay script and return parsed results.",
-          "lineno": 193
+          "lineno": 192
         },
         {
           "name": "buildStepSpec",
           "kind": "function",
           "signature": "(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict",
           "summary": "Return an invocation spec for step-by-step decision-point replay.",
-          "lineno": 222
+          "lineno": 221
         },
         {
           "name": "getDecisionPoints",
           "kind": "function",
           "signature": "(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict",
           "summary": "Run trace-replay and return structured decision points with surrounding context.",
-          "lineno": 262
+          "lineno": 261
         }
       ],
       "depends_on": [
@@ -1655,7 +1655,6 @@
         "notifications.cast",
         "notifications.command_bot",
         "notifications.commands",
-        "notifications.console_hud",
         "notifications.cv2",
         "notifications.dashboard",
         "notifications.discord_channels",
@@ -2764,21 +2763,21 @@
           "kind": "function",
           "signature": "() -> dict",
           "summary": "Install the LoRA training stack if a GPU host lacks it (best-effort, once).",
-          "lineno": 40
+          "lineno": 39
         },
         {
           "name": "ensure_models",
           "kind": "function",
           "signature": "() -> dict",
           "summary": "Pull the embedder + base brain into Ollama if missing (best-effort, once).",
-          "lineno": 62
+          "lineno": 61
         },
         {
           "name": "ensure_all",
           "kind": "function",
           "signature": "() -> dict",
           "summary": "Run the full bootstrap once",
-          "lineno": 83
+          "lineno": 82
         }
       ],
       "depends_on": [
@@ -3081,7 +3080,6 @@
       "depends_on": [
         "config",
         "learning.dataset",
-        "learning.eval_harness",
         "memory.experience"
       ],
       "side_effects": [
@@ -3151,7 +3149,6 @@
       ],
       "callers": [
         "learning.dataset",
-        "learning.distill",
         "learning.evolution.validate",
         "learning.sie_steps",
         "platform_core.orchestration.llm_mixin"
@@ -3166,35 +3163,35 @@
           "kind": "function",
           "signature": "(*, goal_runner: Optional[Callable[[dict], dict]]=None, fitness_under_tag: Optional[Callable[[str], float]]=None) -> None",
           "summary": "Register richer runners (called by the orchestrator when a live brain exists).",
-          "lineno": 35
+          "lineno": 34
         },
         {
           "name": "clear",
           "kind": "function",
           "signature": "() -> None",
           "summary": "",
-          "lineno": 45
+          "lineno": 44
         },
         {
           "name": "fitness_under_tag",
           "kind": "function",
           "signature": "() -> Optional[Callable[[str], float]]",
           "summary": "",
-          "lineno": 50
+          "lineno": 49
         },
         {
           "name": "verify_runner",
           "kind": "function",
           "signature": "(goal: dict[str, Any]) -> dict[str, Any]",
           "summary": "Deterministic, zero-API runner: run the goal's held-out verify command and score it.",
-          "lineno": 54
+          "lineno": 53
         },
         {
           "name": "active_runner",
           "kind": "function",
           "signature": "() -> Callable[[dict], dict]",
           "summary": "The runner the harness should use now: a registered brain runner if present, else",
-          "lineno": 72
+          "lineno": 71
         }
       ],
       "depends_on": [
@@ -6358,14 +6355,14 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 97
+          "lineno": 96
         },
         {
           "name": "setup",
           "kind": "function",
           "signature": "(bot: dpy_commands.Bot) -> None",
           "summary": "",
-          "lineno": 217
+          "lineno": 216
         }
       ],
       "depends_on": [
@@ -6373,7 +6370,6 @@
         "config",
         "notifications.audit",
         "notifications.branding",
-        "notifications.commands",
         "notifications.discord_bot",
         "notifications.slash",
         "notifications.views",
@@ -6853,7 +6849,6 @@
         "notifications.bot.cogs.observe_cog",
         "notifications.bot.cogs.ops_cog",
         "notifications.bot.cogs.plan_cog",
-        "notifications.bot.cogs.runs_cog",
         "notifications.bot.core",
         "notifications.bot.ui.dynamic",
         "notifications.branding",
@@ -6876,11 +6871,10 @@
           "kind": "function",
           "signature": "(state, phase: str, *, events: Optional[list]=None, width: int=36) -> str",
           "summary": "Return the full ```ansi HUD block for ``state``",
-          "lineno": 36
+          "lineno": 35
         }
       ],
       "depends_on": [
-        "config",
         "notifications.cv2",
         "notifications.theme"
       ],
@@ -7689,28 +7683,28 @@
           "kind": "function",
           "signature": "(gate: str, state) -> dict",
           "summary": "Summarize TaskState into the compact context the Jerry service expects.",
-          "lineno": 36
+          "lineno": 35
         },
         {
           "name": "decide",
           "kind": "function",
           "signature": "(gate: str, state, *, timeout: float=6.0) -> Optional[dict]",
           "summary": "Ask the Jerry service for a verb",
-          "lineno": 73
+          "lineno": 72
         },
         {
           "name": "advise",
           "kind": "function",
           "signature": "(gate: str, state, *, timeout: float=6.0) -> Optional[str]",
           "summary": "Advisor role: a one-line second opinion to inject into the Ollama brain's",
-          "lineno": 92
+          "lineno": 91
         },
         {
           "name": "recordOutcome",
           "kind": "function",
           "signature": "(gate: str, predicted: Optional[dict], human_verb: str) -> None",
           "summary": "Append a shadow-mode comparison line (model vs human)",
-          "lineno": 103
+          "lineno": 102
         }
       ],
       "depends_on": [],
@@ -8165,8 +8159,7 @@
         "tests/test_terminal_render.py"
       ],
       "callers": [
-        "notifications.terminal_surface",
-        "notifications.views_terminal"
+        "notifications.terminal_surface"
       ]
     },
     "notifications.terminal_surface": {
@@ -8606,14 +8599,13 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 40
+          "lineno": 39
         }
       ],
       "depends_on": [
         "notifications.commands",
         "notifications.discord_bot",
-        "notifications.terminal_ipc",
-        "notifications.terminal_render"
+        "notifications.terminal_ipc"
       ],
       "side_effects": [
         "writes nav intent via notifications.terminal_ipc",
@@ -8956,7 +8948,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Brain + autonomous loop",
-          "lineno": 69
+          "lineno": 67
         }
       ],
       "depends_on": [
@@ -9960,7 +9952,8 @@
         "tests/test_resume_wiring.py"
       ],
       "callers": [
-        "platform_core.orchestration.execute_attempt_mixin"
+        "platform_core.orchestration.execute_attempt_mixin",
+        "platform_core.orchestration.execute_mixin"
       ]
     },
     "platform_core.knowledge_base": {
@@ -10260,14 +10253,14 @@
           "kind": "function",
           "signature": "() -> list[dict]",
           "summary": "Run every check and return structured results (used by the bot's /diagnostics).",
-          "lineno": 193
+          "lineno": 191
         },
         {
           "name": "runHealthChecks",
           "kind": "function",
           "signature": "() -> bool",
           "summary": "",
-          "lineno": 206
+          "lineno": 204
         }
       ],
       "depends_on": [
@@ -10921,7 +10914,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment.",
-          "lineno": 35
+          "lineno": 38
         }
       ],
       "depends_on": [
@@ -10932,6 +10925,7 @@
         "notifications.dashboard",
         "notifications.discord_bot",
         "platform_core.execution",
+        "platform_core.execution.wiring",
         "platform_core.orchestration",
         "platform_core.orchestration.execute_attempt_mixin",
         "platform_core.orchestration.self_ref_gate",
@@ -11205,28 +11199,28 @@
           "kind": "function",
           "signature": "(subtask: dict) -> set[str]",
           "summary": "Planner-authored file-set",
-          "lineno": 29
+          "lineno": 28
         },
         {
           "name": "disjoint",
           "kind": "function",
           "signature": "(a: dict, b: dict) -> bool",
           "summary": "True only if BOTH file-sets are known and share no file",
-          "lineno": 37
+          "lineno": 36
         },
         {
           "name": "safeParallelSet",
           "kind": "function",
           "signature": "(state, ready: list[dict], limit: int) -> list[dict]",
           "summary": "Greedily pick ready subtasks whose file-sets are pairwise disjoint + dependency-free.",
-          "lineno": 51
+          "lineno": 50
         },
         {
           "name": "claim",
           "kind": "function",
           "signature": "(state, sid: str) -> bool",
           "summary": "Atomic CAS: flip pending->in_progress ONLY if still pending (else lost-race=False).",
-          "lineno": 69
+          "lineno": 68
         }
       ],
       "depends_on": [

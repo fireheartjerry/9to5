@@ -13,7 +13,7 @@ EXPORTS:
   format_pair(row: dict[str, Any]) -> Optional[dict[str, Any]]  -- Turn one gold subtask row into an SFT (prompt, completion) pair, or None if it
   write_jsonl(examples: list[dict[str, Any]], path: Path) -> None
   build(*, db_path: Optional[Path]=None, out_path: Optional[Path]=None, suite: Optional[list[dict[str, Any]]]=None) -> dict[str, Any]  -- Build, clean, and (optionally) write the gold SFT dataset
-DEPENDS-ON: config, learning.dataset, learning.eval_harness, memory.experience
+DEPENDS-ON: config, learning.dataset, memory.experience
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
