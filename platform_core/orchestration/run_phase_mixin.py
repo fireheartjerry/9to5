@@ -375,6 +375,14 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
             pass
         _webdash_mod.stopWebDashboard()
         self._cleanupScaffolding(work_dir)   # never leave 9to5 scratch dirs in the user's project
+        # Best-effort state retention sweep: prune old per-run blackboard/compaction artifacts and
+        # archive terminal task JSON. Fail-open — never blocks or breaks teardown.
+        if getattr(config, "RETENTION_ENABLED", False):
+            try:
+                from platform_core.ops import retention
+                retention.sweepAll()
+            except Exception:  # noqa: BLE001
+                LOG.debug("retention sweep at teardown failed (ignored)", exc_info=True)
         # Fire throttled SIE learning passes off-thread so they never slow teardown.
         if config.SIE_AUTO_MAINTENANCE:
             try:
