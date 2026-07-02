@@ -4,16 +4,16 @@ A self-referential run once finished status=done 1/1 while delivering only 1 of 
 things its goal asked for: the brain-authored verify checked a single fact (file
 runs / one token present), so a 2-of-3-missing subtask still PASSED.
 
-This locks the fix: when a goal enumerates N requirements, the verify must assert
-ALL N -- a file with only requirement #1 done MUST fail verification, and a file
-with all N done MUST pass. Pure-stdlib (``python -m unittest``); imports only the
-dependency-light ``agents.verifier`` so it runs without ollama/discord installed.
+R10 replaced the token-scan synthesizer (a goal word in a comment could pass it)
+with DIFF-GROUNDED declared targets: the verify carries ``targets`` and the receipt
+pipeline FAILS the subtask unless git shows a declared target actually changed.
+This file locks: compound expects still assert EVERY needle, enumerated-requirement
+extraction still powers decomposition, targets survive sanitization, and the plan
+strengthener attaches diff-grounded targets to multi-requirement subtasks.
 """
 from __future__ import annotations
 
-import tempfile
 import unittest
-from pathlib import Path
 
 from agents import verifier
 
@@ -21,35 +21,9 @@ from agents import verifier
 GOAL = ("improve notifications/webdash.py with (1) auto-refresh meta tag, "
         "(2) elapsed-time line, (3) per-subtask green/red color coding.")
 
-# webdash source with ONLY deliverable #1 (auto-refresh) -- the bug's partial state.
-WEBDASH_ONLY_REFRESH = (
-    '<!doctype html><html><head><meta charset="utf-8">\n'
-    '<meta http-equiv="refresh" content="5">\n'
-    '<title>9TO5</title></head><body>just the refresh tag</body></html>\n'
-)
-
-# webdash source with ALL THREE deliverables present.
-WEBDASH_ALL_THREE = (
-    '<!doctype html><html><head><meta charset="utf-8">\n'
-    '<meta http-equiv="refresh" content="5">\n'
-    '<title>9TO5</title></head><body>\n'
-    '<div class="elapsed">elapsed: 00:03:11</div>\n'
-    '<style>.ok{color:green}.bad{color:red}</style>\n'
-    '</body></html>\n'
-)
-
-# Distinctive, AND-across-groups / OR-within-group markers for each requirement.
-MARKER_GROUPS = [["refresh"], ["elapsed"], ["green", "red"]]
-
-
-def _writeWebdash(tmp: str, body: str) -> str:
-    p = Path(tmp) / "webdash.py"
-    p.write_text(body, encoding="utf-8")
-    return str(p)
-
 
 class TestCompoundExpectation(unittest.TestCase):
-    """The new stdout_contains_all / stdout_regex_all expectations check EVERY needle."""
+    """The stdout_contains_all / stdout_regex_all expectations check EVERY needle."""
 
     def test_contains_all_fails_when_only_one_of_three_present(self):
         haystack = '<meta http-equiv="refresh" content="5">'
@@ -66,36 +40,16 @@ class TestCompoundExpectation(unittest.TestCase):
         self.assertFalse(
             verifier._evaluate(r"stdout_regex_all:refresh||elapsed||color\s*:\s*(green|red)", 0, haystack))
 
-
-class TestContentScanVerify(unittest.TestCase):
-    """A compound content-scan verify built from explicit marker groups."""
-
-    def test_fails_when_only_one_of_three_requirements_done(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            target = _writeWebdash(tmp, WEBDASH_ONLY_REFRESH)
-            v = verifier.buildContentScanVerify(MARKER_GROUPS, target)
-            self.assertTrue(verifier.isStrictVerify(v), "content-scan verify must be strict")
-            res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
-            self.assertFalse(res["passed"], "2-of-3 missing must FAIL verification")
-
-    def test_passes_when_all_three_requirements_done(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            target = _writeWebdash(tmp, WEBDASH_ALL_THREE)
-            v = verifier.buildContentScanVerify(MARKER_GROUPS, target)
-            res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
-            self.assertTrue(res["passed"], "all-3-present must PASS verification")
-
-    def test_failure_output_names_the_missing_requirement(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            target = _writeWebdash(tmp, WEBDASH_ONLY_REFRESH)
-            v = verifier.buildContentScanVerify(MARKER_GROUPS, target)
-            res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
-            blob = (res.get("stdout") or "") + (res.get("stderr") or "")
-            self.assertIn("elapsed", blob, "feedback should name the missing markers for retry")
+    def test_verdict_reports_matched_and_missing_needles(self):
+        verdict, matched, missing = verifier.verdictFor(
+            0, "refresh only", "stdout_contains_all:refresh||elapsed||green")
+        self.assertIs(verdict, verifier.Verdict.FAIL)
+        self.assertEqual(matched, ("refresh",))
+        self.assertEqual(set(missing), {"elapsed", "green"})
 
 
 class TestRequirementExtraction(unittest.TestCase):
-    """Deterministic NL parsing that powers decomposition + compound-verify synthesis."""
+    """Deterministic NL parsing that powers decomposition + target declaration."""
 
     def test_extracts_three_enumerated_requirements(self):
         reqs = verifier.extractRequirements(GOAL)
@@ -104,36 +58,41 @@ class TestRequirementExtraction(unittest.TestCase):
     def test_no_requirements_for_plain_single_deliverable(self):
         self.assertEqual(verifier.extractRequirements("write a fibonacci function in fib.py"), [])
 
-    def test_markers_capture_distinctive_words(self):
-        markers = verifier.requirementMarkers("auto-refresh meta tag")
-        self.assertIn("refresh", markers)
+    def test_primary_target_file_found(self):
+        self.assertEqual(verifier.primaryTargetFile(GOAL), "notifications/webdash.py")
 
 
-class TestBuildRequirementsVerifyEndToEnd(unittest.TestCase):
-    """The full synthesizer: goal text -> compound verify that fails on partial work."""
+class TestDeclaredTargets(unittest.TestCase):
+    """Diff-grounded targets replace the token-scan: they must survive sanitization and
+    be attached by the plan strengthener for multi-requirement subtasks."""
 
-    def test_synthesized_verify_fails_on_partial_and_passes_on_complete(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            partial = _writeWebdash(tmp, WEBDASH_ONLY_REFRESH)
-            v = verifier.buildRequirementsVerify(GOAL, partial)
-            self.assertIsNotNone(v, "an enumerated 3-part goal must yield a compound verify")
-            self.assertFalse(
-                verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})["passed"])
-
-            target = _writeWebdash(tmp, WEBDASH_ALL_THREE)
-            v2 = verifier.buildRequirementsVerify(GOAL, target)
-            self.assertTrue(
-                verifier.runVerification(v2, tmp, {"ok": True, "returncode": 0})["passed"])
-
-    def test_returns_none_for_single_deliverable_goal(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            target = _writeWebdash(tmp, WEBDASH_ALL_THREE)
-            self.assertIsNone(verifier.buildRequirementsVerify("tidy up webdash.py", target))
-
-    def test_sanitize_keeps_compound_content_scan_and_strict_flag(self):
-        # planning runs the strengthened verify through sanitizeVerify -- it must survive intact,
-        # else the compound check is silently dropped back to 'executor exited 0'.
-        v = verifier.buildContentScanVerify(MARKER_GROUPS, "/tmp/webdash.py")
+    def test_targets_survive_sanitize_alongside_a_real_cmd(self):
+        v = {"cmd": "python C:\\9to5\\x.py", "expect": "exit_zero",
+             "targets": ["notifications/webdash.py"]}
         kept = verifier.sanitizeVerify(v)
         self.assertIsNotNone(kept)
-        self.assertTrue(verifier.isStrictVerify(kept))
+        self.assertEqual(kept["targets"], ["notifications/webdash.py"])
+
+    def test_targets_survive_when_cmd_is_dropped(self):
+        # a rejected cmd (angle brackets) must NOT throw away the declared targets --
+        # diff grounding is part of the acceptance contract even without a runnable cmd.
+        v = {"cmd": "python <ABSOLUTE path>", "expect": "exit_zero",
+             "targets": ["notifications/webdash.py"]}
+        kept = verifier.sanitizeVerify(v)
+        self.assertEqual(kept, {"targets": ["notifications/webdash.py"]})
+
+    def test_strengthener_attaches_targets_to_multi_requirement_subtasks(self):
+        from platform_core.orchestration.subtask import _strengthenPlanVerifies
+        subs = [{"title": "webdash refresh + elapsed",
+                 "description": "add the auto-refresh meta tag and the elapsed-time line",
+                 "verify": {"cmd": "python C:\\9to5\\x.py", "expect": "exit_zero"}}]
+        out = _strengthenPlanVerifies(GOAL, subs)
+        self.assertTrue((out[0]["verify"] or {}).get("targets"),
+                        "multi-requirement subtask must declare a diff-grounded target")
+
+    def test_strengthener_skips_single_requirement_subtasks(self):
+        from platform_core.orchestration.subtask import _strengthenPlanVerifies
+        subs = [{"title": "unrelated docs pass", "description": "tidy the readme wording",
+                 "verify": {"cmd": "python C:\\9to5\\x.py", "expect": "exit_zero"}}]
+        out = _strengthenPlanVerifies(GOAL, subs)
+        self.assertIsNone((out[0]["verify"] or {}).get("targets"))

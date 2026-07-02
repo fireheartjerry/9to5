@@ -62,94 +62,94 @@ class TestSimBrainPlan(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# SimBrain.chat
+# SimBrain.chat -- EXACT act dispatch (R5): prompt wording NEVER routes
 # ---------------------------------------------------------------------------
 
 class TestSimBrainChat(unittest.TestCase):
     def _user_msg(self, text):
         return [{"role": "user", "content": text}]
 
-    def test_invocation_spec_path(self):
+    def test_invocation_spec_act(self):
         brain = SimBrain()
-        resp = brain.chat(messages=self._user_msg("Please write an invocation spec for step 1"))
+        resp = brain.chat(messages=self._user_msg("anything at all"), act="invocation_spec")
         data = json.loads(resp["message"]["content"])
         self.assertIn("prompt", data)
         self.assertIn("effort_level", data)
         self.assertIn("skills_to_invoke", data)
 
-    def test_corrected_path_returns_plan(self):
+    def test_critique_act_returns_plan(self):
         brain = SimBrain(n_subtasks=2)
-        resp = brain.chat(messages=self._user_msg("here is the corrected plan to fix things"))
+        resp = brain.chat(messages=self._user_msg("totally reworded critique ask"), act="critique")
         data = json.loads(resp["message"]["content"])
         self.assertIn("subtasks", data)
         self.assertEqual(len(data["subtasks"]), 2)
 
-    def test_plan_to_fix_path_returns_plan(self):
-        brain = SimBrain(n_subtasks=2)
-        resp = brain.chat(messages=self._user_msg("plan to fix the failing step"))
-        data = json.loads(resp["message"]["content"])
-        self.assertIn("subtasks", data)
-
-    def test_default_path_returns_plan(self):
+    def test_plan_act_returns_plan(self):
         brain = SimBrain(n_subtasks=1)
-        resp = brain.chat(messages=self._user_msg("build something"))
+        resp = brain.chat(messages=self._user_msg("build something"), act="plan")
         data = json.loads(resp["message"]["content"])
         self.assertIn("subtasks", data)
 
-    def test_empty_messages_returns_plan(self):
-        brain = SimBrain()
-        resp = brain.chat(messages=[])
-        data = json.loads(resp["message"]["content"])
-        self.assertIn("subtasks", data)
+    def test_wording_never_routes(self):
+        """THE R5 regression: the old sim substring-matched 'invocation spec' in the user
+        prompt. Now the act tag wins even when the wording says the opposite."""
+        brain = SimBrain(n_subtasks=2)
+        # wording screams invocation-spec; act says plan -> plan payload
+        resp = brain.chat(messages=self._user_msg("INVOCATION SPEC please"), act="plan")
+        self.assertIn("subtasks", json.loads(resp["message"]["content"]))
+        # wording is a fully reworded directive; act says invocation_spec -> spec payload
+        resp = brain.chat(messages=self._user_msg("Compose the execution directive for step 1"),
+                          act="invocation_spec")
+        self.assertIn("prompt", json.loads(resp["message"]["content"]))
 
-    def test_no_messages_kwarg_returns_plan(self):
+    def test_unknown_act_raises(self):
         brain = SimBrain()
-        resp = brain.chat()
-        data = json.loads(resp["message"]["content"])
-        self.assertIn("subtasks", data)
+        with self.assertRaises(ValueError):
+            brain.chat(messages=self._user_msg("go"), act="mystery_act")
+
+    def test_missing_act_raises(self):
+        brain = SimBrain()
+        with self.assertRaises(ValueError):
+            brain.chat(messages=self._user_msg("go"))
+
+    def test_gatekeeper_act_approves(self):
+        brain = SimBrain()
+        resp = brain.chat(messages=self._user_msg("gate?"), act="gatekeeper")
+        self.assertTrue(json.loads(resp["message"]["content"])["approve"])
+
+    def test_horizon_fill_act_returns_empty_batch(self):
+        brain = SimBrain()
+        resp = brain.chat(messages=self._user_msg("more work?"), act="horizon_fill")
+        self.assertEqual(json.loads(resp["message"]["content"])["subtasks"], [])
+
+    def test_architect_act_returns_text(self):
+        brain = SimBrain()
+        resp = brain.chat(messages=self._user_msg("design"), act="architect")
+        self.assertTrue(resp["message"]["content"].strip())
 
     def test_calls_counter_increments(self):
         brain = SimBrain()
         self.assertEqual(brain.calls, 0)
-        brain.chat(messages=self._user_msg("invocation spec"))
-        brain.chat(messages=self._user_msg("some plan"))
+        brain.chat(messages=self._user_msg("x"), act="invocation_spec")
+        brain.chat(messages=self._user_msg("y"), act="plan")
         self.assertEqual(brain.calls, 2)
 
     def test_model_kwarg_ignored(self):
         brain = SimBrain()
-        resp = brain.chat(model="qwen2.5:7b", messages=self._user_msg("invocation spec"))
+        resp = brain.chat(model="qwen2.5:7b", messages=self._user_msg("x"), act="invocation_spec")
         self.assertIn("message", resp)
 
     def test_response_has_message_content_key(self):
         brain = SimBrain()
-        resp = brain.chat(messages=self._user_msg("go"))
+        resp = brain.chat(messages=self._user_msg("go"), act="plan")
         self.assertIn("message", resp)
         self.assertIn("content", resp["message"])
 
-    def test_non_dict_message_items_ignored(self):
-        brain = SimBrain()
-        mixed = ["string item", None, {"role": "user", "content": "invocation spec"}, 42]
-        resp = brain.chat(messages=mixed)
-        data = json.loads(resp["message"]["content"])
-        self.assertIn("prompt", data)
-
-    def test_content_none_falls_back_to_plan(self):
+    def test_messages_irrelevant_to_dispatch(self):
         brain = SimBrain(n_subtasks=1)
-        resp = brain.chat(messages=[{"role": "user", "content": None}])
-        data = json.loads(resp["message"]["content"])
-        self.assertIn("subtasks", data)
-
-    def test_messages_none_returns_plan(self):
-        brain = SimBrain()
-        resp = brain.chat(messages=None)
-        data = json.loads(resp["message"]["content"])
-        self.assertIn("subtasks", data)
-
-    def test_invocation_spec_case_insensitive(self):
-        brain = SimBrain()
-        resp = brain.chat(messages=self._user_msg("INVOCATION SPEC please"))
-        data = json.loads(resp["message"]["content"])
-        self.assertIn("prompt", data)
+        for msgs in (None, [], ["junk", 42], [{"role": "user", "content": None}]):
+            data = json.loads(brain.chat(messages=msgs, act="plan")["message"]["content"])
+            self.assertIn("subtasks", data)
 
 
 # ---------------------------------------------------------------------------

@@ -61,11 +61,47 @@ class TestReviewFailsClosedToStub(unittest.TestCase):
             return adv.review("subtask", "heartbeat", "executor output",
                               ollama_chat=lambda *a, **k: object(), goal="goal")
 
-    def test_missing_verdict_becomes_labeled_stub(self):
+    def test_missing_verdict_becomes_labeled_challenge(self):
         r = self._review('{"concerns": ["real issue"]}')   # NO verdict key
         self.assertTrue(r["stub"], "malformed verdict was silently treated as a clean approve")
+        self.assertEqual(r["verdict"], adv._CHALLENGED, "garbled must fail closed (R10)")
 
     def test_valid_challenge_is_not_stub(self):
         r = self._review('{"verdict": "challenged", "concerns": ["x"]}')
         self.assertEqual(r["verdict"], adv._CHALLENGED)
         self.assertFalse(r["stub"])
+
+
+class TestOneParserBothSurfaces(unittest.TestCase):
+    """R10 property test over the two previously-diverging paths: review() (which used to
+    inline a byte-for-byte copy of _parseVerdict) and reviewViaBrowser() must agree on
+    every payload -- same verdict, same fail-closed handling of garbled output."""
+
+    PAYLOADS = [
+        '{"verdict": "approved", "concerns": []}',
+        '{"verdict": "challenged", "concerns": ["bug"], "severity": "high"}',
+        '{"verdict": "rejected", "concerns": ["x"]}',      # normalized to challenged
+        '```json\n{"verdict": "challenged"}\n```',          # fenced
+        'prose {"verdict": "approved"} trailing {braces}',  # balanced-walker salvage
+        '{"concerns": ["no verdict key"]}',                 # off-contract -> challenged
+        'not json at all',                                  # garbled -> challenged
+    ]
+
+    def _via_ollama(self, payload):
+        with mock.patch.object(adv.llm_io, "responseText", return_value=payload):
+            return adv.review("s", "r", "o", ollama_chat=lambda *a, **k: object())
+
+    def _via_browser(self, payload):
+        return adv.reviewViaBrowser("s", "r", "o", browser_ask=lambda message: payload)
+
+    def test_both_paths_agree_on_every_payload(self):
+        for payload in self.PAYLOADS:
+            a = self._via_ollama(payload)
+            b = self._via_browser(payload)
+            self.assertEqual(a["verdict"], b["verdict"],
+                             f"paths diverged on {payload!r}: {a['verdict']} vs {b['verdict']}")
+
+    def test_garbled_is_challenged_on_both_paths(self):
+        for payload in ('not json at all', '{"concerns": ["no verdict"]}'):
+            self.assertEqual(self._via_ollama(payload)["verdict"], adv._CHALLENGED)
+            self.assertEqual(self._via_browser(payload)["verdict"], adv._CHALLENGED)

@@ -65,6 +65,10 @@ def _parseArgs(argv: list[str]) -> "argparse.Namespace":
     parser.add_argument("--web-port", type=int, default=config.WEB_DASHBOARD_PORT, help="Web dashboard port.")
     parser.add_argument("--no-web", action="store_true", help="Disable the local web dashboard.")
     parser.add_argument("--task-id", help="Alias for --resume: restore + continue a task by id.")
+    parser.add_argument("--launch-id",
+                        help="Launch handshake token from the Discord launcher: this run writes "
+                             "state/launch/<id>.json with its task_id so the launcher can confirm "
+                             "the spawn without polling for the newest state file.")
     parser.add_argument("--night-mode", action="store_true",
                         help="Zero human interaction: watch mode, no adversary PR hold, auto-resume pauses.")
     parser.add_argument("--work-profile",

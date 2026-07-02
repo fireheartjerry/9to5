@@ -16,7 +16,7 @@ EXPORTS:
   handleCommand(content: str) -> str  -- Parse + apply a '!' command against the latest task
   buildBot()  -- Construct (but do not run) the NightclawBot
   runBot() -> None
-DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, notifications.views_feedback, notifications.views_terminal, platform_core.runtime.control
+DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, notifications.views_feedback, notifications.views_terminal, platform_core.runtime, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_simulation_core.py
 """
@@ -167,8 +167,11 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
         async def _presenceLoop(self) -> None:
             await self.wait_until_ready()
 
-            def _presenceName() -> str:
-                # Off the event loop: resolveTargetTask is a glob + JSON read.
+            def _presenceTick() -> str:
+                # Off the event loop: resolveTargetTask is a glob + JSON read, and the
+                # gateway-bot heartbeat (platform_core.runtime.heartbeat) is a file write.
+                from platform_core.runtime import heartbeat as _heartbeat
+                _heartbeat.writeBotHeartbeat()
                 state = spine.resolveTargetTask()
                 if state is not None and spine.isRunActive(state):
                     done, total = state.progress()
@@ -177,7 +180,7 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
 
             while not self.is_closed():
                 try:
-                    name = await asyncio.to_thread(_presenceName)
+                    name = await asyncio.to_thread(_presenceTick)
                     await self.change_presence(
                         activity=discord.Activity(type=discord.ActivityType.watching, name=name))
                 except Exception:  # noqa: BLE001

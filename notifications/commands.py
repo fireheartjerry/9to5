@@ -248,8 +248,10 @@ def _applyIntelCommand(bus: ControlBus, state: TaskState, cmd: Command) -> Optio
         m = cmd.arg.strip().lower()
         if m not in ("gated", "watch"):
             return "usage: `!mode gated|watch`"
-        state.setControlMode(m)
-        return f"Control mode -> `{m}`."
+        # SINGLE-WRITER RULE: this layer also runs in the gateway-bot process, which must
+        # never write task JSON. Queue the change; the run loop drains + applies it.
+        bus.pushOp({"op": "set_mode", "mode": m})
+        return f"Control mode -> `{m}` (applies at the next loop tick)."
     if n == "replan":
         bus.requestForceReplan()
         return "Replanning pass requested — runs at the next loop tick."

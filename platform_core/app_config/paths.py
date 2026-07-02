@@ -71,6 +71,13 @@ SESSIONS_DIR_REL: str = "sessions"
 # --- Task state and control ----------------------------------------------
 STATE_DIR: Path = PROJECT_ROOT / "state" / "tasks"
 CONTROL_DIR: Path = PROJECT_ROOT / "state" / "control"
+# Liveness heartbeats (platform_core/runtime/heartbeat.py) -- one JSON per run + gateway bot.
+HEARTBEAT_DIR: Path = PROJECT_ROOT / "state" / "heartbeats"
+# Launch handshake files (notifications/work_launcher.py <-> main.py --launch-id).
+LAUNCH_DIR: Path = PROJECT_ROOT / "state" / "launch"
+# Cross-process IPC files (e.g. Live Terminal nav/mirror) -- OUTSIDE the task-store namespace
+# so state/tasks/ scans never misparse them.
+IPC_DIR: Path = PROJECT_ROOT / "state" / "ipc"
 
 # --- Agent Society / Workforce (Epic 5) blackboard -----------------------
 BLACKBOARD_DIR: Path = PROJECT_ROOT / "state" / "blackboard"
@@ -106,6 +113,9 @@ _REQUIRED_DIRS = (
     LOG_PATH,
     STATE_DIR,
     CONTROL_DIR,
+    HEARTBEAT_DIR,
+    LAUNCH_DIR,
+    IPC_DIR,
     CLAUDE_DIR,
     VAULT_DISK_ROOT,
     VAULT_DISK_ROOT / TASKS_DIR_REL,

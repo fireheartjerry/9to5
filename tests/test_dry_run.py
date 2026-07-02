@@ -125,3 +125,30 @@ class TestDryRun(unittest.TestCase):
         st.setElaboratedGoal("clean up docs")
         st.save()
         self.assertTrue(run_loop._detectSelfReferential(st, str(config.PROJECT_ROOT)))
+
+    def test_reworded_prompts_still_route_on_act(self):
+        """R5 regression: reword EVERY planner prompt string and the sim must still route
+        correctly, because SimBrain dispatches on the structured act tag -- the old
+        substring dispatch ('invocation spec' / 'corrected') demonstrably fails this."""
+        from platform_core.orchestration import plan_prompts
+        reworded = [
+            mock.patch.object(plan_prompts, "PLANNER_SYSTEM",
+                              "Decompose the mandate into work units. JSON only."),
+            mock.patch.object(plan_prompts, "CRITIQUE_SYSTEM",
+                              "Audit the proposal and emit an amended version. JSON only."),
+            mock.patch.object(plan_prompts, "PLAN_FIXER_SYSTEM",
+                              "Amend the proposal per the violation report. JSON only."),
+            mock.patch.object(plan_prompts, "ORCHESTRATOR_CONSTITUTION",
+                              "Author the execution directive for this work unit. JSON only."),
+        ]
+        for p in reworded:
+            p.start()
+            self.addCleanup(p.stop)
+        st = TaskState.create("build a calculator", 1.0)
+        st.setElaboratedGoal("build a calculator")
+        st.save()
+        summary = simulation.buildOrchestrator(n_subtasks=2).runFull(
+            st, work_dir=str(self.work), auto_pr=False, control_mode="watch")
+        self.assertEqual(summary["status"], "done")
+        self.assertEqual(len(summary["subtasks"]), 2)
+        self.assertTrue(all(s["status"] == "done" for s in summary["subtasks"]))

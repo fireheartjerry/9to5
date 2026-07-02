@@ -214,14 +214,15 @@ class TestNativeDispatch(unittest.TestCase):
 
 def test_author_architect_prompt_injects_discovery_report():
     """When discovery_report is passed, its content appears in the authored prompt."""
+    import llm_io
     from agents.discovery.models import Finding, DiscoveryReport
     f = Finding("Rewrite orchestrator", "reimagining", 5, 4, 5,
                 "Current approach is tightly coupled", ["orchestrator.py"], "lens_3")
     f.rank = 1
     report = DiscoveryReport(theme_suggestion="transform the orchestrator layer", findings=[f])
 
-    with mock.patch.object(architect, "_getOllama") as mock_oll:
-        mock_oll.return_value.chat.return_value = {"message": {"content": "design the architecture"}}
+    fake = mock.Mock(chat=mock.Mock(return_value={"message": {"content": "design the architecture"}}))
+    with mock.patch.object(llm_io, "getClient", return_value=fake):
         prompt = architect.authorArchitectPrompt("spec text", discovery_report=report)
     # Either the theme or the finding title should appear in the final prompt
     assert "transform the orchestrator layer" in prompt or "Rewrite orchestrator" in prompt

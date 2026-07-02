@@ -11,11 +11,13 @@ EXPORTS:
   handleRunAbort(orch, state, e: BaseException, web_url, dashboard) -> dict  -- Handle AbortRun/KeyboardInterrupt: persist aborted status and notify.
   handleRunCrash(orch, state, e: Exception, web_url, dashboard) -> dict  -- Handle unexpected crash: persist 'crashed' (non-terminal) status so recovery can resume.
   phase4PrCapture(orch, state, pr: dict) -> dict  -- Capture CI + review feedback for a created PR into the experience ledger.
+  finalizeSurfaces(orch, state, status: str, done: int, total: int, elapsed: str) -> None  -- Run-end surfaces: arc final beat, perfect-run moment, self-reflection post.
+  postGrowth(orch) -> None  -- Spec B: post a short '!growth' learning summary to Discord at teardown (best-effort).
   maybeInstinct(orch, state, bus) -> None  -- Throttled trigger for the periodic instinct call
   runInstinct(orch, state) -> None
-DEPENDS-ON: config, memory.user_prefs, notifications.discord_bot, notifications.instinct, platform_core.orchestration.pr_feedback, platform_core.orchestration.time_utils
+DEPENDS-ON: config, learning.wisdom, memory.experience, memory.user_prefs, notifications.discord_bot, notifications.instinct, notifications.reflection_post, notifications.run_arc, platform_core.orchestration.pr_feedback, platform_core.orchestration.time_utils
 SIDE-EFFECTS: posts Discord embeds; spawns the instinct thread; mutates run state status/notifications
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_run_phase_outcome.py
 """
 from __future__ import annotations
 
@@ -30,14 +32,25 @@ LOG = config.getLogger("orchestrator")
 
 
 def handleRunAbort(orch, state, e: BaseException, web_url, dashboard) -> dict:
-    """Handle AbortRun/KeyboardInterrupt: persist aborted status and notify."""
+    """Handle AbortRun/KeyboardInterrupt: persist aborted status and notify.
+
+    Persistence and notification are wrapped SEPARATELY (mirroring handleRunCrash): a
+    failing state save must not turn an operator ABORT into a 'crash' that recovery would
+    auto-resume -- the bus abort flag + run_with_recovery's abort check are the backstop.
+    """
     reason = "ctrl-c" if isinstance(e, KeyboardInterrupt) else str(e)
     elapsed = _elapsedSince(state.meta["started_at"])
-    state.setStatus("aborted", blocked_reason=reason)
-    orch.writeIndex(state)
-    discord.sendEmbed(discord.abortedEmbed(reason, _fmtElapsed(elapsed)))
-    state.addNotification("aborted", reason)
-    dashboard.update(state, "aborted", f"aborted: {reason}")
+    try:
+        state.setStatus("aborted", blocked_reason=reason)
+        orch.writeIndex(state)
+        state.addNotification("aborted", reason)
+    except Exception:  # noqa: BLE001
+        LOG.error("abort persistence failed (bus abort flag still stops recovery)", exc_info=True)
+    try:
+        discord.sendEmbed(discord.abortedEmbed(reason, _fmtElapsed(elapsed)))
+        dashboard.update(state, "aborted", f"aborted: {reason}")
+    except Exception:  # noqa: BLE001
+        LOG.error("abort notification failed (ignored)", exc_info=True)
     LOG.warning("Run aborted: %s", reason)
     return {"task_id": state.task_id, "status": "aborted", "reason": reason,
             "elapsed_seconds": round(elapsed, 1), "web_dashboard": web_url,
@@ -98,6 +111,41 @@ def phase4PrCapture(orch, state, pr: dict) -> dict:
         )
         state.addNotification("pr_capture_block", capture_result.get("ci_summary", "")[:200])
     return capture_result
+
+
+def finalizeSurfaces(orch, state, status: str, done: int, total: int, elapsed: str) -> None:
+    """Run-end surfaces: arc final beat, perfect-run moment, self-reflection post.
+    Best-effort; never breaks teardown. (Moved from run_phase_mixin for size.)"""
+    try:
+        from notifications import reflection_post, run_arc
+        from memory import experience
+        run_arc.append_beat(state, run_arc.beat_complete(status, done, total, elapsed))
+        replans = sum(1 for n in state.data.get("notifications", [])
+                      if isinstance(n, dict) and n.get("kind") == "replan")
+        advs = len(state.data.get("adversary_reviews", []))
+        if replans == 0 and advs == 0:
+            orch._emitMoment("system",
+                             "⚡ MOMENT — A perfect run. Zero replans, zero adversary triggers.")
+        comparative = experience.compare_run(state.task_id)
+        text = reflection_post.write_reflection(state, chat=orch._ollamaChat,
+                                                comparative=comparative, obs=orch.obs)
+        if text:
+            reflection_post.post_reflection(state, text, comparative=comparative)
+        orch._narrate(f"{(state.meta.get('codename') or 'Run')} closed — {status}, "
+                      f"{done}/{total} in {elapsed}.", force=True)
+    except Exception:  # noqa: BLE001 -- surfaces are best-effort; never break teardown
+        LOG.warning("run-end surface finalize failed", exc_info=True)
+
+
+def postGrowth(orch) -> None:  # noqa: ARG001 -- orch kept for symmetry with siblings
+    """Spec B: post a short '!growth' learning summary to Discord at teardown (best-effort)."""
+    try:
+        from learning import wisdom
+        line = wisdom.growthSummary()
+        if line:
+            discord.sendEmbed(discord.noticeEmbed(line, title="9TO5 growth"))
+    except Exception:  # noqa: BLE001 -- growth post is best-effort, never blocks teardown
+        LOG.debug("growth post failed (ignored)", exc_info=True)
 
 
 def maybeInstinct(orch, state, bus) -> None:

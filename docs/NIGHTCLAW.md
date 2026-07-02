@@ -106,9 +106,9 @@ message with ◀ Prev · ⏸ Freeze · Raw · Next ▶ · 📷 Snapshot buttons.
   viewed page is ever edited — N sub-processes cost the same as one.
 - **Cross-process buttons.** The buttons are handled by the *bot* process; the surface lives
   in the *orchestrator* process. They bridge through the filesystem
-  (`notifications/terminal_ipc.py`): the view writes nav intent to `state/terminal_nav.json`
+  (`notifications/terminal_ipc.py`): the view writes nav intent to `state/ipc/terminal_nav.json`
   (`bump_nav`), the surface reads it each tick and writes a mirror
-  (`state/terminal_mirror.json`: body + page_count + lane ids) that the view reads for
+  (`state/ipc/terminal_mirror.json`: body + page_count + lane ids) that the view reads for
   snapshots and page clamping. Nav latency ≈ one tick (~0.4s). `TerminalView` is a persistent
   view (`timeout=None`, `term_*` custom_ids) registered in `notifications/bot/core.py`, so it
   survives multi-hour runs and bot restarts. Deep browser/native telemetry still lives on the

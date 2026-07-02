@@ -11,14 +11,14 @@ EXPORTS:
   buildArgv(req: WorkRequest) -> list[str]
   prepareExternalRepo(req: WorkRequest) -> None  -- Clone repo_url into a managed workspace and mutate req.work_dir for this launch.
   activeRun() -> Optional[TaskState]  -- The latest task iff it's still active
-  newestTaskSince(ts: float) -> Optional[str]  -- task_id of the newest state file created at/after `ts` (with ~2s mtime fuzz for filesys…
+  waitForLaunch(launch_id: str, *, timeout_s: float=10.0, poll_s: float=0.5) -> Optional[str]  -- Launch handshake: poll state/launch/<launch_id>.json (written by main.py --launch-id)
   spawn(req: WorkRequest) -> int
   buildResumeArgv(task_id: str) -> list[str]
   taskExists(task_id: str) -> bool
   spawnResume(task_id: str) -> int
-  launchOrError(req: WorkRequest) -> str  -- Validate -> block-if-active -> spawn -> confirm
+  launchOrError(req: WorkRequest) -> str  -- Validate -> lock -> block-if-active -> spawn -> handshake-confirm
   resumeOrError(task_id: str) -> str  -- Resume an existing task by id (block if a run is active)
-DEPENDS-ON: config, notifications.commands, platform_core.ops.external_project, platform_core.orchestration, platform_core.runtime.control, state.task
+DEPENDS-ON: config, notifications.commands, platform_core.core, platform_core.ops.external_project, platform_core.orchestration, platform_core.runtime.control, platform_core.runtime.heartbeat, state.task, state.task_io
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_work_launcher.py
 """
@@ -29,7 +29,9 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +39,7 @@ from typing import Optional
 
 import config
 from notifications import commands
+from platform_core.core import fsio
 from platform_core.orchestration import work_profile
 from state.task import TaskState
 
@@ -83,6 +86,7 @@ class WorkRequest:
     no_pr: bool = False
     night_mode: bool = False
     work_profile: Optional[str] = None
+    launch_id: Optional[str] = None   # handshake token (set by launchOrError)
 
 
 def parseHours(raw) -> float:
@@ -184,6 +188,8 @@ def buildArgv(req: WorkRequest) -> list[str]:
         argv += ["--repo-url", req.repo_url]
     if req.repo_ref:
         argv += ["--repo-ref", req.repo_ref]
+    if req.launch_id:
+        argv += ["--launch-id", req.launch_id]
     return argv
 
 
@@ -198,77 +204,59 @@ def prepareExternalRepo(req: WorkRequest) -> None:
 
 
 def activeRun() -> Optional[TaskState]:
-    """The latest task iff it's still active. Auto-aborts stale tasks whose process died
-    without updating state (e.g. killed mid-elaboration, left in 'created'/'planning')."""
+    """The latest task iff it's still active. A stale task (its orchestrator process is
+    provably dead) is reaped via the bus + the single-writer escape hatch -- this bot-process
+    module NEVER writes task JSON directly."""
     state = commands.resolveTargetTask()
     if not commands.isRunActive(state):
         return None
     if _isStale(state):
-        try:
-            # The orchestrator process is gone -> also request a real abort on the bus (belt and
-            # suspenders) before marking the JSON aborted, then let a fresh run take over.
-            from platform_core.runtime.control import ControlBus
-            ControlBus(state.task_id).requestAbort()
-            state.setStatus("aborted")
-            LOG.warning("auto-aborted stale task %s (process dead / no heartbeat)", state.task_id[:8])
-        except Exception:  # noqa: BLE001
-            pass
+        _reapStale(state)
         return None
     return state
 
 
-def _runPidAlive(state: TaskState) -> Optional[bool]:
-    """Tri-state liveness of the orchestrator process recorded in the task: True alive, False the
-    PID is gone, None when no/garbage PID was recorded (caller falls back to the mtime heuristic).
-    main.py stamps meta['run_pid'] before runFull, so a LIVE run -- even one quiet for >30min during
-    a long subtask or a Pro token-limit pause -- is never misread as stale and double-spawned over."""
-    pid = (getattr(state, "meta", {}) or {}).get("run_pid")
-    if not isinstance(pid, int) or pid <= 0:
-        return None
-    try:
-        import psutil
-        return psutil.pid_exists(pid)
-    except Exception:  # noqa: BLE001 -- psutil missing/errored -> unknown, fall back to mtime
-        return None
-
-
-# A task is stale if its state file hasn't been touched in this many seconds.
-# 'created' tasks (died in elaboration) stale out faster; executing tasks use RUN_STALL_SECONDS.
-_STALE_CREATED_SECONDS: int = 300    # 5 min — elaboration should never take this long
-_STALE_SECONDS: int = int(getattr(config, "RUN_STALL_SECONDS", 1800))
-
-
 def _isStale(state: Optional[TaskState]) -> bool:
-    """True when the orchestrator process is dead. PID liveness is authoritative; the mtime
-    heuristic is only a fallback for legacy tasks with no recorded run_pid."""
+    """True when the orchestrator process behind this task is provably dead: no fresh
+    heartbeat AND its recorded pid is gone (heartbeat.isRunAlive is the ONE liveness
+    primitive -- the old mtime heuristic is deleted). A live run, even one quiet for
+    >30 min during a long subtask, is never misread as stale."""
     if state is None:
         return False
-    alive = _runPidAlive(state)
-    if alive is True:
-        return False            # process is running -> NEVER stale, no matter how quiet
-    if alive is False:
-        return True             # the recorded orchestrator PID is gone -> the run is dead
-    try:                        # no/unknown PID -> fall back to the mtime heuristic
-        mtime = (config.STATE_DIR / f"{state.task_id}.json").stat().st_mtime
-        age = time.time() - mtime
-        cutoff = (_STALE_CREATED_SECONDS if state.meta.get("status") in ("created", "planning")
-                  else _STALE_SECONDS)
-        return age > cutoff
-    except OSError:
-        return False
+    from platform_core.runtime.heartbeat import isRunAlive
+    return not isRunAlive(state.task_id)
 
 
-def newestTaskSince(ts: float) -> Optional[str]:
-    """task_id of the newest state file created at/after `ts` (with ~2s mtime fuzz for filesystem coarseness) (used to confirm a launch)."""
-    best_id, best_m = None, ts - 1
+def _reapStale(state: TaskState) -> None:
+    """Dead-run cleanup from the bot process: request abort on the bus (belt + suspenders,
+    it persists independently of task JSON), leave a breadcrumb op, then finalize through
+    task_io.reapDeadRun -- which re-checks liveness and refuses unless the run is dead."""
     try:
-        for f in config.STATE_DIR.glob("*.json"):
-            m = f.stat().st_mtime
-            if m >= ts - 2.0 and m > best_m:
-                best_m, best_id = m, f.stem
-    except OSError:
-        return None
-    return best_id
+        from platform_core.runtime.control import ControlBus
+        from state import task_io
+        bus = ControlBus(state.task_id)
+        bus.requestAbort()
+        bus.pushOp({"op": "mark_stale", "reason": "launcher: no heartbeat and pid dead"})
+        reaped = task_io.reapDeadRun(state.task_id)
+        LOG.warning("stale task %s: abort requested on bus, reaped=%s",
+                    state.task_id[:8], reaped)
+    except Exception:  # noqa: BLE001 -- cleanup is best-effort; the next poll retries
+        LOG.warning("stale-task reap failed (ignored)", exc_info=True)
+
+
+def waitForLaunch(launch_id: str, *, timeout_s: float = 10.0,
+                  poll_s: float = 0.5) -> Optional[str]:
+    """Launch handshake: poll state/launch/<launch_id>.json (written by main.py --launch-id)
+    for the spawned run's task_id. Replaces newest-state-file polling, which could confirm
+    the WRONG task when two writers raced."""
+    p = config.LAUNCH_DIR / f"{launch_id}.json"
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        data = fsio.loadJson(p, default=None)
+        if isinstance(data, dict) and data.get("task_id"):
+            return str(data["task_id"])
+        time.sleep(poll_s)
+    return None
 
 
 def _spawnArgv(argv: list[str], tag: str) -> int:
@@ -312,33 +300,65 @@ def spawnResume(task_id: str) -> int:
     return _spawnArgv(buildResumeArgv(task_id), "resume")
 
 
-def launchOrError(req: WorkRequest) -> str:
-    """Validate -> block-if-active -> spawn -> confirm. Returns the user-facing message.
-    BLOCKING (Popen + up to ~10s poll); async callers must run via asyncio.to_thread."""
-    errs = validate(req)
-    if errs:
-        return "❌ " + "  ".join(errs)
+# Double-launch guard: an in-process lock (bot cogs + views can race) plus a cross-process
+# O_EXCL sidecar so the check-active -> spawn -> confirm window is atomic even across a bot
+# restart or a second launcher process.
+_LAUNCH_LOCK = threading.Lock()
+
+
+def _launchLockPath() -> Path:
+    return config.LAUNCH_DIR / "launching.lock"
+
+
+def _lockOwnerAlive(pid: int) -> bool:
+    try:
+        import psutil
+        return psutil.pid_exists(pid)
+    except Exception:  # noqa: BLE001 -- unknowable -> assume alive (never steal a live lock)
+        return True
+
+
+def _doLaunch(req: WorkRequest) -> "tuple[Optional[int], Optional[str], Optional[str]]":
+    """Inside-the-lock launch body: returns (pid, task_id, error_message)."""
     active = activeRun()
     if active is not None:
-        return (f"⛔ A run is already active (`{active.task_id[:8]}` · "
-                f"`{active.meta.get('status')}`). Abort it first.")
+        return None, None, (f"⛔ A run is already active (`{active.task_id[:8]}` · "
+                            f"`{active.meta.get('status')}`). Abort it first.")
     try:
         prepareExternalRepo(req)
     except Exception as e:  # noqa: BLE001
         LOG.exception("external repo clone failed")
-        return f"❌ Clone failed: {e}"
-    t0 = time.time()
+        return None, None, f"❌ Clone failed: {e}"
+    req.launch_id = req.launch_id or uuid.uuid4().hex[:12]
     try:
         pid = spawn(req)
     except Exception as e:  # noqa: BLE001
         LOG.exception("spawn failed")
-        return f"❌ Launch failed: {e}"
-    task_id = None
-    for _ in range(20):
-        task_id = newestTaskSince(t0)
-        if task_id:
-            break
-        time.sleep(0.5)
+        return None, None, f"❌ Launch failed: {e}"
+    return pid, waitForLaunch(req.launch_id), None
+
+
+def launchOrError(req: WorkRequest) -> str:
+    """Validate -> lock -> block-if-active -> spawn -> handshake-confirm. Returns the
+    user-facing message. BLOCKING (Popen + up to ~10s handshake poll); async callers must
+    run via asyncio.to_thread."""
+    errs = validate(req)
+    if errs:
+        return "❌ " + "  ".join(errs)
+    if not _LAUNCH_LOCK.acquire(blocking=False):
+        return "⛔ Another launch is already in progress."
+    try:
+        if not fsio.tryAcquireLock(_launchLockPath(), stale_after=120.0,
+                                   owner_alive=_lockOwnerAlive):
+            return "⛔ Another launch is already in progress (cross-process lock held)."
+        try:
+            pid, task_id, err = _doLaunch(req)
+        finally:
+            fsio.releaseLock(_launchLockPath())
+    finally:
+        _LAUNCH_LOCK.release()
+    if err:
+        return err
     web = f"http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/"
     if task_id:
         msg = (f"✅ Launched run `{task_id[:8]}` (pid {pid}) · mode `{req.mode}` · "
@@ -360,16 +380,28 @@ def launchOrError(req: WorkRequest) -> str:
 
 
 def resumeOrError(task_id: str) -> str:
-    """Resume an existing task by id (block if a run is active). Returns the user message."""
+    """Resume an existing task by id (block if a run is active). Returns the user message.
+    Shares the launch locks so a /work and a /resume can never double-spawn."""
     if not taskExists(task_id):
         return f"❌ No such task `{task_id}`."
-    active = activeRun()
-    if active is not None:
-        return f"⛔ A run is already active (`{active.task_id[:8]}`). Abort it first."
+    if not _LAUNCH_LOCK.acquire(blocking=False):
+        return "⛔ Another launch is already in progress."
     try:
-        pid = spawnResume(task_id)
-    except Exception as e:  # noqa: BLE001
-        LOG.exception("resume spawn failed")
-        return f"❌ Resume failed: {e}"
+        if not fsio.tryAcquireLock(_launchLockPath(), stale_after=120.0,
+                                   owner_alive=_lockOwnerAlive):
+            return "⛔ Another launch is already in progress (cross-process lock held)."
+        try:
+            active = activeRun()
+            if active is not None:
+                return f"⛔ A run is already active (`{active.task_id[:8]}`). Abort it first."
+            try:
+                pid = spawnResume(task_id)
+            except Exception as e:  # noqa: BLE001
+                LOG.exception("resume spawn failed")
+                return f"❌ Resume failed: {e}"
+        finally:
+            fsio.releaseLock(_launchLockPath())
+    finally:
+        _LAUNCH_LOCK.release()
     web = f"http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/"
     return f"♻️ Resuming `{task_id[:8]}` (pid {pid})\n{web}"

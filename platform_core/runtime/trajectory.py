@@ -30,7 +30,7 @@ from platform_core.core import clock, jsonl_io
 LOG = config.getLogger("runtime.trajectory")
 
 SPAN_KINDS = ("architect", "planner", "executor", "tool", "verify",
-              "adversary", "replan", "remediation")
+              "adversary", "replan", "remediation", "brain")
 
 
 class Recorder:
@@ -46,14 +46,16 @@ class Recorder:
     def _path(self) -> Path:
         return self._root / f"{self.run_id}.jsonl"
 
-    def openSpan(self, kind: str, parent_id: Optional[str], attrs: Optional[dict] = None) -> str:
-        """Open a span; returns its step_id (a child of parent_id, or a root span)."""
+    def openSpan(self, kind: str, parent_id: Optional[str], attrs: Optional[dict] = None,
+                 act: Optional[str] = None) -> str:
+        """Open a span; returns its step_id (a child of parent_id, or a root span).
+        ``act`` is the structured brain-act tag (R5) -- free telemetry on every brain span."""
         step_id = uuid.uuid4().hex
         try:
             span = {
                 "step_id": step_id, "parent_id": parent_id,
                 "kind": kind if kind in SPAN_KINDS else "tool",
-                "attrs": dict(attrs or {}), "opened_at": clock.nowIsoLocal(),
+                "attrs": dict(attrs or {}), "act": act, "opened_at": clock.nowIsoLocal(),
                 "closed_at": None, "usage": None, "cost_usd": None,
             }
             with self._lock:
@@ -61,7 +63,8 @@ class Recorder:
                 self._order.append(step_id)
                 jsonl_io.appendRecord(self._path(), {
                     "ev": "open", "step_id": step_id, "parent_id": parent_id,
-                    "kind": span["kind"], "attrs": span["attrs"], "at": span["opened_at"],
+                    "kind": span["kind"], "attrs": span["attrs"], "act": act,
+                    "at": span["opened_at"],
                 })
         except Exception as e:  # noqa: BLE001 -- recorder must never crash a run
             LOG.warning("trajectory.openSpan failed (ignored): %s", e)
@@ -123,7 +126,7 @@ def _replayEvents(events: list) -> list:
         if ev.get("ev") == "open":
             spans[sid] = {
                 "step_id": sid, "parent_id": ev.get("parent_id"), "kind": ev.get("kind"),
-                "attrs": ev.get("attrs") or {}, "opened_at": ev.get("at"),
+                "attrs": ev.get("attrs") or {}, "act": ev.get("act"), "opened_at": ev.get("at"),
                 "closed_at": None, "usage": None, "cost_usd": None,
             }
             order.append(sid)

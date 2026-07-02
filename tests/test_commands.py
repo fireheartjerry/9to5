@@ -103,6 +103,24 @@ class TestApplyCommand(unittest.TestCase):
         commands.applyCommand(bus, st, commands.Command("abort", ""))
         bus.requestAbort.assert_called_once()
 
+    def test_mode_is_bus_only(self):
+        # single-writer rule: '!mode' also runs in the BOT process, so it must queue a
+        # plan op -- never call state.setControlMode (a direct task-JSON write) itself.
+        st = _state("executing")
+        bus = mock.Mock()
+        with mock.patch.object(type(st), "setControlMode",
+                               side_effect=AssertionError("bot wrote task JSON directly")):
+            out = commands.applyCommand(bus, st, commands.Command("mode", "gated"))
+        bus.pushOp.assert_called_once_with({"op": "set_mode", "mode": "gated"})
+        self.assertIn("gated", out)
+
+    def test_mode_rejects_garbage(self):
+        st = _state("executing")
+        bus = mock.Mock()
+        out = commands.applyCommand(bus, st, commands.Command("mode", "turbo"))
+        self.assertIn("usage", out.lower())
+        bus.pushOp.assert_not_called()
+
     def test_none_state_returns_no_task(self):
         out = commands.applyCommand(mock.Mock(), None, commands.Command("status", ""))
         self.assertEqual(out, commands.NO_TASK)

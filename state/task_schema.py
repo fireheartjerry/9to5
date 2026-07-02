@@ -70,7 +70,6 @@ class TaskState:
                 "subtask_seq": 0,
                 "universe": None,
                 "epoch": None,
-                "state_epoch": 0,
                 "discovery_report": None,
                 "codename": _gen_codename(),
                 "tunnel_url": None,

@@ -90,28 +90,28 @@
           "kind": "function",
           "signature": "(review_type: str='subtask') -> str",
           "summary": "The system prompt for a given touchpoint: the one schema + a type-specific lead-in.",
-          "lineno": 81
+          "lineno": 78
         },
         {
           "name": "isCdpTransient",
           "kind": "function",
           "signature": "(exc: BaseException) -> bool",
           "summary": "True when ``exc`` looks like a transient CDP/network hiccup worth retrying.",
-          "lineno": 87
+          "lineno": 84
         },
         {
           "name": "shouldTrigger",
           "kind": "function",
           "signature": "(executor_output: str, subtask_position: int, attempt_count: int=1, pre_pr: bool=False) -> tuple[bool, str]",
           "summary": "Return ``(triggered, reason)``.",
-          "lineno": 93
+          "lineno": 90
         },
         {
           "name": "review",
           "kind": "function",
           "signature": "(subtask_title: str, trigger_reason: str, executor_output: str, *, ollama_chat: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict",
           "summary": "Critique the executor output and return a verdict dict.",
-          "lineno": 231
+          "lineno": 232
         }
       ],
       "depends_on": [
@@ -135,7 +135,7 @@
           "kind": "function",
           "signature": "(goal_elaborated: str, chat=None, discovery_report=None, work_profile=None) -> str",
           "summary": "Ollama authors the prompt that will be sent to Claude Code CLI.",
-          "lineno": 53
+          "lineno": 81
         }
       ],
       "depends_on": [
@@ -453,9 +453,9 @@
         {
           "name": "run_lens_panel",
           "kind": "function",
-          "signature": "(digest: dict) -> List[Finding]",
+          "signature": "(digest: dict, chat=None) -> List[Finding]",
           "summary": "Run all lenses in parallel",
-          "lineno": 253
+          "lineno": 233
         }
       ],
       "depends_on": [
@@ -510,9 +510,9 @@
         {
           "name": "synthesize",
           "kind": "function",
-          "signature": "(findings: List[Finding]) -> DiscoveryReport",
+          "signature": "(findings: List[Finding], chat=None) -> DiscoveryReport",
           "summary": "Rank and filter findings into a DiscoveryReport",
-          "lineno": 116
+          "lineno": 98
         }
       ],
       "depends_on": [
@@ -535,21 +535,22 @@
         {
           "name": "elaborate",
           "kind": "function",
-          "signature": "(goal_raw: str) -> str",
+          "signature": "(goal_raw: str, chat=None) -> str",
           "summary": "Return the elaborated specification for ``goal_raw`` (never raises",
-          "lineno": 77
+          "lineno": 58
         },
         {
           "name": "extractUniverse",
           "kind": "function",
-          "signature": "(goal_raw: str, goal_elaborated: str, work_dir: str) -> dict",
+          "signature": "(goal_raw: str, goal_elaborated: str, work_dir: str, chat=None) -> dict",
           "summary": "Extract the operating universe (scope boundary) from the goal (with safe defaults).",
-          "lineno": 104
+          "lineno": 87
         }
       ],
       "depends_on": [
         "config",
-        "knowledge"
+        "knowledge",
+        "llm_io"
       ],
       "side_effects": [
         "unannotated"
@@ -613,7 +614,7 @@
       "callers": [
         "agents.browser_executor",
         "agents.native_executor",
-        "agents.verifier_runner",
+        "agents.verification",
         "orchestrator",
         "platform_core.ops.health",
         "platform_core.orchestration.safety_mixin",
@@ -1076,9 +1077,9 @@
         {
           "name": "replan",
           "kind": "function",
-          "signature": "(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, executor_output: str, self_referential: bool=False, remaining_hours: 'float | None'=None, work_profile=None) -> dict",
+          "signature": "(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, executor_output: str, self_referential: bool=False, remaining_hours: 'float | None'=None, work_profile=None, chat=None) -> dict",
           "summary": "Return the replan decision dict (always well-formed).",
-          "lineno": 54
+          "lineno": 45
         }
       ],
       "depends_on": [
@@ -1310,54 +1311,143 @@
         "agents.trace_replay_cli"
       ]
     },
+    "agents.verification": {
+      "path": "agents/verification.py",
+      "purpose": "Verification with ONE owner (R10): the typed Receipt pipeline.",
+      "exports": [
+        {
+          "name": "Verdict",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 58
+        },
+        {
+          "name": "Receipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "The single typed verification result",
+          "lineno": 66
+        },
+        {
+          "name": "annotate",
+          "kind": "function",
+          "signature": "(receipt: Receipt, key: str, value) -> None",
+          "summary": "Attach a non-binding annotation (envelope / independent verify / adversary).",
+          "lineno": 86
+        },
+        {
+          "name": "VResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "One-release compat shim: the legacy vresult dict shape, carrying the typed Receipt.",
+          "lineno": 91
+        },
+        {
+          "name": "verdictFor",
+          "kind": "function",
+          "signature": "(rc, output: str, expect) -> 'tuple[Verdict, tuple, tuple]'",
+          "summary": "PURE function of (rc, output, expect) -> (verdict, matched, missing).",
+          "lineno": 116
+        },
+        {
+          "name": "VerifyCancelled",
+          "kind": "class",
+          "signature": "",
+          "summary": "cancel_check fired while the acceptance command was running.",
+          "lineno": 169
+        },
+        {
+          "name": "runReceipt",
+          "kind": "function",
+          "signature": "(verify: Optional[dict], work_dir: str, executor_result: dict, *, declared_targets=None, cancel_check=None) -> Receipt",
+          "summary": "THE verification pipeline (single owner)",
+          "lineno": 320
+        },
+        {
+          "name": "receiptToVResult",
+          "kind": "function",
+          "signature": "(receipt: Receipt) -> VResult",
+          "summary": "The legacy vresult dict shape from a Receipt (compat shim, one release).",
+          "lineno": 386
+        }
+      ],
+      "depends_on": [
+        "agents.executor",
+        "agents.verification_diff",
+        "agents.verifier_sanitize",
+        "config"
+      ],
+      "side_effects": [
+        "runs the acceptance subprocess",
+        "reads git status"
+      ],
+      "test": [],
+      "callers": [
+        "agents.verifier",
+        "agents.verifier_runner",
+        "platform_core.orchestration.evidence_gate"
+      ]
+    },
+    "agents.verification_diff": {
+      "path": "agents/verification_diff.py",
+      "purpose": "Diff-grounding stage of the verification Receipt pipeline (R10c).",
+      "exports": [
+        {
+          "name": "changedFiles",
+          "kind": "function",
+          "signature": "(work_dir: str) -> 'Optional[set[str]]'",
+          "summary": "Changed + untracked files per ``git status --porcelain`` (paths normalized to",
+          "lineno": 23
+        },
+        {
+          "name": "checkDeclaredTargets",
+          "kind": "function",
+          "signature": "(work_dir: str, declared: 'tuple[str, ...]', cmd: Optional[str], changed: 'Optional[set[str]]') -> 'tuple[bool, str]'",
+          "summary": "Diff-grounded evaluation (R10c): the diff must intersect the declared target files,",
+          "lineno": 56
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.core"
+      ],
+      "side_effects": [
+        "reads git status"
+      ],
+      "test": [],
+      "callers": [
+        "agents.verification"
+      ]
+    },
     "agents.verifier": {
       "path": "agents/verifier.py",
-      "purpose": "Verifier -- run the brain-authored verification check for a subtask.",
+      "purpose": "Verifier facade -- the ONE owner surface for verification (R10).",
       "exports": [
         {
           "name": "extractRequirements",
           "kind": "function",
           "signature": "(goal: str) -> list[str]",
           "summary": "Pull the EXPLICITLY enumerated deliverables out of a goal.",
-          "lineno": 72
+          "lineno": 53
         },
         {
           "name": "primaryTargetFile",
           "kind": "function",
           "signature": "(goal: str) -> Optional[str]",
           "summary": "The single distinct file path a goal targets, else None (zero or several files named).",
-          "lineno": 105
-        },
-        {
-          "name": "requirementMarkers",
-          "kind": "function",
-          "signature": "(phrase: str) -> list[str]",
-          "summary": "Lowercased, distinctive content-word markers for one requirement phrase.",
-          "lineno": 117
-        },
-        {
-          "name": "buildContentScanVerify",
-          "kind": "function",
-          "signature": "(marker_groups: list[list[str]], target_path: str) -> dict",
-          "summary": "A compound, deterministic, stdlib-only verify: the target file's (lowercased) source mu…",
-          "lineno": 140
-        },
-        {
-          "name": "buildRequirementsVerify",
-          "kind": "function",
-          "signature": "(goal: str, target_path: str) -> Optional[dict]",
-          "summary": "Synthesize a compound content-scan verify for an enumerated multi-deliverable `goal` ag…",
-          "lineno": 165
+          "lineno": 86
         },
         {
           "name": "isStrictVerify",
           "kind": "function",
           "signature": "(verify: Optional[dict]) -> bool",
           "summary": "True for a deliberate multi-requirement verify (compound expect or ``strict`` flag)",
-          "lineno": 185
+          "lineno": 98
         }
       ],
       "depends_on": [
+        "agents.verification",
         "agents.verifier_runner",
         "agents.verifier_sanitize",
         "config"
@@ -1366,7 +1456,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_independent_verifier.py"
+        "tests/test_verifier.py"
       ],
       "callers": [
         "learning.eval_runner",
@@ -1383,24 +1473,27 @@
     },
     "agents.verifier_runner": {
       "path": "agents/verifier_runner.py",
-      "purpose": "Verification runner: execute brain-authored verify commands and evaluate results.",
+      "purpose": "Verification runner facade -- thin delegate to the ONE typed Receipt pipeline.",
       "exports": [
         {
           "name": "runVerification",
           "kind": "function",
-          "signature": "(verify: Optional[dict], work_dir: str, executor_result: dict) -> dict",
-          "summary": "Return a verify_result dict: {passed, cmd, expect, returncode, stdout, stderr}.",
-          "lineno": 180
+          "signature": "(verify: Optional[dict], work_dir: str, executor_result: dict, *, declared_targets=None, cancel_check=None) -> dict",
+          "summary": "Run the ONE Receipt pipeline and return the legacy vresult dict shape.",
+          "lineno": 45
         }
       ],
       "depends_on": [
-        "agents.executor",
+        "agents.verification",
         "config"
       ],
       "side_effects": [
-        "unannotated"
+        "runs the acceptance subprocess",
+        "reads git status"
       ],
-      "test": [],
+      "test": [
+        "tests/test_verifier_runner.py"
+      ],
       "callers": [
         "agents.verifier"
       ]
@@ -1414,7 +1507,7 @@
           "kind": "function",
           "signature": "(verify: Optional[dict]) -> Optional[dict]",
           "summary": "Drop a structurally-unreliable brain-authored verify so the subtask falls back to",
-          "lineno": 83
+          "lineno": 90
         }
       ],
       "depends_on": [
@@ -1425,6 +1518,7 @@
       ],
       "test": [],
       "callers": [
+        "agents.verification",
         "agents.verifier"
       ]
     },
@@ -1517,6 +1611,8 @@
         "agents.trace_replay",
         "agents.trace_replay_cli",
         "agents.trace_replay_events",
+        "agents.verification",
+        "agents.verification_diff",
         "agents.verifier",
         "agents.verifier_runner",
         "agents.verifier_sanitize",
@@ -1555,6 +1651,7 @@
         "learning.solution_cache",
         "learning.toolsmith",
         "learning.wisdom",
+        "llm_io",
         "main",
         "memory.exp_index",
         "memory.experience_evolution",
@@ -1636,6 +1733,7 @@
         "platform_core.orchestration.branch_runner",
         "platform_core.orchestration.compaction",
         "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.control_ops",
         "platform_core.orchestration.dual_ledger_planner",
         "platform_core.orchestration.dual_ledger_replan",
         "platform_core.orchestration.evidence_gate",
@@ -1648,6 +1746,7 @@
         "platform_core.orchestration.llm_mixin",
         "platform_core.orchestration.parallel_safety",
         "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.plan_prompts",
         "platform_core.orchestration.plan_shape_check",
         "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.review_mixin",
@@ -1664,6 +1763,7 @@
         "platform_core.orchestration.winner_merge",
         "platform_core.runtime.control",
         "platform_core.runtime.cost_budget",
+        "platform_core.runtime.heartbeat",
         "platform_core.runtime.resilience",
         "platform_core.runtime.trajectory",
         "platform_core.runtime.worktree",
@@ -3317,29 +3417,65 @@
       ],
       "callers": [
         "notifications.bot.cogs.log_cog",
-        "platform_core.orchestration.run_phase_mixin"
+        "platform_core.orchestration.run_phase_outcome"
       ]
     },
     "llm_io": {
       "path": "llm_io.py",
-      "purpose": "Robust extraction from an Ollama chat response.",
+      "purpose": "ONE LLM seam: the memoized Ollama client, the single blessed retry/backoff chat,",
       "exports": [
+        {
+          "name": "getClient",
+          "kind": "function",
+          "signature": "()",
+          "summary": "Lazily build (and memoize) THE Ollama client",
+          "lineno": 51
+        },
+        {
+          "name": "chatAcceptsAct",
+          "kind": "function",
+          "signature": "(chat_callable) -> bool",
+          "summary": "True when ``chat_callable`` can receive the structured ``act`` tag (an explicit ``act``",
+          "lineno": 62
+        },
+        {
+          "name": "callChat",
+          "kind": "function",
+          "signature": "(chat_fn, system: str, user: str, *, act: str, **kw)",
+          "summary": "Invoke an INJECTED chat callable ``(system, user, ...)`` forwarding ``act`` only when t…",
+          "lineno": 75
+        },
+        {
+          "name": "chat",
+          "kind": "function",
+          "signature": "(system: str, user: str, *, act: str, model=None, want_json: bool=False, retries: int=3, client=None)",
+          "summary": "The single blessed LLM call (R5): retry/backoff + empty-completion salvage.",
+          "lineno": 84
+        },
         {
           "name": "responseText",
           "kind": "function",
           "signature": "(resp) -> str",
           "summary": "``resp['message']['content']`` as text",
-          "lineno": 54
+          "lineno": 153
+        },
+        {
+          "name": "parseJsonLoose",
+          "kind": "function",
+          "signature": "(text: str)",
+          "summary": "THE tolerant JSON ladder (promoted from brain_io.parseJsonText",
+          "lineno": 216
         },
         {
           "name": "responseJson",
           "kind": "function",
           "signature": "(resp)",
-          "summary": "Parse the JSON body of a chat response",
-          "lineno": 100
+          "summary": "Parse the JSON body of a chat response via the ONE loose ladder",
+          "lineno": 239
         }
       ],
       "depends_on": [
+        "config",
         "notifications.lane_feed"
       ],
       "side_effects": [
@@ -3355,12 +3491,14 @@
         "agents.clarifier",
         "agents.discovery.lenses",
         "agents.discovery.synthesis",
+        "agents.elaborator",
         "agents.replanner",
         "notifications.ask",
         "notifications.brain_dialogue",
         "notifications.briefing",
         "notifications.instinct",
-        "platform_core.orchestration.brain_io"
+        "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.llm_mixin"
       ]
     },
     "main": {
@@ -3372,7 +3510,7 @@
           "kind": "function",
           "signature": "() -> int",
           "summary": "",
-          "lineno": 307
+          "lineno": 324
         }
       ],
       "depends_on": [
@@ -3382,11 +3520,14 @@
         "orchestrator.Orchestrator",
         "orchestrator.refreshClaudeKnowledge",
         "platform_core.cli.main_cli",
+        "platform_core.core",
         "platform_core.ops.doctor",
         "platform_core.ops.external_project",
         "platform_core.ops.health",
         "platform_core.orchestration",
+        "platform_core.runtime",
         "platform_core.runtime.control",
+        "platform_core.runtime.heartbeat",
         "platform_core.runtime.resilience",
         "platform_core.simulator.simulation",
         "state.task",
@@ -3527,7 +3668,7 @@
         "platform_core.orchestration.plan_mixin",
         "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.run_loop_mixin",
-        "platform_core.orchestration.run_phase_mixin",
+        "platform_core.orchestration.run_phase_outcome",
         "platform_core.orchestration.step_resume",
         "platform_core.orchestration.step_sink",
         "society.society_batch",
@@ -5024,7 +5165,7 @@
           "kind": "function",
           "signature": "() -> None",
           "summary": "",
-          "lineno": 192
+          "lineno": 195
         }
       ],
       "depends_on": [
@@ -5035,6 +5176,7 @@
         "notifications.views",
         "notifications.views_feedback",
         "notifications.views_terminal",
+        "platform_core.runtime",
         "platform_core.runtime.control"
       ],
       "side_effects": [
@@ -5401,7 +5543,7 @@
           "kind": "function",
           "signature": "(bus: ControlBus, state: TaskState, cmd: Command) -> str",
           "summary": "Perform the bus mutation and return human markdown text ('' for silent control ops).",
-          "lineno": 283
+          "lineno": 285
         }
       ],
       "depends_on": [
@@ -6480,7 +6622,7 @@
         "tests/test_reflection_post.py"
       ],
       "callers": [
-        "platform_core.orchestration.run_phase_mixin"
+        "platform_core.orchestration.run_phase_outcome"
       ]
     },
     "notifications.run_arc": {
@@ -6547,7 +6689,8 @@
       "callers": [
         "notifications.commands",
         "platform_core.orchestration.dual_ledger_replan",
-        "platform_core.orchestration.run_phase_mixin"
+        "platform_core.orchestration.run_phase_mixin",
+        "platform_core.orchestration.run_phase_outcome"
       ]
     },
     "notifications.slash": {
@@ -6609,49 +6752,50 @@
           "kind": "function",
           "signature": "() -> dict",
           "summary": "",
-          "lineno": 53
+          "lineno": 51
         },
         {
           "name": "write_nav",
           "kind": "function",
           "signature": "(page_idx: int, mode: str, frozen: bool) -> None",
           "summary": "",
-          "lineno": 65
+          "lineno": 63
         },
         {
           "name": "bump_nav",
           "kind": "function",
           "signature": "(*, delta_page: int=0, toggle_raw: bool=False, toggle_freeze: bool=False, page_count: 'int | None'=None) -> dict",
           "summary": "",
-          "lineno": 71
+          "lineno": 69
         },
         {
           "name": "read_mirror",
           "kind": "function",
           "signature": "() -> dict",
           "summary": "",
-          "lineno": 85
+          "lineno": 83
         },
         {
           "name": "write_mirror",
           "kind": "function",
           "signature": "(body: str, page_count: int, lanes: list) -> None",
           "summary": "",
-          "lineno": 92
+          "lineno": 90
         },
         {
           "name": "clear",
           "kind": "function",
           "signature": "() -> None",
           "summary": "",
-          "lineno": 97
+          "lineno": 95
         }
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.core"
       ],
       "side_effects": [
-        "writes state/terminal_nav.json + state/terminal_mirror.json"
+        "writes state/ipc/terminal_nav.json + state/ipc/terminal_mirror.json"
       ],
       "test": [
         "tests/test_terminal_ipc.py"
@@ -7303,107 +7447,110 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 75
+          "lineno": 78
         },
         {
           "name": "parseHours",
           "kind": "function",
           "signature": "(raw) -> float",
           "summary": "Tolerant parse ('2', '2h', '1.5')",
-          "lineno": 88
+          "lineno": 92
         },
         {
           "name": "validate",
           "kind": "function",
           "signature": "(req: WorkRequest) -> list[str]",
           "summary": "",
-          "lineno": 105
+          "lineno": 109
         },
         {
           "name": "externalReadiness",
           "kind": "function",
           "signature": "(req: WorkRequest) -> list[str]",
           "summary": "Warn about external-project setup gaps that degrade PR output, without blocking launch.",
-          "lineno": 131
+          "lineno": 135
         },
         {
           "name": "buildArgv",
           "kind": "function",
           "signature": "(req: WorkRequest) -> list[str]",
           "summary": "",
-          "lineno": 164
+          "lineno": 168
         },
         {
           "name": "prepareExternalRepo",
           "kind": "function",
           "signature": "(req: WorkRequest) -> None",
           "summary": "Clone repo_url into a managed workspace and mutate req.work_dir for this launch.",
-          "lineno": 190
+          "lineno": 196
         },
         {
           "name": "activeRun",
           "kind": "function",
           "signature": "() -> Optional[TaskState]",
           "summary": "The latest task iff it's still active",
-          "lineno": 200
+          "lineno": 206
         },
         {
-          "name": "newestTaskSince",
+          "name": "waitForLaunch",
           "kind": "function",
-          "signature": "(ts: float) -> Optional[str]",
-          "summary": "task_id of the newest state file created at/after `ts` (with ~2s mtime fuzz for filesys…",
-          "lineno": 261
+          "signature": "(launch_id: str, *, timeout_s: float=10.0, poll_s: float=0.5) -> Optional[str]",
+          "summary": "Launch handshake: poll state/launch/<launch_id>.json (written by main.py --launch-id)",
+          "lineno": 247
         },
         {
           "name": "spawn",
           "kind": "function",
           "signature": "(req: WorkRequest) -> int",
           "summary": "",
-          "lineno": 299
+          "lineno": 287
         },
         {
           "name": "buildResumeArgv",
           "kind": "function",
           "signature": "(task_id: str) -> list[str]",
           "summary": "",
-          "lineno": 303
+          "lineno": 291
         },
         {
           "name": "taskExists",
           "kind": "function",
           "signature": "(task_id: str) -> bool",
           "summary": "",
-          "lineno": 307
+          "lineno": 295
         },
         {
           "name": "spawnResume",
           "kind": "function",
           "signature": "(task_id: str) -> int",
           "summary": "",
-          "lineno": 311
+          "lineno": 299
         },
         {
           "name": "launchOrError",
           "kind": "function",
           "signature": "(req: WorkRequest) -> str",
-          "summary": "Validate -> block-if-active -> spawn -> confirm",
-          "lineno": 315
+          "summary": "Validate -> lock -> block-if-active -> spawn -> handshake-confirm",
+          "lineno": 341
         },
         {
           "name": "resumeOrError",
           "kind": "function",
           "signature": "(task_id: str) -> str",
           "summary": "Resume an existing task by id (block if a run is active)",
-          "lineno": 362
+          "lineno": 382
         }
       ],
       "depends_on": [
         "config",
         "notifications.commands",
+        "platform_core.core",
         "platform_core.ops.external_project",
         "platform_core.orchestration",
         "platform_core.runtime.control",
-        "state.task"
+        "platform_core.runtime.heartbeat",
+        "state.task",
+        "state.task_io"
       ],
       "side_effects": [
         "unannotated"
@@ -7568,7 +7715,7 @@
           "kind": "function",
           "signature": "() -> None",
           "summary": "Create every directory 9TO5 needs (idempotent).",
-          "lineno": 116
+          "lineno": 126
         }
       ],
       "depends_on": [],
@@ -7617,17 +7764,22 @@
       ],
       "test": [],
       "callers": [
+        "agents.verification_diff",
         "learning.adversary_trust",
         "learning.selfplay",
         "learning.sie",
+        "main",
         "memory.obsidian",
         "memory.user_prefs",
         "notifications.audit",
         "notifications.dashboard",
+        "notifications.terminal_ipc",
+        "notifications.work_launcher",
         "platform_core.orchestration.github",
         "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.self_ref_gate",
+        "platform_core.runtime.heartbeat",
         "platform_core.runtime.trajectory",
         "platform_core.runtime.worktree",
         "state.task_io"
@@ -7703,6 +7855,7 @@
         "notifications.cv2",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.time_utils",
+        "platform_core.runtime.heartbeat",
         "platform_core.runtime.resilience"
       ]
     },
@@ -9146,7 +9299,7 @@
           "kind": "function",
           "signature": "(text: str)",
           "summary": "Parse JSON text, tolerating fences and leading/trailing prose.",
-          "lineno": 49
+          "lineno": 46
         }
       ],
       "depends_on": [
@@ -9302,6 +9455,28 @@
         "orchestrator"
       ]
     },
+    "platform_core.orchestration.control_ops": {
+      "path": "platform_core/orchestration/control_ops.py",
+      "purpose": "Queued plan-op application -- the drain side of the ControlBus single-writer contract.",
+      "exports": [
+        {
+          "name": "applyOp",
+          "kind": "function",
+          "signature": "(state, op: dict, dashboard) -> None",
+          "summary": "Apply ONE drained plan op to the task state",
+          "lineno": 52
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "mutates + saves task JSON",
+        "emits dashboard events"
+      ],
+      "test": [],
+      "callers": []
+    },
     "platform_core.orchestration.dual_ledger_planner": {
       "path": "platform_core/orchestration/dual_ledger_planner.py",
       "purpose": "Dual-ledger planner free functions (autogen Magentic-One + metagpt DAG, MIT).",
@@ -9419,27 +9594,28 @@
           "kind": "function",
           "signature": "(work_dir: str) -> dict",
           "summary": "Best-effort, re-derivable git facts for the receipt: head sha, working-tree diff text, …",
-          "lineno": 98
+          "lineno": 111
         },
         {
           "name": "runEvidenceGate",
           "kind": "function",
           "signature": "(orch, state, subtask: dict, result: dict, exec_cwd: str, vresult: dict, sid: str) -> 'tuple[dict, bool]'",
           "summary": "For a code-change subtask that PASSED the deterministic gate: run the independent verif…",
-          "lineno": 138
+          "lineno": 151
         },
         {
           "name": "persistReceipt",
           "kind": "function",
           "signature": "(orch, state, sid: str, receipt: dict) -> None",
           "summary": "Write the Evidence Receipt as a per-subtask Obsidian note (durable audit artifact).",
-          "lineno": 194
+          "lineno": 220
         }
       ],
       "depends_on": [
         "agents.completion_envelope",
         "agents.evidence_receipt",
         "agents.independent_verifier",
+        "agents.verification",
         "agents.verifier",
         "config",
         "platform_core.orchestration"
@@ -9756,6 +9932,7 @@
         "config",
         "learning.eval_harness",
         "learning.finetune",
+        "llm_io",
         "notifications.dashboard",
         "notifications.discord_bot",
         "platform_core.orchestration",
@@ -9824,7 +10001,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles subtask plan authoring, invocation spec construction, and SIE authoring context.",
-          "lineno": 98
+          "lineno": 45
         }
       ],
       "depends_on": [
@@ -9844,6 +10021,7 @@
         "platform_core.core.surfaces",
         "platform_core.orchestration",
         "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.plan_prompts",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.subtask",
         "state.task"
@@ -9854,6 +10032,29 @@
       "test": [],
       "callers": [
         "orchestrator"
+      ]
+    },
+    "platform_core.orchestration.plan_prompts": {
+      "path": "platform_core/orchestration/plan_prompts.py",
+      "purpose": "Planner prompt constants for the orchestrator (extracted from plan_mixin for modularity).",
+      "exports": [
+        {
+          "name": "horizonFillSystem",
+          "kind": "function",
+          "signature": "(room: int, remaining_hours: float) -> str",
+          "summary": "The HORIZON-FILL planner system prompt (self-improvement runs with time left).",
+          "lineno": 136
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "platform_core.orchestration.plan_mixin"
       ]
     },
     "platform_core.orchestration.plan_shape_check": {
@@ -9981,7 +10182,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles the execution loop, backfill, livelock guard, and replan application.",
-          "lineno": 31
+          "lineno": 33
         }
       ],
       "depends_on": [
@@ -10016,7 +10217,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles run lifecycle phases: resume, fresh run, preamble, phase 4, teardown.",
-          "lineno": 31
+          "lineno": 33
         }
       ],
       "depends_on": [
@@ -10026,8 +10227,6 @@
         "config",
         "learning.adversary_trust",
         "learning.sie",
-        "learning.wisdom",
-        "memory.experience",
         "notifications.cast",
         "notifications.dashboard",
         "notifications.discord_bot",
@@ -10035,7 +10234,6 @@
         "notifications.icons",
         "notifications.lane_feed",
         "notifications.narration",
-        "notifications.reflection_post",
         "notifications.run_arc",
         "notifications.terminal_ipc",
         "notifications.terminal_surface",
@@ -10048,6 +10246,7 @@
         "platform_core.orchestration.knowledge_refresh",
         "platform_core.orchestration.step_resume",
         "platform_core.orchestration.time_utils",
+        "platform_core.runtime",
         "platform_core.runtime.control",
         "state.task"
       ],
@@ -10068,42 +10267,60 @@
           "kind": "function",
           "signature": "(orch, state, e: BaseException, web_url, dashboard) -> dict",
           "summary": "Handle AbortRun/KeyboardInterrupt: persist aborted status and notify.",
-          "lineno": 32
+          "lineno": 34
         },
         {
           "name": "handleRunCrash",
           "kind": "function",
           "signature": "(orch, state, e: Exception, web_url, dashboard) -> dict",
           "summary": "Handle unexpected crash: persist 'crashed' (non-terminal) status so recovery can resume.",
-          "lineno": 48
+          "lineno": 61
         },
         {
           "name": "phase4PrCapture",
           "kind": "function",
           "signature": "(orch, state, pr: dict) -> dict",
           "summary": "Capture CI + review feedback for a created PR into the experience ledger.",
-          "lineno": 73
+          "lineno": 86
+        },
+        {
+          "name": "finalizeSurfaces",
+          "kind": "function",
+          "signature": "(orch, state, status: str, done: int, total: int, elapsed: str) -> None",
+          "summary": "Run-end surfaces: arc final beat, perfect-run moment, self-reflection post.",
+          "lineno": 116
+        },
+        {
+          "name": "postGrowth",
+          "kind": "function",
+          "signature": "(orch) -> None",
+          "summary": "Spec B: post a short '!growth' learning summary to Discord at teardown (best-effort).",
+          "lineno": 140
         },
         {
           "name": "maybeInstinct",
           "kind": "function",
           "signature": "(orch, state, bus) -> None",
           "summary": "Throttled trigger for the periodic instinct call",
-          "lineno": 103
+          "lineno": 151
         },
         {
           "name": "runInstinct",
           "kind": "function",
           "signature": "(orch, state) -> None",
           "summary": "",
-          "lineno": 124
+          "lineno": 172
         }
       ],
       "depends_on": [
         "config",
+        "learning.wisdom",
+        "memory.experience",
         "memory.user_prefs",
         "notifications.discord_bot",
         "notifications.instinct",
+        "notifications.reflection_post",
+        "notifications.run_arc",
         "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.time_utils"
       ],
@@ -10112,7 +10329,9 @@
         "spawns the instinct thread",
         "mutates run state status/notifications"
       ],
-      "test": [],
+      "test": [
+        "tests/test_run_phase_outcome.py"
+      ],
       "callers": []
     },
     "platform_core.orchestration.safety_mixin": {
@@ -10504,12 +10723,15 @@
       ],
       "test": [],
       "callers": [
+        "main",
+        "notifications.bot.core",
         "platform_core.execution.backends.worktree",
         "platform_core.orchestration.adversary_loop",
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.fork_seams",
         "platform_core.orchestration.review_mixin",
         "platform_core.orchestration.run_loop_mixin",
+        "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.safety_mixin"
       ]
     },
@@ -10668,7 +10890,8 @@
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_phase_mixin",
-        "platform_core.orchestration.safety_mixin"
+        "platform_core.orchestration.safety_mixin",
+        "platform_core.runtime.resilience"
       ]
     },
     "platform_core.runtime.cost_budget": {
@@ -10695,6 +10918,84 @@
       ],
       "callers": [
         "platform_core.orchestration.execute_mixin"
+      ]
+    },
+    "platform_core.runtime.heartbeat": {
+      "path": "platform_core/runtime/heartbeat.py",
+      "purpose": "One cross-process liveness primitive: heartbeat files under ``state/heartbeats/``.",
+      "exports": [
+        {
+          "name": "heartbeatPath",
+          "kind": "function",
+          "signature": "(name: str) -> Path",
+          "summary": "",
+          "lineno": 51
+        },
+        {
+          "name": "writeHeartbeat",
+          "kind": "function",
+          "signature": "(name: str, pid: Optional[int]=None, seq: Optional[int]=None) -> None",
+          "summary": "Atomic-replace ``state/heartbeats/<name>.json``",
+          "lineno": 55
+        },
+        {
+          "name": "beat",
+          "kind": "function",
+          "signature": "(name: str, *, interval_s: float=HEARTBEAT_INTERVAL_SECONDS) -> bool",
+          "summary": "Throttled ``writeHeartbeat`` for hot loops (the run loop calls this every iteration).",
+          "lineno": 75
+        },
+        {
+          "name": "readHeartbeat",
+          "kind": "function",
+          "signature": "(name: str) -> Optional[dict]",
+          "summary": "",
+          "lineno": 89
+        },
+        {
+          "name": "clearHeartbeat",
+          "kind": "function",
+          "signature": "(name: str) -> None",
+          "summary": "Best-effort unlink (clean run teardown)",
+          "lineno": 94
+        },
+        {
+          "name": "isRunAlive",
+          "kind": "function",
+          "signature": "(task_id: str, *, grace_s: float=RUN_GRACE_SECONDS) -> bool",
+          "summary": "True while the orchestrator process behind ``task_id`` may still be running.",
+          "lineno": 137
+        },
+        {
+          "name": "writeBotHeartbeat",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Gateway-bot heartbeat",
+          "lineno": 148
+        },
+        {
+          "name": "isBotAlive",
+          "kind": "function",
+          "signature": "(*, grace_s: float=BOT_GRACE_SECONDS) -> bool",
+          "summary": "True while the gateway bot process may still be running (heartbeat fresh or pid alive).",
+          "lineno": 153
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.core",
+        "platform_core.core.clock"
+      ],
+      "side_effects": [
+        "writes/removes state/heartbeats/<name>.json"
+      ],
+      "test": [
+        "tests/test_heartbeat.py"
+      ],
+      "callers": [
+        "main",
+        "notifications.work_launcher",
+        "state.task_io"
       ]
     },
     "platform_core.runtime.resilience": {
@@ -10746,14 +11047,15 @@
         {
           "name": "run_with_recovery",
           "kind": "function",
-          "signature": "(run_fn: Callable[[TaskState], dict], state: TaskState, *, max_restarts: Optional[int]=None, backoff_base: float=2.0, sleep: Callable[[float], None]=time.sleep, reload_state: Optional[Callable[[str], TaskState]]=None) -> dict",
+          "signature": "(run_fn: Callable[[TaskState], dict], state: TaskState, *, max_restarts: Optional[int]=None, backoff_base: float=2.0, sleep: Callable[[float], None]=time.sleep, reload_state: Optional[Callable[[str], TaskState]]=None, bus=None) -> dict",
           "summary": "Run ``run_fn(state)`` and auto-resume it on crash until the task is terminal, the",
-          "lineno": 78
+          "lineno": 122
         }
       ],
       "depends_on": [
         "config",
         "platform_core.core.clock",
+        "platform_core.runtime.control",
         "state.task"
       ],
       "side_effects": [
@@ -10782,7 +11084,7 @@
           "kind": "function",
           "signature": "(run_id: str, root: Optional[Path]=None) -> dict",
           "summary": "Replay a run's event log into ``{\"run_id\": ..., \"spans\": [...]}``.",
-          "lineno": 89
+          "lineno": 92
         }
       ],
       "depends_on": [
@@ -10878,63 +11180,63 @@
           "kind": "class",
           "signature": "",
           "summary": "Stand-in for ``ollama.Client``",
-          "lineno": 49
+          "lineno": 80
         },
         {
           "name": "simRunClaude",
           "kind": "function",
           "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw)",
           "summary": "Fake executor",
-          "lineno": 79
+          "lineno": 107
         },
         {
           "name": "simReplan",
           "kind": "function",
           "signature": "(*args, **kwargs)",
           "summary": "",
-          "lineno": 91
+          "lineno": 119
         },
         {
           "name": "simReview",
           "kind": "function",
           "signature": "(subtask_title, trigger_reason, executor_output, *, ollama_chat=None, goal='')",
           "summary": "",
-          "lineno": 95
+          "lineno": 123
         },
         {
           "name": "SimObs",
           "kind": "class",
           "signature": "",
           "summary": "In-memory Obsidian double: records writes, never touches disk or REST.",
-          "lineno": 100
+          "lineno": 128
         },
         {
           "name": "buildOrchestrator",
           "kind": "function",
           "signature": "(n_subtasks: int=3)",
           "summary": "An Orchestrator wired entirely with simulation doubles (no external services).",
-          "lineno": 123
+          "lineno": 151
         },
         {
           "name": "BuilderBrain",
           "kind": "class",
           "signature": "",
           "summary": "Plans N subtasks, each producing a real file under ``work_dir`` with a REAL",
-          "lineno": 144
+          "lineno": 172
         },
         {
           "name": "builderRunClaude",
           "kind": "function",
           "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw)",
           "summary": "Fake hands that ACTUALLY write the target file parsed from the subtask's verify cmd,",
-          "lineno": 170
+          "lineno": 197
         },
         {
           "name": "buildBuilderOrchestrator",
           "kind": "function",
           "signature": "(work_dir: str, n_subtasks: int=3)",
           "summary": "An Orchestrator that produces real artifacts under work_dir and verifies them for real.",
-          "lineno": 197
+          "lineno": 224
         }
       ],
       "depends_on": [
@@ -11295,6 +11597,7 @@
       ],
       "test": [
         "tests/test_subtask_files_touched.py",
+        "tests/test_task_io_single_writer.py",
         "tests/test_task_ledger.py",
         "tests/test_task_listrecent.py",
         "tests/test_task_save_concurrent.py",
@@ -11336,55 +11639,66 @@
           "name": "save",
           "kind": "function",
           "signature": "(state: 'TaskState') -> Path",
-          "summary": "Atomic JSON save with monotonic state_epoch stamp.",
-          "lineno": 36
+          "summary": "Atomic JSON save (unique temp + os.replace via the fsio kernel).",
+          "lineno": 43
         },
         {
           "name": "load",
           "kind": "function",
           "signature": "(task_id: str) -> 'TaskState'",
           "summary": "Load task JSON from the state store",
-          "lineno": 53
+          "lineno": 56
         },
         {
           "name": "loadSafe",
           "kind": "function",
           "signature": "(task_id: str) -> 'Optional[TaskState]'",
           "summary": "Like ``load`` but returns None for a missing/corrupt file instead of raising.",
-          "lineno": 63
+          "lineno": 66
         },
         {
           "name": "iterStored",
           "kind": "function",
           "signature": "()",
-          "summary": "Yield ``(path, data)`` for every readable task JSON in the store.",
-          "lineno": 71
+          "summary": "Yield ``(path, data)`` for every readable, task-shaped JSON in the store.",
+          "lineno": 80
         },
         {
           "name": "loadLatest",
           "kind": "function",
           "signature": "() -> 'Optional[TaskState]'",
           "summary": "Prefer the most-recently-STARTED active (non-terminal) task.",
-          "lineno": 84
+          "lineno": 103
         },
         {
           "name": "listRecent",
           "kind": "function",
           "signature": "(n: int=10) -> list[dict[str, Any]]",
           "summary": "Lightweight summaries of recent tasks, newest first",
-          "lineno": 101
+          "lineno": 120
+        },
+        {
+          "name": "reapDeadRun",
+          "kind": "function",
+          "signature": "(task_id: str, *, reason: str='orchestrator process dead (no heartbeat, pid gone)') -> bool",
+          "summary": "Finalize a PROVABLY-DEAD, still-non-terminal run as ``aborted``.",
+          "lineno": 140
         }
       ],
       "depends_on": [
         "config",
         "platform_core.core",
+        "platform_core.runtime.heartbeat",
         "state.task_schema"
       ],
       "side_effects": [
         "writes state/tasks/<id>.json"
       ],
-      "test": [],
+      "test": [
+        "tests/test_task_io_single_writer.py"
+      ],
       "callers": [
+        "notifications.work_launcher",
         "state.task_schema"
       ]
     },

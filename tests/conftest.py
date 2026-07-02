@@ -115,6 +115,11 @@ def _isolate_state(monkeypatch, tmp_path):
     cd.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(config, "STATE_DIR", sd, raising=False)
     monkeypatch.setattr(config, "CONTROL_DIR", cd, raising=False)
+    # Sibling state dirs (R9): heartbeats / launch handshakes / IPC must never leak into
+    # (or read from) the real state tree either. fsio creates parents on write.
+    monkeypatch.setattr(config, "HEARTBEAT_DIR", tmp_path / "state_heartbeats", raising=False)
+    monkeypatch.setattr(config, "LAUNCH_DIR", tmp_path / "state_launch", raising=False)
+    monkeypatch.setattr(config, "IPC_DIR", tmp_path / "state_ipc", raising=False)
     yield
 
 

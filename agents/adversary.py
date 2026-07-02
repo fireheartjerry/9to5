@@ -34,7 +34,7 @@ from agents.adversary_review import (  # noqa: F401
     ADVERSARY_MAX_OUTPUT_CHARS, CDP_MAX_RETRIES, CDP_RETRY_BACKOFF_BASE,
     _CDP_TRANSIENT_SIGNALS, _SYSTEM, REVIEW_GUIDANCE, _APPROVE_WORDS,
     systemFor, isCdpTransient, shouldTrigger,
-    _loadJsonLoose, _normalizeVerdict, _stubReview,
+    _loadJsonLoose, _normalizeVerdict, _stubReview, _garbledChallenge,
     _buildReviewUser, _richFields, _parseVerdict,
     review,
 )
@@ -70,7 +70,12 @@ def reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: s
             reply = browser_ask(message)
             if not reply:
                 raise ValueError("empty reply from Gemini")
-            rv = _parseVerdict(reply, trigger_reason, surface="gemini", review_type=review_type)
+            try:
+                rv = _parseVerdict(reply, trigger_reason, surface="gemini", review_type=review_type)
+            except Exception as pe:  # noqa: BLE001 -- responded but GARBLED -> fail closed (R10)
+                LOG.warning("Adversary (Gemini) verdict garbled (%s); failing closed as CHALLENGED", pe)
+                return _garbledChallenge(trigger_reason, pe, surface="gemini",
+                                         review_type=review_type)
             LOG.info(
                 "Adversary (Gemini) verdict for '%s' (%s) -> %s (%d concern(s))",
                 subtask_title, trigger_reason, rv["verdict"], len(rv["concerns"]),
@@ -106,6 +111,6 @@ __all__ = [
     "ADVERSARY_MAX_OUTPUT_CHARS", "CDP_MAX_RETRIES", "CDP_RETRY_BACKOFF_BASE",
     "REVIEW_GUIDANCE", "_APPROVED", "_CHALLENGED",
     # Private names accessed by tests:
-    "_loadJsonLoose", "_normalizeVerdict", "_stubReview",
+    "_loadJsonLoose", "_normalizeVerdict", "_stubReview", "_garbledChallenge",
     "_buildReviewUser", "_richFields", "_parseVerdict",
 ]

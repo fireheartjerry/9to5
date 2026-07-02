@@ -10,7 +10,9 @@ from notifications import metrics
 
 
 def _task(status, subs):
-    return {"meta": {"status": status, "started_at": "2026-06-22T09:00:00+00:00"},
+    # task_id is mandatory: iterStored validates shape and skips non-task files.
+    return {"task_id": f"t-{status}",
+            "meta": {"status": status, "started_at": "2026-06-22T09:00:00+00:00"},
             "plan": {"subtasks": subs}}
 
 

@@ -52,3 +52,102 @@ class TestPydanticExtraction(unittest.TestCase):
     def test_fence_and_prose_salvage_on_pydantic(self):
         self.assertEqual(_chatJson(_Resp('```json\n{"a": 1}\n```')), {"a": 1})
         self.assertEqual(_chatJson(_Resp('sure, here: {"a": 2} done')), {"a": 2})
+
+
+class TestParseJsonLooseGolden(unittest.TestCase):
+    """Golden cases merged from the three pre-R5 implementations (brain_io.parseJsonText,
+    llm_io.responseJson, adversary._loadJsonLoose) -- ONE ladder now owns them all."""
+
+    def test_clean_json(self):
+        self.assertEqual(llm_io.parseJsonLoose('{"x": 1}'), {"x": 1})
+
+    def test_fenced_json(self):
+        self.assertEqual(llm_io.parseJsonLoose('```json\n{"x": 1}\n```'), {"x": 1})
+
+    def test_prose_wrapped_object(self):
+        self.assertEqual(llm_io.parseJsonLoose('Here you go: {"x": 2} hope that helps'), {"x": 2})
+
+    def test_trailing_braces_use_balanced_walker(self):
+        # the naive greedy r"{.*}" spans to the LAST '}' and fails; the balanced walker wins
+        text = '{"verdict": "challenged"}\n\nNote: see {the diff} for details.'
+        self.assertEqual(llm_io.parseJsonLoose(text), {"verdict": "challenged"})
+
+    def test_truncated_object_repaired(self):
+        out = llm_io.parseJsonLoose('{"subtasks": [{"title": "a"},], "n": 3')
+        self.assertIsInstance(out, dict)
+        self.assertEqual(out["n"], 3)
+
+    def test_pure_prose_is_none(self):
+        self.assertIsNone(llm_io.parseJsonLoose("no json here at all"))
+        self.assertIsNone(llm_io.parseJsonLoose(""))
+        self.assertIsNone(llm_io.parseJsonLoose(None))
+
+    def test_delegates_are_the_one_ladder(self):
+        from platform_core.orchestration import brain_io
+        from agents import adversary_review
+        text = '```json\n{"verdict": "approved"}\n```'
+        self.assertEqual(brain_io.parseJsonText(text), llm_io.parseJsonLoose(text))
+        self.assertEqual(adversary_review._loadJsonLoose(text), llm_io.parseJsonLoose(text))
+
+
+class _ActAwareClient:
+    """Sim-shaped client: explicit act kwarg + records calls."""
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.calls = []
+
+    def chat(self, *, model=None, messages=None, act=None, **kwargs):
+        self.calls.append({"act": act, "kwargs": kwargs})
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+
+class _RealShapedClient:
+    """ollama.Client-shaped: NO act parameter, NO **kwargs -- act must never reach it."""
+    def __init__(self, reply):
+        self.reply = reply
+        self.calls = 0
+
+    def chat(self, model="", messages=None, *, tools=None, stream=False, format=None,
+             options=None, keep_alive=None):
+        self.calls += 1
+        return self.reply
+
+
+class TestBlessedChat(unittest.TestCase):
+    def test_act_forwarded_to_act_aware_client(self):
+        cli = _ActAwareClient([{"message": {"content": "ok"}}])
+        resp = llm_io.chat("s", "u", act="plan", client=cli)
+        self.assertEqual(llm_io.responseText(resp), "ok")
+        self.assertEqual(cli.calls[0]["act"], "plan")
+
+    def test_act_never_reaches_a_real_shaped_client(self):
+        cli = _RealShapedClient({"message": {"content": "ok"}})
+        resp = llm_io.chat("s", "u", act="plan", client=cli)   # would TypeError if forwarded
+        self.assertEqual(llm_io.responseText(resp), "ok")
+        self.assertEqual(cli.calls, 1)
+
+    def test_pydantic_response_parity(self):
+        cli = _ActAwareClient([_Resp('{"a": 1}')])
+        resp = llm_io.chat("s", "u", act="plan", want_json=True, client=cli)
+        self.assertEqual(llm_io.responseJson(resp), {"a": 1})
+
+    def test_retry_then_success(self):
+        cli = _ActAwareClient([ConnectionError("down"), {"message": {"content": "recovered"}}])
+        resp = llm_io.chat("s", "u", act="plan", retries=3, client=cli)
+        self.assertEqual(llm_io.responseText(resp), "recovered")
+        self.assertEqual(len(cli.calls), 2)
+
+    def test_returns_none_after_retries_exhausted(self):
+        cli = _ActAwareClient([ConnectionError("down")] * 3)
+        self.assertIsNone(llm_io.chat("s", "u", act="plan", retries=3, client=cli))
+
+    def test_empty_completion_salvaged_by_dropping_format_json(self):
+        cli = _ActAwareClient([{"message": {"content": ""}},          # format=json dead-end
+                               {"message": {"content": '{"a": 1}'}}])  # free-form salvage
+        resp = llm_io.chat("s", "u", act="plan", want_json=True, client=cli)
+        self.assertEqual(llm_io.responseJson(resp), {"a": 1})
+        self.assertEqual(cli.calls[0]["kwargs"].get("format"), "json")
+        self.assertNotIn("format", cli.calls[1]["kwargs"])   # salvage drops format=json

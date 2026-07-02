@@ -122,7 +122,7 @@ class TestExternalProjectClone(unittest.TestCase):
                 mock.patch("platform_core.ops.external_project.cloneRepo", return_value=Path(d)), \
                 mock.patch.object(work_launcher, "activeRun", return_value=None), \
                 mock.patch.object(work_launcher, "spawn", return_value=123), \
-                mock.patch.object(work_launcher, "newestTaskSince", return_value="abcdef12"):
+                mock.patch.object(work_launcher, "waitForLaunch", return_value="abcdef12"):
             out = work_launcher.launchOrError(req)
         self.assertIn("Working dir:", out)
         self.assertIn(str(Path(d).resolve()), out)

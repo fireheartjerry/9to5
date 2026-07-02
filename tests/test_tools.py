@@ -140,11 +140,12 @@ class TestReviewStub(unittest.TestCase):
         self.assertEqual(rv["verdict"], "approved")
         self.assertTrue(rv.get("stub"))
 
-    def test_brain_returns_junk_is_stub(self):
+    def test_brain_returns_junk_fails_closed_as_challenged(self):
+        # R10: garbled output -> CHALLENGED (labeled), never a silent clean approve.
         def junk_chat(system, user, **kw):
             return {"message": {"content": "not json"}}
         rv = adversary.review("do thing", "test", "output", ollama_chat=junk_chat)
-        self.assertEqual(rv["verdict"], "approved")
+        self.assertEqual(rv["verdict"], "challenged")
         self.assertTrue(rv.get("stub"))
 
 

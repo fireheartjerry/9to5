@@ -12,8 +12,6 @@ from __future__ import annotations
 
 import unittest
 
-from agents import verifier
-
 try:
     import orchestrator
     _IMPORT_ERR = None
@@ -44,13 +42,19 @@ class TestStrengthenPlanVerifies(unittest.TestCase):
     def setUp(self):
         self.orc = orchestrator.Orchestrator.__new__(orchestrator.Orchestrator)
 
-    def test_collapsed_multi_req_subtask_gets_strict_compound_verify(self):
+    def test_collapsed_multi_req_subtask_gets_diff_grounded_target(self):
+        # R10: the token-scan compound verify is gone; a covering subtask instead DECLARES
+        # the resolved target file so the receipt pipeline fails it if the file never changed.
         subs = [{"title": "improve webdash", "description": GOAL, "layer": 3,
                  "verify": {"cmd": "python -c \"import os\"", "expect": "exit_zero"}}]
         out = self.orc._strengthenPlanVerifies(GOAL, subs)
         v = out[0]["verify"]
-        self.assertTrue(verifier.isStrictVerify(v), "covering subtask must get a strict verify")
-        self.assertIn("webdash.py", v["cmd"], "verify must point at the resolved target file")
+        targets = v.get("targets") or []
+        self.assertTrue(targets, "covering subtask must declare a diff-grounded target")
+        self.assertTrue(any("webdash.py" in t for t in targets),
+                        "target must point at the resolved goal file")
+        self.assertEqual(v["cmd"], 'python -c "import os"',
+                         "the brain-authored verify cmd is preserved (targets are additive)")
 
     def test_single_deliverable_goal_left_untouched(self):
         original = {"cmd": "python C:/x.py", "expect": "exit_zero"}

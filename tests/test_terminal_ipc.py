@@ -39,3 +39,20 @@ def test_all_reads_are_best_effort_on_garbage(tmp_path, monkeypatch):
     p = tmp_path / "nav.json"; p.write_text("{not json", encoding="utf-8")
     monkeypatch.setattr(ipc, "NAV_PATH", p)
     assert ipc.read_nav() == {"page_idx": 0, "mode": "summary", "frozen": False}
+
+
+def test_ipc_files_live_outside_the_task_store():
+    # R9: IPC files moved to state/ipc/ so task_io.iterStored can never misparse them.
+    assert ipc.NAV_PATH.parent.name == "ipc"
+    assert ipc.MIRROR_PATH.parent.name == "ipc"
+    assert ipc.NAV_PATH.parent.name != "tasks"
+
+
+def test_clear_removes_both_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(ipc, "NAV_PATH", tmp_path / "nav.json")
+    monkeypatch.setattr(ipc, "MIRROR_PATH", tmp_path / "mirror.json")
+    ipc.write_nav(1, "raw", True)
+    ipc.write_mirror("b", 2, [])
+    ipc.clear()
+    assert not (tmp_path / "nav.json").exists()
+    assert not (tmp_path / "mirror.json").exists()

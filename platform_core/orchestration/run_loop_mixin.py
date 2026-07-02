@@ -17,8 +17,10 @@ from agents import verifier
 from platform_core.runtime.control import AbortRun
 from memory import experience
 from notifications import discord_bot as discord
-from platform_core.orchestration.run_loop import _deadlinePassed, _remainingHours
+from platform_core.orchestration.run_loop import (_cascadeResetDependents, _deadlinePassed,
+                                                  _remainingHours)
 from platform_core.orchestration.subtask import _pendingCount, _readySet
+from platform_core.runtime import heartbeat as _heartbeat
 from state.task import TaskState, nowIso
 
 if TYPE_CHECKING:
@@ -250,13 +252,12 @@ class OrchestratorRunLoopMixin:
         if getattr(config, "WORKTREE_ISOLATION_ENABLED", False):
             from platform_core.runtime import worktree
             worktree.gcOrphans(state)
-        position = 0
-        iters = 0
-        no_progress = 0
+        position = iters = no_progress = 0
         prev_terminal = -1
         dry_backfills = 0     # consecutive empty horizon-fill attempts (self-improvement runs)
         while True:
             iters += 1
+            _heartbeat.beat(getattr(state, "task_id", ""))   # liveness beacon (throttled ~10s)
             if self._deadlineBreak(state, dashboard):
                 break
             # Guard on NO PROGRESS (not raw iteration count) to avoid false-aborting long runs.
@@ -403,24 +404,8 @@ class OrchestratorRunLoopMixin:
         LOG.info("Replan applied: %s", decision.get("reason", ""))
 
     def _cascadeResetDependents(self, state: TaskState, removed_ids: list) -> None:
-        """Remove only the still-PENDING dependents (transitively) of removed/replaced subtasks, so a
-        root-cause replan invalidates downstream work that built on now-stale assumptions while the
-        executed prefix (done/failed) is frozen (metagpt reset_task; cf. nextActionable FX-21)."""
-        queue = list(removed_ids or [])
-        seen: set = set(queue)
-        while queue:
-            rid = queue.pop()
-            for dep in state.dependentsOf(rid):
-                did = dep["subtask_id"]
-                # Traverse THROUGH a frozen (done/failed) dependent so its own still-pending
-                # dependents are still invalidated, but never reset the frozen prefix itself.
-                if did not in seen:
-                    seen.add(did)
-                    queue.append(did)
-                if dep["status"] != "pending":
-                    continue
-                state.updateSubtask(did, status="removed")
-                state.addNotification("cascade_reset", f"{did} (depended on {rid})")
+        """Cascade-remove still-pending dependents (delegates to run_loop helper)."""
+        _cascadeResetDependents(state, removed_ids)
 
     def _stallReplan(self, state: TaskState, architect_doc: str, failure_summary: str) -> bool:
         """Stall-driven root-cause replan: rewrite facts+plan, freeze the executed prefix, remove the

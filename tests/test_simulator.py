@@ -28,21 +28,23 @@ from platform_core.simulator.simulation import (
 # ---------------------------------------------------------------------------
 
 class TestSimBrainNonDictMessages(unittest.TestCase):
+    """R5: messages content is IRRELEVANT to dispatch -- only the act tag routes."""
+
     def test_non_dict_message_items_do_not_crash(self):
         brain = SimBrain()
-        resp = brain.chat(messages=["string item", 42, None])
+        resp = brain.chat(messages=["string item", 42, None], act="plan")
         data = json.loads(resp["message"]["content"])
         self.assertIn("subtasks", data)
 
     def test_none_messages_does_not_crash(self):
         brain = SimBrain()
-        resp = brain.chat(messages=None)
+        resp = brain.chat(messages=None, act="plan")
         self.assertIn("message", resp)
 
-    def test_invocation_spec_via_mixed_messages(self):
+    def test_invocation_spec_act_ignores_mixed_messages(self):
         brain = SimBrain(n_subtasks=2)
-        msgs = ["bad", {"role": "user", "content": "invocation spec please"}]
-        resp = brain.chat(messages=msgs)
+        msgs = ["bad", {"role": "user", "content": "totally reworded ask"}]
+        resp = brain.chat(messages=msgs, act="invocation_spec")
         data = json.loads(resp["message"]["content"])
         self.assertIn("prompt", data)
 
@@ -54,13 +56,13 @@ class TestSimBrainNonDictMessages(unittest.TestCase):
 class TestBuilderBrainNonDictMessages(unittest.TestCase):
     def test_non_dict_items_do_not_crash(self):
         brain = BuilderBrain("/tmp/w", n_subtasks=1)
-        resp = brain.chat(messages=["garbage", 999])
+        resp = brain.chat(messages=["garbage", 999], act="plan")
         data = json.loads(resp["message"]["content"])
         self.assertIn("subtasks", data)
 
     def test_none_messages_returns_plan(self):
         brain = BuilderBrain("/tmp/w", n_subtasks=2)
-        resp = brain.chat(messages=None)
+        resp = brain.chat(messages=None, act="plan")
         data = json.loads(resp["message"]["content"])
         self.assertIn("subtasks", data)
 

@@ -83,6 +83,12 @@ class TestBuildArgv(unittest.TestCase):
         self.assertIn("--work-profile", argv)
         self.assertIn("auditor", argv)
 
+    def test_launch_id_passed_to_cli(self):
+        self.assertNotIn("--launch-id", wl.buildArgv(wl.WorkRequest(goal="x")))
+        argv = wl.buildArgv(wl.WorkRequest(goal="x", launch_id="abc123"))
+        self.assertIn("--launch-id", argv)
+        self.assertIn("abc123", argv)
+
 
 class TestActiveRun(unittest.TestCase):
     def test_none_when_terminal(self):
@@ -96,6 +102,8 @@ class TestActiveRun(unittest.TestCase):
         from state.task import TaskState
         st = TaskState.create("g", 1.0)
         st.meta["status"] = "executing"
+        st.meta["run_pid"] = os.getpid()   # liveness: this process vouches for the run
+        st.save()
         with mock.patch.object(wl.commands, "resolveTargetTask", return_value=st):
             self.assertIs(wl.activeRun(), st)
 
@@ -167,21 +175,56 @@ class TestLaunchGlue(unittest.TestCase):
         with mock.patch.object(wl, "activeRun", return_value=st):
             self.assertIn("already active", wl.launchOrError(wl.WorkRequest(goal="x")))
 
-    def test_launch_confirms(self):
+    def test_launch_confirms_via_handshake(self):
         with mock.patch.object(wl, "activeRun", return_value=None), \
                 mock.patch.object(wl, "spawn", return_value=123), \
-                mock.patch.object(wl, "newestTaskSince", return_value="abcdef12"):
+                mock.patch.object(wl, "waitForLaunch", return_value="abcdef12") as wfl:
             out = wl.launchOrError(wl.WorkRequest(goal="x"))
         self.assertIn("Launched", out)
         self.assertIn("abcdef12", out)
+        # the handshake token generated for the spawn is the one polled for
+        self.assertTrue(wfl.call_args.args[0])
 
     def test_launch_summary_includes_profile(self):
         with mock.patch.object(wl, "activeRun", return_value=None), \
                 mock.patch.object(wl, "spawn", return_value=123), \
-                mock.patch.object(wl, "newestTaskSince", return_value="abcdef12"):
+                mock.patch.object(wl, "waitForLaunch", return_value="abcdef12"):
             out = wl.launchOrError(wl.WorkRequest(goal="x", work_profile="auditor"))
         self.assertIn("Profile:", out)
         self.assertIn("auditor", out)
+
+    def test_handshake_reads_launch_file(self):
+        import json
+        config.LAUNCH_DIR.mkdir(parents=True, exist_ok=True)
+        (config.LAUNCH_DIR / "tok1.json").write_text(json.dumps({"task_id": "t-42"}),
+                                                     encoding="utf-8")
+        self.assertEqual(wl.waitForLaunch("tok1", timeout_s=0.2, poll_s=0.01), "t-42")
+        self.assertIsNone(wl.waitForLaunch("missing", timeout_s=0.05, poll_s=0.01))
+
+    def test_double_launch_spawns_exactly_once(self):
+        import threading
+        spawned = []
+
+        def slow_spawn(req):
+            spawned.append(req)
+            import time as _t
+            _t.sleep(0.2)          # hold the launch window open so the second call collides
+            return 123
+
+        results = []
+        with mock.patch.object(wl, "activeRun", return_value=None), \
+                mock.patch.object(wl, "spawn", side_effect=slow_spawn), \
+                mock.patch.object(wl, "waitForLaunch", return_value="abcdef12"):
+            ts = [threading.Thread(
+                target=lambda: results.append(wl.launchOrError(wl.WorkRequest(goal="x"))))
+                for _ in range(2)]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join(timeout=10)
+        self.assertEqual(len(spawned), 1, "concurrent launchOrError double-spawned")
+        self.assertEqual(sorted("Launched" in r for r in results), [False, True])
+        self.assertTrue(any("already in progress" in r for r in results))
 
     def test_resume_no_task(self):
         with mock.patch.object(wl, "taskExists", return_value=False):

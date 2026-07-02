@@ -150,3 +150,136 @@ class TestRunWithRecovery(unittest.TestCase):
                 state, reload_state=lambda t: state, sleep=lambda s: None)
         self.assertEqual(out["status"], "blocked")
         self.assertEqual(out["reason"], "max_restarts")
+
+
+class _FakeBus:
+    """Minimal ControlBus stand-in: abort flag flips after `after` isAbort() polls."""
+
+    def __init__(self, abort=False):
+        self.abort = abort
+
+    def isAbort(self):
+        return self.abort
+
+
+class TestAbortSafeRecovery(unittest.TestCase):
+    """Operator abort must survive a crashed run: the bus flag persists independently of
+    task JSON, so a failed 'aborted' save can never be auto-RESUMED as a 'crash'."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        mock.patch.object(config, "STATE_DIR", self.dir).start()
+        mock.patch.object(config, "RUN_MAX_RESTARTS", 5).start()
+
+    def tearDown(self):
+        mock.patch.stopall()
+        for p in self.dir.glob("*"):
+            p.unlink()
+        self.dir.rmdir()
+
+    def test_crash_with_bus_abort_is_finalized_not_resumed(self):
+        state = TaskState.create("g", 1.0)
+        bus = _FakeBus(abort=False)
+        calls = {"n": 0}
+
+        def run_fn(st):
+            calls["n"] += 1
+            bus.abort = True                      # operator abort lands mid-run...
+            raise RuntimeError("state save failed; abort persisted only on the bus")
+
+        out = resilience.run_with_recovery(run_fn, state, reload_state=lambda t: state,
+                                           sleep=lambda s: None, bus=bus)
+        self.assertEqual(out["status"], "aborted")
+        self.assertEqual(calls["n"], 1, "run_fn was re-invoked despite an operator abort")
+        self.assertEqual(state.meta["status"], "aborted")
+
+    def test_preexisting_abort_prevents_any_invocation(self):
+        state = TaskState.create("g", 1.0)
+        run_fn = mock.Mock()
+        out = resilience.run_with_recovery(run_fn, state, reload_state=lambda t: state,
+                                           sleep=lambda s: None, bus=_FakeBus(abort=True))
+        self.assertEqual(out["status"], "aborted")
+        run_fn.assert_not_called()
+
+    def test_broken_bus_never_kills_recovery(self):
+        state = TaskState.create("g", 1.0)
+
+        class _BrokenBus:
+            def isAbort(self):
+                raise OSError("bus file unreadable")
+
+        def run_fn(st):
+            st.meta["status"] = "done"
+            return {"status": "done"}
+
+        out = resilience.run_with_recovery(run_fn, state, reload_state=lambda t: state,
+                                           sleep=lambda s: None, bus=_BrokenBus())
+        self.assertEqual(out["status"], "done")
+
+
+class TestReloadStateStrikes(unittest.TestCase):
+    """reload_state failures must be diagnosed, not swallowed: 3 consecutive strikes end
+    the run with a distinct 'state file unreadable' reason instead of burning the whole
+    restart budget blind."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        mock.patch.object(config, "STATE_DIR", self.dir).start()
+        mock.patch.object(config, "RUN_MAX_RESTARTS", 50).start()
+
+    def tearDown(self):
+        mock.patch.stopall()
+        for p in self.dir.glob("*"):
+            p.unlink()
+        self.dir.rmdir()
+
+    def test_three_reload_failures_finalize_with_distinct_reason(self):
+        state = TaskState.create("g", 1.0)
+        calls = {"run": 0, "reload": 0}
+
+        def run_fn(st):
+            calls["run"] += 1
+            raise RuntimeError("crash")
+
+        def bad_reload(task_id):
+            calls["reload"] += 1
+            raise OSError("corrupt json")
+
+        with self.assertLogs("9to5.resilience", level="WARNING") as logs:
+            out = resilience.run_with_recovery(run_fn, state, reload_state=bad_reload,
+                                               sleep=lambda s: None, bus=_FakeBus())
+        self.assertEqual(out["status"], "blocked")
+        self.assertIn("state file unreadable", out["reason"])
+        self.assertIn("corrupt json", out["reason"])
+        self.assertEqual(calls["reload"], 3, "did not stop at the 3-strike streak")
+        self.assertTrue(any("reload_state failed (strike" in m for m in logs.output),
+                        f"no per-strike diagnostics logged: {logs.output}")
+
+    def test_reload_strike_streak_resets_on_success(self):
+        state = TaskState.create("g", 1.0)
+        calls = {"run": 0, "reload": 0}
+
+        def run_fn(st):
+            calls["run"] += 1
+            if calls["run"] >= 4:
+                st.meta["status"] = "done"
+                return {"status": "done"}
+            raise RuntimeError("crash")
+
+        def flaky_reload(task_id):
+            calls["reload"] += 1
+            if calls["reload"] % 2 == 1:          # fail, succeed, fail, succeed...
+                raise OSError("transient")
+            return state
+
+        out = resilience.run_with_recovery(run_fn, state, reload_state=flaky_reload,
+                                           sleep=lambda s: None, bus=_FakeBus())
+        self.assertEqual(out["status"], "done", "an intermittent reload failure was fatal")
+
+
+class TestNoBytecodeReload(unittest.TestCase):
+    def test_no_importlib_reload_in_resilience_source(self):
+        # In-process restart must keep the pinned bytecode; self-edits adopt only on a
+        # fresh process. A reload would re-enter edited code incoherently.
+        src = Path(resilience.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("importlib.reload", src)

@@ -214,3 +214,40 @@ def test_manager_stop_is_clean():
     assert _wait_until(lambda: mgr.url is not None)
     mgr.stop()
     assert mgr.is_alive is False
+
+
+def test_announce_saves_state_under_the_state_lock():
+    """The supervisor daemon thread mutates shared TaskState -- _announce must hold the
+    orchestrator's state lock around meta mutation + save (same discipline as dashboard)."""
+    class _SpyLock:
+        def __init__(self):
+            self.held = 0
+            self.acquisitions = 0
+
+        def __enter__(self):
+            self.held += 1
+            self.acquisitions += 1
+            return self
+
+        def __exit__(self, *a):
+            self.held -= 1
+            return False
+
+    lock = _SpyLock()
+
+    class _StubState:
+        def __init__(self):
+            self.meta = {}
+            self.saved_under_lock = None
+
+        def save(self):
+            self.saved_under_lock = lock.held > 0
+
+    state = _StubState()
+    mgr = _fast(TunnelManager(providers=[_FakeProvider()], state=state, state_lock=lock))
+    mgr.start(8787)
+    assert _wait_until(lambda: state.meta.get("tunnel_url"))
+    mgr.stop()
+    assert state.meta["tunnel_url"] == "https://live.example.com"
+    assert state.saved_under_lock is True, "state.save() ran outside the state lock"
+    assert lock.acquisitions >= 1

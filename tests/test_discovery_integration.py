@@ -16,6 +16,7 @@ def test_discovery_called_before_architect(tmp_path):
 
     call_order = []
     fake_report = mock.Mock()
+    fake_report.findings = []   # _runDiscoveryPhase calls len(report.findings)
     fake_report.to_dict.return_value = {
         "theme_suggestion": "t", "findings": [], "innovation_ratio": 0.5
     }

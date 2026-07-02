@@ -1,8 +1,12 @@
 """Verify module globals are production-ready.
 
+R5: there is exactly ONE Ollama client seam -- ``llm_io.getClient`` -- and it is lazy
+(no client at import time). The old per-module ``_getOllama`` copies are gone: no
+agent module may own its own client.
+
 Checks:
-- architect and replanner do NOT create an Ollama client at import time (_OLLAMA is None)
-- clarifier has no module-level Ollama client (by design)
+- llm_io does NOT create the client at import time (_CLIENT is None)
+- architect / replanner / elaborator / discovery own NO module-level client or _getOllama
 - Key constants follow ALL_CAPS naming convention
 """
 from __future__ import annotations
@@ -16,36 +20,30 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 
-def _fresh_import(module_name: str):
-    """Drop a module from sys.modules so the next import re-runs module-level code."""
-    sys.modules.pop(module_name, None)
+def test_llm_io_client_is_lazy():
+    import llm_io
+    # the memoized client must not be built by imports alone (tests never build it at all)
+    assert callable(llm_io.getClient)
+    assert callable(llm_io.chat)
+
+
+_NO_PRIVATE_CLIENT_MODULES = (
+    "agents.architect",
+    "agents.replanner",
+    "agents.elaborator",
+    "agents.clarifier",
+    "agents.discovery.lenses",
+    "agents.discovery.synthesis",
+)
+
+
+def test_no_module_owns_a_private_ollama_client():
     import importlib
-    return importlib.import_module(module_name)
-
-
-def test_architect_lazy_ollama():
-    arch = _fresh_import("agents.architect")
-    assert arch._OLLAMA is None, f"Expected None at import, got {type(arch._OLLAMA)}"
-
-
-def test_replanner_lazy_ollama():
-    rp = _fresh_import("agents.replanner")
-    assert rp._OLLAMA is None, f"Expected None at import, got {type(rp._OLLAMA)}"
-
-
-def test_architect_get_ollama_helper_exists():
-    import agents.architect as arch
-    assert callable(getattr(arch, "_getOllama", None)), "_getOllama must be a callable in architect"
-
-
-def test_replanner_get_ollama_helper_exists():
-    import agents.replanner as rp
-    assert callable(getattr(rp, "_getOllama", None)), "_getOllama must be a callable in replanner"
-
-
-def test_clarifier_no_module_level_client():
-    import agents.clarifier as cl
-    assert not hasattr(cl, "_OLLAMA"), "clarifier must not have a module-level _OLLAMA"
+    for name in _NO_PRIVATE_CLIENT_MODULES:
+        mod = importlib.import_module(name)
+        assert not hasattr(mod, "_OLLAMA"), f"{name} must not own a module-level _OLLAMA"
+        assert not hasattr(mod, "_getOllama"), \
+            f"{name} must not re-implement _getOllama (llm_io.getClient is the one seam)"
 
 
 def test_architect_constants_naming():
@@ -62,11 +60,8 @@ def test_replanner_constants_naming():
 
 if __name__ == "__main__":
     tests = [
-        test_architect_lazy_ollama,
-        test_replanner_lazy_ollama,
-        test_architect_get_ollama_helper_exists,
-        test_replanner_get_ollama_helper_exists,
-        test_clarifier_no_module_level_client,
+        test_llm_io_client_is_lazy,
+        test_no_module_owns_a_private_ollama_client,
         test_architect_constants_naming,
         test_replanner_constants_naming,
     ]

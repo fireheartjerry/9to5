@@ -96,6 +96,28 @@ def _goalText(state) -> str:
     return state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "")
 
 
+def _cascadeResetDependents(state, removed_ids: list) -> None:
+    """Remove only the still-PENDING dependents (transitively) of removed/replaced subtasks, so a
+    root-cause replan invalidates downstream work that built on now-stale assumptions while the
+    executed prefix (done/failed) is frozen (metagpt reset_task; cf. nextActionable FX-21).
+    (Moved from run_loop_mixin for size; the mixin keeps a thin delegate.)"""
+    queue = list(removed_ids or [])
+    seen: set = set(queue)
+    while queue:
+        rid = queue.pop()
+        for dep in state.dependentsOf(rid):
+            did = dep["subtask_id"]
+            # Traverse THROUGH a frozen (done/failed) dependent so its own still-pending
+            # dependents are still invalidated, but never reset the frozen prefix itself.
+            if did not in seen:
+                seen.add(did)
+                queue.append(did)
+            if dep["status"] != "pending":
+                continue
+            state.updateSubtask(did, status="removed")
+            state.addNotification("cascade_reset", f"{did} (depended on {rid})")
+
+
 def _confidenceNudge(title: str) -> str:
     """SIE subsystem K: if this subtask family historically struggles, tell the brain to
     escalate effort and slow down."""

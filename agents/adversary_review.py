@@ -14,9 +14,6 @@ RUN/TEST: (no mapped test)
 """
 from __future__ import annotations
 
-import json
-import re
-import time
 from typing import Callable, Optional
 
 import config
@@ -112,31 +109,15 @@ def _loadJsonLoose(content: object):
     Critical for the Adversary (FX-5): a real 'challenged' verdict wrapped in a
     fence/prose must NOT silently fail json.loads and degrade to a conservative
     'approved', which would neuter the PR-hold and remediation.
-    Returns a dict or None.
+    Thin delegate to the ONE loose ladder (llm_io.parseJsonLoose, R5): fence strip ->
+    strict loads -> first balanced object -> json_repair salvage. Returns a dict or None.
     """
     if isinstance(content, dict):
         return content
     if not isinstance(content, str):
         return None
-    text = content.strip()
-    if not text:
-        return None
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE).strip()
-    try:
-        return json.loads(text)
-    except Exception:  # noqa: BLE001
-        pass
-    # Salvage the FIRST balanced object. The naive greedy r"\{.*\}" spans first '{' to LAST '}'
-    # so multi-object output concatenates into an unparseable blob; the balanced walker closes
-    # at the correct depth-0 '}'.
-    chunk = llm_io._firstBalancedObject(text)
-    if chunk:
-        try:
-            return json.loads(chunk)
-        except Exception:  # noqa: BLE001
-            return None
-    return None
+    out = llm_io.parseJsonLoose(content)
+    return out if isinstance(out, dict) else None
 
 
 def _normalizeVerdict(raw: object) -> Optional[str]:
@@ -158,8 +139,8 @@ def _normalizeVerdict(raw: object) -> Optional[str]:
 
 
 def _stubReview(trigger_reason: str, *, note: Optional[str] = None) -> dict:
-    """Conservative fallback: approve, but mark it as un-reviewed so it is never
-    mistaken for a real pass. Used when no brain is wired or the brain errors."""
+    """Conservative fallback for a brain that is UNAVAILABLE (not wired / transport error /
+    empty reply): approve, but mark it as un-reviewed so it is never mistaken for a real pass."""
     return {
         "verdict": _APPROVED,
         "trigger_reason": trigger_reason,
@@ -168,6 +149,26 @@ def _stubReview(trigger_reason: str, *, note: Optional[str] = None) -> dict:
                           "Phase 2 -> Gemini via the google-genai SDK."),
         "stub": True,
         "severity": "none",
+        "must_fix": [],
+        "suggested_fix": "",
+        "confidence": None,
+    }
+
+
+def _garbledChallenge(trigger_reason: str, err: object, *, surface: str,
+                      review_type: str = "subtask") -> dict:
+    """Fail-closed fallback for GARBLED output (R10): the brain DID respond but its verdict is
+    unparseable/off-contract -- treat it as CHALLENGED, never a silent clean approve (a real
+    'challenged' expressed off-contract must not neuter the PR-hold/remediation)."""
+    return {
+        "verdict": _CHALLENGED,
+        "trigger_reason": trigger_reason,
+        "concerns": ["adversary verdict was unparseable -- failing closed as challenged"],
+        "notes": f"Adversary output garbled ({err}); treated as CHALLENGED (fail-closed, R10).",
+        "stub": True,
+        "surface": surface,
+        "review_type": review_type,
+        "severity": "medium",
         "must_fix": [],
         "suggested_fix": "",
         "confidence": None,
@@ -234,9 +235,11 @@ def review(subtask_title: str, trigger_reason: str, executor_output: str, *,
     """Critique the executor output and return a verdict dict.
 
     ``ollama_chat`` is the orchestrator's resilient Ollama caller
-    ``(system, user, *, want_json=False) -> resp | None``. When it is None
+    ``(system, user, *, act=..., want_json=False) -> resp | None``. When it is None
     the reviewer degrades to a conservative auto-approve so the run is never
-    blocked by the reviewer itself.
+    blocked by the reviewer itself. Parsing goes through the ONE ``_parseVerdict``
+    (R10 dedup): an UNAVAILABLE brain (None/empty/transport error) degrades to the
+    labeled approve-stub, but GARBLED output fails closed as CHALLENGED.
     """
     if ollama_chat is None:
         LOG.info("Adversary (no brain) for '%s' (%s) -> approved [stub]",
@@ -245,30 +248,21 @@ def review(subtask_title: str, trigger_reason: str, executor_output: str, *,
 
     user = _buildReviewUser(subtask_title, trigger_reason, executor_output, goal)
     try:
-        resp = ollama_chat(systemFor(review_type), user, want_json=True)
-        content = llm_io.responseText(resp) or None
-        data = _loadJsonLoose(content)
-        if not isinstance(data, dict):
-            raise ValueError("non-object review payload")
-        verdict = _normalizeVerdict(data.get("verdict"))
-        if verdict is None:
-            raise ValueError(f"missing or unrecognized verdict: {data.get('verdict')!r}")
-        concerns = [str(c) for c in (data.get("concerns") or []) if str(c).strip()][:10]
-        notes = str(data.get("notes") or "").strip()
-        LOG.info("Adversary verdict for '%s' (%s) -> %s (%d concern(s))",
-                 subtask_title, trigger_reason, verdict, len(concerns))
-        return {
-            "verdict": verdict,
-            "trigger_reason": trigger_reason,
-            "concerns": concerns,
-            "notes": notes,
-            "stub": False,
-            "surface": "ollama",
-            "review_type": review_type,
-            **_richFields(data, verdict),
-        }
-    except Exception as e:  # noqa: BLE001
+        resp = llm_io.callChat(ollama_chat, systemFor(review_type), user,
+                               act="adversary_review", want_json=True)
+        content = llm_io.responseText(resp).strip()
+        if not content:
+            raise ConnectionError("no/empty adversary completion")
+    except Exception as e:  # noqa: BLE001 -- brain UNAVAILABLE -> labeled conservative stub
         LOG.warning("Adversary brain critique failed (%s); conservative auto-approve", e,
                     exc_info=True)
         return _stubReview(trigger_reason,
                            note=f"Adversary critique errored ({e}); auto-approved conservatively.")
+    try:
+        rv = _parseVerdict(content, trigger_reason, surface="ollama", review_type=review_type)
+    except Exception as e:  # noqa: BLE001 -- brain RESPONDED but garbled -> fail closed (R10)
+        LOG.warning("Adversary verdict garbled (%s); failing closed as CHALLENGED", e)
+        return _garbledChallenge(trigger_reason, e, surface="ollama", review_type=review_type)
+    LOG.info("Adversary verdict for '%s' (%s) -> %s (%d concern(s))",
+             subtask_title, trigger_reason, rv["verdict"], len(rv["concerns"]))
+    return rv

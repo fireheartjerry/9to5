@@ -62,11 +62,13 @@ class TestReview(unittest.TestCase):
         self.assertEqual(rv["verdict"], "approved")
         self.assertTrue(rv["stub"])
 
-    def test_fallback_on_bad_payload(self):
+    def test_garbled_payload_fails_closed_as_challenged(self):
+        # R10: the brain RESPONDED but the verdict is unparseable -> CHALLENGED (labeled),
+        # never a silent clean approve that would neuter the PR-hold/remediation.
         def chat(system, user, *, want_json=False):
             return {"message": {"content": "not json at all"}}
         rv = adversary.review("do x", "heartbeat", "output", ollama_chat=chat)
-        self.assertEqual(rv["verdict"], "approved")
+        self.assertEqual(rv["verdict"], "challenged")
         self.assertTrue(rv["stub"])
 
     def test_fallback_on_none_response(self):
@@ -119,10 +121,11 @@ class TestReviewViaBrowser(unittest.TestCase):
         self.assertEqual(rv["verdict"], "approved")
         self.assertTrue(rv["stub"])
 
-    def test_stub_on_garbled_reply(self):
+    def test_garbled_reply_fails_closed_as_challenged(self):
+        # R10: same fail-closed contract as the Ollama path, via the ONE _parseVerdict.
         rv = adversary.reviewViaBrowser("do x", "heartbeat", "output",
                                         browser_ask=lambda message: "not json at all")
-        self.assertEqual(rv["verdict"], "approved")
+        self.assertEqual(rv["verdict"], "challenged")
         self.assertTrue(rv["stub"])
 
     def test_stub_when_browser_ask_raises(self):

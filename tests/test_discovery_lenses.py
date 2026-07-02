@@ -39,7 +39,7 @@ def _make_ollama_response(findings: list) -> dict:
 
 
 def test_run_lens_panel_returns_findings():
-    with mock.patch.object(lenses_mod, "_getOllama") as mock_oll:
+    with mock.patch.object(lenses_mod.llm_io, "getClient") as mock_oll:
         mock_oll.return_value.chat.return_value = _make_ollama_response([VALID_FINDING])
         results = lenses_mod.run_lens_panel(SAMPLE_DIGEST)
     assert isinstance(results, list)
@@ -56,14 +56,14 @@ def test_run_lens_panel_survives_partial_failure():
             raise RuntimeError("ollama down")
         return _make_ollama_response([VALID_FINDING])
 
-    with mock.patch.object(lenses_mod, "_getOllama") as mock_oll:
+    with mock.patch.object(lenses_mod.llm_io, "getClient") as mock_oll:
         mock_oll.return_value.chat.side_effect = flaky_chat
         results = lenses_mod.run_lens_panel(SAMPLE_DIGEST)
     assert isinstance(results, list)
 
 
 def test_brain_call_returns_empty_on_bad_json():
-    with mock.patch.object(lenses_mod, "_getOllama") as mock_oll:
+    with mock.patch.object(lenses_mod.llm_io, "getClient") as mock_oll:
         mock_oll.return_value.chat.return_value = {"message": {"content": "not json"}}
         result = lenses_mod._brain_call("sys", "usr")
     assert result == []
@@ -71,7 +71,7 @@ def test_brain_call_returns_empty_on_bad_json():
 
 def test_finding_with_invalid_type_is_corrected():
     bad = dict(VALID_FINDING, type="garbage")
-    with mock.patch.object(lenses_mod, "_getOllama") as mock_oll:
+    with mock.patch.object(lenses_mod.llm_io, "getClient") as mock_oll:
         mock_oll.return_value.chat.return_value = _make_ollama_response([bad])
         results = lenses_mod.run_lens_panel(SAMPLE_DIGEST)
     for f in results:

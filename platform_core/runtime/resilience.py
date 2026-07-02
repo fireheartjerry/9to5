@@ -21,8 +21,8 @@ EXPORTS:
   last_progress_at(state: TaskState) -> Optional[str]  -- ISO timestamp of the most recent subtask completion (progress heartbeat).
   is_stalled(state: TaskState, *, max_idle_seconds: float) -> bool  -- True if no subtask has completed within ``max_idle_seconds`` (a hung run).
   pick_resume_task() -> Optional[str]  -- The most-recent interrupted (non-terminal) task to auto-resume, or None.
-  run_with_recovery(run_fn: Callable[[TaskState], dict], state: TaskState, *, max_restarts: Optional[int]=None, backoff_base: float=2.0, sleep: Callable[[float], None]=time.sleep, reload_state: Optional[Callable[[str], TaskState]]=None) -> dict  -- Run ``run_fn(state)`` and auto-resume it on crash until the task is terminal, the
-DEPENDS-ON: config, platform_core.core.clock, state.task
+  run_with_recovery(run_fn: Callable[[TaskState], dict], state: TaskState, *, max_restarts: Optional[int]=None, backoff_base: float=2.0, sleep: Callable[[float], None]=time.sleep, reload_state: Optional[Callable[[str], TaskState]]=None, bus=None) -> dict  -- Run ``run_fn(state)`` and auto-resume it on crash until the task is terminal, the
+DEPENDS-ON: config, platform_core.core.clock, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_resilience.py
 """
@@ -75,39 +75,90 @@ def pick_resume_task() -> Optional[str]:
     return None
 
 
+def _abortRequested(bus) -> bool:
+    """Best-effort bus abort check -- a broken bus must never kill recovery."""
+    try:
+        return bool(bus is not None and bus.isAbort())
+    except Exception:  # noqa: BLE001
+        LOG.debug("bus abort check failed (treated as no-abort)", exc_info=True)
+        return False
+
+
+# Consecutive reload_state failures tolerated before recovery gives up with diagnostics.
+_RELOAD_STRIKES: int = 3
+
+
+def _defaultBus(state: TaskState):
+    """The task's ControlBus, or None when unavailable (degraded mode, not a death)."""
+    try:
+        from platform_core.runtime.control import ControlBus
+        return ControlBus(state.task_id)
+    except Exception:  # noqa: BLE001
+        LOG.warning("ControlBus unavailable for recovery abort checks", exc_info=True)
+        return None
+
+
+def _reloadCommitted(state: TaskState, reload_state, strikes: int):
+    """Adopt committed progress from disk. Returns (state, strikes, fatal_reason|None):
+    a failure is logged as a strike; the 3rd consecutive strike is fatal with a distinct
+    'state file unreadable' reason instead of silently burning the restart budget.
+
+    COHERENCE INVARIANT (#13): this reloads persisted *state* (JSON), NOT module bytecode.
+    Never call importlib's reload() here -- the running process must keep its pinned
+    start-of-run bytecode so in-process re-invocations of run_fn stay coherent. Self-edits
+    to loop code are inert until a fresh process is started."""
+    try:
+        return reload_state(state.task_id), 0, None
+    except Exception as e:  # noqa: BLE001
+        strikes += 1
+        LOG.warning("reload_state failed (strike %d/%d): %s",
+                    strikes, _RELOAD_STRIKES, e, exc_info=True)
+        if strikes >= _RELOAD_STRIKES:
+            LOG.error("giving up recovery after %d reload failures", strikes)
+            return state, strikes, f"state file unreadable: {e}"
+        return state, strikes, None
+
+
 def run_with_recovery(run_fn: Callable[[TaskState], dict], state: TaskState, *,
                       max_restarts: Optional[int] = None, backoff_base: float = 2.0,
                       sleep: Callable[[float], None] = time.sleep,
-                      reload_state: Optional[Callable[[str], TaskState]] = None) -> dict:
+                      reload_state: Optional[Callable[[str], TaskState]] = None,
+                      bus=None) -> dict:
     """Run ``run_fn(state)`` and auto-resume it on crash until the task is terminal, the
-    deadline passes, or the restart budget is exhausted. Returns the final summary.
+    deadline passes, the operator aborts, or the restart budget is exhausted. Returns the
+    final summary.
 
     ``run_fn`` is the orchestrator's runFull (bound to its work_dir/args). On a raised
     exception or a non-terminal return, we reload the persisted state (committed progress
-    is the source of truth) and try again after exponential backoff.
+    is the source of truth) and try again after exponential backoff. ``bus`` defaults to
+    the task's ControlBus; tests inject a fake.
     """
     max_restarts = config.RUN_MAX_RESTARTS if max_restarts is None else max_restarts
     reload_state = reload_state or TaskState.load
-    attempt = 0
-    no_progress_streak = 0
+    bus = bus if bus is not None else _defaultBus(state)
+    attempt = no_progress_streak = reload_failures = 0
     prev_progress = last_progress_at(state)
     last_summary: dict[str, Any] = {"task_id": state.task_id, "status": "unknown"}
 
     while True:
+        # OPERATOR INTENT SURVIVES STATE-SAVE FAILURE: the bus abort flag persists
+        # independently of the task JSON, so even when persisting 'aborted' failed and the
+        # crash handler wrote 'crashed', the operator's stop is honored -- never auto-resumed.
+        if _abortRequested(bus):
+            LOG.warning("abort flag set on the control bus; finalizing instead of resuming")
+            _finalize_partial(state, status="aborted", reason="operator abort")
+            return {"task_id": state.task_id, "status": "aborted", "reason": "operator abort"}
+
         try:
             last_summary = run_fn(state) or last_summary
         except Exception as e:  # noqa: BLE001 -- a crash must become a resume, not a death
             LOG.error("run crashed (attempt %d): %s", attempt + 1, e, exc_info=True)
             last_summary = {"task_id": state.task_id, "status": "crashed", "error": str(e)}
 
-        try:
-            # COHERENCE INVARIANT (#13): this recovery path reloads persisted *state* (JSON),
-            # NOT module bytecode. Never call importlib's reload() here -- the running process
-            # must keep its pinned start-of-run bytecode so in-process re-invocations of run_fn
-            # stay coherent. Self-edits to loop code are inert until a fresh process is started.
-            state = reload_state(state.task_id)   # adopt committed progress before deciding
-        except Exception:  # noqa: BLE001
-            pass
+        state, reload_failures, fatal = _reloadCommitted(state, reload_state, reload_failures)
+        if fatal is not None:
+            _finalize_partial(state, status="blocked", reason=fatal)
+            return {"task_id": state.task_id, "status": "blocked", "reason": fatal}
 
         if is_terminal(state):
             return last_summary

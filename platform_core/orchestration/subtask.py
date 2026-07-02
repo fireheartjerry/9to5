@@ -47,9 +47,16 @@ def _singleDeliverable(goal_elaborated: str) -> bool:
     return len(files) <= 1 and not multi_phrase
 
 
+def _coversRequirement(req: str, hay: str) -> bool:
+    """Cheap coverage check: the subtask text shares >=1 significant word with the requirement."""
+    return any(w in hay for w in re.findall(r"[a-z0-9]{4,}", (req or "").lower()))
+
+
 def _strengthenPlanVerifies(goal_elaborated: str, subtasks: list[dict]) -> list[dict]:
-    """For an enumerated multi-deliverable goal, replace the verify of any subtask covering >=2
-    requirements with a strict compound content-scan that asserts every covered requirement.
+    """For an enumerated multi-deliverable goal with a single named target file, DECLARE that
+    file as the diff-grounded target of any subtask covering >=2 requirements (R10): the
+    receipt pipeline then FAILS the subtask unless git shows the target actually changed.
+    Replaces the deleted token-scan content verify -- a goal word in a comment proves nothing.
     No-op for non-enumerated goals or when no single target file is named."""
     reqs = verifier.extractRequirements(goal_elaborated)
     if len(reqs) < 2:
@@ -58,15 +65,15 @@ def _strengthenPlanVerifies(goal_elaborated: str, subtasks: list[dict]) -> list[
     if not target_rel:
         return subtasks
     target_abs = str((config.PROJECT_ROOT / target_rel).resolve())
-    req_markers = [(r, verifier.requirementMarkers(r)) for r in reqs]
     for st in subtasks:
         hay = f"{st.get('title', '')} {st.get('description', '')}".lower()
-        covered = [markers for _r, markers in req_markers
-                   if markers and any(k in hay for k in markers)]
-        if len(covered) >= 2:
-            st["verify"] = verifier.buildContentScanVerify(covered, target_abs)
-            LOG.info("plan strengthen: subtask '%s' -> strict compound verify over %d requirements",
-                     st.get("title"), len(covered))
+        covered = sum(1 for r in reqs if _coversRequirement(r, hay))
+        if covered >= 2:
+            v = dict(st.get("verify") or {})
+            v.setdefault("targets", [target_abs])
+            st["verify"] = v
+            LOG.info("plan strengthen: subtask '%s' -> diff-grounded target %s "
+                     "(%d requirements covered)", st.get("title"), target_abs, covered)
     return subtasks
 
 

@@ -71,3 +71,20 @@ class TestApplyOps(unittest.TestCase):
         self.state.updateSubtask("st-001", status="in_progress")
         self.orch._applyOps(self.state, _Bus([{"op": "retry"}]), self.dash)
         self.assertEqual(self.state.getSubtask("st-001")["status"], "pending")
+
+    def test_set_mode_applies_at_drain(self):
+        # single-writer rule: '!mode' queues an op; ONLY this drain path writes task JSON.
+        self.orch._applyOps(self.state, _Bus([{"op": "set_mode", "mode": "gated"}]), self.dash)
+        self.assertEqual(self.state.meta["control_mode"], "gated")
+        self.assertTrue(any("control mode -> gated" in e for e in self.dash.events))
+
+    def test_set_mode_rejects_garbage(self):
+        before = self.state.meta.get("control_mode")
+        self.orch._applyOps(self.state, _Bus([{"op": "set_mode", "mode": "turbo"}]), self.dash)
+        self.assertEqual(self.state.meta.get("control_mode"), before)
+
+    def test_mark_stale_is_surfaced_not_applied(self):
+        status_before = self.state.meta["status"]
+        self.orch._applyOps(self.state, _Bus([{"op": "mark_stale", "reason": "launcher"}]), self.dash)
+        self.assertEqual(self.state.meta["status"], status_before)   # breadcrumb only
+        self.assertTrue(any("stale" in e for e in self.dash.events), self.dash.events)

@@ -74,44 +74,44 @@ class TestBuilderBrainPlan(unittest.TestCase):
 
 
 class TestBuilderBrainChat(unittest.TestCase):
+    """EXACT act dispatch (R5): prompt wording NEVER routes; unknown/missing act raises."""
+
     def setUp(self):
         self.brain = BuilderBrain("/tmp/work", n_subtasks=2)
 
     def _user_msg(self, text):
         return [{"role": "user", "content": text}]
 
-    def test_invocation_spec_path(self):
-        resp = self.brain.chat(messages=self._user_msg("invocation spec needed"))
+    def test_invocation_spec_act(self):
+        resp = self.brain.chat(messages=self._user_msg("fully reworded ask"),
+                               act="invocation_spec")
         data = json.loads(resp["message"]["content"])
         self.assertIn("prompt", data)
         self.assertIn("effort_level", data)
 
-    def test_non_spec_path_returns_plan(self):
-        resp = self.brain.chat(messages=self._user_msg("plan the work"))
+    def test_plan_act_returns_plan(self):
+        resp = self.brain.chat(messages=self._user_msg("plan the work"), act="plan")
         data = json.loads(resp["message"]["content"])
         self.assertIn("subtasks", data)
         self.assertEqual(len(data["subtasks"]), 2)
 
-    def test_empty_messages_returns_plan(self):
-        resp = self.brain.chat(messages=[])
-        data = json.loads(resp["message"]["content"])
-        self.assertIn("subtasks", data)
+    def test_wording_never_routes(self):
+        # wording says invocation-spec; act says plan -> the act wins (R5 regression)
+        resp = self.brain.chat(messages=self._user_msg("invocation spec needed"), act="plan")
+        self.assertIn("subtasks", json.loads(resp["message"]["content"]))
 
-    def test_non_dict_items_in_messages_ignored(self):
-        msgs = ["not a dict", None, {"role": "user", "content": "invocation spec"}]
-        resp = self.brain.chat(messages=msgs)
-        data = json.loads(resp["message"]["content"])
-        self.assertIn("prompt", data)
+    def test_unknown_act_raises(self):
+        with self.assertRaises(ValueError):
+            self.brain.chat(messages=self._user_msg("go"), act="mystery")
 
-    def test_content_none_falls_back_to_plan(self):
-        resp = self.brain.chat(messages=[{"role": "user", "content": None}])
-        data = json.loads(resp["message"]["content"])
-        self.assertIn("subtasks", data)
+    def test_missing_act_raises(self):
+        with self.assertRaises(ValueError):
+            self.brain.chat(messages=self._user_msg("go"))
 
-    def test_no_messages_returns_plan(self):
-        resp = self.brain.chat()
-        data = json.loads(resp["message"]["content"])
-        self.assertIn("subtasks", data)
+    def test_messages_irrelevant_to_dispatch(self):
+        for msgs in (None, [], ["junk"], [{"role": "user", "content": None}]):
+            data = json.loads(self.brain.chat(messages=msgs, act="plan")["message"]["content"])
+            self.assertIn("subtasks", data)
 
 
 # ---------------------------------------------------------------------------

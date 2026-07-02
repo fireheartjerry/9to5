@@ -60,63 +60,12 @@ class OrchestratorControlMixin:
             self._poll_lock.release()
 
     def _applyOps(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard) -> None:
+        """Drain queued plan ops and apply each under the state lock (single-writer rule:
+        this run-loop drain is where bot/launcher intent becomes task-JSON writes)."""
+        from platform_core.orchestration import control_ops
         for op in bus.drainOps():
-            kind = op.get("op")
             with self._state_lock:
-                if kind == "skip":
-                    sid = op.get("subtask_id")
-                    st = state.getSubtask(sid)
-                    if st is None:
-                        dashboard.event(f"skip ignored: {sid} not found")
-                    elif st["status"] == "pending":
-                        state.updateSubtask(sid, status="removed")
-                        dashboard.event(f"skipped {sid}")
-                    else:
-                        # in_progress/done/failed/removed can't be skipped between steps -- say so
-                        # instead of dropping the request silently (the user is waiting on feedback).
-                        dashboard.event(f"skip ignored: {sid} is {st['status']} (only pending can be skipped)")
-                elif kind == "add":
-                    st = state.addSubtask(op.get("title", "untitled"), op.get("description", ""))
-                    dashboard.event(f"added {st['subtask_id']}")
-                elif kind == "retry":
-                    cur = next((s for s in state.subtasks if s["status"] == "in_progress"), None)
-                    if cur:
-                        state.updateSubtask(cur["subtask_id"], status="pending")
-                        dashboard.event(f"retry {cur['subtask_id']}")
-                elif kind == "edit":
-                    # in-Discord plan editor: amend a subtask's title/description (Tier 2).
-                    sid = op.get("subtask_id")
-                    st = state.getSubtask(sid)
-                    if st is None:
-                        dashboard.event(f"edit ignored: {sid} not found")
-                    elif st["status"] in ("pending", "in_progress"):
-                        fields = {k: op[k] for k in ("title", "description") if op.get(k)}
-                        if fields:
-                            state.updateSubtask(sid, **fields)
-                            dashboard.event(f"edited {sid}")
-                    else:
-                        dashboard.event(f"edit ignored: {sid} is {st['status']} (only pending/in_progress)")
-                elif kind == "intent":
-                    state.addIntent(op.get("text", ""))
-                    dashboard.event(f"intent noted: {op.get('text','')[:60]}")
-                elif kind == "intent_clear":
-                    state.clearIntents()
-                    dashboard.event("intents cleared")
-                elif kind == "inject_context":
-                    state.addInjectedContext(op.get("text", ""))
-                    dashboard.event("context injected for next attempt")
-                elif kind == "set_effort":
-                    sid = op.get("subtask_id")
-                    if state.getSubtask(sid):
-                        state.updateSubtask(sid, effort_override=op.get("level"))
-                        dashboard.event(f"effort override {sid} -> {op.get('level')}")
-                elif kind == "set_run_effort":
-                    state.meta["run_effort_override"] = op.get("level")
-                    state.save()
-                    dashboard.event(f"run effort -> {op.get('level')}")
-                elif kind == "extend_deadline":
-                    new_dl = state.extendDeadline(float(op.get("delta_seconds", 0)))
-                    dashboard.event(f"deadline extended -> {new_dl}")
+                control_ops.applyOp(state, op, dashboard)
 
     def _waitWhilePaused(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard,
                          label: str = "paused") -> None:
@@ -177,7 +126,7 @@ class OrchestratorControlMixin:
         except Exception:
             pass
         try:
-            data = _chatJson(self._ollamaChat(system, user, want_json=True)) or {}
+            data = _chatJson(self._ollamaChat(system, user, act="gatekeeper", want_json=True)) or {}
             approve = data.get("approve", True) if isinstance(data, dict) else True
             reason = str((data or {}).get("reason") or "")[:200]
             return ("approve" if approve else "reject"), reason

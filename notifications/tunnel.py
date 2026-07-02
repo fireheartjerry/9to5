@@ -40,9 +40,13 @@ class TunnelManager:
     DEMOTE_REQUALIFY = 300.0
     DEMOTE_THRESHOLD = 3
 
-    def __init__(self, providers: Optional[list] = None, *, state=None) -> None:
+    def __init__(self, providers: Optional[list] = None, *, state=None, state_lock=None) -> None:
         self.providers = providers if providers is not None else default_providers()
         self._state = state
+        # The supervisor is a daemon thread mutating shared TaskState -- take the
+        # orchestrator's state lock around every state read/write (same discipline as
+        # dashboard.start). A private lock keeps lock-less callers (tests) safe.
+        self._state_lock = state_lock if state_lock is not None else threading.Lock()
         self._provider_idx = 0
         self._port = 0
         self._url: Optional[str] = None
@@ -104,7 +108,8 @@ class TunnelManager:
     def _try_resume(self) -> bool:
         if self._state is None:
             return False
-        saved = (getattr(self._state, "meta", {}) or {}).get("tunnel_url")
+        with self._state_lock:
+            saved = (getattr(self._state, "meta", {}) or {}).get("tunnel_url")
         if not saved:
             return False
         if self._current_provider().probe(saved, timeout=min(5.0, self.VALIDATE_TIMEOUT)):
@@ -224,8 +229,9 @@ class TunnelManager:
             return
         if self._state is not None:
             try:
-                self._state.meta["tunnel_url"] = url
-                self._state.save()
+                with self._state_lock:   # daemon thread + run loop share this TaskState
+                    self._state.meta["tunnel_url"] = url
+                    self._state.save()
             except Exception:  # noqa: BLE001
                 pass
         for cb in list(self._callbacks):

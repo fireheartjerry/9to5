@@ -86,7 +86,7 @@ class TestWorkDirLauncherValidation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, \
                 mock.patch.object(wl, "activeRun", return_value=None), \
                 mock.patch.object(wl, "spawn", return_value=123), \
-                mock.patch.object(wl, "newestTaskSince", return_value="abcdef12"):
+                mock.patch.object(wl, "waitForLaunch", return_value="abcdef12"):
             out = wl.launchOrError(wl.WorkRequest(goal="x", work_dir=d))
         self.assertIn("Launched run", out)
         self.assertIn("not a git repo", out)
