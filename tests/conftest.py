@@ -73,7 +73,7 @@ def _fast_sleep(monkeypatch):
 # Heavyweight test files auto-marked `slow` (subprocess/e2e/integration/fuzz/sim) so the fast lane
 # `pytest -m "not slow"` skips them -- without editing 137 files. Filename-substring based.
 _SLOW_PATTERNS = ("e2e", "integration", "fuzz", "simulation", "full_autonomy",
-                  "phase2", "phase_3", "selfplay", "_loop")
+                  "phase2", "phase_3", "selfplay", "_loop", "chaos")
 
 
 def pytest_collection_modifyitems(config, items):  # noqa: ARG001 -- pytest hook signature
@@ -201,6 +201,7 @@ def _no_real_discord(monkeypatch):
     """Run every test as if Discord is unconfigured -> no live REST calls, no 429 throttling."""
     monkeypatch.setattr(config, "DISCORD_BOT_TOKEN", "")
     monkeypatch.setattr(config, "DISCORD_CHANNEL_ID", 0)
+    monkeypatch.setattr(config, "DISCORD_HUMAN_USER_ID", "")
     yield
 
 
