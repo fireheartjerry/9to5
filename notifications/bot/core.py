@@ -18,7 +18,7 @@ EXPORTS:
   runBot() -> None
 DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, notifications.views_feedback, notifications.views_terminal, platform_core.runtime, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_simulation_core.py
+RUN/TEST: python -m pytest tests/slow/test_simulation_core.py
 """
 from __future__ import annotations
 

@@ -148,7 +148,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_phase_3_architecture.py"
+        "tests/slow/test_phase_3_architecture.py"
       ],
       "callers": [
         "platform_core.orchestration.run_phase_mixin"
@@ -232,8 +232,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_browser_executor.py",
-        "tests/test_phase2_cdp_adversary.py"
+        "tests/slow/test_phase2_cdp_adversary.py",
+        "tests/test_browser_executor.py"
       ],
       "callers": [
         "agents.adversary",
@@ -1125,7 +1125,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_phase2_second_brain.py"
+        "tests/slow/test_phase2_second_brain.py"
       ],
       "callers": [
         "platform_core.orchestration.adversary_loop",
@@ -5200,7 +5200,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_simulation_core.py"
+        "tests/slow/test_simulation_core.py"
       ],
       "callers": [
         "notifications.command_bot"
@@ -11207,9 +11207,9 @@
         "reads/writes state/control.db via control_store"
       ],
       "test": [
+        "tests/slow/test_fuzz_control.py",
         "tests/test_control_concurrency.py",
         "tests/test_control_store.py",
-        "tests/test_fuzz_control.py",
         "tests/test_granular_controls.py",
         "tests/test_webdash_control.py"
       ],
@@ -11694,8 +11694,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_simulation_advanced.py",
-        "tests/test_simulation_core.py"
+        "tests/slow/test_simulation_advanced.py",
+        "tests/slow/test_simulation_core.py"
       ],
       "callers": [
         "main"
@@ -12622,7 +12622,7 @@
           "name": "find_tests",
           "kind": "function",
           "signature": "(dotted: str, name: str) -> list[str]",
-          "summary": "Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> glob -> [].",
+          "summary": "Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> glob -> [] (recursive).",
           "lineno": 254
         },
         {
@@ -12630,42 +12630,42 @@
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> dict",
           "summary": "Full-repo machine index",
-          "lineno": 266
+          "lineno": 268
         },
         {
           "name": "toplevel_import_graph",
           "kind": "function",
           "signature": "() -> dict[str, list[str]]",
           "summary": "{dotted-module: [first-party modules imported at LOAD time]}",
-          "lineno": 295
+          "lineno": 297
         },
         {
           "name": "render_header",
           "kind": "function",
           "signature": "(rec: dict) -> str",
           "summary": "Render the @AI-MAP block (text only, no surrounding quotes).",
-          "lineno": 310
+          "lineno": 312
         },
         {
           "name": "splice_header",
           "kind": "function",
           "signature": "(src: str, header: str) -> Optional[str]",
           "summary": "Return ``src`` with ``header`` placed inside the module docstring (below the prose,",
-          "lineno": 337
+          "lineno": 339
         },
         {
           "name": "write_outputs",
           "kind": "function",
           "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 362
+          "lineno": 364
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: Optional[list[str]]=None) -> int",
           "summary": "",
-          "lineno": 375
+          "lineno": 377
         }
       ],
       "depends_on": [],

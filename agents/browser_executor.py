@@ -30,7 +30,7 @@ EXPORTS:
   askGemini(message: str, *, runner=None, expect_json: bool=False) -> Optional[str]  -- Send one ``message`` to Gemini and return the reply text.
 DEPENDS-ON: agents.executor, agents.gemini_driver, config, notifications.lane_feed
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_browser_executor.py tests/test_phase2_cdp_adversary.py
+RUN/TEST: python -m pytest tests/slow/test_phase2_cdp_adversary.py tests/test_browser_executor.py
 """
 from __future__ import annotations
 

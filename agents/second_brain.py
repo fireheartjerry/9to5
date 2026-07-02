@@ -27,7 +27,7 @@ EXPORTS:
   is_blocking(verdict: dict) -> bool  -- True when a verdict should hold a PR / drive remediation.
 DEPENDS-ON: agents.adversary, agents.gemini_driver, config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_phase2_second_brain.py
+RUN/TEST: python -m pytest tests/slow/test_phase2_second_brain.py
 """
 from __future__ import annotations
 

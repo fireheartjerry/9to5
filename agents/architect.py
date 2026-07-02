@@ -14,7 +14,7 @@ EXPORTS:
   authorArchitectPrompt(goal_elaborated: str, chat=None, discovery_report=None, work_profile=None) -> str  -- Ollama authors the prompt that will be sent to Claude Code CLI.
 DEPENDS-ON: config, knowledge, llm_io, platform_core.orchestration
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_phase_3_architecture.py
+RUN/TEST: python -m pytest tests/slow/test_phase_3_architecture.py
 """
 from __future__ import annotations
 

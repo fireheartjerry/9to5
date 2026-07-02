@@ -15,7 +15,7 @@ EXPORTS:
   module_dotted(path: Path) -> str  -- agents/adversary.py -> 'agents.adversary'
   first_party_roots() -> set[str]  -- Top-level importable names: every top-level .py stem + every dir holding an __init__.py.
   parse_module(path: Path, roots: set[str]) -> dict  -- Extract the per-module record (sans callers, which are computed globally).
-  find_tests(dotted: str, name: str) -> list[str]  -- Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> glob -> [].
+  find_tests(dotted: str, name: str) -> list[str]  -- Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> glob -> [] (recursive).
   build_map(only: Optional[str]=None) -> dict  -- Full-repo machine index
   toplevel_import_graph() -> dict[str, list[str]]  -- {dotted-module: [first-party modules imported at LOAD time]}
   render_header(rec: dict) -> str  -- Render the @AI-MAP block (text only, no surrounding quotes).
@@ -67,9 +67,9 @@ TEST_TOP_DIRS = ("tests", "testing")
 
 # Modules whose covering test is not tests/test_<name>.py. dotted-module -> [test paths].
 MANUAL_TEST_MAP: dict[str, list[str]] = {
-    "agents.second_brain": ["tests/test_phase2_second_brain.py"],
-    "agents.architect": ["tests/test_phase_3_architecture.py"],
-    "agents.browser_executor": ["tests/test_browser_executor.py", "tests/test_phase2_cdp_adversary.py"],
+    "agents.second_brain": ["tests/slow/test_phase2_second_brain.py"],
+    "agents.architect": ["tests/slow/test_phase_3_architecture.py"],
+    "agents.browser_executor": ["tests/test_browser_executor.py", "tests/slow/test_phase2_cdp_adversary.py"],
 }
 
 
@@ -252,14 +252,16 @@ def parse_module(path: Path, roots: set[str]) -> dict:
 
 # ==== TEST MAPPING ====
 def find_tests(dotted: str, name: str) -> list[str]:
-    """Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> glob -> []."""
+    """Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> glob -> [] (recursive)."""
     if dotted in MANUAL_TEST_MAP:
         return sorted(MANUAL_TEST_MAP[dotted])
-    exact = TESTS_DIR / f"test_{name}.py"
-    if exact.exists():
-        return [f"tests/test_{name}.py"]
-    hits = sorted(p for p in TESTS_DIR.glob(f"test_*{name}*.py")) if TESTS_DIR.exists() else []
-    return [f"tests/{p.name}" for p in hits]
+    if not TESTS_DIR.exists():
+        return []
+    exact = sorted(TESTS_DIR.rglob(f"test_{name}.py"))
+    if exact:
+        return [f"tests/{p.relative_to(TESTS_DIR).as_posix()}" for p in exact]
+    hits = sorted(TESTS_DIR.rglob(f"test_*{name}*.py"))
+    return [f"tests/{p.relative_to(TESTS_DIR).as_posix()}" for p in hits]
 
 
 # ==== MAP ASSEMBLY ====

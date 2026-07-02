@@ -47,7 +47,7 @@ python tools/affected_tests.py $(git diff --name-only)   # auto-pick tests for c
 
 ```bash
 # Core PR capture + ledger write (mocked gh CLI)
-python -m pytest tests/test_learning_loop.py -v
+python -m pytest tests/slow/test_learning_loop.py -v
 
 # experience_pr SQLite round-trip (record/fetch/upsert/filter)
 python -m pytest tests/test_experience_pr.py tests/test_memory_experience_pr.py -v
@@ -62,7 +62,7 @@ python -m pytest tests/test_curriculum_adaptive_trigger.py -v
 python -m pytest tests/test_feedback_flow.py -v
 
 # Run all PR-feedback focused tests together
-python -m pytest tests/test_learning_loop.py tests/test_experience_pr.py \
+python -m pytest tests/slow/test_learning_loop.py tests/test_experience_pr.py \
     tests/test_memory_experience_pr.py tests/test_learning_sie.py \
     tests/test_curriculum_adaptive_trigger.py tests/test_feedback_flow.py -v
 ```
@@ -78,7 +78,7 @@ Use after changing lifecycle, execution, ControlBus, state, verifier, replanner,
 Examples:
 
 ```bash
-python -m pytest tests/test_integration_loop.py -q
+python -m pytest tests/slow/test_integration_loop.py -q
 python -m pytest tests/test_notification_integration.py -q
 python -m pytest tests/test_webdash_control.py -q
 ```

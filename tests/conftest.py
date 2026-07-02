@@ -61,19 +61,16 @@ def _fast_sleep(monkeypatch):
     monkeypatch.setattr(_time, "sleep", _capped)
     yield
 
-# Heavyweight test files auto-marked `slow` (subprocess/e2e/integration/fuzz/sim) so the fast lane
-# `pytest -m "not slow"` skips them -- without editing 137 files. Filename-substring based.
-_SLOW_PATTERNS = ("e2e", "integration", "fuzz", "simulation", "full_autonomy",
-                  "phase2", "phase_3", "selfplay", "_loop")
-
-
+# Heavyweight tests (subprocess/e2e/integration/fuzz/sim) live under tests/slow/ and are
+# auto-marked `slow` by directory so the fast lane `pytest -m "not slow"` skips them.
+# Directory placement IS the marker -- no filename-substring magic.
 def pytest_collection_modifyitems(config, items):  # noqa: ARG001 -- pytest hook signature
     for item in items:
-        name = str(getattr(item, "fspath", "")).replace("\\", "/").lower()
-        if any(p in name for p in _SLOW_PATTERNS):
+        path = str(getattr(item, "fspath", "")).replace("\\", "/").lower()
+        if "/tests/slow/" in path:
             item.add_marker(pytest.mark.slow)
-            # Slow tests (e.g. the 150-iteration fuzz property tests) legitimately exceed the
-            # 60s default; give them headroom while the fast lane keeps the tight hang-catching cap.
+            # Slow tests (e.g. 150-iteration fuzz property tests) legitimately exceed the
+            # 60s default; give headroom while the fast lane keeps the tight hang-catching cap.
             item.add_marker(pytest.mark.timeout(300))
 
 

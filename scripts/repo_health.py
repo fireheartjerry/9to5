@@ -49,7 +49,7 @@ def _git(*args: str) -> str:
 
 def _testCount() -> int:
     try:
-        return len(list((REPO_ROOT / "tests").glob("test_*.py")))
+        return len(list((REPO_ROOT / "tests").rglob("test_*.py")))
     except Exception:
         return 0
 

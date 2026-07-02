@@ -24,7 +24,7 @@ EXPORTS:
   buildBuilderOrchestrator(work_dir: str, n_subtasks: int=3)  -- An Orchestrator that produces real artifacts under work_dir and verifies them for real.
 DEPENDS-ON: config, orchestrator.Orchestrator
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_simulation_advanced.py tests/test_simulation_core.py
+RUN/TEST: python -m pytest tests/slow/test_simulation_advanced.py tests/slow/test_simulation_core.py
 """
 from __future__ import annotations
 

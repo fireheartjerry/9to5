@@ -136,3 +136,20 @@ class TestLayering(unittest.TestCase):
         deps = graph.get("orchestrator", set())
         offenders = sorted(d for d in deps if "orchestrator" in graph.get(d, set()))
         self.assertFalse(offenders, f"orchestrator dependencies that back-import orchestrator: {offenders}")
+
+
+@unittest.skipIf(repo_map is None, "tools/repo_map.py not importable")
+class TestFindTestsRecursive:
+    def test_finds_test_in_subdirectory(self, tmp_path, monkeypatch):
+        tests_dir = tmp_path / "tests"
+        (tests_dir / "somedomain").mkdir(parents=True)
+        (tests_dir / "somedomain" / "test_widget.py").write_text("def test_x():\n    pass\n")
+        monkeypatch.setattr(repo_map, "TESTS_DIR", tests_dir)
+        assert repo_map.find_tests("agents.widget", "widget") == ["tests/somedomain/test_widget.py"]
+
+    def test_glob_fallback_is_recursive(self, tmp_path, monkeypatch):
+        tests_dir = tmp_path / "tests"
+        (tests_dir / "d").mkdir(parents=True)
+        (tests_dir / "d" / "test_widget_extra.py").write_text("def test_x():\n    pass\n")
+        monkeypatch.setattr(repo_map, "TESTS_DIR", tests_dir)
+        assert repo_map.find_tests("agents.widget", "widget") == ["tests/d/test_widget_extra.py"]

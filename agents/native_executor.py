@@ -8,7 +8,7 @@ installed the call degrades cleanly (ok=False, is_error=True) so the run continu
 rather than crashing -- exactly like a failed terminal subtask.
 
 Deterministic + offline-testable: pywinauto is isolated behind ``_run_native_actions``
-(mockable); all tests in tests/test_phase_3_architecture.py mock that function so CI
+(mockable); all tests in tests/slow/test_phase_3_architecture.py mock that function so CI
 never requires a real Windows display session or pywinauto install.
 
 See docs/phase_3_architecture.md + orchestrator._selectExecutor for the wiring spec.
