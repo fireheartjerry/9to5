@@ -72,7 +72,7 @@ def render_root_agents_md(m: dict) -> str:
         ("Tests for changed files", "`python tools/affected_tests.py $(git diff --name-only)`"),
         ("Outline a big file (signatures only)", "`python tools/dev.py outline <file>`"),
         ("Find a symbol's def + callers", "`python tools/dev.py where <symbol>`"),
-        ("Full suite", "`python -m unittest discover -s tests -v`"),
+        ("Full suite", "`python tools/dev.py fast`"),
         ("Fast lane", "`python -m pytest -m \"not slow\" -q`"),
         ("Dry-run pipeline", "`python main.py --dry-run --goal ... --hours 1 --no-web`"),
     ):
