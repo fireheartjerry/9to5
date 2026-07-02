@@ -83,6 +83,7 @@ class WorkRequest:
     no_pr: bool = False
     night_mode: bool = False
     work_profile: Optional[str] = None
+    sim: bool = False   # token-light: --sim-run (simulation doubles over live surfaces, zero API)
 
 
 def parseHours(raw) -> float:
@@ -176,6 +177,8 @@ def buildArgv(req: WorkRequest) -> list[str]:
         argv.append("--no-pr")
     if req.night_mode:
         argv.append("--night-mode")
+    if req.sim:
+        argv.append("--sim-run")
     if req.work_profile:
         argv += ["--work-profile", req.work_profile]
     if req.work_dir:
