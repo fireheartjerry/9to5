@@ -28,7 +28,3 @@ class TestRepoHealth(unittest.TestCase):
     def test_main_runs_clean(self):
         self.assertEqual(repo_health.main([]), 0)
         self.assertEqual(repo_health.main(["--json"]), 0)
-
-
-if __name__ == "__main__":
-    unittest.main()

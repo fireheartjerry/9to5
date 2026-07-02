@@ -273,7 +273,3 @@ class TestLoadRegistry(unittest.TestCase):
         _write_json(self.defs_dir, "bad.json", {"unknown_key": True})
         with self.assertLogs("workflows.registry", level=logging.WARNING):
             loadRegistry(self.defs_dir)
-
-
-if __name__ == "__main__":
-    unittest.main()

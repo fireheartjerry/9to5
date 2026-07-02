@@ -74,7 +74,3 @@ class TestPromptProvenance(unittest.TestCase):
         prompts.champion_id("planner", "PLANNER DEFAULT", db_path=self.db)
         got = prompts.get("planner", "FALLBACK", db_path=self.db)
         self.assertEqual(got, "PLANNER DEFAULT")
-
-
-if __name__ == "__main__":
-    unittest.main()

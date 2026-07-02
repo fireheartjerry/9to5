@@ -142,7 +142,3 @@ class TestPaginator(unittest.TestCase):
         interaction.user.id = 5
         result = _run(p.interaction_check(interaction))
         self.assertTrue(result)
-
-
-if __name__ == "__main__":
-    unittest.main()

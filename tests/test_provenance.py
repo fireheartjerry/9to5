@@ -38,7 +38,3 @@ class TestAssertIngestible(unittest.TestCase):
         d = provenance.assertIngestible("gold_examples", "believe",
                                         Provenance(origin=Origin.EXECUTOR, attested_by="adversary:real"))
         self.assertEqual(d.verdict, Verdict.ALLOW)
-
-
-if __name__ == "__main__":
-    unittest.main()

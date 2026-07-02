@@ -105,7 +105,3 @@ class TestGeminiRouting(unittest.TestCase):
             reply = browser_executor.askGemini("q", expect_json=True)
         self.assertEqual(reply, "from session")
         m.assert_called_once_with("q", expect_json=True)
-
-
-if __name__ == "__main__":
-    unittest.main()

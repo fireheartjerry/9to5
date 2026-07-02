@@ -125,7 +125,3 @@ class TestDryRun(unittest.TestCase):
         st.setElaboratedGoal("clean up docs")
         st.save()
         self.assertTrue(run_loop._detectSelfReferential(st, str(config.PROJECT_ROOT)))
-
-
-if __name__ == "__main__":
-    unittest.main()

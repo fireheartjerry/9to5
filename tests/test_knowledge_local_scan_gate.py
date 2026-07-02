@@ -113,7 +113,3 @@ class TestLocalScanGate(unittest.TestCase):
 
         self.assertNotIn("EXECUTOR FORGED DESCRIPTION", out)
         self.assertIn("executor-agent", out)  # name still present
-
-
-if __name__ == "__main__":
-    unittest.main()

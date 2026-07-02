@@ -336,7 +336,3 @@ class TestSimReview(unittest.TestCase):
         for trigger in ("heartbeat", "uncertainty", "attempt_limit", "pre_pr"):
             rv = simReview("t", trigger, "o")
             self.assertEqual(rv["trigger_reason"], trigger)
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)

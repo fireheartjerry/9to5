@@ -263,7 +263,3 @@ class TestEventPersistence(unittest.TestCase):
             d.start(st)
         save_ev.assert_not_called()
         self.assertEqual(len(d._eventsSnapshot()), 0)
-
-
-if __name__ == "__main__":
-    unittest.main()

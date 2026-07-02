@@ -8,7 +8,7 @@ Subcommands:
   check [files] [--json] ruff + typecheck + affected tests + repo-map drift
   test [pytest-args]    run tests (default: full suite)
   fast                  run the fast lane: pytest -m "not slow"
-  ci-local              local CI gate: repo-map, workflows, affected tests, fast fallback
+  ci-local              local CI gate: compile tests, no-unittest-main, repo-map, workflows, affected tests, fast fallback
   slow-report           run slow lane with heartbeat + durations; write logs/slow-test-report.md
   heartbeat-test        prove pytest heartbeat output with an explicit slow fixture
   context-check         validate Claude-facing context budgets

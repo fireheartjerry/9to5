@@ -122,7 +122,3 @@ class TestSafeChatExtract(unittest.TestCase):
     def test_missing_content_key_returns_empty(self):
         msgs = [{"role": "user"}]
         self.assertEqual(safeChatExtract(msgs), "")
-
-
-if __name__ == "__main__":
-    unittest.main()

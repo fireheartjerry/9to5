@@ -206,7 +206,3 @@ class TestExecutionLoop(unittest.TestCase):
             orch.runExecutionLoop(st, "doc", str(self.dir), bus, mock.Mock(), parallelism=1)
         self.assertEqual(st.getSubtask("st-001")["status"], "done")
         self.assertTrue(review.called)
-
-
-if __name__ == "__main__":
-    unittest.main()

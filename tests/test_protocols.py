@@ -39,7 +39,3 @@ class TestStructuralSatisfaction(unittest.TestCase):
 
     def test_an_unrelated_object_does_not_satisfy_executor(self):
         self.assertNotIsInstance(object(), protocols.Executor)
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -249,14 +249,3 @@ class TestWriteLedger(unittest.TestCase):
                               "review_feedback": []})
             except Exception as exc:  # noqa: BLE001
                 self.fail(f"_writeLedger raised on import failure: {exc}")
-
-
-if __name__ == "__main__":
-    if "--test" in sys.argv:
-        # Run the full unittest suite and exit with its result code.
-        loader = unittest.TestLoader()
-        suite = loader.loadTestsFromModule(sys.modules[__name__])
-        runner = unittest.TextTestRunner(verbosity=2)
-        result = runner.run(suite)
-        sys.exit(0 if result.wasSuccessful() else 1)
-    unittest.main()

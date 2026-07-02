@@ -212,22 +212,3 @@ class TestScoreDomains(unittest.TestCase):
         rows = scoreDomains(demand, inventory)
         debug_row = next(r for r in rows if r["domain"] == "debugging")
         self.assertGreater(debug_row["demand"], 0)
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-if __name__ == "__main__":
-    loader = unittest.TestLoader()
-    suite = unittest.TestSuite()
-    for cls in [
-        TestStemTokens,
-        TestSkillNameTokens,
-        TestBuildDemandCounter,
-        TestScoreDomains,
-    ]:
-        suite.addTests(loader.loadTestsFromTestCase(cls))
-
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    sys.exit(0 if result.wasSuccessful() else 1)

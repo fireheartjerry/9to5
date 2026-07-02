@@ -413,7 +413,3 @@ class TestGetDecisionPoints(unittest.TestCase):
     def test_calibrate_limit_param_accepted(self):
         result = self._run_with_good_json(calibrate_limit=5)
         self.assertIn("decision_points", result)
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)

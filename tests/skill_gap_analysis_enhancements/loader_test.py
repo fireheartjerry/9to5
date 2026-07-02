@@ -145,7 +145,3 @@ class TestParallelLoadTaskHistory(unittest.TestCase):
     def test_missing_tasks_dir_returns_empty_list(self):
         with patch.object(_mod, "TASKS_DIR", pathlib.Path("/no/such/tasks/dir")):
             self.assertEqual(loadTaskHistory(), [])
-
-
-if __name__ == "__main__":
-    unittest.main()

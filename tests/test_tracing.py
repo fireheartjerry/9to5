@@ -54,7 +54,3 @@ class TestTracing(unittest.TestCase):
         tracing.emit("run_one", "a")
         tracing.emit("run_two", "b")
         self.assertEqual(set(tracing.recentRunIds()), {"run_one", "run_two"})
-
-
-if __name__ == "__main__":
-    unittest.main()

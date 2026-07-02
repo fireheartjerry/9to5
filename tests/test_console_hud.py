@@ -45,7 +45,3 @@ class Hud(unittest.TestCase):
             data = {}
         out = console_hud.render(Broken(), "executing")
         self.assertIn("console offline", out)
-
-
-if __name__ == "__main__":
-    unittest.main()

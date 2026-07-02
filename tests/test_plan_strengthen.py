@@ -57,7 +57,3 @@ class TestStrengthenPlanVerifies(unittest.TestCase):
         subs = [{"title": "x", "description": "tidy up webdash.py", "verify": dict(original)}]
         out = self.orc._strengthenPlanVerifies("tidy up webdash.py", subs)
         self.assertEqual(out[0]["verify"], original, "non-enumerated goal must keep the brain verify")
-
-
-if __name__ == "__main__":
-    unittest.main()

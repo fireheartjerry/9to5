@@ -69,7 +69,3 @@ class TestReviewFailsClosedToStub(unittest.TestCase):
         r = self._review('{"verdict": "challenged", "concerns": ["x"]}')
         self.assertEqual(r["verdict"], adv._CHALLENGED)
         self.assertFalse(r["stub"])
-
-
-if __name__ == "__main__":
-    unittest.main()

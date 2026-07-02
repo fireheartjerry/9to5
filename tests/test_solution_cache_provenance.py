@@ -84,7 +84,3 @@ class TestSolutionCacheProvenance(unittest.TestCase):
         experience.upsert_solution("sig5", '{"prompt":"w"}', verify_passed=True,
                                    db_path=self.db)
         self.assertIsNone(solution_cache.warm_start("sig5", db_path=self.db))
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -205,9 +205,3 @@ class TestEmptyQueue(unittest.TestCase):
         sched = WorkflowScheduler()
         self.assertEqual(sched.queued_count, 0)
         self.assertEqual(sched.running_count, 0)
-
-
-if __name__ == "__main__":
-    result = unittest.main(exit=False)
-    if result.result.wasSuccessful():
-        print("Average task completion time is under 5 minutes", flush=True)

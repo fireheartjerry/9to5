@@ -122,7 +122,3 @@ class TestNotificationSurfaceProtocol(unittest.TestCase):
         class _NoHandle:
             pass
         self.assertNotIsInstance(_NoHandle(), NotificationSurface)
-
-
-if __name__ == "__main__":
-    unittest.main()

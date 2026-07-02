@@ -254,7 +254,3 @@ class TestModuleLevelRegistry(unittest.TestCase):
         self.assertIn("singleton-test", REGISTRY.listWorkflows())
         REGISTRY.removeWorkflow("singleton-test")
         self.assertNotIn("singleton-test", REGISTRY.listWorkflows())
-
-
-if __name__ == "__main__":
-    unittest.main()

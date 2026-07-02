@@ -50,7 +50,3 @@ class TestStrictPromotion(unittest.TestCase):
             r = finetune.consider_promotion(1, challenger_fitness=0.4, champion_fitness=0.5)
             self.assertEqual(r["decision"], "reject")
             prom.assert_not_called()
-
-
-if __name__ == "__main__":
-    unittest.main()

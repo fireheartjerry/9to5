@@ -164,16 +164,3 @@ def _runPathNormalizationCheck() -> bool:
 
     print("PASS: verifier path normalization works correctly")
     return True
-
-
-if __name__ == "__main__":
-    if "--verify-path-normalization" in sys.argv:
-        sys.argv.remove("--verify-path-normalization")
-        if not _runPathNormalizationCheck():
-            sys.exit(1)
-
-    if "--verify-loop-command-examples" in sys.argv:
-        sys.argv.remove("--verify-loop-command-examples")
-
-    result = unittest.main(verbosity=2, exit=False)
-    sys.exit(0 if result.result.wasSuccessful() else 1)

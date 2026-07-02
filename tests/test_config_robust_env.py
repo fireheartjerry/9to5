@@ -47,7 +47,3 @@ class TestImportSurvivesMalformedEnv(unittest.TestCase):
             cwd=str(config.PROJECT_ROOT), env=env, capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, f"config import crashed on malformed .env:\n{r.stderr}")
         self.assertEqual(r.stdout.strip(), "180 27124")   # both fell back to their defaults
-
-
-if __name__ == "__main__":
-    unittest.main()

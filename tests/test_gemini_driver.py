@@ -236,7 +236,3 @@ class TestHealthProbe(unittest.TestCase):
             sess._client = fake_client
             sess._types = mock.Mock()
             self.assertFalse(sess.health_probe())
-
-
-if __name__ == "__main__":
-    unittest.main()

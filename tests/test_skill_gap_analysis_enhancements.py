@@ -308,23 +308,3 @@ class TestNameOnlyCoverage(unittest.TestCase):
         rows = scoreDomains(Counter(), inventory)
         for row in rows:
             self.assertEqual(row["gap_score"], 0.0)
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-if __name__ == "__main__":
-    loader = unittest.TestLoader()
-    suite = unittest.TestSuite()
-    for cls in [
-        TestLoadOneTask,
-        TestParallelLoadTaskHistory,
-        TestSkillsDirExistsGuard,
-        TestPyFileExclusion,
-        TestNameOnlyCoverage,
-    ]:
-        suite.addTests(loader.loadTestsFromTestCase(cls))
-
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    sys.exit(0 if result.wasSuccessful() else 1)

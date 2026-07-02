@@ -111,7 +111,3 @@ class TestPyFileExclusion(unittest.TestCase):
                 inv = loadSkillInventory()
         self.assertNotIn("notes", inv)
         self.assertIn("skill", inv)
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -378,7 +378,3 @@ class TestConstants(unittest.TestCase):
     def test_passing_statuses_subset_of_terminal(self):
         from memory.subtask_manager import PASSING_STATUSES, TERMINAL_STATUSES
         self.assertTrue(PASSING_STATUSES.issubset(TERMINAL_STATUSES))
-
-
-if __name__ == "__main__":
-    unittest.main()

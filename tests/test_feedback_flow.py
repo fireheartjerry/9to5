@@ -147,7 +147,3 @@ class TestPostSubtaskFeedbackIntegration(unittest.TestCase):
         self.assertEqual(labels["fb_reject"], "Reject")
         self.assertEqual(labels["fb_skip"], "Skip")
         self.assertEqual(labels["fb_retry"], "Retry")
-
-
-if __name__ == "__main__":
-    unittest.main()

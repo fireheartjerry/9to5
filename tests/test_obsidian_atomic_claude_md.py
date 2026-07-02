@@ -53,7 +53,3 @@ class TestAtomicClaudeMd(unittest.TestCase):
         self.assertEqual(torn, [], f"observed {len(torn)} torn CLAUDE.md read(s); first: {torn[:1]}")
         final = target.read_text(encoding="utf-8")
         self.assertTrue(final.startswith(HEAD) and FOOT in final)
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -58,7 +58,3 @@ class TestOllamaNumCtxStable(unittest.TestCase):
         self.assertTrue(
             all(c["keep_alive"] for c in self.brain.calls),
             "keep_alive must be set so the runner is not unloaded during long Claude runs")
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -230,8 +230,3 @@ class TestEdgeCases(unittest.TestCase):
         self.assertIsNotNone(job.started_at)
         self.assertGreaterEqual(job.started_at, before)
         self.assertLessEqual(job.started_at, after)
-
-
-if __name__ == "__main__":
-    result = unittest.main(exit=False, verbosity=2)
-    sys.exit(0 if result.result.wasSuccessful() else 1)

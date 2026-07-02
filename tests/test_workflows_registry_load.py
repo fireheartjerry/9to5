@@ -132,7 +132,3 @@ class TestModuleLevelRegistry(unittest.TestCase):
         for name in ("code_review", "bug_investigation", "feature_implementation"):
             with self.subTest(name=name):
                 self.assertIn(name, _reg_module.REGISTRY)
-
-
-if __name__ == "__main__":
-    unittest.main()

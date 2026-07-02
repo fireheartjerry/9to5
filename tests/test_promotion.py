@@ -89,7 +89,3 @@ class TestRunPromotions(unittest.TestCase):
         out = promotion.run_promotions(rng=random.Random(0), db_path=self.db)
         self.assertEqual(out["orchestrator"]["decision"], "insufficient")
         self.assertEqual(prompts.get("orchestrator", "champ body", db_path=self.db), "champ body")
-
-
-if __name__ == "__main__":
-    unittest.main()

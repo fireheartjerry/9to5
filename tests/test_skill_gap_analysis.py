@@ -350,7 +350,3 @@ class TestYamlConfig(unittest.TestCase):
             result = _mod._loadYamlConfig() if _mod._YAML_AVAILABLE else {}
         # When yaml is unavailable the function returns {} (not an exception)
         self.assertIsInstance(result, dict)
-
-
-if __name__ == "__main__":
-    unittest.main()

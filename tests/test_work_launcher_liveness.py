@@ -62,7 +62,3 @@ class TestStaleLiveness(unittest.TestCase):
         st.save()
         self._age(st)
         self.assertTrue(work_launcher._isStale(st), "legacy task with old mtime should be stale")
-
-
-if __name__ == "__main__":
-    unittest.main()

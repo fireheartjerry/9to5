@@ -200,8 +200,3 @@ class TestCancellation(unittest.TestCase):
 
     def test_cancel_unknown_returns_false(self):
         self.assertFalse(self.sched.cancel("does-not-exist"))
-
-
-if __name__ == "__main__":
-    result = unittest.main(exit=False, verbosity=2)
-    sys.exit(0 if result.result.wasSuccessful() else 1)

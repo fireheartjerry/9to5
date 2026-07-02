@@ -314,13 +314,3 @@ class TestMultipleAlertsSimultaneous(unittest.TestCase):
         self.assertIn("low_success_rate", types_fired)
         self.assertIn(f"max_retries_exceeded:w1", types_fired)
         self.assertGreaterEqual(mock_notify.call_count, 2)
-
-
-if __name__ == "__main__":
-    import tests.test_event_alerting as _evt_module
-    _loader = unittest.TestLoader()
-    _suite = unittest.TestSuite()
-    _suite.addTests(_loader.loadTestsFromModule(sys.modules[__name__]))
-    _suite.addTests(_loader.loadTestsFromModule(_evt_module))
-    _result = unittest.TextTestRunner(verbosity=2).run(_suite)
-    sys.exit(0 if _result.wasSuccessful() else 1)

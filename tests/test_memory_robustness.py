@@ -371,7 +371,3 @@ class TestApplyControlValidation(unittest.TestCase):
         result = self.webdash._applyControl("task-123", "xyzzy_unknown", None)
         self.assertFalse(result["ok"])
         self.assertIn("unknown", result["error"])
-
-
-if __name__ == "__main__":
-    unittest.main()

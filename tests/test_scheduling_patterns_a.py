@@ -213,8 +213,3 @@ class TestDeadlineAwareAllocation(unittest.TestCase):
         self.assertFalse(sched.slot_available)
         sched.complete(j.job_id)
         self.assertTrue(sched.slot_available)
-
-
-if __name__ == "__main__":
-    result = unittest.main(exit=False, verbosity=2)
-    sys.exit(0 if result.result.wasSuccessful() else 1)

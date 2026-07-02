@@ -95,7 +95,3 @@ class TestSuiteAndRun(unittest.TestCase):
     def test_fitness_panel_empty(self):
         db = self.dir / "empty.db"
         self.assertIn("no eval points", eh.fitness_panel(db_path=db))
-
-
-if __name__ == "__main__":
-    unittest.main()

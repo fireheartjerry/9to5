@@ -52,7 +52,3 @@ class TestPydanticExtraction(unittest.TestCase):
     def test_fence_and_prose_salvage_on_pydantic(self):
         self.assertEqual(_chatJson(_Resp('```json\n{"a": 1}\n```')), {"a": 1})
         self.assertEqual(_chatJson(_Resp('sure, here: {"a": 2} done')), {"a": 2})
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -28,7 +28,3 @@ class TestOverrideBounds(unittest.TestCase):
 
     def test_unknown_knob_rejected(self):
         self.assertFalse(config.set_override("PROJECT_ROOT", "C:/evil"))
-
-
-if __name__ == "__main__":
-    unittest.main()

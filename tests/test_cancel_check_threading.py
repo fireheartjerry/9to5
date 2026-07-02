@@ -35,7 +35,3 @@ class TestCancelCheckThreading(unittest.TestCase):
                         "eval Claude run did not thread a cancel_check (pause would be unbreakable)")
         # the predicate must be callable and return a bool without raising
         self.assertIsInstance(captured["cancel_check"](), bool)
-
-
-if __name__ == "__main__":
-    unittest.main()

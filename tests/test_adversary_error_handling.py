@@ -273,7 +273,3 @@ class TestStubReview(unittest.TestCase):
     def test_custom_note(self):
         rv = adversary._stubReview("r", note="custom note here")
         self.assertEqual(rv["notes"], "custom note here")
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)

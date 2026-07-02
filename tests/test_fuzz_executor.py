@@ -79,7 +79,3 @@ class TestExecutorFuzz(unittest.TestCase):
             except Exception as e:  # noqa: BLE001
                 bad.append((seed, "RAISED", repr(e)))
         self.assertEqual(bad, [], f"executor fuzz produced bad outcomes: {bad[:8]}")
-
-
-if __name__ == "__main__":
-    unittest.main()

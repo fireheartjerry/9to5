@@ -97,7 +97,3 @@ class TestControlToken(unittest.TestCase):
         self.assertEqual(post({}), 403, "tokenless control POST was not forbidden")
         self.assertEqual(post({"X-9to5-Token": "wrong"}), 403, "bad token was accepted")
         self.assertEqual(post({"X-9to5-Token": token}), 200, "valid token was rejected")
-
-
-if __name__ == "__main__":
-    unittest.main()

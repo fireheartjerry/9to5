@@ -215,7 +215,3 @@ class TestKeyFields(unittest.TestCase):
         self.assertIn("cmd=", result)
         self.assertIn("exit_code=", result)
         self.assertIn("decided_by=", result)
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)

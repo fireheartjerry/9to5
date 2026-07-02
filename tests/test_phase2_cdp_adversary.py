@@ -129,7 +129,3 @@ class TestAdversaryFallbackNote(unittest.TestCase):
     def test_custom_note_overrides_default(self):
         rv = adversary._stubReview("reason", note="custom message")
         self.assertEqual(rv["notes"], "custom message")
-
-
-if __name__ == "__main__":
-    unittest.main()

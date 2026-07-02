@@ -131,7 +131,3 @@ class TestMetaApply(unittest.TestCase):
     def test_disabled_skips(self):
         with mock.patch.object(config, "SIE_META_AUTOAPPLY", False):
             self.assertEqual(meta_opt.apply(db_path=self.db)["skipped"], "disabled")
-
-
-if __name__ == "__main__":
-    unittest.main()

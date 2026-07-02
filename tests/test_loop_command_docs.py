@@ -69,8 +69,3 @@ class TestLoopCommandDocs(unittest.TestCase):
     def test_retry_documented(self):
         self.assertIn("retryTask", self.text,
                       "docs/loop_command.md must document retryTask as the programmatic retry alternative")
-
-
-if __name__ == "__main__":
-    result = unittest.main(verbosity=2, exit=False)
-    sys.exit(0 if result.result.wasSuccessful() else 1)

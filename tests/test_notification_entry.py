@@ -662,14 +662,3 @@ class TestFormatVerdictUI(unittest.TestCase):
     def test_case_insensitive(self):
         self.assertEqual(d.formatVerdict("APPROVED"), "APPROVED")
         self.assertEqual(d.formatVerdict("Rejected"), "CHALLENGED")
-
-
-if __name__ == "__main__":
-    loader = unittest.TestLoader()
-    suite = loader.loadTestsFromModule(__import__(__name__))
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    if result.wasSuccessful():
-        print("Schema validation passed")
-    else:
-        sys.exit(1)

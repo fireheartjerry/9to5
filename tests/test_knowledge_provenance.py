@@ -69,7 +69,3 @@ class TestKnowledgeProvenance(unittest.TestCase):
         # And it must pass injectableDoc gate (non-empty return)
         out = k.injectableDoc(doc, name="claude_code.md")
         self.assertTrue(len(out) > 0, "freshly-built doc must pass the provenance gate")
-
-
-if __name__ == "__main__":
-    unittest.main()

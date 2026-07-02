@@ -33,7 +33,3 @@ class TestSieLock(unittest.TestCase):
         lp.parent.mkdir(parents=True, exist_ok=True)
         lp.write_text(str(os.getpid()), encoding="utf-8")   # our own pid == alive
         self.assertIsNone(sie._acquire_lock(), "stole a lock held by a live process")
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -566,7 +566,3 @@ class TestConcurrentBusEmission(unittest.TestCase):
 
         self.assertEqual(errors, [])
         self.assertEqual(len(cap.calls), 40)
-
-
-if __name__ == "__main__":
-    unittest.main()

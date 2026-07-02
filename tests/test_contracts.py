@@ -98,7 +98,3 @@ class TestWorkflowDefinition(unittest.TestCase):
         # total=False means no key is required at runtime (TypedDict erased).
         wf: WorkflowDefinition = {"name": "minimal"}
         self.assertNotIn("phases", wf)
-
-
-if __name__ == "__main__":
-    unittest.main()

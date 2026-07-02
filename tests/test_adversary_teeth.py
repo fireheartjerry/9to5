@@ -69,7 +69,3 @@ class TestPrePrAdversary(unittest.TestCase):
             raise RuntimeError("brain down")
         rv = self._orch(boom)._prePrAdversary(self.state)
         self.assertEqual(rv["verdict"], "approved")   # never blocks a run on a reviewer error
-
-
-if __name__ == "__main__":
-    unittest.main()

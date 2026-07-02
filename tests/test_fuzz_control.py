@@ -86,7 +86,3 @@ class TestControlFuzz(unittest.TestCase):
             if r.error is not None or r.alive or r.status not in _TERMINAL:
                 bad.append((seed, surface, r.status, r.alive, r.error))
         self.assertEqual(bad, [], f"control fuzz produced bad outcomes: {bad[:8]}")
-
-
-if __name__ == "__main__":
-    unittest.main()

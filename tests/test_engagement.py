@@ -70,7 +70,3 @@ class CogLoad(unittest.TestCase):
                 except Exception:  # noqa: BLE001
                     pass
         self.assertIn("on_raw_poll_vote_add", asyncio.run(run()))
-
-
-if __name__ == "__main__":
-    unittest.main()

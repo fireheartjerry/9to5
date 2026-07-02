@@ -160,7 +160,3 @@ class TestNotificationEntrySchema(unittest.TestCase):
     def test_isValid_convenience_wrapper(self):
         e = self.makeEntry("task_done", "done")
         self.assertTrue(self.isValid(e))
-
-
-if __name__ == "__main__":
-    unittest.main()

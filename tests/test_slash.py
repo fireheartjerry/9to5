@@ -35,7 +35,3 @@ class TestFmtUptime(unittest.TestCase):
         now = time.time()
         result = _fmtUptime(now - 7 * 3600 + 60)
         self.assertIn("h", result)
-
-
-if __name__ == "__main__":
-    unittest.main()

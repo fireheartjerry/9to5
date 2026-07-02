@@ -137,7 +137,3 @@ class TestBuildRequirementsVerifyEndToEnd(unittest.TestCase):
         kept = verifier.sanitizeVerify(v)
         self.assertIsNotNone(kept)
         self.assertTrue(verifier.isStrictVerify(kept))
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -18,7 +18,3 @@ class TestHooksSelfPath(unittest.TestCase):
         # The sys.path insert must NOT hardcode a literal drive path.
         self.assertNotIn('sys.path.insert(0, r"C:\\9to5")', src)
         self.assertNotIn("sys.path.insert(0, r'C:\\9to5')", src)
-
-
-if __name__ == "__main__":
-    unittest.main()

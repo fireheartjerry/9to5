@@ -103,7 +103,3 @@ class TestBrainFuzz(unittest.TestCase):
             except Exception as e:  # noqa: BLE001 -- a raised exception is the worst outcome
                 bad.append((seed, "RAISED", repr(e)))
         self.assertEqual(bad, [], f"brain fuzz produced non-done outcomes: {bad[:10]}")
-
-
-if __name__ == "__main__":
-    unittest.main()

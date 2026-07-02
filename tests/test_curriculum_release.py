@@ -92,7 +92,3 @@ class TestRelease(_Base):
         text = out.read_text(encoding="utf-8")
         self.assertIn("Self-Improvement Report", text)
         self.assertIn("Fitness", text)
-
-
-if __name__ == "__main__":
-    unittest.main()

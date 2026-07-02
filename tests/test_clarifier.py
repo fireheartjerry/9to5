@@ -62,7 +62,3 @@ class TestAnswer(unittest.TestCase):
     def test_empty_answer_is_none(self):
         self.assertIsNone(clarifier.answerClarifications(
             lambda s, u: {"message": {"content": "   "}}, "g", {}, "o", ["q?"]))
-
-
-if __name__ == "__main__":
-    unittest.main()

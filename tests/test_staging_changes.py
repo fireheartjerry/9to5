@@ -289,7 +289,3 @@ class TestStagingValidatorGate(unittest.TestCase):
         import platform_core.ops.staging_validator as staging_validator
         result = staging_validator.main(quiet=True)
         self.assertEqual(result, 0, "staging_validator reported gate failures")
-
-
-if __name__ == "__main__":
-    unittest.main()

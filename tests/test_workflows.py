@@ -155,7 +155,3 @@ class TestParallelPhaseStructure(unittest.TestCase):
                     len(phase.get("agents", [])), 1,
                     "code_review parallel phase must have >1 agent to be meaningful",
                 )
-
-
-if __name__ == "__main__":
-    unittest.main()

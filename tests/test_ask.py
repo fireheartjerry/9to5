@@ -74,7 +74,3 @@ class Answer(unittest.TestCase):
         ask.answer("did st-001 pass?", _StubState(), chat=cap)
         self.assertIn("st-001", seen["user"])
         self.assertIn("did st-001 pass?", seen["user"])
-
-
-if __name__ == "__main__":
-    unittest.main()

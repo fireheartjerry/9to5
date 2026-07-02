@@ -263,12 +263,9 @@ step = StepResult(
 # Run all error-handling suites in one shot (recommended)
 python run_all_tests.py -v
 
-# Run the acceptance target directly with pytest
+# Run the acceptance target directly with pytest (pytest ONLY -- running a test file as a
+# bare script bypasses the conftest sandbox that blanks the live .env Discord/Ollama creds)
 python -m pytest tests/test_error_handling.py -v
-
-# Acceptance-flag invocations (used by the orchestrator)
-python tests/test_error_handling.py --verify-recurring-task-handling
-python tests/test_error_handling.py --verify-recurring-task-retries
 
 # Hardening and simulator suites
 python -m pytest tests/test_error_handling_hardening.py -v

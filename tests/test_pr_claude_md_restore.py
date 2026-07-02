@@ -60,7 +60,3 @@ class TestClaudeMdRestore(unittest.TestCase):
         _git(d, "checkout", "--", "CLAUDE.md")   # the OLD (buggy) restore: from the index
         # the staged blob is STILL 9to5's -- proving the old idiom leaked it
         self.assertIn("leak", _git(d, "show", ":CLAUDE.md").stdout)
-
-
-if __name__ == "__main__":
-    unittest.main()

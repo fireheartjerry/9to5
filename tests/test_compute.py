@@ -62,7 +62,3 @@ class TestTrainerRouting(unittest.TestCase):
              mock.patch("learning.compute.should_use_gpu", return_value=True):
             self.assertIsNotNone(finetune.default_trainer())
             self.assertIsNotNone(finetune.default_dpo_trainer())
-
-
-if __name__ == "__main__":
-    unittest.main()

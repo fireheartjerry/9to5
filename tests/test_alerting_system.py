@@ -21,11 +21,3 @@ if str(_REPO_ROOT) not in sys.path:
 
 import tests.test_active_alerting as _active
 import tests.test_event_alerting as _event
-
-if __name__ == "__main__":
-    _loader = unittest.TestLoader()
-    _suite = unittest.TestSuite()
-    _suite.addTests(_loader.loadTestsFromModule(_active))
-    _suite.addTests(_loader.loadTestsFromModule(_event))
-    _result = unittest.TextTestRunner(verbosity=2).run(_suite)
-    sys.exit(0 if _result.wasSuccessful() else 1)

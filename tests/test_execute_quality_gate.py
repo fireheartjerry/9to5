@@ -82,7 +82,3 @@ class TestRunAttemptVerifyQualityGate(unittest.TestCase):
         self.assertIn("affected tests failed", vresult["stderr"])
         self.assertIn("affected tests failed", feedback)
         state.recordVerify.assert_called_once()
-
-
-if __name__ == "__main__":
-    unittest.main()

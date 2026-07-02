@@ -137,7 +137,3 @@ class TestFetch(unittest.TestCase):
     def test_baseline_returns_id_only(self):
         with _cfg(), mock.patch.object(d, "_request", return_value=_Resp(200, [{"id": "9"}])):
             self.assertEqual(d.baselineLatestId(), "9")
-
-
-if __name__ == "__main__":
-    unittest.main()

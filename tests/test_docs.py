@@ -100,7 +100,3 @@ class TestWorkflowDoc(unittest.TestCase):
         self.assertIn("Error handling", self.content)
         self.assertIn("Ollama unavailable", self.content)
         self.assertIn("disk write", self.content)
-
-
-if __name__ == "__main__":
-    unittest.main()

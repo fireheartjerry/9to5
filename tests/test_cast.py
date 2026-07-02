@@ -94,7 +94,3 @@ class SendAsSemantics(unittest.TestCase):
     def test_silent_when_no_webhook(self):
         discord._ensureWebhook = lambda: None
         self.assertFalse(discord.sendAs({"name": "x"}, content="hi"))
-
-
-if __name__ == "__main__":
-    unittest.main()

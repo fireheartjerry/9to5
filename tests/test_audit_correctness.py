@@ -194,7 +194,3 @@ class TestAskAbortConfirm(unittest.IsolatedAsyncioTestCase):
         rec, apply_cmd = await self._run(confirm_value=True)
         apply_cmd.assert_called_once()
         rec.assert_called_once()
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -90,7 +90,3 @@ class TestWorkDirLauncherValidation(unittest.TestCase):
             out = wl.launchOrError(wl.WorkRequest(goal="x", work_dir=d))
         self.assertIn("Launched run", out)
         self.assertIn("not a git repo", out)
-
-
-if __name__ == "__main__":
-    unittest.main()

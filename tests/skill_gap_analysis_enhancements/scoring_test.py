@@ -120,7 +120,3 @@ class TestSaturationAndRounding(unittest.TestCase):
         rows = scoreDomains(Counter(), {})
         output_domains = {r["domain"] for r in rows}
         self.assertEqual(output_domains, set(DOMAIN_MAP.keys()))
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -133,7 +133,3 @@ class TestResearchTrack(_Base):
         for v in (0.1, 0.3, 0.5, 0.7, 0.9):
             experience.record_eval({"fitness": v}, db_path=self.db)
         self.assertTrue(adapter_ops.overfit_signal(recent=5, db_path=self.db)["suspect"])
-
-
-if __name__ == "__main__":
-    unittest.main()

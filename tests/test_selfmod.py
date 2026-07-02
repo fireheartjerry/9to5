@@ -100,7 +100,3 @@ class TestSelfMod(unittest.TestCase):
                                   test_runner=lambda d: (False, "would fail"))
         self.assertFalse(out["ran"])           # non-core changes never gated/reverted
         self.assertEqual((self.dir / "other.py").read_text(), "changed\n")
-
-
-if __name__ == "__main__":
-    unittest.main()

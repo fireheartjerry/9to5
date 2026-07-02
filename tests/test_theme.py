@@ -53,7 +53,3 @@ class ThemeSelection(unittest.TestCase):
         self.assertEqual(theme.PHASE_ICON["executing"], "active")
         self.assertEqual(theme.PHASE_ICON["complete"], "complete")
         self.assertTrue(theme.iconChar("active"))      # a real Segoe Fluent glyph
-
-
-if __name__ == "__main__":
-    unittest.main()

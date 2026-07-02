@@ -89,7 +89,3 @@ class TestSieMaintenance(unittest.TestCase):
         sie.run_maintenance(force=True, db_path=self.db)   # must not error or double-count
         arms = {a["action_json"]: a for a in experience.fetch_arms("discord", db_path=self.db)}
         self.assertEqual(arms['{"effort": "high"}']["pulls"], 3)
-
-
-if __name__ == "__main__":
-    unittest.main()

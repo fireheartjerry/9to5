@@ -80,8 +80,3 @@ class TestStagingMainExitCode(unittest.TestCase):
         from platform_core.ops.staging_validator import main
         exit_code = main(quiet=True)
         self.assertEqual(exit_code, 0, "staging_validator.main() must return 0 in a healthy repo")
-
-
-if __name__ == "__main__":
-    result = unittest.main(verbosity=2, exit=False)
-    sys.exit(0 if result.result.wasSuccessful() else 1)

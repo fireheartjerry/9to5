@@ -39,7 +39,3 @@ class TestCalibrator(unittest.TestCase):
     def test_fit_empty_is_noop(self):
         cal = reward.Calibrator().fit([])
         self.assertTrue(0.0 <= cal.predict({"verify_passed": 1}) <= 1.0)
-
-
-if __name__ == "__main__":
-    unittest.main()

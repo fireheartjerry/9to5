@@ -193,7 +193,3 @@ class TestPrGateDegraded(unittest.TestCase):
                 mock.patch.object(config, "ADVERSARY_PR_HOLD_ENABLED", True):
             create, _ = self.orch._prGate(review, auto_pr=True, state=self.state)
         self.assertTrue(create)   # night mode + healthy + challenged -> ship (hands-off)
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -151,23 +151,3 @@ def runWorkflowAcceptance(workflow_path: Path) -> bool:
     print(f"  updated speedup_model.estimated_wall_clock_ratio = {round(result.ratio, 4)}")
     print("PASS")
     return True
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Timing harness acceptance test")
-    parser.add_argument("--workflow", help="Path to workflow JSON (relative to repo root or absolute)")
-    args, remaining = parser.parse_known_args()
-
-    if args.workflow:
-        workflow_path = _resolveWorkflowPath(args.workflow)
-        acceptance_ok = runWorkflowAcceptance(workflow_path)
-
-        # Also run unit tests
-        loader = unittest.TestLoader()
-        suite = loader.loadTestsFromTestCase(TestTimingHarness)
-        runner = unittest.TextTestRunner(verbosity=2)
-        unit_result = runner.run(suite)
-
-        sys.exit(0 if (acceptance_ok and unit_result.wasSuccessful()) else 1)
-    else:
-        unittest.main(argv=[sys.argv[0]] + remaining)

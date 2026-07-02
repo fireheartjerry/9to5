@@ -122,7 +122,3 @@ class TestConcurrentWrites(unittest.TestCase):
         self.assertIsInstance(ControlBus("corrupt-task").load(), dict)
         # no temp files were left behind
         self.assertEqual(list(self.dir.glob("*.tmp")), [])
-
-
-if __name__ == "__main__":
-    unittest.main()

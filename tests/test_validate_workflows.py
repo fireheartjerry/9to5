@@ -145,7 +145,3 @@ class TestValidateWorkflowsCIIntegration(unittest.TestCase):
         )
         # Summary line looks like "3/3 workflow definition(s) valid."
         self.assertIn("workflow definition(s) valid", result.stdout)
-
-
-if __name__ == "__main__":
-    unittest.main()

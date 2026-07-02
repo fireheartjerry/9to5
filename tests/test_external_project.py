@@ -126,7 +126,3 @@ class TestExternalProjectClone(unittest.TestCase):
             out = work_launcher.launchOrError(req)
         self.assertIn("Working dir:", out)
         self.assertIn(str(Path(d).resolve()), out)
-
-
-if __name__ == "__main__":
-    unittest.main()

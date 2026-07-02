@@ -138,7 +138,3 @@ class TestTaskStateAddNotification(unittest.TestCase):
         details = [n["detail"] for n in self.state.data["notifications"] if n["kind"] == "replan"]
         self.assertIn("first", details)
         self.assertIn("second", details)
-
-
-if __name__ == "__main__":
-    unittest.main()

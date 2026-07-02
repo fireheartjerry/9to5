@@ -324,7 +324,3 @@ class TestReplayTrace(unittest.TestCase):
 class TestBuiltInSelfTest(unittest.TestCase):
     def test_self_test_passes(self):
         _mod._selfTest()
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)

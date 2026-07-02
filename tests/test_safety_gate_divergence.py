@@ -86,7 +86,3 @@ class TestGateHonorsDivergence(unittest.TestCase):
         self.assertFalse(result.get("ran", True))
         reason = (result.get("reason") or "").lower()
         self.assertIn("diverg", reason)
-
-
-if __name__ == "__main__":
-    unittest.main()

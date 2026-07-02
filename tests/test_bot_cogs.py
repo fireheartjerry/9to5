@@ -39,7 +39,3 @@ class CogLoader(unittest.TestCase):
         bot = core.buildBot()
         self.assertEqual(type(bot).__name__, "NightclawBot")
         self.assertTrue(bot.intents.message_content)
-
-
-if __name__ == "__main__":
-    unittest.main()

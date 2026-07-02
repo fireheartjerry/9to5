@@ -71,7 +71,3 @@ class CogLoad(unittest.TestCase):
                     pass
         listeners, _ = asyncio.run(run())
         self.assertIn("on_raw_reaction_add", listeners)
-
-
-if __name__ == "__main__":
-    unittest.main()

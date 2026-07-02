@@ -42,7 +42,3 @@ class TestConcurrentSave(unittest.TestCase):
         # final file is complete + valid, and no stray temp files linger
         self.assertIsInstance(json.loads(ts.path().read_text(encoding="utf-8")), dict)
         self.assertEqual(list(self.dir.glob("*.tmp")), [], "left a temp file behind")
-
-
-if __name__ == "__main__":
-    unittest.main()

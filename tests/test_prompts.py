@@ -52,7 +52,3 @@ class TestPromptRegistry(unittest.TestCase):
     def test_champion_id_seeds_when_missing(self):
         cid = prompts.champion_id("planner", "planner default", db_path=self.db)
         self.assertIsNotNone(cid)
-
-
-if __name__ == "__main__":
-    unittest.main()

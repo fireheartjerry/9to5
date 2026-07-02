@@ -18,6 +18,12 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# THE canonical full-suite command -- single source of truth, consumed by the AGENTS.md
+# Commands table (below), scripts/repo_health.py, agents/playbook.py, and README.md.
+# pytest ONLY: `unittest discover` bypasses the pytest-only conftest sandbox and fires
+# REAL Discord/Ollama side effects with the live creds in .env. Never advertise it.
+FULL_SUITE = "python -m pytest -n auto -q"
+
 
 # ==== JSON SERIALIZATION ====
 
@@ -72,7 +78,7 @@ def render_root_agents_md(m: dict) -> str:
         ("Tests for changed files", "`python tools/affected_tests.py $(git diff --name-only)`"),
         ("Outline a big file (signatures only)", "`python tools/dev.py outline <file>`"),
         ("Find a symbol's def + callers", "`python tools/dev.py where <symbol>`"),
-        ("Full suite", "`python -m unittest discover -s tests -v`"),
+        ("Full suite", f"`{FULL_SUITE}`"),
         ("Fast lane", "`python -m pytest -m \"not slow\" -q`"),
         ("Dry-run pipeline", "`python main.py --dry-run --goal ... --hours 1 --no-web`"),
     ):

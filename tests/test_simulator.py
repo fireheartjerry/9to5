@@ -290,7 +290,3 @@ class TestSimRunClaudeEdgeCases(unittest.TestCase):
         result = simRunClaude({})
         for key in ("ok", "returncode", "stdout", "is_error", "session_id"):
             self.assertIn(key, result)
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)

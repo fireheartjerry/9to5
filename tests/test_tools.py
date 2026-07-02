@@ -190,7 +190,3 @@ class TestSystemFor(unittest.TestCase):
         s = adversary.systemFor("nonexistent_type")
         subtask_s = adversary.systemFor("subtask")
         self.assertEqual(s, subtask_s)
-
-
-if __name__ == "__main__":
-    unittest.main()

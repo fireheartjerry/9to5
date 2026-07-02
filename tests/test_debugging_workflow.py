@@ -210,7 +210,3 @@ class TestDebugDomains(unittest.TestCase):
 
     def test_deployment_not_in_debug_domains(self):
         self.assertNotIn("deployment", _DEBUG_DOMAINS)
-
-
-if __name__ == "__main__":
-    unittest.main()

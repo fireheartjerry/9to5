@@ -274,7 +274,3 @@ class TestButtonIconApplication(unittest.TestCase):
         with mock.patch("notifications.views_feedback._applyButtonIcons") as mock_apply:
             view = FeedbackView()
             mock_apply.assert_called_once_with(view)
-
-
-if __name__ == "__main__":
-    unittest.main()

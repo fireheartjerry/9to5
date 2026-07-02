@@ -67,7 +67,3 @@ class TestSurfacesUsed(unittest.TestCase):
         self.assertIn("profile_axis:stability", used)
         self.assertIn("profile_posture:audit", used)
         self.assertIn("profile_env:isolated", used)
-
-
-if __name__ == "__main__":
-    unittest.main()

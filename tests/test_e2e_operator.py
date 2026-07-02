@@ -106,7 +106,3 @@ class TestE2EOperator(unittest.TestCase):
     def test_operator_rejects_bad_surface(self):
         with self.assertRaises(ValueError):
             VirtualOperator("tid", surface="telepathy")
-
-
-if __name__ == "__main__":
-    unittest.main()

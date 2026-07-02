@@ -150,7 +150,3 @@ class TestRunWithRecovery(unittest.TestCase):
                 state, reload_state=lambda t: state, sleep=lambda s: None)
         self.assertEqual(out["status"], "blocked")
         self.assertEqual(out["reason"], "max_restarts")
-
-
-if __name__ == "__main__":
-    unittest.main()

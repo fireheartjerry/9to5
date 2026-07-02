@@ -128,7 +128,3 @@ class TestGuardFailClosed(unittest.TestCase):
                 mock.patch.object(hooks_selfmod, "_coreLockFor", return_value=(False, ())):
             data = {"tool_name": "Edit", "tool_input": {"file_path": r"C:\project\src\app.py"}}
             self.assertEqual(self._run(data), 0)
-
-
-if __name__ == "__main__":
-    unittest.main()

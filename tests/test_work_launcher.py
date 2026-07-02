@@ -200,7 +200,3 @@ class TestLaunchGlue(unittest.TestCase):
                 mock.patch.object(wl, "activeRun", return_value=None), \
                 mock.patch.object(wl, "spawnResume", return_value=5):
             self.assertIn("Resuming", wl.resumeOrError("abc"))
-
-
-if __name__ == "__main__":
-    unittest.main()

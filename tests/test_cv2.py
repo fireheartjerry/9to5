@@ -147,7 +147,3 @@ class TestMultipart(unittest.TestCase):
         body = json.loads(data["payload_json"])
         self.assertEqual(body["attachments"], [{"id": 0, "filename": "c.png"}])
         self.assertEqual(files["files[0]"][0], "c.png")
-
-
-if __name__ == "__main__":
-    unittest.main()

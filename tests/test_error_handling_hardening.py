@@ -274,7 +274,3 @@ class TestWebdashPostActionNormalization(unittest.TestCase):
         self.assertTrue(result["ok"])
         from platform_core.runtime.control import ControlBus
         self.assertTrue(ControlBus("t-web").isAbort())
-
-
-if __name__ == "__main__":
-    unittest.main()

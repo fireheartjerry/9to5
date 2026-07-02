@@ -175,7 +175,3 @@ class TestExperienceLedger(unittest.TestCase):
         # A bad db path (a directory) must not raise -- best-effort contract.
         ok = experience.record_run({"run_id": "r1"}, db_path=self.dir)  # dir, not a file
         self.assertFalse(ok)
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -46,7 +46,3 @@ class TestAudit(unittest.TestCase):
                 audit.record(1, f"act{i}", "t")
             self.assertTrue((self.dir / "audit.jsonl.1").exists())
             self.assertTrue(audit.recent(5))   # still works after rotation
-
-
-if __name__ == "__main__":
-    unittest.main()

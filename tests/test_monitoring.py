@@ -169,7 +169,3 @@ class TestGetAlertsSnapshot(unittest.TestCase):
         alerts = monitoring.get_alerts()
         alerts.append({"type": "fake"})
         self.assertNotEqual(monitoring.get_alerts(), alerts)
-
-
-if __name__ == "__main__":
-    unittest.main()

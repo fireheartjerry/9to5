@@ -387,7 +387,3 @@ class TestNotificationBusDocs(unittest.TestCase):
             self.text.lower(),
             "doc must document the deadlock mechanism caused by recursive bus.emit() inside handle()",
         )
-
-
-if __name__ == "__main__":
-    unittest.main()

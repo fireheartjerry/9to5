@@ -223,7 +223,3 @@ class TestRegistrySingletonIntegrity(unittest.TestCase):
         self.assertEqual(errors, [], f"concurrent resolver errors: {errors}")
         for i in range(8):
             self.assertIn(f"concurrent-{i}", REGISTRY.listWorkflows())
-
-
-if __name__ == "__main__":
-    unittest.main()

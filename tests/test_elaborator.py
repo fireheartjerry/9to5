@@ -53,7 +53,3 @@ class TestUniverse(unittest.TestCase):
             u = elaborator.extractUniverse("g", "spec", "/w")
         self.assertEqual(u["allowed_paths"], ["a.py"])
         self.assertIn("secret", u["hard_boundaries"])
-
-
-if __name__ == "__main__":
-    unittest.main()

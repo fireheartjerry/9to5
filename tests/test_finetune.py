@@ -156,7 +156,3 @@ class TestModelfileAndCycle(unittest.TestCase):
                                            db_path=self.db)
         self.assertEqual(prom["decision"], "promote")
         self.assertEqual(finetune.active_brain_tag(db_path=self.db), "9to5-brain:v1")
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -51,7 +51,3 @@ class TestHandleCommand(unittest.TestCase):
 
     def test_max_reply_constant_below_discord_limit(self):
         self.assertLess(cb.MAX_REPLY_CHARS, config.DISCORD_MAX_CONTENT)
-
-
-if __name__ == "__main__":
-    unittest.main()

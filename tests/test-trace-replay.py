@@ -210,7 +210,3 @@ class TestBuiltInSelfTest(unittest.TestCase):
     def test_self_test_does_not_raise(self):
         # The module's own internal self-test must pass without error.
         _mod._selfTest()
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)

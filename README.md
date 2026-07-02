@@ -69,9 +69,10 @@ re-prompted with the failure and retried up to 3×.
 
 ## Tests
 ```powershell
-# stdlib unittest only; no extra test deps
-venv\Scripts\python -m unittest discover -s tests
+# full suite -- pytest ONLY (the conftest sandbox that blanks live creds is pytest-only)
+venv\Scripts\python -m pytest -n auto -q
 ```
+The command is single-sourced as `FULL_SUITE` in `tools/repo_map_render.py`.
 GitHub Actions runs the same suite on every push/PR (`.github/workflows/tests.yml`,
 Python 3.11 + 3.12).
 

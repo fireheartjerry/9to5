@@ -105,7 +105,3 @@ class TestPerRoleAdapters(unittest.TestCase):
         champs = {c["role"]: c["tag"]
                   for c in experience.fetch_adapters("champion", db_path=self.db)}
         self.assertEqual(champs, {"planner": "t-a", "replanner": "t-b"})
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -190,7 +190,3 @@ class TestFeatureImplementationRegistry(unittest.TestCase):
         result = self.registry.executeWorkflow("feature_implementation")
         prompt = result["prompt"]
         self.assertEqual(prompt.count("(parallel)"), 3)
-
-
-if __name__ == "__main__":
-    unittest.main()

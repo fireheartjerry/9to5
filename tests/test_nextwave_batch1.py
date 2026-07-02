@@ -97,7 +97,3 @@ class TestSafety(_Base):
         out = safety.panic_to_stock(db_path=self.db)
         self.assertEqual(out["retired"], 1)
         self.assertEqual(experience.fetch_adapters("champion", db_path=self.db), [])
-
-
-if __name__ == "__main__":
-    unittest.main()

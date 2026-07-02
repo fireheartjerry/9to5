@@ -53,7 +53,3 @@ class TestNormalize(unittest.TestCase):
 
     def test_canonical_terminal_after_normalize(self):
         self.assertTrue(lifecycle.isTerminalRun("Completed"))  # synonym -> done -> terminal
-
-
-if __name__ == "__main__":
-    unittest.main()

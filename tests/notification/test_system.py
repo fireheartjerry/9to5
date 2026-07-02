@@ -248,7 +248,3 @@ class TestSnapshotCacheContract(unittest.TestCase):
         time.sleep(0.1)
         _cached("t1", _builder, ttl=0.05)
         self.assertEqual(call_count, 2)
-
-
-if __name__ == "__main__":
-    unittest.main()

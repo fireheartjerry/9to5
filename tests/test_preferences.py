@@ -111,7 +111,3 @@ class TestDpoCycle(unittest.TestCase):
         self.assertEqual(out["status"], "trained")
         self.assertIn("dpo-v", out["tag"])
         self.assertEqual(captured["beta"], config.DPO_KL_BETA)
-
-
-if __name__ == "__main__":
-    unittest.main()

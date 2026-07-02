@@ -106,7 +106,3 @@ class TestApplyCommand(unittest.TestCase):
     def test_none_state_returns_no_task(self):
         out = commands.applyCommand(mock.Mock(), None, commands.Command("status", ""))
         self.assertEqual(out, commands.NO_TASK)
-
-
-if __name__ == "__main__":
-    unittest.main()

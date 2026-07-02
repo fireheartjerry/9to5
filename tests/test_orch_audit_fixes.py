@@ -70,7 +70,3 @@ class TestGptSoftFailDisable(unittest.TestCase):
                             return_value={"tier": "ollama", "verdict": "approved"}):
                 orch._adversaryReview("t", "r", "o", worth=True)
         self.assertTrue(orch._gemini_session_ok)   # streak reset, only 1 soft-fail since
-
-
-if __name__ == "__main__":
-    unittest.main()

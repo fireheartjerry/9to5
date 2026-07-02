@@ -225,7 +225,3 @@ def test_author_architect_prompt_injects_discovery_report():
         prompt = architect.authorArchitectPrompt("spec text", discovery_report=report)
     # Either the theme or the finding title should appear in the final prompt
     assert "transform the orchestrator layer" in prompt or "Rewrite orchestrator" in prompt
-
-
-if __name__ == "__main__":
-    unittest.main()

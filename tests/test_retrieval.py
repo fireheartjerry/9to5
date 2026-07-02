@@ -96,7 +96,3 @@ class TestRendering(unittest.TestCase):
         # No DB / no embedder -> empty string, never raises.
         with mock.patch.object(retrieval, "_embed_call", return_value=None):
             self.assertEqual(retrieval.lessons_block("g", "t"), "")
-
-
-if __name__ == "__main__":
-    unittest.main()

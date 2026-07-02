@@ -108,7 +108,3 @@ class TestNotificationBusErrorHandling(unittest.TestCase):
             bus.emit(evt, {})
         self.assertEqual(len(s.calls), 3)
         self.assertEqual([c[0] for c in s.calls], ["planning_start", "subtask_done", "complete"])
-
-
-if __name__ == "__main__":
-    unittest.main()

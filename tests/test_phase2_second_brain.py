@@ -123,7 +123,3 @@ class TestTrustTelemetry(unittest.TestCase):
             self.assertEqual(s["gpt"], 2)
             self.assertEqual(s["challenges"], 1)
             self.assertEqual(s["upheld_rate"], 1.0)
-
-
-if __name__ == "__main__":
-    unittest.main()

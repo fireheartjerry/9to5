@@ -157,18 +157,3 @@ class TestLearningLoopPRFeedbackCapture(unittest.TestCase):
                 })
             except Exception as exc:
                 self.fail(f"_writeLedger raised on record_pr_outcome failure: {exc}")
-
-
-if __name__ == "__main__":
-    loader = unittest.TestLoader()
-    suite = loader.loadTestsFromTestCase(TestLearningLoopPRFeedbackCapture)
-    runner = unittest.TextTestRunner(verbosity=0, stream=open(  # noqa: WPS515
-        sys.stderr.fileno(), "w", closefd=False
-    ))
-    result = runner.run(suite)
-    if result.wasSuccessful():
-        print("PR feedback captured successfully")
-        sys.exit(0)
-    else:
-        print("FAILED: learning loop PR feedback tests did not pass")
-        sys.exit(1)

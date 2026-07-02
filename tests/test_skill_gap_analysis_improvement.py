@@ -369,27 +369,3 @@ class TestMainRegression(unittest.TestCase):
         with patch("sys.stdout", io.StringIO()):
             result = _wf.main()
         self.assertEqual(result, 0)
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-if __name__ == "__main__":
-    loader = unittest.TestLoader()
-    suite = unittest.TestSuite()
-    for cls in [
-        TestStemTokensRegression,
-        TestBuildDemandCounterRegression,
-        TestDomainMapRegression,
-        TestLoadOneTask,
-        TestParallelLoading,
-        TestSkillsDirGuard,
-        TestPyFileExclusion,
-        TestNameOnlyCoverage,
-        TestMainRegression,
-    ]:
-        suite.addTests(loader.loadTestsFromTestCase(cls))
-
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    sys.exit(0 if result.wasSuccessful() else 1)

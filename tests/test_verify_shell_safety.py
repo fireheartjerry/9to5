@@ -25,7 +25,3 @@ class TestVerifyShellSafety(unittest.TestCase):
         # the pipe is inside the python source (bitwise-or), not a shell pipe; the quote ends the cmd
         out = self._san('python -c "print(1 | 2)"')
         self.assertIsNotNone(out)
-
-
-if __name__ == "__main__":
-    unittest.main()

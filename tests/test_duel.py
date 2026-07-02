@@ -57,7 +57,3 @@ class CastDuelGating(unittest.TestCase):
         persona, kw = self.sent[0]
         self.assertEqual(persona["icon"], "adversary")
         self.assertTrue(kw["files"][0][0] == "duel.png")
-
-
-if __name__ == "__main__":
-    unittest.main()

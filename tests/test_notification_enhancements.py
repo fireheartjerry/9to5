@@ -393,7 +393,3 @@ class TestBusEntryHealth(unittest.TestCase):
             bus.emit(bad["kind"], bad)  # type: ignore[arg-type]
         self.assertEqual(len(cap.calls), 1)
         self.assertEqual(cap.calls[0][0], "replan")
-
-
-if __name__ == "__main__":
-    unittest.main()

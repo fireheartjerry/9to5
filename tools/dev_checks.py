@@ -140,8 +140,46 @@ def cmd_fast(args: list[str]) -> int:
     return _run([PY, "-m", "pytest", *_xdist(["-m", "not slow", "-q", *args])]).returncode
 
 
+# Test files must never carry a unittest runner block: `python tests/test_x.py` (and
+# `unittest discover`) bypass the pytest-only conftest sandbox and can fire REAL
+# Discord/Ollama side effects with the live creds in .env. pytest is the only runner.
+UNITTEST_MAIN_TOKEN = "unittest.main("
+
+
+def _bare_runner_offenders() -> list[str]:
+    """Test files containing a forbidden bare-runner block (see UNITTEST_MAIN_TOKEN).
+    Private: kept out of the AI-nav index so no generated artifact advertises the token."""
+    out: list[str] = []
+    for p in sorted((REPO_ROOT / "tests").rglob("*.py")):
+        if "__pycache__" in p.parts:
+            continue
+        if UNITTEST_MAIN_TOKEN in p.read_text(encoding="utf-8", errors="ignore"):
+            out.append(str(p.relative_to(REPO_ROOT)).replace("\\", "/"))
+    return out
+
+
+def _no_unittest_main_gate() -> int:
+    offenders = _bare_runner_offenders()
+    if offenders:
+        print(f"[dev] no-unittest-main: FAIL -- {len(offenders)} test file(s) carry a "
+              f"unittest.main() runner block (pytest is the only allowed runner):", file=sys.stderr)
+        for f in offenders[:10]:
+            print(f"  - {f}", file=sys.stderr)
+        return 1
+    print("[dev] no-unittest-main: ok")
+    return 0
+
+
 def cmd_ci_local(args: list[str]) -> int:  # noqa: ARG001
     """Run the local CI gates in cheapest useful order."""
+    # Step zero: corrupt/uncompilable test files must fail in seconds, never at collection.
+    print("[dev] compile-tests")
+    rc = _run([PY, "-m", "compileall", "-q", str(REPO_ROOT / "tests")]).returncode
+    if rc != 0:
+        return rc
+    rc = _no_unittest_main_gate()
+    if rc != 0:
+        return rc
     gates = [
         ("repo-map", [PY, str(REPO_ROOT / "tools" / "repo_map.py"), "--check"]),
         ("workflows", [PY, str(REPO_ROOT / "validate_workflows.py")]),

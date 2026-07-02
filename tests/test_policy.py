@@ -83,7 +83,3 @@ class TestBandit(unittest.TestCase):
         h = policy.hint("goal", "discord thing", rng=random.Random(1), db_path=self.db)
         self.assertIn("POLICY HINT", h)
         self.assertIn("effort=", h)
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -54,7 +54,3 @@ class TestDiverged(unittest.TestCase):
             self.assertFalse(epoch.diverged(snap))
             f.write_text("x = 2", encoding="utf-8")
             self.assertTrue(epoch.diverged(snap))
-
-
-if __name__ == "__main__":
-    unittest.main()

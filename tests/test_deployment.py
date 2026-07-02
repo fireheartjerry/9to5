@@ -126,13 +126,3 @@ def _runDeploymentReview() -> bool:
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
     return result.wasSuccessful()
-
-
-if __name__ == "__main__":
-    if "--verify-deployment-review" in sys.argv:
-        sys.argv.remove("--verify-deployment-review")
-        success = _runDeploymentReview()
-        sys.exit(0 if success else 1)
-
-    result = unittest.main(verbosity=2, exit=False)
-    sys.exit(0 if result.result.wasSuccessful() else 1)

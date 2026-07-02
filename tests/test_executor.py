@@ -74,7 +74,3 @@ class TestParseEnvelope(unittest.TestCase):
         blob = json.dumps({"type": "result", "result": "x", "is_error": False, "cost_usd": 0.5})
         _, fields = executor._parseEnvelope(blob)
         self.assertEqual(fields["cost_usd"], 0.5)
-
-
-if __name__ == "__main__":
-    unittest.main()

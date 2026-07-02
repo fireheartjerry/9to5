@@ -58,7 +58,3 @@ class TestApplyReplan(unittest.TestCase):
         before = self._count()
         self.orch._applyReplan(self.state, {})
         self.assertEqual(self._count(), before)
-
-
-if __name__ == "__main__":
-    unittest.main()

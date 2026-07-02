@@ -24,7 +24,3 @@ class TestCollectHealth(unittest.TestCase):
             checks = health.collectHealth()
         self.assertFalse(checks[0]["ok"])
         self.assertIn("errored", checks[0]["detail"])
-
-
-if __name__ == "__main__":
-    unittest.main()

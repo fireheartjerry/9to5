@@ -95,7 +95,3 @@ class TestAdapterPromotion(unittest.TestCase):
         out = adapter_promotion.run(db_path=self.db)
         self.assertEqual(out["9to5-brain:v1"]["decision"], "reject")
         self.assertIsNone(experience.get_champion_adapter(db_path=self.db))
-
-
-if __name__ == "__main__":
-    unittest.main()

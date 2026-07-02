@@ -3,7 +3,6 @@
   "generated_by": "tools/repo_map.py",
   "root": "9to5",
   "first_party_roots": [
-    "C9to5nightclaw",
     "agents",
     "config",
     "conftest",
@@ -30,19 +29,6 @@
     "workflows"
   ],
   "modules": {
-    "C9to5nightclaw": {
-      "path": "C9to5nightclaw.py",
-      "purpose": "Nightclaw — Discord bot entry point for 9TO5.",
-      "exports": [],
-      "depends_on": [
-        "notifications.command_bot"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
     "agents": {
       "path": "agents/__init__.py",
       "purpose": "9TO5 agent roster.",
@@ -1088,21 +1074,21 @@
           "kind": "function",
           "signature": "(spec: Optional[dict], subtask: Optional[dict], task_state=None) -> str",
           "summary": "Deterministically pick the executor profile from the spec + subtask.",
-          "lineno": 220
+          "lineno": 243
         },
         {
           "name": "buildCharter",
           "kind": "function",
           "signature": "(profile: str) -> str",
           "summary": "Compact system-level charter for ``--append-system-prompt`` (always injected).",
-          "lineno": 266
+          "lineno": 289
         },
         {
           "name": "buildPlaybook",
           "kind": "function",
           "signature": "(profile: str) -> str",
           "summary": "Richer role playbook rendered as a CLAUDE.md section (auto-read by Claude Code).",
-          "lineno": 282
+          "lineno": 305
         }
       ],
       "depends_on": [
@@ -5859,19 +5845,6 @@
       "test": [],
       "callers": []
     },
-    "nightclaw.__main__": {
-      "path": "nightclaw/__main__.py",
-      "purpose": "Nightclaw bot launcher (python -m nightclaw)",
-      "exports": [],
-      "depends_on": [
-        "notifications.command_bot"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
     "notifications": {
       "path": "notifications/__init__.py",
       "purpose": "Discord notifications + command bot (see notifications.discord_bot).",
@@ -6739,9 +6712,7 @@
         "tests/test_command_bot.py"
       ],
       "callers": [
-        "C9to5nightclaw",
-        "nightclaw",
-        "nightclaw.__main__"
+        "nightclaw"
       ]
     },
     "notifications.commands": {
@@ -12340,21 +12311,21 @@
           "kind": "function",
           "signature": "() -> dict",
           "summary": "Collect the repo-health snapshot as a plain dict",
-          "lineno": 76
+          "lineno": 80
         },
         {
           "name": "render",
           "kind": "function",
           "signature": "(snap: dict) -> str",
           "summary": "",
-          "lineno": 103
+          "lineno": 107
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: 'list[str] | None'=None) -> int",
           "summary": "",
-          "lineno": 122
+          "lineno": 126
         }
       ],
       "depends_on": [
@@ -13227,7 +13198,7 @@
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "Run the local CI gates in cheapest useful order.",
-          "lineno": 143
+          "lineno": 173
         }
       ],
       "depends_on": [],
@@ -13322,81 +13293,88 @@
       "purpose": "repo_map -- generate the 9to5 AI-navigation layer from the source AST.",
       "exports": [
         {
+          "name": "is_test_path",
+          "kind": "function",
+          "signature": "(path: Path) -> bool",
+          "summary": "True for files under the test trees (see TEST_TOP_DIRS): never mapped, never spliced.",
+          "lineno": 83
+        },
+        {
           "name": "iter_py_files",
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> list[Path]",
-          "summary": "All first-party .py files (sorted, deterministic), skipping EXCLUDE_DIRS",
-          "lineno": 69
+          "summary": "All first-party .py files (sorted, deterministic), skipping EXCLUDE_DIRS and nested",
+          "lineno": 88
         },
         {
           "name": "module_dotted",
           "kind": "function",
           "signature": "(path: Path) -> str",
           "summary": "agents/adversary.py -> 'agents.adversary'",
-          "lineno": 84
+          "lineno": 105
         },
         {
           "name": "first_party_roots",
           "kind": "function",
           "signature": "() -> set[str]",
           "summary": "Top-level importable names: every top-level .py stem + every dir holding an __init__.py.",
-          "lineno": 91
+          "lineno": 112
         },
         {
           "name": "parse_module",
           "kind": "function",
           "signature": "(path: Path, roots: set[str]) -> dict",
           "summary": "Extract the per-module record (sans callers, which are computed globally).",
-          "lineno": 213
+          "lineno": 234
         },
         {
           "name": "find_tests",
           "kind": "function",
           "signature": "(dotted: str, name: str) -> list[str]",
           "summary": "Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> glob -> [].",
-          "lineno": 231
+          "lineno": 252
         },
         {
           "name": "build_map",
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> dict",
           "summary": "Full-repo machine index",
-          "lineno": 243
+          "lineno": 264
         },
         {
           "name": "toplevel_import_graph",
           "kind": "function",
           "signature": "() -> dict[str, list[str]]",
           "summary": "{dotted-module: [first-party modules imported at LOAD time]}",
-          "lineno": 272
+          "lineno": 293
         },
         {
           "name": "render_header",
           "kind": "function",
           "signature": "(rec: dict) -> str",
           "summary": "Render the @AI-MAP block (text only, no surrounding quotes).",
-          "lineno": 287
+          "lineno": 308
         },
         {
           "name": "splice_header",
           "kind": "function",
           "signature": "(src: str, header: str) -> Optional[str]",
           "summary": "Return ``src`` with ``header`` placed inside the module docstring (below the prose,",
-          "lineno": 304
+          "lineno": 335
         },
         {
           "name": "write_outputs",
           "kind": "function",
           "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 326
+          "lineno": 360
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: Optional[list[str]]=None) -> int",
           "summary": "",
-          "lineno": 339
+          "lineno": 373
         }
       ],
       "depends_on": [],
@@ -13417,7 +13395,7 @@
           "kind": "function",
           "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 106
+          "lineno": 115
         }
       ],
       "depends_on": [],
@@ -13436,14 +13414,14 @@
           "kind": "function",
           "signature": "(m: dict) -> str",
           "summary": "",
-          "lineno": 56
+          "lineno": 62
         },
         {
           "name": "render_package_agents_md",
           "kind": "function",
           "signature": "(m: dict, pkg: str) -> str",
           "summary": "",
-          "lineno": 114
+          "lineno": 120
         }
       ],
       "depends_on": [],

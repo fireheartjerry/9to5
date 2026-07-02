@@ -160,7 +160,3 @@ class TestRetryPolicyComposition(unittest.TestCase):
         result = policy.execute(fn)
         self.assertTrue(result["ok"])
         self.assertIn(fn, policy.call_log)
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)

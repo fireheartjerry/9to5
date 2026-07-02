@@ -40,7 +40,3 @@ class Replay(unittest.TestCase):
 
     def test_postfile_exists(self):
         self.assertTrue(callable(discord.postFile))
-
-
-if __name__ == "__main__":
-    unittest.main()

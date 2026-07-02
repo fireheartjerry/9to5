@@ -321,7 +321,3 @@ class TestEmbedStructure(unittest.TestCase):
         )
         self._assertEmbed(embed)
         self.assertIn("Critical Event", embed["title"])
-
-
-if __name__ == "__main__":
-    unittest.main()

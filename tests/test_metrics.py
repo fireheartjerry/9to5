@@ -50,7 +50,3 @@ class TestMetrics(unittest.TestCase):
         self.assertEqual(m["total_runs"], 0)
         self.assertIsNone(m["success_rate"])
         self.assertIsNone(m["avg_duration_seconds"])
-
-
-if __name__ == "__main__":
-    unittest.main()

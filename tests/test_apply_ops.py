@@ -71,7 +71,3 @@ class TestApplyOps(unittest.TestCase):
         self.state.updateSubtask("st-001", status="in_progress")
         self.orch._applyOps(self.state, _Bus([{"op": "retry"}]), self.dash)
         self.assertEqual(self.state.getSubtask("st-001")["status"], "pending")
-
-
-if __name__ == "__main__":
-    unittest.main()

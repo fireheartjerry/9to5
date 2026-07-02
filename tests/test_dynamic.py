@@ -75,7 +75,3 @@ class Registration(unittest.TestCase):
         intents = discord.Intents.default()
         bot = dpy_commands.Bot(command_prefix=dpy_commands.when_mentioned, intents=intents)
         bot.add_dynamic_items(dynamic.SubtaskButton)   # must not raise
-
-
-if __name__ == "__main__":
-    unittest.main()

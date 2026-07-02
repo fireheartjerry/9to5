@@ -243,7 +243,3 @@ class TestResolveWorkflowDefinition(unittest.TestCase):
         spec = {"use_workflow": True, "workflow_name": "__nonexistent_wf__"}
         result = resolveWorkflowDefinition(spec)
         self.assertIsNone(result)
-
-
-if __name__ == "__main__":
-    unittest.main()

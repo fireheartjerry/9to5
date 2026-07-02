@@ -77,7 +77,3 @@ class Provision(unittest.TestCase):
         self.assertEqual(icons.icon("done"), "<:nc_done:111>")
         self.assertTrue(icons.prefix("done").endswith(" "))
         self.assertEqual(icons.prefix("nope"), "")
-
-
-if __name__ == "__main__":
-    unittest.main()

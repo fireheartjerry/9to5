@@ -34,7 +34,3 @@ class TestMentionShorthand(unittest.TestCase):
 
     def test_mention_is_case_insensitive(self):
         self.assertEqual(sh(["@9TO5", "do x"]), ["--goal", "do x", "--auto-approve"])
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -228,22 +228,3 @@ class TestMain(unittest.TestCase):
                         with patch("sys.stdout", io.StringIO()):
                             result = _mod.main()
         self.assertEqual(result, 0)
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-if __name__ == "__main__":
-    loader = unittest.TestLoader()
-    suite = unittest.TestSuite()
-    for cls in [
-        TestLoadTaskHistory,
-        TestLoadSkillInventory,
-        TestPrintReport,
-        TestMain,
-    ]:
-        suite.addTests(loader.loadTestsFromTestCase(cls))
-
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    sys.exit(0 if result.wasSuccessful() else 1)

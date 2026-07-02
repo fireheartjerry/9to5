@@ -46,7 +46,3 @@ class TestGetSolutionLock(unittest.TestCase):
         row = experience.get_solution(sig, db_path=self.db)
         self.assertIsNotNone(row)
         self.assertGreaterEqual(row["reuse_count"], 120)   # 6*20 increments all landed
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -163,7 +163,3 @@ class TestCreatePullRequestStaging(unittest.TestCase):
             head = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=work,
                                   check=True, capture_output=True, text=True).stdout.strip()
             self.assertEqual(head, "9to5/abcdef12")
-
-
-if __name__ == "__main__":
-    unittest.main()

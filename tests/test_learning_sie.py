@@ -220,7 +220,3 @@ class TestPrConsolidateProvenance(PrConsolidateBase):
         # Upsert must not duplicate rows
         ci_modes = [m for m in modes if m["taxonomy_class"] == "ci_failure"]
         self.assertEqual(len(ci_modes), 1)
-
-
-if __name__ == "__main__":
-    unittest.main()

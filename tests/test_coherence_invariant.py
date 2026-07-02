@@ -30,7 +30,3 @@ class TestCoherence(unittest.TestCase):
         # In-process restart must keep the pinned bytecode; self-edits adopt only on a
         # fresh process. A reload would re-enter edited code incoherently.
         self.assertNotIn("importlib.reload", src)
-
-
-if __name__ == "__main__":
-    unittest.main()

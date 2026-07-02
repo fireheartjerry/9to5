@@ -40,7 +40,3 @@ class TestGoldFilter(unittest.TestCase):
         self.assertIn("real", gold)
         self.assertNotIn("stubbed", gold)   # stub approval is not evidence
         self.assertNotIn("never", gold)     # never-reviewed is not evidence
-
-
-if __name__ == "__main__":
-    unittest.main()

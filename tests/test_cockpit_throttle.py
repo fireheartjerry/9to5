@@ -50,7 +50,3 @@ class CockpitImageThrottle(unittest.TestCase):
         d = dm.DiscordDashboard()
         _, files = d._cockpit(_State(), "executing")
         self.assertIsNone(files)
-
-
-if __name__ == "__main__":
-    unittest.main()

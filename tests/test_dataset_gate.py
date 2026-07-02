@@ -57,7 +57,3 @@ class TestGate(unittest.TestCase):
         s = out["stats"]
         self.assertEqual((s["in"], s["dropped_invalid"], s["dropped_dup"], s["out"]),
                          (3, 1, 1, 1))
-
-
-if __name__ == "__main__":
-    unittest.main()

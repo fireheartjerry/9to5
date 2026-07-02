@@ -63,7 +63,3 @@ class TestBuilders(unittest.TestCase):
         pb = playbook.buildPlaybook("tester")
         self.assertIn("Non-negotiables", pb)
         self.assertIn("Test author", pb)
-
-
-if __name__ == "__main__":
-    unittest.main()

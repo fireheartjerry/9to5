@@ -115,7 +115,3 @@ class DashboardCv2Routing(unittest.TestCase):
         d.start(st, "starting", state_lock=threading.Lock())
         self.assertEqual(self.embed_create, 1)
         self.assertEqual(self.cv2_create, 0)
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -51,7 +51,3 @@ class TestDoctor(unittest.TestCase):
         rep = {"checks": [doctor._check("Ollama", True, hard=True, detail="ok")],
                "ready": True, "blockers": []}
         self.assertIn("Ready", doctor.render(rep))
-
-
-if __name__ == "__main__":
-    unittest.main()

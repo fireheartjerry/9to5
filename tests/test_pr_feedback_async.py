@@ -407,7 +407,3 @@ class TestCapturePRFeedbackPromoteSafe(unittest.TestCase):
 
     def test_unknown_ci_blocks(self):
         self.assertFalse(self._run("unknown", "none"))
-
-
-if __name__ == "__main__":
-    unittest.main()

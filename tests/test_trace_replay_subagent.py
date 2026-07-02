@@ -386,14 +386,3 @@ class TestGetDecisionPointsGDP(unittest.TestCase):
         result = self._run_gdp(recent=["run-001"], proc_report=report)
         self.assertTrue(result["ok"])
         self.assertEqual(result["decision_points"], [])
-
-
-if __name__ == "__main__":
-    _loader = unittest.TestLoader()
-    _suite = unittest.TestSuite([
-        _loader.loadTestsFromTestCase(TestExtractDecisionPoints),
-        _loader.loadTestsFromTestCase(TestBuildStepSpecGDP),
-        _loader.loadTestsFromTestCase(TestGetDecisionPointsGDP),
-    ])
-    _result = unittest.TextTestRunner(verbosity=2).run(_suite)
-    sys.exit(0 if _result.wasSuccessful() else 1)

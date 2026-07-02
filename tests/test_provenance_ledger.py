@@ -38,7 +38,3 @@ class TestLedgerProvenanceColumns(unittest.TestCase):
             for table in ("prompt_variants", "reflections", "solution_cache"):
                 cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
                 self.assertIn("provenance", cols, f"{table} missing provenance")
-
-
-if __name__ == "__main__":
-    unittest.main()

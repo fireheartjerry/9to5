@@ -35,7 +35,3 @@ class TestLedgerMigration(unittest.TestCase):
             experience._ensureColumns(conn, "subtasks", {"spike_col": "INTEGER"})  # again
             cols = {r["name"] for r in conn.execute("PRAGMA table_info(subtasks)")}
         self.assertIn("spike_col", cols)
-
-
-if __name__ == "__main__":
-    unittest.main()

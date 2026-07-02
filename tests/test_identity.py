@@ -88,7 +88,3 @@ class TestPredicates(unittest.TestCase):
         # But real loop modules remain present:
         names = {Path(f).name for f in files}
         self.assertIn("orchestrator.py", names)
-
-
-if __name__ == "__main__":
-    unittest.main()

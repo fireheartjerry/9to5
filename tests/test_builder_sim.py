@@ -97,7 +97,3 @@ class TestBuilderSim(unittest.TestCase):
         head = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=self.proj,
                               check=True, capture_output=True, text=True).stdout.strip()
         self.assertEqual(head, f"9to5/{st.task_id[:8]}")
-
-
-if __name__ == "__main__":
-    unittest.main()

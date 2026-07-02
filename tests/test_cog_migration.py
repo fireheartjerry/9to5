@@ -53,7 +53,3 @@ class Migration(unittest.TestCase):
         import notifications.slash as s
         self.assertFalse(hasattr(s, "registerSlashCommands"))
         self.assertTrue(hasattr(s, "_fmtUptime"))   # helper preserved (test_slash depends on it)
-
-
-if __name__ == "__main__":
-    unittest.main()

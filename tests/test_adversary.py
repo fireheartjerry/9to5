@@ -152,7 +152,3 @@ class TestReviewViaBrowser(unittest.TestCase):
         m.assert_called_once()
         self.assertEqual(rv["verdict"], "approved")
         self.assertFalse(rv["stub"])
-
-
-if __name__ == "__main__":
-    unittest.main()

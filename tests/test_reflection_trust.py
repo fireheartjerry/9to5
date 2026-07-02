@@ -24,7 +24,3 @@ class TestTrust(unittest.TestCase):
         self.assertFalse(reflection.trust(_SUMMARY, verify_passed=False,
                                           adversary_verdict="approved",
                                           adversary_stub=False))
-
-
-if __name__ == "__main__":
-    unittest.main()

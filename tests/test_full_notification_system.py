@@ -239,18 +239,3 @@ class TestFullPipelineSmoke(unittest.TestCase):
             pass
 
         self.assertNotIsInstance(_NoHandle(), NotificationSurface)
-
-
-# ---------------------------------------------------------------------------
-# Entry point: run all tests and exit with appropriate code
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    # Discover sub-suite modules registered above + the smoke tests in this file
-    loader = unittest.TestLoader()
-    suite = loader.discover(str(_ROOT / "tests"), pattern="test_notification*.py")
-    # Also explicitly add this module's smoke tests in case discovery misses them
-    suite.addTests(loader.loadTestsFromModule(sys.modules[__name__]))
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    sys.exit(0 if result.wasSuccessful() else 1)

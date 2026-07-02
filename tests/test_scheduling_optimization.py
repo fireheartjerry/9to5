@@ -228,8 +228,3 @@ class TestStartedAtTimestamp(unittest.TestCase):
     def test_started_at_none_before_dispatch(self) -> None:
         job = WorkflowScheduler().enqueue("wf")
         self.assertIsNone(job.started_at)
-
-
-if __name__ == "__main__":
-    result = unittest.main(exit=False, verbosity=2)
-    sys.exit(0 if result.result.wasSuccessful() else 1)

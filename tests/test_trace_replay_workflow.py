@@ -291,7 +291,3 @@ class TestWorkflowOptimizations(unittest.TestCase):
             with mock.patch("subprocess.run") as mock_run:
                 _wf.runWorkflow()
         mock_run.assert_not_called()
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)

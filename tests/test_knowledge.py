@@ -60,7 +60,3 @@ class TestInjectCapabilities(unittest.TestCase):
         knowledge.setCapabilities("")
         with mock.patch.object(knowledge_compress, "ensureCapabilities", return_value=""):
             self.assertEqual(knowledge.injectCapabilities("SYS"), "SYS")
-
-
-if __name__ == "__main__":
-    unittest.main()

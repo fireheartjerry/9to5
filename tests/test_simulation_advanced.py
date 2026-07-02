@@ -347,7 +347,3 @@ class TestSimErrorHandling(unittest.TestCase):
     def test_safeChatExtract_content_none_returns_empty(self):
         msgs = [{"role": "user", "content": None}]
         self.assertEqual(self.safeChatExtract(msgs), "")
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)

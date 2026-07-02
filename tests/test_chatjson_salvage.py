@@ -26,7 +26,3 @@ class TestChatJsonSalvage(unittest.TestCase):
 
     def test_garbage_returns_none(self):
         self.assertIsNone(self._chatjson("no json here at all"))
-
-
-if __name__ == "__main__":
-    unittest.main()

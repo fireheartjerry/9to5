@@ -219,11 +219,3 @@ class TestNotificationImports(unittest.TestCase):
     def test_web_dashboard_port_in_valid_range(self):
         self.assertGreater(config.WEB_DASHBOARD_PORT, 1024)
         self.assertLess(config.WEB_DASHBOARD_PORT, 65536)
-
-
-if __name__ == "__main__":
-    loader = unittest.TestLoader()
-    suite = loader.loadTestsFromModule(sys.modules[__name__])
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    sys.exit(0 if result.wasSuccessful() else 1)

@@ -33,10 +33,3 @@ class TestBusDocumentation(unittest.TestCase):
             self.text,
             "NotificationBus error-handling section must document SystemExit",
         )
-
-
-if __name__ == "__main__":
-    result = unittest.main(verbosity=2, exit=False)
-    if result.result.wasSuccessful():
-        print("Error handling updated for KeyboardInterrupt and SystemExit")
-    sys.exit(0 if result.result.wasSuccessful() else 1)

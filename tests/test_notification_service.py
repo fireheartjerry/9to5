@@ -468,7 +468,3 @@ class TestHandleCommand(unittest.TestCase):
             result = command_bot.handleCommand("!zzznonsense")
         # unknown commands should be handled gracefully (not raise)
         self.assertIsInstance(result, str)
-
-
-if __name__ == "__main__":
-    unittest.main()

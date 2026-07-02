@@ -342,7 +342,3 @@ class TestRunSteps(unittest.TestCase):
 
     def test_empty_steps_returns_empty_list(self):
         self.assertEqual(runSteps([], {}, {}), [])
-
-
-if __name__ == "__main__":
-    unittest.main()

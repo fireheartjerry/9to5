@@ -63,7 +63,3 @@ class VisualsDisabled(unittest.TestCase):
         self.assertIsNone(visuals.progressCard(st))
         self.assertIsNone(visuals.burndownChart(st))
         self.assertIsNone(visuals.timelapseGif([b"x"]))
-
-
-if __name__ == "__main__":
-    unittest.main()

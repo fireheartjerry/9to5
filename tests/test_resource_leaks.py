@@ -44,7 +44,3 @@ class TestGeminiSessionNoLeak(unittest.TestCase):
         close.assert_called_once()              # the probe()-opened session was torn down
         self.assertIsNone(orch._gemini_session)
         self.assertFalse(orch._gemini_session_ok)
-
-
-if __name__ == "__main__":
-    unittest.main()

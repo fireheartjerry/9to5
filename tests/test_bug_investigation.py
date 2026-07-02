@@ -190,7 +190,3 @@ class TestBugInvestigationRegistry(unittest.TestCase):
         prompt = result["prompt"]
         # All 3 phases are parallel
         self.assertEqual(prompt.count("(parallel)"), 3)
-
-
-if __name__ == "__main__":
-    unittest.main()

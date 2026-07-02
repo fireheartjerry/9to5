@@ -124,6 +124,8 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: uv pip install --system -r requirements.txt -r requirements-dev.txt
+      - name: Repo-map drift check
+        run: python tools/repo_map.py --check
       - name: Tooling tests
         run: python -m pytest tests/test_repo_map.py tests/test_tools.py -q
 
@@ -147,6 +149,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: uv pip install --system -r requirements.txt -r requirements-dev.txt
+      - name: Compile tests (corrupt files fail in seconds, not at collection)
+        run: python -m compileall -q tests
       - name: Fast lane
         run: python -m pytest -m "not slow" -n auto --dist loadscope -q
       - name: Validate workflow definitions

@@ -84,7 +84,3 @@ class TestConsolidate(unittest.TestCase):
         lessons.consolidate(db_path=self.db, write_digest=True, digest_path=digest)
         self.assertTrue(digest.exists())
         self.assertIn("prefer high", digest.read_text(encoding="utf-8"))
-
-
-if __name__ == "__main__":
-    unittest.main()

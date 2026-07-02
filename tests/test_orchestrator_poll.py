@@ -70,7 +70,3 @@ class TestTranslateDiscordArity(unittest.TestCase):
         names = [a.arg for a in func.args.args]
         self.assertEqual(names, ["self", "bus", "state"])
         self.assertFalse(func.args.defaults, "no defaults expected; both args are required")
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -56,7 +56,3 @@ class TestListRecent(unittest.TestCase):
             self._w(f"{i}.json", f"t{i}", "done", f"2026-06-22T0{i}:00:00+00:00", [])
         with mock.patch.object(config, "STATE_DIR", self.dir):
             self.assertEqual(len(TaskState.listRecent(3)), 3)
-
-
-if __name__ == "__main__":
-    unittest.main()

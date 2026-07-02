@@ -71,7 +71,3 @@ class TestBranding(unittest.TestCase):
         rows = branding.controlPanelRow()
         ids = [c["custom_id"] for row in rows for c in row["components"]]
         self.assertEqual(set(ids), set(branding.CONTROL_PANEL_IDS.values()))
-
-
-if __name__ == "__main__":
-    unittest.main()

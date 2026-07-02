@@ -23,6 +23,3 @@ except ModuleNotFoundError:
     from tests.test_workflows_registry_load import (  # noqa: E402
         TestModuleLevelRegistry, TestShippedDefinitions,
     )
-
-if __name__ == "__main__":
-    unittest.main()

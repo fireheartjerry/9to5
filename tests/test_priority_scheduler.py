@@ -216,8 +216,3 @@ class TestEdgeCases(unittest.TestCase):
         # must be non-increasing
         for a, b in zip(order, order[1:]):
             self.assertGreaterEqual(a, b)
-
-
-if __name__ == "__main__":
-    result = unittest.main(exit=False, verbosity=2)
-    sys.exit(0 if result.result.wasSuccessful() else 1)

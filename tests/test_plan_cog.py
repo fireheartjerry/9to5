@@ -57,7 +57,3 @@ class CogRegistration(unittest.TestCase):
         self.assertIn("timeline", slash)
         self.assertIn("Send to Nightclaw as a goal", ctx)
         self.assertIn("Add as 9to5 subtask", ctx)
-
-
-if __name__ == "__main__":
-    unittest.main()

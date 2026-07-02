@@ -59,7 +59,3 @@ class TestWriteNote(unittest.TestCase):
             put.return_value = mock.Mock(status_code=200)
             res = self.client.writeNote("tasks/z.md", "hi")
         self.assertEqual(res["via"], "rest")
-
-
-if __name__ == "__main__":
-    unittest.main()

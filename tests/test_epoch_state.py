@@ -29,7 +29,3 @@ class TestEpochInMeta(unittest.TestCase):
         st.setEpoch(snap)
         self.assertEqual(TaskState.load(st.task_id).meta["epoch"]["universe"]["hard_boundaries"],
                          [".env"])
-
-
-if __name__ == "__main__":
-    unittest.main()
