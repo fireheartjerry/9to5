@@ -18,6 +18,7 @@ from platform_core.runtime.control import AbortRun
 from memory import experience
 from notifications import discord_bot as discord
 from platform_core.orchestration.run_loop import _deadlinePassed, _remainingHours
+from platform_core.orchestration.run_loop_replan_mixin import OrchestratorRunLoopReplanMixin
 from platform_core.orchestration.subtask import _pendingCount, _readySet
 from state.task import TaskState, nowIso
 
@@ -28,8 +29,11 @@ if TYPE_CHECKING:
 LOG = config.getLogger("orchestrator")
 
 
-class OrchestratorRunLoopMixin:
-    """Handles the execution loop, backfill, livelock guard, and replan application."""
+class OrchestratorRunLoopMixin(OrchestratorRunLoopReplanMixin):
+    """Handles the execution loop, backfill, livelock guard, and replan application.
+
+    Forced/adaptive replan + DAG cascade (_forcedReplan, _applyReplan, _cascadeResetDependents,
+    _stallReplan) live in OrchestratorRunLoopReplanMixin, inherited here."""
 
     # ===================================================================
     # Deadline / queue helpers (thin delegates)
@@ -293,182 +297,73 @@ class OrchestratorRunLoopMixin:
             except Exception:  # noqa: BLE001 -- instinct is best-effort, never blocks the loop
                 pass
             if parallelism <= 1:
-                subtask = state.nextActionable()
-                if subtask is None:
-                    cont, dry_backfills = self._continueAfterDrain(
-                        state, architect_doc, dashboard, dry_backfills)
-                    if cont:
-                        continue
-                    break
-                from notifications.lane_feed import laneTap
-                laneTap("orchestrator", f"loop: {subtask.get('subtask_id', '?')} "
-                                         f"{str(subtask.get('title', ''))[:60]}")
-                position += 1
-                try:
-                    self._executeSubtask(state, subtask, architect_doc, work_dir,
-                                         bus, dashboard, position)
-                except AbortRun:
-                    raise
-                except Exception as e:  # noqa: BLE001 -- one bad subtask must not kill the run
-                    LOG.error("Subtask %s crashed: %s", subtask.get("subtask_id"), e, exc_info=True)
-                    try:
-                        discord.sendEmbed(discord.noticeEmbed(
-                            f"Subtask {subtask.get('subtask_id')} crashed "
-                            f"(marked failed, run continues): {e}"))
-                    except Exception:  # noqa: BLE001
-                        pass
-                    with self._state_lock:
-                        state.updateSubtask(subtask["subtask_id"], status="failed",
-                                            completed_at=nowIso())
-                        state.addNotification("subtask_crashed",
-                                              f"{subtask.get('subtask_id')}: {e}")
-                continue
-            # parallel: run the ready set (deps satisfied) concurrently
-            ready = self._readySet(state)
-            if not ready:
-                if state.nextActionable() is None:
-                    cont, dry_backfills = self._continueAfterDrain(
-                        state, architect_doc, dashboard, dry_backfills)
-                    if cont:
-                        continue
-                    break
-                ready = [state.nextActionable()]
-            from platform_core.orchestration import parallel_safety
-            if getattr(config, "WORKTREE_ISOLATION_ENABLED", False):
-                batch = parallel_safety.safeParallelSet(state, ready, parallelism)
+                stop, position, dry_backfills = self._runSequentialStep(
+                    state, architect_doc, work_dir, bus, dashboard, position, dry_backfills)
             else:
-                batch = ready[:parallelism]
-            if self._societyGate(batch):
-                # Epic 5: 9to5-owned workforce on the blackboard (flag ON, >=2 ready).
-                # Separate `position2` accumulator keeps the OFF-path `position` untouched.
-                position2, abort = self._handleSocietyBatch(
-                    state, batch, work_dir, parallelism)
-                position += position2
-            else:
-                position, abort = self._handleParallelBatch(
-                    state, batch, architect_doc, work_dir, bus, dashboard, position, parallelism)
-            if abort is not None:
-                raise abort
-
-    def _forcedReplan(self, state: TaskState, architect_doc: str,
-                      dashboard: "DiscordDashboard") -> None:
-        """Operator-requested replanning pass (via !replan / ControlBus.force_replan). Best-effort:
-        never raises into the loop. Skips single-deliverable goals (nothing to replan)."""
-        try:
-            from platform_core.orchestration.subtask import _singleDeliverable
-            goal = state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "")
-            if _singleDeliverable(goal):
-                dashboard.event("forced replan skipped (single-deliverable goal)")
-                return
-            last_done = next((s for s in reversed(state.subtasks) if s["status"] == "done"), None)
-            with self._state_lock:
-                subs = list(state.subtasks)
-            decision = self._replan(goal, subs, last_done or {}, "operator-forced replan",
-                                    self_referential=bool(state.meta.get("is_self_referential")),
-                                    remaining_hours=self._remainingHours(state),
-                                    work_profile=state.meta.get("work_profile"))
-            if decision.get("action") == "mutate" and (decision.get("add") or decision.get("remove")):
-                dashboard.update(state, "replanning", "operator-forced replan")
-                with self._state_lock:
-                    self._applyReplan(state, decision)
-        except Exception as e:  # noqa: BLE001 -- forced replan is best-effort
-            LOG.warning("forced replan failed (ignored): %s", e)
-
-    def _applyReplan(self, state: TaskState, decision: dict) -> None:
-        diff = [f"## Replan @ {nowIso()}", f"Reason: {decision.get('reason', '')}", ""]
-        # Cap the LIVE queue (pending + in-progress), not the all-time total: a long self-improvement
-        # run churns through many subtasks over the horizon, so counting terminal ones would freeze
-        # the plan after MAX_SUBTASKS and kill horizon-fill (RC-2).
-        active = self._pendingCount(state)
-        # The brain may return malformed add/remove (non-list, or items of the wrong type). A crash
-        # here would propagate to the caller's handler and flip the just-COMPLETED subtask to failed,
-        # so coerce defensively and skip any entry that isn't the expected shape.
-        # FX-24: de-dup adds against the live (pending/in-progress) queue so two parallel workers that
-        # both propose the same backfill title (their replan decisions race lock-free) don't enqueue
-        # duplicate subtasks that both run (wasted horizon / conflicting edits to the same file).
-        live_titles = {(s.get("title") or "").strip().lower()
-                       for s in state.subtasks if s["status"] in ("pending", "in_progress")}
-        adds = decision.get("add") or []
-        for add in (adds if isinstance(adds, list) else []):
-            if not isinstance(add, dict):
-                continue
-            # The 7B brain sometimes emits a non-string truthy title (int / dict). ``.strip()`` on
-            # that would raise and flip the just-completed subtask to failed, so coerce first.
-            raw = add.get("title")
-            title = (raw if isinstance(raw, str) else "untitled").strip() or "untitled"
-            if title.lower() in live_titles:
-                diff.append(f"(skipped duplicate add '{title}')")
-                continue
-            if active >= config.MAX_SUBTASKS:
-                LOG.info("replan add skipped: MAX_SUBTASKS (%d) reached", config.MAX_SUBTASKS)
-                diff.append(f"(skipped add '{title}' -- MAX_SUBTASKS cap)")
+                stop, position, dry_backfills = self._runParallelStep(
+                    state, architect_doc, work_dir, bus, dashboard, position, dry_backfills, parallelism)
+            if stop:
                 break
-            st = state.addSubtask(title, add.get("description", ""),
-                                  layer=add.get("layer", 3), verify=verifier.sanitizeVerify(add.get("verify")))
-            live_titles.add(title.lower())
-            active += 1
-            diff.append(f"+ {st['subtask_id']} {st['title']}")
-        rems = decision.get("remove") or []
-        for rid in (rems if isinstance(rems, list) else []):
-            if not isinstance(rid, str):
-                continue
-            st = state.getSubtask(rid)
-            if st and st["status"] == "pending":
-                state.updateSubtask(rid, status="removed")
-                diff.append(f"- {rid} {st['title']}")
-                # FX-19: the BRAIN dropped a planned, never-completed subtask. For a bounded goal that
-                # means a deliverable was silently dropped -> the run is not a clean "done". Record it
-                # so finalization reports 'partial' rather than "done N/N" on the shrunken denominator.
-                state.addNotification("replan_removed", f"{rid} {st.get('title', '')}"[:200])
-        diff.append("")
-        state.addNotification("replan", decision.get("reason", "")[:200])
-        self.obs.appendNote(state.replanLogRel(), "\n".join(diff) + "\n")
-        LOG.info("Replan applied: %s", decision.get("reason", ""))
 
-    def _cascadeResetDependents(self, state: TaskState, removed_ids: list) -> None:
-        """Remove only the still-PENDING dependents (transitively) of removed/replaced subtasks, so a
-        root-cause replan invalidates downstream work that built on now-stale assumptions while the
-        executed prefix (done/failed) is frozen (metagpt reset_task; cf. nextActionable FX-21)."""
-        queue = list(removed_ids or [])
-        seen: set = set(queue)
-        while queue:
-            rid = queue.pop()
-            for dep in state.dependentsOf(rid):
-                did = dep["subtask_id"]
-                # Traverse THROUGH a frozen (done/failed) dependent so its own still-pending
-                # dependents are still invalidated, but never reset the frozen prefix itself.
-                if did not in seen:
-                    seen.add(did)
-                    queue.append(did)
-                if dep["status"] != "pending":
-                    continue
-                state.updateSubtask(did, status="removed")
-                state.addNotification("cascade_reset", f"{did} (depended on {rid})")
+    def _runSequentialStep(self, state: TaskState, architect_doc: str, work_dir: str,
+                           bus: "ControlBus", dashboard: "DiscordDashboard", position: int,
+                           dry_backfills: int) -> "tuple[bool, int, int]":
+        """One sequential (parallelism<=1) loop iteration. Returns (should_stop, position, dry_backfills)."""
+        subtask = state.nextActionable()
+        if subtask is None:
+            cont, dry_backfills = self._continueAfterDrain(
+                state, architect_doc, dashboard, dry_backfills)
+            return (not cont), position, dry_backfills
+        from notifications.lane_feed import laneTap
+        laneTap("orchestrator", f"loop: {subtask.get('subtask_id', '?')} "
+                                 f"{str(subtask.get('title', ''))[:60]}")
+        position += 1
+        try:
+            self._executeSubtask(state, subtask, architect_doc, work_dir,
+                                 bus, dashboard, position)
+        except AbortRun:
+            raise
+        except Exception as e:  # noqa: BLE001 -- one bad subtask must not kill the run
+            LOG.error("Subtask %s crashed: %s", subtask.get("subtask_id"), e, exc_info=True)
+            try:
+                discord.sendEmbed(discord.noticeEmbed(
+                    f"Subtask {subtask.get('subtask_id')} crashed "
+                    f"(marked failed, run continues): {e}"))
+            except Exception:  # noqa: BLE001
+                pass
+            with self._state_lock:
+                state.updateSubtask(subtask["subtask_id"], status="failed",
+                                    completed_at=nowIso())
+                state.addNotification("subtask_crashed",
+                                      f"{subtask.get('subtask_id')}: {e}")
+        return False, position, dry_backfills
 
-    def _stallReplan(self, state: TaskState, architect_doc: str, failure_summary: str) -> bool:
-        """Stall-driven root-cause replan: rewrite facts+plan, freeze the executed prefix, remove the
-        pending tail + cascade-reset its dependents, then re-derive the remaining DAG. Gated by
-        DUAL_LEDGER_PLANNER_ENABLED. Returns True when a rewrite was applied."""
-        from platform_core.orchestration import dual_ledger_planner as dlp
-        from platform_core.orchestration import task_ledger as tl
-        ledger = tl.loadFromState(state)
-        if ledger is None:
-            return False
-        goal = state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "")
-        new_ledger = dlp.rootCauseReplan(self._ollamaChat, goal, ledger, failure_summary)
-        if new_ledger is None:
-            return False
-        with self._state_lock:
-            pending = [s["subtask_id"] for s in state.subtasks if s["status"] == "pending"]
-            for pid in pending:
-                state.updateSubtask(pid, status="removed")
-            self._cascadeResetDependents(state, pending)
-            subs = dlp.deriveSubtaskDag(new_ledger, goal)
-            dlp.materializeDag(state, subs)
-            tl.saveToState(state, new_ledger)
-            state.meta["stall_count"] = 0
-            state.save()
-            state.addNotification("root_cause_replan",
-                                  f"revision {new_ledger.revision}: {failure_summary[:160]}")
-        LOG.info("root-cause replan applied (revision %d)", new_ledger.revision)
-        return True
+    def _runParallelStep(self, state: TaskState, architect_doc: str, work_dir: str,
+                         bus: "ControlBus", dashboard: "DiscordDashboard", position: int,
+                         dry_backfills: int, parallelism: int) -> "tuple[bool, int, int]":
+        """One parallel loop iteration: run the ready set (deps satisfied) concurrently.
+        Returns (should_stop, position, dry_backfills)."""
+        ready = self._readySet(state)
+        if not ready:
+            if state.nextActionable() is None:
+                cont, dry_backfills = self._continueAfterDrain(
+                    state, architect_doc, dashboard, dry_backfills)
+                return (not cont), position, dry_backfills
+            ready = [state.nextActionable()]
+        from platform_core.orchestration import parallel_safety
+        if getattr(config, "WORKTREE_ISOLATION_ENABLED", False):
+            batch = parallel_safety.safeParallelSet(state, ready, parallelism)
+        else:
+            batch = ready[:parallelism]
+        if self._societyGate(batch):
+            # Epic 5: 9to5-owned workforce on the blackboard (flag ON, >=2 ready).
+            # Separate `position2` accumulator keeps the OFF-path `position` untouched.
+            position2, abort = self._handleSocietyBatch(
+                state, batch, work_dir, parallelism)
+            position += position2
+        else:
+            position, abort = self._handleParallelBatch(
+                state, batch, architect_doc, work_dir, bus, dashboard, position, parallelism)
+        if abort is not None:
+            raise abort
+        return False, position, dry_backfills

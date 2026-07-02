@@ -18,6 +18,7 @@ from notifications import discord_bot as discord
 import notifications.webdash as _webdash_mod
 from platform_core.orchestration.brain_io import _resultText
 from platform_core.orchestration.knowledge_refresh import refreshClaudeKnowledge
+from platform_core.orchestration.run_phase_surface_mixin import OrchestratorRunPhaseSurfaceMixin
 from platform_core.orchestration.time_utils import _elapsedSince, _fmtElapsed
 from state.task import TaskState, nowIso
 
@@ -28,73 +29,11 @@ if TYPE_CHECKING:
 LOG = config.getLogger("orchestrator")
 
 
-class OrchestratorRunPhaseMixin:
-    """Handles run lifecycle phases: resume, fresh run, preamble, phase 4, teardown."""
+class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
+    """Handles run lifecycle phases: resume, fresh run, preamble, phase 4, teardown.
 
-    # ===================================================================
-    # Surface helpers (narration, moments, arc, reflection) -- all best-effort
-    # ===================================================================
-    def _getNarrator(self):
-        nar = getattr(self, "_narrator", None)
-        if nar is None:
-            from notifications.narration import Narrator
-            nar = self._narrator = Narrator()
-        return nar
-
-    def _narrate(self, text: str, *, force: bool = False) -> None:
-        """Post one rate-limited proactive narration in The Cast's voice. Never raises."""
-        try:
-            self._getNarrator().narrate(text, force=force)
-        except Exception:  # noqa: BLE001
-            pass
-
-    def _emitMoment(self, sid: str, text: str) -> None:
-        """Elevate a rare event: bus moment + non-ephemeral Cast line. Never raises."""
-        try:
-            from notifications.event_bus import get_bus
-            from notifications.narration import emit_moment
-            emit_moment(get_bus(), sid, text)
-        except Exception:  # noqa: BLE001
-            pass
-
-    def _arcBeat(self, state: TaskState, text: str) -> None:
-        try:
-            from notifications import run_arc
-            run_arc.append_beat(state, text)
-        except Exception:  # noqa: BLE001
-            pass
-
-    def _finalizeSurfaces(self, state: TaskState, status: str, done: int, total: int,
-                          elapsed: str) -> None:
-        """Run-end surfaces: arc final beat, perfect-run moment, self-reflection post."""
-        try:
-            from notifications import reflection_post, run_arc
-            from memory import experience
-            run_arc.append_beat(state, run_arc.beat_complete(status, done, total, elapsed))
-            replans = sum(1 for n in state.data.get("notifications", [])
-                          if isinstance(n, dict) and n.get("kind") == "replan")
-            advs = len(state.data.get("adversary_reviews", []))
-            if replans == 0 and advs == 0:
-                self._emitMoment("system",
-                                 "⚡ MOMENT — A perfect run. Zero replans, zero adversary triggers.")
-            comparative = experience.compare_run(state.task_id)
-            text = reflection_post.write_reflection(state, chat=self._ollamaChat,
-                                                    comparative=comparative, obs=self.obs)
-            if text:
-                reflection_post.post_reflection(state, text, comparative=comparative)
-            self._narrate(f"{(state.meta.get('codename') or 'Run')} closed — {status}, "
-                          f"{done}/{total} in {elapsed}.", force=True)
-        except Exception:  # noqa: BLE001 -- surfaces are best-effort; never break teardown
-            LOG.warning("run-end surface finalize failed", exc_info=True)
-
-    def _stopTunnel(self) -> None:
-        tunnel = getattr(self, "_tunnel", None)
-        if tunnel is not None:
-            try:
-                tunnel.stop()
-            except Exception:  # noqa: BLE001
-                pass
-            self._tunnel = None
+    Best-effort run surfaces (narration, moments, arc beats, run-end reflection, tunnel stop)
+    live in OrchestratorRunPhaseSurfaceMixin, inherited here."""
 
     # ===================================================================
     # runFull phase helpers (resume, fresh run, preamble, phase 4, teardown)

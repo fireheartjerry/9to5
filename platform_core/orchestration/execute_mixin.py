@@ -9,11 +9,9 @@ RUN/TEST: python -m pytest tests/test_execute_mixin_env.py tests/test_execute_mi
 """
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING
 
 import config
-import platform_core.core.surfaces as surfaces
 # adversary + verifier are no longer called directly here (the review/remediation paths moved to
 # adversary_loop), but stay imported as module-level names: they are the shared agents.* module
 # objects that tests patch via ``execute_mixin.verifier.runVerification`` (patching the object here
@@ -22,8 +20,7 @@ from agents import adversary, verifier  # noqa: F401
 from platform_core.runtime.control import AbortRun
 from notifications import cast
 from notifications import discord_bot as discord
-from platform_core.orchestration.brain_io import _resultText
-from platform_core.runtime import autonomy_allowance
+from platform_core.orchestration.execute_attempt_mixin import OrchestratorExecuteAttemptMixin
 from state.task import TaskState, nowIso
 
 if TYPE_CHECKING:
@@ -36,8 +33,11 @@ LOG = config.getLogger("orchestrator")
 from platform_core.execution.wiring import envHandsKw as _envHandsKw  # noqa: E402
 
 
-class OrchestratorExecuteMixin:
-    """Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment."""
+class OrchestratorExecuteMixin(OrchestratorExecuteAttemptMixin):
+    """Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment.
+
+    The single-attempt runner (_runOneAttempt + spec/feed/hands/verify helpers) lives in
+    OrchestratorExecuteAttemptMixin, inherited here."""
 
     def _selfRefQualityGate(self, work_dir: str) -> "tuple[bool, str]":
         """Run cheap Windows repo gates after a self-ref subtask passes its own verify.
@@ -115,143 +115,6 @@ class OrchestratorExecuteMixin:
             from platform_core.runtime.cost_budget import CostBudget
             cb = self._cost_budget = CostBudget(state.task_id)
         return cb
-
-    def _runOneAttempt(self, state: TaskState, subtask: dict, architect_doc: str,
-                       exec_cwd: str, bus: "ControlBus", dashboard: "DiscordDashboard",
-                       sid: str, verify_spec: "dict | None", failure_feedback: "str | None",
-                       resume_session: "str | None", attempt: int, env_ctx=None) -> tuple:
-        """Plan spec, run executor, combine output, verify. Returns all loop-locals.
-        ``env_ctx`` = optional Epic 8 (environment, handle) tuple; None => today's path."""
-        spec = self.authorInvocationSpec(state, subtask, architect_doc, failure_feedback)
-        spec.setdefault("work_profile", state.meta.get("work_profile"))
-        spec.setdefault("run_intent_policy", state.meta.get("run_intent_policy"))
-        with self._state_lock:
-            sess = dict(subtask.get("session") or {})
-            # FX-20: record the model the executor will ACTUALLY route to by effort (low->haiku,
-            # default/high->sonnet, xhigh/ultracode->opus) -- not a hardcoded opus.
-            routed_model = config.MODEL_BY_EFFORT.get(
-                (spec.get("effort_level") or "default").lower(), config.PRIMARY_MODEL)
-            sess.update({"effort": spec.get("effort_level"), "model": routed_model,
-                         "skills": spec.get("skills_to_invoke"), "subagent": spec.get("subagent"),
-                         "surfaces": surfaces.surfaces_used(spec),   # SIE surface learning
-                         "use_workflow": bool(spec.get("use_workflow")), "attempts": attempt,
-                         "work_profile": state.meta.get("work_profile"),
-                         "run_intent_policy": state.meta.get("run_intent_policy")})
-            state.updateSubtask(sid, session=sess)
-        LOG.info("Subtask %s attempt %d/%d effort=%s", sid, attempt, config.MAX_SUBTASK_ATTEMPTS,
-                 spec.get("effort_level"))
-        dashboard.update(state, "executing", f"{sid} attempt {attempt} · effort {spec.get('effort_level')}",
-                         effort=spec.get("effort_level"))
-        if attempt >= 2:
-            self._narrate(f"`{sid}` attempt {attempt}. Still working on it.")
-        # Epic 4 semantic-safety: per-attempt authorization (defense-in-depth, coarse-grained).
-        # The bulk lives in OrchestratorSafetyMixin; here we only honor a block verdict. Guard the
-        # call so a non-safety host (and the disabled default) is a clean passthrough.
-        if config.SEMANTIC_SAFETY_ENABLED:
-            blocked = self._authorizeAttempt(state, bus, dashboard, spec)
-            if blocked is not None:
-                vresult = {"passed": False, "blocked": True, "returncode": -1,
-                           "cmd": None, "stderr": blocked["stderr"]}
-                with self._state_lock:
-                    state.recordVerify(sid, vresult)
-                return spec, blocked, vresult, blocked["stderr"], False, None, None
-        attempt_started = time.time()
-        hands = self._selectExecutor(spec)   # route to the right surface (terminal | browser)
-        # Live surface feed: tap the Claude subprocess stdout in real time (terminal path only;
-        # the browser hands layer doesn't take a feed). Best-effort -- never block a run.
-        feed = None
-        recorder = None
-        parent_span = None   # LOCAL (not on self): per-thread so a peer worker can't close it
-        if hands is self._run_claude:
-            try:
-                from notifications.event_bus import get_bus
-                from notifications.subprocess_feed import SubprocessFeed
-                from platform_core.orchestration.step_sink import makeSink
-                # Plan signature gates resume; recorded on every journal row (Epic 1b consumer).
-                try:
-                    from platform_core.orchestration.step_resume import planSignature
-                    plan_sig = planSignature(state)
-                except Exception:  # noqa: BLE001 -- step_resume lands in Epic 1b; until then plan_sig=""
-                    plan_sig = ""
-                recorder = self._trajectoryRecorder(state)
-                if recorder is not None:
-                    parent_span = recorder.openSpan(
-                        "executor", None, {"sid": sid, "attempt": attempt,
-                                           "work_profile": state.meta.get("work_profile"),
-                                           "run_intent_policy": state.meta.get("run_intent_policy")})
-                last = {"sid": resume_session}
-
-                def _session_getter():
-                    s = (state.getSubtask(sid) or {}).get("session") or {}
-                    return s.get("resume_session_id") or last.get("sid")
-
-                sink = makeSink(state.task_id, sid, attempt, plan_sig, _session_getter,
-                                recorder=recorder, parent_span_id=parent_span,
-                                profile_meta={
-                                    "work_profile": state.meta.get("work_profile"),
-                                    "run_intent_policy": state.meta.get("run_intent_policy"),
-                                })
-                feed = SubprocessFeed(get_bus(), sid, time.monotonic(), on_step=sink)
-            except Exception:  # noqa: BLE001 -- live feed + journal are best-effort
-                feed, recorder, parent_span = None, None, None
-        # cancel_check lets a long in-hands wait break early on abort, deadline, or an operator
-        # kill-subprocess signal (Spec B: terminate THIS attempt, not the whole run) (CB-9).
-        hands_kw = dict(work_dir=exec_cwd, task_state=state, subtask=subtask,
-                        resume_session=resume_session,
-                        cancel_check=lambda: bus.isAbort() or bus.isKillSubprocess()
-                        or self._deadlinePassed(state))
-        environment, env_handle = (env_ctx or (None, None))   # Epic 8: env on Claude-CLI path only
-        hands_kw.update(_envHandsKw(hands, self._run_claude, environment, env_handle))
-        if feed is not None:
-            hands_kw["feed"] = feed
-        # eliza spawn-link: hand THIS attempt's parent step id to the child subprocess so its tool
-        # spans stitch into this subtask span. Passed per-spawn into the CHILD's env (runClaude
-        # copies os.environ per subprocess) -- never mutating the shared process-global os.environ --
-        # so concurrent pool workers can't clobber each other and no stale id leaks to a later spawn.
-        if hands is self._run_claude:
-            hands_kw["parent_trajectory_step_id"] = parent_span
-        result = None
-        try:
-            result = hands(spec, **hands_kw)
-        finally:
-            if feed is not None:
-                feed.stop()
-            if recorder is not None and parent_span is not None:
-                _res = result if isinstance(result, dict) else {}
-                recorder.closeSpan(parent_span, usage=_res.get("usage"), cost_usd=_res.get("cost_usd"))
-                if getattr(config, "COST_BUDGET_ENABLED", False):
-                    try:
-                        self._costBudget(state).add(_res.get("cost_usd"))
-                    except Exception:  # noqa: BLE001
-                        pass
-        if bus.isKillSubprocess():
-            bus.clearKillSubprocess()
-            with self._state_lock:
-                state.addNotification("kill_subprocess", f"{sid}: operator killed the attempt")
-        if not isinstance(result, dict):   # a hands layer that returns junk must fail cleanly
-            result = {"ok": False, "returncode": -1, "stdout": "",
-                      "stderr": f"executor returned non-dict result: {type(result).__name__}"}
-        # Epic 4: meter the committed (post-runClaude) cost against the autonomy allowance.
-        if config.SEMANTIC_SAFETY_ENABLED and not result.get("blocked"):
-            try:
-                autonomy_allowance.meterSpend(bus, result.get("cost_usd"),
-                                              attempt_id=f"{sid}:{attempt}")
-            except Exception:  # noqa: BLE001 -- metering never breaks a run
-                pass
-        # Carry a HEALTHY session forward; start fresh on error (is_error absent => no resume).
-        resume_session = result.get("session_id") if (
-            result.get("session_id") and not result.get("is_error")) else None
-        if resume_session:
-            with self._state_lock:
-                state.setResumeSession(sid, resume_session)   # survive a PROCESS crash (Epic 1b)
-        combined = _resultText(result, "stdout")
-        stderr_text = _resultText(result, "stderr")
-        if stderr_text:
-            combined += "\n[stderr]\n" + stderr_text
-        vresult, passed, resume_session, failure_feedback = self._runAttemptVerify(
-            state, subtask, result, exec_cwd, verify_spec, attempt_started,
-            sid, combined, dashboard, resume_session)
-        return spec, result, vresult, combined, passed, resume_session, failure_feedback
 
     @staticmethod
     def _seedResumeContext(subtask: dict) -> "tuple[str | None, str | None]":
