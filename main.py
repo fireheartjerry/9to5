@@ -38,6 +38,17 @@ from state.task import TaskState
 LOG = config.getLogger("main")
 
 
+def _buildRunOrchestrator(args):
+    """The Orchestrator for a live run. --sim-run swaps in the zero-API simulation doubles
+    (brain/executor/replan/review) while every surface (Discord dashboard, web, control gates)
+    stays live, so the bot is exercised end-to-end for free. Otherwise the real Orchestrator."""
+    if getattr(args, "sim_run", False):
+        import platform_core.simulator.simulation as simulation
+        LOG.info("SIM-RUN: full lifecycle over live surfaces with simulation doubles (zero API cost)")
+        return simulation.buildOrchestrator()
+    return Orchestrator()
+
+
 def _runRefreshCommand() -> int:
     """`python main.py /refresh` -- manually rebuild the living Claude Code knowledge
     base (scrape latest docs + scan installed .claude + product-self-knowledge), overwrite
@@ -215,8 +226,9 @@ def _resumeRun(args) -> int:
     def _run_resume(st):
         st.meta["run_pid"] = os.getpid()   # liveness beacon so the launcher never double-spawns a live run
         st.save()
-        return Orchestrator().runFull(st, work_dir=resume_work_dir, auto_pr=not args.no_pr,
-                                      control_mode=args.mode, resume=True, parallelism=max(1, args.parallel))
+        return _buildRunOrchestrator(args).runFull(st, work_dir=resume_work_dir, auto_pr=not args.no_pr,
+                                                    control_mode=args.mode, resume=True,
+                                                    parallelism=max(1, args.parallel))
 
     summary = resilience.run_with_recovery(_run_resume, state)
     print("\n===== RUN SUMMARY =====")
@@ -267,6 +279,13 @@ def _elaborateGoal(args, work_dir: str):
     state.save()
     LOG.info("Created task %s (horizon %sh, mode %s, parallel %s)",
              state.task_id, args.hours, args.mode, args.parallel)
+    if getattr(args, "sim_run", False):
+        # Token-light: skip the Ollama elaborator/universe extraction entirely. The goal is used
+        # verbatim and the run edits nothing (simulation executor), so a wide-open universe is safe.
+        state.setElaboratedGoal(goal)
+        state.setUniverse({"description": "sim-run", "allowed_paths": [],
+                           "allowed_to_expand_to": [], "hard_boundaries": []})
+        return state
     try:
         import platform_core.ops.doctor as doctor
         _pf = doctor.run()
@@ -297,8 +316,8 @@ def _setupAndRun(args, state, work_dir: str) -> int:
     def _run(st):
         st.meta["run_pid"] = os.getpid()   # liveness beacon so the launcher never double-spawns a live run
         st.save()
-        return Orchestrator().runFull(st, work_dir=work_dir, auto_pr=not args.no_pr,
-                                      control_mode=args.mode, parallelism=max(1, args.parallel))
+        return _buildRunOrchestrator(args).runFull(st, work_dir=work_dir, auto_pr=not args.no_pr,
+                                                    control_mode=args.mode, parallelism=max(1, args.parallel))
 
     summary = resilience.run_with_recovery(_run, state)
     print("\n===== RUN SUMMARY =====")
@@ -345,10 +364,12 @@ def main() -> int:
 
     # Living knowledge refresh: happens before any Ollama call so the brain reasons from the
     # current Claude Code feature set. Idempotent per process; never blocks the run.
-    try:
-        refreshClaudeKnowledge()
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("startup knowledge refresh failed (non-fatal): %s", e)
+    # Skipped for --sim-run (no real brain -> nothing to inform; keeps it fully offline/free).
+    if not getattr(args, "sim_run", False):
+        try:
+            refreshClaudeKnowledge()
+        except Exception as e:  # noqa: BLE001
+            LOG.warning("startup knowledge refresh failed (non-fatal): %s", e)
 
     if args.repo_ref and not args.repo_url:
         print("--repo-ref requires --repo-url")

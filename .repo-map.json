@@ -4456,7 +4456,7 @@
           "kind": "function",
           "signature": "() -> int",
           "summary": "",
-          "lineno": 317
+          "lineno": 336
         }
       ],
       "depends_on": [
@@ -6362,7 +6362,7 @@
           "kind": "function",
           "signature": "(bot: dpy_commands.Bot) -> None",
           "summary": "",
-          "lineno": 216
+          "lineno": 218
         }
       ],
       "depends_on": [
@@ -8831,91 +8831,91 @@
           "kind": "function",
           "signature": "(raw) -> float",
           "summary": "Tolerant parse ('2', '2h', '1.5')",
-          "lineno": 88
+          "lineno": 89
         },
         {
           "name": "validate",
           "kind": "function",
           "signature": "(req: WorkRequest) -> list[str]",
           "summary": "",
-          "lineno": 105
+          "lineno": 106
         },
         {
           "name": "externalReadiness",
           "kind": "function",
           "signature": "(req: WorkRequest) -> list[str]",
           "summary": "Warn about external-project setup gaps that degrade PR output, without blocking launch.",
-          "lineno": 131
+          "lineno": 132
         },
         {
           "name": "buildArgv",
           "kind": "function",
           "signature": "(req: WorkRequest) -> list[str]",
           "summary": "",
-          "lineno": 164
+          "lineno": 165
         },
         {
           "name": "prepareExternalRepo",
           "kind": "function",
           "signature": "(req: WorkRequest) -> None",
           "summary": "Clone repo_url into a managed workspace and mutate req.work_dir for this launch.",
-          "lineno": 190
+          "lineno": 193
         },
         {
           "name": "activeRun",
           "kind": "function",
           "signature": "() -> Optional[TaskState]",
           "summary": "The latest task iff it's still active",
-          "lineno": 200
+          "lineno": 203
         },
         {
           "name": "newestTaskSince",
           "kind": "function",
           "signature": "(ts: float) -> Optional[str]",
           "summary": "task_id of the newest state file created at/after `ts` (with ~2s mtime fuzz for filesys…",
-          "lineno": 261
+          "lineno": 264
         },
         {
           "name": "spawn",
           "kind": "function",
           "signature": "(req: WorkRequest) -> int",
           "summary": "",
-          "lineno": 299
+          "lineno": 302
         },
         {
           "name": "buildResumeArgv",
           "kind": "function",
           "signature": "(task_id: str) -> list[str]",
           "summary": "",
-          "lineno": 303
+          "lineno": 306
         },
         {
           "name": "taskExists",
           "kind": "function",
           "signature": "(task_id: str) -> bool",
           "summary": "",
-          "lineno": 307
+          "lineno": 310
         },
         {
           "name": "spawnResume",
           "kind": "function",
           "signature": "(task_id: str) -> int",
           "summary": "",
-          "lineno": 311
+          "lineno": 314
         },
         {
           "name": "launchOrError",
           "kind": "function",
           "signature": "(req: WorkRequest) -> str",
           "summary": "Validate -> block-if-active -> spawn -> confirm",
-          "lineno": 315
+          "lineno": 318
         },
         {
           "name": "resumeOrError",
           "kind": "function",
           "signature": "(task_id: str) -> str",
           "summary": "Resume an existing task by id (block if a run is active)",
-          "lineno": 362
+          "lineno": 365
         }
       ],
       "depends_on": [

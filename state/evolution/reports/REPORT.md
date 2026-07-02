@@ -178,3 +178,39 @@
 - [promote] playbook:generalist (id=1) -- challenger 100% vs champion 0%, z=2.00
 - [promote] playbook:g (id=1) -- challenger 100% vs champion 0%, z=2.00
 - [rollback] playbook:g (id=1) -- champion retired -> fall back to prior/constant
+- [auto-reject] skill:orchestrator.py (id=1) -- I8: candidate touches core-protected path 'orchestrator.py'
+- [auto-reject] skill:my-skill (id=1) -- I8: candidate touches core-protected path 'agents/hooks.py'
+- [auto-reject] skill:create-pr (id=1) -- I7: candidate targets pinned/bundled skill 'create-pr'
+- [promote] playbook:generalist (id=1) -- challenger 100% vs champion 0%, z=2.00
+- [promote] playbook:g (id=1) -- challenger 100% vs champion 0%, z=2.00
+- [rollback] playbook:g (id=1) -- champion retired -> fall back to prior/constant
+- [auto-reject] skill:orchestrator.py (id=1) -- I8: candidate touches core-protected path 'orchestrator.py'
+- [auto-reject] skill:my-skill (id=1) -- I8: candidate touches core-protected path 'agents/hooks.py'
+- [auto-reject] skill:create-pr (id=1) -- I7: candidate targets pinned/bundled skill 'create-pr'
+- [promote] playbook:generalist (id=1) -- challenger 100% vs champion 0%, z=2.00
+- [promote] playbook:g (id=1) -- challenger 100% vs champion 0%, z=2.00
+- [rollback] playbook:g (id=1) -- champion retired -> fall back to prior/constant
+- [auto-reject] skill:orchestrator.py (id=1) -- I8: candidate touches core-protected path 'orchestrator.py'
+- [auto-reject] skill:my-skill (id=1) -- I8: candidate touches core-protected path 'agents/hooks.py'
+- [auto-reject] skill:create-pr (id=1) -- I7: candidate targets pinned/bundled skill 'create-pr'
+- [promote] playbook:generalist (id=1) -- challenger 100% vs champion 0%, z=2.00
+- [promote] playbook:g (id=1) -- challenger 100% vs champion 0%, z=2.00
+- [rollback] playbook:g (id=1) -- champion retired -> fall back to prior/constant
+- [auto-reject] skill:orchestrator.py (id=1) -- I8: candidate touches core-protected path 'orchestrator.py'
+- [auto-reject] skill:my-skill (id=1) -- I8: candidate touches core-protected path 'agents/hooks.py'
+- [auto-reject] skill:create-pr (id=1) -- I7: candidate targets pinned/bundled skill 'create-pr'
+- [promote] playbook:generalist (id=1) -- challenger 100% vs champion 0%, z=2.00
+- [promote] playbook:g (id=1) -- challenger 100% vs champion 0%, z=2.00
+- [rollback] playbook:g (id=1) -- champion retired -> fall back to prior/constant
+- [auto-reject] skill:orchestrator.py (id=1) -- I8: candidate touches core-protected path 'orchestrator.py'
+- [auto-reject] skill:my-skill (id=1) -- I8: candidate touches core-protected path 'agents/hooks.py'
+- [auto-reject] skill:create-pr (id=1) -- I7: candidate targets pinned/bundled skill 'create-pr'
+- [promote] playbook:generalist (id=1) -- challenger 100% vs champion 0%, z=2.00
+- [promote] playbook:g (id=1) -- challenger 100% vs champion 0%, z=2.00
+- [rollback] playbook:g (id=1) -- champion retired -> fall back to prior/constant
+- [auto-reject] skill:orchestrator.py (id=1) -- I8: candidate touches core-protected path 'orchestrator.py'
+- [auto-reject] skill:my-skill (id=1) -- I8: candidate touches core-protected path 'agents/hooks.py'
+- [auto-reject] skill:create-pr (id=1) -- I7: candidate targets pinned/bundled skill 'create-pr'
+- [promote] playbook:generalist (id=1) -- challenger 100% vs champion 0%, z=2.00
+- [promote] playbook:g (id=1) -- challenger 100% vs champion 0%, z=2.00
+- [rollback] playbook:g (id=1) -- champion retired -> fall back to prior/constant
