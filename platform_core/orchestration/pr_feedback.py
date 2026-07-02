@@ -9,7 +9,7 @@ EXPORTS:
   capturePRFeedback(pr_url: str, run_id: str, subtask_id: Optional[str]=None, *, poll_attempts: int=6, poll_interval: int=30) -> dict[str, Any]  -- Poll GitHub CI + review state for ``pr_url`` and write the result to the experience led…
 DEPENDS-ON: config, memory.experience, memory.experience_pr, platform_core.core
 SIDE-EFFECTS: writes to experience ledger (record_feedback, record_reflection)
-RUN/TEST: python -m pytest tests/test_pr_feedback.py
+RUN/TEST: python -m pytest tests/execution/test_pr_feedback.py
 """
 from __future__ import annotations
 

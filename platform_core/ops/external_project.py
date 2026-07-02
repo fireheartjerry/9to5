@@ -5,7 +5,7 @@ EXPORTS:
   cloneRepo(repo_url: str, ref: str | None=None) -> Path  -- Clone a remote repo into 9to5's managed external workspace.
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_external_project.py
+RUN/TEST: python -m pytest tests/execution/test_external_project.py
 """
 from __future__ import annotations
 

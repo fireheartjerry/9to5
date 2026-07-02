@@ -14,7 +14,7 @@ EXPORTS:
   build(*, db_path: Optional[Path]=None, out_path: Optional[Path]=None, suite: Optional[list[dict[str, Any]]]=None) -> dict[str, Any]  -- Build + (optionally) write the DPO preference dataset
 DEPENDS-ON: config, learning.dataset, learning.lessons, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_preferences.py
+RUN/TEST: python -m pytest tests/evolution/test_preferences.py
 """
 from __future__ import annotations
 

@@ -14,7 +14,7 @@ EXPORTS:
   loadSpans(run_id: str, root: Optional[Path]=None) -> dict  -- Replay a run's event log into ``{"run_id": ..., "spans": [...]}``.
 DEPENDS-ON: config, platform_core.core
 SIDE-EFFECTS: writes state/trajectories/<run_id>.jsonl
-RUN/TEST: python -m pytest tests/test_trajectory.py
+RUN/TEST: python -m pytest tests/orchestration/test_trajectory.py
 """
 from __future__ import annotations
 

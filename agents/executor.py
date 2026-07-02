@@ -32,7 +32,7 @@ EXPORTS:
   runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, system_prompt: Optional[str]=None, extra: Optional[str]=None, timeout: Optional[int]=None, resume_session: Optional[str]=None, cancel_check=None, feed=None, parent_trajectory_step_id: Optional[str]=None, environment=None, env_handle=None) -> dict  -- Prepare the environment from the invocation spec, then fire one Claude run.
 DEPENDS-ON: agents.executor_env, agents.executor_session, agents.executor_stream, agents.playbook, config, memory.obsidian
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_executor.py
+RUN/TEST: python -m pytest tests/execution/test_executor.py
 """
 from __future__ import annotations
 

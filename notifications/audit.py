@@ -7,7 +7,7 @@ EXPORTS:
   recent(n: int=20) -> list[dict]  -- The last n audit entries (oldest-first within the window)
 DEPENDS-ON: config, platform_core.core
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_audit.py
+RUN/TEST: python -m pytest tests/notifications/test_audit.py
 """
 from __future__ import annotations
 

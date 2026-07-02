@@ -15,7 +15,7 @@ EXPORTS:
   claim(state, sid: str) -> bool  -- Atomic CAS: flip pending->in_progress ONLY if still pending (else lost-race=False).
 DEPENDS-ON: config
 SIDE-EFFECTS: claim() flips subtask status via state.updateSubtask
-RUN/TEST: python -m pytest tests/test_parallel_safety.py
+RUN/TEST: python -m pytest tests/control/test_parallel_safety.py
 """
 from __future__ import annotations
 

@@ -9,7 +9,7 @@ EXPORTS:
   rerank(candidates: list[dict[str, Any]], *, now: Optional[datetime]=None, w_recency: Optional[float]=None, w_importance: Optional[float]=None, w_relevance: Optional[float]=None) -> list[dict[str, Any]]  -- Sort candidates by weighted (recency, importance, relevance)
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_retrieval_rank.py
+RUN/TEST: python -m pytest tests/evolution/test_retrieval_rank.py
 """
 from __future__ import annotations
 

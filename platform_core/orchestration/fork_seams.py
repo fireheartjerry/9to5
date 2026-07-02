@@ -9,7 +9,7 @@ EXPORTS:
   ForkDeps  -- Everything the coordinator injects into the units (keeps them testable in isolation).
 DEPENDS-ON: platform_core.runtime
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_fork_seams.py
+RUN/TEST: python -m pytest tests/orchestration/test_fork_seams.py
 """
 from __future__ import annotations
 

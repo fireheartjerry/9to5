@@ -13,7 +13,7 @@ EXPORTS:
   warm_start(title: str, *, db_path: Optional[Path]=None) -> Optional[str]  -- Return a cached PASSING spec for a near-duplicate subtask, or None.
 DEPENDS-ON: config, memory.experience, platform_core.core.provenance
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_solution_cache_provenance.py
+RUN/TEST: python -m pytest tests/evolution/test_solution_cache_provenance.py
 """
 from __future__ import annotations
 

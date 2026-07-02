@@ -23,7 +23,7 @@ EXPORTS:
   projectRoot() -> Path  -- This checkout's root
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: loadEnvOnce mutates os.environ from .env files (never overriding existing keys)
-RUN/TEST: python -m pytest tests/test_completion_envelope.py tests/test_config_robust_env.py tests/test_execute_mixin_env.py tests/test_execution_environment.py tests/test_executor_wrap_env.py
+RUN/TEST: python -m pytest tests/execution/test_completion_envelope.py tests/execution/test_execution_environment.py tests/execution/test_executor_wrap_env.py tests/orchestration/test_execute_mixin_env.py tests/platform/test_config_robust_env.py
 """
 from __future__ import annotations
 

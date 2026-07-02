@@ -13,7 +13,7 @@ EXPORTS:
   candidate_field_stats(candidate_id: int, db_path: Optional[Path]=None) -> dict[str, int]  -- The {n, first_pass} counters the promotion proportion test consumes.
 DEPENDS-ON: config, memory.experience_schema
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_experience_evolution.py
+RUN/TEST: python -m pytest tests/evolution/test_experience_evolution.py
 """
 from __future__ import annotations
 

@@ -32,7 +32,7 @@ EXPORTS:
   clearRunStart(task_id: str) -> None  -- Reset ONLY the run-execution cursor (queued ops, Discord poll cursor, pending gate)
 DEPENDS-ON: config, platform_core.core.clock
 SIDE-EFFECTS: creates/writes state/control.db; renames legacy state/control/*.json once
-RUN/TEST: python -m pytest tests/test_control_store.py
+RUN/TEST: python -m pytest tests/control/test_control_store.py
 """
 from __future__ import annotations
 

@@ -18,7 +18,7 @@ EXPORTS:
   scheduledEventPayload(name: str, start_iso: str, end_iso: str, description: str='') -> dict  -- Body for POST /guilds/{id}/scheduled-events
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_engagement.py
+RUN/TEST: python -m pytest tests/notifications/test_engagement.py
 """
 from __future__ import annotations
 

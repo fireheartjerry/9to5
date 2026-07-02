@@ -5,7 +5,7 @@ EXPORTS:
   runSubprocess(run_cmd: list, run_prompt: str, *, work: str, timeout: int, env: dict, creationflags: int, spec: dict, effort: str, flag, profile, playbook_md: str, claude_md_path, model: str, feed=None, cancel_check=None) -> dict  -- Execute one Claude subprocess and return a normalised result dict.
 DEPENDS-ON: agents.executor_env, config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_executor_stream.py
+RUN/TEST: python -m pytest tests/execution/test_executor_stream.py
 """
 from __future__ import annotations
 

@@ -13,7 +13,7 @@ EXPORTS:
   roles() -> tuple
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_personas_archetypes.py
+RUN/TEST: python -m pytest tests/notifications/test_personas_archetypes.py
 """
 from __future__ import annotations
 

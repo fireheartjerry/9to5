@@ -12,7 +12,7 @@ EXPORTS:
   meterSpend(bus, amount_usd: 'float | None', *, attempt_id: Optional[str]=None) -> float  -- Add a committed (post-runClaude) cost to the running total, monotonically and idempoten…
 DEPENDS-ON: platform_core.runtime
 SIDE-EFFECTS: writes the control_store ledger table
-RUN/TEST: python -m pytest tests/test_autonomy_allowance.py
+RUN/TEST: python -m pytest tests/orchestration/test_autonomy_allowance.py
 """
 from __future__ import annotations
 

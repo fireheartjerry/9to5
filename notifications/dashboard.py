@@ -11,7 +11,7 @@ EXPORTS:
   DiscordDashboard
 DEPENDS-ON: config, notifications.branding, notifications.commands, notifications.cv2, notifications.discord_bot, notifications.event_bus, notifications.health_aura, notifications.visuals, platform_core.core, platform_core.core.best_effort, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_dashboard.py
+RUN/TEST: python -m pytest tests/notifications/test_dashboard.py
 """
 from __future__ import annotations
 

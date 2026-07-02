@@ -8,7 +8,7 @@ EXPORTS:
   fireEvolver(*, reason: str='post-run', db_path: Optional[Path]=None) -> dict[str, Any]  -- Throttled, best-effort evolver fire
 DEPENDS-ON: config, learning.evolution, learning.safety
 SIDE-EFFECTS: may register candidate rows
-RUN/TEST: python -m pytest tests/test_evolution_hook.py
+RUN/TEST: python -m pytest tests/evolution/test_evolution_hook.py
 """
 from __future__ import annotations
 

@@ -15,7 +15,7 @@ EXPORTS:
   applyCommand(bus: ControlBus, state: TaskState, cmd: Command, *, source_msg_id: Optional[str]=None) -> str  -- Perform the bus mutation and return human markdown text ('' for silent control ops).
 DEPENDS-ON: config, learning.human_feedback, memory.user_prefs, notifications.discord_bot, notifications.event_bus, notifications.run_arc, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_commands.py
+RUN/TEST: python -m pytest tests/notifications/test_commands.py
 """
 from __future__ import annotations
 

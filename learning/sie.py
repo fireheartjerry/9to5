@@ -20,7 +20,7 @@ EXPORTS:
   run_maintenance_async(**kwargs)  -- Start maintenance on a daemon thread and RETURN the thread so the caller can join it wi…
 DEPENDS-ON: config, learning.adapter_promotion, learning.bootstrap, learning.curriculum, learning.eval_runner, learning.evolution, learning.finetune, learning.meta_opt, learning.promotion, learning.release, learning.selfplay, learning.sie_steps, memory.experience, notifications.work_launcher, platform_core.core
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_sie.py
+RUN/TEST: python -m pytest tests/evolution/test_sie.py
 """
 from __future__ import annotations
 

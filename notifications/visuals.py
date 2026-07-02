@@ -11,7 +11,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: notifications.visuals_cards, notifications.visuals_components
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_visuals.py
+RUN/TEST: python -m pytest tests/notifications/test_visuals.py
 """
 from __future__ import annotations
 

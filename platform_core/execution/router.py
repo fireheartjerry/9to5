@@ -11,7 +11,7 @@ EXPORTS:
   finalize(env: ExecutionEnvironment, handle: EnvHandle, task_state, subtask) -> dict  -- collectChanges then teardown; both best-effort
 DEPENDS-ON: config, notifications.event_bus, platform_core.execution.backends.docker, platform_core.execution.backends.local, platform_core.execution.backends.remote, platform_core.execution.backends.worktree, platform_core.execution.environment
 SIDE-EFFECTS: emits env_* events on notifications.event_bus (best-effort)
-RUN/TEST: python -m pytest tests/test_execution_router.py
+RUN/TEST: python -m pytest tests/execution/test_execution_router.py
 """
 from __future__ import annotations
 

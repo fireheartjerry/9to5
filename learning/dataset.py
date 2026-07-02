@@ -17,7 +17,7 @@ EXPORTS:
   clean(examples: Iterable[dict[str, Any]], *, suite: Optional[list[dict[str, Any]]]=None) -> dict[str, Any]  -- Run the full gate
 DEPENDS-ON: config, learning.eval_harness
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_dataset_gate.py
+RUN/TEST: python -m pytest tests/evolution/test_dataset_gate.py
 """
 from __future__ import annotations
 

@@ -21,7 +21,7 @@ EXPORTS:
   buildCockpit(state, phase: str, *, events: Optional[list]=None, model: Optional[str]=None, effort: str='default', image_url: Optional[str]=None) -> tuple[list, int]  -- Return ``(components, flags)`` for the live cockpit
 DEPENDS-ON: config, notifications.branding, notifications.discord_bot, notifications.health_aura, notifications.icons, notifications.theme, platform_core.core.clock
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_cv2.py
+RUN/TEST: python -m pytest tests/notifications/test_cv2.py
 """
 from __future__ import annotations
 

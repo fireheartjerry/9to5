@@ -19,7 +19,7 @@ EXPORTS:
   run(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict  -- Execute the integrated debugging workflow.
 DEPENDS-ON: agents.trace_replay
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_debugging_workflow.py
+RUN/TEST: python -m pytest tests/workflows/test_debugging_workflow.py
 """
 from __future__ import annotations
 

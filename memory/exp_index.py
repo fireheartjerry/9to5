@@ -14,7 +14,7 @@ EXPORTS:
   resetIndex() -> None  -- Drop the cached singleton (tests, or after a known backfill rebuild).
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_exp_index.py
+RUN/TEST: python -m pytest tests/evolution/test_exp_index.py
 """
 from __future__ import annotations
 

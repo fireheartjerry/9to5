@@ -17,7 +17,7 @@ EXPORTS:
   resetDegradations(*, warnings: bool=False) -> None  -- Clear the registry so the next run's summary is per-run
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: mutates the module-level DEGRADATIONS registry; emits log records
-RUN/TEST: python -m pytest tests/test_best_effort.py
+RUN/TEST: python -m pytest tests/orchestration/test_best_effort.py
 """
 from __future__ import annotations
 

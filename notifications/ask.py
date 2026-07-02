@@ -16,7 +16,7 @@ EXPORTS:
   answer(question: str, state, *, chat: Optional[Callable[[str, str], str]]=None) -> str  -- Answer ``question`` about ``state`` via the local brain
 DEPENDS-ON: config, llm_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_ask.py
+RUN/TEST: python -m pytest tests/notifications/test_ask.py
 """
 from __future__ import annotations
 

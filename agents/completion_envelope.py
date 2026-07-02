@@ -14,7 +14,7 @@ EXPORTS:
   envelopeCorrection(error: str) -> str  -- Targeted re-prompt when the executor emitted a malformed envelope.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_completion_envelope.py
+RUN/TEST: python -m pytest tests/execution/test_completion_envelope.py
 """
 from __future__ import annotations
 

@@ -24,7 +24,7 @@ EXPORTS:
   main(argv: Optional[list[str]]=None) -> int
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_repo_map.py
+RUN/TEST: python -m pytest tests/platform/test_repo_map.py
 """
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ TEST_TOP_DIRS = ("tests", "testing")
 MANUAL_TEST_MAP: dict[str, list[str]] = {
     "agents.second_brain": ["tests/slow/test_phase2_second_brain.py"],
     "agents.architect": ["tests/slow/test_phase_3_architecture.py"],
-    "agents.browser_executor": ["tests/test_browser_executor.py", "tests/slow/test_phase2_cdp_adversary.py"],
+    "agents.browser_executor": ["tests/execution/test_browser_executor.py", "tests/slow/test_phase2_cdp_adversary.py"],
 }
 
 

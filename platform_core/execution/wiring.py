@@ -11,7 +11,7 @@ EXPORTS:
   finalizeQuietly(env, handle, state, subtask, sid, log) -> None  -- Bring the env's work back to the canonical tree + tear it down
 DEPENDS-ON: platform_core.execution, platform_core.orchestration
 SIDE-EFFECTS: emits env_* events via router (best-effort)
-RUN/TEST: python -m pytest tests/test_dual_ledger_wiring.py tests/test_execute_mixin_fork_wiring.py tests/test_resume_wiring.py
+RUN/TEST: python -m pytest tests/execution/test_resume_wiring.py tests/orchestration/test_dual_ledger_wiring.py tests/orchestration/test_execute_mixin_fork_wiring.py
 """
 from __future__ import annotations
 

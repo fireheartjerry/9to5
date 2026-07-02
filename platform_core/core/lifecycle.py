@@ -24,7 +24,7 @@ EXPORTS:
   isTerminalSubtask(status: str) -> bool  -- True iff a subtask in ``status`` is no longer actionable (done/failed/removed).
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_lifecycle.py
+RUN/TEST: python -m pytest tests/platform/test_lifecycle.py
 """
 from __future__ import annotations
 

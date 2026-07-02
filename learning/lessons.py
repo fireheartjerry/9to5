@@ -13,7 +13,7 @@ EXPORTS:
   consolidate(*, db_path: Optional[Path]=None, write_digest: bool=True, digest_path: Optional[Path]=None) -> dict[str, Any]  -- Rebuild the ``lessons`` table from the ledger and (optionally) write the digest.
 DEPENDS-ON: config, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_lessons.py
+RUN/TEST: python -m pytest tests/evolution/test_lessons.py
 """
 from __future__ import annotations
 

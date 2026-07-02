@@ -12,7 +12,7 @@ EXPORTS:
   insight_block(goal: str, title: str, *, db_path: Optional[Path]=None) -> str  -- Top insights ranked by recency*importance*relevance, sanitized
 DEPENDS-ON: config, learning.lessons, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_insight.py
+RUN/TEST: python -m pytest tests/evolution/test_insight.py
 """
 from __future__ import annotations
 

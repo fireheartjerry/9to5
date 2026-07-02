@@ -12,7 +12,7 @@ EXPORTS:
   SubtaskButton
 DEPENDS-ON: config, notifications.audit, notifications.commands, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_dynamic.py
+RUN/TEST: python -m pytest tests/notifications/test_dynamic.py
 """
 from __future__ import annotations
 

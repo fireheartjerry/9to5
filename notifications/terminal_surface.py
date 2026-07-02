@@ -14,7 +14,7 @@ EXPORTS:
   set_terminal_surface(surface: Optional[TerminalSurface]) -> None
 DEPENDS-ON: config, notifications.discord_bot, notifications.event_bus, notifications.terminal_ipc, notifications.terminal_render
 SIDE-EFFECTS: TerminalSurface creates/edits/pins Discord messages via notifications.discord_bot
-RUN/TEST: python -m pytest tests/test_terminal_surface.py
+RUN/TEST: python -m pytest tests/notifications/test_terminal_surface.py
 """
 from __future__ import annotations
 

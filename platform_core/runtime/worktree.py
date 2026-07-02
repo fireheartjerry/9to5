@@ -16,7 +16,7 @@ EXPORTS:
   isIsolated(path: str) -> bool  -- True only when ``path`` lives under state/.sc-worktrees/ (an isolated worktree).
 DEPENDS-ON: config, platform_core.core
 SIDE-EFFECTS: creates/removes git worktrees under state/.sc-worktrees/
-RUN/TEST: python -m pytest tests/test_worktree.py
+RUN/TEST: python -m pytest tests/execution/test_worktree.py
 """
 from __future__ import annotations
 

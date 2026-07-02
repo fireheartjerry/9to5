@@ -21,7 +21,7 @@ EXPORTS:
   panic_to_stock(*, db_path: Optional[Path]=None) -> dict[str, int]  -- Hard rollback: retire EVERY champion adapter so the active tag falls back to the
 DEPENDS-ON: config, learning.prompts, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_evolution_safety.py tests/test_parallel_safety.py tests/test_safety_gate_divergence.py tests/test_safety_mixin.py tests/test_verify_shell_safety.py
+RUN/TEST: python -m pytest tests/control/test_parallel_safety.py tests/control/test_safety_gate_divergence.py tests/control/test_safety_mixin.py tests/evolution/test_evolution_safety.py tests/execution/test_verify_shell_safety.py
 """
 from __future__ import annotations
 

@@ -22,7 +22,7 @@ EXPORTS:
   fitness_panel(limit: int=30, db_path: Optional[Path]=None) -> str  -- Render the recent fitness series as a compact sparkline + delta for a dashboard
 DEPENDS-ON: config, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_eval_harness.py
+RUN/TEST: python -m pytest tests/evolution/test_eval_harness.py
 """
 from __future__ import annotations
 

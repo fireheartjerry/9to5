@@ -19,7 +19,7 @@ EXPORTS:
   reset_bus() -> None  -- Drop the singleton so the next ``get_bus`` builds a fresh one (test hook).
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_event_bus.py
+RUN/TEST: python -m pytest tests/notifications/test_event_bus.py
 """
 from __future__ import annotations
 

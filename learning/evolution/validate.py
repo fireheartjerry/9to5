@@ -10,7 +10,7 @@ EXPORTS:
   validate_candidate(candidate_id: int, *, runner: Callable[[dict, str], dict], db_path: Optional[Path]=None, suite_dir: Optional[Path]=None, reviewer_opinion: Optional[str]=None) -> dict[str, Any]  -- Return an Evidence Receipt {facts, assessments, verdict}
 DEPENDS-ON: config, learning.eval_harness, learning.evolution.candidate, learning.promotion, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_evolution_validate.py tests/test_validate_workflows.py
+RUN/TEST: python -m pytest tests/evolution/test_evolution_validate.py tests/workflows/test_validate_workflows.py
 """
 from __future__ import annotations
 

@@ -24,7 +24,7 @@ EXPORTS:
   buildPlaybook(profile: str) -> str  -- Richer role playbook rendered as a CLAUDE.md section (auto-read by Claude Code).
 DEPENDS-ON: config, learning.evolution
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_playbook.py
+RUN/TEST: python -m pytest tests/evolution/test_playbook.py
 """
 from __future__ import annotations
 

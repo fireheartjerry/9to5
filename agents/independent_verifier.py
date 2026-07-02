@@ -14,7 +14,7 @@ EXPORTS:
   runIndependentVerification(run_claude: Callable, *, goal: str, acceptance_criteria: str, diff_summary: str, work_dir: str, task_state, subtask: dict, cancel_check: Optional[Callable]=None) -> EnvelopeParse  -- Spawn a SEPARATE read-only Claude subprocess and parse its CompletionEnvelope.
 DEPENDS-ON: agents.completion_envelope
 SIDE-EFFECTS: spawns a read-only Claude subprocess
-RUN/TEST: python -m pytest tests/test_independent_verifier.py
+RUN/TEST: python -m pytest tests/execution/test_independent_verifier.py
 """
 from __future__ import annotations
 

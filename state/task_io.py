@@ -18,7 +18,7 @@ EXPORTS:
   reapDeadRun(task_id: str, *, reason: str='orchestrator process dead (no heartbeat, pid gone)') -> bool  -- Finalize a PROVABLY-DEAD, still-non-terminal run as ``aborted``.
 DEPENDS-ON: config, platform_core.core, platform_core.runtime.heartbeat, state.task_schema
 SIDE-EFFECTS: writes state/tasks/<id>.json
-RUN/TEST: python -m pytest tests/test_task_io_single_writer.py
+RUN/TEST: python -m pytest tests/control/test_task_io_single_writer.py
 """
 from __future__ import annotations
 

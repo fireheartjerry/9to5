@@ -19,7 +19,7 @@ EXPORTS:
   stopWebDashboard() -> None  -- Shut down the running dashboard server (frees the port)
 DEPENDS-ON: config, memory.experience, notifications.event_bus, notifications.health_aura, notifications.webdash_page, platform_core.core.best_effort, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_bloomberg_webdash.py tests/test_webdash_control.py
+RUN/TEST: python -m pytest tests/control/test_webdash_control.py tests/notifications/test_bloomberg_webdash.py
 """
 from __future__ import annotations
 

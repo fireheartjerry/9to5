@@ -5,7 +5,7 @@ EXPORTS:
   parseJsonText(text: str)  -- Parse JSON text, tolerating fences and leading/trailing prose.
 DEPENDS-ON: llm_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_brain_io_repair.py
+RUN/TEST: python -m pytest tests/orchestration/test_brain_io_repair.py
 """
 from __future__ import annotations
 

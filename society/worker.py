@@ -11,7 +11,7 @@ EXPORTS:
   WorkerAgent  -- Claim a subtask, execute it under a role, post the result.
 DEPENDS-ON: agents.executor, config, society.blackboard
 SIDE-EFFECTS: claims+updates task JSON, runs Claude, appends to the blackboard
-RUN/TEST: python -m pytest tests/test_society_worker.py
+RUN/TEST: python -m pytest tests/orchestration/test_society_worker.py
 """
 from __future__ import annotations
 

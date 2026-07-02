@@ -5,7 +5,7 @@ EXPORTS:
   createPullRequest(state, work_dir: str) -> dict  -- Create a PR for the completed run
 DEPENDS-ON: config, platform_core.core
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_github_pr_gate.py
+RUN/TEST: python -m pytest tests/execution/test_github_pr_gate.py
 """
 from __future__ import annotations
 

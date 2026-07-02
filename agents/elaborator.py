@@ -15,7 +15,7 @@ EXPORTS:
   extractUniverse(goal_raw: str, goal_elaborated: str, work_dir: str, chat=None) -> dict  -- Extract the operating universe (scope boundary) from the goal (with safe defaults).
 DEPENDS-ON: config, knowledge, llm_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_elaborator.py
+RUN/TEST: python -m pytest tests/orchestration/test_elaborator.py
 """
 from __future__ import annotations
 

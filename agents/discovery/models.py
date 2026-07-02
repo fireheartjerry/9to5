@@ -6,7 +6,7 @@ EXPORTS:
   DiscoveryReport
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_discovery_models.py
+RUN/TEST: python -m pytest tests/orchestration/test_discovery_models.py
 """
 from __future__ import annotations
 

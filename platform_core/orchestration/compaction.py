@@ -14,7 +14,7 @@ EXPORTS:
   fitOrCompact(system: str, user: str, num_ctx: int, headroom: int, *, summarize: Optional[Callable[[str], str]]=None) -> str  -- The llm_mixin seam
 DEPENDS-ON: config, platform_core.orchestration.brain_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_compaction.py
+RUN/TEST: python -m pytest tests/orchestration/test_compaction.py
 """
 from __future__ import annotations
 

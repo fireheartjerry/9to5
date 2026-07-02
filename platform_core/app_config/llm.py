@@ -15,7 +15,7 @@ EXPORTS:
   buildSieCfg() -> SieCfg
 DEPENDS-ON: platform_core.app_config, platform_core.app_config._env
 SIDE-EFFECTS: none
-RUN/TEST: python -m pytest tests/test_llm_compaction_numctx.py tests/test_llm_io_pydantic.py
+RUN/TEST: python -m pytest tests/orchestration/test_llm_compaction_numctx.py tests/orchestration/test_llm_io_pydantic.py
 """
 from __future__ import annotations
 

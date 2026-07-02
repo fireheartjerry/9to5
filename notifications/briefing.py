@@ -11,7 +11,7 @@ EXPORTS:
   generate_brief(state, prefs: dict, depth: Optional[str]=None, *, chat: Optional[Callable[[str, str], str]]=None) -> str
 DEPENDS-ON: config, llm_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_briefing.py
+RUN/TEST: python -m pytest tests/notifications/test_briefing.py
 """
 from __future__ import annotations
 

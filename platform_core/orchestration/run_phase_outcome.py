@@ -17,7 +17,7 @@ EXPORTS:
   runInstinct(orch, state) -> None
 DEPENDS-ON: config, learning.wisdom, memory.experience, memory.user_prefs, notifications.discord_bot, notifications.instinct, notifications.reflection_post, notifications.run_arc, platform_core.core.best_effort, platform_core.orchestration.pr_feedback, platform_core.orchestration.time_utils
 SIDE-EFFECTS: posts Discord embeds; spawns the instinct thread; mutates run state status/notifications
-RUN/TEST: python -m pytest tests/test_run_phase_outcome.py
+RUN/TEST: python -m pytest tests/control/test_run_phase_outcome.py
 """
 from __future__ import annotations
 

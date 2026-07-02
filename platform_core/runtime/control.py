@@ -15,7 +15,7 @@ EXPORTS:
   ControlBus
 DEPENDS-ON: config, platform_core.runtime
 SIDE-EFFECTS: reads/writes state/control.db via control_store
-RUN/TEST: python -m pytest tests/slow/test_fuzz_control.py tests/test_control_concurrency.py tests/test_control_store.py tests/test_granular_controls.py tests/test_webdash_control.py
+RUN/TEST: python -m pytest tests/control/test_control_concurrency.py tests/control/test_control_store.py tests/control/test_granular_controls.py tests/control/test_webdash_control.py tests/slow/test_fuzz_control.py
 """
 from __future__ import annotations
 

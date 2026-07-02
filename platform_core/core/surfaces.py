@@ -18,7 +18,7 @@ EXPORTS:
   surfaces_used(spec: dict[str, Any]) -> list[str]  -- Which surfaces a spec actually invokes -> tags stored for SIE learning.
 DEPENDS-ON: config, knowledge, platform_core.orchestration
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_surfaces.py
+RUN/TEST: python -m pytest tests/platform/test_surfaces.py
 """
 from __future__ import annotations
 

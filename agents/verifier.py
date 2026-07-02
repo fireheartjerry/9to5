@@ -28,7 +28,7 @@ EXPORTS:
   isStrictVerify(verify: Optional[dict]) -> bool  -- True for a deliberate multi-requirement verify (compound expect or ``strict`` flag)
 DEPENDS-ON: agents.verification, agents.verifier_runner, agents.verifier_sanitize, config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_verifier.py
+RUN/TEST: python -m pytest tests/execution/test_verifier.py
 """
 from __future__ import annotations
 

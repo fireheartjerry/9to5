@@ -21,7 +21,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: memory.experience_adapters, memory.experience_evolution, memory.experience_journal, memory.experience_policy, memory.experience_pr, memory.experience_runs, memory.experience_schema, memory.experience_solutions, memory.experience_subtasks
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_experience_content.py tests/test_experience_content_sync.py tests/test_experience_evolution.py tests/test_experience_journal.py tests/test_experience_ledger.py tests/test_experience_pr.py tests/test_experience_schema_migration.py
+RUN/TEST: python -m pytest tests/evolution/test_experience_content.py tests/evolution/test_experience_content_sync.py tests/evolution/test_experience_evolution.py tests/evolution/test_experience_journal.py tests/evolution/test_experience_ledger.py tests/evolution/test_experience_pr.py tests/evolution/test_experience_schema_migration.py
 """
 from __future__ import annotations
 

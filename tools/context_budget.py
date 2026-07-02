@@ -7,7 +7,7 @@ EXPORTS:
   main(argv: list[str] | None=None) -> int
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_context_budget.py
+RUN/TEST: python -m pytest tests/platform/test_context_budget.py
 """
 from __future__ import annotations
 

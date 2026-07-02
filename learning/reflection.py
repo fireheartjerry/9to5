@@ -16,7 +16,7 @@ EXPORTS:
   recipes(*, db_path: Optional[Path]=None) -> list[str]  -- Trusted reusable recipes
 DEPENDS-ON: config, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_reflection_post.py tests/test_reflection_trust.py
+RUN/TEST: python -m pytest tests/evolution/test_reflection_trust.py tests/notifications/test_reflection_post.py
 """
 from __future__ import annotations
 

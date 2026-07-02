@@ -14,7 +14,7 @@ EXPORTS:
   TunnelManager
 DEPENDS-ON: config, notifications.tunnel_providers
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_tunnel.py
+RUN/TEST: python -m pytest tests/notifications/test_tunnel.py
 """
 from __future__ import annotations
 

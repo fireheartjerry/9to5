@@ -10,7 +10,7 @@ EXPORTS:
   pickWinner(scores: list[BranchScore]) -> Optional[str]  -- Winning branch_id
 DEPENDS-ON: config, platform_core.orchestration
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_judge_panel.py
+RUN/TEST: python -m pytest tests/orchestration/test_judge_panel.py
 """
 from __future__ import annotations
 

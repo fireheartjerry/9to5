@@ -19,7 +19,7 @@ EXPORTS:
   rootCauseReplan(ollama_chat: Callable, goal: str, ledger: 'tl.TaskLedger', failure_summary: str) -> 'Optional[tl.TaskLedger]'  -- autogen TASK_LEDGER_FACTS_UPDATE then ..._PLAN_UPDATE: explain the root cause, rewrite …
 DEPENDS-ON: config, platform_core.orchestration, platform_core.orchestration.brain_json
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_dual_ledger_planner.py
+RUN/TEST: python -m pytest tests/orchestration/test_dual_ledger_planner.py
 """
 from __future__ import annotations
 

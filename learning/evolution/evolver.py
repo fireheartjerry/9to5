@@ -11,7 +11,7 @@ EXPORTS:
   propose_candidates(*, brain: Optional[Callable[[str], str]]=None, spawn: Optional[Callable[[list[str]], dict]]=None, db_path: Optional[Path]=None) -> dict[str, Any]  -- Propose capability candidates (hybrid)
 DEPENDS-ON: config, learning.evolution.evolver_prompts, learning.safety, learning.toolsmith, memory.experience
 SIDE-EFFECTS: writes candidate rows + candidate files under state/evolution/candidates/
-RUN/TEST: python -m pytest tests/test_evolution_evolver.py tests/test_evolver_prompts.py
+RUN/TEST: python -m pytest tests/evolution/test_evolution_evolver.py tests/evolution/test_evolver_prompts.py
 """
 from __future__ import annotations
 

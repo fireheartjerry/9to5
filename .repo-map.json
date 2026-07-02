@@ -58,7 +58,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_adversary.py"
+        "tests/orchestration/test_adversary.py"
       ],
       "callers": [
         "agents.second_brain",
@@ -232,8 +232,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/slow/test_phase2_cdp_adversary.py",
-        "tests/test_browser_executor.py"
+        "tests/execution/test_browser_executor.py",
+        "tests/slow/test_phase2_cdp_adversary.py"
       ],
       "callers": [
         "agents.adversary",
@@ -270,7 +270,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_clarifier.py"
+        "tests/orchestration/test_clarifier.py"
       ],
       "callers": [
         "platform_core.orchestration.llm_mixin"
@@ -321,7 +321,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_completion_envelope.py"
+        "tests/execution/test_completion_envelope.py"
       ],
       "callers": [
         "agents.independent_verifier",
@@ -383,7 +383,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_debugging_workflow.py"
+        "tests/workflows/test_debugging_workflow.py"
       ],
       "callers": []
     },
@@ -442,7 +442,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_discovery_digest.py"
+        "tests/orchestration/test_discovery_digest.py"
       ],
       "callers": []
     },
@@ -467,7 +467,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_discovery_lenses.py"
+        "tests/orchestration/test_discovery_lenses.py"
       ],
       "callers": []
     },
@@ -495,7 +495,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_discovery_models.py"
+        "tests/orchestration/test_discovery_models.py"
       ],
       "callers": [
         "agents.discovery",
@@ -524,7 +524,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_discovery_synthesis.py"
+        "tests/orchestration/test_discovery_synthesis.py"
       ],
       "callers": []
     },
@@ -556,7 +556,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_elaborator.py"
+        "tests/orchestration/test_elaborator.py"
       ],
       "callers": [
         "main"
@@ -579,7 +579,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_evidence_receipt.py"
+        "tests/execution/test_evidence_receipt.py"
       ],
       "callers": [
         "platform_core.orchestration.evidence_gate"
@@ -609,7 +609,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_executor.py"
+        "tests/execution/test_executor.py"
       ],
       "callers": [
         "agents.browser_executor",
@@ -727,7 +727,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_executor_stream.py"
+        "tests/execution/test_executor_stream.py"
       ],
       "callers": [
         "agents.executor"
@@ -787,7 +787,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_gemini_driver.py"
+        "tests/orchestration/test_gemini_driver.py"
       ],
       "callers": [
         "agents.browser_executor",
@@ -838,7 +838,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_hooks.py"
+        "tests/control/test_hooks.py"
       ],
       "callers": []
     },
@@ -979,7 +979,7 @@
         "spawns a read-only Claude subprocess"
       ],
       "test": [
-        "tests/test_independent_verifier.py"
+        "tests/execution/test_independent_verifier.py"
       ],
       "callers": [
         "platform_core.orchestration.evidence_gate"
@@ -1063,7 +1063,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_playbook.py"
+        "tests/evolution/test_playbook.py"
       ],
       "callers": [
         "agents.executor",
@@ -1164,7 +1164,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_timing_harness.py"
+        "tests/orchestration/test_timing_harness.py"
       ],
       "callers": []
     },
@@ -1210,7 +1210,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_trace_replay.py"
+        "tests/execution/test_trace_replay.py"
       ],
       "callers": [
         "agents.debugging_workflow"
@@ -1457,7 +1457,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_verifier.py"
+        "tests/execution/test_verifier.py"
       ],
       "callers": [
         "learning.eval_runner",
@@ -1493,7 +1493,7 @@
         "reads git status"
       ],
       "test": [
-        "tests/test_verifier_runner.py"
+        "tests/execution/test_verifier_runner.py"
       ],
       "callers": [
         "agents.verifier"
@@ -1583,13 +1583,13 @@
         "set_override writes state/sie_overrides.json"
       ],
       "test": [
-        "tests/test_config_bootstrap.py",
-        "tests/test_config_robust_env.py",
-        "tests/test_durable_config.py",
-        "tests/test_epic2_config.py",
-        "tests/test_notification_config.py",
-        "tests/test_society_config.py",
-        "tests/test_solution_fork_config.py"
+        "tests/notifications/test_notification_config.py",
+        "tests/orchestration/test_society_config.py",
+        "tests/platform/test_config_bootstrap.py",
+        "tests/platform/test_config_robust_env.py",
+        "tests/platform/test_durable_config.py",
+        "tests/platform/test_epic2_config.py",
+        "tests/platform/test_solution_fork_config.py"
       ],
       "callers": [
         "agents.adversary_review",
@@ -1812,7 +1812,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_knowledge.py"
+        "tests/evolution/test_knowledge.py"
       ],
       "callers": [
         "agents.architect",
@@ -1932,7 +1932,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_config_bootstrap.py"
+        "tests/platform/test_config_bootstrap.py"
       ],
       "callers": [
         "learning.sie"
@@ -1999,7 +1999,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_compute.py"
+        "tests/execution/test_compute.py"
       ],
       "callers": [
         "learning.bootstrap",
@@ -2075,8 +2075,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_curriculum_adaptive_trigger.py",
-        "tests/test_curriculum_release.py"
+        "tests/evolution/test_curriculum_adaptive_trigger.py",
+        "tests/evolution/test_curriculum_release.py"
       ],
       "callers": [
         "learning.meta_opt",
@@ -2139,7 +2139,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_dataset_gate.py"
+        "tests/evolution/test_dataset_gate.py"
       ],
       "callers": [
         "learning.distill",
@@ -2241,7 +2241,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_eval_harness.py"
+        "tests/evolution/test_eval_harness.py"
       ],
       "callers": [
         "learning.dataset",
@@ -2299,7 +2299,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_eval_runner.py"
+        "tests/execution/test_eval_runner.py"
       ],
       "callers": [
         "learning.adapter_promotion",
@@ -2358,7 +2358,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_evolution_candidate.py"
+        "tests/evolution/test_evolution_candidate.py"
       ],
       "callers": [
         "learning.evolution",
@@ -2393,7 +2393,7 @@
         "writes state/evolution/reports"
       ],
       "test": [
-        "tests/test_evolution_curator.py"
+        "tests/evolution/test_evolution_curator.py"
       ],
       "callers": [
         "learning.evolution"
@@ -2422,8 +2422,8 @@
         "writes candidate rows + candidate files under state/evolution/candidates/"
       ],
       "test": [
-        "tests/test_evolution_evolver.py",
-        "tests/test_evolver_prompts.py"
+        "tests/evolution/test_evolution_evolver.py",
+        "tests/evolution/test_evolver_prompts.py"
       ],
       "callers": [
         "learning.evolution"
@@ -2438,7 +2438,7 @@
         "none"
       ],
       "test": [
-        "tests/test_evolver_prompts.py"
+        "tests/evolution/test_evolver_prompts.py"
       ],
       "callers": [
         "learning.evolution.evolver"
@@ -2475,7 +2475,7 @@
         "writes audit reports"
       ],
       "test": [
-        "tests/test_evolution_promote.py"
+        "tests/evolution/test_evolution_promote.py"
       ],
       "callers": [
         "learning.evolution"
@@ -2504,8 +2504,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_evolution_validate.py",
-        "tests/test_validate_workflows.py"
+        "tests/evolution/test_evolution_validate.py",
+        "tests/workflows/test_validate_workflows.py"
       ],
       "callers": [
         "learning.evolution",
@@ -2598,7 +2598,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_finetune.py"
+        "tests/evolution/test_finetune.py"
       ],
       "callers": [
         "learning.adapter_promotion",
@@ -2686,7 +2686,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_insight.py"
+        "tests/evolution/test_insight.py"
       ],
       "callers": [
         "learning.sie_steps"
@@ -2752,7 +2752,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_lessons.py"
+        "tests/evolution/test_lessons.py"
       ],
       "callers": [
         "learning.confidence",
@@ -2853,7 +2853,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_policy.py"
+        "tests/evolution/test_policy.py"
       ],
       "callers": [
         "learning.sie_steps",
@@ -2937,7 +2937,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_preferences.py"
+        "tests/evolution/test_preferences.py"
       ],
       "callers": [
         "learning.finetune"
@@ -2985,7 +2985,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_promotion.py"
+        "tests/evolution/test_promotion.py"
       ],
       "callers": [
         "learning.evolution.validate",
@@ -3041,7 +3041,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_prompts.py"
+        "tests/evolution/test_prompts.py"
       ],
       "callers": [
         "learning.evolution.candidate",
@@ -3093,8 +3093,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_reflection_post.py",
-        "tests/test_reflection_trust.py"
+        "tests/evolution/test_reflection_trust.py",
+        "tests/notifications/test_reflection_post.py"
       ],
       "callers": [
         "platform_core.orchestration.dual_ledger_replan",
@@ -3144,7 +3144,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_curriculum_release.py"
+        "tests/evolution/test_curriculum_release.py"
       ],
       "callers": [
         "learning.sie"
@@ -3199,11 +3199,11 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_evolution_safety.py",
-        "tests/test_parallel_safety.py",
-        "tests/test_safety_gate_divergence.py",
-        "tests/test_safety_mixin.py",
-        "tests/test_verify_shell_safety.py"
+        "tests/control/test_parallel_safety.py",
+        "tests/control/test_safety_gate_divergence.py",
+        "tests/control/test_safety_mixin.py",
+        "tests/evolution/test_evolution_safety.py",
+        "tests/execution/test_verify_shell_safety.py"
       ],
       "callers": [
         "learning.evolution.evolver",
@@ -3283,7 +3283,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_sie.py"
+        "tests/evolution/test_sie.py"
       ],
       "callers": [
         "platform_core.orchestration.run_phase_mixin"
@@ -3349,7 +3349,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_solution_cache_provenance.py"
+        "tests/evolution/test_solution_cache_provenance.py"
       ],
       "callers": [
         "learning.sie_steps",
@@ -3416,7 +3416,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_wisdom.py"
+        "tests/evolution/test_wisdom.py"
       ],
       "callers": [
         "notifications.bot.cogs.log_cog",
@@ -3485,7 +3485,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_llm_io_pydantic.py"
+        "tests/orchestration/test_llm_io_pydantic.py"
       ],
       "callers": [
         "agents.adversary",
@@ -3601,7 +3601,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_exp_index.py"
+        "tests/evolution/test_exp_index.py"
       ],
       "callers": [
         "memory.retrieval"
@@ -3626,13 +3626,13 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_experience_content.py",
-        "tests/test_experience_content_sync.py",
-        "tests/test_experience_evolution.py",
-        "tests/test_experience_journal.py",
-        "tests/test_experience_ledger.py",
-        "tests/test_experience_pr.py",
-        "tests/test_experience_schema_migration.py"
+        "tests/evolution/test_experience_content.py",
+        "tests/evolution/test_experience_content_sync.py",
+        "tests/evolution/test_experience_evolution.py",
+        "tests/evolution/test_experience_journal.py",
+        "tests/evolution/test_experience_ledger.py",
+        "tests/evolution/test_experience_pr.py",
+        "tests/evolution/test_experience_schema_migration.py"
       ],
       "callers": [
         "agents.discovery.digest",
@@ -3799,7 +3799,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_experience_content.py"
+        "tests/evolution/test_experience_content.py"
       ],
       "callers": [
         "memory.experience_subtasks",
@@ -3882,7 +3882,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_experience_evolution.py"
+        "tests/evolution/test_experience_evolution.py"
       ],
       "callers": [
         "memory.experience"
@@ -3937,7 +3937,7 @@
         "writes step_journal rows in experience.db"
       ],
       "test": [
-        "tests/test_experience_journal.py"
+        "tests/evolution/test_experience_journal.py"
       ],
       "callers": [
         "memory.experience"
@@ -4084,7 +4084,7 @@
         "writes to experience ledger (pr_outcomes table)"
       ],
       "test": [
-        "tests/test_experience_pr.py"
+        "tests/evolution/test_experience_pr.py"
       ],
       "callers": [
         "memory.experience",
@@ -4208,7 +4208,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_experience_schema_migration.py"
+        "tests/evolution/test_experience_schema_migration.py"
       ],
       "callers": [
         "memory.experience",
@@ -4360,7 +4360,7 @@
         "none (pure)"
       ],
       "test": [
-        "tests/test_memory_sanitizer.py"
+        "tests/evolution/test_memory_sanitizer.py"
       ],
       "callers": [
         "memory.retrieval",
@@ -4402,8 +4402,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_obsidian_atomic_claude_md.py",
-        "tests/test_obsidian_write.py"
+        "tests/notifications/test_obsidian_atomic_claude_md.py",
+        "tests/notifications/test_obsidian_write.py"
       ],
       "callers": [
         "agents.executor",
@@ -4528,7 +4528,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_retrieval.py"
+        "tests/evolution/test_retrieval.py"
       ],
       "callers": [
         "learning.sie_steps",
@@ -4554,7 +4554,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_retrieval_rank.py"
+        "tests/evolution/test_retrieval_rank.py"
       ],
       "callers": [
         "memory.retrieval"
@@ -4643,7 +4643,7 @@
         "writes user_prefs.json"
       ],
       "test": [
-        "tests/test_user_prefs.py"
+        "tests/evolution/test_user_prefs.py"
       ],
       "callers": [
         "notifications.bot.cogs.context_cog",
@@ -4710,7 +4710,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_ask.py"
+        "tests/notifications/test_ask.py"
       ],
       "callers": [
         "notifications.bot.cogs.ask_cog"
@@ -4743,7 +4743,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_audit.py"
+        "tests/notifications/test_audit.py"
       ],
       "callers": [
         "notifications.bot.cogs.ask_cog",
@@ -4877,7 +4877,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_context_cog.py"
+        "tests/notifications/test_context_cog.py"
       ],
       "callers": []
     },
@@ -4991,7 +4991,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_log_cog.py"
+        "tests/notifications/test_log_cog.py"
       ],
       "callers": []
     },
@@ -5116,7 +5116,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_plan_cog.py"
+        "tests/notifications/test_plan_cog.py"
       ],
       "callers": []
     },
@@ -5253,7 +5253,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_dynamic.py"
+        "tests/notifications/test_dynamic.py"
       ],
       "callers": [
         "notifications.bot.core"
@@ -5286,7 +5286,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_brain_dialogue.py"
+        "tests/orchestration/test_brain_dialogue.py"
       ],
       "callers": [
         "notifications.bot.cogs.context_cog",
@@ -5385,7 +5385,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_branding.py"
+        "tests/notifications/test_branding.py"
       ],
       "callers": [
         "notifications.bot.cogs.observe_cog",
@@ -5421,7 +5421,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_briefing.py"
+        "tests/notifications/test_briefing.py"
       ],
       "callers": [
         "notifications.bot.cogs.context_cog",
@@ -5465,7 +5465,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_cast.py"
+        "tests/notifications/test_cast.py"
       ],
       "callers": [
         "notifications.narration",
@@ -5496,7 +5496,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_command_bot.py"
+        "tests/notifications/test_command_bot.py"
       ],
       "callers": [
         "nightclaw"
@@ -5577,7 +5577,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_commands.py"
+        "tests/notifications/test_commands.py"
       ],
       "callers": [
         "notifications.bot.cogs.admin",
@@ -5623,7 +5623,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_console_hud.py"
+        "tests/notifications/test_console_hud.py"
       ],
       "callers": [
         "notifications.bot.cogs.admin"
@@ -5682,7 +5682,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_cv2.py"
+        "tests/notifications/test_cv2.py"
       ],
       "callers": [
         "notifications.bot.cogs.admin",
@@ -5719,7 +5719,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_dashboard.py"
+        "tests/notifications/test_dashboard.py"
       ],
       "callers": [
         "orchestrator",
@@ -6138,7 +6138,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_engagement.py"
+        "tests/notifications/test_engagement.py"
       ],
       "callers": [
         "notifications.bot.cogs.engagement_cog",
@@ -6176,8 +6176,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_entry_creation.py",
-        "tests/test_notification_entry.py"
+        "tests/notifications/test_entry_creation.py",
+        "tests/notifications/test_notification_entry.py"
       ],
       "callers": [
         "state.task_schema"
@@ -6235,7 +6235,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_event_bus.py"
+        "tests/notifications/test_event_bus.py"
       ],
       "callers": [
         "notifications.commands",
@@ -6276,7 +6276,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_health_aura.py"
+        "tests/notifications/test_health_aura.py"
       ],
       "callers": [
         "notifications.cv2",
@@ -6333,7 +6333,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_icons.py"
+        "tests/notifications/test_icons.py"
       ],
       "callers": [
         "notifications.bot.core",
@@ -6390,7 +6390,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_instinct.py"
+        "tests/notifications/test_instinct.py"
       ],
       "callers": [
         "platform_core.orchestration.run_phase_outcome"
@@ -6466,7 +6466,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_lane_feed.py"
+        "tests/notifications/test_lane_feed.py"
       ],
       "callers": [
         "agents.browser_executor",
@@ -6496,7 +6496,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_metrics.py"
+        "tests/notifications/test_metrics.py"
       ],
       "callers": [
         "notifications.bot.cogs.observe_cog"
@@ -6537,7 +6537,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_narration.py"
+        "tests/notifications/test_narration.py"
       ],
       "callers": [
         "platform_core.orchestration.run_phase_mixin"
@@ -6574,7 +6574,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_ops.py"
+        "tests/notifications/test_ops.py"
       ],
       "callers": [
         "notifications.bot.cogs.ops_cog"
@@ -6606,7 +6606,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_personas_archetypes.py"
+        "tests/notifications/test_personas_archetypes.py"
       ],
       "callers": [
         "notifications.cast"
@@ -6639,7 +6639,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_reflection_post.py"
+        "tests/notifications/test_reflection_post.py"
       ],
       "callers": [
         "platform_core.orchestration.run_phase_outcome"
@@ -6704,7 +6704,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_run_arc.py"
+        "tests/control/test_run_arc.py"
       ],
       "callers": [
         "notifications.commands",
@@ -6728,7 +6728,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_slash.py"
+        "tests/notifications/test_slash.py"
       ],
       "callers": [
         "notifications.bot.cogs.control_cog",
@@ -6757,7 +6757,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_subprocess_feed.py"
+        "tests/notifications/test_subprocess_feed.py"
       ],
       "callers": [
         "platform_core.orchestration.step_sink"
@@ -6818,7 +6818,7 @@
         "writes state/ipc/terminal_nav.json + state/ipc/terminal_mirror.json"
       ],
       "test": [
-        "tests/test_terminal_ipc.py"
+        "tests/control/test_terminal_ipc.py"
       ],
       "callers": [
         "notifications.terminal_surface",
@@ -6850,7 +6850,7 @@
         "none"
       ],
       "test": [
-        "tests/test_terminal_render.py"
+        "tests/notifications/test_terminal_render.py"
       ],
       "callers": [
         "notifications.terminal_surface",
@@ -6908,7 +6908,7 @@
         "TerminalSurface creates/edits/pins Discord messages via notifications.discord_bot"
       ],
       "test": [
-        "tests/test_terminal_surface.py"
+        "tests/notifications/test_terminal_surface.py"
       ],
       "callers": [
         "platform_core.orchestration.run_phase_mixin"
@@ -7010,7 +7010,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_theme.py"
+        "tests/notifications/test_theme.py"
       ],
       "callers": [
         "notifications.console_hud",
@@ -7040,7 +7040,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_tunnel.py"
+        "tests/notifications/test_tunnel.py"
       ],
       "callers": [
         "platform_core.orchestration.run_phase_mixin"
@@ -7118,7 +7118,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_views.py"
+        "tests/control/test_views.py"
       ],
       "callers": [
         "notifications.bot.cogs.ask_cog",
@@ -7308,7 +7308,7 @@
         "reads the mirror for snapshots"
       ],
       "test": [
-        "tests/test_views_terminal.py"
+        "tests/control/test_views_terminal.py"
       ],
       "callers": [
         "notifications.bot.core"
@@ -7326,7 +7326,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_visuals.py"
+        "tests/notifications/test_visuals.py"
       ],
       "callers": [
         "notifications.cast",
@@ -7438,8 +7438,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_bloomberg_webdash.py",
-        "tests/test_webdash_control.py"
+        "tests/control/test_webdash_control.py",
+        "tests/notifications/test_bloomberg_webdash.py"
       ],
       "callers": [
         "orchestrator",
@@ -7577,7 +7577,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_work_launcher.py"
+        "tests/execution/test_work_launcher.py"
       ],
       "callers": [
         "learning.sie",
@@ -7628,8 +7628,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_orchestrator_poll.py",
-        "tests/test_orchestrator_with_registry.py"
+        "tests/orchestration/test_orchestrator_poll.py",
+        "tests/orchestration/test_orchestrator_with_registry.py"
       ],
       "callers": [
         "platform_core.orchestration.run_phase_mixin"
@@ -7705,11 +7705,11 @@
         "loadEnvOnce mutates os.environ from .env files (never overriding existing keys)"
       ],
       "test": [
-        "tests/test_completion_envelope.py",
-        "tests/test_config_robust_env.py",
-        "tests/test_execute_mixin_env.py",
-        "tests/test_execution_environment.py",
-        "tests/test_executor_wrap_env.py"
+        "tests/execution/test_completion_envelope.py",
+        "tests/execution/test_execution_environment.py",
+        "tests/execution/test_executor_wrap_env.py",
+        "tests/orchestration/test_execute_mixin_env.py",
+        "tests/platform/test_config_robust_env.py"
       ],
       "callers": [
         "config",
@@ -7746,8 +7746,8 @@
         "none"
       ],
       "test": [
-        "tests/test_discord_rest.py",
-        "tests/test_discord_surfaces.py"
+        "tests/notifications/test_discord_rest.py",
+        "tests/notifications/test_discord_surfaces.py"
       ],
       "callers": [
         "platform_core.app_config.settings"
@@ -7808,8 +7808,8 @@
         "none"
       ],
       "test": [
-        "tests/test_llm_compaction_numctx.py",
-        "tests/test_llm_io_pydantic.py"
+        "tests/orchestration/test_llm_compaction_numctx.py",
+        "tests/orchestration/test_llm_io_pydantic.py"
       ],
       "callers": [
         "platform_core.app_config.settings"
@@ -8071,7 +8071,7 @@
         "emits log records"
       ],
       "test": [
-        "tests/test_best_effort.py"
+        "tests/orchestration/test_best_effort.py"
       ],
       "callers": [
         "agents.hooks_obsidian",
@@ -8298,7 +8298,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_contracts.py"
+        "tests/platform/test_contracts.py"
       ],
       "callers": [
         "src.workflow_registry",
@@ -8346,7 +8346,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_epoch.py"
+        "tests/evolution/test_epoch.py"
       ],
       "callers": [
         "orchestrator",
@@ -8414,7 +8414,7 @@
         "creates/removes .lock and .bak files"
       ],
       "test": [
-        "tests/test_fsio.py"
+        "tests/execution/test_fsio.py"
       ],
       "callers": []
     },
@@ -8512,7 +8512,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_identity.py"
+        "tests/control/test_identity.py"
       ],
       "callers": [
         "platform_core.core.epoch"
@@ -8598,7 +8598,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_lifecycle.py"
+        "tests/platform/test_lifecycle.py"
       ],
       "callers": []
     },
@@ -8640,7 +8640,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_protocols.py"
+        "tests/platform/test_protocols.py"
       ],
       "callers": []
     },
@@ -8696,7 +8696,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_provenance.py"
+        "tests/platform/test_provenance.py"
       ],
       "callers": [
         "learning.prompts",
@@ -8746,7 +8746,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_surfaces.py"
+        "tests/platform/test_surfaces.py"
       ],
       "callers": [
         "platform_core.orchestration.execute_mixin",
@@ -8793,7 +8793,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_tracing.py"
+        "tests/platform/test_tracing.py"
       ],
       "callers": [
         "agents.trace_replay",
@@ -8852,7 +8852,7 @@
         "starts/removes containers"
       ],
       "test": [
-        "tests/test_execution_docker.py"
+        "tests/execution/test_execution_docker.py"
       ],
       "callers": [
         "platform_core.execution.router"
@@ -8877,8 +8877,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_execution_local.py",
-        "tests/test_knowledge_local_scan_gate.py"
+        "tests/evolution/test_knowledge_local_scan_gate.py",
+        "tests/execution/test_execution_local.py"
       ],
       "callers": [
         "platform_core.execution.router"
@@ -8904,7 +8904,7 @@
         "runs `ssh` / remote SDKs (behind _run_remote)"
       ],
       "test": [
-        "tests/test_execution_remote.py"
+        "tests/execution/test_execution_remote.py"
       ],
       "callers": [
         "platform_core.execution.router"
@@ -8932,7 +8932,7 @@
         "creates/removes worktrees under STATE_DIR"
       ],
       "test": [
-        "tests/test_worktree.py"
+        "tests/execution/test_worktree.py"
       ],
       "callers": [
         "platform_core.execution.router"
@@ -8969,7 +8969,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_execution_environment.py"
+        "tests/execution/test_execution_environment.py"
       ],
       "callers": [
         "platform_core.execution",
@@ -9019,7 +9019,7 @@
         "emits env_* events on notifications.event_bus (best-effort)"
       ],
       "test": [
-        "tests/test_execution_router.py"
+        "tests/execution/test_execution_router.py"
       ],
       "callers": [
         "platform_core.execution"
@@ -9059,7 +9059,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_execution_security.py"
+        "tests/execution/test_execution_security.py"
       ],
       "callers": [
         "platform_core.execution.backends.docker"
@@ -9099,9 +9099,9 @@
         "emits env_* events via router (best-effort)"
       ],
       "test": [
-        "tests/test_dual_ledger_wiring.py",
-        "tests/test_execute_mixin_fork_wiring.py",
-        "tests/test_resume_wiring.py"
+        "tests/execution/test_resume_wiring.py",
+        "tests/orchestration/test_dual_ledger_wiring.py",
+        "tests/orchestration/test_execute_mixin_fork_wiring.py"
       ],
       "callers": [
         "platform_core.orchestration.execute_mixin"
@@ -9145,7 +9145,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_builder_sim.py"
+        "tests/execution/test_builder_sim.py"
       ],
       "callers": [
         "knowledge",
@@ -9289,7 +9289,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_codenames.py"
+        "tests/platform/test_codenames.py"
       ],
       "callers": []
     },
@@ -9370,7 +9370,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_doctor.py"
+        "tests/platform/test_doctor.py"
       ],
       "callers": [
         "main"
@@ -9395,7 +9395,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_external_project.py"
+        "tests/execution/test_external_project.py"
       ],
       "callers": [
         "main",
@@ -9430,9 +9430,9 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_health_aura.py",
-        "tests/test_health_collect.py",
-        "tests/test_repo_health.py"
+        "tests/notifications/test_health_aura.py",
+        "tests/platform/test_health_collect.py",
+        "tests/platform/test_repo_health.py"
       ],
       "callers": [
         "main",
@@ -9486,7 +9486,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_validate_workflows.py"
+        "tests/workflows/test_validate_workflows.py"
       ],
       "callers": [
         "validate_workflows"
@@ -9628,7 +9628,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_brain_io_repair.py"
+        "tests/orchestration/test_brain_io_repair.py"
       ],
       "callers": [
         "orchestrator",
@@ -9661,7 +9661,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_brain_json.py"
+        "tests/orchestration/test_brain_json.py"
       ],
       "callers": [
         "platform_core.orchestration.dual_ledger_planner"
@@ -9694,7 +9694,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_branch_runner.py"
+        "tests/orchestration/test_branch_runner.py"
       ],
       "callers": []
     },
@@ -9732,7 +9732,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_compaction.py"
+        "tests/orchestration/test_compaction.py"
       ],
       "callers": []
     },
@@ -9861,7 +9861,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_dual_ledger_planner.py"
+        "tests/orchestration/test_dual_ledger_planner.py"
       ],
       "callers": []
     },
@@ -9948,7 +9948,7 @@
         "mutates state notifications"
       ],
       "test": [
-        "tests/test_evidence_gate.py"
+        "tests/execution/test_evidence_gate.py"
       ],
       "callers": []
     },
@@ -9973,7 +9973,7 @@
         "may register candidate rows"
       ],
       "test": [
-        "tests/test_evolution_hook.py"
+        "tests/evolution/test_evolution_hook.py"
       ],
       "callers": []
     },
@@ -10015,8 +10015,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_execute_mixin_env.py",
-        "tests/test_execute_mixin_fork_wiring.py"
+        "tests/orchestration/test_execute_mixin_env.py",
+        "tests/orchestration/test_execute_mixin_fork_wiring.py"
       ],
       "callers": [
         "orchestrator"
@@ -10064,7 +10064,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_fork_policy.py"
+        "tests/orchestration/test_fork_policy.py"
       ],
       "callers": []
     },
@@ -10115,7 +10115,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_fork_seams.py"
+        "tests/orchestration/test_fork_seams.py"
       ],
       "callers": []
     },
@@ -10139,7 +10139,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_github_pr_gate.py"
+        "tests/execution/test_github_pr_gate.py"
       ],
       "callers": [
         "platform_core.orchestration.control_mixin",
@@ -10201,7 +10201,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_judge_panel.py"
+        "tests/orchestration/test_judge_panel.py"
       ],
       "callers": []
     },
@@ -10308,7 +10308,7 @@
         "claim() flips subtask status via state.updateSubtask"
       ],
       "test": [
-        "tests/test_parallel_safety.py"
+        "tests/control/test_parallel_safety.py"
       ],
       "callers": []
     },
@@ -10403,7 +10403,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_plan_shape_check.py"
+        "tests/orchestration/test_plan_shape_check.py"
       ],
       "callers": []
     },
@@ -10429,7 +10429,7 @@
         "writes to experience ledger (record_feedback, record_reflection)"
       ],
       "test": [
-        "tests/test_pr_feedback.py"
+        "tests/execution/test_pr_feedback.py"
       ],
       "callers": [
         "platform_core.orchestration.review_mixin",
@@ -10656,7 +10656,7 @@
         "mutates run state status/notifications"
       ],
       "test": [
-        "tests/test_run_phase_outcome.py"
+        "tests/control/test_run_phase_outcome.py"
       ],
       "callers": []
     },
@@ -10686,7 +10686,7 @@
         "reads/writes the autonomy ledger"
       ],
       "test": [
-        "tests/test_safety_mixin.py"
+        "tests/control/test_safety_mixin.py"
       ],
       "callers": [
         "orchestrator"
@@ -10772,7 +10772,7 @@
         "writes/removes state/<task_id>__fork_<branch>.json (throwaway branch states)"
       ],
       "test": [
-        "tests/test_solution_space.py"
+        "tests/orchestration/test_solution_space.py"
       ],
       "callers": []
     },
@@ -10810,7 +10810,7 @@
         "mutates subtask session/status via state.updateSubtask"
       ],
       "test": [
-        "tests/test_step_resume.py"
+        "tests/execution/test_step_resume.py"
       ],
       "callers": [
         "platform_core.orchestration.run_phase_mixin",
@@ -10847,7 +10847,7 @@
         "writes journal rows + trajectory spans"
       ],
       "test": [
-        "tests/test_step_sink.py"
+        "tests/orchestration/test_step_sink.py"
       ],
       "callers": [
         "platform_core.orchestration.execute_mixin"
@@ -10866,7 +10866,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_subtask_files_touched.py"
+        "tests/orchestration/test_subtask_files_touched.py"
       ],
       "callers": [
         "orchestrator",
@@ -10908,7 +10908,7 @@
         "writes state.meta[\"task_ledger\"]"
       ],
       "test": [
-        "tests/test_task_ledger.py"
+        "tests/control/test_task_ledger.py"
       ],
       "callers": []
     },
@@ -10961,7 +10961,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_winner_merge.py"
+        "tests/orchestration/test_winner_merge.py"
       ],
       "callers": []
     },
@@ -11045,7 +11045,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_work_profile.py"
+        "tests/orchestration/test_work_profile.py"
       ],
       "callers": []
     },
@@ -11140,7 +11140,7 @@
         "none (pure)"
       ],
       "test": [
-        "tests/test_action_risk.py"
+        "tests/execution/test_action_risk.py"
       ],
       "callers": [
         "agents.executor_env",
@@ -11176,7 +11176,7 @@
         "writes the control_store ledger table"
       ],
       "test": [
-        "tests/test_autonomy_allowance.py"
+        "tests/orchestration/test_autonomy_allowance.py"
       ],
       "callers": []
     },
@@ -11207,11 +11207,11 @@
         "reads/writes state/control.db via control_store"
       ],
       "test": [
-        "tests/slow/test_fuzz_control.py",
-        "tests/test_control_concurrency.py",
-        "tests/test_control_store.py",
-        "tests/test_granular_controls.py",
-        "tests/test_webdash_control.py"
+        "tests/control/test_control_concurrency.py",
+        "tests/control/test_control_store.py",
+        "tests/control/test_granular_controls.py",
+        "tests/control/test_webdash_control.py",
+        "tests/slow/test_fuzz_control.py"
       ],
       "callers": [
         "main",
@@ -11336,7 +11336,7 @@
         "renames legacy state/control/*.json once"
       ],
       "test": [
-        "tests/test_control_store.py"
+        "tests/control/test_control_store.py"
       ],
       "callers": []
     },
@@ -11360,7 +11360,7 @@
         "emits Events on the live bus"
       ],
       "test": [
-        "tests/test_cost_budget.py"
+        "tests/execution/test_cost_budget.py"
       ],
       "callers": [
         "platform_core.orchestration.execute_mixin"
@@ -11436,7 +11436,7 @@
         "writes/removes state/heartbeats/<name>.json"
       ],
       "test": [
-        "tests/test_heartbeat.py"
+        "tests/control/test_heartbeat.py"
       ],
       "callers": [
         "main",
@@ -11509,7 +11509,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_resilience.py"
+        "tests/control/test_resilience.py"
       ],
       "callers": [
         "main"
@@ -11542,7 +11542,7 @@
         "writes state/trajectories/<run_id>.jsonl"
       ],
       "test": [
-        "tests/test_trajectory.py"
+        "tests/orchestration/test_trajectory.py"
       ],
       "callers": [
         "platform_core.orchestration.execute_mixin"
@@ -11603,7 +11603,7 @@
         "creates/removes git worktrees under state/.sc-worktrees/"
       ],
       "test": [
-        "tests/test_worktree.py"
+        "tests/execution/test_worktree.py"
       ],
       "callers": []
     },
@@ -11735,7 +11735,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_repo_health.py"
+        "tests/platform/test_repo_health.py"
       ],
       "callers": []
     },
@@ -11772,7 +11772,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_selfmod.py"
+        "tests/evolution/test_selfmod.py"
       ],
       "callers": [
         "platform_core.orchestration.control_mixin"
@@ -11827,7 +11827,7 @@
         "writes <path>.jsonl"
       ],
       "test": [
-        "tests/test_society_blackboard.py"
+        "tests/orchestration/test_society_blackboard.py"
       ],
       "callers": [
         "society",
@@ -11867,7 +11867,7 @@
         "claims/updates task JSON, runs workers, appends to the blackboard"
       ],
       "test": [
-        "tests/test_society_coordinator.py"
+        "tests/orchestration/test_society_coordinator.py"
       ],
       "callers": [
         "society",
@@ -11902,7 +11902,7 @@
         "none"
       ],
       "test": [
-        "tests/test_society_roles.py"
+        "tests/orchestration/test_society_roles.py"
       ],
       "callers": [
         "society",
@@ -11964,7 +11964,7 @@
         "claims+updates task JSON, runs Claude, appends to the blackboard"
       ],
       "test": [
-        "tests/test_society_worker.py"
+        "tests/orchestration/test_society_worker.py"
       ],
       "callers": [
         "society",
@@ -12015,7 +12015,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_workflow_registry.py"
+        "tests/workflows/test_workflow_registry.py"
       ],
       "callers": [
         "agents.workflow_resolver"
@@ -12043,12 +12043,12 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_subtask_files_touched.py",
-        "tests/test_task_io_single_writer.py",
-        "tests/test_task_ledger.py",
-        "tests/test_task_listrecent.py",
-        "tests/test_task_save_concurrent.py",
-        "tests/test_task_schema_hn.py"
+        "tests/control/test_task_io_single_writer.py",
+        "tests/control/test_task_ledger.py",
+        "tests/control/test_task_listrecent.py",
+        "tests/control/test_task_save_concurrent.py",
+        "tests/control/test_task_schema_hn.py",
+        "tests/orchestration/test_subtask_files_touched.py"
       ],
       "callers": [
         "agents.hooks_selfmod",
@@ -12143,7 +12143,7 @@
         "writes state/tasks/<id>.json"
       ],
       "test": [
-        "tests/test_task_io_single_writer.py"
+        "tests/control/test_task_io_single_writer.py"
       ],
       "callers": [
         "notifications.work_launcher",
@@ -12180,7 +12180,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_task_schema_hn.py"
+        "tests/control/test_task_schema_hn.py"
       ],
       "callers": [
         "state.task",
@@ -12350,7 +12350,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_context_budget.py"
+        "tests/platform/test_context_budget.py"
       ],
       "callers": []
     },
@@ -12427,7 +12427,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_dev_commands.py"
+        "tests/platform/test_dev_commands.py"
       ],
       "callers": []
     },
@@ -12673,7 +12673,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_repo_map.py"
+        "tests/platform/test_repo_map.py"
       ],
       "callers": []
     },
@@ -12759,7 +12759,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_validate_workflows.py"
+        "tests/workflows/test_validate_workflows.py"
       ],
       "callers": []
     },
@@ -12793,7 +12793,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_registry.py"
+        "tests/workflows/test_registry.py"
       ],
       "callers": [
         "platform_core.ops.validate_workflows"

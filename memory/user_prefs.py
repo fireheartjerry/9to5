@@ -18,7 +18,7 @@ EXPORTS:
   formatPrefs(prefs: dict) -> str
 DEPENDS-ON: config, platform_core.core
 SIDE-EFFECTS: writes user_prefs.json
-RUN/TEST: python -m pytest tests/test_user_prefs.py
+RUN/TEST: python -m pytest tests/evolution/test_user_prefs.py
 """
 from __future__ import annotations
 

@@ -32,7 +32,7 @@ EXPORTS:
   responseJson(resp)  -- Parse the JSON body of a chat response via the ONE loose ladder
 DEPENDS-ON: config, notifications.lane_feed
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_llm_io_pydantic.py
+RUN/TEST: python -m pytest tests/orchestration/test_llm_io_pydantic.py
 """
 from __future__ import annotations
 

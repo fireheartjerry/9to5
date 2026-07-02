@@ -9,7 +9,7 @@ EXPORTS:
   run_lens_panel(digest: dict, chat=None) -> List[Finding]  -- Run all lenses in parallel
 DEPENDS-ON: agents.discovery.models, config, llm_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_discovery_lenses.py
+RUN/TEST: python -m pytest tests/orchestration/test_discovery_lenses.py
 """
 from __future__ import annotations
 

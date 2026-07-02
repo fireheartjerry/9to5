@@ -14,7 +14,7 @@ EXPORTS:
   Coordinator  -- Owns workforce orchestration over the blackboard
 DEPENDS-ON: config, notifications.event_bus, society.blackboard, society.roles, society.worker, state.task
 SIDE-EFFECTS: claims/updates task JSON, runs workers, appends to the blackboard
-RUN/TEST: python -m pytest tests/test_society_coordinator.py
+RUN/TEST: python -m pytest tests/orchestration/test_society_coordinator.py
 """
 from __future__ import annotations
 

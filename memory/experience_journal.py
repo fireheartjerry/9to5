@@ -14,7 +14,7 @@ EXPORTS:
   markAttemptSuperseded(run_id: str, subtask_id: str, attempt: int, db_path: Optional[Path]=None) -> None  -- Resume bookkeeping: drop a stale attempt's journal rows so it won't be resumed.
 DEPENDS-ON: config, memory.experience_schema, platform_core.core.best_effort
 SIDE-EFFECTS: writes step_journal rows in experience.db
-RUN/TEST: python -m pytest tests/test_experience_journal.py
+RUN/TEST: python -m pytest tests/evolution/test_experience_journal.py
 """
 from __future__ import annotations
 

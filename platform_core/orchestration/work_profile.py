@@ -17,7 +17,7 @@ EXPORTS:
   profile_help_embed_fields() -> list[tuple[str, str]]
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_work_profile.py
+RUN/TEST: python -m pytest tests/orchestration/test_work_profile.py
 """
 from __future__ import annotations
 

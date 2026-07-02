@@ -18,7 +18,7 @@ EXPORTS:
   render(report: dict[str, Any]) -> str
 DEPENDS-ON: config, learning.compute, platform_core.core.best_effort
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_doctor.py
+RUN/TEST: python -m pytest tests/platform/test_doctor.py
 """
 from __future__ import annotations
 

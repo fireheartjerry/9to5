@@ -24,7 +24,7 @@ EXPORTS:
   run_with_recovery(run_fn: Callable[[TaskState], dict], state: TaskState, *, max_restarts: Optional[int]=None, backoff_base: float=2.0, sleep: Callable[[float], None]=time.sleep, reload_state: Optional[Callable[[str], TaskState]]=None, bus=None) -> dict  -- Run ``run_fn(state)`` and auto-resume it on crash until the task is terminal, the
 DEPENDS-ON: config, platform_core.core.best_effort, platform_core.core.clock, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_resilience.py
+RUN/TEST: python -m pytest tests/control/test_resilience.py
 """
 from __future__ import annotations
 

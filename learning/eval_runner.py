@@ -17,7 +17,7 @@ EXPORTS:
   active_runner() -> Callable[[dict], dict]  -- The runner the harness should use now: a registered brain runner if present, else
 DEPENDS-ON: agents.verifier, config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_eval_runner.py
+RUN/TEST: python -m pytest tests/execution/test_eval_runner.py
 """
 from __future__ import annotations
 

@@ -11,7 +11,7 @@ EXPORTS:
   loadFromState(state) -> Optional[TaskLedger]
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: writes state.meta["task_ledger"]
-RUN/TEST: python -m pytest tests/test_task_ledger.py
+RUN/TEST: python -m pytest tests/control/test_task_ledger.py
 """
 from __future__ import annotations
 

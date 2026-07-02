@@ -10,7 +10,7 @@ EXPORTS:
   fetch_pr_outcomes(run_id: Optional[str]=None, *, promote_safe: Optional[bool]=None, limit: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Query stored PR outcomes, optionally filtered by run or promotion safety.
 DEPENDS-ON: config, memory.experience_schema
 SIDE-EFFECTS: writes to experience ledger (pr_outcomes table)
-RUN/TEST: python -m pytest tests/test_experience_pr.py
+RUN/TEST: python -m pytest tests/evolution/test_experience_pr.py
 """
 from __future__ import annotations
 

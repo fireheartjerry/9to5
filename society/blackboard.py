@@ -12,7 +12,7 @@ EXPORTS:
   Blackboard  -- Append-only JSONL coordination store
 DEPENDS-ON: config
 SIDE-EFFECTS: writes <path>.jsonl
-RUN/TEST: python -m pytest tests/test_society_blackboard.py
+RUN/TEST: python -m pytest tests/orchestration/test_society_blackboard.py
 """
 from __future__ import annotations
 

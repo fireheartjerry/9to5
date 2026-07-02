@@ -8,7 +8,7 @@ EXPORTS:
   buildAttemptFeed(orch, state, sid: str, attempt: int, resume_session: Optional[str]) -> tuple  -- Wire the live surface feed for ONE Claude-CLI attempt: step-journal sink + trajectory
 DEPENDS-ON: config, memory.experience, notifications.event_bus, notifications.subprocess_feed, platform_core.orchestration.step_resume
 SIDE-EFFECTS: writes journal rows + trajectory spans
-RUN/TEST: python -m pytest tests/test_step_sink.py
+RUN/TEST: python -m pytest tests/orchestration/test_step_sink.py
 """
 from __future__ import annotations
 

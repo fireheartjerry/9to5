@@ -11,7 +11,7 @@ EXPORTS:
   restore_skill(target: str, *, db_path: Optional[Path]=None) -> bool  -- Recover an archived/stale skill back to champion (archive is never a delete).
 DEPENDS-ON: config, memory.experience
 SIDE-EFFECTS: flips candidate states; writes state/evolution/reports
-RUN/TEST: python -m pytest tests/test_evolution_curator.py
+RUN/TEST: python -m pytest tests/evolution/test_evolution_curator.py
 """
 from __future__ import annotations
 

@@ -20,7 +20,7 @@ EXPORTS:
   resumeOrError(task_id: str) -> str  -- Resume an existing task by id (block if a run is active)
 DEPENDS-ON: config, notifications.commands, platform_core.core, platform_core.ops.external_project, platform_core.orchestration, platform_core.runtime.control, platform_core.runtime.heartbeat, state.task, state.task_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_work_launcher.py
+RUN/TEST: python -m pytest tests/execution/test_work_launcher.py
 """
 from __future__ import annotations
 

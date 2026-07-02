@@ -11,7 +11,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: state.task_schema
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_subtask_files_touched.py tests/test_task_io_single_writer.py tests/test_task_ledger.py tests/test_task_listrecent.py tests/test_task_save_concurrent.py tests/test_task_schema_hn.py
+RUN/TEST: python -m pytest tests/control/test_task_io_single_writer.py tests/control/test_task_ledger.py tests/control/test_task_listrecent.py tests/control/test_task_save_concurrent.py tests/control/test_task_schema_hn.py tests/orchestration/test_subtask_files_touched.py
 """
 from __future__ import annotations
 

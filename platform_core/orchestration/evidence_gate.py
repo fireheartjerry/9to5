@@ -16,7 +16,7 @@ EXPORTS:
   persistReceipt(orch, state, sid: str, receipt: dict) -> None  -- Write the Evidence Receipt as a per-subtask Obsidian note (durable audit artifact).
 DEPENDS-ON: agents.completion_envelope, agents.evidence_receipt, agents.independent_verifier, agents.verification, agents.verifier, config, platform_core.core.best_effort, platform_core.orchestration
 SIDE-EFFECTS: spawns a read-only Claude subprocess; writes an Obsidian note; mutates state notifications
-RUN/TEST: python -m pytest tests/test_evidence_gate.py
+RUN/TEST: python -m pytest tests/execution/test_evidence_gate.py
 """
 from __future__ import annotations
 

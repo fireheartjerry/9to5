@@ -15,7 +15,7 @@ EXPORTS:
   runVerification(verify: Optional[dict], work_dir: str, executor_result: dict, *, declared_targets=None, cancel_check=None) -> dict  -- Run the ONE Receipt pipeline and return the legacy vresult dict shape.
 DEPENDS-ON: agents.verification, config
 SIDE-EFFECTS: runs the acceptance subprocess; reads git status
-RUN/TEST: python -m pytest tests/test_verifier_runner.py
+RUN/TEST: python -m pytest tests/execution/test_verifier_runner.py
 """
 from __future__ import annotations
 

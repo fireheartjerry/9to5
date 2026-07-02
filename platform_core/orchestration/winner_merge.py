@@ -7,7 +7,7 @@ EXPORTS:
   graftRunnerUp(orch, state, subtask, architect_doc, exec_cwd, runner_up, *, enabled: bool) -> None  -- Advisory graft: feed the top runner-up's idea to the winner via ONE bounded _remediate …
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_winner_merge.py
+RUN/TEST: python -m pytest tests/orchestration/test_winner_merge.py
 """
 from __future__ import annotations
 

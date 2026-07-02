@@ -9,7 +9,7 @@ EXPORTS:
   compile_digest(work_dir: str) -> dict  -- Compile and return the full codebase digest
 DEPENDS-ON: config, learning.postmortem, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_discovery_digest.py
+RUN/TEST: python -m pytest tests/orchestration/test_discovery_digest.py
 """
 from __future__ import annotations
 

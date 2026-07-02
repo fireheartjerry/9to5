@@ -71,10 +71,10 @@ jobs:
             if [[ ! "$f" =~ ^(docs/|.*\.md$|LLM_MAP\.md$|CAPABILITIES\.md$|README\.md$) ]]; then
               docs_only=false
             fi
-            if [[ ! "$f" =~ ^(\.github/workflows/|workflows/|validate_workflows\.py|tests/test_.*workflow.*\.py|tests/test_validate_workflows\.py) ]]; then
+            if [[ ! "$f" =~ ^(\.github/workflows/|workflows/|validate_workflows\.py|tests/workflows/.*\.py) ]]; then
               workflow_only=false
             fi
-            if [[ ! "$f" =~ ^(tools/|tests/test_(repo_map|tools|dev_commands)\.py|\.repo-map\.json) ]]; then
+            if [[ ! "$f" =~ ^(tools/|tests/platform/test_(repo_map|tools|dev_commands)\.py|\.repo-map\.json) ]]; then
               tooling_only=false
             fi
             if [[ ! "$f" =~ ^(docs/|.*\.md$|\.github/workflows/|tools/|\.repo-map\.json) ]]; then
@@ -135,7 +135,7 @@ jobs:
       - name: Validate workflow definitions
         run: python validate_workflows.py
       - name: Workflow tests
-        run: python -m pytest tests/test_validate_workflows.py tests/test_workflows.py tests/test_workflows_registry_load.py tests/test_workflows_registry_validators.py tests/test_workflow_registry.py -q
+        run: python -m pytest tests/workflows/test_validate_workflows.py tests/workflows/test_workflows.py tests/workflows/test_workflows_registry_load.py tests/workflows/test_workflows_registry_validators.py tests/workflows/test_workflow_registry.py -q
 
   tooling:
     needs: classify
@@ -156,7 +156,7 @@ jobs:
       - name: Repo-map drift check
         run: python tools/repo_map.py --check
       - name: Tooling tests
-        run: python -m pytest tests/test_repo_map.py tests/test_tools.py tests/test_dev_commands.py -q
+        run: python -m pytest tests/platform/test_repo_map.py tests/platform/test_tools.py tests/platform/test_dev_commands.py -q
 
   fast:
     needs: classify

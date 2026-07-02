@@ -10,7 +10,7 @@ EXPORTS:
   buildReceipt(goal: str, git_info: dict, det_check: dict, indep_checks: list, criteria_reported: int, assessments: dict) -> dict  -- Pure: build the Evidence Receipt dict
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_evidence_receipt.py
+RUN/TEST: python -m pytest tests/execution/test_evidence_receipt.py
 """
 from __future__ import annotations
 

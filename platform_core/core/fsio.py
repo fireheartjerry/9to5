@@ -17,7 +17,7 @@ EXPORTS:
   fileLock(path, *, stale_after: float=3600.0, timeout: float=10.0, poll: float=0.05)  -- Hold the pid lock at ``path`` for the ``with`` body
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: writes/replaces the given paths; creates parent dirs; creates/removes .lock and .bak files
-RUN/TEST: python -m pytest tests/test_fsio.py
+RUN/TEST: python -m pytest tests/execution/test_fsio.py
 """
 from __future__ import annotations
 

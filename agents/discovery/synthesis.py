@@ -9,7 +9,7 @@ EXPORTS:
   synthesize(findings: List[Finding], chat=None) -> DiscoveryReport  -- Rank and filter findings into a DiscoveryReport
 DEPENDS-ON: agents.discovery.models, config, llm_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_discovery_synthesis.py
+RUN/TEST: python -m pytest tests/orchestration/test_discovery_synthesis.py
 """
 from __future__ import annotations
 

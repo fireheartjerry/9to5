@@ -15,7 +15,7 @@ EXPORTS:
   ObsidianClient
 DEPENDS-ON: config, platform_core.core, platform_core.core.best_effort
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_obsidian_atomic_claude_md.py tests/test_obsidian_write.py
+RUN/TEST: python -m pytest tests/notifications/test_obsidian_atomic_claude_md.py tests/notifications/test_obsidian_write.py
 """
 from __future__ import annotations
 

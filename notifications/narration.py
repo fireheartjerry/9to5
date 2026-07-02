@@ -14,7 +14,7 @@ EXPORTS:
   detect_mode(bus) -> str  -- Heuristic attention mode: Present if a web SSE tab is subscribed, else Away.
 DEPENDS-ON: config, notifications.cast, notifications.event_bus
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_narration.py
+RUN/TEST: python -m pytest tests/notifications/test_narration.py
 """
 from __future__ import annotations
 

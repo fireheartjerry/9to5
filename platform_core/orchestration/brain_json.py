@@ -9,7 +9,7 @@ EXPORTS:
   chatJsonValidated(ollama_chat: Callable, system: str, user: str, *, required_keys: list[str], validators: Optional[dict]=None, max_retries: Optional[int]=None, act: str='unspecified') -> Optional[dict]  -- Call the brain for JSON, validate its shape, and re-prompt with exact field errors on f…
 DEPENDS-ON: config, platform_core.orchestration.brain_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_brain_json.py
+RUN/TEST: python -m pytest tests/orchestration/test_brain_json.py
 """
 from __future__ import annotations
 

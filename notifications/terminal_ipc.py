@@ -13,7 +13,7 @@ EXPORTS:
   clear() -> None
 DEPENDS-ON: config, platform_core.core
 SIDE-EFFECTS: writes state/ipc/terminal_nav.json + state/ipc/terminal_mirror.json
-RUN/TEST: python -m pytest tests/test_terminal_ipc.py
+RUN/TEST: python -m pytest tests/control/test_terminal_ipc.py
 """
 from __future__ import annotations
 

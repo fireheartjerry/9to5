@@ -17,7 +17,7 @@ EXPORTS:
   buttonEmoji(concept: str)  -- {'id','name'} for the NEAR-WHITE button variant (reads on green/red/gray buttons), or N…
 DEPENDS-ON: config, notifications.discord_bot, notifications.iconset
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_icons.py
+RUN/TEST: python -m pytest tests/notifications/test_icons.py
 """
 from __future__ import annotations
 

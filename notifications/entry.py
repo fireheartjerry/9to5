@@ -15,7 +15,7 @@ EXPORTS:
   validate(entry: dict[str, Any]) -> list[str]  -- Return a list of validation errors (empty means valid).
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_entry_creation.py tests/test_notification_entry.py
+RUN/TEST: python -m pytest tests/notifications/test_entry_creation.py tests/notifications/test_notification_entry.py
 """
 from __future__ import annotations
 

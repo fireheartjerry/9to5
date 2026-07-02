@@ -10,7 +10,7 @@ EXPORTS:
   TaskState  -- Wraps the lean state dict and persists it to ``state/tasks/<id>.json``.
 DEPENDS-ON: config, memory.experience, notifications.entry, platform_core.ops, state.task_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_task_schema_hn.py
+RUN/TEST: python -m pytest tests/control/test_task_schema_hn.py
 """
 from __future__ import annotations
 

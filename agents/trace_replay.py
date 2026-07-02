@@ -21,7 +21,7 @@ EXPORTS:
   getDecisionPoints(run_id: Optional[str]=None, limit: int=5, calibrate_limit: int=20) -> dict  -- Run trace-replay and return structured decision points with surrounding context.
 DEPENDS-ON: agents.trace_replay_events, config, platform_core.core.tracing
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_trace_replay.py
+RUN/TEST: python -m pytest tests/execution/test_trace_replay.py
 """
 from __future__ import annotations
 

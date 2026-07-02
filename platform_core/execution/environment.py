@@ -11,7 +11,7 @@ EXPORTS:
   ExecutionEnvironment  -- Where a subtask's Claude CLI process runs and which tree it touches.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_execution_environment.py
+RUN/TEST: python -m pytest tests/execution/test_execution_environment.py
 """
 from __future__ import annotations
 

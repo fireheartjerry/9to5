@@ -22,7 +22,7 @@ EXPORTS:
   recentRunIds(limit: int=10) -> list[str]  -- The most-recently-modified run ids under RUNS_ROOT (newest first)
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_tracing.py
+RUN/TEST: python -m pytest tests/platform/test_tracing.py
 """
 from __future__ import annotations
 

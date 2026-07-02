@@ -8,7 +8,7 @@ EXPORTS:
   loadRegistry(definitions_dir: Path=DEFINITIONS_DIR) -> Dict[str, WorkflowDefinition]  -- Load all *.json files from *definitions_dir*, validate, and return by name.
 DEPENDS-ON: platform_core.core.contracts
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_registry.py
+RUN/TEST: python -m pytest tests/workflows/test_registry.py
 """
 from __future__ import annotations
 

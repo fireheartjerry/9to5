@@ -15,7 +15,7 @@ EXPORTS:
   validateMounts(policy: CapabilityPolicy, mounts, *, network_mode: str='bridge') -> None  -- Refuse a backend's requested bind-mounts/network
 DEPENDS-ON: config, platform_core.runtime.action_risk
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_execution_security.py
+RUN/TEST: python -m pytest tests/execution/test_execution_security.py
 """
 from __future__ import annotations
 

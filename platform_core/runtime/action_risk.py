@@ -20,7 +20,7 @@ EXPORTS:
   decideAuthorization(action: ActionDescriptor, *, allowance_usd: float, already_spent_usd: float, autonomous: bool) -> AuthDecision  -- Eliza three-way routing (pure): read/dry_run -> auto
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none (pure)
-RUN/TEST: python -m pytest tests/test_action_risk.py
+RUN/TEST: python -m pytest tests/execution/test_action_risk.py
 """
 from __future__ import annotations
 

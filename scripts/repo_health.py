@@ -19,7 +19,7 @@ EXPORTS:
   main(argv: 'list[str] | None'=None) -> int
 DEPENDS-ON: config, platform_core.core.tracing
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_repo_health.py
+RUN/TEST: python -m pytest tests/platform/test_repo_health.py
 """
 from __future__ import annotations
 

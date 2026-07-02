@@ -17,7 +17,7 @@ EXPORTS:
   main()  -- Dispatch to the requested handler based on argv[1].
 DEPENDS-ON: agents.hooks_destructive, agents.hooks_obsidian, agents.hooks_selfmod, config, notifications.discord_bot
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_hooks.py
+RUN/TEST: python -m pytest tests/control/test_hooks.py
 """
 
 import sys

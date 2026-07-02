@@ -12,7 +12,7 @@ short-circuit to ``None`` BEFORE any network call -- exactly the path production
 when Discord is simply not configured (every caller already handles that ``None`` gracefully).
 The 'bus' control surface is unaffected because it drives control through the file-backed
 ControlBus, not Discord. Tests that exercise the REST chokepoint itself
-(tests/test_discord_rest.py) set their own token via ``mock.patch`` inside each test and so are
+(tests/notifications/test_discord_rest.py) set their own token via ``mock.patch`` inside each test and so are
 unaffected by this ambient default.
 """
 import os
@@ -156,7 +156,7 @@ def _no_real_tunnel(monkeypatch):
     WEB_DASHBOARD, but a test that exercises a dashboard-on path would still auto-download
     cloudflared and expose a LIVE public tunnel to the test dashboard. Blank the provider
     list at the binding TunnelManager actually uses -- start() no-ops on an empty list.
-    tests/test_tunnel.py constructs with explicit fake providers and is unaffected."""
+    tests/notifications/test_tunnel.py constructs with explicit fake providers and is unaffected."""
     from notifications import tunnel as _tunnel_mod
     monkeypatch.setattr(_tunnel_mod, "default_providers", lambda: [])
     yield

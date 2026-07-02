@@ -14,7 +14,7 @@ EXPORTS:
   reconcileResume(state, db_path: Optional[Path]=None) -> None  -- For each in_progress subtask: keep it resumable on a plan-sig match (stash resume_block…
 DEPENDS-ON: config, memory.experience
 SIDE-EFFECTS: mutates subtask session/status via state.updateSubtask
-RUN/TEST: python -m pytest tests/test_step_resume.py
+RUN/TEST: python -m pytest tests/execution/test_step_resume.py
 """
 from __future__ import annotations
 

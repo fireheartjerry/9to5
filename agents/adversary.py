@@ -19,7 +19,7 @@ EXPORTS:
   reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: str, *, browser_ask: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict  -- Phase-2 critique: route the review to Gemini via the google-genai SDK.
 DEPENDS-ON: agents.adversary_browser, agents.adversary_review, agents.browser_executor, llm_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_adversary.py
+RUN/TEST: python -m pytest tests/orchestration/test_adversary.py
 """
 from __future__ import annotations
 

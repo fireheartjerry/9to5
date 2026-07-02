@@ -12,7 +12,7 @@ EXPORTS:
   fetchSolutionContent(run_id: str, st_id: str, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]  -- The stored content row for ``(run_id, st_id)``, or None
 DEPENDS-ON: memory.experience_schema, platform_core.core.best_effort
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_experience_content.py
+RUN/TEST: python -m pytest tests/evolution/test_experience_content.py
 """
 from __future__ import annotations
 
