@@ -129,8 +129,15 @@ def _runDryRun(args) -> int:
     # isolated temp work_dir: keeps the dry-run from tripping self-referential detection
     # (which would create a git branch) or writing into the real project tree.
     work_dir = tempfile.mkdtemp(prefix="9to5-dryrun-")
-    print(f"[DRY-RUN] simulating a full run for {goal!r} — no Ollama/Claude/Discord/Obsidian touched.")
-    orch = simulation.buildOrchestrator()
+    chaos_seed = getattr(args, "chaos", None)
+    if chaos_seed is not None:
+        import platform_core.simulator.chaos as chaos
+        print(f"[DRY-RUN · CHAOS seed={chaos_seed}] simulating a full run for {goal!r} under "
+              f"seeded fault injection — no Ollama/Claude/Discord/Obsidian touched.")
+        orch = chaos.buildChaosOrchestrator(work_dir, chaos_seed)
+    else:
+        print(f"[DRY-RUN] simulating a full run for {goal!r} — no Ollama/Claude/Discord/Obsidian touched.")
+        orch = simulation.buildOrchestrator()
     summary = orch.runFull(state, work_dir=work_dir, auto_pr=False,
                            control_mode=args.mode, parallelism=max(1, args.parallel))
     print("\n===== DRY-RUN SUMMARY =====")
