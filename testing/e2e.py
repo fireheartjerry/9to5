@@ -225,11 +225,10 @@ def runSuite() -> list:
     # Pre-warm the one-time per-process work (offline capabilities build) OUTSIDE any
     # scenario, so scenario 1 doesn't spend most of its 15s operator budget on it on a
     # cold runner. Best-effort: a failure here surfaces in the scenario itself.
-    try:
+    from platform_core.core.best_effort import best_effort
+    with best_effort("e2e.prewarm_capabilities"):
         import knowledge
         knowledge.ensureCapabilities()
-    except Exception:  # noqa: BLE001
-        pass
     results = []
     for _name, runner in buildSuite():
         results.append(runner())

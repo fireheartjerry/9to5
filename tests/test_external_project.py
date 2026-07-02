@@ -57,7 +57,13 @@ class TestExternalProjectClone(unittest.TestCase):
                 clone = external_project.cloneRepo(str(origin))
 
             self.assertTrue((clone / "README.md").exists())
-            self.assertTrue(str(clone).startswith(str(managed_root / "state" / "external-projects")))
+            # Resolve the expected base too: cloneRepo returns target.resolve(), and on
+            # GitHub Windows runners the tempdir comes back in 8.3 short form
+            # (C:\Users\RUNNER~1\...) while resolve() expands it -- a raw startswith
+            # against the unresolved base fails there and nowhere else.
+            expected_base = (managed_root / "state" / "external-projects").resolve()
+            self.assertTrue(str(clone).startswith(str(expected_base)),
+                            f"{clone} not under {expected_base}")
 
     def test_clone_repo_checks_out_requested_branch(self):
         with tempfile.TemporaryDirectory() as d:
