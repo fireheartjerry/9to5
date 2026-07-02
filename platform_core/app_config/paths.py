@@ -77,6 +77,15 @@ CONTROL_DIR: Path = PROJECT_ROOT / "state" / "control"
 # --- Agent Society / Workforce (Epic 5) blackboard -----------------------
 BLACKBOARD_DIR: Path = PROJECT_ROOT / "state" / "blackboard"
 
+# --- State retention sweep (best-effort GC of per-run artifacts) ----------
+# The blackboard/compaction dirs accumulate one file per run and were never pruned;
+# terminal task/control JSON is archived (never deleted) past a longer horizon.
+RETENTION_ENABLED: bool = _envBool("RETENTION_ENABLED", True)
+RETENTION_KEEP_RECENT: int = _envInt("RETENTION_KEEP_RECENT", 10)
+RETENTION_MAX_AGE_DAYS: int = _envInt("RETENTION_MAX_AGE_DAYS", 14)
+RETENTION_ARCHIVE_AGE_DAYS: int = _envInt("RETENTION_ARCHIVE_AGE_DAYS", 30)
+ARCHIVE_DIR: Path = PROJECT_ROOT / "state" / "archive"
+
 # --- SIE / learning paths ------------------------------------------------
 EXPERIENCE_DB_PATH: Path = PROJECT_ROOT / "state" / "experience.db"
 EVAL_SUITE_DIR: Path = PROJECT_ROOT / "learning" / "eval_suite"
