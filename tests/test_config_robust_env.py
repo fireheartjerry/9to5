@@ -44,6 +44,6 @@ class TestImportSurvivesMalformedEnv(unittest.TestCase):
                "CLAUDE_DOC_FETCH_BUDGET_SECONDS": "xx"}
         r = subprocess.run(
             [sys.executable, "-c", "import config; print(config.OLLAMA_TIMEOUT_SECONDS, config.OBSIDIAN_PORT)"],
-            cwd=str(config.PROJECT_ROOT), env=env, capture_output=True, text=True, timeout=60)
+            cwd=str(config.PROJECT_ROOT), env=env, capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, f"config import crashed on malformed .env:\n{r.stderr}")
         self.assertEqual(r.stdout.strip(), "180 27124")   # both fell back to their defaults

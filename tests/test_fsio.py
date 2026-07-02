@@ -28,6 +28,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 # fsio: atomic writes
 # ---------------------------------------------------------------------------
 
+@pytest.mark.timeout(120)
 def test_atomic_write_concurrent_threads_and_processes_never_torn(tmp_path):
     target = tmp_path / "shared.json"
     errors: list[Exception] = []
@@ -63,18 +64,24 @@ def test_atomic_write_concurrent_threads_and_processes_never_torn(tmp_path):
     )
     procs = [subprocess.Popen([sys.executable, "-c", code, str(_ROOT), str(target),
                                payloads[f"p{i}"]]) for i in range(2)]
-    threads = [threading.Thread(target=writer, args=(f"t{i}",)) for i in range(8)]
-    readers = [threading.Thread(target=reader) for _ in range(2)]
+    try:
+        threads = [threading.Thread(target=writer, args=(f"t{i}",)) for i in range(8)]
+        readers = [threading.Thread(target=reader) for _ in range(2)]
+        for r in readers:
+            r.start()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+        rcs = [p.wait(timeout=20) for p in procs]
+    finally:
+        stop.set()
+        for p in procs:
+            if p.poll() is None:
+                p.kill()
+                p.wait(timeout=5)
     for r in readers:
-        r.start()
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=30)
-    rcs = [p.wait(timeout=60) for p in procs]
-    stop.set()
-    for r in readers:
-        r.join(timeout=5)
+        r.join(timeout=10)
 
     assert errors == [], f"concurrent atomic writes raised: {errors[:2]}"
     assert rcs == [0, 0], "a child-process writer crashed (FileNotFoundError race?)"

@@ -46,3 +46,8 @@ C:\\supercritical/
 !.agents/**
 !.claude/**
 references/
+
+# runtime state that earlier lived in git by mistake (untracked 2026-07-02)
+state/exp_index/
+state/sie_overrides.json
+state/evolution/reports/

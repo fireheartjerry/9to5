@@ -16,9 +16,15 @@ class TestCanonical(unittest.TestCase):
 
     def test_absolute_and_relative_to_root_match(self):
         # A bare 'config.py' resolved against the project root equals the absolute form.
+        # Restore cwd afterwards: a leaked chdir mutates this xdist worker's cwd for
+        # every later test in the same process.
+        prev_cwd = os.getcwd()
         os.chdir(identity.PROJECT_ROOT)
-        self.assertEqual(identity._canonical("config.py"),
-                         identity._canonical(str(identity.PROJECT_ROOT / "config.py")))
+        try:
+            self.assertEqual(identity._canonical("config.py"),
+                             identity._canonical(str(identity.PROJECT_ROOT / "config.py")))
+        finally:
+            os.chdir(prev_cwd)
 
 
 class TestRoleOf(unittest.TestCase):
@@ -41,16 +47,19 @@ class TestRoleOf(unittest.TestCase):
 
     def test_symlink_into_config_classifies_as_target_role(self):
         # Evasion: a link whose basename is innocuous still classifies by its real target.
-        import os, tempfile
-        link = identity.PROJECT_ROOT / "_tmp_link_identity.py"
-        try:
-            os.symlink(identity.PROJECT_ROOT / "config.py", link)
-        except (OSError, NotImplementedError):
-            self.skipTest("symlink not permitted on this host")
-        try:
+        # The link lives in a temp dir, NOT the live repo root: roleOf canonicalizes via
+        # os.path.realpath before any containment check, so the link's location is
+        # irrelevant to the property under test -- while an in-repo root-level *.py would
+        # be visible to repo-scanning tests on other xdist workers (and could leak on a
+        # crash). Out-of-tree is also the stronger assertion: without realpath the link
+        # would classify OTHER_CONTENT instead of the target's SELF_CODE.
+        with tempfile.TemporaryDirectory() as td:
+            link = Path(td) / "_tmp_link_identity.py"
+            try:
+                os.symlink(identity.PROJECT_ROOT / "config.py", link)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlink not permitted on this host")
             self.assertEqual(identity.roleOf(str(link)), identity.Role.SELF_CODE)
-        finally:
-            link.unlink()
 
     def test_outside_tree_is_other_content(self):
         import tempfile

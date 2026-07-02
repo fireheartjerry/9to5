@@ -214,9 +214,16 @@ def composeRunSettingsDict(base_settings_path=None) -> dict:
         existing = list(merged.get(event) or [])
         for entry in entries:
             hook_name = entry["hooks"][0]["command"].rsplit(" ", 1)[-1]
-            blob = json.dumps(existing)
-            if "hooks.py" not in blob or hook_name not in blob:
-                existing.append(entry)
+
+            def _is_same_guard(e, _name=hook_name) -> bool:
+                blob = json.dumps(e)
+                return "hooks.py" in blob and _name in blob
+
+            # REPLACE any prior registration of this guard, don't just skip: a base
+            # settings.json committed from another checkout carries that checkout's
+            # absolute hooks.py path -- keeping it would run the WRONG tree's guards.
+            existing = [e for e in existing if not _is_same_guard(e)]
+            existing.append(entry)
         merged[event] = existing
     base["hooks"] = merged
     return base

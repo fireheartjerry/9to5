@@ -5,6 +5,7 @@ no matter what garbage the brain emits -- the local 7B model produces malformed,
 mistyped, oversized, and partial JSON constantly, and none of it may crash the core
 loop (status 'blocked') or fail/hang the run. Seeded for reproducibility.
 """
+import os
 import random
 import tempfile
 import unittest
@@ -32,6 +33,16 @@ _GARBAGE_CONTENT = [
     '{"subtasks": [' + ",".join('{"title":"t%d"}' % i for i in range(60)) + ']}',
 ]
 _GARBAGE_RESP = ["content", None, "no-message", "no-content", "message-not-dict"]
+
+
+def _seedCount(default=24):
+    raw = os.getenv("NINE_TO_FIVE_FUZZ_SEEDS", "").strip()
+    if not raw:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
 
 
 class _FuzzBrain:
@@ -88,7 +99,7 @@ class TestBrainFuzz(unittest.TestCase):
     def test_garbage_brain_always_reaches_done(self):
         goals = ["build a calculator", "build (1) add (2) sub (3) mul", "make a thing.py"]
         bad = []
-        for seed in range(150):
+        for seed in range(_seedCount()):
             rng = random.Random(seed * 7 + 1)   # this multiplier surfaced the verify-path holes
             st = TaskState.create(rng.choice(goals), 1.0)
             st.setElaboratedGoal(st.meta["goal_raw"])

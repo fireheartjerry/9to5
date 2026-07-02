@@ -37,6 +37,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -192,6 +193,12 @@ def _runVector(argv: "list[str]", work_dir: str, cancel_check=None) -> subproces
     orphan fix the executor uses (f57855b): a plain kill leaves a python.exe grandchild
     holding a file lock on the artifact the next retry must rewrite. ``cancel_check`` is
     polled every 0.5s so an operator kill / deadline breaks a long verify promptly."""
+    # A bare ``python``/``python3`` resolves from PATH, which on CI can be a DIFFERENT
+    # interpreter than the one running this suite (uv install) -- module mismatches.
+    # Pin it to sys.executable; copy first so the caller's argv stays authored-as-is.
+    argv = list(argv)
+    if argv and argv[0].lower() in ("python", "python3"):
+        argv[0] = sys.executable
     Path(work_dir).mkdir(parents=True, exist_ok=True)
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     proc = subprocess.Popen(argv, shell=False, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
@@ -243,8 +250,10 @@ def _normalizeWorkDir(cmd: str, work_dir: str) -> str:
     Verify commands are authored relative to the repo root, but a self-referential
     run sets a subtask's work_dir to a ``.sc-ctx/<sid>`` scratch dir -- so a verify
     like ``python tests/foo.py`` cannot find its target from the scratch cwd.
-    Re-root to INSTALL_ROOT when the referenced path lives under the repo root but
-    not under work_dir. Absolute repo-root paths are normalised too."""
+    Re-root to PROJECT_ROOT (this checkout) when the referenced path lives under it
+    but not under work_dir; fall back to INSTALL_ROOT only when the PROJECT_ROOT
+    probe misses and INSTALL_ROOT exists (dev-box convenience -- INSTALL_ROOT is
+    absent on CI). Absolute repo-root paths are normalised too."""
     candidate = _extractVerifyPath(cmd)
     if not candidate:
         return work_dir
@@ -264,10 +273,15 @@ def _normalizeWorkDir(cmd: str, work_dir: str) -> str:
         check = Path(probe).parent
     try:
         in_workdir = (Path(work_dir) / check).exists()
-        in_root = (Path(config.INSTALL_ROOT) / check).exists()
+        in_project = (Path(config.PROJECT_ROOT) / check).exists()
+        # INSTALL_ROOT is the OTHER checkout on the dev box; it does not exist on CI.
+        in_install = (not in_project and Path(config.INSTALL_ROOT).exists()
+                      and (Path(config.INSTALL_ROOT) / check).exists())
     except OSError:
         return work_dir
-    if in_root and not in_workdir:
+    if in_project and not in_workdir:
+        return str(config.PROJECT_ROOT)
+    if in_install and not in_workdir:
         return str(config.INSTALL_ROOT)
     return work_dir
 

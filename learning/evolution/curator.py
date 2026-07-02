@@ -36,7 +36,9 @@ def _age_days(ts: Optional[str], now: datetime) -> float:
 
 def _write_report(report: dict[str, Any]) -> None:
     try:
-        rep_dir = Path(config.PROJECT_ROOT) / "state" / "evolution" / "reports"
+        # Derive from STATE_DIR (state/tasks) so per-test isolation redirects this too --
+        # the PROJECT_ROOT form appended to the COMMITTED CURATOR.md on every test run.
+        rep_dir = Path(config.STATE_DIR).parent / "evolution" / "reports"
         rep_dir.mkdir(parents=True, exist_ok=True)
         with (rep_dir / "CURATOR.md").open("a", encoding="utf-8") as fh:
             fh.write(f"- curator run dry={report['dry_run']} archived={report['archived']} "

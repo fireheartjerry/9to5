@@ -7,6 +7,7 @@ ollama>=0.3
 python-dotenv>=1.0
 gitpython>=3.1
 requests>=2.31
+urllib3>=2           # imported directly (disable_warnings) by memory/obsidian.py + platform_core/ops/health.py; declare, don't rely on requests' transitive pin
 google-genai>=1.0    # Gemini second brain transport (agents/gemini_driver.py)
 json-repair>=0.30    # last-resort salvage of truncated/malformed 7B JSON (brain_io.parseJsonText)
 playwright>=1.40     # generic browser surface only (agents/browser_executor.py::_run_actions)

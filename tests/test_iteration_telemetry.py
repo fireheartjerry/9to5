@@ -38,6 +38,7 @@ def test_hooks_telemetry_tolerates_malformed_stdin():
         cwd=Path(__file__).resolve().parent.parent,
         text=True,
         capture_output=True,
+        timeout=30,
     )
 
     assert proc.returncode == 0
@@ -50,6 +51,7 @@ def test_statusline_prints_compact_state():
         cwd=Path(__file__).resolve().parent.parent,
         text=True,
         capture_output=True,
+        timeout=30,
     )
 
     assert proc.returncode == 0

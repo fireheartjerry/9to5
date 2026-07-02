@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"C:/9to5/fable-rewrite/agents/hooks.py\" block_destructive"
+            "command": "python \"agents/hooks.py\" block_destructive"
           }
         ]
       },
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"C:/9to5/fable-rewrite/agents/hooks.py\" self_modification_guard"
+            "command": "python \"agents/hooks.py\" self_modification_guard"
           }
         ]
       }

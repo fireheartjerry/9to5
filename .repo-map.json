@@ -665,14 +665,14 @@
           "kind": "function",
           "signature": "(base_settings_path=None, out_path=None) -> Path",
           "summary": "Write the per-run --settings file (see composeRunSettingsDict) and return its path.",
-          "lineno": 225
+          "lineno": 232
         },
         {
           "name": "buildHookCtxEnv",
           "kind": "function",
           "signature": "(boundaries=None) -> str",
           "summary": "JSON for the NINE_TO_FIVE_HOOK_CTX env var: ONE channel for hook context (boundaries +",
-          "lineno": 234
+          "lineno": 241
         }
       ],
       "depends_on": [
@@ -1321,56 +1321,56 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 58
+          "lineno": 59
         },
         {
           "name": "Receipt",
           "kind": "class",
           "signature": "",
           "summary": "The single typed verification result",
-          "lineno": 66
+          "lineno": 67
         },
         {
           "name": "annotate",
           "kind": "function",
           "signature": "(receipt: Receipt, key: str, value) -> None",
           "summary": "Attach a non-binding annotation (envelope / independent verify / adversary).",
-          "lineno": 86
+          "lineno": 87
         },
         {
           "name": "VResult",
           "kind": "class",
           "signature": "",
           "summary": "One-release compat shim: the legacy vresult dict shape, carrying the typed Receipt.",
-          "lineno": 91
+          "lineno": 92
         },
         {
           "name": "verdictFor",
           "kind": "function",
           "signature": "(rc, output: str, expect) -> 'tuple[Verdict, tuple, tuple]'",
           "summary": "PURE function of (rc, output, expect) -> (verdict, matched, missing).",
-          "lineno": 116
+          "lineno": 117
         },
         {
           "name": "VerifyCancelled",
           "kind": "class",
           "signature": "",
           "summary": "cancel_check fired while the acceptance command was running.",
-          "lineno": 169
+          "lineno": 170
         },
         {
           "name": "runReceipt",
           "kind": "function",
           "signature": "(verify: Optional[dict], work_dir: str, executor_result: dict, *, declared_targets=None, cancel_check=None) -> Receipt",
           "summary": "THE verification pipeline (single owner)",
-          "lineno": 320
+          "lineno": 334
         },
         {
           "name": "receiptToVResult",
           "kind": "function",
           "signature": "(receipt: Receipt) -> VResult",
           "summary": "The legacy vresult dict shape from a Receipt (compat shim, one release).",
-          "lineno": 386
+          "lineno": 400
         }
       ],
       "depends_on": [
@@ -1789,7 +1789,7 @@
           "kind": "function",
           "signature": "(config)",
           "summary": "Expand shell-unresolved glob patterns in pytest's path arguments.",
-          "lineno": 35
+          "lineno": 46
         }
       ],
       "depends_on": [],
@@ -2374,14 +2374,14 @@
           "kind": "function",
           "signature": "(*, now: Optional[datetime]=None, dry_run: bool=False, db_path: Optional[Path]=None) -> dict[str, Any]",
           "summary": "Deterministic age-out over champion skills + opt-in umbrella consolidation.",
-          "lineno": 48
+          "lineno": 50
         },
         {
           "name": "restore_skill",
           "kind": "function",
           "signature": "(target: str, *, db_path: Optional[Path]=None) -> bool",
           "summary": "Recover an archived/stale skill back to champion (archive is never a delete).",
-          "lineno": 83
+          "lineno": 85
         }
       ],
       "depends_on": [
@@ -2453,14 +2453,14 @@
           "kind": "function",
           "signature": "(*, runner: Callable[[dict, str], dict], actor: str='gate', db_path: Optional[Path]=None, suite_dir: Optional[Path]=None) -> dict[str, Any]",
           "summary": "Evaluate every proposed candidate, fence it, and promote ONLY on a facts-green receipt.",
-          "lineno": 92
+          "lineno": 93
         },
         {
           "name": "rollback",
           "kind": "function",
           "signature": "(candidate_id: int, *, db_path: Optional[Path]=None) -> bool",
           "summary": "One-row reversal: retire a champion candidate so its target falls back to the prior",
-          "lineno": 126
+          "lineno": 127
         }
       ],
       "depends_on": [
@@ -7864,91 +7864,91 @@
           "kind": "class",
           "signature": "",
           "summary": "Epic 1/2/5/6/8 feature flags (formerly llm_epic_flags.py).",
-          "lineno": 59
+          "lineno": 60
         },
         {
           "name": "PromptsCfg",
           "kind": "class",
           "signature": "",
           "summary": "The big authored prompt/brief strings (env-overridable where they always were).",
-          "lineno": 160
+          "lineno": 161
         },
         {
           "name": "Settings",
           "kind": "class",
           "signature": "",
           "summary": "The whole typed registry: one frozen composite per process (swap-on-override).",
-          "lineno": 174
+          "lineno": 175
         },
         {
           "name": "buildSettings",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "Fresh registry: coded defaults < .env (loadEnvOnce) < sie_overrides.json.",
-          "lineno": 221
+          "lineno": 222
         },
         {
           "name": "settings",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "The process-wide registry singleton (lazy, thread-safe).",
-          "lineno": 235
+          "lineno": 236
         },
         {
           "name": "allNames",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Every legacy ALL_CAPS constant name the registry serves (for the facade __all__/__dir__…",
-          "lineno": 260
+          "lineno": 261
         },
         {
           "name": "lookup",
           "kind": "function",
           "signature": "(name: str) -> Any",
           "summary": "Constant by legacy name",
-          "lineno": 265
+          "lineno": 266
         },
         {
           "name": "lookupDomain",
           "kind": "function",
           "signature": "(domains: tuple[str, ...], name: str) -> Any",
           "summary": "lookup() restricted to the given domains (PEP 562 seam for the domain modules).",
-          "lineno": 275
+          "lineno": 276
         },
         {
           "name": "RunFlags",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 295
+          "lineno": 296
         },
         {
           "name": "runFlags",
           "kind": "function",
           "signature": "() -> RunFlags",
           "summary": "The run-scoped flag singleton, seeded from the registry's coded/env defaults.",
-          "lineno": 305
+          "lineno": 306
         },
         {
           "name": "reload",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "Rebuild the registry from the current env + overrides file and reseed run flags.",
-          "lineno": 319
+          "lineno": 320
         },
         {
           "name": "setOverride",
           "kind": "function",
           "signature": "(knob: str, value: Any) -> tuple[bool, bool]",
           "summary": "Live-apply + persist a whitelisted, bounds-checked SIE knob.",
-          "lineno": 333
+          "lineno": 334
         },
         {
           "name": "getLogger",
           "kind": "function",
           "signature": "(name: str='9to5') -> logging.Logger",
           "summary": "Return a child of the configured ``9to5`` logger.",
-          "lineno": 416
+          "lineno": 421
         }
       ],
       "depends_on": [
@@ -9448,14 +9448,14 @@
           "kind": "function",
           "signature": "() -> list[dict]",
           "summary": "Run all staging gates",
-          "lineno": 97
+          "lineno": 103
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(quiet: bool=False) -> int",
           "summary": "",
-          "lineno": 107
+          "lineno": 113
         }
       ],
       "depends_on": [
@@ -9648,7 +9648,7 @@
         {
           "name": "chatJsonValidated",
           "kind": "function",
-          "signature": "(ollama_chat: Callable, system: str, user: str, *, required_keys: list[str], validators: Optional[dict]=None, max_retries: Optional[int]=None) -> Optional[dict]",
+          "signature": "(ollama_chat: Callable, system: str, user: str, *, required_keys: list[str], validators: Optional[dict]=None, max_retries: Optional[int]=None, act: str='unspecified') -> Optional[dict]",
           "summary": "Call the brain for JSON, validate its shape, and re-prompt with exact field errors on f…",
           "lineno": 53
         }
@@ -9814,42 +9814,42 @@
           "kind": "function",
           "signature": "(ollama_chat: Callable, goal: str, architect_doc: str, work_profile=None) -> Optional[list]",
           "summary": "Flag-on convenience: author a TaskLedger then derive its DAG -> index-form subtask dict…",
-          "lineno": 66
+          "lineno": 68
         },
         {
           "name": "deriveSubtaskDag",
           "kind": "function",
           "signature": "(ledger: 'tl.TaskLedger', goal: str) -> list",
           "summary": "Turn the bullet plan into subtask dicts with INDEX-based depends_on (metagpt dependent_…",
-          "lineno": 82
+          "lineno": 84
         },
         {
           "name": "materializeDag",
           "kind": "function",
           "signature": "(state, subs: list) -> list",
           "summary": "Create the subtasks in order via state.addSubtask, resolving each index dep to the real…",
-          "lineno": 104
+          "lineno": 106
         },
         {
           "name": "progressLedgerStep",
           "kind": "function",
           "signature": "(ollama_chat: Callable, goal: str, recent: str) -> Optional[dict]",
           "summary": "One tiny per-step Progress Ledger call (autogen ORCHESTRATOR_PROGRESS_LEDGER_PROMPT, mi…",
-          "lineno": 117
+          "lineno": 119
         },
         {
           "name": "updateStallCount",
           "kind": "function",
           "signature": "(progress: dict, current: int) -> int",
           "summary": "autogen n_stalls: +1 when in a loop OR no progress",
-          "lineno": 130
+          "lineno": 133
         },
         {
           "name": "rootCauseReplan",
           "kind": "function",
           "signature": "(ollama_chat: Callable, goal: str, ledger: 'tl.TaskLedger', failure_summary: str) -> 'Optional[tl.TaskLedger]'",
           "summary": "autogen TASK_LEDGER_FACTS_UPDATE then ..._PLAN_UPDATE: explain the root cause, rewrite …",
-          "lineno": 139
+          "lineno": 142
         }
       ],
       "depends_on": [
@@ -11627,63 +11627,63 @@
           "kind": "class",
           "signature": "",
           "summary": "Stand-in for ``ollama.Client``",
-          "lineno": 80
+          "lineno": 98
         },
         {
           "name": "simRunClaude",
           "kind": "function",
           "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw)",
           "summary": "Fake executor",
-          "lineno": 107
+          "lineno": 125
         },
         {
           "name": "simReplan",
           "kind": "function",
           "signature": "(*args, **kwargs)",
           "summary": "",
-          "lineno": 119
+          "lineno": 137
         },
         {
           "name": "simReview",
           "kind": "function",
           "signature": "(subtask_title, trigger_reason, executor_output, *, ollama_chat=None, goal='')",
           "summary": "",
-          "lineno": 123
+          "lineno": 141
         },
         {
           "name": "SimObs",
           "kind": "class",
           "signature": "",
           "summary": "In-memory Obsidian double: records writes, never touches disk or REST.",
-          "lineno": 128
+          "lineno": 146
         },
         {
           "name": "buildOrchestrator",
           "kind": "function",
           "signature": "(n_subtasks: int=3)",
           "summary": "An Orchestrator wired entirely with simulation doubles (no external services).",
-          "lineno": 151
+          "lineno": 169
         },
         {
           "name": "BuilderBrain",
           "kind": "class",
           "signature": "",
           "summary": "Plans N subtasks, each producing a real file under ``work_dir`` with a REAL",
-          "lineno": 172
+          "lineno": 190
         },
         {
           "name": "builderRunClaude",
           "kind": "function",
           "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw)",
           "summary": "Fake hands that ACTUALLY write the target file parsed from the subtask's verify cmd,",
-          "lineno": 197
+          "lineno": 215
         },
         {
           "name": "buildBuilderOrchestrator",
           "kind": "function",
           "signature": "(work_dir: str, n_subtasks: int=3)",
           "summary": "An Orchestrator that produces real artifacts under work_dir and verifies them for real.",
-          "lineno": 224
+          "lineno": 242
         }
       ],
       "depends_on": [
@@ -12588,84 +12588,84 @@
           "kind": "function",
           "signature": "(path: Path) -> bool",
           "summary": "True for files under the test trees (see TEST_TOP_DIRS): never mapped, never spliced.",
-          "lineno": 83
+          "lineno": 85
         },
         {
           "name": "iter_py_files",
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> list[Path]",
           "summary": "All first-party .py files (sorted, deterministic), skipping EXCLUDE_DIRS and nested",
-          "lineno": 88
+          "lineno": 90
         },
         {
           "name": "module_dotted",
           "kind": "function",
           "signature": "(path: Path) -> str",
           "summary": "agents/adversary.py -> 'agents.adversary'",
-          "lineno": 105
+          "lineno": 107
         },
         {
           "name": "first_party_roots",
           "kind": "function",
           "signature": "() -> set[str]",
           "summary": "Top-level importable names: every top-level .py stem + every dir holding an __init__.py.",
-          "lineno": 112
+          "lineno": 114
         },
         {
           "name": "parse_module",
           "kind": "function",
           "signature": "(path: Path, roots: set[str]) -> dict",
           "summary": "Extract the per-module record (sans callers, which are computed globally).",
-          "lineno": 234
+          "lineno": 236
         },
         {
           "name": "find_tests",
           "kind": "function",
           "signature": "(dotted: str, name: str) -> list[str]",
           "summary": "Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> glob -> [].",
-          "lineno": 252
+          "lineno": 254
         },
         {
           "name": "build_map",
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> dict",
           "summary": "Full-repo machine index",
-          "lineno": 264
+          "lineno": 266
         },
         {
           "name": "toplevel_import_graph",
           "kind": "function",
           "signature": "() -> dict[str, list[str]]",
           "summary": "{dotted-module: [first-party modules imported at LOAD time]}",
-          "lineno": 293
+          "lineno": 295
         },
         {
           "name": "render_header",
           "kind": "function",
           "signature": "(rec: dict) -> str",
           "summary": "Render the @AI-MAP block (text only, no surrounding quotes).",
-          "lineno": 308
+          "lineno": 310
         },
         {
           "name": "splice_header",
           "kind": "function",
           "signature": "(src: str, header: str) -> Optional[str]",
           "summary": "Return ``src`` with ``header`` placed inside the module docstring (below the prose,",
-          "lineno": 335
+          "lineno": 337
         },
         {
           "name": "write_outputs",
           "kind": "function",
           "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 360
+          "lineno": 362
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: Optional[list[str]]=None) -> int",
           "summary": "",
-          "lineno": 373
+          "lineno": 375
         }
       ],
       "depends_on": [],

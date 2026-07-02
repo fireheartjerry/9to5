@@ -38,7 +38,7 @@ def _runHook(hook: str, stdin_text: str, tmp_path) -> subprocess.CompletedProces
         {"guard_alerts": str(tmp_path / "guard_alerts.jsonl"),
          "log_path": str(tmp_path / "hooks.log")})
     return subprocess.run([sys.executable, str(HOOKS_PY), hook], input=stdin_text,
-                          capture_output=True, text=True, env=env, cwd=str(REPO), timeout=120)
+                          capture_output=True, text=True, env=env, cwd=str(REPO), timeout=30)
 
 
 # ---------------------------------------------------------------------------

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 from dataclasses import dataclass, field, fields, replace
 from typing import Any, Optional
@@ -345,7 +346,11 @@ def setOverride(knob: str, value: Any) -> tuple[bool, bool]:
         _SETTINGS = replace(cur, sie=replace(cur.sie, **{knob: value}))
     try:
         from platform_core.core import fsio
-        path = settings().paths.SIE_OVERRIDES_PATH
+        # Honor an explicit shadow on the root facade (tests patch config.SIE_OVERRIDES_PATH;
+        # a patched attr lives in vars(), unpatched reads route through __getattr__ -> here).
+        # Without this the persistence path ignored the patch and wrote the REAL state file.
+        _cfg = sys.modules.get("config")
+        path = (_cfg and vars(_cfg).get("SIE_OVERRIDES_PATH")) or settings().paths.SIE_OVERRIDES_PATH
         data = fsio.loadJson(path, {})
         if not isinstance(data, dict):
             data = {}

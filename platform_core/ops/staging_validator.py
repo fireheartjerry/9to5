@@ -84,12 +84,18 @@ def _gateValidateWorkflowsScript() -> list[dict]:
 
 
 def _gateConfigImport() -> list[dict]:
-    """Verify config.INSTALL_ROOT resolves correctly."""
+    """Verify config imports and its root paths resolve sanely.
+
+    INSTALL_ROOT may legitimately not exist on CI runners (it defaults to the
+    dev-box path C:\\9to5), so gate on it resolving to an absolute path plus
+    PROJECT_ROOT actually existing -- machine-independent checks.
+    """
     try:
         import config  # noqa: PLC0415
-        passed = config.INSTALL_ROOT.exists()
+        passed = config.INSTALL_ROOT.is_absolute() and config.PROJECT_ROOT.exists()
         return [{"gate": "config:INSTALL_ROOT_exists", "passed": passed,
-                 "detail": str(config.INSTALL_ROOT)}]
+                 "detail": f"INSTALL_ROOT={config.INSTALL_ROOT} "
+                           f"PROJECT_ROOT={config.PROJECT_ROOT}"}]
     except Exception as exc:  # noqa: BLE001
         return [{"gate": "config:INSTALL_ROOT_exists", "passed": False, "detail": str(exc)[:200]}]
 

@@ -117,6 +117,8 @@ class TestValidateWorkflowsCIIntegration(unittest.TestCase):
             [sys.executable, str(script)],
             capture_output=True,
             text=True,
+            cwd=str(_REPO_ROOT),
+            timeout=30,
         )
         self.assertEqual(
             result.returncode, 0,
@@ -131,6 +133,8 @@ class TestValidateWorkflowsCIIntegration(unittest.TestCase):
             [sys.executable, str(script)],
             capture_output=True,
             text=True,
+            cwd=str(_REPO_ROOT),
+            timeout=30,
         )
         self.assertIn("PASS", result.stdout)
         self.assertNotIn("FAIL", result.stdout)
@@ -142,6 +146,8 @@ class TestValidateWorkflowsCIIntegration(unittest.TestCase):
             [sys.executable, str(script)],
             capture_output=True,
             text=True,
+            cwd=str(_REPO_ROOT),
+            timeout=30,
         )
         # Summary line looks like "3/3 workflow definition(s) valid."
         self.assertIn("workflow definition(s) valid", result.stdout)

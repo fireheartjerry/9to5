@@ -78,15 +78,22 @@ def test_compress_injection() -> None:
 
 def test_injection_shared_cache() -> None:
     print("[injectCapabilities shared cache]")
-    knowledge.setCapabilities("")                      # clear
-    caps = knowledge.ensureCapabilities()              # offline lazy build
-    check("ensureCapabilities builds offline", bool(caps))
-    inj = knowledge.injectCapabilities("BASE_SYS")
-    check("prepends capabilities header", inj.startswith("## CLAUDE CODE CAPABILITIES"))
-    check("has the consult directive", "FORBIDDEN" in inj)
-    check("preserves base prompt", inj.rstrip().endswith("BASE_SYS"))
-    knowledge.setCapabilities("CACHED")
-    check("getCapabilities returns cache", knowledge.getCapabilities() == "CACHED")
+    # The capabilities cache is process-wide: save it on entry and restore in finally so
+    # the 'CACHED' sentinel never leaks into later tests on the same xdist worker
+    # (mirrors tests/test_knowledge.py::TestInjectCapabilities setUp/tearDown).
+    saved = knowledge.getCapabilities()
+    try:
+        knowledge.setCapabilities("")                      # clear
+        caps = knowledge.ensureCapabilities()              # offline lazy build
+        check("ensureCapabilities builds offline", bool(caps))
+        inj = knowledge.injectCapabilities("BASE_SYS")
+        check("prepends capabilities header", inj.startswith("## CLAUDE CODE CAPABILITIES"))
+        check("has the consult directive", "FORBIDDEN" in inj)
+        check("preserves base prompt", inj.rstrip().endswith("BASE_SYS"))
+        knowledge.setCapabilities("CACHED")
+        check("getCapabilities returns cache", knowledge.getCapabilities() == "CACHED")
+    finally:
+        knowledge.setCapabilities(saved)
 
 
 def test_playbook() -> None:

@@ -241,13 +241,17 @@ class OrchestratorRunPhaseMixin:
             _surface.start()
         # Hyper-robust public tunnel alongside the local dashboard (non-blocking; URL via callback).
         # state_lock: the tunnel's daemon thread mutates state.meta -- same discipline as dashboard.start.
+        # Gated on WEB_DASHBOARD: the tunnel exists only to expose the dashboard, and an ungated
+        # start meant every sim/fuzz/e2e run spawned a REAL provider (cloudflared download + live
+        # tunnel process) -- the dominant source of suite hangs and orphaned processes.
         self._tunnel = None   # best_effort below: a failed start must never block a run
-        with best_effort("tunnel.start", log=LOG):
-            from notifications.tunnel import TunnelManager
-            tunnel = TunnelManager(state=state, state_lock=self._state_lock)
-            tunnel.on_url(dashboard.set_tunnel_url)
-            tunnel.start(config.WEB_DASHBOARD_PORT)
-            self._tunnel = tunnel
+        if config.WEB_DASHBOARD:
+            with best_effort("tunnel.start", log=LOG):
+                from notifications.tunnel import TunnelManager
+                tunnel = TunnelManager(state=state, state_lock=self._state_lock)
+                tunnel.on_url(dashboard.set_tunnel_url)
+                tunnel.start(config.WEB_DASHBOARD_PORT)
+                self._tunnel = tunnel
         dashboard.start(state, "resuming" if resume else "starting", state_lock=self._state_lock)
         elaborated = state.meta["goal_elaborated"] or state.meta["goal_raw"]
         self.writeIndex(state)

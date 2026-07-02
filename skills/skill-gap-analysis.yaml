@@ -54,8 +54,10 @@ recommendations:
   top_n: 5                 # number of priority actions shown
 
 inputs:
-  skills_dir: C:\9to5\skills
-  tasks_dir: C:\9to5\state\tasks
+  # Relative paths are resolved against the repo root by the script;
+  # absolute paths are honored as-is.
+  skills_dir: skills
+  tasks_dir: state/tasks
 
 exit_codes:
   0: success — inventory non-empty, report printed

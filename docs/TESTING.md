@@ -101,12 +101,21 @@ python tools/dev.py swallow-ratchet              # bare except-swallow count vs 
 ```
 
 > The suite is **pytest-only**. Never run bare `unittest`: the per-test sandbox (offline
-> Discord/Ollama/browser) lives in `tests/conftest.py`, which `unittest` does not load — so
+> Discord/Ollama/browser/tunnel) lives in `tests/conftest.py`, which `unittest` does not load — so
 > bare `unittest` can fire real side effects from a live local `.env`. This footgun is
 > enforced: `python tools/dev.py ci-local` includes a **no-unittest-main gate** (no test
 > file may carry a `unittest.main()` runner block), plus `compileall -q tests` and the
 > **swallow-ratchet** gate (`tools/swallow_baseline.json` — bare `except Exception: pass`
 > count may only decrease; lower it with `--update`).
+
+**Hermetic install root.** The root `conftest.py` pins `INSTALL_ROOT` to the current
+checkout for every pytest process (before any `import config`). Without it,
+`loadEnvOnce()` loads the shared install's `C:\9to5\.env` — live production credentials
+and feature flags — into local test runs while CI runs with stock defaults, which is how
+"green locally, red on CI" divergence used to happen. Non-pytest harnesses stay hermetic
+by their own means: `testing/e2e.py` forces sim-safe knobs (`_FORCED`, incl.
+`GEMINI_ENABLED=False`, `DUAL_LEDGER_PLANNER_ENABLED=False`) and `main.py --dry-run`
+uses the simulation doubles.
 
 #### CI lanes (`.github/workflows/tests.yml`)
 
@@ -114,16 +123,21 @@ python tools/dev.py swallow-ratchet              # bare except-swallow count vs 
 |---|---|
 | Docs-only | repo-map drift check only |
 | Workflow-only | workflow validation + workflow registry tests |
-| Tooling-only | repo-map/tooling tests |
-| Push to `main` with core changes | fast lane, py3.12 |
+| Tooling-only | repo-map/tooling/dev-command tests |
+| Push to `main` with core changes | fast lane py3.12, slow lane, dry-run smoke, E2E smoke |
 | PR with core changes | fast lane py3.11+3.12, slow lane py3.12, dry-run smoke, E2E smoke |
-| Nightly/manual | exhaustive slow lane + smoke commands |
+| Nightly/manual | exhaustive slow lane (`NINE_TO_FIVE_FUZZ_SEEDS=150`) + smoke commands |
+
+Classification **fails closed**: a change set that mixes "excluded" categories (e.g. docs +
+tools) or whose diff base is unverifiable (force-push) runs the full core lanes rather than
+silently skipping everything. Every job carries a `timeout-minutes` cap.
 
 The fast job runs `python -m compileall -q tests` BEFORE pytest so corrupt test
 files fail in seconds, not at collection.
 
-`concurrency: cancel-in-progress` kills superseded runs; installs use `uv`. Dev/test deps
-(`pytest`, `pytest-xdist`, `pytest-timeout`) live in `requirements-dev.txt`.
+`concurrency: cancel-in-progress` applies to PR runs only — a push to `main` no longer
+cancels the in-flight nightly exhaustive run. Installs use `uv`. Dev/test deps
+(`pytest`, `pytest-xdist`, `pytest-timeout`, `pyyaml`) live in `requirements-dev.txt`.
 
 Long CI pytest jobs enable the first-party heartbeat reporter by default:
 

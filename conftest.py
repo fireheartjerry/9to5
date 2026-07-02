@@ -13,6 +13,17 @@ SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
 import glob as _glob
+import os as _os
+import pathlib as _pathlib
+
+# HERMETIC INSTALL ROOT (must run before ANY `import config`): loadEnvOnce() loads
+# INSTALL_ROOT/.env FIRST, and INSTALL_ROOT defaults to the shared install C:\9to5 -- so on a
+# dev machine every test process silently absorbed the LIVE production .env (Discord creds,
+# GEMINI_API_KEY, feature flags), while CI (no C:\9to5) ran with stock defaults. Pinning
+# INSTALL_ROOT to THIS checkout makes local and CI test runs see the same world: the checkout's
+# own .env if present (none is committed), otherwise pure defaults. A caller that exported
+# INSTALL_ROOT deliberately still wins (setdefault).
+_os.environ.setdefault("INSTALL_ROOT", str(_pathlib.Path(__file__).resolve().parent))
 
 
 def _expand_globs(args):

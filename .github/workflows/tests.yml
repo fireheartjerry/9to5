@@ -9,9 +9,15 @@ on:
   schedule:
     - cron: "17 8 * * *"
 
+# Per-event groups: a push to main must NOT cancel the nightly exhaustive run (schedule and
+# push previously shared the group "tests-refs/heads/main"). Only PR runs auto-cancel their
+# superseded predecessors.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 env:
   NINE_TO_FIVE_TEST_PROGRESS: "1"
@@ -20,13 +26,14 @@ env:
 jobs:
   classify:
     runs-on: windows-latest
+    timeout-minutes: 10
     outputs:
       docs_only: ${{ steps.paths.outputs.docs_only }}
       workflow_only: ${{ steps.paths.outputs.workflow_only }}
       tooling_only: ${{ steps.paths.outputs.tooling_only }}
       core: ${{ steps.paths.outputs.core }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -38,9 +45,19 @@ jobs:
           elif [[ -n "${{ github.event.before }}" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
             base="${{ github.event.before }}"
           else
-            base="HEAD~1"
+            base=""
           fi
-          git diff --name-only "$base"...HEAD > /tmp/changed.txt || git diff --name-only HEAD~1 HEAD > /tmp/changed.txt || true
+          # A force-push (or shallow history) can hand us a base SHA that no longer exists;
+          # validate it and FAIL CLOSED (treat everything as changed) instead of silently
+          # diffing one commit.
+          if [[ -n "$base" ]] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base=""
+          fi
+          if [[ -n "$base" ]]; then
+            git diff --name-only "$base"...HEAD > /tmp/changed.txt || echo "." > /tmp/changed.txt
+          else
+            echo "." > /tmp/changed.txt
+          fi
           if [[ ! -s /tmp/changed.txt ]]; then
             echo "." > /tmp/changed.txt
           fi
@@ -57,13 +74,20 @@ jobs:
             if [[ ! "$f" =~ ^(\.github/workflows/|workflows/|validate_workflows\.py|tests/test_.*workflow.*\.py|tests/test_validate_workflows\.py) ]]; then
               workflow_only=false
             fi
-            if [[ ! "$f" =~ ^(tools/|tests/test_(repo_map|tools)\.py|\.repo-map\.json) ]]; then
+            if [[ ! "$f" =~ ^(tools/|tests/test_(repo_map|tools|dev_commands)\.py|\.repo-map\.json) ]]; then
               tooling_only=false
             fi
             if [[ ! "$f" =~ ^(docs/|.*\.md$|\.github/workflows/|tools/|\.repo-map\.json) ]]; then
               core=true
             fi
           done < /tmp/changed.txt
+
+          # Fail closed: a change set mixing "excluded" categories (e.g. docs + tools) used to
+          # produce all-false outputs -- every job skipped and the PR went green with ZERO tests
+          # run. If no single specialized lane claims the whole change set, run the core lanes.
+          if [[ "$core" == "false" && "$docs_only" == "false" && "$workflow_only" == "false" && "$tooling_only" == "false" ]]; then
+            core=true
+          fi
 
           if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             docs_only=false
@@ -83,24 +107,27 @@ jobs:
     needs: classify
     if: needs.classify.outputs.docs_only == 'true'
     runs-on: windows-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Repo-map generate
-        run: python tools/repo_map.py
+      - name: Repo-map drift check
+        run: python tools/repo_map.py --check
 
   workflow-validation:
     needs: classify
     if: needs.classify.outputs.workflow_only == 'true'
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -114,12 +141,14 @@ jobs:
     needs: classify
     if: needs.classify.outputs.tooling_only == 'true'
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -127,12 +156,13 @@ jobs:
       - name: Repo-map drift check
         run: python tools/repo_map.py --check
       - name: Tooling tests
-        run: python -m pytest tests/test_repo_map.py tests/test_tools.py -q
+        run: python -m pytest tests/test_repo_map.py tests/test_tools.py tests/test_dev_commands.py -q
 
   fast:
     needs: classify
     if: needs.classify.outputs.core == 'true'
     runs-on: windows-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -140,11 +170,12 @@ jobs:
           ${{ (github.event_name == 'pull_request')
               && fromJSON('["3.11","3.12"]') || fromJSON('["3.12"]') }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -158,14 +189,16 @@ jobs:
 
   slow:
     needs: [classify, fast]
-    if: github.event_name == 'pull_request' && needs.classify.outputs.core == 'true'
+    if: (github.event_name == 'pull_request' || github.event_name == 'push') && needs.classify.outputs.core == 'true'
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -175,14 +208,16 @@ jobs:
 
   dry-run-smoke:
     needs: [classify, fast]
-    if: github.event_name == 'pull_request' && needs.classify.outputs.core == 'true'
+    if: (github.event_name == 'pull_request' || github.event_name == 'push') && needs.classify.outputs.core == 'true'
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -192,14 +227,16 @@ jobs:
 
   e2e-smoke:
     needs: [classify, fast]
-    if: github.event_name == 'pull_request' && needs.classify.outputs.core == 'true'
+    if: (github.event_name == 'pull_request' || github.event_name == 'push') && needs.classify.outputs.core == 'true'
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -210,12 +247,14 @@ jobs:
   exhaustive:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies

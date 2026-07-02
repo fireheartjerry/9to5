@@ -5,8 +5,11 @@ old JSON-file bus needed sidecar locks and identity dedup; here BEGIN IMMEDIATE
 transactions and UNIQUE(task_id, source_msg_id) make those properties structural."""
 import multiprocessing
 import threading
+import time
 import unittest
 from pathlib import Path
+
+import pytest
 
 from platform_core.runtime import control_store
 from platform_core.runtime.control import ControlBus
@@ -166,6 +169,7 @@ def _procWorker(db_path: str, idx: int, per: int) -> None:
             bus.setSeen(f"{idx}-{i}")
 
 
+@pytest.mark.timeout(180)   # 2 spawn children re-import the platform; marginal under the 60s default
 class TestCrossProcess(unittest.TestCase):
     def test_two_real_processes_never_lose_an_abort_or_an_op(self):
         """Two real OS processes hammer the bus while this process drains concurrently:
@@ -183,6 +187,7 @@ class TestCrossProcess(unittest.TestCase):
             b = ControlBus("xproc")
             while not stop.is_set():
                 drained.extend(b.drainOps())
+                time.sleep(0.001)   # yield the core; a hot drain loop starves the spawn children
 
         d = threading.Thread(target=drainer)
         d.start()

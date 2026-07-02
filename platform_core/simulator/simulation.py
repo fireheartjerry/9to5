@@ -40,7 +40,11 @@ LOG = config.getLogger("simulation")
 # so a rerouted/reworded prompt can never silently exercise the wrong payload shape.
 KNOWN_SIM_ACTS = ("architect", "plan", "critique", "invocation_spec", "replan",
                   "gatekeeper", "compaction", "horizon_fill", "elaborate", "universe",
-                  "adversary_review", "instinct")
+                  "adversary_review", "instinct",
+                  # Epic 2 dual-ledger planner (flag-gated in production; acts registered so a
+                  # flag-on sim/dry-run stays deterministic instead of retry-looping to fallback)
+                  "ledger_facts", "ledger_plan", "ledger_progress",
+                  "ledger_facts_update", "ledger_plan_update")
 
 _TEXT_RESPONSES = {
     "architect": "Produce a thorough architecture and design document for the specification.",
@@ -49,8 +53,17 @@ _TEXT_RESPONSES = {
     "instinct": "NONE",   # best-effort instinct scan: nothing flagged in a dry-run
 }
 
+_LEDGER_ANSWER = {"answer": False, "reason": "dry-run"}
 _JSON_RESPONSES = {
     "replan": {"action": "keep", "add": [], "remove": [], "reason": "dry-run"},
+    "ledger_facts": {"given_facts": ["dry-run: the goal is fully specified"],
+                     "lookup_facts": [], "derive_facts": [], "guess_facts": []},
+    "ledger_facts_update": {"root_cause": "dry-run", "given_facts": [],
+                            "lookup_facts": [], "derive_facts": [], "guess_facts": []},
+    "ledger_progress": {"is_request_satisfied": dict(_LEDGER_ANSWER),
+                        "is_in_loop": dict(_LEDGER_ANSWER),
+                        "is_progress_being_made": {"answer": True, "reason": "dry-run"},
+                        "instruction": {"answer": "continue", "reason": "dry-run"}},
     "gatekeeper": {"approve": True, "reason": "dry-run auto-approve"},
     "horizon_fill": {"subtasks": []},   # wind down: never invent extra dry-run work
     "universe": {"description": "dry-run universe", "allowed_paths": [],
@@ -66,6 +79,11 @@ def _simPayload(act, plan: dict, spec: dict):
     RAISES on an unknown/missing act (fail loud -- prompt wording must never route)."""
     if act in ("plan", "critique"):        # critique pass echoes a valid plan
         return {"message": {"content": json.dumps(plan)}}
+    if act in ("ledger_plan", "ledger_plan_update"):   # bullet form of the SAME plan, so the
+        # dual-ledger DAG derives the identical subtasks the one-shot planner would author
+        bullets = [s.get("title", f"step {i + 1}")
+                   for i, s in enumerate(plan.get("subtasks") or [])] or ["Simulated subtask 1"]
+        return {"message": {"content": json.dumps({"plan": bullets})}}
     if act == "invocation_spec":
         return {"message": {"content": json.dumps(spec)}}
     if act in _TEXT_RESPONSES:

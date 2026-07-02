@@ -50,7 +50,7 @@ def test_subprocess_import_from_non_repo_cwd_resolves_repo_root():
     code = ("import platform_core.app_config.paths as p; "
             "print(p.PROJECT_ROOT); print(p.STATE_DIR)")
     r = subprocess.run([sys.executable, "-c", code], cwd=tempfile.gettempdir(),
-                       env=env, capture_output=True, text=True, timeout=60)
+                       env=env, capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, f"paths import failed from non-repo cwd:\n{r.stderr}"
     got_root, got_state = r.stdout.strip().splitlines()[-2:]
     assert Path(got_root).resolve() == REPO_ROOT

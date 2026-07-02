@@ -49,7 +49,14 @@ _FORCED = {"WEB_DASHBOARD": False, "DISCORD_DASHBOARD": False,
            # The virtual operator IS a human at the controls: night mode (which a
            # production .env may enable) would auto-resume pauses and drop the PR hold,
            # breaking the very interactions these scenarios script.
-           "NIGHT_MODE": False}
+           "NIGHT_MODE": False,
+           # Hermetic like conftest: a production .env (loaded from INSTALL_ROOT by ANY
+           # runner, pytest or not) must not let a scenario probe the REAL Gemini API
+           # (observed: live 429 quota burn per scenario) or the browser layer.
+           "GEMINI_ENABLED": False, "BROWSER_LAYER_ENABLED": False,
+           # Scenarios must run the same planner CI's default config runs: the dual-ledger
+           # path adds depends_on chains that change skip/add gate semantics mid-scenario.
+           "DUAL_LEDGER_PLANNER_ENABLED": False}
 
 
 def runScenario(name: str, goal: str, script: Callable[[VirtualOperator], None], *,

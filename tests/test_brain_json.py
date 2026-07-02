@@ -34,7 +34,7 @@ class _FakeChat:
         self.replies = list(replies)
         self.calls = []
 
-    def __call__(self, system, user, *, want_json=False):
+    def __call__(self, system, user, *, want_json=False, act="unspecified"):
         self.calls.append(user)
         body = self.replies.pop(0)
         return {"message": {"content": body}}

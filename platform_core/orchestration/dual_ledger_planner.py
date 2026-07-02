@@ -44,14 +44,16 @@ def authorTaskLedger(ollama_chat: Callable, goal: str, architect_doc: str,
         ollama_chat, tl.TASK_LEDGER_FACTS_PROMPT, facts_user,
         required_keys=["given_facts", "lookup_facts", "derive_facts", "guess_facts"],
         validators={k: lambda v: isinstance(v, list)
-                    for k in ("given_facts", "lookup_facts", "derive_facts", "guess_facts")})
+                    for k in ("given_facts", "lookup_facts", "derive_facts", "guess_facts")},
+        act="ledger_facts")
     if facts is None:
         return None
     plan_user = f"GOAL:\n{goal}\n\n{profile_block}\nFACTS:\n{facts}"
     plan = chatJsonValidated(
         ollama_chat, tl.TASK_LEDGER_PLAN_PROMPT, plan_user,
         required_keys=["plan"],
-        validators={"plan": lambda v: isinstance(v, list) and len(v) >= 1})
+        validators={"plan": lambda v: isinstance(v, list) and len(v) >= 1},
+        act="ledger_plan")
     if plan is None:
         return None
     return tl.TaskLedger(
@@ -124,7 +126,8 @@ def progressLedgerStep(ollama_chat: Callable, goal: str, recent: str) -> Optiona
         required_keys=["is_request_satisfied", "is_in_loop",
                        "is_progress_being_made", "instruction"],
         validators={"is_request_satisfied": _obj, "is_in_loop": _obj,
-                    "is_progress_being_made": _obj, "instruction": _obj})
+                    "is_progress_being_made": _obj, "instruction": _obj},
+        act="ledger_progress")
 
 
 def updateStallCount(progress: dict, current: int) -> int:
@@ -146,14 +149,16 @@ def rootCauseReplan(ollama_chat: Callable, goal: str, ledger: "tl.TaskLedger",
         ollama_chat, tl.FACTS_UPDATE_PROMPT, facts_user,
         required_keys=["root_cause", "given_facts", "lookup_facts", "derive_facts", "guess_facts"],
         validators={k: lambda v: isinstance(v, list)
-                    for k in ("given_facts", "lookup_facts", "derive_facts", "guess_facts")})
+                    for k in ("given_facts", "lookup_facts", "derive_facts", "guess_facts")},
+        act="ledger_facts_update")
     if facts is None:
         return None
     plan_user = f"GOAL:\n{goal}\n\nREWRITTEN FACTS:\n{facts}\n\nROOT CAUSE:\n{facts.get('root_cause')}"
     plan = chatJsonValidated(
         ollama_chat, tl.PLAN_UPDATE_PROMPT, plan_user,
         required_keys=["plan"],
-        validators={"plan": lambda v: isinstance(v, list) and len(v) >= 1})
+        validators={"plan": lambda v: isinstance(v, list) and len(v) >= 1},
+        act="ledger_plan_update")
     if plan is None:
         return None
     return tl.TaskLedger(

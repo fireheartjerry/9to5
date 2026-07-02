@@ -1,12 +1,20 @@
 """Unit tests for adaptive curriculum trigger in Self-Improvement Engine."""
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
 import config
 from learning import sie
 from memory import experience, retrieval
+# The code under test (learning/sie.py::_curriculum_and_report) resolves spawn at call
+# time as `from notifications import work_launcher; work_launcher.spawn(...)` -- a plain
+# attribute lookup on this same module object. Import it once here and patch that
+# attribute with mock.patch.object; no sys.modules pop/reload needed (reloading forked
+# the module identity, breaking WorkRequest isinstance checks and leaking fresh spawn
+# bindings depending on test order).
+from notifications import work_launcher
 
 
 class TestAdaptiveCurriculumTrigger(unittest.TestCase):
@@ -24,11 +32,6 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
         mock.patch.object(config, "SELFPLAY_ENABLED", False).start()
         mock.patch.object(config, "SIE_BOOTSTRAP", False).start()
         retrieval.reset_embed_cache()
-        # Reload work_launcher module to clear any stale cached references from other tests
-        import sys
-        import importlib
-        if 'notifications.work_launcher' in sys.modules:
-            importlib.reload(sys.modules['notifications.work_launcher'])
 
     def tearDown(self):
         mock.patch.stopall()
@@ -67,21 +70,22 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
             )
 
     def test_adaptive_trigger_fires_on_five_new_feedback(self):
-        """When >=5 feedback records exist, curriculum goals are auto-queued.
-
-        NOTE: This test has a known issue when run with other tests that import work_launcher.
-        It passes in isolation or when run as the only test method in this class, but may fail
-        when run after sie/override tests due to module caching in mocks. This is a test isolation
-        issue, not a code issue. Running with `pytest tests/test_curriculum_adaptive_trigger.py` alone works.
-        """
-        # Clear cached module and mock work_launcher.spawn BEFORE the first run to ensure module caching works correctly.
-        import sys
-        sys.modules.pop('notifications.work_launcher', None)
-        from notifications import work_launcher
+        """When >=5 feedback records exist, curriculum goals are auto-queued."""
         with mock.patch.object(work_launcher, "spawn", return_value=12345) as mock_spawn:
             # First run with no feedback should not queue goals.
             out1 = sie.run_maintenance(force=True, db_path=self.db)
             self.assertIn("curriculum_and_report", out1["steps"])
+
+            # Deterministically backdate the consolidation watermark. Both last_full_at
+            # and feedback 'at' are second-precision isoformats, and the trigger counts
+            # feedback with a STRICTLY greater timestamp -- so feedback seeded in the
+            # same wall-clock second as the first run compares equal and never counts
+            # (the old "module caching" flake was really this timing race, which warm
+            # imports after other test files made near-certain to lose).
+            st = sie._read_state()
+            st["last_full_at"] = (datetime.now().astimezone()
+                                  - timedelta(minutes=1)).isoformat(timespec="seconds")
+            sie._write_state(st)
 
             # Seed 5 new feedback records and curriculum context.
             self._seed_curriculum_context()
@@ -118,7 +122,6 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
         self._seed_feedback(4)
 
         # Run maintenance with mocked spawn to verify it's NOT called.
-        from notifications import work_launcher
         with mock.patch.object(work_launcher, "spawn", return_value=12345) as mock_spawn:
             out = sie.run_maintenance(force=True, db_path=self.db)
             curriculum_result = out["steps"]["curriculum_and_report"]

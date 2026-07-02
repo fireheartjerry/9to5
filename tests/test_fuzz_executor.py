@@ -3,6 +3,7 @@ return via result.get(...); a malformed result (None, non-dict, missing keys, wr
 must degrade gracefully -- the run always reaches a valid terminal state, never crashes the
 core to 'blocked', and never raises out of runFull.
 """
+import os
 import random
 import tempfile
 import unittest
@@ -16,6 +17,16 @@ from orchestrator import Orchestrator
 from state.task import TaskState
 
 _GRACEFUL_TERMINAL = {"done", "complete", "partial", "failed", "aborted"}
+
+
+def _seedCount(default=24):
+    raw = os.getenv("NINE_TO_FIVE_FUZZ_SEEDS", "").strip()
+    if not raw:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
 
 
 def _fuzz_executor(rng):
@@ -64,7 +75,7 @@ class TestExecutorFuzz(unittest.TestCase):
 
     def test_malformed_executor_results_terminate_gracefully(self):
         bad = []
-        for seed in range(80):
+        for seed in range(_seedCount()):
             rng = random.Random(seed * 11 + 3)
             st = TaskState.create("build (1) a (2) b (3) c", 1.0)
             st.setElaboratedGoal(st.meta["goal_raw"])

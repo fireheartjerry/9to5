@@ -62,6 +62,9 @@ class TunnelManager:
 
     # ---- public API -----------------------------------------------------
     def start(self, port: int) -> None:
+        if not self.providers:   # sandboxed (tests) or fully-demoted install: nothing to supervise
+            LOG.info("tunnel start skipped: no providers available")
+            return
         self._port = port
         self._stop.clear()
         self._supervisor = threading.Thread(target=self._supervise, name="tunnel-sup", daemon=True)

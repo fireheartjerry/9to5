@@ -71,15 +71,22 @@ class TestControlToken(unittest.TestCase):
     so another local process / a cross-origin page can't drive a live run."""
 
     def test_token_gates_post(self):
+        import socket
         import urllib.request
         import urllib.error
         config_patch = mock.patch.object(config, "WEB_DASHBOARD", True)
         config_patch.start()
         self.addCleanup(config_patch.stop)
-        url = webdash.startWebDashboard("task-token", port=8791)
-        if not url:
-            self.skipTest("could not bind the dashboard port")
+        # startWebDashboard coerces port=0 to config.WEB_DASHBOARD_PORT (`port or ...`) and
+        # builds the URL from the requested port, so true port=0 flow-through is not possible
+        # without changing the code under test. Probe the OS for a free ephemeral port instead
+        # (tiny close-then-rebind race accepted) so xdist workers never collide on a fixed port.
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        url = webdash.startWebDashboard("task-token", port=port)
         self.addCleanup(webdash.stopWebDashboard)
+        self.assertTrue(url, f"dashboard failed to bind OS-assigned port {port}")
         page = urllib.request.urlopen(url, timeout=3).read().decode()
         m = re.search(r'const __T="([^"]+)"', page)
         self.assertTrue(m and m.group(1) != "__WEBDASH_TOKEN__", "page did not embed a real token")

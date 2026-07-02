@@ -154,6 +154,40 @@ def _isolate_experience_db(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_tunnel(monkeypatch):
+    """Never let a test start a real tunnel provider. runFull's tunnel start is gated on
+    WEB_DASHBOARD, but a test that exercises a dashboard-on path would still auto-download
+    cloudflared and expose a LIVE public tunnel to the test dashboard. Blank the provider
+    list at the binding TunnelManager actually uses -- start() no-ops on an empty list.
+    tests/test_tunnel.py constructs with explicit fake providers and is unaffected."""
+    from notifications import tunnel as _tunnel_mod
+    monkeypatch.setattr(_tunnel_mod, "default_providers", lambda: [])
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _no_knowledge_refresh(monkeypatch):
+    """Stub the living-knowledge refresh at the binding _runPreamble calls. The real refresh
+    reads/writes INSTALL_ROOT's knowledge cache and (when stale) scrapes the Claude docs --
+    machine state + network that must not leak into runFull-driving tests. Tests that exercise
+    refresh logic import platform_core.orchestration.knowledge_refresh directly (unaffected)."""
+    from platform_core.orchestration import run_phase_mixin as _rpm
+    monkeypatch.setattr(_rpm, "refreshClaudeKnowledge", lambda *a, **k: None)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_sie_overrides(monkeypatch, tmp_path):
+    """Pin the meta-optimizer's persisted-override file to a per-test path. Without this,
+    setOverride() wrote the REAL state/sie_overrides.json -- persisted knob changes then warped
+    every later run (order-dependent flakiness) and dirtied the working tree. settings.setOverride
+    honors this facade shadow (see settings.py)."""
+    monkeypatch.setattr(config, "SIE_OVERRIDES_PATH", tmp_path / "sie_overrides.json",
+                        raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _no_real_browser(monkeypatch):
     """Never let a test drive the real generic browser (CDP) layer.
 

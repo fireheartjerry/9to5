@@ -6,7 +6,7 @@ class _Chat:
     def __init__(self, replies):
         self.replies = list(replies)
 
-    def __call__(self, system, user, *, want_json=False):
+    def __call__(self, system, user, *, want_json=False, act="unspecified"):
         return {"message": {"content": self.replies.pop(0)}}
 
 
