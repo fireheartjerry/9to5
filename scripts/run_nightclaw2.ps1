@@ -7,7 +7,7 @@
   credentials as process env vars, redirects the file log to logs2/ so it never
   collides with the live instance, and starts `python -m nightclaw` from the
   worktree root. Because it runs from the worktree, config.PROJECT_ROOT resolves
-  to the worktree — its state/control/tasks dirs are its own, isolated from the
+  to the worktree -- its state/control/tasks dirs are its own, isolated from the
   live C:\9to5 instance. The live bot and this one share nothing but the Discord
   API (different token, different app, different server/channel).
 
@@ -50,7 +50,7 @@ foreach ($r in $required) {
     }
 }
 if ($env:DISCORD_BOT_TOKEN -eq "paste_second_bot_token_here") {
-    Write-Host "[nightclaw2] DISCORD_BOT_TOKEN is still the placeholder — edit $envFile" -ForegroundColor Red
+    Write-Host "[nightclaw2] DISCORD_BOT_TOKEN is still the placeholder -- edit $envFile" -ForegroundColor Red
     exit 1
 }
 
