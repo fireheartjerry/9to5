@@ -295,6 +295,10 @@ def test_simulated_429_then_401_no_op_no_crash(monkeypatch):
     br.resetTransport()
     monkeypatch.setattr(config, "DISCORD_BOT_TOKEN", "fake-token")
     monkeypatch.setattr(config, "DISCORD_CHANNEL_ID", 42)
+    # This test deliberately drives the REAL _request() chokepoint (mocked Session, not the
+    # network) -- opt out of the pytest-auto-detected _realDiscordBlocked guard, same as
+    # tests/test_discord_rest.py's _cfg().
+    monkeypatch.setattr(_dc, "_realDiscordBlocked", lambda: False)
 
     calls = {"n": 0}
 

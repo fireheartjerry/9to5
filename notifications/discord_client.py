@@ -10,6 +10,8 @@ RUN/TEST: (no mapped test)
 from __future__ import annotations
 
 import json as _jsonlib   # aliased: the _request kwarg is named `json` (Discord body)
+import os
+import sys
 import time
 from typing import Optional
 
@@ -20,6 +22,24 @@ import config
 LOG = config.getLogger("discord")
 
 _SESSION = requests.Session()   # persistent connection pool; reused across all REST calls
+
+
+def _realDiscordBlocked() -> bool:
+    """True when a REAL Discord REST call must be REFUSED (unit/CI context).
+
+    Mirrors ``work_launcher._spawnBlocked`` / ``gemini_driver._realApiBlocked``: this chokepoint
+    normally only avoids the live channel because conftest.py blanks DISCORD_BOT_TOKEN/
+    DISCORD_CHANNEL_ID for pytest -- a test file invoked directly (bare ``python test_x.py`` /
+    ``python -m unittest``) never loads conftest.py and so isn't sandboxed at all, letting a
+    stray test post to the real channel. This is a second, independent guard so that escape
+    hatch can't reach the network regardless of how the test got invoked."""
+    allow = os.getenv("NINE_TO_FIVE_TEST_MODE", "").strip().lower()
+    if allow in {"0", "false", "no", "off"}:
+        return False                       # explicit opt-out: tests that assert the real path
+    if allow in {"1", "true", "yes", "on"}:
+        return True
+    # env unset -> auto-detect a live test runner so a forgotten/bypassed sandbox never posts live.
+    return "unittest" in sys.modules or "pytest" in sys.modules
 
 _API = "https://discord.com/api/v10"
 
@@ -45,6 +65,16 @@ def _authHeadersMultipart() -> dict:
     return {"Authorization": f"Bot {config.DISCORD_BOT_TOKEN}"}
 
 
+def _requestHeaders(noauth: bool, files: Optional[dict]) -> dict:
+    """Webhook-execute (noauth) is authorized by the token IN the URL, so it carries no Bot
+    header; a multipart upload drops Content-Type so requests can set its own boundary."""
+    if noauth:
+        return {}
+    if files is not None:
+        return _authHeadersMultipart()
+    return _authHeaders()
+
+
 def _ownerMentions() -> dict:
     """allowed_mentions that can never expand past the configured owner."""
     oid = (config.DISCORD_HUMAN_USER_ID or "").strip()
@@ -68,19 +98,15 @@ def _request(method: str, path: str, *, json: Optional[dict] = None,
     global _DISABLED, _RATE_LIMITED_UNTIL
     if _DISABLED or not config.DISCORD_BOT_TOKEN or not config.DISCORD_CHANNEL_ID:
         return None
+    if _realDiscordBlocked():
+        return None
     # Global 429 circuit breaker: while inside the rate-limit window, do not touch the network at all.
     if time.monotonic() < _RATE_LIMITED_UNTIL:
         return None
     url = f"{_API}{path}"
     attempt = 0
     while True:
-        # Webhook-execute (noauth) is authorized by the token IN the URL, so it carries no Bot header.
-        if noauth:
-            headers: dict = {}
-        elif files is not None:
-            headers = _authHeadersMultipart()
-        else:
-            headers = _authHeaders()
+        headers = _requestHeaders(noauth, files)
         try:
             if files is not None:
                 r = _SESSION.request(method, url, headers=headers, data=data,

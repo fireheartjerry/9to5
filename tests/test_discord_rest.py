@@ -1,9 +1,11 @@
 """Unit tests for the discord_bot REST chokepoint + embed clamping (no real network)."""
+import contextlib
 import unittest
 from unittest import mock
 
 import config
 from notifications import discord_bot as d
+from notifications import discord_client as _dc_mod
 
 
 class _Resp:
@@ -17,8 +19,14 @@ class _Resp:
         return self._body
 
 
+@contextlib.contextmanager
 def _cfg():
-    return mock.patch.multiple(config, DISCORD_BOT_TOKEN="t", DISCORD_CHANNEL_ID=123)
+    # This module deliberately exercises the real _request() transport path (mocked Session,
+    # not the network) -- opt out of the pytest-auto-detected _realDiscordBlocked guard so it
+    # doesn't short-circuit before ever reaching the mocked Session.request.
+    with mock.patch.multiple(config, DISCORD_BOT_TOKEN="t", DISCORD_CHANNEL_ID=123), \
+            mock.patch.object(_dc_mod, "_realDiscordBlocked", return_value=False):
+        yield
 
 
 class TestRequest(unittest.TestCase):

@@ -22,6 +22,7 @@
     "platform_core",
     "run_all_tests",
     "scheduling",
+    "scratch_seed_hunt",
     "selfmod",
     "society",
     "src",
@@ -7212,7 +7213,7 @@
           "kind": "function",
           "signature": "(text, n: int) -> str",
           "summary": "Clamp to n chars, marking a clip with a trailing ellipsis.",
-          "lineno": 130
+          "lineno": 156
         }
       ],
       "depends_on": [
