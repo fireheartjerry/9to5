@@ -14777,6 +14777,195 @@
       ],
       "callers": []
     },
+    "tools.test_brain_reports": {
+      "path": "tools/test_brain_reports.py",
+      "purpose": "test_brain_reports -- markdown/JSON report rendering for tools/test_brain.py.",
+      "exports": [
+        {
+          "name": "write_quarantine",
+          "kind": "function",
+          "signature": "(stats: dict[str, TestStat], path: Path | None=None) -> Path",
+          "summary": "",
+          "lineno": 43
+        },
+        {
+          "name": "stat_record",
+          "kind": "function",
+          "signature": "(stat: TestStat) -> dict",
+          "summary": "",
+          "lineno": 67
+        },
+        {
+          "name": "history_report",
+          "kind": "function",
+          "signature": "(stats: dict[str, TestStat], limit: int=20) -> dict",
+          "summary": "",
+          "lineno": 80
+        },
+        {
+          "name": "history_markdown",
+          "kind": "function",
+          "signature": "(data: dict) -> str",
+          "summary": "",
+          "lineno": 99
+        },
+        {
+          "name": "write_history_report",
+          "kind": "function",
+          "signature": "(stats: dict[str, TestStat], out_dir: Path, limit: int=20) -> tuple[Path, Path]",
+          "summary": "",
+          "lineno": 128
+        },
+        {
+          "name": "mapping_markdown",
+          "kind": "function",
+          "signature": "(data: dict) -> str",
+          "summary": "",
+          "lineno": 138
+        },
+        {
+          "name": "write_mapping_report",
+          "kind": "function",
+          "signature": "(data: dict, out_dir: Path) -> tuple[Path, Path]",
+          "summary": "",
+          "lineno": 164
+        },
+        {
+          "name": "selection_report",
+          "kind": "function",
+          "signature": "(selection: Selection) -> dict",
+          "summary": "Stable machine-readable report for CI summaries and cached artifacts.",
+          "lineno": 173
+        },
+        {
+          "name": "shard_report",
+          "kind": "function",
+          "signature": "(shards: list[dict]) -> dict",
+          "summary": "",
+          "lineno": 190
+        },
+        {
+          "name": "matrix_report",
+          "kind": "function",
+          "signature": "(shards: list[dict]) -> dict",
+          "summary": "GitHub Actions matrix payload for duration-balanced shards.",
+          "lineno": 200
+        },
+        {
+          "name": "write_reports",
+          "kind": "function",
+          "signature": "(selection: Selection, out_dir: Path, shards: list[dict] | None=None) -> tuple[Path, Path]",
+          "summary": "",
+          "lineno": 259
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "write_* functions write JSON/Markdown report files under the given out_dir"
+      ],
+      "test": [
+        "tests/platform/test_test_brain.py"
+      ],
+      "callers": []
+    },
+    "tools.test_brain_selection": {
+      "path": "tools/test_brain_selection.py",
+      "purpose": "test_brain_selection -- core selection/audit logic for tools/test_brain.py.",
+      "exports": [
+        {
+          "name": "TestStat",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 113
+        },
+        {
+          "name": "Selection",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 150
+        },
+        {
+          "name": "load_stats",
+          "kind": "function",
+          "signature": "(history_dir: Path | None=None) -> dict[str, TestStat]",
+          "summary": "Load aggregate file-level test stats from pytest history JSONL.",
+          "lineno": 187
+        },
+        {
+          "name": "flake_candidates",
+          "kind": "function",
+          "signature": "(stats: dict[str, TestStat]) -> list[TestStat]",
+          "summary": "Return tests with mixed pass/fail history that are safe quarantine candidates.",
+          "lineno": 228
+        },
+        {
+          "name": "slowest_tests",
+          "kind": "function",
+          "signature": "(stats: dict[str, TestStat], limit: int=20) -> list[TestStat]",
+          "summary": "Return targets with the highest average runtime.",
+          "lineno": 236
+        },
+        {
+          "name": "audit_mapping",
+          "kind": "function",
+          "signature": "(repo_root: Path=REPO_ROOT) -> dict",
+          "summary": "Report source files that do not currently resolve to any affected-test target.",
+          "lineno": 257
+        },
+        {
+          "name": "mapping_debt_priority",
+          "kind": "function",
+          "signature": "(path: str) -> int",
+          "summary": "",
+          "lineno": 285
+        },
+        {
+          "name": "mapping_debt_priority_label",
+          "kind": "function",
+          "signature": "(priority: int) -> str",
+          "summary": "",
+          "lineno": 292
+        },
+        {
+          "name": "load_quarantine",
+          "kind": "function",
+          "signature": "(path: Path | None=None) -> set[str]",
+          "summary": "",
+          "lineno": 296
+        },
+        {
+          "name": "sentinel_targets_for",
+          "kind": "function",
+          "signature": "(files: list[str]) -> list[str]",
+          "summary": "Cheap domain sentinels for adjacent-contract coverage beyond direct mappings.",
+          "lineno": 309
+        },
+        {
+          "name": "plan_shards",
+          "kind": "function",
+          "signature": "(targets: list[str], stats: dict[str, TestStat], shard_count: int) -> list[dict]",
+          "summary": "Greedy duration-balanced pytest target shards.",
+          "lineno": 350
+        },
+        {
+          "name": "select_tests",
+          "kind": "function",
+          "signature": "(files: list[str], repo_root: Path=REPO_ROOT, budget_seconds: float=480.0, history_dir: Path | None=None, quarantine_file: Path | None=None) -> Selection",
+          "summary": "",
+          "lineno": 374
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "write_quarantine writes the quarantine JSON file"
+      ],
+      "test": [
+        "tests/platform/test_test_brain.py"
+      ],
+      "callers": []
+    },
     "validate_workflows": {
       "path": "validate_workflows.py",
       "purpose": "Compatibility script for CI workflow validation.",

@@ -8,18 +8,17 @@ test_brain_reports.py).
 EXPORTS:
   TestStat
   Selection
-  load_stats(history_dir: Path | None = None) -> dict[str, TestStat]
-  flake_candidates(stats: dict[str, TestStat]) -> list[TestStat]
-  slowest_tests(stats: dict[str, TestStat], limit: int = 20) -> list[TestStat]
-  load_quarantine(path: Path | None = None) -> set[str]
-  write_quarantine(stats: dict[str, TestStat], path: Path | None = None) -> Path
-  sentinel_targets_for(files: list[str]) -> list[str]
-  plan_shards(targets: list[str], stats: dict[str, TestStat], shard_count: int) -> list[dict]
-  select_tests(files, repo_root, budget_seconds=480.0, history_dir=None, quarantine_file=None) -> Selection
-  audit_mapping(repo_root: Path = REPO_ROOT) -> dict
+  load_stats(history_dir: Path | None=None) -> dict[str, TestStat]  -- Load aggregate file-level test stats from pytest history JSONL.
+  flake_candidates(stats: dict[str, TestStat]) -> list[TestStat]  -- Return tests with mixed pass/fail history that are safe quarantine candidates.
+  slowest_tests(stats: dict[str, TestStat], limit: int=20) -> list[TestStat]  -- Return targets with the highest average runtime.
+  audit_mapping(repo_root: Path=REPO_ROOT) -> dict  -- Report source files that do not currently resolve to any affected-test target.
   mapping_debt_priority(path: str) -> int
   mapping_debt_priority_label(priority: int) -> str
-DEPENDS-ON: tools.affected_tests
+  load_quarantine(path: Path | None=None) -> set[str]
+  sentinel_targets_for(files: list[str]) -> list[str]  -- Cheap domain sentinels for adjacent-contract coverage beyond direct mappings.
+  plan_shards(targets: list[str], stats: dict[str, TestStat], shard_count: int) -> list[dict]  -- Greedy duration-balanced pytest target shards.
+  select_tests(files: list[str], repo_root: Path=REPO_ROOT, budget_seconds: float=480.0, history_dir: Path | None=None, quarantine_file: Path | None=None) -> Selection
+DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: write_quarantine writes the quarantine JSON file
 RUN/TEST: python -m pytest tests/platform/test_test_brain.py
 """
@@ -305,30 +304,6 @@ def load_quarantine(path: Path | None = None) -> set[str]:
     else:
         raw = data
     return {str(t).replace("\\", "/") for t in raw if str(t).strip()}
-
-
-def write_quarantine(stats: dict[str, TestStat], path: Path | None = None) -> Path:
-    qpath = path or QUARANTINE_FILE
-    targets = [s.target for s in flake_candidates(stats)]
-    qpath.parent.mkdir(parents=True, exist_ok=True)
-    qpath.write_text(
-        json.dumps(
-            {
-                "schema": 1,
-                "generated_at": int(time()),
-                "policy": {
-                    "min_runs": MIN_FLAKE_RUNS,
-                    "max_failure_rate": MAX_QUARANTINE_FAILURE_RATE,
-                },
-                "targets": targets,
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    return qpath
 
 
 def sentinel_targets_for(files: list[str]) -> list[str]:

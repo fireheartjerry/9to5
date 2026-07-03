@@ -44,7 +44,6 @@ from test_brain_selection import (  # noqa: F401 -- re-exported (facade rule)
     select_tests,
     sentinel_targets_for,
     slowest_tests,
-    write_quarantine,
 )
 from test_brain_reports import (  # noqa: F401 -- re-exported (facade rule)
     history_markdown,
@@ -56,6 +55,7 @@ from test_brain_reports import (  # noqa: F401 -- re-exported (facade rule)
     stat_record,
     write_history_report,
     write_mapping_report,
+    write_quarantine,
     write_reports,
 )
 
