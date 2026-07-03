@@ -1,5 +1,7 @@
 """Unit tests for the Self-Improvement Orchestrator auto-runner (learning/sie.py)."""
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -78,6 +80,25 @@ class TestSieMaintenance(unittest.TestCase):
             out = sie.run_maintenance(force=True, db_path=self.db)
         self.assertEqual(out["skipped"], "locked")
 
+    def test_live_owner_older_than_1h_is_not_stolen(self):
+        # B24: a still-LIVE owner must never be reclaimed, no matter how old the lock. The old
+        # time-only rule stole any lock >1h, killing long-running (but live) maintenance passes.
+        lp = sie._lock_path()
+        lp.parent.mkdir(parents=True, exist_ok=True)
+        lp.write_text(str(os.getpid()), encoding="utf-8")   # our pid == provably alive
+        old = time.time() - 2 * 3600                          # 2h old
+        os.utime(lp, (old, old))
+        self.assertIsNone(sie._acquire_lock(), "stole a lock held by a live (but old) owner")
+
+    def test_dead_owner_lock_is_stolen(self):
+        # B24 counterpart: a proven-dead owner IS reclaimed immediately (even when fresh).
+        lp = sie._lock_path()
+        lp.parent.mkdir(parents=True, exist_ok=True)
+        lp.write_text("999999999", encoding="utf-8")         # implausible -> definitely dead
+        got = sie._acquire_lock()
+        self.assertIsNotNone(got, "did not reclaim a lock owned by a dead PID")
+        self.assertEqual(lp.read_text(encoding="utf-8").strip(), str(os.getpid()))
+
     def test_maintenance_rebuilds_policy_arms(self):
         self._seed()
         sie.run_maintenance(force=True, db_path=self.db)
@@ -90,3 +111,20 @@ class TestSieMaintenance(unittest.TestCase):
         sie.run_maintenance(force=True, db_path=self.db)   # must not error or double-count
         arms = {a["action_json"]: a for a in experience.fetch_arms("discord", db_path=self.db)}
         self.assertEqual(arms['{"effort": "high"}']["pulls"], 3)
+
+    def test_evolve_op_registered(self):
+        out = sie.run_maintenance(force=True, db_path=self.db)
+        self.assertIn("evolve", out["steps"])
+
+    def test_evolve_promote_op_registered(self):
+        out = sie.run_maintenance(force=True, db_path=self.db)
+        self.assertIn("evolve_promote", out["steps"])
+
+    def test_curate_op_registered(self):
+        out = sie.run_maintenance(force=True, db_path=self.db)
+        self.assertIn("curate", out["steps"])
+
+    def test_insight_op_registered(self):
+        out = sie.run_maintenance(force=True, db_path=self.db)
+        self.assertIn("insight", out["steps"])
+

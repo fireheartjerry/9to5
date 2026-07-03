@@ -122,6 +122,44 @@ class TestExternalProjectClone(unittest.TestCase):
         clone.assert_called_once_with("https://github.com/acme/repo.git", "dev")
         self.assertIsNone(req.repo_ref)
 
+    def test_clone_rejects_file_scheme(self):
+        with self.assertRaises(ValueError):
+            external_project.cloneRepo("file:///etc/passwd")
+
+    def test_clone_rejects_git_scheme(self):
+        with self.assertRaises(ValueError):
+            external_project.cloneRepo("git://internal.example/repo.git")
+
+    def test_clone_rejects_ssh_scheme(self):
+        with self.assertRaises(ValueError):
+            external_project.cloneRepo("ssh://git@internal.example/repo.git")
+
+    def test_clone_rejects_remote_helper_syntax(self):
+        # git's `ext::` transport runs an arbitrary helper PROGRAM -- this is a known
+        # command-execution vector via a crafted "repo_url", not just SSRF.
+        with self.assertRaises(ValueError):
+            external_project.cloneRepo("ext::sh -c touch% /tmp/pwned")
+
+    def test_clone_rejects_dash_prefixed_url(self):
+        with self.assertRaises(ValueError):
+            external_project.cloneRepo("--upload-pack=/bin/sh")
+
+    def test_clone_rejects_dash_prefixed_ref(self):
+        with self.assertRaises(ValueError):
+            external_project.cloneRepo("https://github.com/acme/repo.git", "--upload-pack=/bin/sh")
+
+    def test_clone_rejects_ref_with_shell_metacharacters(self):
+        with self.assertRaises(ValueError):
+            external_project.cloneRepo("https://github.com/acme/repo.git", "main; rm -rf /")
+
+    def test_clone_accepts_https_url(self):
+        # Doesn't actually reach the network -- a nonexistent host fails at git-clone time
+        # (RuntimeError), which proves validation passed and execution proceeded past it.
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch.object(config, "PROJECT_ROOT", Path(d)):
+                with self.assertRaises(RuntimeError):
+                    external_project.cloneRepo("https://127.0.0.1:1/definitely-not-a-repo.git")
+
     def test_launch_reply_shows_prepared_work_dir(self):
         req = work_launcher.WorkRequest(goal="x", repo_url="https://github.com/acme/repo.git")
         with tempfile.TemporaryDirectory() as d, \

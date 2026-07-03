@@ -1,0 +1,135 @@
+## AVAILABLE SURFACES & TOOLS — compose across these; pick the RIGHT surface per step, do NOT default to the shell when a richer tool fits:
+- MCP servers (email/calendar/drive/repo/etc.): github, gmail, google_calendar, google_drive, canva
+- Skills: /architect-review, /write-obsidian-note, /create-pr, 9to5-ci-debug, 9to5-doc-sync, 9to5-fast-fix, 9to5-iteration-bench, architect-review, caveman, caveman-stats, create-pr, upstash
+- Subagents: architect, security-reviewer
+- Terminal/CLI: yes (git, gh, build tools)  · Browser: yes  · Native apps: yes
+
+## RELEVANT PAST LESSONS (from similar subtasks that PASSED)
+- "Deliverable 3: Hunt and fix any robustness or continuity bug you find.": effort=high, model=claude-opus-4-8
+- "Deliverable 3: Hunt and fix any robustness or continuity bug you find. ###": effort=default, model=claude-opus-4-8
+- "Improve Bug Fixes for Workflow Issues": effort=default, model=claude-sonnet-4-6
+- "Fix Verifier Path Normalization Issue for Error Handling Documentation Test": effort=default, model=claude-sonnet-4-6
+- "Refine Workflow for Debugging": effort=default, model=claude-sonnet-4-6
+
+
+
+## Learned principles (insights)
+- In profile:auditor profile_axis:stability work, recurring failures across 5 subtasks (Conduct an initial review of all newly integrated features to identify any potential issues or areas for improvement.; Compile a comprehensive report deta
+- In optimize work, recurring failures across 2 subtasks (Optimize Recurring Task Scheduling; Optimize Workflow for Bug Investigation): verify before claiming done and read the target before editing.
+- In deliverable work, recurring failures across 2 subtasks (Deliverable 3: **Code Quality**: - All changes should adhere to existing; Deliverable 2: **API Endpoint Optimization**): verify before claiming done and read the target before editi
+Overall goal (elaborated):
+## Objective
+
+Conduct a comprehensive and advanced bug-fixing effort across the entire codebase of 9TO5 to identify and resolve critical issues, ensuring stability and reliability.
+
+## Deliverables (with exact file paths)
+
+1. **Bug Reports**
+   - `state/bug_reports.txt`
+
+2. **Code Changes**
+   - All files affected by identified bugs within the repository
+
+3. **Testing Changes**
+   - Unit tests for new bug fixes
+   - Integration tests to validate bug fixes
+
+4. **Documentation Updates**
+   - `docs/bug_fixing_report.md`
+
+## Acceptance Criteria
+
+1. **All critical bugs must be resolved**: Ensure that all identified critical bugs are fixed and tested.
+2. **Code changes must pass automated tests**: All code changes must be accompanied by passing unit tests and integration tests.
+3. **Documentation updated**: The bug fixing report should document each bug found, the steps taken to resolve it, and any new documentation needed.
+
+## Constraints
+
+1. **No destructive edits**: Only safe edits are allowed in this process to prevent unintended side effects.
+2. **Effort level**: High effort is required due to the complexity of the task.
+3. **Timeframe**: The fix should be completed within 24 hours.
+
+## Assumptions
+
+1. **Current codebase state**: Assume that the current state of the codebase is stable and that any issues are isolated to specific areas.
+2. **Testing infrastructure**: Ensure that all necessary testing frameworks and tools are available for running tests.
+
+---
+
+Use the following workflow to perform advanced bug-fixing:
+
+### Step 1: Identify Critical Bugs
+
+- **Objective**: Use automated tools and manual review to identify critical bugs in the codebase.
+- **Deliverables**:
+  - `state/bug_reports.txt` containing a list of all identified bugs with details such as file paths, line numbers, and descriptions.
+- **Acceptance Criteria**:
+  - All critical bugs must be listed.
+- **Constraints**:
+  - Use subagent for isolated analysis.
+- **Effort Level**: Medium
+
+### Step 2: Fix Identified Bugs
+
+- **Objective**: Apply code changes to fix identified bugs.
+- **Deliverables**:
+  - Modified files within the repository.
+- **Acceptance Criteria**:
+  - All bugs must be fixed and tested.
+- **Constraints**:
+  - No destructive edits allowed.
+- **Effort Level**: High
+
+### Step 3: Write Unit Tests
+
+- **Objective**: Create unit tests for each bug fix to ensure they pass.
+- **Deliverables**:
+  - New unit tests within `tests/` directory.
+- **Acceptance Criteria**:
+  - All unit tests must pass.
+- **Constraints**:
+  - Automated testing frameworks must be used.
+- **Effort Level**: Medium
+
+### Step 4: Write Integration Tests
+
+- **Objective**: Create integration tests to validate the bug fixes in different parts of the system.
+- **Deliverables**:
+  - New integration tests within `tests/` directory.
+- **Acceptance Criteria**:
+  - All integration tests must pass.
+- **Constraints**:
+  - Automated testing frameworks must be used.
+- **Effort Level**: Medium
+
+### Step 5: Update Documentation
+
+- **Objective**: Document the bug fixing process and any new changes or fixes.
+- **Deliverables**:
+  - Updated `docs/bug_fixing_report.md`.
+- **Acceptance Criteria**:
+  - The report must accurately document each bug, the steps taken to resolve it, and any new documentation needed.
+- **Effort Level**: Medium
+
+### Workflow Definition
+
+```json
+{
+  "use_workflow": true,
+  "workflow_definition": [
+    {
+      "step_name": "Identify Critical Bugs",
+      "tools_to_use": ["security-reviewer"],
+      "prompt": "Identify all critical bugs in the codebase. List them in state/bug_reports.txt with details such as file paths, line numbers, and descriptions."
+    },
+    {
+      "step_name": "Fix Identified Bugs",
+      "tools_to_use": [],
+      "prompt": "Apply code changes to fix identified bugs. Ensure no destructive edits are made.",
+      "pre_tool_hooks": ["block_destructive"],
+      "post_tool_hooks": ["write_obsidian/log_all"]
+    },
+    {
+      "step_name": "Write Unit Tests",
+      "tools_to_use": [],
+      "prompt": "Create unit tests for each bug fix to ensu

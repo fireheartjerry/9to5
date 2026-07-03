@@ -106,7 +106,7 @@ class TestPrConsolidateHappyPath(PrConsolidateBase):
              "promote_safe": False},
             db_path=self.db,
         )
-        result = sie._pr_consolidate(db_path=self.db)
+        sie._pr_consolidate(db_path=self.db)
         modes = experience.fetch_failure_modes(db_path=self.db)
         classes = {m["taxonomy_class"] for m in modes}
         self.assertIn("review_rejected", classes)
@@ -173,7 +173,7 @@ class TestPrConsolidateLessonContent(PrConsolidateBase):
         )
         sie._pr_consolidate(db_path=self.db)
         lessons = experience.fetch_lessons(scope="pr_feedback", db_path=self.db)
-        self.assertTrue(all(l["win_rate"] == 0.0 for l in lessons))
+        self.assertTrue(all(lesson["win_rate"] == 0.0 for lesson in lessons))
 
     def test_lesson_text_contains_pr_url(self):
         url = "https://github.com/org/repo/pull/32"
@@ -185,7 +185,7 @@ class TestPrConsolidateLessonContent(PrConsolidateBase):
         )
         sie._pr_consolidate(db_path=self.db)
         lessons = experience.fetch_lessons(scope="pr_feedback", db_path=self.db)
-        self.assertTrue(any(url in l["text"] for l in lessons))
+        self.assertTrue(any(url in lesson["text"] for lesson in lessons))
 
 
 # ---------------------------------------------------------------------------

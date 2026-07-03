@@ -126,6 +126,15 @@ class Coordinator:
                             "subtask_crashed", f"{st.get('subtask_id')}: {e}")
         return messages
 
+    def detectContested(self, messages: list) -> list:
+        """Subtask ids with conflicting worker verdicts (any not-ok report) -> need debate."""
+        contested = []
+        for sid in {m.get("subtask_id") for m in messages}:
+            verdicts = [m.get("ok") for m in messages if m.get("subtask_id") == sid]
+            if any(v is False for v in verdicts):
+                contested.append(sid)
+        return sorted(c for c in contested if c)
+
     def budgetExceeded(self) -> bool:
         """True once accumulated worker spend breaches SOCIETY_TOKEN_BUDGET_USD."""
         return self.spent_usd >= config.SOCIETY_TOKEN_BUDGET_USD

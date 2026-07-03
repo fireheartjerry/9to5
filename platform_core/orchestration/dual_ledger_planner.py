@@ -111,7 +111,8 @@ def materializeDag(state, subs: list) -> list:
         dep_ids = [created[idx]["subtask_id"] for idx in (s.get("depends_on") or [])
                    if isinstance(idx, int) and 0 <= idx < len(created)]
         st = state.addSubtask(s.get("title", "step"), s.get("description", ""),
-                              layer=s.get("layer", 3), depends_on=dep_ids, verify=s.get("verify"))
+                              layer=s.get("layer", 3), depends_on=dep_ids, verify=s.get("verify"),
+                              files_touched=s.get("files_touched"))
         created.append(st)
     return created
 
@@ -120,7 +121,7 @@ def progressLedgerStep(ollama_chat: Callable, goal: str, recent: str) -> Optiona
     """One tiny per-step Progress Ledger call (autogen ORCHESTRATOR_PROGRESS_LEDGER_PROMPT, minus
     next_speaker -- 9to5 is a star topology). Returns the validated 4-key dict, or None."""
     user = f"GOAL:\n{goal}\n\nMOST RECENT OUTCOME:\n{(recent or '')[:2000]}"
-    _obj = lambda v: isinstance(v, dict) and "answer" in v
+    def _obj(v): return isinstance(v, dict) and "answer" in v
     return chatJsonValidated(
         ollama_chat, tl.PROGRESS_LEDGER_PROMPT, user,
         required_keys=["is_request_satisfied", "is_in_loop",

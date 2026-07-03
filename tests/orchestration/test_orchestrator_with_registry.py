@@ -18,7 +18,6 @@ from agents.workflow_resolver import resolveWorkflowDefinition  # noqa: E402
 from src.workflow_registry import (  # noqa: E402
     REGISTRY,
     WorkflowRegistry,
-    WorkflowNotFoundError,
 )
 
 
@@ -30,6 +29,7 @@ def _empty_reg() -> WorkflowRegistry:
     reg = WorkflowRegistry.__new__(WorkflowRegistry)
     reg._lock = threading.Lock()
     reg._store = {}
+    reg._builtin = frozenset()
     return reg
 
 

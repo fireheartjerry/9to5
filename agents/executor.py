@@ -203,6 +203,29 @@ def _applyEnvironment(fresh_cmd: list, resume_cmd: "list | None", work: str,
 # Public entry point
 # ---------------------------------------------------------------------------
 
+def _retryOnSessionLimit(result: dict, fresh_cmd: list, full_prompt: str, run_kw: dict,
+                         cancel_check) -> dict:
+    """Wait out a session token-limit window and retry on a fresh session, BOUNDED +
+    abort/deadline-aware (CB-4/9); re-arm each round to guarantee a real wait."""
+    tries = 0
+    while _isRateLimitError(result) and tries < config.SESSION_LIMIT_MAX_RETRIES:
+        if cancel_check is not None:
+            try:
+                if cancel_check():
+                    LOG.warning("rate-limit retry abandoned (abort/deadline) after %d tries", tries)
+                    break
+            except Exception:  # noqa: BLE001
+                pass
+        _SESSION_LIMIT_STATE["first_hit_at"] = time.time()   # re-arm: guarantee a real wait
+        if not _waitForSessionReset(cancel_check):
+            break   # cancelled mid-wait -> return still-error result to caller
+        tries += 1
+        LOG.info("Retrying subtask on fresh session after session reset (try %d/%d)",
+                 tries, config.SESSION_LIMIT_MAX_RETRIES)
+        result = runSubprocess(fresh_cmd, full_prompt, **run_kw)
+    return result
+
+
 def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = None,
               task_state=None, subtask: Optional[dict] = None,
               system_prompt: Optional[str] = None, extra: Optional[str] = None,
@@ -257,19 +280,4 @@ def runClaude(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str] = Non
             LOG.warning("resume launch yielded no envelope (rc=%s) -- retrying once on a fresh session", rc)
             result = runSubprocess(fresh_cmd, full_prompt, **run_kw)
     # Session token limit: BOUNDED wait-out + fresh-session retry; abort/deadline-aware (CB-4/9).
-    tries = 0
-    while _isRateLimitError(result) and tries < config.SESSION_LIMIT_MAX_RETRIES:
-        if cancel_check is not None:
-            try:
-                if cancel_check():
-                    LOG.warning("rate-limit retry abandoned (abort/deadline) after %d tries", tries)
-                    break
-            except Exception:  # noqa: BLE001
-                pass
-        _SESSION_LIMIT_STATE["first_hit_at"] = time.time()   # re-arm: guarantee a real wait
-        if not _waitForSessionReset(cancel_check):
-            break   # cancelled mid-wait -> return still-error result to caller
-        tries += 1
-        LOG.info("Retrying on fresh session after reset (try %d/%d)", tries, config.SESSION_LIMIT_MAX_RETRIES)
-        result = runSubprocess(fresh_cmd, full_prompt, **run_kw)
-    return result
+    return _retryOnSessionLimit(result, fresh_cmd, full_prompt, run_kw, cancel_check)

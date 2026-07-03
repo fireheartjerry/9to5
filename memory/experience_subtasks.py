@@ -87,7 +87,8 @@ def record_subtask(run_id: str, st: dict[str, Any], db_path: Optional[Path] = No
                     :adversary_verdict, :adversary_stub, :adversary_concerns_json, :replan_delta_json, :status,
                     :predicted_success, :started_at, :ended_at)
                    ON CONFLICT(run_id, st_id) DO UPDATE SET
-                    position=excluded.position, title=excluded.title,
+                    position=COALESCE(excluded.position, subtasks.position),
+                    title=COALESCE(excluded.title, subtasks.title),
                     signature_tags=COALESCE(excluded.signature_tags, subtasks.signature_tags),
                     effort=COALESCE(excluded.effort, subtasks.effort),
                     model=COALESCE(excluded.model, subtasks.model),
@@ -107,7 +108,7 @@ def record_subtask(run_id: str, st: dict[str, Any], db_path: Optional[Path] = No
                     replan_delta_json=COALESCE(excluded.replan_delta_json, subtasks.replan_delta_json),
                     status=COALESCE(excluded.status, subtasks.status),
                     predicted_success=COALESCE(excluded.predicted_success, subtasks.predicted_success),
-                    ended_at=excluded.ended_at""",
+                    ended_at=COALESCE(excluded.ended_at, subtasks.ended_at)""",
                 _subtask_params(run_id, st),
             )
         return True

@@ -1,7 +1,11 @@
 """Tests for trace-replay JSON output mode, ANSI color, timestamp/offset utilities, and integration."""
 from __future__ import annotations
 
-import importlib.util, io, json, sys, unittest
+import importlib.util
+import io
+import json
+import sys
+import unittest
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent

@@ -83,6 +83,21 @@ python -m pytest tests/test_notification_integration.py -q
 python -m pytest tests/test_webdash_control.py -q
 ```
 
+**Epic-flag isolation:** use the `pin_flags` factory fixture (`tests/conftest.py`) instead of
+hand-rolling `monkeypatch.setattr(config, "FLAG", value, raising=False)` per flag — e.g.
+`pin_flags(SOCIETY_ENABLED=True, WORKTREE_ISOLATION_ENABLED=True)`. It isolates a test from the
+live `.env` the same way, just without the boilerplate.
+
+**Combined-flags smoke test:** `tests/test_epic_flags_combined.py` turns SEVERAL epic flags on
+TOGETHER (Society, Worktree Isolation, Solution Fork, Semantic Safety, Cost Budget, Compaction,
+Execution Fabric) against a real `BuilderBrain` run — every other epic test exercises flags in
+isolation, never in combination, so this is the only place cross-epic interaction bugs surface.
+Run it after changing any epic-flagged code path:
+
+```bash
+python -m pytest tests/test_epic_flags_combined.py -q
+```
+
 ### Tier 3: full suite
 
 Use after focused tests pass or before merging large changes.
@@ -164,6 +179,25 @@ Examples:
 - UIA/pywinauto native execution
 - real Claude Code subprocess smoke
 - real Obsidian REST API write
+
+#### Nightclaw offline replay (substitutes a second live gateway)
+
+Only one `DISCORD_BOT_TOKEN` exists, so a second live bot cannot be started to exercise the
+`!` control surface. `platform_core/simulator/bot_replay.py` is the safe offline substitute:
+it feeds synthetic gateway messages through the pure command spine
+(`notifications/commands.py`) against an in-memory `ControlBus`, mirroring BOTH real consumers
+of a Discord message (the gateway `on_message` path and the in-run REST poller). The token is
+blank so the REST chokepoint (`notifications/discord_client._request`) short-circuits to a
+no-op — nothing touches the network. Use it instead of spinning up a second gateway.
+
+```bash
+python -m pytest tests/test_bot_replay.py -q
+```
+
+The matrix covers: every registered `!` command, malformed/unicode-garbage args, unauthorized
+and bot-author senders, duplicate/dedup, cursor-based stale replay, pause/resume/abort races,
+oversized reply/embed clamping, dual-consumer double-apply, the REST 429→401 breaker/latch, and
+the watchdog stale path.
 
 ## Preferred test-selection flow
 

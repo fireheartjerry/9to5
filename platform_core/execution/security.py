@@ -30,9 +30,12 @@ LOG = config.getLogger("execution.security")
 # Checked per path segment, so .../user/.aws/credentials is blocked via the ".aws" segment.
 _BLOCKED_MOUNT_NAMES = (".env", ".git", ".ssh", ".aws", ".gnupg", ".gpg",
                         ".docker", ".npmrc", ".netrc")
-# Substrings that flag a system root or the docker socket directory anywhere in the path.
-_BLOCKED_MOUNT_FRAGMENTS = ("docker.sock", "/var/run/docker", "/etc", "/root", "/boot",
-                            "/sys", "/proc", "/dev/")
+# Substrings that flag the docker socket anywhere in the path (specific enough not to
+# false-positive on a legit path segment).
+_BLOCKED_MOUNT_FRAGMENTS = ("docker.sock", "/var/run/docker")
+# System-root directory NAMES matched as WHOLE path segments -- so /etc/passwd is blocked
+# while /data/etcd/x is allowed (a bare "/etc" substring wrongly matched "etcd").
+_BLOCKED_ROOT_SEGMENTS = frozenset({"etc", "root", "boot", "sys", "proc", "dev"})
 _BLOCKED_NETWORK_MODES = ("host", "container")
 
 
@@ -98,11 +101,14 @@ def _components(norm_path: str) -> list:
 
 
 def _assertSafePath(host_path: str, norm: str) -> None:
-    """Raise MountSecurityError if any segment is a blocked name or any fragment is present."""
-    if any(seg in _BLOCKED_MOUNT_NAMES for seg in _components(norm)):
+    """Raise MountSecurityError if any segment is a blocked name, a blocked system-root
+    segment, or a docker-socket fragment is present."""
+    segs = _components(norm)
+    if any(seg in _BLOCKED_MOUNT_NAMES for seg in segs):
         raise MountSecurityError(f"refusing to mount secret/VCS/cred path: {host_path}")
     low = norm.lower()
-    if any(frag in low for frag in _BLOCKED_MOUNT_FRAGMENTS):
+    if (any(frag in low for frag in _BLOCKED_MOUNT_FRAGMENTS)
+            or any(seg in _BLOCKED_ROOT_SEGMENTS for seg in segs)):
         raise MountSecurityError(f"refusing to mount system/socket path: {host_path}")
 
 

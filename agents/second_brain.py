@@ -31,7 +31,7 @@ RUN/TEST: python -m pytest tests/slow/test_phase2_second_brain.py
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 import config
 from agents import adversary

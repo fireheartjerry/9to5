@@ -10,6 +10,8 @@ RUN/TEST: (no mapped test)
 from __future__ import annotations
 
 import json as _jsonlib   # aliased: the _request kwarg is named `json` (Discord body)
+import os
+import sys
 import time
 from typing import Optional
 
@@ -20,6 +22,24 @@ import config
 LOG = config.getLogger("discord")
 
 _SESSION = requests.Session()   # persistent connection pool; reused across all REST calls
+
+
+def _realDiscordBlocked() -> bool:
+    """True when a REAL Discord REST call must be REFUSED (unit/CI context).
+
+    Mirrors ``work_launcher._spawnBlocked`` / ``gemini_driver._realApiBlocked``: this chokepoint
+    normally only avoids the live channel because conftest.py blanks DISCORD_BOT_TOKEN/
+    DISCORD_CHANNEL_ID for pytest -- a test file invoked directly (bare ``python test_x.py`` /
+    ``python -m unittest``) never loads conftest.py and so isn't sandboxed at all, letting a
+    stray test post to the real channel. This is a second, independent guard so that escape
+    hatch can't reach the network regardless of how the test got invoked."""
+    allow = os.getenv("NINE_TO_FIVE_TEST_MODE", "").strip().lower()
+    if allow in {"0", "false", "no", "off"}:
+        return False                       # explicit opt-out: tests that assert the real path
+    if allow in {"1", "true", "yes", "on"}:
+        return True
+    # env unset -> auto-detect a live test runner so a forgotten/bypassed sandbox never posts live.
+    return "unittest" in sys.modules or "pytest" in sys.modules
 
 _API = "https://discord.com/api/v10"
 
@@ -45,10 +65,22 @@ def _authHeadersMultipart() -> dict:
     return {"Authorization": f"Bot {config.DISCORD_BOT_TOKEN}"}
 
 
+def _requestHeaders(noauth: bool, files: Optional[dict]) -> dict:
+    """Webhook-execute (noauth) is authorized by the token IN the URL, so it carries no Bot
+    header; a multipart upload drops Content-Type so requests can set its own boundary."""
+    if noauth:
+        return {}
+    if files is not None:
+        return _authHeadersMultipart()
+    return _authHeaders()
+
+
 def _ownerMentions() -> dict:
     """allowed_mentions that can never expand past the configured owner."""
     oid = (config.DISCORD_HUMAN_USER_ID or "").strip()
-    return {"parse": [], "users": [int(oid)] if oid.isdigit() else []}
+    # Discord snowflakes must be JSON strings, not ints (a bare int can exceed JS safe-int range
+    # and Discord rejects/mangles it); keep the numeric string as-is.
+    return {"parse": [], "users": [oid] if oid.isdigit() else []}
 
 
 def _request(method: str, path: str, *, json: Optional[dict] = None,
@@ -66,19 +98,15 @@ def _request(method: str, path: str, *, json: Optional[dict] = None,
     global _DISABLED, _RATE_LIMITED_UNTIL
     if _DISABLED or not config.DISCORD_BOT_TOKEN or not config.DISCORD_CHANNEL_ID:
         return None
+    if _realDiscordBlocked():
+        return None
     # Global 429 circuit breaker: while inside the rate-limit window, do not touch the network at all.
     if time.monotonic() < _RATE_LIMITED_UNTIL:
         return None
     url = f"{_API}{path}"
     attempt = 0
     while True:
-        # Webhook-execute (noauth) is authorized by the token IN the URL, so it carries no Bot header.
-        if noauth:
-            headers: dict = {}
-        elif files is not None:
-            headers = _authHeadersMultipart()
-        else:
-            headers = _authHeaders()
+        headers = _requestHeaders(noauth, files)
         try:
             if files is not None:
                 r = _SESSION.request(method, url, headers=headers, data=data,
@@ -142,12 +170,15 @@ def _embedLen(embed: dict) -> int:
 
 
 def _clampEmbed(embed: dict) -> dict:
-    """Guarantee a sendable embed: per-field clamp (no oversize field can 400 the whole message),
-    <=25 fields, and a 6000-total budget enforced by shrinking the LARGEST field value first so the
-    dashboard's dynamic tail rows are never silently dropped."""
+    """Guarantee a sendable embed: title + per-field clamp (no oversize part can 400 the whole
+    message), <=25 fields, and a hard 6000-total budget. The budget is enforced by shrinking the
+    largest field VALUE first (dashboard tail rows survive longest), then the largest field NAME,
+    then dropping trailing fields — so a many-long-names embed can never exceed the total limit."""
     if not isinstance(embed, dict):
         return embed
     e = dict(embed)
+    if isinstance(e.get("title"), str):
+        e["title"] = truncate(e["title"], config.DISCORD_MAX_EMBED_TITLE)
     if isinstance(e.get("description"), str):
         e["description"] = truncate(e["description"], config.DISCORD_MAX_EMBED_DESC)
     fields = e.get("fields")
@@ -161,16 +192,32 @@ def _clampEmbed(embed: dict) -> dict:
             nf["value"] = truncate(nf.get("value", ""), config.DISCORD_MAX_FIELD_VALUE) or "—"
             clamped.append(nf)
         e["fields"] = clamped
-        guard = 0
-        while _embedLen(e) > config.DISCORD_EMBED_TOTAL_MAX and guard < 50:
-            guard += 1
-            over = _embedLen(e) - config.DISCORD_EMBED_TOTAL_MAX
-            biggest = max(e["fields"], key=lambda f: len(str(f.get("value", ""))), default=None)
-            if biggest is None or len(str(biggest.get("value", ""))) <= 8:
-                break
-            cur_len = len(str(biggest["value"]))
-            biggest["value"] = truncate(biggest["value"], max(8, cur_len - over - 1))
+        _shrinkEmbedToBudget(e)
     return e
+
+
+def _shrinkEmbedToBudget(e: dict) -> None:
+    """Mutate ``e`` in place until _embedLen(e) <= the total budget: shrink largest value, then
+    largest name, then drop the last field as a final fallback (guaranteed to terminate)."""
+    guard = 0
+    while _embedLen(e) > config.DISCORD_EMBED_TOTAL_MAX and guard < 200:
+        guard += 1
+        over = _embedLen(e) - config.DISCORD_EMBED_TOTAL_MAX
+        fields = e["fields"]
+        val = max(fields, key=lambda f: len(str(f.get("value", ""))), default=None)
+        if val is not None and len(str(val.get("value", ""))) > 8:
+            cur = len(str(val["value"]))
+            val["value"] = truncate(val["value"], max(8, cur - over - 1))
+            continue
+        nm = max(fields, key=lambda f: len(str(f.get("name", ""))), default=None)
+        if nm is not None and len(str(nm.get("name", ""))) > 1:
+            cur = len(str(nm.get("name", "")))
+            nm["name"] = truncate(nm["name"], max(1, cur - over - 1))
+            continue
+        if fields:                       # values + names at floor: drop a trailing field
+            fields.pop()
+            continue
+        break                            # no fields left; title/description already clamped
 
 
 def _cv2TextLen(components) -> int:

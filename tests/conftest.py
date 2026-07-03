@@ -20,6 +20,15 @@ import time as _time
 
 import pytest
 
+# --- Redirect the prod 9to5.log FileHandler to a throwaway dir for the whole test session ---
+# config._configureLogging() (fired lazily by the first getLogger) otherwise attaches a FileHandler
+# to the real LOG_PATH/9to5.log and pollutes the production log during tests. Set the documented
+# override BEFORE importing config so the very first getLogger picks it up. setdefault so a caller
+# that deliberately exports NINE_TO_FIVE_LOG_DIR still wins.
+import tempfile as _tempfile
+os.environ.setdefault("NINE_TO_FIVE_LOG_DIR",
+                      os.path.join(_tempfile.gettempdir(), "9to5-test-logs"))
+
 import config
 
 pytest_plugins = ("tests.progress_reporter",)
@@ -101,6 +110,75 @@ def _no_real_ollama(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _pin_test_config(monkeypatch):
+    """Pin documented test-default feature flags regardless of the developer's live ``.env``.
+
+    The dev ``.env`` may set ``HUMAN_NATURE_ENABLED=true`` / ``SEMANTIC_SAFETY_ENABLED=true`` for
+    real runs; with them on, the ``OFF is a no-op`` regression tests (test_integration) and the
+    semantic-safety-gated paths behave as if the layer is live and fail. Force the documented OFF
+    defaults for the test process; monkeypatch restores the real values after each test. Tests that
+    exercise a layer ON still ``mock.patch`` the flag True locally -- their patch wins inside the
+    test body and is undone before this fixture tears down."""
+    for knob in ("HUMAN_NATURE_ENABLED", "SEMANTIC_SAFETY_ENABLED"):
+        monkeypatch.setattr(config, knob, False, raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _no_real_claude(monkeypatch):
+    """Never let a test spawn the real ``claude`` CLI subprocess (slow, costs money, needs a live
+    login). Any code path that reaches ``_resolveClaudeLauncher`` -- the gate every real run passes
+    through before ``subprocess.Popen`` -- raises a clear error pointing at the fix. Mirrors the
+    Ollama/Discord/browser sandboxes. Tests that exercise the executor inject a fake launcher +
+    mock ``subprocess.Popen`` (see test_executor_readonly / test_living_knowledge) -- their local
+    patch wins inside the test. Opt out for a deliberate live run with ``NINE_TO_FIVE_ALLOW_CLAUDE=1``."""
+    if os.getenv("NINE_TO_FIVE_ALLOW_CLAUDE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        yield
+        return
+
+    def _blocked(*_a, **_k):
+        raise RuntimeError("real Claude CLI spawn blocked in tests (set NINE_TO_FIVE_ALLOW_CLAUDE=1 "
+                           "to allow); mock the launcher + subprocess.Popen instead.")
+
+    for target in ("agents.executor._resolveClaudeLauncher",
+                   "agents.executor_stream._resolveClaudeLauncher"):
+        monkeypatch.setattr(target, _blocked, raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _no_real_tunnel(monkeypatch, request):
+    """Never let a test start a real public tunnel to the dashboard.
+
+    ``TunnelManager.start`` spawns a daemon supervisor thread that survives test teardown and spins
+    real ``npx localtunnel`` / cloudflared retry loops -- a leaked supervisor is what hung the fuzz
+    property tests past their timeout. No product test needs a live tunnel, so make ``start`` a
+    no-op and hard-block the process-spawn helper. (The supervisor-thread ``stop()`` join hang is a
+    separate tunnel.py fix; the sandbox here keeps tests from ever triggering it.)
+
+    The tunnel's OWN unit tests (test_tunnel.py) drive the real ``start``/supervisor with FAKE
+    providers -- never a real spawn -- so they are exempt, exactly like test_discord_rest opts out
+    of the Discord sandbox."""
+    if "test_tunnel" in str(getattr(request.node, "fspath", "")):
+        yield
+        return
+    try:
+        import notifications.tunnel as _tunnel
+        import notifications.tunnel_providers as _providers
+    except Exception:  # noqa: BLE001 -- optional surface; nothing to sandbox
+        yield
+        return
+
+    def _blocked_spawn(*_a, **_k):
+        raise RuntimeError("real tunnel spawn blocked in tests "
+                           "(notifications.tunnel_providers._spawn)")
+
+    monkeypatch.setattr(_tunnel.TunnelManager, "start", lambda self, port: None, raising=False)
+    monkeypatch.setattr(_providers, "_spawn", _blocked_spawn, raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_state(monkeypatch, tmp_path):
     """Give every test its own STATE_DIR / CONTROL_DIR so task + control files never leak between
     tests. Stray task files in the shared state dir caused order-dependent flakiness -- e.g.
@@ -137,6 +215,7 @@ def _no_real_discord(monkeypatch):
     """Run every test as if Discord is unconfigured -> no live REST calls, no 429 throttling."""
     monkeypatch.setattr(config, "DISCORD_BOT_TOKEN", "")
     monkeypatch.setattr(config, "DISCORD_CHANNEL_ID", 0)
+    monkeypatch.setattr(config, "DISCORD_HUMAN_USER_ID", "")
     yield
 
 
@@ -182,6 +261,19 @@ def _isolate_sie_overrides(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "SIE_OVERRIDES_PATH", tmp_path / "sie_overrides.json",
                         raising=False)
     yield
+
+
+@pytest.fixture
+def pin_flags(monkeypatch):
+    """Factory fixture: pin one or more config flags for the duration of a test.
+
+    Usage: pin_flags(SOCIETY_ENABLED=True, WORKTREE_ISOLATION_ENABLED=True). Deduplicates the
+    hand-rolled ``monkeypatch.setattr(config, "FLAG", value, raising=False)`` pattern used across
+    the epic-flag test files; monkeypatch restores every value automatically at teardown."""
+    def _pin(**flags):
+        for name, value in flags.items():
+            monkeypatch.setattr(config, name, value, raising=False)
+    return _pin
 
 
 @pytest.fixture(autouse=True)

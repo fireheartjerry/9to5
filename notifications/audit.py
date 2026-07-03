@@ -11,6 +11,7 @@ RUN/TEST: python -m pytest tests/notifications/test_audit.py
 """
 from __future__ import annotations
 
+import threading
 from typing import Optional
 
 import config
@@ -18,19 +19,28 @@ from platform_core.core import clock, jsonl_io
 
 LOG = config.getLogger("audit")
 
+# Serializes the rotate-check + replace + append sequence: record() is called from many
+# concurrent asyncio.to_thread call sites (every mutating cog/command). Without this, two
+# near-simultaneous callers could both observe size > AUDIT_MAX_BYTES and both call
+# path.replace(...) to the same ".1" destination -- the loser's replace (or append to a path
+# the winner just moved) raises, and since that's swallowed by the outer except below, the
+# audit entry for that action is silently never written.
+_RECORD_LOCK = threading.Lock()
+
 
 def record(user_id, action: str, task_id: Optional[str] = None, detail: str = "") -> None:
     """Append one audit entry. Swallows all errors (audit must never break a command)."""
     try:
-        entry = {
-            "at": clock.nowIsoLocal(),
-            "user_id": str(user_id) if user_id is not None else None,
-            "action": action,
-            "task_id": task_id,
-            "detail": detail,
-        }
-        jsonl_io.appendRecord(config.AUDIT_LOG_PATH, entry,
-                              max_bytes=config.AUDIT_MAX_BYTES)   # size-rotates to .1
+        with _RECORD_LOCK:
+            entry = {
+                "at": clock.nowIsoLocal(),
+                "user_id": str(user_id) if user_id is not None else None,
+                "action": action,
+                "task_id": task_id,
+                "detail": detail,
+            }
+            jsonl_io.appendRecord(config.AUDIT_LOG_PATH, entry,
+                                  max_bytes=config.AUDIT_MAX_BYTES)   # size-rotates to .1
     except Exception as e:  # noqa: BLE001
         LOG.warning("audit record failed: %s", e)
 

@@ -20,7 +20,7 @@ EXPORTS:
   SimObs  -- In-memory Obsidian double: records writes, never touches disk or REST.
   buildOrchestrator(n_subtasks: int=3)  -- An Orchestrator wired entirely with simulation doubles (no external services).
   BuilderBrain  -- Plans N subtasks, each producing a real file under ``work_dir`` with a REAL
-  builderRunClaude(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw)  -- Fake hands that ACTUALLY write the target file parsed from the subtask's verify cmd,
+  builderRunClaude(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, _project_root=None, **_kw)  -- Fake hands that ACTUALLY write the target file parsed from the subtask's verify cmd,
   buildBuilderOrchestrator(work_dir: str, n_subtasks: int=3)  -- An Orchestrator that produces real artifacts under work_dir and verifies them for real.
 DEPENDS-ON: config, orchestrator.Orchestrator
 SIDE-EFFECTS: unannotated
@@ -28,6 +28,7 @@ RUN/TEST: python -m pytest tests/slow/test_simulation_advanced.py tests/slow/tes
 """
 from __future__ import annotations
 
+import functools as _functools
 import json
 import re as _re
 from pathlib import Path as _Path
@@ -202,7 +203,11 @@ class BuilderBrain:
             target = str(_Path(self.work) / f"feature_{i}.py")
             subs.append({"title": f"build feature {i}", "description": f"create {target}",
                          "layer": 3, "effort_level": "default",
-                         "verify": {"cmd": f'python "{target}"', "expect": "exit_zero"}})
+                         "verify": {"cmd": f'python "{target}"', "expect": "exit_zero"},
+                         # Each subtask touches only its own file -- mutually disjoint, so Epic 1's
+                         # safeParallelSet/Epic 5's selectDisjointBatch can schedule them together
+                         # instead of collapsing to one-at-a-time (unknown file-sets conflict).
+                         "files_touched": [f"feature_{i}.py"]})
         return {"subtasks": subs}
 
     def _spec(self) -> dict:
@@ -213,21 +218,30 @@ class BuilderBrain:
 
 
 def builderRunClaude(spec, *, work_dir=None, task_state=None, subtask=None,
-                     system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw):
+                     system_prompt=None, extra=None, timeout=None, resume_session=None,
+                     _project_root=None, **_kw):
     """Fake hands that ACTUALLY write the target file parsed from the subtask's verify cmd,
-    so the real verify (`python <file>`) passes. Architect phase returns a design doc."""
+    so the real verify (`python <file>`) passes. Architect phase returns a design doc.
+
+    ``_project_root`` (bound via functools.partial in buildBuilderOrchestrator) is the
+    containment boundary for the path-traversal guard below. It defaults to ``work_dir``
+    for backward compatibility, but under worktree isolation ``work_dir`` becomes a
+    per-attempt worktree copy while BuilderBrain's verify commands always reference the
+    ORIGINAL project root -- so the boundary must stay pinned to that root, not drift with
+    whichever worktree the attempt happens to execute in."""
     if system_prompt is not None:
         return {"ok": True, "returncode": 0, "stdout": "# design\n" + "doc " * 60,
                 "is_error": False, "session_id": None}
     cmd = ((subtask or {}).get("verify") or {}).get("cmd") or ""
     m = _re.search(r'python\s+"([^"]+)"', cmd)
     sid = (subtask or {}).get("subtask_id", "?")
+    boundary = _project_root or work_dir
     if m:
         try:
             p = _Path(m.group(1)).resolve()
-            if work_dir and not str(p).startswith(str(_Path(work_dir).resolve())):
+            if boundary and not str(p).startswith(str(_Path(boundary).resolve())):
                 return {"ok": False, "returncode": 1,
-                        "stdout": f"path traversal blocked: {p} outside {work_dir}",
+                        "stdout": f"path traversal blocked: {p} outside {boundary}",
                         "is_error": True, "session_id": None}
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(f'"""Built by 9to5 builder-sim for {sid}."""\nprint("{sid} ok")\n',
@@ -250,4 +264,5 @@ def buildBuilderOrchestrator(work_dir: str, n_subtasks: int = 3):
             f"Underlying error: {exc}"
         ) from exc
     return Orchestrator(brain=BuilderBrain(work_dir, n_subtasks), obs=SimObs(),
-                        run_claude=builderRunClaude, replan=simReplan, review=simReview)
+                        run_claude=_functools.partial(builderRunClaude, _project_root=str(work_dir)),
+                        replan=simReplan, review=simReview)

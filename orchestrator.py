@@ -23,7 +23,7 @@ from __future__ import annotations
 import threading
 
 import config
-from agents import adversary, executor, replanner, verifier
+from agents import adversary, executor, replanner, verifier  # noqa: F401 -- adversary/verifier re-exported; tests patch orchestrator.adversary/.verifier
 from platform_core.runtime.control import AbortRun, ControlBus
 from memory.obsidian import ObsidianClient
 from notifications.dashboard import DiscordDashboard
@@ -33,8 +33,6 @@ import platform_core.core.epoch as epoch
 from platform_core.orchestration.llm_mixin import OrchestratorLlmMixin
 from platform_core.orchestration.plan_mixin import (
     OrchestratorPlanMixin,
-    ORCHESTRATOR_CONSTITUTION,
-    _VERIFY_EXAMPLE_PATH,
 )
 from platform_core.orchestration.control_mixin import OrchestratorControlMixin
 from platform_core.orchestration.execute_mixin import OrchestratorExecuteMixin

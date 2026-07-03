@@ -22,10 +22,13 @@ EXPORTS:
   signature_text(goal: str, title: str='') -> str  -- The text we embed for a subtask/goal
   embed_and_store(run_id: str, st_id: str, goal: str, title: str='', db_path: Optional[Path]=None) -> bool  -- Compute + persist a subtask's embedding AND seed the ANN index (derived cache
   top_k_similar(query_vec: list[float], k: int=5, *, only_passed: bool=True, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- The ``k`` most-similar embedded subtasks to ``query_vec``, each annotated with a
+  top_k_failures(query_vec: list[float], k: int=2, *, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- The ``k`` most-similar embedded subtasks that FAILED verification (``verify_passed==0``…
   retrieve(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Embed the (goal, title) query and return the top-K similar past successes.
+  retrieve_failures(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Embed the (goal, title) query and return up to ``k`` similar past FAILED subtasks.
   retrieve_content(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Embed the query, look up the ANN index (fallback: O(n) scan), and JOIN each hit to
   render_lessons(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str  -- Render neighbors into a compact lessons block, truncated to the token budget.
   render_solutions(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str  -- Render neighbors into a compact block of ACTUAL solution content (sanitized),
+  render_failures(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str  -- Render similar past FAILED subtasks into a DISTINCTLY-tagged warning block.
   backfill_embeddings(db_path: Optional[Path]=None) -> dict[str, int]  -- Embed every verify-passing subtask that lacks an embedding (run off the hot path,
   lessons_block(goal: str, title: str='', *, db_path: Optional[Path]=None) -> str  -- Orchestrator-facing one-call helper: retrieve + render, fully best-effort.
 DEPENDS-ON: config, memory.exp_index, memory.experience, memory.experience_content, memory.memory_sanitizer, memory.retrieval_rank
@@ -143,11 +146,19 @@ def _uid(run_id: str, st_id: str) -> str:
     return f"{run_id}::{st_id}"
 
 
+def _embedText(goal: str, title: str = "") -> Optional[list[float]]:
+    """The single embedding-composition seam: BOTH the live write path (embed_and_store) and the
+    nightly backfill compose their vector here, so a backfilled row lands in the SAME vector space
+    as a live-embedded row and the query. Embedding two different texts (title-only vs goal+title)
+    would silently split the space and starve retrieval of matches."""
+    return embed(signature_text(goal, title))
+
+
 def embed_and_store(run_id: str, st_id: str, goal: str, title: str = "",
                     db_path: Optional[Path] = None) -> bool:
     """Compute + persist a subtask's embedding AND seed the ANN index (derived cache; the
     BLOB column stays source of truth). Best-effort."""
-    vec = embed(signature_text(goal, title))
+    vec = _embedText(goal, title)
     if not vec:
         return False
     ok = experience.set_subtask_embedding(run_id, st_id, pack(vec), db_path=db_path)
@@ -182,6 +193,33 @@ def top_k_similar(query_vec: list[float], k: int = 5, *, only_passed: bool = Tru
     return out[:k]
 
 
+def top_k_failures(query_vec: list[float], k: int = 2, *,
+                   db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    """The ``k`` most-similar embedded subtasks that FAILED verification (``verify_passed==0``).
+
+    Mirrors ``top_k_similar`` but over the FAILED pool -- reusing the exact same O(n) cosine
+    scan (``embedded_subtasks(only_passed=False)``), so no separate store/index is needed. The
+    ANN index only ever holds successes, so failures always come from this scan. ``None``
+    (skipped/unknown) rows are excluded -- only explicit failures become anti-pattern warnings."""
+    floor = float(getattr(config, "RETRIEVAL_MIN_SCORE", 0.0) or 0.0)
+    out: list[dict[str, Any]] = []
+    for row in experience.embedded_subtasks(only_passed=False, db_path=db_path):
+        if row.get("verify_passed") != 0:    # keep only rows that explicitly FAILED verify
+            continue
+        blob = row.get("embedding")
+        if not blob:
+            continue
+        try:
+            score = cosine(query_vec, unpack(blob))
+        except Exception:  # noqa: BLE001 -- a corrupt blob just doesn't compete
+            continue
+        if score < floor:        # below the relevance floor -> not a relevant failure
+            continue
+        out.append({**row, "score": score})
+    out.sort(key=lambda r: r["score"], reverse=True)
+    return out[:k]
+
+
 def retrieve(goal: str, title: str = "", *, k: Optional[int] = None,
              db_path: Optional[Path] = None) -> list[dict[str, Any]]:
     """Embed the (goal, title) query and return the top-K similar past successes."""
@@ -189,6 +227,22 @@ def retrieve(goal: str, title: str = "", *, k: Optional[int] = None,
     if not qvec:
         return []
     return top_k_similar(qvec, k or config.RETRIEVAL_K, db_path=db_path)
+
+
+def retrieve_failures(goal: str, title: str = "", *, k: Optional[int] = None,
+                      db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    """Embed the (goal, title) query and return up to ``k`` similar past FAILED subtasks.
+
+    Best-effort mate of ``retrieve`` for the failure lane: shares the SAME embedding seam and
+    cosine scan, so surfacing failures costs one extra scan over an already-loaded pool, not a
+    new store. ``k`` defaults to ``config.RETRIEVAL_FAILURES_K``; ``k<=0`` short-circuits."""
+    k = k if k is not None else int(getattr(config, "RETRIEVAL_FAILURES_K", 2) or 0)
+    if k <= 0:
+        return []
+    qvec = embed(signature_text(goal, title))
+    if not qvec:
+        return []
+    return top_k_failures(qvec, k, db_path=db_path)
 
 
 def retrieve_content(goal: str, title: str = "", *, k: Optional[int] = None,
@@ -308,6 +362,36 @@ def render_solutions(neighbors: list[dict[str, Any]],
     return header + "\n".join(lines) + "\n"
 
 
+def render_failures(neighbors: list[dict[str, Any]],
+                    max_tokens: Optional[int] = None) -> str:
+    """Render similar past FAILED subtasks into a DISTINCTLY-tagged warning block.
+
+    Shares the RETRIEVAL_MAX_TOKENS budget with the lessons block (same order of magnitude as
+    the metadata block; the point is a short "don't re-walk this dead-end" nudge, not a full
+    history). Every line is prefixed ``FAILURE`` so the brain reads these as anti-patterns to
+    avoid, never as templates to copy. Returns "" for an empty/over-budget neighbor list."""
+    budget = max_tokens or config.RETRIEVAL_MAX_TOKENS
+    if not neighbors:
+        return ""
+    header = "## SIMILAR PAST FAILURES (these subtasks FAILED verification -- avoid repeating)\n"
+    lines: list[str] = []
+    for n in neighbors:
+        title = sanitizeInjectedField((n.get("title") or "untitled"), max_chars=120)
+        effort = n.get("effort") or "default"
+        bits = [f"- FAILURE \"{title}\": effort={effort}"]
+        lesson = _sanitizeField(n.get("post_mortem"), 200)
+        if lesson:
+            bits.append(f"why: {lesson}")
+        line = ", ".join(bits)
+        candidate = header + "\n".join(lines + [line])
+        if _approx_tokens(candidate) > budget:
+            break
+        lines.append(line)
+    if not lines:
+        return ""
+    return header + "\n".join(lines) + "\n"
+
+
 def backfill_embeddings(db_path: Optional[Path] = None) -> dict[str, int]:
     """Embed every verify-passing subtask that lacks an embedding (run off the hot path,
     e.g. by the nightly SIE job). Returns {embedded, skipped}. Stops early if the embedder
@@ -317,8 +401,9 @@ def backfill_embeddings(db_path: Optional[Path] = None) -> dict[str, int]:
         if row.get("embedding") or row.get("verify_passed") != 1:
             skipped += 1
             continue
-        # The goal text isn't on the subtask row; title is the strongest available signal.
-        vec = embed(signature_text(row.get("title") or "", ""))
+        # The goal text isn't on the subtask row; title is the strongest available signal. Route
+        # through the SAME _embedText seam as the live path so both share one vector space.
+        vec = _embedText("", row.get("title") or "")
         if not vec:
             skipped += 1
             if embedded == 0:          # embedder dead on first try -> bail, don't spin
@@ -347,6 +432,13 @@ def lessons_block(goal: str, title: str = "", *, db_path: Optional[Path] = None)
         block = render_solutions(neighbors)
         if not block:
             block = render_lessons(neighbors)
+        # Failure-aware lane (opt-out via RETRIEVAL_FAILURES_ENABLED). With the flag OFF this
+        # branch is skipped entirely, so the returned block stays byte-identical to before.
+        if getattr(config, "RETRIEVAL_FAILURES_ENABLED", True):
+            failure_block = render_failures(
+                retrieve_failures(goal, title, db_path=db_path))
+            if failure_block:
+                block = (block + "\n" + failure_block) if block else failure_block
         return (block + "\n") if block else ""
     except Exception as e:  # noqa: BLE001 -- learning must never break authoring
         LOG.debug("lessons_block failed (ignored): %s", e)

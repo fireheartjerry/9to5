@@ -212,5 +212,5 @@ if __name__ == "__main__":  # pragma: no cover -- self-test entrypoint
         print(f"\n{len(failed)} check(s) failed: {failed}")
         sys.exit(1)
 
-    print(f"\nAll checks passed.")
+    print("\nAll checks passed.")
     sys.exit(0)

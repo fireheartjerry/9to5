@@ -36,7 +36,8 @@ def test_mirror_roundtrip(tmp_path, monkeypatch):
 
 
 def test_all_reads_are_best_effort_on_garbage(tmp_path, monkeypatch):
-    p = tmp_path / "nav.json"; p.write_text("{not json", encoding="utf-8")
+    p = tmp_path / "nav.json"
+    p.write_text("{not json", encoding="utf-8")
     monkeypatch.setattr(ipc, "NAV_PATH", p)
     assert ipc.read_nav() == {"page_idx": 0, "mode": "summary", "frozen": False}
 

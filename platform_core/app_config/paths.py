@@ -21,7 +21,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from platform_core.app_config._env import _envPath, installRoot, loadEnvOnce, projectRoot
+from platform_core.app_config._env import (
+    _envBool,
+    _envInt,
+    _envPath,
+    installRoot,
+    loadEnvOnce,
+    projectRoot,
+)
 
 
 @dataclass(frozen=True)
@@ -63,10 +70,18 @@ class PathsCfg:
     CLAUDE_DIR: Path
     CLAUDE_SETTINGS_PATH: Path
     VENV_PYTHON: Path             # absolute venv python so hooks run with our deps regardless of cwd
+    # --- state retention sweep (best-effort GC of per-run artifacts) ---
+    ARCHIVE_DIR: Path
     # --- literal defaults ---
     AUDIT_MAX_BYTES: int = 1_000_000   # rotate audit.jsonl past ~1 MB
     TASKS_DIR_REL: str = "tasks"
     SESSIONS_DIR_REL: str = "sessions"
+    # The blackboard/compaction dirs accumulate one file per run and were never pruned;
+    # terminal task/control JSON is archived (never deleted) past a longer horizon.
+    RETENTION_ENABLED: bool = True
+    RETENTION_KEEP_RECENT: int = 10
+    RETENTION_MAX_AGE_DAYS: int = 14
+    RETENTION_ARCHIVE_AGE_DAYS: int = 30
 
     def requiredDirs(self) -> tuple[Path, ...]:
         """Directories that must exist for a run (see ensureDirs)."""
@@ -112,6 +127,12 @@ def buildPathsCfg() -> PathsCfg:
         CLAUDE_DIR=root / ".claude",
         CLAUDE_SETTINGS_PATH=root / ".claude" / "settings.json",
         VENV_PYTHON=root / "venv" / "Scripts" / "python.exe",
+        # --- state retention sweep (best-effort GC of per-run artifacts) ---
+        ARCHIVE_DIR=state / "archive",
+        RETENTION_ENABLED=_envBool("RETENTION_ENABLED", True),
+        RETENTION_KEEP_RECENT=_envInt("RETENTION_KEEP_RECENT", 10),
+        RETENTION_MAX_AGE_DAYS=_envInt("RETENTION_MAX_AGE_DAYS", 14),
+        RETENTION_ARCHIVE_AGE_DAYS=_envInt("RETENTION_ARCHIVE_AGE_DAYS", 30),
     )
 
 

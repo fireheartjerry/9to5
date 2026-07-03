@@ -71,10 +71,13 @@ def ensureIcons(force: bool = False) -> dict:
     global _MAP
     if _MAP is not None and not force:
         return _MAP
-    _MAP = {}
+    # Build into a LOCAL map; only latch the module cache on a non-empty success. A transient
+    # startup failure (no app id / all uploads fail) must NOT cache an empty map, or every later
+    # call would short-circuit on the empty cache and icons would never provision.
+    result: dict = {}
     app = _appId()
     if not app:
-        return _MAP
+        return result
     existing = _listExisting(app)
 
     def _upload(name: str, png: bytes) -> "str | None":
@@ -95,15 +98,17 @@ def ensureIcons(force: bool = False) -> dict:
         name = PREFIX + concept
         eid = _upload(name, iconset.renderIcon(concept) or b"")
         if eid:
-            _MAP[concept] = f"<:{name}:{eid}>"
+            result[concept] = f"<:{name}:{eid}>"
     # near-white variants (for icons placed ON coloured buttons)
     for concept in iconset.BUTTON_CONCEPTS:
         name = PREFIX + "w_" + concept
         eid = _upload(name, iconset.renderIcon(concept, color=iconset.BUTTON_COLOR) or b"")
         if eid:
-            _MAP["w_" + concept] = f"<:{name}:{eid}>"
-    LOG.info("app-emoji icons ready: %d", len(_MAP))
-    return _MAP
+            result["w_" + concept] = f"<:{name}:{eid}>"
+    if result:
+        _MAP = result   # latch only a non-empty, successful provisioning
+        LOG.info("app-emoji icons ready: %d", len(_MAP))
+    return result
 
 
 def icon(concept: str) -> str:

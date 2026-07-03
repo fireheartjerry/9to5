@@ -19,6 +19,7 @@ RUN/TEST: python -m pytest tests/execution/test_verifier_runner.py
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 import config
@@ -42,13 +43,49 @@ def _evaluate(expect: str, returncode: int, stdout: str) -> bool:
     return verdict is verification.Verdict.PASS
 
 
+def _verifyTimeoutSeconds(cmd: str) -> int:
+    """A broad pytest/unittest suite run needs more wall-clock than a narrow one-shot
+    check -- purely a scheduling knob, no verdict-logic special case (R10 stays intact)."""
+    head = " ".join(cmd.strip().split()[:3]).lower()
+    if "pytest" in head or "unittest" in head:
+        return config.VERIFY_SUITE_TIMEOUT_SECONDS
+    return config.VERIFY_TIMEOUT_SECONDS
+
+
+def _verifyScriptMissing(cmd: str, work_dir: str) -> bool:
+    """True when ``cmd`` names a literal (non-glob) ``.py`` script that doesn't exist.
+
+    A brain-authored verify referencing a helper script that was never created must not
+    burn every retry on FileNotFoundError -- the caller falls back to the executor's own
+    exit status instead. A glob pattern is never treated as missing (it may legitimately
+    expand to nothing yet, or rely on shell globbing outside our control)."""
+    candidate = _extractVerifyPath(cmd)
+    if not candidate or not candidate.endswith(".py") or any(ch in candidate for ch in "*?["):
+        return False
+    script = Path(candidate.strip("\"'"))
+    if script.is_absolute():
+        return not script.exists()
+    run_dir = _normalizeWorkDir(cmd, work_dir)
+    return not (Path(run_dir) / script).exists()
+
+
 def runVerification(verify: Optional[dict], work_dir: str, executor_result: dict, *,
                     declared_targets=None, cancel_check=None) -> dict:
     """Run the ONE Receipt pipeline and return the legacy vresult dict shape.
 
     {passed, cmd, expect, returncode, stdout, stderr} -- a ``VResult`` dict subclass;
     the typed ``Receipt`` rides on ``.receipt`` for annotation-aware consumers."""
+    cmd = (verify or {}).get("cmd") if isinstance(verify, dict) else None
+    if cmd and _verifyScriptMissing(cmd, work_dir):
+        LOG.warning("verify script missing (authoring defect) -> falling back to executor exit: %s",
+                   cmd)
+        receipt = verification._skippedReceipt(executor_result, tuple(declared_targets or ()), work_dir)
+        result = verification.receiptToVResult(receipt)
+        result["cmd"] = cmd
+        result["expect"] = "executor_exit_zero (verify script missing)"
+        return result
+    timeout_seconds = _verifyTimeoutSeconds(cmd) if cmd else None
     receipt = verification.runReceipt(verify, work_dir, executor_result,
                                       declared_targets=declared_targets,
-                                      cancel_check=cancel_check)
+                                      cancel_check=cancel_check, timeout_seconds=timeout_seconds)
     return verification.receiptToVResult(receipt)

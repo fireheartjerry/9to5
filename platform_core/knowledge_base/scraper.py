@@ -180,6 +180,22 @@ def fetchClaudeDocs(enabled: bool = True, timeout: Optional[int] = None) -> dict
 # ============================================================================
 # 2) Scan the installed .claude capability surface off disk
 # ============================================================================
+# Foreign subtrees a recursive scan must NEVER descend into: nested worktree repo copies
+# (.claude/worktrees/**) and vendored sub-projects (fable-rewrite/**, nightclaw/**). Their
+# .claude surfaces are not THIS install's capabilities -- scanning them is slow and injects
+# foreign skills/agents into the brain prompt.
+_SCAN_EXCLUDE_SEGMENTS: frozenset[str] = frozenset({"worktrees", "fable-rewrite", "nightclaw"})
+
+
+def _isExcludedScanPath(path: Path, root: Path) -> bool:
+    """True if *path* lives under an excluded subtree relative to *root*."""
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        parts = path.parts
+    return any(seg.lower() in _SCAN_EXCLUDE_SEGMENTS for seg in parts)
+
+
 def _parseFrontmatter(text: str) -> dict:
     """Tiny YAML-frontmatter reader (no pyyaml dep). Returns flat str->value."""
     if not text.startswith("---"):
@@ -295,6 +311,8 @@ def _scanRootSkillsAndAgents(root: Path, inv: dict,
                               seen_skill: set, seen_agent: set) -> None:
     """Scan skills and subagents from one .claude root into inv in-place."""
     for skill_md in root.glob("**/SKILL.md"):
+        if _isExcludedScanPath(skill_md, root):
+            continue
         inv["files_scanned"] += 1
         raw_text = _readText(skill_md)
         desc_trusted = _isTrustedSource(raw_text, str(skill_md))
@@ -359,10 +377,14 @@ def scanLocalClaude(roots: Optional[tuple] = None) -> dict:
         inv["roots"].append(str(root))
         _scanRootSkillsAndAgents(root, inv, seen_skill, seen_agent)
         for wf in (root / "workflows").glob("**/*") if (root / "workflows").exists() else []:
+            if _isExcludedScanPath(wf, root):
+                continue
             if wf.is_file() and wf.suffix in (".js", ".ts", ".md"):
                 inv["files_scanned"] += 1
                 inv["workflows"].append({"name": wf.stem, "path": str(wf)})
         for cmd in (root / "commands").glob("**/*.md") if (root / "commands").exists() else []:
+            if _isExcludedScanPath(cmd, root):
+                continue
             inv["files_scanned"] += 1
             fm = _parseFrontmatter(_readText(cmd))
             inv["commands"].append({"name": cmd.stem, "description": (fm.get("description") or "")[:200],
@@ -377,14 +399,22 @@ def scanLocalClaude(roots: Optional[tuple] = None) -> dict:
 def readProductSelfKnowledge(roots: Optional[tuple] = None) -> dict:
     """Locate + read the product-self-knowledge skill (Claude Code's own current
     state). Returns ``{found: bool, path: str|None, text: str}``. Never raises."""
-    search_roots = list(roots or config.CLAUDE_SCAN_ROOTS) + [
-        Path.home() / ".claude", config.INSTALL_ROOT]
+    # .claude-scoped roots only (mirrors scanLocalClaude/config.CLAUDE_SCAN_ROOTS) -- the bare
+    # config.INSTALL_ROOT this used to include was an unbounded recursive glob over the WHOLE
+    # project tree (.git, venvs, node_modules, ...) on every knowledge refresh, and (like
+    # scanLocalClaude before its own fix) never excluded .claude/worktrees/** nested repo
+    # copies or the vendored fable-rewrite/nightclaw subtrees -- so a nested/foreign
+    # product-self-knowledge skill could be picked up (non-deterministic glob order) instead of
+    # this install's real one.
+    search_roots = list(roots or config.CLAUDE_SCAN_ROOTS) + [Path.home() / ".claude"]
     for root in search_roots:
         root = Path(root)
         if not root.exists():
             continue
         for pattern in _PRODUCT_SELF_KNOWLEDGE_GLOBS:
             for hit in root.glob(pattern):
+                if _isExcludedScanPath(hit, root):
+                    continue
                 if hit.is_file():
                     txt = _readText(hit, limit=60_000)
                     if txt:

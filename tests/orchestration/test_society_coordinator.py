@@ -47,7 +47,10 @@ def test_handle_society_batch_runs_workers_and_collects(tmp_path):
     ready = [s for s in state.subtasks if s["status"] == "pending"]
     msgs = coord._handleSocietyBatch(ready, parallelism=2, run_fn=fake_run)
     assert len(ran) == 2 and all(m["ok"] for m in msgs)
-    assert {s["status"] for s in state.subtasks} == {"in_progress"}  # claimed; verifier lands later
+    # WorkerAgent._landStatus lands a terminal status itself (claim -> execute -> single-shot
+    # verify -> land) so the run loop never livelocks on a subtask stuck 'in_progress' -- there
+    # is no separate deferred-verifier stage (see test_society_worker.py's own "done" assertion).
+    assert {s["status"] for s in state.subtasks} == {"done"}
 
 
 def test_worker_crash_contained(tmp_path):

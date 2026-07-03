@@ -33,10 +33,14 @@ LOG = config.getLogger("orchestrator")
 def _effectiveVerify(orch, subtask: dict, exec_cwd: str, verify_spec,
                      attempt_started: float, declared: list, sid: str):
     """FX-1: synthesize a behavioral verify when none was authored (declared diff-grounding
-    targets survive the synthesis -- they are part of the acceptance contract, R10)."""
+    targets survive the synthesis -- they are part of the acceptance contract, R10).
+
+    BUG-009: ``_repairVerify`` extracts a path from Ollama-authored description text; route it
+    through ``sanitizeVerify`` same as every planner-authored verify, rather than trusting it
+    unsanitized (defense-in-depth against shell-chaining metacharacters/non-stdlib imports)."""
     if (verify_spec or {}).get("cmd"):
         return verify_spec
-    synth = orch._repairVerify(subtask, exec_cwd, attempt_started)
+    synth = verifier.sanitizeVerify(orch._repairVerify(subtask, exec_cwd, attempt_started))
     if not synth:
         return verify_spec
     if declared:
@@ -52,7 +56,7 @@ def _repairBrittleVerify(orch, subtask: dict, exec_cwd: str, verify_spec,
     rescued. Returns the (possibly repaired) (vresult, passed)."""
     if passed or verifier.isStrictVerify(verify_spec):
         return vresult, passed
-    repaired = orch._repairVerify(subtask, exec_cwd, attempt_started)
+    repaired = verifier.sanitizeVerify(orch._repairVerify(subtask, exec_cwd, attempt_started))
     same = bool(repaired) and (repaired.get("cmd"), repaired.get("expect")) == \
         ((verify_spec or {}).get("cmd"), (verify_spec or {}).get("expect"))
     if repaired and not same:
@@ -128,7 +132,10 @@ def runAttemptVerify(orch, state, subtask: dict, result: dict, exec_cwd: str,
     vresult, passed = _selfRefGateDowngrade(orch, state, sid, vresult, passed)
     # Epic 2 (steal #3): execution-grounded downgrade. Runs ONLY when the deterministic gate
     # already passed; can never upgrade a fail. MODE-DEPENDENT NOT_VERIFIED handled inside.
-    if passed and config.INDEPENDENT_VERIFY_ENABLED:
+    # Skip for unverified subtasks (no verify cmd = exit-zero fallback only, not a code-change
+    # subtask). gitDiffFacts runs inside the repo and sees pre-existing dirty files, causing
+    # false has_code_change=True on branches with in-progress work.
+    if passed and config.INDEPENDENT_VERIFY_ENABLED and not vresult.get("unverified"):
         vresult, passed = runEvidenceGate(orch, state, subtask, result, exec_cwd, vresult, sid)
     with orch._state_lock:
         state.recordVerify(sid, vresult)

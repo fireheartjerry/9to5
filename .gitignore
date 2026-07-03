@@ -24,6 +24,9 @@ state/sie_state.json
 # Phase 2 second brain (Gemini): trust telemetry log
 state/adversary_trust.jsonl
 state/audit.jsonl
+# Live Terminal cross-process IPC bridge (runtime data)
+state/terminal_nav.json
+state/terminal_mirror.json
 # Leftover ChatGPT Chromium profile from the pre-Gemini browser layer (runtime data; safe to delete)
 state/chatgpt_profile/
 # Scratch dumps
@@ -51,3 +54,21 @@ references/
 state/exp_index/
 state/sie_overrides.json
 state/evolution/reports/
+.env.backup
+# Second-instance bot secret (separate Discord app token) — NEVER commit
+.env.nightclaw2
+logs2/
+# Quarantine trees: nested worktree clone + untracked bot package (excluded from
+# repo_map/identity scans; kept out of git status). See mega-upgrade plan.
+fable-rewrite/
+nightclaw/
+# Local launcher scripts (untracked, machine-specific)
+run.bat
+run.ps1
+.env.example.vars.txt
+# Stray state tree created when PROJECT_ROOT mis-resolves (guarded by B28 fix)
+platform_core/app_config/state/
+platform_core/app_config/logs/
+platform_core/app_config/vault/
+platform_core/app_config/.sc-ctx/
+platform_core/app_config/.claude/

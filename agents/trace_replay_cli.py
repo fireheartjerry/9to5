@@ -46,7 +46,7 @@ if str(_ROOT) not in sys.path:
 import config  # noqa: E402
 import platform_core.core.tracing as tracing  # noqa: E402
 
-from agents.trace_replay_events import (  # noqa: E402
+from agents.trace_replay_events import (  # noqa: E402, F401 -- re-exported; tests read these via importlib module attrs
     _calibrateThreshold,
     _computeThresholdFromCounts,
     _parseTs,
@@ -63,7 +63,7 @@ from agents.trace_replay_events import (  # noqa: E402
     _fmtOffset,
 )
 import agents.trace_replay_output as _tro  # noqa: E402
-from agents.trace_replay_output import (  # noqa: E402
+from agents.trace_replay_output import (  # noqa: E402, F401 -- re-exported; tests read these via importlib module attrs
     _colorEnabled, _printEventRows, _printTextSummary, _printTraceHeader,
     _renderBarChart, _COLORS,
 )

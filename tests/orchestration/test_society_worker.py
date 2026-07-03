@@ -28,7 +28,7 @@ def test_run_claims_executes_and_posts_result(tmp_path):
     msg = w.run()
 
     assert msg["ok"] is True and msg["role"] == "coder"
-    assert state.getSubtask(sid)["status"] == "in_progress"
+    assert state.getSubtask(sid)["status"] == "done"
     assert state.getSubtask(sid)["claimed_by"] == "coder"
     # role narrows effort/model but does not bypass routing
     assert calls["spec"]["effort_level"] == ROLES["coder"].effort_level
@@ -72,5 +72,25 @@ def test_two_workers_one_winner(tmp_path):
 
     t1 = threading.Thread(target=attempt, args=("coder",))
     t2 = threading.Thread(target=attempt, args=("tester",))
-    t1.start(); t2.start(); t1.join(); t2.join()
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
     assert len(wins) == 1  # exactly one worker ever owns the subtask
+
+
+def test_failing_verify_lands_failed(tmp_path):
+    state, sid = _state_with_subtask()
+    state.updateSubtask(sid, verify={"cmd": "python -c \"import sys; sys.exit(1)\"",
+                                     "expect": "exit_zero"})
+    bb = Blackboard(tmp_path / "b.jsonl")
+
+    def fake_run(spec, **kw):
+        return {"ok": True, "returncode": 0, "stdout": "done", "cost_usd": 0.0}
+
+    w = WorkerAgent(ROLES["coder"], state.getSubtask(sid), str(tmp_path),
+                    bb, state, threading.Lock(), run_fn=fake_run)
+    msg = w.run()
+
+    assert msg["ok"] is True  # executor itself succeeded
+    assert state.getSubtask(sid)["status"] == "failed"  # but the verifier did not pass

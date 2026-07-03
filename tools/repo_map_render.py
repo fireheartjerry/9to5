@@ -79,7 +79,7 @@ def render_root_agents_md(m: dict) -> str:
         ("Outline a big file (signatures only)", "`python tools/dev.py outline <file>`"),
         ("Find a symbol's def + callers", "`python tools/dev.py where <symbol>`"),
         ("Full suite", f"`{FULL_SUITE}`"),
-        ("Fast lane", "`python -m pytest -m \"not slow\" -q`"),
+        ("Fast lane", "`python tools/dev.py fast`"),
         ("Dry-run pipeline", "`python main.py --dry-run --goal ... --hours 1 --no-web`"),
     ):
         out.append(f"| {task} | {cmd} |")

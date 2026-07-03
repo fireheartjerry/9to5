@@ -14,7 +14,33 @@ import time
 import config
 from platform_core.orchestration.execute_mixin import OrchestratorExecuteMixin
 from platform_core.runtime import trajectory
-from platform_core.runtime.trajectory import Recorder
+from platform_core.runtime.trajectory import Recorder, loadSpans
+
+
+# ---------------------------------------------------------------------------
+# B29's temp+os.replace whole-file flush is gone: the recorder is append-only JSONL
+# now (one line per open/close event under self._lock), so there is no per-flush temp
+# file to race on -- concurrent-write safety is covered by the append-only test below.
+# ---------------------------------------------------------------------------
+def test_concurrent_flushes_leave_valid_complete_file(tmp_path):
+    rec = Recorder("run-flush", root=tmp_path)
+
+    def _worker(n):
+        for i in range(15):
+            sid = rec.openSpan("tool", None, {"n": n, "i": i})
+            rec.closeSpan(sid, cost_usd=float(n))
+
+    threads = [threading.Thread(target=_worker, args=(k,)) for k in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert (tmp_path / "run-flush.jsonl").exists()
+    data = loadSpans("run-flush", root=tmp_path)
+    assert data["run_id"] == "run-flush"
+    assert len(data["spans"]) == 8 * 15               # no concurrent append silently dropped a span
+    assert not list(tmp_path.glob("*.tmp"))           # append-only: no temp files at all
 
 _ENV_KEY = "NINE_TO_FIVE_PARENT_TRAJECTORY_STEP_ID"
 
@@ -103,6 +129,7 @@ class _FakeState:
         self.subtasks: list = []
         self.meta: dict = {}          # _runOneAttempt reads meta (e.g. work_profile)
         self._subs: dict = {}
+        self.meta: dict = {}
 
     def updateSubtask(self, sid, **kw):
         self._subs.setdefault(sid, {}).update(kw)

@@ -5,7 +5,7 @@ Thin shells over work_launcher + branding (see notifications.slash helpers).
 EXPORTS:
   RunsCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.branding, notifications.commands, notifications.discord_bot, notifications.slash, notifications.views, notifications.work_launcher, orchestrator.Orchestrator, platform_core.orchestration, state.task
+DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.branding, notifications.discord_bot, notifications.slash, notifications.views, notifications.work_launcher, orchestrator.Orchestrator, platform_core.orchestration, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -18,7 +18,6 @@ from discord.ext import commands as dpy_commands
 
 import config
 from notifications import audit, branding, work_launcher
-from notifications import commands as spine
 from notifications import slash
 from platform_core.orchestration import work_profile as work_profile_mod
 from state.task import TaskState
@@ -105,6 +104,7 @@ class RunsCog(dpy_commands.Cog):
                            repo_url="Clone this repo into a managed workspace",
                            repo_ref="Branch, tag, or ref to check out with repo_url",
                            night_mode="Zero human interaction — no pings, no holds, auto-resume pauses",
+                           sim="Token-light: simulated run over the live surfaces (zero API cost)",
                            profile_preset="Nightclaw work-profile preset",
                            work_profile="Custom axes, e.g. stability=80,evidence=90")
     @app_commands.choices(mode=[app_commands.Choice(name="watch", value="watch"),
@@ -119,6 +119,7 @@ class RunsCog(dpy_commands.Cog):
                    work_dir: "str | None" = None, repo_url: "str | None" = None,
                    repo_ref: "str | None" = None,
                    night_mode: "bool | None" = None,
+                   sim: "bool | None" = None,
                    profile_preset: "app_commands.Choice[str] | None" = None,
                    work_profile: "str | None" = None) -> None:  # noqa: ANN001
         if not slash._ownerOk(interaction):
@@ -128,7 +129,7 @@ class RunsCog(dpy_commands.Cog):
             return await interaction.response.send_modal(WorkModal())
         await interaction.response.defer(ephemeral=False)
 
-        if config.GEMINI_ENABLED:
+        if config.GEMINI_ENABLED and not sim:
             from agents import browser_executor
             await interaction.followup.send("Checking Gemini reachability…", ephemeral=False)
             reachable = await asyncio.to_thread(browser_executor.preflightLogin, 300, 3)
@@ -143,7 +144,7 @@ class RunsCog(dpy_commands.Cog):
             goal=goal, hours=work_launcher.parseHours(hours),
             mode=(mode.value if mode else "watch"), parallel=parallel or 1,
             work_dir=work_dir or None, repo_url=repo_url or None, repo_ref=repo_ref or None,
-            night_mode=bool(night_mode),
+            night_mode=bool(night_mode), sim=bool(sim),
             work_profile=(work_profile or (profile_preset.value if profile_preset else None)))
         audit.record(interaction.user.id, "work", None, "slash")
         reply = await asyncio.to_thread(work_launcher.launchOrError, req)
@@ -187,17 +188,19 @@ class RunsCog(dpy_commands.Cog):
         await interaction.followup.send(embed=slash._embed(branding.runEmbed(state)), ephemeral=False)
 
     @app_commands.command(name="resume", description="Resume a paused run, or resume a prior run by id")
-    @app_commands.describe(task_id="(optional) prior task id to resume; omit to unpause the current run")
+    @app_commands.describe(task_id="(optional) prior task id to resume; omit to unpause the current run",
+                           retry_failed="Also retry subtasks that failed (default: only pending ones continue)")
     @app_commands.autocomplete(task_id=slash._taskAutocomplete)
     @slash.COOLDOWN
-    async def resume(self, interaction, task_id: "str | None" = None) -> None:  # noqa: ANN001
+    async def resume(self, interaction, task_id: "str | None" = None,
+                     retry_failed: bool = False) -> None:  # noqa: ANN001
         if not slash._ownerOk(interaction):
             return await interaction.response.send_message("Not authorized.", ephemeral=True)
         if not task_id:
             return await slash._runControl(interaction, "resume")
         await interaction.response.defer(ephemeral=False)
         audit.record(interaction.user.id, "resume", task_id, "slash")
-        reply = await asyncio.to_thread(work_launcher.resumeOrError, task_id)
+        reply = await asyncio.to_thread(work_launcher.resumeOrError, task_id, retry_failed)
         await interaction.followup.send(reply[:slash.MAX_REPLY], ephemeral=False)
 
     @app_commands.command(name="create-pr", description="Manually create a PR for any completed run (bypasses test gate)")

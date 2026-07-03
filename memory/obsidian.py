@@ -25,6 +25,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 import requests
 import urllib3
@@ -37,6 +38,26 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 LOG = config.getLogger("obsidian")
 
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+_warned_non_loopback = False
+
+
+def _warnIfNonLoopback(url: str) -> None:
+    """One-time warning when TLS verification is disabled (verify=False, below) against a
+    non-loopback host. The Obsidian Local REST API only ever runs on 127.0.0.1; disabling cert
+    verification is meant for that self-signed-on-localhost case, not a network-facing one."""
+    global _warned_non_loopback
+    if _warned_non_loopback:
+        return
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:  # noqa: BLE001
+        host = ""
+    if host and host not in _LOOPBACK_HOSTS:
+        _warned_non_loopback = True
+        LOG.warning("OBSIDIAN_BASE_URL (%s) is not loopback but TLS verification is disabled "
+                   "for the Obsidian REST client; this was intended for 127.0.0.1 only.", url)
+
 _APPEND_LOCK = threading.Lock()  # serialize appendNote read-modify-write
 
 # Background pool for REST syncs to Obsidian -- the disk write is the source of truth and
@@ -44,14 +65,22 @@ _APPEND_LOCK = threading.Lock()  # serialize appendNote read-modify-write
 # or unavailable vault never blocks the run loop. Flushed at process exit.
 _REST_POOL: Optional[ThreadPoolExecutor] = None
 _REST_LOCK = threading.Lock()
+_REST_ATEXIT_REGISTERED = False
 
 
 def _restPool() -> ThreadPoolExecutor:
-    global _REST_POOL
+    global _REST_POOL, _REST_ATEXIT_REGISTERED
     with _REST_LOCK:
         if _REST_POOL is None:
             _REST_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="obsidian-rest")
-            atexit.register(lambda: _REST_POOL and _REST_POOL.shutdown(wait=True))
+            # BUG-017: register the atexit shutdown ONCE per process, not once per pool. If
+            # flushRest() tears the pool down and a later _restPool() call recreates it, every
+            # prior registration is still live (atexit never deregisters) and each evaluates the
+            # CURRENT global _REST_POOL at interpreter exit -- calling shutdown() on it once per
+            # stacked registration.
+            if not _REST_ATEXIT_REGISTERED:
+                atexit.register(lambda: _REST_POOL and _REST_POOL.shutdown(wait=True))
+                _REST_ATEXIT_REGISTERED = True
     return _REST_POOL
 
 
@@ -60,6 +89,7 @@ def _restPut(base_url: str, headers: dict, rel_path: str, content: str) -> None:
     has the note; REST is a bonus, so failures are swallowed (but counted). level=DEBUG:
     a closed vault is an expected daily condition, not an alarm -- the DEGRADATIONS
     registry still counts it for the run-end summary."""
+    _warnIfNonLoopback(base_url)
     with best_effort("obsidian.rest_sync", log=LOG, level=logging.DEBUG):
         r = requests.put(f"{base_url}/vault/{rel_path}", data=content.encode("utf-8"),
                          headers={**headers, "Content-Type": "text/markdown"},
@@ -183,6 +213,7 @@ class ObsidianClient:
 
     def _writeNoteSync(self, rel_path: str, content: str) -> dict:
         """Legacy synchronous REST-first write (disk fallback)."""
+        _warnIfNonLoopback(self.base_url)
         try:
             r = requests.put(
                 f"{self.base_url}/vault/{rel_path}", data=content.encode("utf-8"),
@@ -200,6 +231,7 @@ class ObsidianClient:
 
     def readNote(self, rel_path: str) -> Optional[str]:
         url = f"{self.base_url}/vault/{rel_path}"
+        _warnIfNonLoopback(url)
         with best_effort("obsidian.rest_read", log=LOG, level=logging.DEBUG):
             r = requests.get(url, headers=self.headers, verify=False, timeout=10)
             if 200 <= r.status_code < 300:
@@ -228,6 +260,7 @@ class ObsidianClient:
         """Probe REST reachability and whether our key authenticates."""
         rest_ok = False
         authed = False
+        _warnIfNonLoopback(self.base_url)
         try:
             r = requests.get(f"{self.base_url}/", verify=False, timeout=6)
             rest_ok = r.status_code == 200

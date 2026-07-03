@@ -248,12 +248,14 @@ def _drainStreaming(proc, run_prompt: str, feed, timeout: int) -> "tuple[str, st
 
     def _errReader():
         try:
-            err_parts.append(proc.stderr.read() or "")
+            if proc.stderr:
+                err_parts.append(proc.stderr.read() or "")
         except Exception:  # noqa: BLE001 -- stderr loss must never break the drain
             pass
 
     et = threading.Thread(target=_errReader, name="claude-stderr", daemon=True)
     et.start()
+
     out_lines: list[str] = []
     try:
         for line in proc.stdout:   # blocks until EOF (process exit or tree-kill closes the pipe)

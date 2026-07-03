@@ -4,7 +4,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import config
 from learning import prompts
 from memory import experience
 

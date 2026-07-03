@@ -71,24 +71,42 @@ def _detectSelfReferential(state, work_dir: str) -> bool:
 
 
 def _prepareSelfReferential(state, work_dir: str, bus, dashboard) -> None:
-    """Create (or resume) the isolation branch for a self-referential run and notify Discord."""
+    """Create (or resume) the isolation branch for a self-referential run and notify Discord.
+
+    ORDER MATTERS: the run is marked self-referential (which applies the core-file locks) only
+    AFTER the isolation branch is actually checked out. If the checkout fails, marking self-ref
+    would enable core-file protection with NO isolation branch, so every executor edit would land
+    directly on the live branch -- so on a nonzero checkout return code we alert and ABORT self-ref
+    prep, leaving the run on the current branch without self-ref protection."""
     from notifications import discord_bot as discord
     branch = f"{config.SELF_REF_BRANCH_PREFIX}{state.task_id[:8]}"
-    state.markSelfReferential(branch)
     try:
         t = config.GIT_TIMEOUT_SECONDS
         repo_ok, _reason = git_io.gitPreflight(work_dir, timeout=t)
         if repo_ok:
             exists = git_io.runGit("rev-parse", "--verify", branch,
                                    cwd=work_dir, timeout=t).returncode == 0
-            git_io.runGit(*(("checkout", branch) if exists else ("checkout", "-B", branch)),
-                          cwd=work_dir, timeout=t)
+            co = git_io.runGit(*(("checkout", branch) if exists else ("checkout", "-B", branch)),
+                               cwd=work_dir, timeout=t)
+            if co.returncode != 0:
+                LOG.error("self-ref checkout of branch %s failed (rc=%d): %s",
+                          branch, co.returncode, (co.stderr or "").strip()[:200])
+                try:
+                    discord.sendEmbed(discord.noticeEmbed(
+                        f"Self-referential isolation branch '{branch}' checkout FAILED "
+                        f"(rc={co.returncode}) — aborting self-ref prep; run continues on the "
+                        "current branch WITHOUT core-file isolation."))
+                except Exception:  # noqa: BLE001
+                    pass
+                return
             LOG.info("Self-referential task -> %s branch %s",
                      "resumed" if exists else "created", branch)
         else:
             LOG.warning("Self-ref task but %s is not a git repo; no isolation branch", work_dir)
     except Exception as e:  # noqa: BLE001
         LOG.warning("self-ref branch creation failed: %s", e)
+        return
+    state.markSelfReferential(branch)
     discord.sendEmbed(discord.selfRefEmbed(branch, config.CORE_PROTECTED_FILES))
     dashboard.event(f"self-referential · branch {branch}")
 
@@ -178,7 +196,7 @@ def _parallelIteration(orch, state, architect_doc: str, work_dir: str, bus, dash
         # Epic 5: 9to5-owned workforce on the blackboard (flag ON, >=2 ready).
         # Separate `position2` accumulator keeps the OFF-path `position` untouched.
         position2, abort = orch._handleSocietyBatch(
-            state, batch, work_dir, parallelism)
+            state, batch, work_dir, parallelism, run_fn=orch._run_claude)
         position += position2
     else:
         position, abort = orch._handleParallelBatch(

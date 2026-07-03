@@ -16,7 +16,6 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-from pathlib import Path
 
 import requests
 import urllib3
@@ -179,7 +178,6 @@ def _hooks() -> tuple[bool, str, str]:
 
 def _vault() -> tuple[bool, str, str]:
     root = config.VAULT_DISK_ROOT
-    tasks = root / config.TASKS_DIR_REL
     ok = root.exists()
     return ok, (f"exists at {root}" if ok else f"missing {root}"), \
         ("" if ok else "run any task once (ensureDirs creates it) or mkdir it")

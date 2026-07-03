@@ -10,7 +10,7 @@ import sys
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 # Ensure project root is importable regardless of cwd.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))

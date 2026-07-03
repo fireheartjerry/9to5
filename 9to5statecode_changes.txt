@@ -1,0 +1,16 @@
+9TO5 Code Changes Validation Report
+====================================
+
+Checks passed : 10
+Checks failed : 0
+
+  PASS  BUG-003: UUID validation in task_io.load() prevents path traversal
+  PASS  BUG-005: CSRF token always checked, empty token rejected
+  PASS  BUG-006: trailing content after python -c closing quote is rejected
+  PASS  BUG-007: drainOps uses strict read to avoid clobbering abort signal
+  PASS  BUG-008: UUID validation in continuity letters path prevents traversal
+  PASS  BUG-010: broadened rm pattern catches rm -rfv and similar variants
+  PASS  BUG-012: no fallback to loadLatest() in _resolveState
+  PASS  BUG-014: SSRF guard rejects non-https URIs in cloneRepo
+  PASS  BUG-015: format-drive regex prevents false positives on 'reformat'
+  PASS  BUG-017: atexit registered only once per pool lifecycle

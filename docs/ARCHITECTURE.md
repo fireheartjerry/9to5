@@ -166,7 +166,11 @@ All live surfaces are fed by one process-global nervous system; nothing bypasses
   demotion, validate-before-announce, and resume reuse of a live `meta["tunnel_url"]`.
 - **`notifications/webdash.py` (+ `webdash_page.py`)**: Bloomberg-terminal page; `/api/events` SSE,
   `/api/raw` per-subtask stdout, `/api/state` snapshot (health aura, codename, arc, wisdom trail,
-  comparative, intelligence curve). Control token CSRF guard preserved.
+  comparative, intelligence curve). Control token CSRF guard preserved. The page itself is split
+  across `webdash_page.py` (facade, exports `PAGE`), `webdash_styles.py` (`STYLES`),
+  `webdash_markup.py` (`MARKUP`), and `webdash_script.py` (`SCRIPT`) — a11y landmarks/focus/aria,
+  confirm-modal + toast + connection-status feedback, motion, a responsive breakpoint, and an SVG
+  intelligence-curve chart, all zero-dependency (stdlib `http.server` only, no CDN/build step).
 - **Voice/story (best-effort, wired additively into the orchestration mixins):**
   `run_arc.py` (narrative beats), `narration.py` (rate-limited proactive narration + Moments +
   attention-mode), `reflection_post.py` (end-of-run self-reflection), `health_aura.py`

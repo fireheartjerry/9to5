@@ -5,7 +5,7 @@ EXPORTS:
   selfModificationGuard(data)  -- PreToolUse: block edits to hard boundaries and core loop files
 DEPENDS-ON: agents.hooks_destructive, config, platform_core.runtime.action_risk, state.task
 SIDE-EFFECTS: appends logs/guard_alerts.jsonl when the guard blocks
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/test_hooks_selfmod_writes.py
 """
 from __future__ import annotations
 
@@ -82,7 +82,10 @@ def _resolveState():
     explicit is True ONLY when an executor-pinned task resolved. Resolution order:
       1. NINE_TO_FIVE_TASK_FILE -- absolute state-file path the executor exported.
       2. NINE_TO_FIVE_TASK_ID via the configured STATE_DIR.
-      3. loadLatest() -- manual/standalone fallback (not explicit).
+      3. loadLatest() -- ONLY when an env var WAS set but failed to resolve (degraded, not a
+         guess). When NEITHER env var is set at all, there is no run to guess at: in a
+         concurrent/resumed session "the latest" task may not be the one this hook's tool call
+         actually belongs to, which would enforce the WRONG task's hard_boundaries (BUG-012).
     Never raises; logs to stderr on a degrade so a silent fail-open is visible.
     """
     try:
@@ -102,6 +105,8 @@ def _resolveState():
             return TaskState.load(tid), True
         except Exception as e:
             sys.stderr.write(f"hooks._resolveState: load({tid}) failed ({e}); falling back to loadLatest\n")
+    if not _envTaskRequested():
+        return None, False
     try:
         return TaskState.loadLatest(), False
     except Exception:
@@ -197,7 +202,18 @@ def _parseBashGuardInput(tool_input: dict) -> tuple:
     bash_cmd = tool_input.get("command", "") or ""
     if _bashReadsSecret(bash_cmd.lower()):
         return bash_cmd, True, False
-    if not isWritingBash(bash_cmd):
+    low = bash_cmd.lower()
+    # PowerShell write cmdlets that create/overwrite/delete files -- not covered by the
+    # shared isWritingBash() taxonomy (platform_core.runtime.action_risk targets POSIX-ish
+    # write verbs/redirects/git; PowerShell cmdlets need their own token match) (B11).
+    ps_write = re.search(
+        r"\b(set-content|out-file|add-content|new-item|remove-item|clear-content)\b", low)
+    # Downloaders that write a fetched file to disk (curl -o/-O, iwr -OutFile, wget) -- same
+    # gap: these are network reads to the shared taxonomy but are file WRITES here (B11).
+    downloader = (re.search(r"\bcurl\b[^\n]*\s-o\b", low)
+                  or re.search(r"\biwr\b[^\n]*-outfile", low)
+                  or re.search(r"\bwget\b", low))
+    if not (isWritingBash(bash_cmd) or ps_write or downloader):
         return bash_cmd, False, True  # read-only -- safe
     return bash_cmd, False, False
 

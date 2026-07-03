@@ -8,7 +8,6 @@ Covers gaps not addressed in test_adversary.py and test_browser_executor.py:
  - _parseVerdict with non-dict payload raises ValueError
  - the second-brain stub note mentions the Gemini escalation path
 """
-import json
 import unittest
 from unittest import mock
 

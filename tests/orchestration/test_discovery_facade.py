@@ -1,5 +1,4 @@
 from unittest import mock
-import pytest
 
 from agents.discovery import models
 import agents.discovery as discovery

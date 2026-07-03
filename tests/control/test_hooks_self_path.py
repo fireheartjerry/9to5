@@ -18,3 +18,14 @@ class TestHooksSelfPath(unittest.TestCase):
         # The sys.path insert must NOT hardcode a literal drive path.
         self.assertNotIn('sys.path.insert(0, r"C:\\9to5")', src)
         self.assertNotIn("sys.path.insert(0, r'C:\\9to5')", src)
+
+    def test_log_path_is_not_hardcoded_and_derives_from_config(self):
+        # BUG-004: the hooks log target must not be a hardcoded C:\9to5 literal -- a relocated
+        # install or a git worktree must log under its OWN config.LOG_PATH, not someone else's
+        # install root. hooks.LOG_PATH was refactored into the _hooksLogPath() helper; test
+        # the current API surface for the same guarantee.
+        import config
+        log_path = str(hooks._hooksLogPath())
+        self.assertNotEqual(log_path, r"C:\9to5\logs\hooks.log")
+        self.assertEqual(log_path, str(Path(config.LOG_PATH) / "hooks.log"))
+

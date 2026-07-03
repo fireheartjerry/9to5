@@ -72,7 +72,8 @@ def test_finalize_calls_collect_then_teardown():
     calls = []
     class _Spy(LocalEnvironment):
         def collectChanges(self, handle, *, task_state, subtask):
-            calls.append("collect"); return {"backend": "spy", "merged": True}
+            calls.append("collect")
+            return {"backend": "spy", "merged": True}
         def teardown(self, handle):
             calls.append("teardown")
     env = _Spy()

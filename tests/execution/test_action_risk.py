@@ -127,6 +127,17 @@ def test_empty_bash_is_unknown():
     assert classifyActionRisk(A(tool_name="Bash", command="   ")) is RiskTier.UNKNOWN
 
 
+# --- B27: fail-closed ordering -- a write signal beats a dry-run marker ---
+@pytest.mark.parametrize("cmd", [
+    "rm foo.txt --dry-run",          # rm is a write verb; --dry-run must NOT downgrade it
+    "git checkout main --dry-run",   # git checkout mutates the tree
+    "mv a b --check",                # mv + a dry-run-ish marker
+    "sed -i 's/a/b/' f.py --dry-run",
+])
+def test_mutating_bash_with_dry_run_marker_stays_mutating(cmd):
+    assert classifyActionRisk(A(command=cmd)) is RiskTier.MUTATING
+
+
 from platform_core.runtime.action_risk import decideAuthorization
 
 
@@ -220,3 +231,16 @@ def test_controlbus_has_action_risk_gate_and_spend_default(tmp_path, monkeypatch
     assert data["autonomy_spent_usd"] == 0.0
     bus.decide("action_risk", "approve")
     assert bus.getDecision("action_risk") == "approve"
+
+
+def test_mutating_bash_with_dry_run_marker_is_not_auto_authorized():
+    # B27 end-to-end: the mutating classification must route to escalation, never auto-authorize.
+    d = D(A(command="rm foo.txt --dry-run"), allowance=1_000_000.0)
+    assert not d.auto_authorize and d.escalate
+    assert d.tier is RiskTier.MUTATING
+
+
+# B30's file-lock-era clear() test is obsolete: ControlBus.clear() now delegates to
+# control_store.clearTask() (a single SQLite transaction, no _fileLock to spy on). The
+# guarantee it checked -- a full reset, including the ledger -- is covered under the new
+# backend by tests/control/test_control_store.py::test_ledger_wiped_only_by_explicit_full_clear.

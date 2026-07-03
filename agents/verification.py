@@ -25,7 +25,7 @@ EXPORTS:
   VResult  -- One-release compat shim: the legacy vresult dict shape, carrying the typed Receipt.
   verdictFor(rc, output: str, expect) -> 'tuple[Verdict, tuple, tuple]'  -- PURE function of (rc, output, expect) -> (verdict, matched, missing).
   VerifyCancelled  -- cancel_check fired while the acceptance command was running.
-  runReceipt(verify: Optional[dict], work_dir: str, executor_result: dict, *, declared_targets=None, cancel_check=None) -> Receipt  -- THE verification pipeline (single owner)
+  runReceipt(verify: Optional[dict], work_dir: str, executor_result: dict, *, declared_targets=None, cancel_check=None, timeout_seconds: Optional[int]=None) -> Receipt  -- THE verification pipeline (single owner)
   receiptToVResult(receipt: Receipt) -> VResult  -- The legacy vresult dict shape from a Receipt (compat shim, one release).
 DEPENDS-ON: agents.executor, agents.verification_diff, agents.verifier_sanitize, config
 SIDE-EFFECTS: runs the acceptance subprocess; reads git status
@@ -186,7 +186,8 @@ def _splitCmd(cmd: str) -> "list[str]":
     return out
 
 
-def _runVector(argv: "list[str]", work_dir: str, cancel_check=None) -> subprocess.CompletedProcess:
+def _runVector(argv: "list[str]", work_dir: str, cancel_check=None,
+               timeout_seconds: Optional[int] = None) -> subprocess.CompletedProcess:
     """Run the acceptance ARG-VECTOR (shell=False) with the tree-kill discipline.
 
     Popen + CREATE_NEW_PROCESS_GROUP + tree-kill on timeout/cancel -- the SAME Windows
@@ -205,7 +206,8 @@ def _runVector(argv: "list[str]", work_dir: str, cancel_check=None) -> subproces
                             stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
                             cwd=work_dir, creationflags=creationflags,
                             start_new_session=(os.name != "nt"))
-    deadline = time.monotonic() + config.VERIFY_TIMEOUT_SECONDS
+    limit = timeout_seconds if timeout_seconds is not None else config.VERIFY_TIMEOUT_SECONDS
+    deadline = time.monotonic() + limit
     while True:
         try:
             out, err = proc.communicate(timeout=0.5)
@@ -218,7 +220,7 @@ def _runVector(argv: "list[str]", work_dir: str, cancel_check=None) -> subproces
             if time.monotonic() >= deadline:
                 _killProcessTree(proc.pid)
                 _drainQuietly(proc)
-                raise subprocess.TimeoutExpired(argv, config.VERIFY_TIMEOUT_SECONDS) from None
+                raise subprocess.TimeoutExpired(argv, limit) from None
 
 
 def _drainQuietly(proc) -> None:
@@ -332,7 +334,7 @@ def _errorReceipt(argv, cmd: str, expect: str, feedback: str, duration: float) -
 
 
 def runReceipt(verify: Optional[dict], work_dir: str, executor_result: dict, *,
-               declared_targets=None, cancel_check=None) -> Receipt:
+               declared_targets=None, cancel_check=None, timeout_seconds: Optional[int] = None) -> Receipt:
     """THE verification pipeline (single owner). See module docstring for the order."""
     executor_result = executor_result if isinstance(executor_result, dict) else {}
     raw_targets = tuple(str(t) for t in (
@@ -350,10 +352,10 @@ def runReceipt(verify: Optional[dict], work_dir: str, executor_result: dict, *,
     LOG.info("Verifying (vector): %s  (expect: %s)", argv, expect)
     t0 = time.monotonic()
     try:
-        proc = _runVector(argv, run_dir, cancel_check=cancel_check)
+        proc = _runVector(argv, run_dir, cancel_check=cancel_check, timeout_seconds=timeout_seconds)
     except subprocess.TimeoutExpired:
-        return _errorReceipt(argv, cmd, expect,
-                             f"verify TIMEOUT after {config.VERIFY_TIMEOUT_SECONDS}s",
+        limit = timeout_seconds if timeout_seconds is not None else config.VERIFY_TIMEOUT_SECONDS
+        return _errorReceipt(argv, cmd, expect, f"verify TIMEOUT after {limit}s",
                              time.monotonic() - t0)
     except VerifyCancelled:
         return _errorReceipt(argv, cmd, expect, "verification cancelled (operator kill / deadline)",

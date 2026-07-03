@@ -22,7 +22,7 @@ import config
 from notifications import theme
 from notifications.visuals_components import (
     LOG, available, _pal, _font, _canvas, _wrap, _progress,
-    _status_cells, _icon, _metrics, _status_summary, _logo, _mix,
+    _status_cells, _metrics, _status_summary, _logo, _mix,
 )
 
 _CHALLENGED = {"challenged", "rejected", "reject", "blocked", "fail"}

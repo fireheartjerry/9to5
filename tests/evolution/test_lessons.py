@@ -77,6 +77,21 @@ class TestConsolidate(unittest.TestCase):
         lessons.consolidate(db_path=self.db, write_digest=False)
         self.assertEqual(len(experience.fetch_lessons(db_path=self.db)), 1)
 
+    def test_rebuild_failure_leaves_prior_lessons_intact(self):
+        # B25: clear+rebuild runs in ONE transaction, so a failure mid-rebuild rolls back the
+        # DELETE and the prior lessons survive -- never a half-cleared table.
+        lessons._rebuild_lessons([("effort", "discord", "old lesson", 3, 0.9)], db_path=self.db)
+        self.assertEqual(len(experience.fetch_lessons(db_path=self.db)), 1)
+        # Second rebuild fails on the SECOND row (win_rate not floatable) AFTER the DELETE +
+        # first INSERT have run -- all must roll back.
+        with self.assertRaises(Exception):
+            lessons._rebuild_lessons(
+                [("effort", "discord", "new good", 3, 0.8),
+                 ("effort", "api", "new bad", 3, "NOT_A_FLOAT")], db_path=self.db)
+        rows = experience.fetch_lessons(db_path=self.db)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["text"], "old lesson")
+
     def test_digest_written(self):
         self._seed("discord", "high", True, 3)
         self._seed("discord", "default", False, 3)

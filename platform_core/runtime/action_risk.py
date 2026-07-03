@@ -71,7 +71,9 @@ DESTRUCTIVE_PATTERNS: tuple[str, ...] = (
 # ANYWHERE: a redirect is destructive regardless of its position on the command line.
 DESTRUCTIVE_COMMAND_RE = re.compile(
     r"(?:^|[\n;&|`]\s*)(?:sudo\s+|doas\s+)?"
-    r"(rm\s+-[rf]{2}\b|rmdir\s+/s\b|del\s+/[fsq]\b|format\s+[a-z]:|"
+    # BUG-010: rm's flag cluster may carry extra letters around r/f (-rfv, -rvf, -vrf, ...),
+    # not just the exact 2-char "-rf"/"-fr" -- require both r and f present, in any order.
+    r"(rm\s+-(?=[a-z]*r)(?=[a-z]*f)[a-z]+\b|rmdir\s+/s\b|del\s+/[fsq]\b|format\s+[a-z]:|"
     r"drop\s+table\b|git\s+push\s+(?:--force\b|-f\b)|mkfs\b|:\(\)\s*\{)"
     r"|(>\s*/dev/sd[a-z])",
     re.IGNORECASE | re.MULTILINE,
@@ -154,14 +156,18 @@ def classifyActionRisk(action: ActionDescriptor) -> RiskTier:
     # 4. Read-only tools.
     if tool in _READ_TOOLS:
         return RiskTier.READ
-    # 5. Bash -- distinguish dry-run / mutating / read; ambiguous-empty -> UNKNOWN.
+    # 5. Bash -- distinguish mutating / dry-run / read; ambiguous-empty -> UNKNOWN.
+    # FAIL-CLOSED ordering: a write signal wins over a dry-run marker, so a mutating
+    # command that merely carries "--dry-run"/"--check" (e.g. "rm foo --dry-run") is
+    # never mis-tagged DRY_RUN and auto-authorized. Dry-run allowance applies only to
+    # genuinely non-mutating commands.
     if tool == "Bash":
         if not cmd.strip():
             return RiskTier.UNKNOWN
-        if _DRY_RUN_RE.search(cmd_low):
-            return RiskTier.DRY_RUN
         if _isWritingBash(cmd, cmd_low):
             return RiskTier.MUTATING
+        if _DRY_RUN_RE.search(cmd_low):
+            return RiskTier.DRY_RUN
         return RiskTier.READ
     # 6. Anything else -- fail-closed.
     return RiskTier.UNKNOWN

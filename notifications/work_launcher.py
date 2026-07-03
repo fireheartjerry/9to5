@@ -13,11 +13,11 @@ EXPORTS:
   activeRun() -> Optional[TaskState]  -- The latest task iff it's still active
   waitForLaunch(launch_id: str, *, timeout_s: float=10.0, poll_s: float=0.5) -> Optional[str]  -- Launch handshake: poll state/launch/<launch_id>.json (written by main.py --launch-id)
   spawn(req: WorkRequest) -> int
-  buildResumeArgv(task_id: str) -> list[str]
-  taskExists(task_id: str) -> bool
-  spawnResume(task_id: str) -> int
+  buildResumeArgv(task_id: str, retry_failed: bool=False) -> list[str]
+  taskExists(task_id: str) -> bool  -- False for a non-UUID task_id, not just a missing file
+  spawnResume(task_id: str, retry_failed: bool=False) -> int
   launchOrError(req: WorkRequest) -> str  -- Validate -> lock -> block-if-active -> spawn -> handshake-confirm
-  resumeOrError(task_id: str) -> str  -- Resume an existing task by id (block if a run is active)
+  resumeOrError(task_id: str, retry_failed: bool=False) -> str  -- Resume an existing task by id (block if a run is active)
 DEPENDS-ON: config, notifications.commands, platform_core.core, platform_core.ops.external_project, platform_core.orchestration, platform_core.runtime.control, platform_core.runtime.heartbeat, state.task, state.task_io
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_work_launcher.py
@@ -87,6 +87,7 @@ class WorkRequest:
     night_mode: bool = False
     work_profile: Optional[str] = None
     launch_id: Optional[str] = None   # handshake token (set by launchOrError)
+    sim: bool = False   # token-light: --sim-run (simulation doubles over live surfaces, zero API)
 
 
 def parseHours(raw) -> float:
@@ -180,6 +181,8 @@ def buildArgv(req: WorkRequest) -> list[str]:
         argv.append("--no-pr")
     if req.night_mode:
         argv.append("--night-mode")
+    if req.sim:
+        argv.append("--sim-run")
     if req.work_profile:
         argv += ["--work-profile", req.work_profile]
     if req.work_dir:
@@ -288,16 +291,28 @@ def spawn(req: WorkRequest) -> int:
     return _spawnArgv(buildArgv(req), "work")
 
 
-def buildResumeArgv(task_id: str) -> list[str]:
-    return [str(config.VENV_PYTHON), str(config.PROJECT_ROOT / "main.py"), "--resume", task_id]
+def buildResumeArgv(task_id: str, retry_failed: bool = False) -> list[str]:
+    argv = [str(config.VENV_PYTHON), str(config.PROJECT_ROOT / "main.py"), "--resume", task_id]
+    if retry_failed:
+        argv.append("--retry-failed")
+    return argv
 
 
 def taskExists(task_id: str) -> bool:
+    """False for a non-UUID task_id, not just a missing file -- a raw path.exists() check let
+    task_id="../user_prefs" resolve to (and confirm the existence of) an arbitrary file outside
+    STATE_DIR (e.g. memory/user_prefs.py's real store), a path-traversal existence oracle
+    reachable via the unauthenticated Discord /run and !resume commands."""
+    from state.task_io import validateTaskId
+    try:
+        validateTaskId(task_id)
+    except ValueError:
+        return False
     return (config.STATE_DIR / f"{task_id}.json").exists()
 
 
-def spawnResume(task_id: str) -> int:
-    return _spawnArgv(buildResumeArgv(task_id), "resume")
+def spawnResume(task_id: str, retry_failed: bool = False) -> int:
+    return _spawnArgv(buildResumeArgv(task_id, retry_failed=retry_failed), "resume")
 
 
 # Double-launch guard: an in-process lock (bot cogs + views can race) plus a cross-process
@@ -379,9 +394,11 @@ def launchOrError(req: WorkRequest) -> str:
     return msg
 
 
-def resumeOrError(task_id: str) -> str:
+def resumeOrError(task_id: str, retry_failed: bool = False) -> str:
     """Resume an existing task by id (block if a run is active). Returns the user message.
-    Shares the launch locks so a /work and a /resume can never double-spawn."""
+    Shares the launch locks so a /work and a /resume can never double-spawn.
+    retry_failed: also reset 'failed' subtasks back to 'pending' so they're retried -- opt-in,
+    since a subtask that failed for a structural reason will just fail the same way again."""
     if not taskExists(task_id):
         return f"❌ No such task `{task_id}`."
     if not _LAUNCH_LOCK.acquire(blocking=False):
@@ -395,7 +412,7 @@ def resumeOrError(task_id: str) -> str:
             if active is not None:
                 return f"⛔ A run is already active (`{active.task_id[:8]}`). Abort it first."
             try:
-                pid = spawnResume(task_id)
+                pid = spawnResume(task_id, retry_failed=retry_failed)
             except Exception as e:  # noqa: BLE001
                 LOG.exception("resume spawn failed")
                 return f"❌ Resume failed: {e}"
@@ -404,4 +421,5 @@ def resumeOrError(task_id: str) -> str:
     finally:
         _LAUNCH_LOCK.release()
     web = f"http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/"
-    return f"♻️ Resuming `{task_id[:8]}` (pid {pid})\n{web}"
+    suffix = " (retrying failed subtasks)" if retry_failed else ""
+    return f"♻️ Resuming `{task_id[:8]}`{suffix} (pid {pid})\n{web}"

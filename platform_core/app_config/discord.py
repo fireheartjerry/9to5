@@ -40,6 +40,7 @@ class DiscordCfg:
     # --- Discord hard limits (single source of truth for all truncation/clamping) ---
     DISCORD_MAX_CONTENT: int = 2000
     DISCORD_MAX_EMBED_DESC: int = 4096
+    DISCORD_MAX_EMBED_TITLE: int = 256
     DISCORD_MAX_FIELD_NAME: int = 256
     DISCORD_MAX_FIELD_VALUE: int = 1024
     DISCORD_EMBED_TOTAL_MAX: int = 6000

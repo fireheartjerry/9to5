@@ -46,7 +46,7 @@ def targets_for_safe(files: list[str]) -> list[str]:
 
 
 def decide(files: list[str], repo_root: Path) -> Decision:
-    rels = [Path(f).as_posix().lstrip("./") for f in files if f and f.strip()]
+    rels = [Path(f).as_posix() for f in files if f and f.strip()]
     if not rels:
         return Decision(False, "empty change set")
     if len(rels) > MAX_CHANGED_FILES:

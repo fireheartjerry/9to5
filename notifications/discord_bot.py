@@ -21,16 +21,16 @@ import notifications.discord_client as _dc
 # -- HTTP client, utilities, and payload helpers --
 from notifications.discord_client import (
     truncate,
-    _request,
-    _clampEmbed,
-    _clampComponents,
-    _multipartParts,
-    _ownerMentions,
-    _authHeaders,
-    _authHeadersMultipart,
-    _embedLen,
-    _cv2Count,
-    _cv2TextLen,
+    _request,  # noqa: F401
+    _clampEmbed,  # noqa: F401
+    _clampComponents,  # noqa: F401
+    _multipartParts,  # noqa: F401
+    _ownerMentions,  # noqa: F401
+    _authHeaders,  # noqa: F401
+    _authHeadersMultipart,  # noqa: F401
+    _embedLen,  # noqa: F401
+    _cv2Count,  # noqa: F401
+    _cv2TextLen,  # noqa: F401
 )
 
 # Expose the session object directly (same object; mutations visible to callers).
@@ -45,7 +45,7 @@ from notifications.discord_embeds import (
     statusColor,
     relTime,
     formatVerdict,
-    _goalSummary,
+    _goalSummary,  # noqa: F401
     planningStartEmbed,
     architectDoneEmbed,
     adversaryTriggeredEmbed,
@@ -67,7 +67,7 @@ from notifications.discord_channels import (
     editComponentsV2Result,
     sendComponentsV2,
     sendAs,
-    _ensureWebhook,
+    _ensureWebhook,  # noqa: F401
     createMessage,
     postContent,
     postFile,

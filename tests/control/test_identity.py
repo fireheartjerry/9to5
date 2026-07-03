@@ -1,6 +1,8 @@
 # tests/test_identity.py
 """The SELF manifest: canonicalization + role classification."""
-import os, tempfile, unittest
+import os
+import tempfile
+import unittest
 from pathlib import Path
 
 import platform_core.core.identity as identity
@@ -62,7 +64,6 @@ class TestRoleOf(unittest.TestCase):
             self.assertEqual(identity.roleOf(str(link)), identity.Role.SELF_CODE)
 
     def test_outside_tree_is_other_content(self):
-        import tempfile
         self.assertEqual(identity.roleOf(tempfile.gettempdir()), identity.Role.OTHER_CONTENT)
 
 

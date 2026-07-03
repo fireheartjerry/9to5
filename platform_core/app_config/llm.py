@@ -176,6 +176,11 @@ class SieCfg:
     RETRIEVAL_MAX_TOKENS: int = _F(default_factory=lambda: _envInt("RETRIEVAL_MAX_TOKENS", 350))
     RETRIEVAL_MIN_SCORE: float = _F(default_factory=lambda: _envFloat("RETRIEVAL_MIN_SCORE", 0.35))
     RETRIEVAL_CONTENT_MAX_TOKENS: int = _F(default_factory=lambda: _envInt("RETRIEVAL_CONTENT_MAX_TOKENS", 700))
+    # Failure-aware retrieval: alongside similar PASSED subtasks, surface up to
+    # RETRIEVAL_FAILURES_K similar past FAILED subtasks as distinctly-tagged warnings so the
+    # brain avoids re-walking known dead-ends (reuses the same embedding scan, no new store).
+    RETRIEVAL_FAILURES_ENABLED: bool = _F(default_factory=lambda: _envBool("RETRIEVAL_FAILURES_ENABLED", True))
+    RETRIEVAL_FAILURES_K: int = _F(default_factory=lambda: _envInt("RETRIEVAL_FAILURES_K", 2))
     ANN_INDEX_ENABLED: bool = _F(default_factory=lambda: _envBool("ANN_INDEX_ENABLED", False))
     ANN_INDEX_BACKEND: str = _F(default_factory=lambda: os.getenv("ANN_INDEX_BACKEND", "chroma"))
     ANN_INDEX_DIR: str = _F(default_factory=lambda: os.getenv("ANN_INDEX_DIR", "state/exp_index"))
@@ -291,6 +296,10 @@ class SieCfg:
     # --- verification gate ---
     VERIFY_DEFAULT_EXPECT: str = "exit_zero"
     VERIFY_TIMEOUT_SECONDS: int = 120
+    # A pytest/unittest suite verify legitimately needs more wall-clock than a narrow python -c
+    # one-liner; sharing the 120s cap made a broad test-runner verify TimeoutExpired-fail even
+    # while the suite was still making real progress (never an actual regression signal).
+    VERIFY_SUITE_TIMEOUT_SECONDS: int = 300
     # --- run control ---
     CONTROL_MODE_DEFAULT: str = "watch"   # "watch" (autonomous + abort) | "gated" (approval gates)
     # Plans AUTO-APPROVE through Ollama; in gated mode the plan gate waits this long for an

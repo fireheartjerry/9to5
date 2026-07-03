@@ -78,6 +78,19 @@ def _profileBlock(work_profile) -> str:
         return ""
 
 
+def _fallbackArchitectPrompt(goal_elaborated: str, discovery_block: str, profile_block: str) -> str:
+    """FX-12: deterministic GOAL-BEARING prompt used when the local 7B brain returns EMPTY, so the
+    goal always reaches the architect (returning "" would design for nothing + re-fire empty)."""
+    return (
+        "Produce a thorough architecture and design document for the following specification. "
+        "Cover the approach, the modules/files to add or change, data flow, key dependencies, "
+        "risks, and an ORDERED implementation outline.\n\nSpecification:\n"
+        + (goal_elaborated or "").strip()
+        + discovery_block
+        + profile_block
+    )
+
+
 def authorArchitectPrompt(goal_elaborated: str, chat=None, discovery_report=None,
                           work_profile=None) -> str:
     """Ollama authors the prompt that will be sent to Claude Code CLI.
@@ -106,20 +119,9 @@ def authorArchitectPrompt(goal_elaborated: str, chat=None, discovery_report=None
     # shapes (None / non-dict message / non-string content). The old isinstance(dict) gate made
     # every real (pydantic) reply look empty -> this always fell to the deterministic fallback.
     prompt = llm_io.responseText(resp).strip()
-    # FX-12: the local 7B brain frequently returns EMPTY here. Returning "" would send the architect
-    # Claude a prompt with NO specification (it would design for nothing, and the orchestrator's retry
-    # would re-fire the same empty prompt). Fall back to a deterministic GOAL-BEARING prompt so the
-    # goal always reaches the architect even with a dead brain.
     if not prompt:
         LOG.warning("architect-prompt brain output empty -> deterministic goal-bearing fallback")
-        prompt = (
-            "Produce a thorough architecture and design document for the following specification. "
-            "Cover the approach, the modules/files to add or change, data flow, key dependencies, "
-            "risks, and an ORDERED implementation outline.\n\nSpecification:\n"
-            + (goal_elaborated or "").strip()
-            + discovery_block
-            + profile_block
-        )
+        prompt = _fallbackArchitectPrompt(goal_elaborated, discovery_block, profile_block)
     elif discovery_block:
         # Always append the discovery context so it reaches the architect Claude even when the
         # Ollama brain authored a brief prompt that did not repeat the findings verbatim.

@@ -147,11 +147,23 @@ class TestResume(unittest.TestCase):
     def test_task_exists(self):
         import tempfile
         from pathlib import Path
+        tid = "11111111-1111-4111-8111-111111111111"
+        missing_id = "22222222-2222-4222-8222-222222222222"
         d = Path(tempfile.mkdtemp())
-        (d / "tid.json").write_text("{}", encoding="utf-8")
+        (d / f"{tid}.json").write_text("{}", encoding="utf-8")
         with mock.patch.object(config, "STATE_DIR", d):
-            self.assertTrue(wl.taskExists("tid"))
-            self.assertFalse(wl.taskExists("nope"))
+            self.assertTrue(wl.taskExists(tid))
+            self.assertFalse(wl.taskExists(missing_id))
+
+    def test_task_exists_rejects_path_traversal(self):
+        # BUG (fresh bug hunt): a non-UUID task_id must never confirm a file's existence
+        # outside STATE_DIR -- taskExists is reachable from the unauthenticated /run command.
+        import tempfile
+        from pathlib import Path
+        d = Path(tempfile.mkdtemp())
+        (d / "sibling.json").write_text("{}", encoding="utf-8")
+        with mock.patch.object(config, "STATE_DIR", d / "tasks"):
+            self.assertFalse(wl.taskExists("../sibling"))
 
     def test_spawn_resume_uses_argv(self):
         fake = mock.Mock(pid=99)

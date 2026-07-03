@@ -1,7 +1,5 @@
 import json
-from pathlib import Path
 from unittest import mock
-import pytest
 
 from agents.discovery import digest as digest_mod
 

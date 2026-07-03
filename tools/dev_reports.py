@@ -34,7 +34,10 @@ def _run_tee(cmd: list[str], out_path: Path, *, env: dict[str, str] | None = Non
              pass_no_tests: bool = False) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     lines: list[str] = []
+    # encoding/errors: on Windows text pipes default to cp1252, so Unicode in pytest output
+    # (checkmarks, box-drawing, non-ASCII test names) would raise UnicodeDecodeError mid-stream.
     proc = subprocess.Popen(cmd, cwd=REPO_ROOT, text=True, env=env,
+                            encoding="utf-8", errors="replace",
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     assert proc.stdout is not None
     for line in proc.stdout:

@@ -1,5 +1,17 @@
 """Tests for the LiveEventBus nervous system (rings, SSE pub/sub, singleton)."""
+import time
+
 from notifications.event_bus import Event, LiveEventBus, get_bus, reset_bus
+
+
+def test_event_at_is_stamped_at_creation_not_serialization():
+    """B16: ``at`` must be captured when the Event is created, so serializing it twice (e.g. a
+    replay) yields the identical wall-clock label -- not the moment of each to_dict() call."""
+    e = Event(kind="phase", sid="s", text="x")
+    first = e.to_dict()["at"]
+    time.sleep(1.1)   # cross a second boundary; a now()-at-serialize bug would drift here
+    second = e.to_dict()["at"]
+    assert first == second == e.at
 
 
 def test_emit_and_history():

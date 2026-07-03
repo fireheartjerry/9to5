@@ -9,6 +9,7 @@ import sys
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -31,6 +32,7 @@ def _empty_reg() -> WorkflowRegistry:
     reg = WorkflowRegistry.__new__(WorkflowRegistry)
     reg._lock = threading.Lock()
     reg._store = {}
+    reg._builtin = frozenset()
     return reg
 
 
@@ -86,6 +88,59 @@ class TestAddWorkflow(unittest.TestCase):
         for name in ("a", "b", "c"):
             self.reg.addWorkflow(name, _valid_wf(name))
         self.assertEqual(set(self.reg.listWorkflows()), {"a", "b", "c"})
+
+
+# ---------------------------------------------------------------------------
+# Built-in collision protection
+# ---------------------------------------------------------------------------
+
+class TestBuiltinCollisionProtection(unittest.TestCase):
+    """REGISTRY is a single process-lifetime singleton; addWorkflow's ad-hoc registration path
+    is reachable with a name freely chosen by the (LLM) planner. A colliding name must not
+    silently replace a built-in (disk-loaded) workflow for every other task using it."""
+
+    def _reg_with_builtin(self, name="builtin-wf"):
+        reg = WorkflowRegistry.__new__(WorkflowRegistry)
+        reg._lock = threading.Lock()
+        reg._store = {name: _valid_wf(name)}
+        reg._builtin = frozenset({name})
+        return reg
+
+    def test_addworkflow_rejects_builtin_name_collision(self):
+        from src.workflow_registry import WorkflowCollisionError
+        reg = self._reg_with_builtin()
+        evil = _valid_wf("builtin-wf")
+        evil["description"] = "adhoc definition trying to overwrite the builtin"
+        with self.assertRaises(WorkflowCollisionError):
+            reg.addWorkflow("builtin-wf", evil)
+        # the built-in definition must be untouched
+        self.assertNotEqual(reg.getWorkflow("builtin-wf")["description"],
+                            "adhoc definition trying to overwrite the builtin")
+
+    def test_addworkflow_allows_explicit_overwrite(self):
+        reg = self._reg_with_builtin()
+        replacement = _valid_wf("builtin-wf")
+        replacement["description"] = "explicit operator override"
+        reg.addWorkflow("builtin-wf", replacement, overwrite=True)
+        self.assertEqual(reg.getWorkflow("builtin-wf")["description"], "explicit operator override")
+
+    def test_addworkflow_allows_non_colliding_adhoc_name(self):
+        reg = self._reg_with_builtin()
+        reg.addWorkflow("adhoc-name", _valid_wf("adhoc-name"))
+        self.assertIn("adhoc-name", reg.listWorkflows())
+
+    def test_resolver_falls_back_to_raw_dict_on_collision(self):
+        # agents/workflow_resolver.py already catches WorkflowValidationError (and its
+        # subclasses, including WorkflowCollisionError) and returns the raw dict rather than
+        # raising into the executor.
+        import src.workflow_registry as wr
+        reg = self._reg_with_builtin()
+        with mock.patch.object(wr, "REGISTRY", reg):
+            from agents.workflow_resolver import resolveWorkflowDefinition
+            spec = {"workflow_definition": {
+                "name": "builtin-wf", "phases": [{"title": "P", "agents": []}]}}
+            out = resolveWorkflowDefinition(spec)
+        self.assertEqual(out, spec["workflow_definition"])
 
 
 # ---------------------------------------------------------------------------

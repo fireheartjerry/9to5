@@ -251,3 +251,67 @@ def test_announce_saves_state_under_the_state_lock():
     assert state.meta["tunnel_url"] == "https://live.example.com"
     assert state.saved_under_lock is True, "state.save() ran outside the state lock"
     assert lock.acquisitions >= 1
+
+
+def test_stop_joins_promptly_when_no_url():
+    """B15(a): the supervisor must wake on stop() even while blocked waiting for a URL that
+    never arrives -- otherwise stop() hangs for the full URL_WAIT_TIMEOUT (the join hang)."""
+    prov = _FakeProvider(probe_ok=False)   # a URL is parsed but never validates -> never announced
+    mgr = TunnelManager(providers=[prov])
+    mgr.POLL_INTERVAL = 0.01
+    mgr.PROBE_INTERVAL = 0.02
+    mgr.VALIDATE_TIMEOUT = 0.05
+    mgr.URL_WAIT_TIMEOUT = 30.0   # unpatched stop() would block here for 30s
+    mgr.BACKOFF_BASE = 0.01
+    mgr.BACKOFF_CAP = 0.02
+    mgr.start(8787)
+    assert _wait_until(lambda: prov.started >= 1, timeout=3.0)
+    t0 = time.time()
+    mgr.stop()
+    assert time.time() - t0 < 1.0, "stop() did not join promptly"
+    assert mgr.is_alive is False
+
+
+def test_same_url_reannounces_after_restart():
+    """B15(b): a fresh provider session must re-announce even an identical URL so consumers are
+    re-notified after a tunnel restart (a stable/named tunnel keeps the same host)."""
+    class _DyingPopen:
+        def __init__(self, line):
+            self._lines = iter([line + "\n"])
+            self.stdout = self
+            self.pid = 1
+            self._polls = 1   # alive for exactly one watch poll, then reports exit
+
+        def __iter__(self):
+            return self._lines
+
+        def poll(self):
+            if self._polls > 0:
+                self._polls -= 1
+                return None
+            return 0
+
+        def terminate(self):
+            self._polls = 0
+
+        def kill(self):
+            self._polls = 0
+
+        def wait(self, timeout=None):
+            self._polls = 0
+            return 0
+
+    class _RestartProvider(_FakeProvider):
+        def start(self, port):
+            self.started += 1
+            return _DyingPopen(f"connected at {self._url}")
+
+    prov = _RestartProvider()
+    mgr = _fast(TunnelManager(providers=[prov]))
+    got = []
+    mgr.on_url(got.append)
+    mgr.start(8787)
+    assert _wait_until(lambda: len(got) >= 2, timeout=4.0), "same URL was not re-announced"
+    assert got[0] == got[1] == "https://live.example.com"
+    assert prov.started >= 2   # the session actually restarted
+    mgr.stop()

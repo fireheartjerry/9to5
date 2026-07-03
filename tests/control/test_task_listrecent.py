@@ -25,13 +25,23 @@ class TestListRecent(unittest.TestCase):
             "plan": {"subtasks": subs}}), encoding="utf-8")
 
     def test_load_safe_returns_none_on_corrupt_or_missing(self):
-        (self.dir / "good.json").write_text(
-            '{"task_id": "good", "meta": {}, "plan": {"subtasks": []}}', encoding="utf-8")
-        (self.dir / "bad.json").write_text("{broken", encoding="utf-8")
+        good_id = "33333333-3333-4333-8333-333333333333"
+        bad_id = "44444444-4444-4444-8444-444444444444"
+        missing_id = "55555555-5555-4555-8555-555555555555"
+        (self.dir / f"{good_id}.json").write_text(
+            json.dumps({"task_id": good_id, "meta": {}, "plan": {"subtasks": []}}), encoding="utf-8")
+        (self.dir / f"{bad_id}.json").write_text("{broken", encoding="utf-8")
         with mock.patch.object(config, "STATE_DIR", self.dir):
-            self.assertIsNotNone(TaskState.loadSafe("good"))
-            self.assertIsNone(TaskState.loadSafe("bad"))
-            self.assertIsNone(TaskState.loadSafe("missing"))
+            self.assertIsNotNone(TaskState.loadSafe(good_id))
+            self.assertIsNone(TaskState.loadSafe(bad_id))
+            self.assertIsNone(TaskState.loadSafe(missing_id))
+
+    def test_load_rejects_path_traversal_task_id(self):
+        # BUG-003: a non-UUID task_id (e.g. path-traversal payload) must be rejected before any
+        # path is constructed under STATE_DIR, not silently resolved outside it.
+        with mock.patch.object(config, "STATE_DIR", self.dir):
+            with self.assertRaises(ValueError):
+                TaskState.load("../../.env")
 
     def test_iter_stored_skips_corrupt(self):
         self._w("ok.json", "ok1", "done", "2026-06-22T08:00:00+00:00", [])

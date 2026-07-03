@@ -20,6 +20,31 @@ import config
 
 LOG = config.getLogger("external_project")
 
+# CLI --repo-url/--repo-ref and the Discord launch flow both accept these from an
+# operator/user. A bare local filesystem path is legitimate (no scheme, no network transport);
+# a URI scheme other than https:// is not -- git's file://, git://, and ssh:// transports (and
+# especially the `ext::`/remote-helper syntax, which runs an arbitrary helper PROGRAM) turn an
+# attacker-controlled repo_url into local file access, an internal-network probe, or command
+# execution. A leading '-' on either value is also rejected: passed positionally to `git clone`,
+# it could be misread as a command-line flag instead of a URL/ref (argument injection).
+_URL_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+_HTTPS_HOST_RE = re.compile(r"^https://[A-Za-z0-9.-]+(?::\d+)?/\S+$")
+_SAFE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+
+
+def _validateRepoUrl(url: str) -> None:
+    if "::" in url:
+        raise ValueError(f"repo_url must not use remote-helper syntax: {url!r}")
+    if url.startswith("-"):
+        raise ValueError(f"repo_url must not start with '-': {url!r}")
+    if _URL_SCHEME_RE.match(url) and not _HTTPS_HOST_RE.match(url):
+        raise ValueError(f"repo_url must be an https:// URL or a local path: {url!r}")
+
+
+def _validateRef(ref: str) -> None:
+    if not _SAFE_REF_RE.match(ref):
+        raise ValueError(f"ref contains unsafe characters: {ref!r}")
+
 
 def _slugFor(repo_url: str) -> str:
     """Return a conservative directory stem derived from a repo URL/path."""
@@ -35,7 +60,10 @@ def cloneRepo(repo_url: str, ref: str | None = None) -> Path:
     url = (repo_url or "").strip()
     if not url:
         raise ValueError("repo_url is required")
+    _validateRepoUrl(url)
     ref = (ref or "").strip() or None
+    if ref:
+        _validateRef(ref)
     root = config.PROJECT_ROOT / "state" / "external-projects"
     root.mkdir(parents=True, exist_ok=True)
     target = root / f"{_slugFor(url)}-{uuid.uuid4().hex[:8]}"
@@ -43,7 +71,7 @@ def cloneRepo(repo_url: str, ref: str | None = None) -> Path:
     clone_cmd = ["git", "clone", "--origin", "origin"]
     if ref:
         clone_cmd += ["--branch", ref]
-    clone_cmd += [url, str(target)]
+    clone_cmd += ["--", url, str(target)]
     proc = subprocess.run(clone_cmd, cwd=str(root),
                           capture_output=True, text=True, stdin=subprocess.DEVNULL,
                           env=env,

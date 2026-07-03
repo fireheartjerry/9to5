@@ -2,14 +2,12 @@
 import re
 import tempfile
 import unittest
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
 import config
 from platform_core.runtime.control import ControlBus
 from notifications import webdash
-from state.task import TaskState
 
 
 class TestApplyControl(unittest.TestCase):
@@ -67,8 +65,27 @@ class TestApplyControl(unittest.TestCase):
 
 
 class TestControlToken(unittest.TestCase):
-    """The /api/control POST endpoint must require the per-run token embedded in the served page,
-    so another local process / a cross-origin page can't drive a live run."""
+    """B14: the control token must never be served in the page (it would leak over the public
+    tunnel). The served page is view-only; /api/control requires the console-only control token."""
+
+    def test_page_never_serves_control_token(self):
+        import urllib.request
+        config_patch = mock.patch.object(config, "WEB_DASHBOARD", True)
+        config_patch.start()
+        self.addCleanup(config_patch.stop)
+        url = webdash.startWebDashboard("task-token", port=8791)
+        if not url:
+            self.skipTest("could not bind the dashboard port")
+        self.addCleanup(webdash.stopWebDashboard)
+        token = webdash._CONTROL_TOKEN
+        self.assertTrue(token, "no control token was generated")
+        page = urllib.request.urlopen(url, timeout=3).read().decode()
+        # The real control token must not appear anywhere in the served HTML.
+        self.assertNotIn(token, page, "control token leaked into served page HTML")
+        # The token placeholder must be blanked, not left unsubstituted with a live token.
+        m = re.search(r'const __T="([^"]*)"', page)
+        self.assertTrue(m, "token placeholder missing from page")
+        self.assertEqual(m.group(1), "", "page embedded a control token")
 
     def test_token_gates_post(self):
         import socket
@@ -87,10 +104,7 @@ class TestControlToken(unittest.TestCase):
         url = webdash.startWebDashboard("task-token", port=port)
         self.addCleanup(webdash.stopWebDashboard)
         self.assertTrue(url, f"dashboard failed to bind OS-assigned port {port}")
-        page = urllib.request.urlopen(url, timeout=3).read().decode()
-        m = re.search(r'const __T="([^"]+)"', page)
-        self.assertTrue(m and m.group(1) != "__WEBDASH_TOKEN__", "page did not embed a real token")
-        token = m.group(1)
+        token = webdash._CONTROL_TOKEN
 
         def post(headers):
             req = urllib.request.Request(
@@ -103,4 +117,34 @@ class TestControlToken(unittest.TestCase):
 
         self.assertEqual(post({}), 403, "tokenless control POST was not forbidden")
         self.assertEqual(post({"X-9to5-Token": "wrong"}), 403, "bad token was accepted")
-        self.assertEqual(post({"X-9to5-Token": token}), 200, "valid token was rejected")
+        self.assertEqual(post({"X-9to5-Token": token}), 200, "valid console token was rejected")
+
+    def test_empty_server_token_always_rejects_post(self):
+        # BUG-005: an unset/empty control token must ALWAYS reject control POSTs, never fall
+        # through to unconditional allow. startWebDashboard always generates a real random
+        # token, so drive a bare handler bound to an explicitly EMPTY token to lock this in.
+        import urllib.error
+        import urllib.request
+        from http.server import ThreadingHTTPServer
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), webdash._makeHandler("task-empty-token", ""))
+        thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.shutdown)
+        self.addCleanup(server.server_close)
+        port = server.server_address[1]
+
+        def post(headers):
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/control", data=b'{"action":"pause"}',
+                headers={"content-type": "application/json", **headers}, method="POST")
+            try:
+                return urllib.request.urlopen(req, timeout=3).status
+            except urllib.error.HTTPError as e:
+                return e.code
+
+        self.assertEqual(post({}), 403, "empty server token allowed a headerless POST")
+        self.assertEqual(post({"X-9to5-Token": ""}), 403, "empty server token matched an empty header")
+        self.assertEqual(post({"X-9to5-Token": "anything"}), 403,
+                         "empty server token allowed an arbitrary client-supplied header")
+

@@ -6,7 +6,7 @@ the new ARCHETYPES constant is correctly defined.
 from __future__ import annotations
 
 import pytest
-from notifications.personas import ARCHETYPES, CAST, persona
+from notifications.personas import ARCHETYPES, persona
 
 
 # ---------------------------------------------------------------------------

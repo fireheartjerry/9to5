@@ -17,7 +17,8 @@ from pathlib import Path
 # repo root on path + stub the one pip dep this throwaway run may lack
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 if "ollama" not in sys.modules:
-    _m = types.ModuleType("ollama"); _m.Client = lambda *a, **k: None  # type: ignore
+    _m = types.ModuleType("ollama")
+    _m.Client = lambda *a, **k: None  # type: ignore
     sys.modules["ollama"] = _m
 
 import config           # noqa: E402
@@ -195,7 +196,9 @@ def test_verifier_runs() -> None:
 
 def test_executor_io() -> None:
     print("[executor JSON envelope + resume + env]")
-    import tempfile, subprocess, json as _json
+    import tempfile
+    import subprocess
+    import json as _json
     from agents import executor
     # _parseEnvelope: json -> (text, fields); plain/ malformed -> raw fallback
     text, f = executor._parseEnvelope(_json.dumps(
@@ -207,7 +210,11 @@ def test_executor_io() -> None:
     # runClaude builds the right cmd + env (mock subprocess; save/restore the global Popen)
     cap = {}
     class _P:
-        def __init__(self, cmd, **kw): cap["cmd"] = cmd; cap["env"] = kw.get("env"); self.pid = 1; self.returncode = 0
+        def __init__(self, cmd, **kw):
+            cap["cmd"] = cmd
+            cap["env"] = kw.get("env")
+            self.pid = 1
+            self.returncode = 0
         def communicate(self, input=None, timeout=None):
             return (_json.dumps({"type": "result", "result": "did it", "is_error": False, "session_id": "S9"}), "")
     orig_popen, orig_launch = subprocess.Popen, executor._resolveClaudeLauncher
@@ -245,11 +252,16 @@ def test_parse_robustness() -> None:
 
 def test_executor_resume() -> None:
     print("[resume: fold inject, drop charter, retry-fresh on stale session]")
-    import tempfile, subprocess, json as J, types as T
+    import tempfile
+    import subprocess
+    import json as J
+    import types as T
     from agents import executor
     calls = []
     class _SP:
-        def __init__(self, cmd, **kw): calls.append({"cmd": cmd, "input": None}); self.pid = 1
+        def __init__(self, cmd, **kw):
+            calls.append({"cmd": cmd, "input": None})
+            self.pid = 1
         def communicate(self, input=None, timeout=None):
             calls[-1]["input"] = input
             if "--resume" in calls[-1]["cmd"]:        # stale session -> nonzero rc, NO envelope
@@ -258,7 +270,8 @@ def test_executor_resume() -> None:
             self.returncode = 0                        # fresh retry succeeds
             return (J.dumps({"type": "result", "result": "fixed it", "is_error": False, "session_id": "NEW"}), "")
     op, ol = subprocess.Popen, executor._resolveClaudeLauncher
-    executor._resolveClaudeLauncher = lambda: ["claude"]; executor.subprocess.Popen = _SP
+    executor._resolveClaudeLauncher = lambda: ["claude"]
+    executor.subprocess.Popen = _SP
     try:
         st = T.SimpleNamespace(task_id="T", meta={})
         r = executor.runClaude({"prompt": "fix the bug", "claude_md_inject": "IMPORTANT CONTEXT", "effort_level": "high"},
@@ -266,7 +279,8 @@ def test_executor_resume() -> None:
                                subtask={"subtask_id": "st-1", "title": "t", "description": "implement"},
                                resume_session="OLD")
     finally:
-        executor.subprocess.Popen = op; executor._resolveClaudeLauncher = ol
+        executor.subprocess.Popen = op
+        executor._resolveClaudeLauncher = ol
     check("stale resume triggers a fresh retry (2 launches)", len(calls) == 2)
     check("1st launch used --resume", "--resume" in calls[0]["cmd"])
     check("2nd launch dropped --resume", "--resume" not in calls[1]["cmd"])
@@ -278,7 +292,8 @@ def test_executor_resume() -> None:
 
 def test_block_destructive_scans_resume_inject() -> None:
     print("[block_destructive scans the resume-folded inject]")
-    import tempfile, types as T
+    import tempfile
+    import types as T
     from agents import executor
     st = T.SimpleNamespace(task_id="T", meta={})
     # destructive command lives ONLY in claude_md_inject; on resume it is folded into the prompt
@@ -307,7 +322,9 @@ def test_bash_boundary_token_match() -> None:
 
 def test_deadline_idiom() -> None:
     print("[deadline zero/None idiom]")
-    import orchestrator as orch, types as T, datetime as D
+    import orchestrator as orch
+    import types as T
+    import datetime as D
     o = orch.Orchestrator()
     now = D.datetime.now().astimezone()
     check("past/zero -> passed", o._deadlinePassed(T.SimpleNamespace(meta={"deadline_at": now.isoformat()})) is True)

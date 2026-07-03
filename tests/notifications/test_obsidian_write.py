@@ -59,3 +59,58 @@ class TestWriteNote(unittest.TestCase):
             put.return_value = mock.Mock(status_code=200)
             res = self.client.writeNote("tasks/z.md", "hi")
         self.assertEqual(res["via"], "rest")
+
+
+class TestNonLoopbackWarning(unittest.TestCase):
+    """BUG-013: TLS verification is disabled (verify=False) for the Obsidian REST client --
+    that's only safe against 127.0.0.1. A misconfigured non-loopback OBSIDIAN_BASE_URL must at
+    least surface a warning rather than silently disabling cert checks against a network host."""
+
+    def setUp(self):
+        import memory.obsidian as ob
+        self.ob = ob
+        self._orig = ob._warned_non_loopback
+        ob._warned_non_loopback = False
+
+    def tearDown(self):
+        self.ob._warned_non_loopback = self._orig
+
+    def test_loopback_url_does_not_warn(self):
+        with mock.patch.object(self.ob.LOG, "warning") as warn:
+            self.ob._warnIfNonLoopback("http://127.0.0.1:27124")
+            self.ob._warnIfNonLoopback("http://localhost:27124")
+        warn.assert_not_called()
+
+    def test_non_loopback_url_warns_once(self):
+        with mock.patch.object(self.ob.LOG, "warning") as warn:
+            self.ob._warnIfNonLoopback("https://obsidian.example.com:27124")
+            self.ob._warnIfNonLoopback("https://obsidian.example.com:27124")
+        warn.assert_called_once()
+
+
+class TestRestPoolAtexitRegistration(unittest.TestCase):
+    """BUG-017: atexit.register() for the REST pool shutdown must fire once PER PROCESS, not
+    once per pool recreation -- otherwise tearing down and recreating the pool (flushRest() then
+    a later write) stacks additional atexit registrations."""
+
+    def setUp(self):
+        import memory.obsidian as ob
+        self.ob = ob
+        self._orig_pool = ob._REST_POOL
+        self._orig_registered = ob._REST_ATEXIT_REGISTERED
+        ob._REST_POOL = None
+        ob._REST_ATEXIT_REGISTERED = False
+
+    def tearDown(self):
+        if self.ob._REST_POOL is not None:
+            self.ob._REST_POOL.shutdown(wait=False)
+        self.ob._REST_POOL = self._orig_pool
+        self.ob._REST_ATEXIT_REGISTERED = self._orig_registered
+
+    def test_pool_recreation_registers_atexit_once(self):
+        with mock.patch("memory.obsidian.atexit.register") as reg:
+            self.ob._restPool()          # first creation -> registers
+            self.ob.flushRest()          # tears the pool down (does NOT reset the flag)
+            self.ob._restPool()          # recreation -> must NOT register again
+        reg.assert_called_once()
+

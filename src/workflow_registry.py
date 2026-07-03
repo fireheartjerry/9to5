@@ -13,6 +13,7 @@ Invariants:
 EXPORTS:
   WorkflowNotFoundError  -- Raised when a workflow name is not present in the registry.
   WorkflowValidationError  -- Raised when a workflow definition fails structural validation.
+  WorkflowCollisionError  -- Raised when addWorkflow() would silently overwrite a built-in (disk-loaded) definition.
   WorkflowRegistry  -- Thread-safe mutable registry of WorkflowDefinition entries.
 DEPENDS-ON: platform_core.core.contracts
 SIDE-EFFECTS: unannotated
@@ -66,6 +67,14 @@ class WorkflowValidationError(ValueError):
     """Raised when a workflow definition fails structural validation."""
 
 
+class WorkflowCollisionError(WorkflowValidationError):
+    """Raised when addWorkflow() would silently overwrite a built-in (disk-loaded) definition.
+
+    A subclass of WorkflowValidationError so existing callers that already catch that (e.g.
+    agents/workflow_resolver.py, which falls back to the raw dict on registration failure)
+    handle this the same way without further changes."""
+
+
 class WorkflowRegistry:
     """Thread-safe mutable registry of WorkflowDefinition entries.
 
@@ -79,20 +88,33 @@ class WorkflowRegistry:
         loaded = loadRegistry(definitions_dir)
         with self._lock:
             self._store.update(loaded)
+        # Names loaded from the trusted on-disk definitions directory at startup. REGISTRY is a
+        # single process-lifetime singleton shared across every task/subtask; addWorkflow's
+        # ad-hoc registration path is reachable with a name freely chosen by the (LLM) planner
+        # via subtask.workflow_definition.name -- without this, a colliding name would silently
+        # replace a built-in for every OTHER task using it, for the rest of the process.
+        self._builtin: frozenset = frozenset(loaded.keys())
 
     # ------------------------------------------------------------------
     # Mutation
     # ------------------------------------------------------------------
 
-    def addWorkflow(self, name: str, definition: WorkflowDefinition) -> None:
-        """Add or overwrite *name* with *definition*.
+    def addWorkflow(self, name: str, definition: WorkflowDefinition, *,
+                    overwrite: bool = False) -> None:
+        """Add *name* -> *definition*, or overwrite an existing AD-HOC entry.
 
-        Raises WorkflowValidationError if the definition fails validation.
+        Raises WorkflowValidationError if the definition fails validation, or
+        WorkflowCollisionError if *name* matches a built-in (disk-loaded) workflow and
+        ``overwrite`` is not explicitly True.
         """
         err = _validateWorkflowDefinition(definition, name)
         if err:
             raise WorkflowValidationError(err)
         with self._lock:
+            if name in self._builtin and not overwrite:
+                raise WorkflowCollisionError(
+                    f"refusing to overwrite built-in workflow '{name}' "
+                    "(pass overwrite=True to force)")
             self._store[name] = definition
 
     def removeWorkflow(self, name: str) -> WorkflowDefinition:

@@ -29,10 +29,15 @@ class TestDeploymentChanges(unittest.TestCase):
 
     def test_normalize_work_dir_absolute_repo_script(self):
         from agents.verifier import _normalizeWorkDir
-        subtask_dir = str(REPO_ROOT / ".sc-ctx" / "st-033")
-        cmd = f"python {REPO_ROOT / 'tests' / 'test_documentation.py'}"
+        import config
+        # _normalizeWorkDir re-roots an absolute repo-path script to config.PROJECT_ROOT, so build
+        # the script + expectation against THAT root (location-independent: works from a worktree
+        # where PROJECT_ROOT differs from this test file's own parent).
+        root = config.PROJECT_ROOT
+        subtask_dir = str(root / ".sc-ctx" / "st-033")
+        cmd = f"python {root / 'tests' / 'test_documentation.py'}"
         result = _normalizeWorkDir(cmd, subtask_dir)
-        self.assertEqual(result, str(REPO_ROOT),
+        self.assertEqual(result, str(root),
                          "_normalizeWorkDir must return repo root for absolute repo-path scripts")
 
     def test_normalize_work_dir_non_repo_script_unchanged(self):

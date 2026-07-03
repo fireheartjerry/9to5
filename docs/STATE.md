@@ -254,6 +254,19 @@ When changing state schema:
 - Optional dependency: `chromadb` (Phase 2). Absent wheel -> `NullIndex` fail-open to the O(n)
   cosine scan; never required for a run.
 
+## Retention sweep (per-run artifact GC)
+
+`platform_core/ops/retention.py` runs a best-effort sweep at run teardown (gated by
+`RETENTION_ENABLED`, default true; fail-open — never blocks or breaks a run):
+
+- `state/blackboard/*.jsonl` and `state/compaction/ctx-*.txt` — keep the newest
+  `RETENTION_KEEP_RECENT` (default 10) plus anything younger than `RETENTION_MAX_AGE_DAYS`
+  (default 14); prune the rest. These were previously unbounded (one file per run).
+- Terminal-status task JSON older than `RETENTION_ARCHIVE_AGE_DAYS` (default 30) is **moved**
+  into `state/archive/` — never deleted (the wipe-safety constraint). A live or unreadable
+  run is never archived (`_isTerminalTaskFile` fails closed).
+- The sweep never touches `.py` files under any circumstance.
+
 ## Universe state
 
 Universe lives under:

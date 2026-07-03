@@ -12,7 +12,7 @@ import json
 import unittest
 from pathlib import Path
 
-from workflows.registry import _validateAgent, _validatePhase, _validateWorkflowDefinition, loadRegistry
+from workflows.registry import loadRegistry
 from workflows import registry as _reg_module
 
 

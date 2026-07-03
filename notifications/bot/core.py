@@ -18,7 +18,7 @@ EXPORTS:
   runBot() -> None
 DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, notifications.views_feedback, notifications.views_terminal, platform_core.runtime, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/slow/test_simulation_core.py
+RUN/TEST: python -m pytest tests/slow/test_simulation_core.py tests/test_orch_core_bugs.py
 """
 from __future__ import annotations
 
@@ -139,6 +139,52 @@ async def _onAppError(interaction, error) -> None:  # pragma: no cover  # noqa: 
         pass
 
 
+async def _onMessage(bot, message) -> None:
+    """Nightclaw's on_message body -- module-level so buildBot()'s nested class stays thin."""
+    # Ignore ALL bot authors (not just ourselves): with an unset owner allowlist any
+    # other bot could otherwise drive the '!' control surface.
+    if message.author.bot or not message.content.strip().startswith("!"):
+        return
+    if not spine.isAuthorized(message.author.id):
+        LOG.info("ignored '!' command from unauthorized user %s", message.author.id)
+        return
+    if config.DISCORD_CHANNEL_ID and message.channel.id != config.DISCORD_CHANNEL_ID:
+        return
+    try:
+        # Off the event loop: handleCommand does blocking ControlBus SQLite IO.
+        # Running it inline froze the gateway's heartbeat under contention.
+        reply = await asyncio.to_thread(handleCommand, message.content, str(message.id))
+    except Exception:  # noqa: BLE001
+        LOG.exception("command error")
+        reply = "internal error (see logs)"
+    if reply:
+        await message.channel.send(reply[:MAX_REPLY_CHARS])
+
+
+def _presenceTick() -> str:
+    # Off the event loop: resolveTargetTask is a glob + JSON read, and the
+    # gateway-bot heartbeat (platform_core.runtime.heartbeat) is a file write.
+    from platform_core.runtime import heartbeat as _heartbeat
+    _heartbeat.writeBotHeartbeat()
+    state = spine.resolveTargetTask()
+    if state is not None and spine.isRunActive(state):
+        done, total = state.progress()
+        return f"{done}/{total} · {state.meta.get('status', 'run')}"
+    return "idle · /help"
+
+
+async def _presenceLoop(bot, discord) -> None:
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            name = await asyncio.to_thread(_presenceTick)
+            await bot.change_presence(
+                activity=discord.Activity(type=discord.ActivityType.watching, name=name))
+        except Exception:  # noqa: BLE001
+            pass
+        await asyncio.sleep(config.PRESENCE_INTERVAL)
+
+
 def buildBot():  # pragma: no cover -- requires discord + a gateway connection
     """Construct (but do not run) the NightclawBot. Lazy-imports discord."""
     import discord
@@ -162,49 +208,11 @@ def buildBot():  # pragma: no cover -- requires discord + a gateway connection
         async def on_ready(self) -> None:
             if not self._presence_started:
                 self._presence_started = True
-                self.loop.create_task(self._presenceLoop())
+                self.loop.create_task(_presenceLoop(self, discord))
             LOG.info("Nightclaw online as %s", self.user)
 
         async def on_message(self, message: "discord.Message") -> None:
-            if message.author == self.user or not message.content.strip().startswith("!"):
-                return
-            if not spine.isAuthorized(message.author.id):
-                LOG.info("ignored '!' command from unauthorized user %s", message.author.id)
-                return
-            if config.DISCORD_CHANNEL_ID and message.channel.id != config.DISCORD_CHANNEL_ID:
-                return
-            try:
-                # Off the event loop: handleCommand does blocking ControlBus SQLite IO.
-                # Running it inline froze the gateway's heartbeat under contention.
-                reply = await asyncio.to_thread(handleCommand, message.content, str(message.id))
-            except Exception:  # noqa: BLE001
-                LOG.exception("command error")
-                reply = "internal error (see logs)"
-            if reply:
-                await message.channel.send(reply[:MAX_REPLY_CHARS])
-
-        async def _presenceLoop(self) -> None:
-            await self.wait_until_ready()
-
-            def _presenceTick() -> str:
-                # Off the event loop: resolveTargetTask is a glob + JSON read, and the
-                # gateway-bot heartbeat (platform_core.runtime.heartbeat) is a file write.
-                from platform_core.runtime import heartbeat as _heartbeat
-                _heartbeat.writeBotHeartbeat()
-                state = spine.resolveTargetTask()
-                if state is not None and spine.isRunActive(state):
-                    done, total = state.progress()
-                    return f"{done}/{total} · {state.meta.get('status', 'run')}"
-                return "idle · /help"
-
-            while not self.is_closed():
-                try:
-                    name = await asyncio.to_thread(_presenceTick)
-                    await self.change_presence(
-                        activity=discord.Activity(type=discord.ActivityType.watching, name=name))
-                except Exception:  # noqa: BLE001
-                    pass
-                await asyncio.sleep(config.PRESENCE_INTERVAL)
+            await _onMessage(self, message)
 
     bot = NightclawBot()
     bot.tree.error(_onAppError)

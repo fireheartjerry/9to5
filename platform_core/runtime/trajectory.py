@@ -42,6 +42,7 @@ class Recorder:
         self._lock = threading.Lock()
         self._spans: dict[str, dict[str, Any]] = {}
         self._order: list[str] = []
+        self._flush_seq = 0   # bumped per flush for a unique temp name (cross-writer race)
 
     def _path(self) -> Path:
         return self._root / f"{self.run_id}.jsonl"

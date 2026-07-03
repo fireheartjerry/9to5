@@ -67,7 +67,6 @@ class TestSolutionCacheProvenance(unittest.TestCase):
 
     def test_upsert_solution_writes_provenance(self):
         """upsert_solution with provenance= stores it in the row."""
-        from learning import solution_cache
         experience.init(self.db)
         experience.upsert_solution(
             "sig4", '{"prompt":"z"}', verify_passed=True,

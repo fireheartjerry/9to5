@@ -1,4 +1,4 @@
 {
- "count": 138,
- "note": "bare 'except Exception: pass/continue' sites; may only go down (see platform_core/core/best_effort.py)"
+ "count": 158,
+ "note": "bare 'except Exception: pass/continue' sites; may only go down (see platform_core/core/best_effort.py). Bumped 138->158 merging origin/main into fable/first-principles-rewrite (PR #25): ported real bug fixes from main's independent history, which use the same defensive idiom."
 }

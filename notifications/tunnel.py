@@ -28,6 +28,15 @@ from notifications.tunnel_providers import default_providers
 LOG = config.getLogger("tunnel")
 
 
+def _safe_log(fn, *args, **kwargs) -> None:
+    """Emit a log record, swallowing the ``ValueError: I/O operation on closed file`` that a
+    handler stream raises when the process/test harness tears down logging mid-supervision."""
+    try:
+        fn(*args, **kwargs)
+    except ValueError:
+        pass
+
+
 class TunnelManager:
     # All timings are instance-overridable class attrs so tests can collapse them.
     POLL_INTERVAL = 5.0
@@ -116,7 +125,7 @@ class TunnelManager:
         if not saved:
             return False
         if self._current_provider().probe(saved, timeout=min(5.0, self.VALIDATE_TIMEOUT)):
-            LOG.info("tunnel resume: reusing live saved URL %s", saved)
+            _safe_log(LOG.info, "tunnel resume: reusing live saved URL %s", saved)
             self._announce(saved)
             return True
         return False
@@ -127,7 +136,7 @@ class TunnelManager:
             if self._stop.wait(self.PROBE_INTERVAL):
                 return
             if not self._current_provider().probe(self._url or "", timeout=5.0):
-                LOG.info("tunnel resume: saved URL went dead; launching fresh")
+                _safe_log(LOG.info, "tunnel resume: saved URL went dead; launching fresh")
                 return
 
     def _run_provider_session(self) -> bool:
@@ -139,15 +148,18 @@ class TunnelManager:
         try:
             proc = provider.start(self._port)
         except Exception as e:  # noqa: BLE001
-            LOG.warning("tunnel provider %s failed to start: %s", provider.name, e)
+            _safe_log(LOG.warning, "tunnel provider %s failed to start: %s", provider.name, e)
             return False
         self._proc = proc
         self._session_start = monotonic()
+        # A fresh session must re-announce even an identical URL (e.g. a stable named tunnel):
+        # clearing the last URL makes the reader treat the next URL as new and fire callbacks.
+        self._url = None
         announced = threading.Event()
         reader = threading.Thread(target=self._reader_loop, args=(provider, proc, announced),
                                   name="tunnel-reader", daemon=True)
         reader.start()
-        if not announced.wait(self.URL_WAIT_TIMEOUT) or self._stop.is_set():
+        if not self._await_announced(announced) or self._stop.is_set():
             self._kill(proc)
             reader.join(timeout=1.0)
             return announced.is_set()   # established-then-stopped counts as success
@@ -155,6 +167,14 @@ class TunnelManager:
         self._kill(proc)
         reader.join(timeout=1.0)
         return True
+
+    def _await_announced(self, announced: threading.Event) -> bool:
+        """Wait for the reader to announce a URL, but wake promptly on ``stop()`` so teardown
+        never blocks for the full URL_WAIT_TIMEOUT (the join-hang the supervisor used to cause)."""
+        deadline = monotonic() + self.URL_WAIT_TIMEOUT
+        while not announced.is_set() and not self._stop.is_set() and monotonic() < deadline:
+            announced.wait(0.05)
+        return announced.is_set()
 
     def _reader_loop(self, provider, proc, announced: threading.Event) -> None:
         try:
@@ -183,7 +203,7 @@ class TunnelManager:
             if proc.poll() is not None:
                 return
             if not provider.probe(self._url or "", timeout=5.0):
-                LOG.info("tunnel %s probe failed; restarting", provider.name)
+                _safe_log(LOG.info, "tunnel %s probe failed; restarting", provider.name)
                 return
             if monotonic() - self._session_start >= self.UPTIME_RESET:
                 self._consec_failures = 0
@@ -207,7 +227,7 @@ class TunnelManager:
         self._backoff = min(self.BACKOFF_CAP, self._backoff * 2)
 
     def _demote(self) -> None:
-        LOG.info("tunnel demoting provider %s", self.provider_name)
+        _safe_log(LOG.info, "tunnel demoting provider %s", self.provider_name)
         self._demoted[self._provider_idx] = monotonic()
         self._provider_idx = self._next_provider_idx()
 
@@ -241,7 +261,7 @@ class TunnelManager:
             try:
                 cb(url)
             except Exception:  # noqa: BLE001 -- a bad callback must not stop supervision
-                LOG.warning("tunnel on_url callback failed", exc_info=True)
+                _safe_log(LOG.warning, "tunnel on_url callback failed", exc_info=True)
 
     def _kill(self, proc) -> None:
         if proc is None:

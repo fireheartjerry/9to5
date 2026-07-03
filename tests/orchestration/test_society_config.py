@@ -13,6 +13,12 @@ def test_society_disabled_by_default(monkeypatch):
     assert isinstance(config.SOCIETY_ENABLED, bool)   # facade exposure
 
 
+def test_society_disabled_by_default_pinned(pin_flags):
+    # pin_flags isolates from live .env; test verifies intended ship-dark default.
+    pin_flags(SOCIETY_ENABLED=False)
+    assert config.SOCIETY_ENABLED is False
+
+
 def test_society_numeric_defaults():
     assert config.SOCIETY_MAX_WORKERS >= 1
     assert config.SOCIETY_DEBATE_MAX_ROUNDS >= 1

@@ -192,25 +192,34 @@ class TestTaskStateLoadValidation(unittest.TestCase):
 
     def test_json_array_raises_value_error(self):
         from state.task import TaskState
-        path = self.tmpdir / "bad-task.json"
+        tid = "66666666-6666-4666-8666-666666666666"
+        path = self.tmpdir / f"{tid}.json"
         path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
         with self.assertRaises(ValueError) as ctx:
-            TaskState.load("bad-task")
+            TaskState.load(tid)
         self.assertIn("not a dict", str(ctx.exception))
 
     def test_json_string_raises_value_error(self):
         from state.task import TaskState
-        path = self.tmpdir / "str-task.json"
+        tid = "77777777-7777-4777-8777-777777777777"
+        path = self.tmpdir / f"{tid}.json"
         path.write_text(json.dumps("just a string"), encoding="utf-8")
         with self.assertRaises(ValueError):
-            TaskState.load("str-task")
+            TaskState.load(tid)
 
     def test_load_safe_returns_none_on_corrupt(self):
         """loadSafe() must still swallow the ValueError and return None."""
         from state.task import TaskState
-        path = self.tmpdir / "corrupt-task.json"
+        tid = "88888888-8888-4888-8888-888888888888"
+        path = self.tmpdir / f"{tid}.json"
         path.write_text(json.dumps([]), encoding="utf-8")
-        self.assertIsNone(TaskState.loadSafe("corrupt-task"))
+        self.assertIsNone(TaskState.loadSafe(tid))
+
+    def test_load_rejects_non_uuid_task_id(self):
+        """BUG-003: a non-UUID task_id must be rejected before any path is constructed."""
+        from state.task import TaskState
+        with self.assertRaises(ValueError):
+            TaskState.load("bad-task")
 
     def test_valid_dict_loads_fine(self):
         from state.task import TaskState

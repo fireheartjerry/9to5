@@ -9,8 +9,15 @@ import platform_core.core.identity as identity
 
 
 def test_excludes_non_self_and_vcs_trees():
-    files = [str(p).replace("\\", "/").lower() for p in identity.selfCodeFiles()]
-    bad = [f for f in files if any(seg in f for seg in ("/.git/", "/.claude/", "/venv/"))]
+    # Check the path RELATIVE to the project root: the repo may itself live under a `.claude`
+    # worktree path (e.g. C:/9to5/.claude/worktrees/...), so an absolute-substring scan would
+    # false-flag every legitimate file. The invariant is about excluded SUBTREES under the root.
+    root = str(identity.PROJECT_ROOT).replace("\\", "/").lower()
+    rels = []
+    for p in identity.selfCodeFiles():
+        f = str(p).replace("\\", "/").lower()
+        rels.append(f[len(root):] if f.startswith(root) else f)
+    bad = [r for r in rels if any(seg in r for seg in ("/.git/", "/.claude/", "/venv/"))]
     assert bad == [], f"selfCodeFiles included excluded trees: {bad[:5]}"
 
 

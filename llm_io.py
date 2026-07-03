@@ -155,11 +155,17 @@ def responseText(resp) -> str:
     try:
         content = _field(_field(resp, "message"), "content")
         text = content if isinstance(content, str) else ""
-        if text:
-            _tap_brain("(prompt)", text)
-        return text
     except Exception:  # noqa: BLE001
         return ""
+    # Telemetry is isolated in its OWN guard AFTER the text is computed: a _tap_brain import or
+    # publish failure must never blank a valid completion (that would resurrect the
+    # "empty completion" bug from a purely cosmetic side channel).
+    if text:
+        try:
+            _tap_brain("(prompt)", text)
+        except Exception:  # noqa: BLE001
+            pass
+    return text
 
 
 def _firstBalancedObject(text: str):

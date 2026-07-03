@@ -367,6 +367,7 @@ def setOverride(knob: str, value: Any) -> tuple[bool, bool]:
 # ---------------------------------------------------------------------------
 
 _LOGGER_CONFIGURED = False
+_LOGGER_CONFIG_LOCK = threading.Lock()
 _LOG_MAX_BYTES = 10 * 1024 * 1024   # 10MB per file, 5 rotated backups
 _LOG_BACKUP_COUNT = 5
 
@@ -384,9 +385,18 @@ def _logLevelFromEnv() -> int:
 
 
 def _configureLogging() -> None:
+    """BUG-016: the check-and-set on _LOGGER_CONFIGURED must be lock-protected -- otherwise
+    two threads racing this at import time both pass the flag check and each add a
+    FileHandler/StreamHandler, doubling every log line for the rest of the process."""
     global _LOGGER_CONFIGURED
-    if _LOGGER_CONFIGURED:
-        return
+    with _LOGGER_CONFIG_LOCK:
+        if _LOGGER_CONFIGURED:
+            return
+        _configureLoggingLocked()
+        _LOGGER_CONFIGURED = True
+
+
+def _configureLoggingLocked() -> None:
     from logging.handlers import RotatingFileHandler
 
     class _SharedLogRotatingHandler(RotatingFileHandler):
@@ -415,7 +425,6 @@ def _configureLogging() -> None:
     base.addHandler(fh)
     base.addHandler(ch)
     base.propagate = False
-    _LOGGER_CONFIGURED = True
 
 
 def getLogger(name: str = "9to5") -> logging.Logger:

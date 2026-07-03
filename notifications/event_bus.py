@@ -37,14 +37,21 @@ _PER_SID_MAX = 1_000
 _SSE_QUEUE_MAX = 1_000
 
 
+def _wall_clock() -> str:
+    """Wall-clock HH:MM:SS stamped once, at Event creation (not at serialization)."""
+    return datetime.now().astimezone().strftime("%H:%M:%S")
+
+
 @dataclass
 class Event:
-    """A structured, fan-out event. ``ts`` is a monotonic timestamp for ordering."""
+    """A structured, fan-out event. ``ts`` is a monotonic timestamp for ordering; ``at`` is the
+    human wall-clock stamp captured at creation so replays/re-serialization keep the original time."""
     kind: str
     sid: str
     text: str
     data: dict = field(default_factory=dict)
     ts: float = field(default_factory=time.monotonic)
+    at: str = field(default_factory=_wall_clock)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -53,7 +60,7 @@ class Event:
             "text": self.text,
             "data": self.data,
             "ts": self.ts,
-            "at": datetime.now().astimezone().strftime("%H:%M:%S"),
+            "at": self.at,
         }
 
 

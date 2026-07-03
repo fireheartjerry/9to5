@@ -27,7 +27,7 @@ class TestPrGate(unittest.TestCase):
         # night mode is the only sanctioned ship-anyway escape (tested in test_horizon_fill).
         create, reason = self.orch._prGate(
             {"verdict": "challenged", "concerns": ["secret leak", "no rollback"]}, True, self.state)
-        self.assertFalse(create)
+        self.assertFalse(create)   # a blocking challenge HOLDS the PR (day mode, non-degraded)
         self.assertIn("HOLD", reason)
         self.assertIn("secret leak", reason)
 

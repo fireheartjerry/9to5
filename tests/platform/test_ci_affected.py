@@ -34,6 +34,12 @@ class TestFailClosed:
     def test_empty_change_set_falls_back(self):
         assert _decide([]).ok is False
 
+    def test_dot_prefixed_path_not_corrupted(self):
+        # a .py under a dot-dir must be judged by its true path, not a dot-stripped one
+        d = _decide([".github/scripts/does_not_exist_probe.py"])
+        assert d.ok is False
+        assert "github" in d.reason and ".github" in d.reason  # leading dot preserved in reason
+
 
 class TestHappyPath:
     def test_changed_test_covers_itself(self):

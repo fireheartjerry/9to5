@@ -12,10 +12,8 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-import config
 from notifications import discord_bot as discord_module
 from notifications.views_feedback import FeedbackView
-from state.task import TaskState
 
 
 class TestFeedbackEmbed(unittest.TestCase):

@@ -11,6 +11,8 @@ RUN/TEST: (no mapped test)
 """
 from __future__ import annotations
 
+import asyncio
+
 from discord import app_commands
 from discord.ext import commands as dpy_commands
 
@@ -74,7 +76,10 @@ class ControlCog(dpy_commands.Cog):
             if state is None:
                 return await interaction.followup.send(spine.NO_TASK, ephemeral=False)
             audit.record(interaction.user.id, "abort", state.task_id, "slash")
-            msg = spine.applyCommand(ControlBus(state.task_id), state, spine.Command("abort", ""))
+            # applyCommand does blocking ControlBus file IO; offload it so the gateway loop's
+            # heartbeat is never frozen while the abort is written.
+            msg = await asyncio.to_thread(
+                spine.applyCommand, ControlBus(state.task_id), state, spine.Command("abort", ""))
             await interaction.followup.send(msg[:slash.MAX_REPLY], ephemeral=False)
 
 
