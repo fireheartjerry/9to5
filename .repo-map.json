@@ -14714,6 +14714,19 @@
       ],
       "callers": []
     },
+    "tools.repo_map_test_map": {
+      "path": "tools/repo_map_test_map.py",
+      "purpose": "Manual dotted-module -> covering-test overrides for repo_map.find_tests().",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/platform/test_repo_map.py"
+      ],
+      "callers": []
+    },
     "tools.size_audit": {
       "path": "tools/size_audit.py",
       "purpose": "Line-count audit for agent-friendly files and functions.",
@@ -14739,6 +14752,28 @@
       ],
       "test": [
         "tests/platform/test_dev_commands.py"
+      ],
+      "callers": []
+    },
+    "tools.test_brain": {
+      "path": "tools/test_brain.py",
+      "purpose": "test_brain -- explainable, history-aware test selection for CI and local runs.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str]) -> int",
+          "summary": "",
+          "lineno": 217
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "--github-output prints GitHub output lines",
+        "normal mode prints an explanation"
+      ],
+      "test": [
+        "tests/platform/test_test_brain.py"
       ],
       "callers": []
     },

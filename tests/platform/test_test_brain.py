@@ -1,4 +1,5 @@
 """Tests for the history-aware test selector (tools/test_brain.py)."""
+
 from __future__ import annotations
 
 import json
@@ -9,6 +10,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 import test_brain  # noqa: E402
+import test_brain_selection  # noqa: E402
 
 
 def _write_history(path: Path, records: list[dict]) -> None:
@@ -35,17 +37,21 @@ def test_sensitive_change_fails_closed(tmp_path):
 
 def test_recent_failure_is_added_to_selection(tmp_path):
     history = tmp_path / "run.jsonl"
-    _write_history(history, [
-        {
-            "nodeid": "tests/platform/test_ci_affected.py::test_recent_failure_probe",
-            "outcome": "failed",
-            "duration_seconds": 1.25,
-            "timestamp": time.time(),
-        },
-    ])
+    _write_history(
+        history,
+        [
+            {
+                "nodeid": "tests/platform/test_ci_affected.py::test_recent_failure_probe",
+                "outcome": "failed",
+                "duration_seconds": 1.25,
+                "timestamp": time.time(),
+            },
+        ],
+    )
 
-    sel = test_brain.select_tests(["tests/platform/test_test_brain.py"], REPO_ROOT,
-                                  budget_seconds=60, history_dir=tmp_path)
+    sel = test_brain.select_tests(
+        ["tests/platform/test_test_brain.py"], REPO_ROOT, budget_seconds=60, history_dir=tmp_path
+    )
 
     assert sel.ok is True
     assert "tests/platform/test_ci_affected.py" in sel.targets
@@ -54,21 +60,27 @@ def test_recent_failure_is_added_to_selection(tmp_path):
 
 def test_quarantined_recent_failure_is_not_added_unless_direct(tmp_path):
     history = tmp_path / "run.jsonl"
-    _write_history(history, [
-        {
-            "nodeid": "tests/platform/test_ci_affected.py::test_recent_failure_probe",
-            "outcome": "failed",
-            "duration_seconds": 1.25,
-            "timestamp": time.time(),
-        },
-    ])
+    _write_history(
+        history,
+        [
+            {
+                "nodeid": "tests/platform/test_ci_affected.py::test_recent_failure_probe",
+                "outcome": "failed",
+                "duration_seconds": 1.25,
+                "timestamp": time.time(),
+            },
+        ],
+    )
     quarantine = tmp_path / "quarantine.json"
-    quarantine.write_text(json.dumps({"targets": ["tests/platform/test_ci_affected.py"]}),
-                          encoding="utf-8")
+    quarantine.write_text(json.dumps({"targets": ["tests/platform/test_ci_affected.py"]}), encoding="utf-8")
 
-    sel = test_brain.select_tests(["tests/platform/test_test_brain.py"], REPO_ROOT,
-                                  budget_seconds=60, history_dir=tmp_path,
-                                  quarantine_file=quarantine)
+    sel = test_brain.select_tests(
+        ["tests/platform/test_test_brain.py"],
+        REPO_ROOT,
+        budget_seconds=60,
+        history_dir=tmp_path,
+        quarantine_file=quarantine,
+    )
 
     assert sel.ok is True
     assert "tests/platform/test_ci_affected.py" not in sel.targets
@@ -76,8 +88,9 @@ def test_quarantined_recent_failure_is_not_added_unless_direct(tmp_path):
 
 
 def test_domain_sentinel_adds_adjacent_contract_tests(tmp_path):
-    sel = test_brain.select_tests(["tests/platform/test_test_brain.py"], REPO_ROOT,
-                                  budget_seconds=60, history_dir=tmp_path)
+    sel = test_brain.select_tests(
+        ["tests/platform/test_test_brain.py"], REPO_ROOT, budget_seconds=60, history_dir=tmp_path
+    )
     assert sel.sentinel_targets == []
 
     sentinels = test_brain.sentinel_targets_for(["platform_core/runtime/control_store.py"])
@@ -86,11 +99,13 @@ def test_domain_sentinel_adds_adjacent_contract_tests(tmp_path):
 
 
 def test_selector_includes_domain_sentinels_when_direct_map_is_narrow(tmp_path, monkeypatch):
-    monkeypatch.setattr(test_brain.affected_tests, "targets_for",
-                        lambda files: ["tests/platform/test_test_brain.py"])
+    monkeypatch.setattr(
+        test_brain.affected_tests, "targets_for", lambda files: ["tests/platform/test_test_brain.py"]
+    )
 
-    sel = test_brain.select_tests(["platform_core/runtime/control_store.py"], REPO_ROOT,
-                                  budget_seconds=60, history_dir=tmp_path)
+    sel = test_brain.select_tests(
+        ["platform_core/runtime/control_store.py"], REPO_ROOT, budget_seconds=60, history_dir=tmp_path
+    )
 
     assert sel.ok is True
     assert "tests/platform/test_test_brain.py" in sel.direct_targets
@@ -100,14 +115,17 @@ def test_selector_includes_domain_sentinels_when_direct_map_is_narrow(tmp_path, 
 
 def test_flake_candidates_need_mixed_results_and_enough_runs(tmp_path):
     history = tmp_path / "run.jsonl"
-    _write_history(history, [
-        {"nodeid": "tests/a.py::test_x", "outcome": "passed", "duration_seconds": 1, "timestamp": 1},
-        {"nodeid": "tests/a.py::test_y", "outcome": "passed", "duration_seconds": 1, "timestamp": 2},
-        {"nodeid": "tests/a.py::test_z", "outcome": "failed", "duration_seconds": 1, "timestamp": 3},
-        {"nodeid": "tests/b.py::test_x", "outcome": "failed", "duration_seconds": 1, "timestamp": 4},
-        {"nodeid": "tests/b.py::test_y", "outcome": "failed", "duration_seconds": 1, "timestamp": 5},
-        {"nodeid": "tests/b.py::test_z", "outcome": "failed", "duration_seconds": 1, "timestamp": 6},
-    ])
+    _write_history(
+        history,
+        [
+            {"nodeid": "tests/a.py::test_x", "outcome": "passed", "duration_seconds": 1, "timestamp": 1},
+            {"nodeid": "tests/a.py::test_y", "outcome": "passed", "duration_seconds": 1, "timestamp": 2},
+            {"nodeid": "tests/a.py::test_z", "outcome": "failed", "duration_seconds": 1, "timestamp": 3},
+            {"nodeid": "tests/b.py::test_x", "outcome": "failed", "duration_seconds": 1, "timestamp": 4},
+            {"nodeid": "tests/b.py::test_y", "outcome": "failed", "duration_seconds": 1, "timestamp": 5},
+            {"nodeid": "tests/b.py::test_z", "outcome": "failed", "duration_seconds": 1, "timestamp": 6},
+        ],
+    )
 
     flakes = test_brain.flake_candidates(test_brain.load_stats(tmp_path))
 
@@ -116,22 +134,25 @@ def test_flake_candidates_need_mixed_results_and_enough_runs(tmp_path):
 
 def test_load_stats_dedupes_same_run_nodeid(tmp_path):
     history = tmp_path / "run.jsonl"
-    _write_history(history, [
-        {
-            "run_id": "123",
-            "nodeid": "tests/a.py::test_x",
-            "outcome": "passed",
-            "duration_seconds": 1,
-            "timestamp": 1,
-        },
-        {
-            "run_id": "123",
-            "nodeid": "tests/a.py::test_x",
-            "outcome": "passed",
-            "duration_seconds": 1,
-            "timestamp": 1,
-        },
-    ])
+    _write_history(
+        history,
+        [
+            {
+                "run_id": "123",
+                "nodeid": "tests/a.py::test_x",
+                "outcome": "passed",
+                "duration_seconds": 1,
+                "timestamp": 1,
+            },
+            {
+                "run_id": "123",
+                "nodeid": "tests/a.py::test_x",
+                "outcome": "passed",
+                "duration_seconds": 1,
+                "timestamp": 1,
+            },
+        ],
+    )
 
     stats = test_brain.load_stats(tmp_path)
 
@@ -141,17 +162,21 @@ def test_load_stats_dedupes_same_run_nodeid(tmp_path):
 
 def test_budget_overflow_falls_back_but_reports_targets(tmp_path):
     history = tmp_path / "run.jsonl"
-    _write_history(history, [
-        {
-            "nodeid": "tests/platform/test_test_brain.py::test_changed_test_covers_itself_with_explanation",
-            "outcome": "passed",
-            "duration_seconds": 100.0,
-            "timestamp": time.time(),
-        },
-    ])
+    _write_history(
+        history,
+        [
+            {
+                "nodeid": "tests/platform/test_test_brain.py::test_changed_test_covers_itself_with_explanation",
+                "outcome": "passed",
+                "duration_seconds": 100.0,
+                "timestamp": time.time(),
+            },
+        ],
+    )
 
-    sel = test_brain.select_tests(["tests/platform/test_test_brain.py"], REPO_ROOT,
-                                  budget_seconds=1, history_dir=tmp_path)
+    sel = test_brain.select_tests(
+        ["tests/platform/test_test_brain.py"], REPO_ROOT, budget_seconds=1, history_dir=tmp_path
+    )
 
     assert sel.ok is False
     assert "exceeds budget" in sel.reason
@@ -159,8 +184,9 @@ def test_budget_overflow_falls_back_but_reports_targets(tmp_path):
 
 
 def test_selection_report_and_markdown_are_written(tmp_path):
-    sel = test_brain.select_tests(["tests/platform/test_test_brain.py"], REPO_ROOT,
-                                  budget_seconds=60, history_dir=tmp_path)
+    sel = test_brain.select_tests(
+        ["tests/platform/test_test_brain.py"], REPO_ROOT, budget_seconds=60, history_dir=tmp_path
+    )
 
     json_path, md_path = test_brain.write_reports(sel, tmp_path / "reports")
     data = json.loads(json_path.read_text(encoding="utf-8"))
@@ -181,8 +207,9 @@ def test_plan_shards_balances_by_duration():
         "tests/d.py": test_brain.TestStat("tests/d.py", runs=1, passes=1, total_duration=2),
     }
 
-    shards = test_brain.plan_shards(["tests/a.py", "tests/b.py", "tests/c.py", "tests/d.py"],
-                                    stats, shard_count=2)
+    shards = test_brain.plan_shards(
+        ["tests/a.py", "tests/b.py", "tests/c.py", "tests/d.py"], stats, shard_count=2
+    )
 
     assert len(shards) == 2
     assert shards[0]["targets"] == ["tests/a.py", "tests/d.py"]
@@ -191,8 +218,9 @@ def test_plan_shards_balances_by_duration():
 
 
 def test_write_reports_can_include_shard_artifacts(tmp_path):
-    sel = test_brain.select_tests(["tests/platform/test_test_brain.py"], REPO_ROOT,
-                                  budget_seconds=60, history_dir=tmp_path)
+    sel = test_brain.select_tests(
+        ["tests/platform/test_test_brain.py"], REPO_ROOT, budget_seconds=60, history_dir=tmp_path
+    )
     shards = test_brain.plan_shards(sel.targets, {}, 2)
 
     test_brain.write_reports(sel, tmp_path / "reports", shards)
@@ -235,12 +263,15 @@ def test_matrix_report_and_shard_selection_are_stable():
 
 def test_history_report_lists_slowest_and_flakes(tmp_path):
     history = tmp_path / "run.jsonl"
-    _write_history(history, [
-        {"nodeid": "tests/a.py::test_x", "outcome": "passed", "duration_seconds": 10, "timestamp": 1},
-        {"nodeid": "tests/a.py::test_y", "outcome": "failed", "duration_seconds": 8, "timestamp": 2},
-        {"nodeid": "tests/a.py::test_z", "outcome": "passed", "duration_seconds": 6, "timestamp": 3},
-        {"nodeid": "tests/b.py::test_x", "outcome": "passed", "duration_seconds": 1, "timestamp": 4},
-    ])
+    _write_history(
+        history,
+        [
+            {"nodeid": "tests/a.py::test_x", "outcome": "passed", "duration_seconds": 10, "timestamp": 1},
+            {"nodeid": "tests/a.py::test_y", "outcome": "failed", "duration_seconds": 8, "timestamp": 2},
+            {"nodeid": "tests/a.py::test_z", "outcome": "passed", "duration_seconds": 6, "timestamp": 3},
+            {"nodeid": "tests/b.py::test_x", "outcome": "passed", "duration_seconds": 1, "timestamp": 4},
+        ],
+    )
 
     report = test_brain.history_report(test_brain.load_stats(tmp_path), limit=5)
     md = test_brain.history_markdown(report)
@@ -252,10 +283,16 @@ def test_history_report_lists_slowest_and_flakes(tmp_path):
 
 
 def test_mapping_audit_reports_unmapped_sources(monkeypatch):
-    monkeypatch.setattr(test_brain, "_audit_source_files",
-                        lambda repo_root=test_brain.REPO_ROOT: ["tools/a.py", "notifications/discord_client.py"])
-    monkeypatch.setattr(test_brain.affected_tests, "targets_for",
-                        lambda files: ["tests/platform/test_a.py"] if files == ["tools/a.py"] else [])
+    monkeypatch.setattr(
+        test_brain_selection,
+        "_audit_source_files",
+        lambda repo_root=test_brain.REPO_ROOT: ["tools/a.py", "notifications/discord_client.py"],
+    )
+    monkeypatch.setattr(
+        test_brain.affected_tests,
+        "targets_for",
+        lambda files: ["tests/platform/test_a.py"] if files == ["tools/a.py"] else [],
+    )
 
     report = test_brain.audit_mapping(REPO_ROOT)
     md = test_brain.mapping_markdown(report)
@@ -272,15 +309,19 @@ def test_mapping_audit_reports_unmapped_sources(monkeypatch):
 
 
 def test_mapping_audit_fail_under_exits_nonzero(monkeypatch, capsys):
-    monkeypatch.setattr(test_brain, "audit_mapping", lambda repo_root: {
-        "schema": 1,
-        "total_files": 2,
-        "mapped_files": 1,
-        "unmapped_files": 1,
-        "coverage": 0.5,
-        "mapped": [],
-        "unmapped": [{"file": "agents/b.py", "targets": []}],
-    })
+    monkeypatch.setattr(
+        test_brain,
+        "audit_mapping",
+        lambda repo_root: {
+            "schema": 1,
+            "total_files": 2,
+            "mapped_files": 1,
+            "unmapped_files": 1,
+            "coverage": 0.5,
+            "mapped": [],
+            "unmapped": [{"file": "agents/b.py", "targets": []}],
+        },
+    )
 
     rc = test_brain.main(["--mapping-audit", "--mapping-fail-under", "0.75"])
 
