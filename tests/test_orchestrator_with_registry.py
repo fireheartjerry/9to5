@@ -29,6 +29,7 @@ def _empty_reg() -> WorkflowRegistry:
     reg = WorkflowRegistry.__new__(WorkflowRegistry)
     reg._lock = threading.Lock()
     reg._store = {}
+    reg._builtin = frozenset()
     return reg
 
 

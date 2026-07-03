@@ -100,6 +100,10 @@ class LogCog(dpy_commands.Cog):
 
     @app_commands.command(name="prefs", description="Show or reset your preferences")
     async def prefs(self, interaction, action: Optional[str] = None) -> None:  # noqa: ANN001  # pragma: no cover
+        # "reset" mutates the shared user_prefs.json (and clears persistent_intents); gate it
+        # like every other mutating command (intent/prefer above). "show" stays open.
+        if (action or "").strip().lower() == "reset" and not await slash._guard(interaction):
+            return
         await slash._runControl(interaction, "prefs", action or "")
 
     async def _postOllama(self, interaction, bang: str) -> None:  # noqa: ANN001  # pragma: no cover
@@ -114,7 +118,13 @@ class LogCog(dpy_commands.Cog):
 
     @dpy_commands.Cog.listener("on_message")
     async def _bang_listener(self, message) -> None:  # noqa: ANN001  # pragma: no cover
+        # Mirrors core.py's on_message gate exactly: this listener's "brief set ..." branch
+        # mutates shared user_prefs.json, but had NO authorization check at all -- any non-bot
+        # user in the control channel could flip global operator preferences.
         if message.author.bot or not str(message.content).strip().startswith("!"):
+            return
+        if not spine.isAuthorized(message.author.id):
+            LOG.info("ignored '!' bang command from unauthorized user %s", message.author.id)
             return
         if config.DISCORD_CHANNEL_ID and message.channel.id != config.DISCORD_CHANNEL_ID:
             return

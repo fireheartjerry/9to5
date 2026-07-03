@@ -14,11 +14,11 @@ EXPORTS:
   newestTaskSince(ts: float) -> Optional[str]  -- task_id of the newest state file created at/after `ts` (with ~2s mtime fuzz for filesys…
   spawn(req: WorkRequest) -> int
   buildResumeArgv(task_id: str, retry_failed: bool=False) -> list[str]
-  taskExists(task_id: str) -> bool
+  taskExists(task_id: str) -> bool  -- False for a non-UUID task_id, not just a missing file
   spawnResume(task_id: str, retry_failed: bool=False) -> int
   launchOrError(req: WorkRequest) -> str  -- Validate -> block-if-active -> spawn -> confirm
   resumeOrError(task_id: str, retry_failed: bool=False) -> str  -- Resume an existing task by id (block if a run is active)
-DEPENDS-ON: config, notifications.commands, platform_core.ops.external_project, platform_core.orchestration, platform_core.runtime.control, state.task
+DEPENDS-ON: config, notifications.commands, platform_core.ops.external_project, platform_core.orchestration, platform_core.runtime.control, state.task, state.task_io
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/test_work_launcher.py
 """
@@ -311,6 +311,15 @@ def buildResumeArgv(task_id: str, retry_failed: bool = False) -> list[str]:
 
 
 def taskExists(task_id: str) -> bool:
+    """False for a non-UUID task_id, not just a missing file -- a raw path.exists() check let
+    task_id="../user_prefs" resolve to (and confirm the existence of) an arbitrary file outside
+    STATE_DIR (e.g. memory/user_prefs.py's real store), a path-traversal existence oracle
+    reachable via the unauthenticated Discord /run and !resume commands."""
+    from state.task_io import validateTaskId
+    try:
+        validateTaskId(task_id)
+    except ValueError:
+        return False
     return (config.STATE_DIR / f"{task_id}.json").exists()
 
 

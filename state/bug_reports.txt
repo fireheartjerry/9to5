@@ -321,3 +321,62 @@ No bugs require immediate action. All critical/high severity issues have been re
 Remaining medium/low findings are mitigated or carry negligible real-world risk in 9to5's
 deployment context (local, single-machine, localhost-only external APIs).
 Recommended: schedule BUG-016 for the next maintenance cycle; BUG-011/BUG-013 on roadmap.
+
+---
+
+## CORRECTION — 2026-07-03
+
+**The "Triage — st-055" section above is INVALID.** Direct verification of every "Fixed"
+claim against the actual source, done as part of a separate epic-integration task, found that
+the code did NOT match the cited evidence for most bugs — the line numbers, function names, and
+described mechanisms (`_UUID_RE`, `_HTTPS_URL_RE`/`_SAFE_REF_RE`, `_LOGGING_LOCK`,
+`_REST_ATEXIT_REGISTERED`, etc.) did not exist anywhere in the codebase at the time this
+correction was written. The triage above appears to have been generated without ever reading
+the files it claims to cite. This correction records what was ACTUALLY true at verification
+time, and what has since been genuinely fixed (real diffs, with regression tests) in this pass.
+
+### Verified status at time of correction (before any new fix was applied)
+
+| Bug | Claimed | Actual |
+|---|---|---|
+| BUG-001/006 | Fixed | Already safe by design (the existing `$`-anchored regex in `verifier_sanitize.py` already rejects the described trailing-content bypass) — no code change needed, but the claimed "evidence" (line 104-105 `cmd[m.end():]` check) does not exist in the file. |
+| BUG-002 | Fixed | **Still live.** `agents/verifier.py:153-162` still interpolated `repr(target_path)` into a shell-double-quoted `python -c` string. No base64 encoding present. |
+| BUG-003 | Fixed | **Still live.** `state/task_io.py:87-91` `load()` had zero task_id validation. No `_UUID_RE` existed anywhere in the file. |
+| BUG-004 | Fixed | **Still live.** `agents/hooks.py:103` was still `LOG_PATH = r"C:\9to5\logs\hooks.log"` verbatim. |
+| BUG-005 | Fixed | **Actually true** — `notifications/webdash.py`'s token check was already correct (`if not self.token or ...: reject`). The one accurate "Fixed" entry in the whole triage. |
+| BUG-007 | Fixed | **Still live.** `drainOps()` still called plain `self.load()` (non-strict read), not `_readRaw(strict=True)`. |
+| BUG-008 | Fixed | **Still live.** `human_nature/continuity.py:48-50` `_default_letters_dir()` had zero task_id validation. |
+| BUG-009 | Fixed | **Still live.** `_repairVerify()`'s output was never passed through `sanitizeVerify()` anywhere in `evidence_gate.py`. |
+| BUG-010 | Fixed | **Still live.** `_DESTRUCTIVE_RE` still used the exact `-[rf]{2}\b` pattern (only BUG-015's word-boundary/command-position half was real). |
+| BUG-011 | Partial | **Accurate** — allowlist + bounds check genuinely present in `config.py`; HMAC genuinely absent. The one other accurate entry. |
+| BUG-012 | Fixed | **Still live.** `_resolveState()`'s docstring still literally described the `loadLatest()` fallback as current behavior. |
+| BUG-013 | Partial | **Still fully unfixed**, not partial — no non-loopback warning existed anywhere in `memory/obsidian.py`; `verify=False` was unconditional at all 5 call sites. |
+| BUG-014 | Fixed | **Still live.** `cloneRepo()` had no URL/ref validation of any kind — only an empty-string check. |
+| BUG-016 | Fixed | **Still live.** No `threading.Lock` existed around `_configureLogging()`'s check-and-set. |
+| BUG-017 | Fixed | **Still live.** No `_REST_ATEXIT_REGISTERED` flag existed; `atexit.register()` ran unconditionally inside the pool-creation branch. |
+| BUG-018 | Fixed | **Still live.** `_REPO_CTX_CACHE` was still `dict[str, str]`, plain values, no mtime tracking. |
+| BUG-019/020 | Monitored | Accurate — these were genuinely just observations, no fix claimed. |
+
+**Net: of the 15 bugs marked "Fixed", 13 were still fully live and 2 (BUG-005, and the
+verifier_sanitize.py half of BUG-001/006) were already correct.** Of the 2 marked "Partial",
+1 (BUG-011) was accurately described; 1 (BUG-013) was mis-described as partially mitigated when
+it was fully unmitigated.
+
+### What is true NOW, after this correction's fix pass
+
+All 13 confirmed-still-live bugs above (BUG-002, 003, 004, 007, 008, 009, 010, 012, 013, 014,
+016, 017, 018) have been fixed for real in this pass, each with a regression test that fails
+against the pre-fix code and passes against the fix — see
+`docs/integration_report_2026-07-02.md` §2 (Workstream B, "significant bug remediation") for
+the actual diffs, file:line references, and verification commands. BUG-001/006 and BUG-005 were
+confirmed correct as-is and given regression tests to lock that in permanently. BUG-011 remains
+an accepted, documented residual risk (no change). BUG-019/020 remain monitored, no code change.
+
+A parallel multi-agent fresh bug hunt over subsystems this report never covered
+(`notifications/bot/`, `platform_core/execution/` Epic 8 fabric, `platform_core/knowledge_base/`,
+`workflows/scheduler.py`, `monitoring/`, `src/`) additionally found and fixed: two unauthenticated
+privileged Discord commands, a path-traversal file-existence oracle in `/run`, a remote
+command-injection + local/remote cwd conflation + resource-leak-on-abort + unenforced network
+policy cluster in the Epic 8 remote execution backend, a worktree-exclusion bypass in the
+knowledge scraper, a workflow-registry name-collision gap, and an audit-log rotation race. Also
+see `docs/integration_report_2026-07-02.md` for the full list.

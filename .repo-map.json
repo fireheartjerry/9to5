@@ -6080,14 +6080,14 @@
           "kind": "function",
           "signature": "(user_id, action: str, task_id: Optional[str]=None, detail: str='') -> None",
           "summary": "Append one audit entry",
-          "lineno": 23
+          "lineno": 32
         },
         {
           "name": "recent",
           "kind": "function",
           "signature": "(n: int=20) -> list[dict]",
           "summary": "The last n audit entries (oldest-first within the window)",
-          "lineno": 43
+          "lineno": 53
         }
       ],
       "depends_on": [
@@ -6329,7 +6329,7 @@
           "kind": "function",
           "signature": "(bot: dpy_commands.Bot) -> None",
           "summary": "",
-          "lineno": 138
+          "lineno": 148
         }
       ],
       "depends_on": [
@@ -6900,56 +6900,56 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 68
+          "lineno": 72
         },
         {
           "name": "parseCommand",
           "kind": "function",
           "signature": "(content: str) -> Optional[Command]",
           "summary": "Exact-token parse of a '!' command",
-          "lineno": 73
+          "lineno": 77
         },
         {
           "name": "isAuthorized",
           "kind": "function",
           "signature": "(user_id: Optional[object]) -> bool",
           "summary": "True if no owner configured (dev), else only the configured owner",
-          "lineno": 88
+          "lineno": 92
         },
         {
           "name": "decide",
           "kind": "function",
           "signature": "(author_id: Optional[object], is_bot: bool, content: str) -> Optional[Command]",
           "summary": "Shared gate for BOTH the gateway and the in-run poller: returns the command to",
-          "lineno": 99
+          "lineno": 103
         },
         {
           "name": "resolveTargetTask",
           "kind": "function",
           "signature": "() -> Optional[TaskState]",
           "summary": "",
-          "lineno": 110
+          "lineno": 114
         },
         {
           "name": "isRunActive",
           "kind": "function",
           "signature": "(state: Optional[TaskState]) -> bool",
           "summary": "A run is 'active' iff its status is not terminal",
-          "lineno": 114
+          "lineno": 118
         },
         {
           "name": "footerHelp",
           "kind": "function",
           "signature": "() -> str",
           "summary": "Short, never-stale command hint derived from the registry (used by the dashboard).",
-          "lineno": 122
+          "lineno": 126
         },
         {
           "name": "applyCommand",
           "kind": "function",
           "signature": "(bus: ControlBus, state: TaskState, cmd: Command) -> str",
           "summary": "Perform the bus mutation and return human markdown text ('' for silent control ops).",
-          "lineno": 281
+          "lineno": 285
         }
       ],
       "depends_on": [
@@ -9022,7 +9022,7 @@
           "name": "taskExists",
           "kind": "function",
           "signature": "(task_id: str) -> bool",
-          "summary": "",
+          "summary": "False for a non-UUID task_id, not just a missing file",
           "lineno": 313
         },
         {
@@ -9030,21 +9030,21 @@
           "kind": "function",
           "signature": "(task_id: str, retry_failed: bool=False) -> int",
           "summary": "",
-          "lineno": 317
+          "lineno": 326
         },
         {
           "name": "launchOrError",
           "kind": "function",
           "signature": "(req: WorkRequest) -> str",
           "summary": "Validate -> block-if-active -> spawn -> confirm",
-          "lineno": 321
+          "lineno": 330
         },
         {
           "name": "resumeOrError",
           "kind": "function",
           "signature": "(task_id: str, retry_failed: bool=False) -> str",
           "summary": "Resume an existing task by id (block if a run is active)",
-          "lineno": 368
+          "lineno": 377
         }
       ],
       "depends_on": [
@@ -9053,7 +9053,8 @@
         "platform_core.ops.external_project",
         "platform_core.orchestration",
         "platform_core.runtime.control",
-        "state.task"
+        "state.task",
+        "state.task_io"
       ],
       "side_effects": [
         "unannotated"
@@ -9872,12 +9873,13 @@
           "kind": "class",
           "signature": "",
           "summary": "A remote box/microVM per subtask",
-          "lineno": 45
+          "lineno": 65
         }
       ],
       "depends_on": [
         "config",
-        "platform_core.execution.environment"
+        "platform_core.execution.environment",
+        "platform_core.execution.security"
       ],
       "side_effects": [
         "runs `ssh` / remote SDKs (behind _run_remote)"
@@ -10041,7 +10043,8 @@
         "tests/test_execution_security.py"
       ],
       "callers": [
-        "platform_core.execution.backends.docker"
+        "platform_core.execution.backends.docker",
+        "platform_core.execution.backends.remote"
       ]
     },
     "platform_core.execution.wiring": {
@@ -10222,7 +10225,7 @@
           "kind": "function",
           "signature": "(path: Optional[Path]=None) -> dict",
           "summary": "Read the expert recommendations doc (how 9to5 should wield Claude Code)",
-          "lineno": 417
+          "lineno": 425
         }
       ],
       "depends_on": [
@@ -11073,7 +11076,8 @@
       ],
       "test": [
         "tests/test_execute_mixin_env.py",
-        "tests/test_execute_mixin_fork_wiring.py"
+        "tests/test_execute_mixin_fork_wiring.py",
+        "tests/test_execute_mixin_teardown.py"
       ],
       "callers": [
         "orchestrator"
@@ -13234,21 +13238,28 @@
           "kind": "class",
           "signature": "",
           "summary": "Raised when a workflow name is not present in the registry.",
-          "lineno": 61
+          "lineno": 62
         },
         {
           "name": "WorkflowValidationError",
           "kind": "class",
           "signature": "",
           "summary": "Raised when a workflow definition fails structural validation.",
-          "lineno": 65
+          "lineno": 66
+        },
+        {
+          "name": "WorkflowCollisionError",
+          "kind": "class",
+          "signature": "",
+          "summary": "Raised when addWorkflow() would silently overwrite a built-in (disk-loaded) definition.",
+          "lineno": 70
         },
         {
           "name": "WorkflowRegistry",
           "kind": "class",
           "signature": "",
           "summary": "Thread-safe mutable registry of WorkflowDefinition entries.",
-          "lineno": 69
+          "lineno": 78
         }
       ],
       "depends_on": [
@@ -13393,6 +13404,7 @@
       "test": [],
       "callers": [
         "human_nature.continuity",
+        "notifications.work_launcher",
         "state.task_schema"
       ]
     },

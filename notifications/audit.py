@@ -12,6 +12,7 @@ RUN/TEST: python -m pytest tests/test_audit.py
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime
 from typing import Optional
 
@@ -19,23 +20,32 @@ import config
 
 LOG = config.getLogger("audit")
 
+# Serializes the rotate-check + replace + append sequence: record() is called from many
+# concurrent asyncio.to_thread call sites (every mutating cog/command). Without this, two
+# near-simultaneous callers could both observe size > AUDIT_MAX_BYTES and both call
+# path.replace(...) to the same ".1" destination -- the loser's replace (or append to a path
+# the winner just moved) raises, and since that's swallowed by the outer except below, the
+# audit entry for that action is silently never written.
+_RECORD_LOCK = threading.Lock()
+
 
 def record(user_id, action: str, task_id: Optional[str] = None, detail: str = "") -> None:
     """Append one audit entry. Swallows all errors (audit must never break a command)."""
     try:
-        path = config.AUDIT_LOG_PATH
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists() and path.stat().st_size > config.AUDIT_MAX_BYTES:
-            path.replace(path.with_name(path.name + ".1"))   # rotate (overwrites prior .1)
-        entry = {
-            "at": datetime.now().astimezone().isoformat(timespec="seconds"),
-            "user_id": str(user_id) if user_id is not None else None,
-            "action": action,
-            "task_id": task_id,
-            "detail": detail,
-        }
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        with _RECORD_LOCK:
+            path = config.AUDIT_LOG_PATH
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists() and path.stat().st_size > config.AUDIT_MAX_BYTES:
+                path.replace(path.with_name(path.name + ".1"))   # rotate (overwrites prior .1)
+            entry = {
+                "at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                "user_id": str(user_id) if user_id is not None else None,
+                "action": action,
+                "task_id": task_id,
+                "detail": detail,
+            }
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as e:  # noqa: BLE001
         LOG.warning("audit record failed: %s", e)
 
