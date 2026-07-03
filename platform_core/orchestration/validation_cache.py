@@ -179,9 +179,13 @@ def _store_cached(key: tuple, result: ValidationResult) -> None:
 
 def _run_command(cmd: list[str], work_dir: str) -> ValidationResult:
     t0 = time.perf_counter()
+    # Validation nodes include full/affected pytest lanes, which routinely exceed the 120s
+    # GIT_TIMEOUT_SECONDS. Bound them with the dedicated node budget so a real suite run is not
+    # killed mid-flight (which would flip every pre-PR / self-ref gate to a spurious failure).
+    node_timeout = int(getattr(config, "VALIDATION_NODE_TIMEOUT_SECONDS", 1800))
     try:
         proc = subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True,
-                              stdin=subprocess.DEVNULL, timeout=config.GIT_TIMEOUT_SECONDS)
+                              stdin=subprocess.DEVNULL, timeout=node_timeout)
         elapsed = time.perf_counter() - t0
         tail = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
         perf.record("validation_node", elapsed, command=" ".join(cmd),
@@ -189,7 +193,7 @@ def _run_command(cmd: list[str], work_dir: str) -> ValidationResult:
         return ValidationResult(ok=proc.returncode == 0, detail=tail[-1200:],
                                 elapsed_s=elapsed, commands=[cmd], stdout=proc.stdout or "")
     except subprocess.TimeoutExpired:
-        return ValidationResult(False, f"{' '.join(cmd)} timed out after {config.GIT_TIMEOUT_SECONDS}s",
+        return ValidationResult(False, f"{' '.join(cmd)} timed out after {node_timeout}s",
                                 elapsed_s=time.perf_counter() - t0, commands=[cmd])
     except Exception as e:  # noqa: BLE001
         return ValidationResult(False, f"{' '.join(cmd)} errored: {e}",

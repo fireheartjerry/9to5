@@ -196,6 +196,11 @@ class SieCfg:
     VALIDATION_CACHE_ENABLED: bool = _F(default_factory=lambda: _envBool("VALIDATION_CACHE_ENABLED", True))
     VALIDATION_CACHE_TTL_SECONDS: int = _F(default_factory=lambda: _envInt("VALIDATION_CACHE_TTL_SECONDS", 21600))
     VALIDATION_FAILURE_CACHE_TTL_SECONDS: int = _F(default_factory=lambda: _envInt("VALIDATION_FAILURE_CACHE_TTL_SECONDS", 30))
+    # Per-node subprocess budget for the validation DAG (repo-map/workflow checks AND full
+    # pytest lanes). Must NOT reuse GIT_TIMEOUT_SECONDS (=120s): a parallel full suite runs far
+    # longer than 120s, so bounding it with the git timeout made every pre-PR / self-ref gate
+    # spuriously time out. Mirrors selfmod.py's 1800s self-edit test budget.
+    VALIDATION_NODE_TIMEOUT_SECONDS: int = _F(default_factory=lambda: _envInt("VALIDATION_NODE_TIMEOUT_SECONDS", 1800))
     REPO_MERKLE_CACHE_ENABLED: bool = _F(default_factory=lambda: _envBool("REPO_MERKLE_CACHE_ENABLED", True))
     AFFECTED_TEST_BITSET_ENABLED: bool = _F(default_factory=lambda: _envBool("AFFECTED_TEST_BITSET_ENABLED", True))
     WEBDASH_DERIVED_TTL_SECONDS: int = _F(default_factory=lambda: _envInt("WEBDASH_DERIVED_TTL_SECONDS", 30))
