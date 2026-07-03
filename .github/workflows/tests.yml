@@ -32,10 +32,17 @@ jobs:
       workflow_only: ${{ steps.paths.outputs.workflow_only }}
       tooling_only: ${{ steps.paths.outputs.tooling_only }}
       core: ${{ steps.paths.outputs.core }}
+      affected_ok: ${{ steps.affected.outputs.affected_ok }}
+      affected_reason: ${{ steps.affected.outputs.affected_reason }}
+      affected_targets: ${{ steps.affected.outputs.affected_targets }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
       - id: paths
         shell: bash
@@ -103,6 +110,19 @@ jobs:
             echo "core=$core"
           } >> "$GITHUB_OUTPUT"
 
+      - id: affected
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" && -s /tmp/changed.txt && "$(head -c1 /tmp/changed.txt)" != "." ]]; then
+            python tools/ci_affected.py < /tmp/changed.txt >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "affected_ok=false"
+              echo "affected_reason=not-a-PR-or-unknown-change-set"
+              echo "affected_targets="
+            } >> "$GITHUB_OUTPUT"
+          fi
+
   docs:
     needs: classify
     if: needs.classify.outputs.docs_only == 'true'
@@ -163,12 +183,6 @@ jobs:
     if: needs.classify.outputs.core == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: >-
-          ${{ (github.event_name == 'pull_request')
-              && fromJSON('["3.11","3.12"]') || fromJSON('["3.12"]') }}
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
@@ -177,19 +191,27 @@ jobs:
           cache-dependency-glob: "requirements*.txt"
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
       - name: Install dependencies
         run: uv pip install --system -r requirements.txt -r requirements-dev.txt
       - name: Compile tests (corrupt files fail in seconds, not at collection)
         run: python -m compileall -q tests
-      - name: Fast lane
-        run: python -m pytest -m "not slow" -n auto --dist loadscope -q
+      - name: Affected tests (PR, fail-closed) or full fast lane
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" && "${{ needs.classify.outputs.affected_ok }}" == "true" ]]; then
+            echo "affected-only lane: ${{ needs.classify.outputs.affected_targets }}"
+            python -m pytest ${{ needs.classify.outputs.affected_targets }} -n auto --dist loadscope -q
+          else
+            echo "full fast lane (reason: ${{ needs.classify.outputs.affected_reason }})"
+            python -m pytest -m "not slow" -n auto --dist loadscope -q
+          fi
       - name: Validate workflow definitions
         run: python validate_workflows.py
 
   slow:
-    needs: [classify, fast]
-    if: (github.event_name == 'pull_request' || github.event_name == 'push') && needs.classify.outputs.core == 'true'
+    needs: classify
+    if: github.event_name == 'push' && needs.classify.outputs.core == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -207,8 +229,8 @@ jobs:
         run: python -m pytest -m slow -n auto --dist loadscope --durations=30 -q
 
   dry-run-smoke:
-    needs: [classify, fast]
-    if: (github.event_name == 'pull_request' || github.event_name == 'push') && needs.classify.outputs.core == 'true'
+    needs: classify
+    if: github.event_name == 'push' && needs.classify.outputs.core == 'true'
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -226,8 +248,8 @@ jobs:
         run: python main.py --dry-run --goal "ci smoke build a thing" --hours 1 --no-web
 
   e2e-smoke:
-    needs: [classify, fast]
-    if: (github.event_name == 'pull_request' || github.event_name == 'push') && needs.classify.outputs.core == 'true'
+    needs: classify
+    if: github.event_name == 'push' && needs.classify.outputs.core == 'true'
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -243,6 +265,24 @@ jobs:
         run: uv pip install --system -r requirements.txt -r requirements-dev.txt
       - name: Virtual-operator E2E suite
         run: python main.py --e2e
+
+  nightly-fast-py311:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
+      - name: Fast lane (3.11 compatibility)
+        run: python -m pytest -m "not slow" -n auto --dist loadscope -q
 
   exhaustive:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
