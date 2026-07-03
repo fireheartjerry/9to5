@@ -46,13 +46,18 @@ def targets_for_safe(files: list[str]) -> list[str]:
 
 
 def decide(files: list[str], repo_root: Path) -> Decision:
-    rels = [Path(f).as_posix() for f in files if f and f.strip()]
+    # A UTF-8 BOM on the first line of a changed-files list would corrupt exact-match and
+    # existence checks; strip it (this repo reads sources utf-8-sig elsewhere).
+    rels = [Path(f.strip().strip(chr(0xFEFF)).strip()).as_posix() for f in files if f and f.strip()]
     if not rels:
         return Decision(False, "empty change set")
     if len(rels) > MAX_CHANGED_FILES:
         return Decision(False, f"too many files ({len(rels)} > {MAX_CHANGED_FILES})")
     for rel in rels:
-        if rel in SENSITIVE_EXACT or any(rel.startswith(p) for p in SENSITIVE_PREFIXES):
+        # Any conftest.py (at ANY depth) governs its whole subtree, so a change to one can
+        # break tests the per-module mapper would never associate with it -> fail closed.
+        if rel in SENSITIVE_EXACT or rel.endswith("/conftest.py") \
+                or any(rel.startswith(p) for p in SENSITIVE_PREFIXES):
             return Decision(False, f"sensitive file: {rel}")
         if not rel.endswith(".py"):
             return Decision(False, f"non-python change: {rel}")

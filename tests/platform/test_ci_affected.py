@@ -40,6 +40,20 @@ class TestFailClosed:
         assert d.ok is False
         assert "github" in d.reason and ".github" in d.reason  # leading dot preserved in reason
 
+    def test_leading_bom_is_stripped(self):
+        # A UTF-8 BOM (chr(0xFEFF)) prefixed onto the first changed-file line must not
+        # corrupt matching: it resolves like the clean path.
+        d = _decide([chr(0xFEFF) + "tests/platform/test_ci_affected.py"])
+        assert d.ok is True and "tests/platform/test_ci_affected.py" in d.targets
+
+    def test_subdirectory_conftest_falls_back(self):
+        # a conftest.py at ANY depth governs its whole subtree -> must fail closed even
+        # alongside an otherwise-mappable changed test.
+        d = _decide(["tests/platform/conftest.py"])
+        assert d.ok is False and "sensitive" in d.reason
+        d2 = _decide(["tests/platform/conftest.py", "tests/platform/test_ci_affected.py"])
+        assert d2.ok is False and "sensitive" in d2.reason
+
 
 class TestHappyPath:
     def test_changed_test_covers_itself(self):
