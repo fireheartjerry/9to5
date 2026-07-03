@@ -7590,14 +7590,14 @@
           "kind": "function",
           "signature": "(task_id: str, port: Optional[int]=None) -> Optional[str]",
           "summary": "Start the dashboard in a daemon thread",
-          "lineno": 310
+          "lineno": 317
         },
         {
           "name": "stopWebDashboard",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Shut down the running dashboard server (frees the port)",
-          "lineno": 338
+          "lineno": 345
         }
       ],
       "depends_on": [
