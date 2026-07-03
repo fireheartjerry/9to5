@@ -10,7 +10,7 @@ EXPORTS:
   checkDeclaredTargets(work_dir: str, declared: 'tuple[str, ...]', cmd: Optional[str], changed: 'Optional[set[str]]') -> 'tuple[bool, str]'  -- Diff-grounded evaluation (R10c): the diff must intersect the declared target files,
 DEPENDS-ON: config, platform_core.core
 SIDE-EFFECTS: reads git status
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_verification_diff.py
 """
 from __future__ import annotations
 

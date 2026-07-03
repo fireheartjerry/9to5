@@ -10,7 +10,7 @@ EXPORTS:
   progressLedgerReplan(orch, state: TaskState, subtask: dict, combined: str, architect_doc: str, dashboard) -> None  -- Dual-ledger replan driver: one tiny Progress Ledger call updates the stall counter
 DEPENDS-ON: config, learning.reflection, learning.solution_cache, memory.experience, notifications.run_arc, platform_core.orchestration, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_stall_replan_trigger.py
 """
 from __future__ import annotations
 

@@ -16,7 +16,7 @@ EXPORTS:
   cmd_why_i_feel(self_state: dict[str, Any], appraisal_vars: dict[str, Any]) -> str  -- Return a functional-label trace of the current affect.
 DEPENDS-ON: human_nature.character_vector, human_nature.charter, human_nature.user_model
 SIDE-EFFECTS: none (pure)
-RUN/TEST: python -m pytest tests/test_psyche_commands.py
+RUN/TEST: python -m pytest tests/human_nature/test_psyche_commands.py
 """
 from __future__ import annotations
 

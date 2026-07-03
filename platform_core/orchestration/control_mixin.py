@@ -5,7 +5,7 @@ EXPORTS:
   OrchestratorControlMixin  -- Handles Discord control polling, approval gates, Obsidian index, and second-opinion rev…
 DEPENDS-ON: config, notifications.audit, notifications.commands, notifications.dashboard, notifications.discord_bot, notifications.engagement, notifications.jerry_client, platform_core.core.best_effort, platform_core.orchestration, platform_core.orchestration.brain_io, platform_core.orchestration.control_review_mixin, platform_core.orchestration.github, platform_core.orchestration.run_loop, platform_core.orchestration.subtask, platform_core.runtime, platform_core.runtime.control, selfmod, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/control/test_audit_correctness.py tests/orchestration/test_orchestrator_poll.py
 """
 from __future__ import annotations
 

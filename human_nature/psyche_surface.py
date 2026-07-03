@@ -11,7 +11,7 @@ EXPORTS:
   render_web(self_state: dict[str, Any], *, autonomy: dict[str, str] | None=None) -> str  -- Return an HTML fragment of the interior (no external dependencies).
 DEPENDS-ON: human_nature.gating
 SIDE-EFFECTS: none (pure render)
-RUN/TEST: python -m pytest tests/test_psyche_surface.py
+RUN/TEST: python -m pytest tests/human_nature/test_psyche_surface.py
 """
 from __future__ import annotations
 

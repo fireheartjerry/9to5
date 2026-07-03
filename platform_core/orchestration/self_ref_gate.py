@@ -9,7 +9,7 @@ EXPORTS:
   run_self_ref_quality_gate(work_dir: str) -> 'tuple[bool, str]'  -- Run cheap Windows repo gates after a self-ref subtask passes its own verify.
 DEPENDS-ON: platform_core.orchestration.validation_cache
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_github_pr_gate.py tests/orchestration/test_execute_quality_gate.py
 """
 from __future__ import annotations
 

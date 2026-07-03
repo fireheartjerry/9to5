@@ -8,7 +8,7 @@ EXPORTS:
   setup(bot: dpy_commands.Bot) -> None
 DEPENDS-ON: config, notifications.audit, notifications.branding, notifications.commands, notifications.metrics, notifications.slash, notifications.views, platform_core.ops.health, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/notifications/test_observe_cog.py
 """
 from __future__ import annotations
 

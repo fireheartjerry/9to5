@@ -15,7 +15,7 @@ EXPORTS:
   cap_to(tier: str, ceil: str) -> str  -- Return ``min(tier, ceil)`` on the cosmetic < soft < hard ordering.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none (pure)
-RUN/TEST: python -m pytest tests/test_autonomy.py
+RUN/TEST: python -m pytest tests/human_nature/test_autonomy.py
 """
 from __future__ import annotations
 

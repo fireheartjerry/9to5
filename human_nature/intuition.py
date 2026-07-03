@@ -24,7 +24,7 @@ EXPORTS:
   route(snap_result: dict, *, shortcut_enabled: Optional[bool]=None) -> str  -- Dual-process routing: return "fast" or "deliberate".
 DEPENDS-ON: config, human_nature.conviction
 SIDE-EFFECTS: none in current implementation (chat param reserved for future use)
-RUN/TEST: python -m pytest tests/test_intuition.py
+RUN/TEST: python -m pytest tests/human_nature/test_intuition.py
 """
 from __future__ import annotations
 

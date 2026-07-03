@@ -12,7 +12,7 @@ EXPORTS:
   track_record(judgment_type: str, domain: str, db_path: Optional[Path]=None) -> dict[str, Any]
 DEPENDS-ON: config
 SIDE-EFFECTS: creates/writes the conviction SQLite db at CONVICTION_DB_PATH (or db_path)
-RUN/TEST: python -m pytest tests/test_conviction_ledger.py
+RUN/TEST: python -m pytest tests/evolution/test_conviction_ledger.py
 """
 from __future__ import annotations
 

@@ -9,7 +9,7 @@ EXPORTS:
   is_expression_allowed(surface: str) -> bool
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none (pure)
-RUN/TEST: python -m pytest tests/test_gating.py
+RUN/TEST: python -m pytest tests/human_nature/test_gating.py
 """
 from __future__ import annotations
 

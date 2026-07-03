@@ -19,7 +19,7 @@ EXPORTS:
   RunClock  -- Deadline math for one run
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/platform/test_clock.py
 """
 from __future__ import annotations
 

@@ -8,7 +8,7 @@ EXPORTS:
   main() -> int
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/platform/test_claude_statusline.py
 """
 from __future__ import annotations
 

@@ -17,7 +17,7 @@ EXPORTS:
   recordOutcome(gate: str, predicted: Optional[dict], human_verb: str) -> None  -- Append a shadow-mode comparison line (model vs human)
 DEPENDS-ON: platform_core.core.best_effort
 SIDE-EFFECTS: appends to logs/jerry_shadow.jsonl
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/notifications/test_jerry_client.py
 """
 from __future__ import annotations
 

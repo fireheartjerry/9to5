@@ -5,7 +5,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: config, learning.confidence, learning.solution_cache, notifications.discord_bot, notifications.lane_feed, platform_core.core, platform_core.core.clock, platform_core.orchestration, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_dry_run.py tests/orchestration/test_execcwd_fabric.py tests/orchestration/test_orch_core_bugs.py
 """
 from __future__ import annotations
 

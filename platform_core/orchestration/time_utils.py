@@ -5,7 +5,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: platform_core.core.clock
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_time_utils.py
 """
 from __future__ import annotations
 

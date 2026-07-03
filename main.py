@@ -16,7 +16,7 @@ EXPORTS:
   main() -> int
 DEPENDS-ON: agents.elaborator, config, memory.obsidian, orchestrator.Orchestrator, orchestrator.refreshClaudeKnowledge, platform_core.app_config, platform_core.cli, platform_core.cli.main_cli, platform_core.core, platform_core.ops.doctor, platform_core.ops.external_project, platform_core.ops.health, platform_core.orchestration, platform_core.runtime, platform_core.runtime.control, platform_core.runtime.heartbeat, platform_core.runtime.resilience, platform_core.simulator.chaos, platform_core.simulator.simulation, state.task, testing.e2e
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/platform/test_main_cli.py
 """
 from __future__ import annotations
 

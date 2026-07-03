@@ -23,7 +23,7 @@ EXPORTS:
   sendBlocked(reason: str, question: Optional[str]=None) -> dict  -- Severe: new message, owner ping only (allowed_mentions can't expand past owner), with
 DEPENDS-ON: config, notifications.discord_client, notifications.discord_embeds
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/notifications/test_discord_channels.py
 """
 from __future__ import annotations
 

@@ -8,7 +8,7 @@ EXPORTS:
   WorkProfileModal
 DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.commands, notifications.work_launcher, platform_core.orchestration
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/control/test_views.py
 """
 from __future__ import annotations
 

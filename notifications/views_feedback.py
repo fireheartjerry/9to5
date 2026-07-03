@@ -5,7 +5,7 @@ EXPORTS:
   FeedbackView  -- Persistent (timeout=None) feedback view for subtask completion.
 DEPENDS-ON: config, notifications.slash, notifications.views_control
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/control/test_views.py
 """
 from __future__ import annotations
 

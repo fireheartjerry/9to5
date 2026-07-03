@@ -5,7 +5,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/notifications/test_webdash_page_split.py
 """
 from __future__ import annotations
 

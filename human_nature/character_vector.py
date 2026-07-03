@@ -16,7 +16,7 @@ EXPORTS:
   ratify(vec: dict[str, Any], proposal: dict[str, Any]) -> dict[str, Any]  -- Apply a proposal (clamped) + bump version
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none (pure; does not mutate inputs)
-RUN/TEST: python -m pytest tests/test_character_vector.py
+RUN/TEST: python -m pytest tests/human_nature/test_character_vector.py
 """
 from __future__ import annotations
 

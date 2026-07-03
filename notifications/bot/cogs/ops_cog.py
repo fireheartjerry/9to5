@@ -7,7 +7,7 @@ EXPORTS:
   setup(bot: dpy_commands.Bot) -> None
 DEPENDS-ON: config, notifications.audit, notifications.commands, notifications.discord_bot, notifications.ops, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/notifications/test_ops.py
 """
 from __future__ import annotations
 

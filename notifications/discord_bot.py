@@ -12,7 +12,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: notifications.discord_channels, notifications.discord_client, notifications.discord_embeds
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/notifications/test_discord_rest.py tests/notifications/test_notification_entry.py tests/notifications/test_notification_infrastructure.py tests/notifications/test_notification_service.py
 """
 from __future__ import annotations
 

@@ -45,6 +45,7 @@ layer_dump.txt
 __pycache__/
 *.pyc
 .pytest_cache/
+.testbrain/
 test-run/
 test-run2/
 test-run3/

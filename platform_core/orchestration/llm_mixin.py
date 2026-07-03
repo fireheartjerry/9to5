@@ -5,7 +5,7 @@ EXPORTS:
   OrchestratorLlmMixin  -- Handles all LLM/brain interaction: Ollama calls, goal evaluation, executor routing.
 DEPENDS-ON: agents.browser_executor, agents.clarifier, agents.verifier, config, learning.eval_harness, learning.finetune, llm_io, notifications.dashboard, notifications.discord_bot, platform_core.orchestration, platform_core.orchestration.brain_io, platform_core.orchestration.knowledge_refresh, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_llm_compaction_numctx.py
 """
 from __future__ import annotations
 

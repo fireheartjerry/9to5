@@ -11,7 +11,7 @@ EXPORTS:
   runReplayGif(state, *, max_frames: int=8) -> Optional[bytes]
 DEPENDS-ON: config, notifications.theme, notifications.visuals_components
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/notifications/test_visuals.py
 """
 from __future__ import annotations
 

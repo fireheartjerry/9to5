@@ -9,7 +9,7 @@ EXPORTS:
   render_package_agents_md(m: dict, pkg: str) -> str
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/platform/test_repo_map.py
 """
 from __future__ import annotations
 

@@ -29,7 +29,7 @@ EXPORTS:
   receiptToVResult(receipt: Receipt) -> VResult  -- The legacy vresult dict shape from a Receipt (compat shim, one release).
 DEPENDS-ON: agents.executor, agents.verification_diff, agents.verifier_sanitize, config
 SIDE-EFFECTS: runs the acceptance subprocess; reads git status
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_verifier_runner.py
 """
 from __future__ import annotations
 

@@ -11,7 +11,7 @@ EXPORTS:
   applyOp(state, op: dict, dashboard) -> None  -- Apply ONE drained plan op to the task state
 DEPENDS-ON: config
 SIDE-EFFECTS: mutates + saves task JSON; emits dashboard events
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_control_ops.py
 """
 from __future__ import annotations
 

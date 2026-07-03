@@ -23,7 +23,7 @@ EXPORTS:
   emotion_label(pad: dict) -> str  -- Map a PAD coordinate to a discrete emotion label.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none (pure)
-RUN/TEST: python -m pytest tests/test_appraisal.py
+RUN/TEST: python -m pytest tests/human_nature/test_appraisal.py
 """
 from __future__ import annotations
 

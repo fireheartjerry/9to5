@@ -11,7 +11,7 @@ EXPORTS:
   read_letters(task_id: str, *, letters_dir: Optional[Any]=None) -> list[str]  -- Read all letters for *task_id*, in filename-sorted (chronological) order.
 DEPENDS-ON: config
 SIDE-EFFECTS: writes markdown files under STATE_DIR/task_id/letters/ (or letters_dir)
-RUN/TEST: python -m pytest tests/test_continuity.py
+RUN/TEST: python -m pytest tests/human_nature/test_continuity.py
 """
 from __future__ import annotations
 

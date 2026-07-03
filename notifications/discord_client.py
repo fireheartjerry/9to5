@@ -5,7 +5,7 @@ EXPORTS:
   truncate(text, n: int) -> str  -- Clamp to n chars, marking a clip with a trailing ellipsis.
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/notifications/test_bot_replay.py tests/notifications/test_discord_rest.py
 """
 from __future__ import annotations
 

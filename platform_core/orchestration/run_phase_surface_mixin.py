@@ -8,7 +8,7 @@ EXPORTS:
   OrchestratorRunPhaseSurfaceMixin  -- Best-effort run surfaces: narration, moments, arc beats, run-end reflection, tunnel sto…
 DEPENDS-ON: config, memory.experience, notifications.event_bus, notifications.narration, notifications.reflection_post, notifications.run_arc, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/conftest.py tests/execution/test_resume_setup.py tests/orchestration/test_files_touched_propagation.py tests/orchestration/test_orchestration_surfaces.py tests/slow/test_discovery_integration.py tests/slow/test_e2e_operator.py
 """
 from __future__ import annotations
 

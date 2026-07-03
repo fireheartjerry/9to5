@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: ["**"]
+  merge_group:
   workflow_dispatch:
   schedule:
     - cron: "17 8 * * *"
@@ -35,6 +36,9 @@ jobs:
       affected_ok: ${{ steps.affected.outputs.affected_ok }}
       affected_reason: ${{ steps.affected.outputs.affected_reason }}
       affected_targets: ${{ steps.affected.outputs.affected_targets }}
+      testbrain_estimated_seconds: ${{ steps.affected.outputs.testbrain_estimated_seconds }}
+      testbrain_explain: ${{ steps.affected.outputs.testbrain_explain }}
+      testbrain_matrix: ${{ steps.affected.outputs.testbrain_matrix }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -44,11 +48,25 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Restore test-brain history
+        uses: actions/cache/restore@v4
+        with:
+          path: .testbrain
+          key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            testbrain-${{ runner.os }}-${{ github.ref_name }}-
+            testbrain-${{ runner.os }}-main-
+            testbrain-${{ runner.os }}-
+
       - id: paths
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             base="${{ github.event.pull_request.base.sha }}"
+          elif [[ "${{ github.event_name }}" == "merge_group" ]]; then
+            # Merge queue builds a synthetic queued merge commit. Diff against its first parent
+            # when available; if not, leave base empty and fail closed to the full fast lane.
+            base="$(git rev-parse HEAD^ 2>/dev/null || true)"
           elif [[ -n "${{ github.event.before }}" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
             base="${{ github.event.before }}"
           else
@@ -113,15 +131,24 @@ jobs:
       - id: affected
         shell: bash
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" && -s /tmp/changed.txt && "$(head -c1 /tmp/changed.txt)" != "." ]]; then
-            python tools/ci_affected.py < /tmp/changed.txt >> "$GITHUB_OUTPUT"
+          if [[ ("${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "merge_group") && -s /tmp/changed.txt && "$(head -c1 /tmp/changed.txt)" != "." ]]; then
+            python tools/test_brain.py --budget 480 --shards 4 --report-dir .testbrain/reports --github-output < /tmp/changed.txt >> "$GITHUB_OUTPUT"
           else
             {
               echo "affected_ok=false"
               echo "affected_reason=not-a-PR-or-unknown-change-set"
               echo "affected_targets="
+              echo "testbrain_estimated_seconds=0"
+              echo "testbrain_explain="
+              echo 'testbrain_matrix={"include":[]}'
             } >> "$GITHUB_OUTPUT"
           fi
+      - name: Upload test-brain reports
+        if: always() && hashFiles('.testbrain/reports/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: testbrain-reports
+          path: .testbrain/reports
 
   docs:
     needs: classify
@@ -178,9 +205,62 @@ jobs:
       - name: Tooling tests
         run: python -m pytest tests/platform/test_repo_map.py tests/platform/test_tools.py tests/platform/test_dev_commands.py -q
 
-  fast:
+  smart-shards:
     needs: classify
-    if: needs.classify.outputs.core == 'true'
+    if: >
+      needs.classify.outputs.core == 'true' &&
+      needs.classify.outputs.affected_ok == 'true' &&
+      (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.classify.outputs.testbrain_matrix) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        if: matrix.has_targets
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
+        if: matrix.has_targets
+        with:
+          python-version: "3.12"
+      - name: Restore test-brain history
+        if: matrix.has_targets
+        uses: actions/cache/restore@v4
+        with:
+          path: .testbrain
+          key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-smart-${{ matrix.shard }}
+          restore-keys: |
+            testbrain-${{ runner.os }}-${{ github.ref_name }}-
+            testbrain-${{ runner.os }}-main-
+            testbrain-${{ runner.os }}-
+      - name: Install dependencies
+        if: matrix.has_targets
+        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
+      - name: Smart shard
+        if: matrix.has_targets
+        env:
+          NINE_TO_FIVE_TEST_HISTORY: "1"
+          NINE_TO_FIVE_TEST_SHARD: ${{ matrix.shard }}
+        run: |
+          echo "smart shard ${{ matrix.shard }} (~${{ matrix.estimated_seconds }}s): ${{ matrix.targets }}"
+          python -m pytest ${{ matrix.targets }} -n auto --dist loadscope -q
+      - name: Empty shard
+        if: ${{ !matrix.has_targets }}
+        run: echo "smart shard ${{ matrix.shard }} has no targets"
+      - name: Save test-brain history
+        if: always() && matrix.has_targets && hashFiles('.testbrain/**') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .testbrain
+          key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-smart-${{ matrix.shard }}
+
+  fast:
+    needs: [classify, smart-shards]
+    if: always() && needs.classify.outputs.core == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -192,22 +272,71 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Restore test-brain history
+        uses: actions/cache/restore@v4
+        with:
+          path: .testbrain
+          key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-fast
+          restore-keys: |
+            testbrain-${{ runner.os }}-${{ github.ref_name }}-
+            testbrain-${{ runner.os }}-main-
+            testbrain-${{ runner.os }}-
       - name: Install dependencies
         run: uv pip install --system -r requirements.txt -r requirements-dev.txt
       - name: Compile tests (corrupt files fail in seconds, not at collection)
         run: python -m compileall -q tests
-      - name: Affected tests (PR, fail-closed) or full fast lane
+      - name: Smart shard gate or full fast lane
         shell: bash
+        env:
+          NINE_TO_FIVE_TEST_HISTORY: "1"
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" && "${{ needs.classify.outputs.affected_ok }}" == "true" ]]; then
-            echo "affected-only lane: ${{ needs.classify.outputs.affected_targets }}"
-            python -m pytest ${{ needs.classify.outputs.affected_targets }} -n auto --dist loadscope -q
+          if [[ ("${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "merge_group") && "${{ needs.classify.outputs.affected_ok }}" == "true" ]]; then
+            echo "smart lane delegated to smart-shards (~${{ needs.classify.outputs.testbrain_estimated_seconds }}s): ${{ needs.classify.outputs.affected_targets }}"
+            printf '%s\n' "${{ needs.classify.outputs.testbrain_explain }}"
+            if [[ "${{ needs.smart-shards.result }}" != "success" ]]; then
+              echo "smart-shards result was '${{ needs.smart-shards.result }}'; failing fast gate"
+              exit 1
+            fi
           else
             echo "full fast lane (reason: ${{ needs.classify.outputs.affected_reason }})"
             python -m pytest -m "not slow" -n auto --dist loadscope -q
           fi
       - name: Validate workflow definitions
         run: python validate_workflows.py
+      - name: Download test-brain reports
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: testbrain-reports
+          path: .testbrain/reports
+      - name: Test-brain summary
+        if: always() && hashFiles('.testbrain/reports/selection.md') != ''
+        shell: bash
+        run: cat .testbrain/reports/selection.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Refresh test-brain quarantine
+        if: always()
+        run: python tools/test_brain.py --flake-report --write-quarantine
+      - name: Test-brain history summary
+        if: always()
+        run: python tools/test_brain.py --history-report --report-dir .testbrain/reports
+      - name: Append test-brain history
+        if: always() && hashFiles('.testbrain/reports/history.md') != ''
+        shell: bash
+        run: cat .testbrain/reports/history.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Test-brain mapping audit
+        if: always()
+        run: python tools/test_brain.py --mapping-audit --mapping-fail-under 0.99 --report-dir .testbrain/reports
+      - name: Append test-brain mapping audit
+        if: always() && hashFiles('.testbrain/reports/mapping.md') != ''
+        shell: bash
+        run: cat .testbrain/reports/mapping.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Save test-brain history
+        if: always() && hashFiles('.testbrain/**') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .testbrain
+          key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-fast
 
   slow:
     needs: classify
@@ -226,6 +355,8 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -r requirements.txt -r requirements-dev.txt
       - name: Slow lane
+        env:
+          NINE_TO_FIVE_TEST_HISTORY: "1"
         run: python -m pytest -m slow -n auto --dist loadscope --durations=30 -q
 
   dry-run-smoke:
@@ -282,6 +413,8 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -r requirements.txt -r requirements-dev.txt
       - name: Fast lane (3.11 compatibility)
+        env:
+          NINE_TO_FIVE_TEST_HISTORY: "1"
         run: python -m pytest -m "not slow" -n auto --dist loadscope -q
 
   exhaustive:
@@ -302,6 +435,7 @@ jobs:
       - name: Exhaustive slow lane
         env:
           NINE_TO_FIVE_FUZZ_SEEDS: "150"
+          NINE_TO_FIVE_TEST_HISTORY: "1"
         run: python -m pytest -m slow -n auto --dist loadscope --durations=50 -vv
       - name: Dry-run smoke
         run: python main.py --dry-run --goal "nightly exhaustive smoke" --hours 1 --no-web

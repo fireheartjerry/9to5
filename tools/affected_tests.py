@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -29,6 +30,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import repo_map  # noqa: E402
 
 REPO_ROOT = repo_map.REPO_ROOT
+
+
+def _bitset_enabled() -> bool:
+    return os.getenv("AFFECTED_TEST_BITSET_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
 
 
 def _git_changed() -> list[str]:
@@ -61,7 +66,7 @@ def targets_for(files: list[str]) -> list[str]:
             p = REPO_ROOT / f
         if not p.exists() or p.suffix != ".py":
             continue
-        if not getattr(__import__("config"), "AFFECTED_TEST_BITSET_ENABLED", True):
+        if not _bitset_enabled():
             all_tests.extend(_tests_for_abs(str(p)))
             continue
         local_bits = 0

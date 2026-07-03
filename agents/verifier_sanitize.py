@@ -8,7 +8,7 @@ EXPORTS:
   sanitizeVerify(verify: Optional[dict]) -> Optional[dict]  -- Drop a structurally-unreliable brain-authored verify so the subtask falls back to
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_verifier.py
 """
 from __future__ import annotations
 

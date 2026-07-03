@@ -13,7 +13,7 @@ EXPORTS:
   compute_conviction(momentary: float, track: dict[str, Any], *, recal: bool=True) -> float
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none (pure)
-RUN/TEST: python -m pytest tests/test_conviction.py
+RUN/TEST: python -m pytest tests/human_nature/test_conviction.py
 """
 from __future__ import annotations
 

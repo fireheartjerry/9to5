@@ -8,7 +8,7 @@ EXPORTS:
   write_outputs(*, check: bool, only: Optional[str], no_headers: bool) -> int  -- Write (or --check) all artifacts
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/platform/test_repo_map.py
 """
 from __future__ import annotations
 

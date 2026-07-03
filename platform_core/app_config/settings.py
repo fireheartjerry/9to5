@@ -29,7 +29,7 @@ EXPORTS:
   getLogger(name: str='9to5') -> logging.Logger  -- Return a child of the configured ``9to5`` logger.
 DEPENDS-ON: platform_core.app_config._env, platform_core.app_config.discord, platform_core.app_config.llm, platform_core.app_config.paths, platform_core.core
 SIDE-EFFECTS: setOverride writes sie_overrides.json; getLogger creates LOG_PATH + 9to5.log
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_execution_router.py tests/orchestration/test_society_config.py tests/platform/test_config_bootstrap.py tests/platform/test_config_logging_lock.py tests/platform/test_epic_flags_config.py
 """
 from __future__ import annotations
 

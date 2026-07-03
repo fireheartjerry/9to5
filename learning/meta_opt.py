@@ -12,7 +12,7 @@ EXPORTS:
   apply(*, db_path: Optional[Path]=None) -> dict[str, Any]  -- Auto-apply suggestions within safe bounds (hands-off)
 DEPENDS-ON: config, learning.curriculum, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_nextwave_batch2.py tests/slow/test_full_autonomy.py
 """
 from __future__ import annotations
 

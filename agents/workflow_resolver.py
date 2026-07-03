@@ -14,7 +14,7 @@ EXPORTS:
   resolveWorkflowDefinition(spec: dict) -> Optional[dict]  -- Return the WorkflowDefinition dict for this spec via the centralized registry.
 DEPENDS-ON: src.workflow_registry
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_orchestrator_with_registry.py tests/workflows/test_code_review.py tests/workflows/test_staging_validation.py tests/workflows/test_workflow_registry.py
 """
 from __future__ import annotations
 

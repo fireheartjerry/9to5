@@ -16,7 +16,7 @@ EXPORTS:
   active_tenets(charter: dict[str, Any]) -> list[str]  -- Return the texts of all ratified amendments in ratification order.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none (pure; does not mutate inputs, no I/O)
-RUN/TEST: python -m pytest tests/test_charter.py
+RUN/TEST: python -m pytest tests/human_nature/test_charter.py
 """
 from __future__ import annotations
 

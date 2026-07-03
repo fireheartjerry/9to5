@@ -13,7 +13,7 @@ EXPORTS:
   read_recent(path: Path, limit: int=20) -> list[dict[str, Any]]
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/platform/test_iteration_telemetry.py
 """
 from __future__ import annotations
 

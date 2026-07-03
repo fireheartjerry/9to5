@@ -12,7 +12,7 @@ EXPORTS:
   cross_cast_agreement(votes: list) -> float  -- Fraction of *votes* equal to the modal vote
 DEPENDS-ON: config, human_nature.conviction, llm_io
 SIDE-EFFECTS: calls Ollama (HN_FAST_MODEL) when chat=None
-RUN/TEST: python -m pytest tests/test_momentary.py
+RUN/TEST: python -m pytest tests/human_nature/test_momentary.py
 """
 from __future__ import annotations
 

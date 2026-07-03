@@ -8,7 +8,7 @@ EXPORTS:
   OrchestratorControlReviewMixin  -- Dual-brain second-opinion dispatcher, GPT cost guard, plan/architecture reviews.
 DEPENDS-ON: agents.second_brain, config, notifications.dashboard, platform_core.orchestration, platform_core.orchestration.run_loop, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_control_review_mixin.py
 """
 from __future__ import annotations
 

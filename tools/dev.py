@@ -17,6 +17,10 @@ Subcommands:
   size-audit            bucket tracked Python files and functions by line count
   swallow-ratchet       bare except-swallow count vs baseline (--update to lower it)
   affected              print pytest targets for `git diff` (delegates to affected_tests.py)
+  smart                 explain/select a budgeted test set for changed files
+  flakes                report/write Test Brain quarantine candidates
+  slowest               report slowest tests from Test Brain history
+  map-audit             report source files with no affected-test mapping
   watch [files]         re-run affected tests on .py changes
   outline <file>        signatures + docstring-first-lines + anchors only
   where <symbol>        definition file:line + module-level callers (from .repo-map.json)
@@ -32,6 +36,10 @@ EXPORTS:
   cmd_bench_iteration(args: list[str]) -> int
   cmd_size_audit(args: list[str]) -> int
   cmd_affected(args: list[str]) -> int
+  cmd_smart(args: list[str]) -> int
+  cmd_flakes(args: list[str]) -> int
+  cmd_slowest(args: list[str]) -> int
+  cmd_map_audit(args: list[str]) -> int
   cmd_map(args: list[str]) -> int
   cmd_run(args: list[str]) -> int
   cmd_dryrun(args: list[str]) -> int
@@ -52,6 +60,7 @@ import affected_tests  # noqa: E402
 import iteration_bench  # noqa: E402
 import repo_map  # noqa: E402
 import size_audit  # noqa: E402
+import test_brain  # noqa: E402
 
 from dev_checks import (  # noqa: E402
     REPO_ROOT, PY, _run,
@@ -77,6 +86,22 @@ def cmd_size_audit(args: list[str]) -> int:
 
 def cmd_affected(args: list[str]) -> int:
     return affected_tests.main(args)
+
+
+def cmd_smart(args: list[str]) -> int:
+    return test_brain.main(args)
+
+
+def cmd_flakes(args: list[str]) -> int:
+    return test_brain.main(["--flake-report", *args])
+
+
+def cmd_slowest(args: list[str]) -> int:
+    return test_brain.main(["--history-report", *args])
+
+
+def cmd_map_audit(args: list[str]) -> int:
+    return test_brain.main(["--mapping-audit", *args])
 
 
 def cmd_map(args: list[str]) -> int:
@@ -107,7 +132,9 @@ COMMANDS = {
     "heartbeat-test": cmd_heartbeat_test, "context-check": cmd_context_check,
     "iteration-health": cmd_iteration_health, "bench-iteration": cmd_bench_iteration,
     "size-audit": cmd_size_audit,
-    "affected": cmd_affected, "watch": cmd_watch,
+    "affected": cmd_affected, "smart": cmd_smart, "flakes": cmd_flakes, "slowest": cmd_slowest,
+    "map-audit": cmd_map_audit,
+    "watch": cmd_watch,
     "outline": cmd_outline, "where": cmd_where, "lint": cmd_lint, "typecheck": cmd_typecheck,
     "run": cmd_run, "dryrun": cmd_dryrun, "e2e": cmd_e2e, "codemod": cmd_codemod,
     "swallow-ratchet": cmd_swallow_ratchet,
