@@ -10,6 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import config
 from notifications.dashboard import DiscordDashboard
+from notifications import dashboard as dash_mod
+from notifications import dashboard as dm
+from notifications import discord_bot as discord
 from state.task import TaskState
 
 
@@ -263,3 +266,168 @@ class TestEventPersistence(unittest.TestCase):
             d.start(st)
         save_ev.assert_not_called()
         self.assertEqual(len(d._eventsSnapshot()), 0)
+
+
+# ---- merged from test_dashboard_cv2.py ----
+# Dashboard CV2-mode routing: with DASHBOARD_CV2 on, start()/update() must route to the
+# Components-V2 transport (not the embed transport) and still pin + persist the message id and
+# honour the 404/transient recovery contract. discord_bot is monkeypatched -> no network.
+
+
+class _StubState:
+    def __init__(self):
+        self.task_id = "deadbeefcafe"
+        self.meta = {"goal_raw": "build", "status": "executing", "control_mode": "watch",
+                     "started_at": None, "work_dir": "C:/9to5"}
+        self.subtasks = [{"subtask_id": "st-001", "title": "a", "status": "in_progress"}]
+        self.data = {"notifications": [], "adversary_reviews": []}
+        self.saved_events = None
+        self.saved_msg_id = None
+
+    def saveDashboardEvents(self, ev):
+        self.saved_events = list(ev)
+
+    def setDashboardMessageId(self, mid):
+        self.saved_msg_id = mid
+
+
+def _ids(comps):
+    out = []
+
+    def walk(n):
+        if isinstance(n, dict):
+            if n.get("custom_id"):
+                out.append(n["custom_id"])
+            for v in n.values():
+                walk(v)
+        elif isinstance(n, list):
+            for it in n:
+                walk(it)
+
+    walk(comps)
+    return out
+
+
+class DashboardCv2Routing(unittest.TestCase):
+    def setUp(self):
+        self.cv2_create = self.cv2_edit = self.embed_create = self.embed_edit = 0
+        self.last_comps = None
+        self.pins = []
+        self._orig = {}
+
+        def cv2_create(comps, files=None):
+            self.cv2_create += 1
+            self.last_comps = comps
+            return "msg123"
+
+        def cv2_edit(mid, comps, files=None):
+            self.cv2_edit += 1
+            self.last_comps = comps
+            return "ok"
+
+        def embed_create(embed, content=None, components=None):
+            self.embed_create += 1
+            return "embedmsg"
+
+        def embed_edit(mid, embed, content=None, components=None):
+            self.embed_edit += 1
+            return "ok"
+
+        def pin(mid):
+            self.pins.append(mid)
+            return True
+
+        for name, fn in [("createComponentsV2", cv2_create),
+                         ("editComponentsV2Result", cv2_edit),
+                         ("createMessage", embed_create),
+                         ("editMessageResult", embed_edit),
+                         ("pinMessage", pin)]:
+            self._orig[name] = getattr(discord, name)
+            setattr(discord, name, fn)
+
+        self._flags = (config.DASHBOARD_CV2, config.DISCORD_DASHBOARD)
+        config.DASHBOARD_CV2 = True
+        config.DISCORD_DASHBOARD = True
+
+    def tearDown(self):
+        for name, fn in self._orig.items():
+            setattr(discord, name, fn)
+        config.DASHBOARD_CV2, config.DISCORD_DASHBOARD = self._flags
+
+    def test_start_routes_to_cv2_and_pins(self):
+        d = dash_mod.DiscordDashboard()
+        st = _StubState()
+        d.start(st, "starting", state_lock=threading.Lock())
+        self.assertEqual(self.cv2_create, 1)
+        self.assertEqual(self.embed_create, 0)
+        self.assertEqual(d.message_id, "msg123")
+        self.assertIn("msg123", self.pins)
+        self.assertEqual(st.saved_msg_id, "msg123")
+        self.assertIn("cp_abort", _ids(self.last_comps))   # cockpit carries control buttons
+
+    def test_update_routes_to_cv2_edit(self):
+        d = dash_mod.DiscordDashboard()
+        d.message_id = "msg123"
+        st = _StubState()
+        d.update(st, "executing", note="tick")
+        self.assertEqual(self.cv2_edit, 1)
+        self.assertEqual(self.embed_edit, 0)
+
+    def test_legacy_mode_still_uses_embed(self):
+        config.DASHBOARD_CV2 = False
+        d = dash_mod.DiscordDashboard()
+        st = _StubState()
+        d.start(st, "starting", state_lock=threading.Lock())
+        self.assertEqual(self.embed_create, 1)
+        self.assertEqual(self.cv2_create, 0)
+
+
+# ---- merged from test_cockpit_throttle.py ----
+# P1 hardening: the cockpit hero-image upload is throttled to <=1 per COCKPIT_IMAGE_MIN_INTERVAL,
+# so the every-4s pause loop can't drive a multipart-upload rate-limit storm. Text-CV2 still flows.
+
+
+class _State:
+    meta = {"goal_raw": "Build the lab", "status": "executing", "control_mode": "watch",
+            "started_at": None, "work_dir": "C:/9to5"}
+    subtasks = [{"subtask_id": "st-001", "title": "a", "status": "in_progress"}]
+    data = {"notifications": [], "adversary_reviews": []}
+
+
+class CockpitImageThrottle(unittest.TestCase):
+    def setUp(self):
+        self._flags = (config.VISUALS_ENABLED, config.DASHBOARD_CV2, config.COCKPIT_IMAGE_MIN_INTERVAL)
+        config.VISUALS_ENABLED = True
+        config.DASHBOARD_CV2 = True
+        config.COCKPIT_IMAGE_MIN_INTERVAL = 30
+
+    def tearDown(self):
+        config.VISUALS_ENABLED, config.DASHBOARD_CV2, config.COCKPIT_IMAGE_MIN_INTERVAL = self._flags
+
+    def test_first_includes_image_then_throttled(self):
+        d = dm.DiscordDashboard()
+        _, files1 = d._cockpit(_State(), "executing")
+        self.assertIsNotNone(files1)                      # first render uploads the image
+        self.assertEqual(files1[0][0], "cockpit.png")
+
+        _, files2 = d._cockpit(_State(), "executing")
+        self.assertIsNone(files2)                         # rapid second tick: throttled (text-CV2 only)
+
+    def test_refreshes_after_interval(self):
+        d = dm.DiscordDashboard()
+        d._cockpit(_State(), "executing")                 # primes _last_image_ts
+        d._last_image_ts -= 31                            # simulate >interval elapsed
+        _, files = d._cockpit(_State(), "executing")
+        self.assertIsNotNone(files)                       # image refreshes after the interval
+
+    def test_text_cockpit_always_built(self):
+        d = dm.DiscordDashboard()
+        comps, _ = d._cockpit(_State(), "executing")
+        # the CV2 container is always present regardless of image throttling
+        self.assertEqual(comps[0]["type"], 17)
+
+    def test_disabled_never_uploads(self):
+        config.VISUALS_ENABLED = False
+        d = dm.DiscordDashboard()
+        _, files = d._cockpit(_State(), "executing")
+        self.assertIsNone(files)

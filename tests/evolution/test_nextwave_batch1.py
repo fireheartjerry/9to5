@@ -61,10 +61,12 @@ class TestConfidence(_Base):
 
 
 class TestSafety(_Base):
-    def test_guard_blocks_brain_self_promotion(self):
-        with self.assertRaises(safety.SelfPromotionError):
-            safety.guard_promotion("brain")
-        safety.guard_promotion("gate")   # allowed
+    # test_guard_blocks_brain_self_promotion removed: it was a strict subset of
+    # test_evolution_safety.py::test_guard_promotion_blocks_brain_and_evolver, which
+    # asserts the same two facts (guard_promotion("brain") raises SelfPromotionError;
+    # guard_promotion("gate") does not raise) on the identical code path
+    # (learning.safety.guard_promotion), plus an additional "evolver" assertion this
+    # test did not have.
 
     def test_invariants_healthy_then_violated(self):
         self.assertEqual(safety.verify_invariants(db_path=self.db), [])

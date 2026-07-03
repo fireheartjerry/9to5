@@ -3,10 +3,17 @@
 The SAFETY INVARIANT is the important one: a subtask with implement intent must
 NEVER route to a read-only profile (architect/reviewer), whose charters forbid
 edits and would make the executor refuse to write and burn every retry.
+
+Consolidated from test_playbook.py and test_playbook_evolution.py: both test
+agents/playbook.py -- classification/builders, and buildPlaybook's champion-body
+override via the evolution-candidate DB.
 """
 import unittest
 
+import pytest
+
 from agents import playbook
+from memory import experience
 
 
 def _c(title="", desc="", spec=None):
@@ -63,3 +70,29 @@ class TestBuilders(unittest.TestCase):
         pb = playbook.buildPlaybook("tester")
         self.assertIn("Non-negotiables", pb)
         self.assertIn("Test author", pb)
+
+
+@pytest.fixture()
+def db(tmp_path):
+    p = tmp_path / "exp.db"
+    experience._reset_schema_cache()
+    experience.init(p)
+    yield p
+    experience._reset_schema_cache()
+
+
+def test_build_playbook_uses_constant_with_no_champion(db, monkeypatch):
+    monkeypatch.setattr(playbook.config, "EXPERIENCE_DB_PATH", db, raising=False)
+    out = playbook.buildPlaybook("implementer")
+    # Unchanged behavior: the in-code constant text still appears.
+    assert "Implementation discipline" in out
+
+
+def test_build_playbook_prefers_promoted_champion(db, monkeypatch):
+    monkeypatch.setattr(playbook.config, "EXPERIENCE_DB_PATH", db, raising=False)
+    cid = experience.register_candidate(kind="playbook", target="implementer",
+                                        body="### Evolved discipline\n- do the new thing.",
+                                        provenance={}, db_path=db)
+    experience.promote_candidate(cid, db_path=db)
+    out = playbook.buildPlaybook("implementer")
+    assert "Evolved discipline" in out

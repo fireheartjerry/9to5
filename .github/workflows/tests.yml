@@ -135,7 +135,7 @@ jobs:
       - name: Validate workflow definitions
         run: python validate_workflows.py
       - name: Workflow tests
-        run: python -m pytest tests/workflows/test_validate_workflows.py tests/workflows/test_workflows.py tests/workflows/test_workflows_registry_load.py tests/workflows/test_workflows_registry_validators.py tests/workflows/test_workflow_registry.py -q
+        run: python -m pytest tests/workflows/test_validate_workflows.py tests/workflows/test_workflows.py tests/workflows/test_workflows_registry.py tests/workflows/test_workflow_registry.py -q
 
   tooling:
     needs: classify

@@ -1,4 +1,7 @@
-"""shouldFork is opt-in: fork_eligible flag is the ONLY trigger (fork-as-retry OFF)."""
+"""shouldFork is opt-in: fork_eligible flag is the ONLY trigger (fork-as-retry OFF).
+
+forkPlan emits N distinct seeds spanning effort x angle.
+"""
 from platform_core.orchestration import fork_policy as fp
 
 
@@ -44,3 +47,34 @@ def test_self_referential_excluded():
 def test_discovery_profile_can_opt_in_design_fork():
     st = {"title": "Explore transformative architecture", "description": "ambiguous design options"}
     assert fp.shouldFork(st, **_kwargs(work_profile="inventor")) is True
+
+
+def test_plan_emits_n_distinct_seeds():
+    plan = fp.forkPlan({"subtask_id": "st-001"}, n=2)
+    assert plan.n == 2
+    assert len(plan.branch_seeds) == 2
+    ids = [s.branch_id for s in plan.branch_seeds]
+    assert ids == ["b0", "b1"]
+    # No two seeds identical on (effort, angle).
+    fingerprints = {(s.effort_level, s.angle_hint) for s in plan.branch_seeds}
+    assert len(fingerprints) == 2
+
+
+def test_plan_seeds_carry_routed_model():
+    import config
+    plan = fp.forkPlan({"subtask_id": "st-001"}, n=2)
+    for s in plan.branch_seeds:
+        assert s.model == config.MODEL_BY_EFFORT[s.effort_level]
+
+
+def test_plan_caps_at_angle_bank_but_stays_distinct():
+    plan = fp.forkPlan({"subtask_id": "st-001"}, n=3)
+    assert len(plan.branch_seeds) == 3
+    fingerprints = {(s.effort_level, s.angle_hint) for s in plan.branch_seeds}
+    assert len(fingerprints) == 3
+
+
+def test_profile_shapes_fork_angles():
+    plan = fp.forkPlan({"subtask_id": "st-001"}, n=3, work_profile="auditor")
+    assert any("test-first" in s.angle_hint for s in plan.branch_seeds)
+    assert any("conservative" in s.angle_hint for s in plan.branch_seeds)

@@ -1,4 +1,10 @@
-"""AnnIndex contract: NullIndex fail-open + getIndex singleton honoring ANN_INDEX_ENABLED."""
+"""AnnIndex contract: NullIndex fail-open + getIndex singleton honoring ANN_INDEX_ENABLED.
+
+Consolidated from test_exp_index.py and test_exp_index_chroma.py: both test
+memory/exp_index.py -- the first with a NullIndex/FakeIndex test double (no
+chromadb dependency needed), the second with a real ChromaIndex round-trip
+(skipped unless chromadb is installed).
+"""
 import pytest
 
 import config
@@ -66,3 +72,40 @@ class _FakeIndex:
 
     def persist(self):
         pass
+
+
+# ---------------------------------------------------------------------------
+# Real ChromaIndex round-trip (skipped unless chromadb is installed).
+#
+# NOTE: the skip must be per-test (not a module-level pytest.importorskip), or
+# it would also skip the chromadb-independent NullIndex/FakeIndex tests above
+# when chromadb isn't installed.
+# ---------------------------------------------------------------------------
+
+try:
+    import chromadb  # noqa: F401
+    _HAS_CHROMADB = True
+except ImportError:
+    _HAS_CHROMADB = False
+
+
+@pytest.mark.skipif(not _HAS_CHROMADB, reason="chromadb not installed")
+def test_chromaindex_add_query_roundtrip_by_cosine(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "ANN_INDEX_DIR", str(tmp_path / "idx"), raising=False)
+    monkeypatch.setattr(config, "ANN_EMBED_DIM", 3, raising=False)
+    idx = exp_index.ChromaIndex(str(tmp_path / "idx"))
+    idx.addPair("a", [1.0, 0.0, 0.0], {"st_id": "a", "run_id": "r1"})
+    idx.addPair("b", [0.0, 1.0, 0.0], {"st_id": "b", "run_id": "r1"})
+    idx.persist()
+    hits = idx.query([1.0, 0.0, 0.0], 2, 0.0)
+    assert hits[0]["uid"] == "a"
+    assert hits[0]["payload"]["st_id"] == "a"
+    assert hits[0]["score"] >= hits[1]["score"]
+
+
+@pytest.mark.skipif(not _HAS_CHROMADB, reason="chromadb not installed")
+def test_getindex_returns_chroma_when_enabled(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "ANN_INDEX_ENABLED", True, raising=False)
+    monkeypatch.setattr(config, "ANN_INDEX_DIR", str(tmp_path / "idx2"), raising=False)
+    monkeypatch.setattr(config, "ANN_EMBED_DIM", 3, raising=False)
+    assert isinstance(exp_index.getIndex(), exp_index.ChromaIndex)

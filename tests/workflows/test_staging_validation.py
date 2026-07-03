@@ -4,9 +4,16 @@ Verifies that:
 1. ops.staging_validator is importable and exposes validate() / main().
 2. All staging gates pass (imports, CI workflow, validate_workflows.py script).
 3. main() exits 0 when run from CLI.
+4. The workflow registry (src.workflow_registry) and workflow resolver
+   (agents.workflow_resolver) that staging_validator's import gates depend on
+   are themselves functional (CRUD, resolution, execution).
 
 Run:
     python tests/test_staging_validation.py
+
+Merged from test_staging_changes.py ("Deploy Changes to Staging Environment"
+acceptance test) as part of tests/workflows/ file-sprawl cleanup -- both files
+covered the same staging-promotion acceptance concern.
 """
 from __future__ import annotations
 
@@ -80,3 +87,100 @@ class TestStagingMainExitCode(unittest.TestCase):
         from platform_core.ops.staging_validator import main
         exit_code = main(quiet=True)
         self.assertEqual(exit_code, 0, "staging_validator.main() must return 0 in a healthy repo")
+
+
+# ---------------------------------------------------------------------------
+# 1. Workflow registry (dependency of the import gates above)
+# ---------------------------------------------------------------------------
+
+class TestWorkflowRegistryImports(unittest.TestCase):
+    def test_registry_module_imports(self):
+        from src.workflow_registry import WorkflowRegistry, WorkflowNotFoundError, WorkflowValidationError, REGISTRY
+        self.assertIsInstance(REGISTRY, WorkflowRegistry)
+
+    def test_workflow_resolver_imports(self):
+        from agents.workflow_resolver import resolveWorkflowDefinition
+        self.assertIsNotNone(resolveWorkflowDefinition)
+
+
+class TestWorkflowRegistryCRUD(unittest.TestCase):
+    def setUp(self):
+        from src.workflow_registry import WorkflowRegistry
+        self._reg = WorkflowRegistry.__new__(WorkflowRegistry)
+        import threading
+        self._reg._lock = threading.Lock()
+        self._reg._store = {}
+        self._reg._builtin = frozenset()
+
+    def _wf(self, name: str = "staging-test") -> dict:
+        return {
+            "name": name,
+            "phases": [
+                {
+                    "title": "Phase 1",
+                    "parallel": False,
+                    "agents": [{"label": "a", "effort": "default", "prompt": "do X"}],
+                }
+            ],
+        }
+
+    def test_add_and_get_workflow(self):
+        self._reg.addWorkflow("staging-test", self._wf())
+        result = self._reg.getWorkflow("staging-test")
+        self.assertEqual(result["name"], "staging-test")
+
+    def test_list_workflows(self):
+        self._reg.addWorkflow("wf-a", self._wf("wf-a"))
+        self._reg.addWorkflow("wf-b", self._wf("wf-b"))
+        names = self._reg.listWorkflows()
+        self.assertIn("wf-a", names)
+        self.assertIn("wf-b", names)
+
+    def test_remove_workflow(self):
+        from src.workflow_registry import WorkflowNotFoundError
+        self._reg.addWorkflow("wf-rm", self._wf("wf-rm"))
+        self._reg.removeWorkflow("wf-rm")
+        with self.assertRaises(WorkflowNotFoundError):
+            self._reg.getWorkflow("wf-rm")
+
+    def test_get_missing_raises(self):
+        from src.workflow_registry import WorkflowNotFoundError
+        with self.assertRaises(WorkflowNotFoundError):
+            self._reg.getWorkflow("does-not-exist")
+
+    def test_invalid_definition_raises(self):
+        from src.workflow_registry import WorkflowValidationError
+        # Unknown key in the root dict triggers validation failure.
+        with self.assertRaises(WorkflowValidationError):
+            self._reg.addWorkflow("bad", {"unknown_key": True})
+
+    def test_execute_workflow_returns_prompt(self):
+        self._reg.addWorkflow("exec-test", self._wf("exec-test"))
+        out = self._reg.executeWorkflow("exec-test", context="staging")
+        self.assertTrue(out["ok"])
+        self.assertIn("Phase 1", out["prompt"])
+        self.assertIn("staging", out["prompt"])
+
+
+class TestWorkflowResolver(unittest.TestCase):
+    def test_none_spec_returns_none(self):
+        from agents.workflow_resolver import resolveWorkflowDefinition
+        self.assertIsNone(resolveWorkflowDefinition(None))
+
+    def test_empty_spec_returns_none(self):
+        from agents.workflow_resolver import resolveWorkflowDefinition
+        self.assertIsNone(resolveWorkflowDefinition({}))
+
+    def test_inline_definition_resolves(self):
+        from agents.workflow_resolver import resolveWorkflowDefinition
+        spec = {
+            "workflow_definition": {
+                "name": "inline-wf",
+                "phases": [
+                    {"title": "P1", "agents": [{"label": "x", "effort": "default", "prompt": "y"}]}
+                ],
+            }
+        }
+        result = resolveWorkflowDefinition(spec)
+        self.assertIsNotNone(result)
+        self.assertIn("phases", result)

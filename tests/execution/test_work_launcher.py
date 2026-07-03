@@ -1,11 +1,26 @@
-"""Unit tests for the pure /work launcher core (no real subprocess)."""
+"""Unit tests for the pure /work launcher core (no real subprocess).
+
+Also covers: working-directory selection (persistence in task meta, resume remembering
+it, surfacing in status/run embeds, and launcher validation), and liveness -- a LIVE
+orchestrator run must never be classed 'stale' (which mis-aborts it and lets a second
+run double-spawn on the same repo). Liveness is heartbeat.isRunAlive -- heartbeat fresh
+OR recorded pid alive; the old mtime heuristic is gone. Stale cleanup goes through the
+bus + task_io.reapDeadRun, never a direct task-JSON write from the bot process."""
 import os
 import subprocess
+import tempfile
+import time
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import config
+from notifications import branding
 from notifications import work_launcher as wl
+from platform_core.core import fsio
+from state.task import TaskState
+
+DEAD_PID = 999999999   # implausible -> definitely dead
 
 
 class TestParseHours(unittest.TestCase):
@@ -92,14 +107,12 @@ class TestBuildArgv(unittest.TestCase):
 
 class TestActiveRun(unittest.TestCase):
     def test_none_when_terminal(self):
-        from state.task import TaskState
         st = TaskState.create("g", 1.0)
         st.meta["status"] = "done"
         with mock.patch.object(wl.commands, "resolveTargetTask", return_value=st):
             self.assertIsNone(wl.activeRun())
 
     def test_returns_when_active(self):
-        from state.task import TaskState
         st = TaskState.create("g", 1.0)
         st.meta["status"] = "executing"
         st.meta["run_pid"] = os.getpid()   # liveness: this process vouches for the run
@@ -145,8 +158,6 @@ class TestResume(unittest.TestCase):
         self.assertIn("abc-123", argv)
 
     def test_task_exists(self):
-        import tempfile
-        from pathlib import Path
         tid = "11111111-1111-4111-8111-111111111111"
         missing_id = "22222222-2222-4222-8222-222222222222"
         d = Path(tempfile.mkdtemp())
@@ -158,8 +169,6 @@ class TestResume(unittest.TestCase):
     def test_task_exists_rejects_path_traversal(self):
         # BUG (fresh bug hunt): a non-UUID task_id must never confirm a file's existence
         # outside STATE_DIR -- taskExists is reachable from the unauthenticated /run command.
-        import tempfile
-        from pathlib import Path
         d = Path(tempfile.mkdtemp())
         (d / "sibling.json").write_text("{}", encoding="utf-8")
         with mock.patch.object(config, "STATE_DIR", d / "tasks"):
@@ -181,7 +190,6 @@ class TestLaunchGlue(unittest.TestCase):
         self.assertIn("❌", wl.launchOrError(wl.WorkRequest(goal="")))
 
     def test_blocks_when_active(self):
-        from state.task import TaskState
         st = TaskState.create("g", 1.0)
         st.meta["status"] = "executing"
         with mock.patch.object(wl, "activeRun", return_value=st):
@@ -243,7 +251,6 @@ class TestLaunchGlue(unittest.TestCase):
             self.assertIn("No such task", wl.resumeOrError("nope"))
 
     def test_resume_blocks_when_active(self):
-        from state.task import TaskState
         st = TaskState.create("g", 1.0)
         st.meta["status"] = "executing"
         with mock.patch.object(wl, "taskExists", return_value=True), \
@@ -255,3 +262,175 @@ class TestLaunchGlue(unittest.TestCase):
                 mock.patch.object(wl, "activeRun", return_value=None), \
                 mock.patch.object(wl, "spawnResume", return_value=5):
             self.assertIn("Resuming", wl.resumeOrError("abc"))
+
+
+# ---------------------------------------------------------------------------
+# Working-directory selection: persistence in task meta, resume remembering it,
+# surfacing in status/run embeds, and launcher validation.
+# ---------------------------------------------------------------------------
+
+class TestWorkDirState(unittest.TestCase):
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self._patch = mock.patch.object(config, "STATE_DIR", self.dir)
+        self._patch.start()
+
+    def tearDown(self):
+        self._patch.stop()
+        for p in self.dir.glob("*"):
+            p.unlink()
+        self.dir.rmdir()
+
+    def test_create_has_work_dir_field(self):
+        st = TaskState.create("g", 1.0)
+        self.assertIn("work_dir", st.meta)
+        self.assertIsNone(st.meta["work_dir"])
+
+    def test_set_work_dir_resolves_absolute_and_persists(self):
+        st = TaskState.create("g", 1.0)
+        st.setWorkDir(str(self.dir))
+        self.assertEqual(st.meta["work_dir"], str(self.dir.resolve()))
+        # persisted across a reload
+        self.assertEqual(TaskState.load(st.task_id).meta["work_dir"], str(self.dir.resolve()))
+
+
+class TestWorkDirSurfaces(unittest.TestCase):
+    def _state(self):
+        st = TaskState.create("build a thing", 1.0)
+        st.meta["work_dir"] = "/home/user/myproject"
+        st.addSubtask("a", "d")
+        return st
+
+    def test_status_embed_shows_work_dir(self):
+        e = branding.statusEmbed(self._state(), bus=None)
+        blob = " ".join(f["value"] for f in e["fields"])
+        self.assertIn("/home/user/myproject", blob)
+
+    def test_run_embed_shows_work_dir(self):
+        e = branding.runEmbed(self._state())
+        blob = " ".join(f["value"] for f in e["fields"])
+        self.assertIn("/home/user/myproject", blob)
+
+
+class TestWorkDirLauncherValidation(unittest.TestCase):
+    def test_missing_work_dir_is_rejected(self):
+        errs = wl.validate(wl.WorkRequest(goal="x", work_dir="/no/such/dir/xyz"))
+        self.assertTrue(any("work_dir" in e for e in errs))
+
+    def test_existing_work_dir_ok(self):
+        with tempfile.TemporaryDirectory() as d:
+            errs = wl.validate(wl.WorkRequest(goal="x", work_dir=d))
+            self.assertEqual(errs, [])
+
+    def test_argv_passes_resolved_work_dir(self):
+        with tempfile.TemporaryDirectory() as d:
+            argv = wl.buildArgv(wl.WorkRequest(goal="x", work_dir=d))
+            self.assertIn("--work-dir", argv)
+            self.assertIn(str(Path(d).resolve()), argv)
+
+    def test_external_readiness_warns_for_non_git_dir(self):
+        with tempfile.TemporaryDirectory() as d:
+            warnings = wl.externalReadiness(wl.WorkRequest(goal="x", work_dir=d))
+            self.assertTrue(any("not a git repo" in w for w in warnings))
+
+    def test_external_readiness_warns_for_git_repo_without_origin(self):
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run(["git", "init", d], check=True, capture_output=True, text=True)
+            warnings = wl.externalReadiness(wl.WorkRequest(goal="x", work_dir=d))
+            self.assertTrue(any("no `origin` remote" in w for w in warnings))
+
+    def test_launch_reply_includes_external_readiness_warnings(self):
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(wl, "activeRun", return_value=None), \
+                mock.patch.object(wl, "spawn", return_value=123), \
+                mock.patch.object(wl, "waitForLaunch", return_value="abcdef12"):
+            out = wl.launchOrError(wl.WorkRequest(goal="x", work_dir=d))
+        self.assertIn("Launched run", out)
+        self.assertIn("not a git repo", out)
+
+
+# ---------------------------------------------------------------------------
+# Liveness: a LIVE orchestrator run must never be classed 'stale'.
+# ---------------------------------------------------------------------------
+
+def _task(status="executing"):
+    st = TaskState.create("goal", 1.0)
+    st.meta["status"] = status
+    st.save()
+    return st
+
+
+def _age(st, seconds=100000):
+    old = time.time() - seconds
+    os.utime(st.path(), (old, old))
+
+
+class TestStaleLiveness(unittest.TestCase):
+    def test_live_pid_not_stale_even_with_ancient_mtime(self):
+        st = _task()
+        st.meta["run_pid"] = os.getpid()   # this process is alive
+        st.save()
+        _age(st)                            # file untouched for ~27h
+        self.assertFalse(wl._isStale(st), "a live run was misread as stale")
+
+    def test_created_status_live_pid_not_stale(self):
+        # A still-initializing run (status 'created') stamps run_pid BEFORE the slow Ollama
+        # elaboration, so even a multi-minute elaboration is NOT mis-declared stale.
+        st = _task(status="created")
+        st.meta["run_pid"] = os.getpid()
+        st.save()
+        _age(st, seconds=1000)
+        self.assertFalse(wl._isStale(st),
+                         "a live still-elaborating run was misread as stale (double-spawn risk)")
+
+    def test_fresh_heartbeat_not_stale_despite_dead_pid_and_old_mtime(self):
+        # The heartbeat is authoritative when fresh: an old task-file mtime means nothing.
+        st = _task()
+        st.meta["run_pid"] = DEAD_PID
+        st.save()
+        _age(st)
+        fsio.atomicWriteJson(config.HEARTBEAT_DIR / f"{st.task_id}.json",
+                             {"pid": DEAD_PID, "seq": 3, "ts": time.time()})
+        self.assertFalse(wl._isStale(st),
+                         "a heartbeat-fresh run was misread as stale")
+
+    def test_dead_pid_is_stale(self):
+        st = _task()
+        st.meta["run_pid"] = DEAD_PID
+        st.save()
+        self.assertTrue(wl._isStale(st))
+
+    def test_no_pid_no_heartbeat_is_stale(self):
+        st = _task()
+        st.meta.pop("run_pid", None)
+        st.save()
+        self.assertTrue(wl._isStale(st),
+                        "a task with no liveness evidence at all should be stale")
+
+
+class TestStaleReap(unittest.TestCase):
+    """activeRun's stale path: bus abort + reapDeadRun -- NEVER a direct task-JSON write."""
+
+    def test_stale_run_reaped_via_bus_and_escape_hatch(self):
+        st = _task()
+        st.meta["run_pid"] = DEAD_PID
+        st.save()
+        with mock.patch.object(wl.commands, "resolveTargetTask", return_value=st), \
+                mock.patch.object(TaskState, "setStatus",
+                                  side_effect=AssertionError("bot wrote task JSON directly")):
+            self.assertIsNone(wl.activeRun())
+        from platform_core.runtime.control import ControlBus
+        bus = ControlBus(st.task_id)
+        self.assertTrue(bus.isAbort(), "stale cleanup did not request abort on the bus")
+        ops = bus.drainOps()
+        self.assertTrue(any(o.get("op") == "mark_stale" for o in ops), f"no breadcrumb op: {ops}")
+        self.assertEqual(TaskState.load(st.task_id).meta["status"], "aborted",
+                         "dead run was not finalized through reapDeadRun")
+
+    def test_live_run_never_reaped(self):
+        st = _task()
+        st.meta["run_pid"] = os.getpid()
+        st.save()
+        with mock.patch.object(wl.commands, "resolveTargetTask", return_value=st):
+            self.assertIs(wl.activeRun(), st)
+        self.assertEqual(TaskState.load(st.task_id).meta["status"], "executing")

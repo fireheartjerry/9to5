@@ -5,7 +5,7 @@ EXPORTS:
   LocalEnvironment  -- The host, the real tree
 DEPENDS-ON: platform_core.execution.environment
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/evolution/test_knowledge_local_scan_gate.py tests/execution/test_execution_local.py
+RUN/TEST: python -m pytest tests/execution/test_execution_local.py
 """
 from __future__ import annotations
 

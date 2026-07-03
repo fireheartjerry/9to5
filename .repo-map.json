@@ -933,7 +933,7 @@
         "appends logs/guard_alerts.jsonl when the guard blocks"
       ],
       "test": [
-        "tests/control/test_hooks_selfmod_writes.py"
+        "tests/control/test_hooks_selfmod.py"
       ],
       "callers": [
         "agents.hooks",
@@ -1720,10 +1720,7 @@
         "tests/orchestration/test_society_config.py",
         "tests/platform/test_config_bootstrap.py",
         "tests/platform/test_config_logging_lock.py",
-        "tests/platform/test_config_robust_env.py",
-        "tests/platform/test_durable_config.py",
-        "tests/platform/test_epic2_config.py",
-        "tests/platform/test_solution_fork_config.py"
+        "tests/platform/test_epic_flags_config.py"
       ],
       "callers": [
         "agents.adversary_review",
@@ -2220,8 +2217,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/evolution/test_curriculum_adaptive_trigger.py",
-        "tests/evolution/test_curriculum_release.py"
+        "tests/evolution/test_curriculum.py"
       ],
       "callers": [
         "learning.meta_opt",
@@ -3293,9 +3289,7 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [
-        "tests/evolution/test_curriculum_release.py"
-      ],
+      "test": [],
       "callers": [
         "learning.sie"
       ]
@@ -3352,8 +3346,7 @@
         "tests/control/test_parallel_safety.py",
         "tests/control/test_safety_gate_divergence.py",
         "tests/control/test_safety_mixin.py",
-        "tests/evolution/test_evolution_safety.py",
-        "tests/execution/test_verify_shell_safety.py"
+        "tests/evolution/test_evolution_safety.py"
       ],
       "callers": [
         "learning.evolution.evolver",
@@ -3778,12 +3771,11 @@
       ],
       "test": [
         "tests/evolution/test_experience_content.py",
-        "tests/evolution/test_experience_content_sync.py",
         "tests/evolution/test_experience_evolution.py",
         "tests/evolution/test_experience_journal.py",
         "tests/evolution/test_experience_ledger.py",
         "tests/evolution/test_experience_pr.py",
-        "tests/evolution/test_experience_schema_migration.py"
+        "tests/evolution/test_experience_schema.py"
       ],
       "callers": [
         "agents.discovery.digest",
@@ -4363,7 +4355,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/evolution/test_experience_schema_migration.py"
+        "tests/evolution/test_experience_schema.py"
       ],
       "callers": [
         "learning.lessons",
@@ -7937,9 +7929,7 @@
       "test": [
         "tests/execution/test_completion_envelope.py",
         "tests/execution/test_execution_environment.py",
-        "tests/execution/test_executor_wrap_env.py",
-        "tests/orchestration/test_execute_mixin_env.py",
-        "tests/platform/test_config_robust_env.py"
+        "tests/orchestration/test_execute_mixin_env.py"
       ],
       "callers": [
         "config",
@@ -9129,7 +9119,6 @@
         "unannotated"
       ],
       "test": [
-        "tests/evolution/test_knowledge_local_scan_gate.py",
         "tests/execution/test_execution_local.py"
       ],
       "callers": [
@@ -12675,13 +12664,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/control/test_task_io_single_writer.py",
-        "tests/control/test_task_ledger.py",
-        "tests/control/test_task_listrecent.py",
-        "tests/control/test_task_save_concurrent.py",
-        "tests/control/test_task_schema_hn.py",
-        "tests/orchestration/test_subtask_files_touched.py",
-        "tests/orchestration/test_subtask_note.py"
+        "tests/control/test_task.py"
       ],
       "callers": [
         "agents.hooks_selfmod",
@@ -12827,9 +12810,7 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [
-        "tests/control/test_task_schema_hn.py"
-      ],
+      "test": [],
       "callers": [
         "state.task",
         "state.task_io"
@@ -13483,7 +13464,9 @@
         "unannotated"
       ],
       "test": [
-        "tests/workflows/test_registry.py"
+        "tests/orchestration/test_orchestrator_with_registry.py",
+        "tests/workflows/test_workflow_registry.py",
+        "tests/workflows/test_workflows_registry.py"
       ],
       "callers": [
         "platform_core.ops.validate_workflows"

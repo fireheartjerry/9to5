@@ -1,11 +1,114 @@
-"""The self_modification_guard PreToolUse hook must FAIL CLOSED: if the guard itself crashes
-while a write target is identified, it must BLOCK (exit 2), never silently allow the edit -- a
-malformed task meta must not become a way to edit .env / .git / state / core loop files."""
+"""agents/hooks_selfmod.py + the self_modification_guard PreToolUse hook (agents/hooks.py).
+
+Merged (consolidation pass, tests/control sprawl reduction) from:
+  - test_hooks_resolve_state.py    -- BUG-012: _resolveState() must not guess the wrong task
+  - test_hooks_selfmod_writes.py   -- B11: Bash write-detection must cover PowerShell/downloaders
+  - test_self_mod_guard_failclosed.py -- the guard hook must FAIL CLOSED on internal error
+"""
+from __future__ import annotations
+
+import os
 import unittest
 from unittest import mock
 
+import pytest
+
 from agents import hooks
 from agents import hooks_selfmod
+from agents.hooks_selfmod import _parseBashGuardInput, _resolveState
+
+
+# =============================================================================
+# Merged from test_hooks_resolve_state.py
+# =============================================================================
+"""BUG-012: _resolveState() must not guess the wrong task via loadLatest() when no task is
+pinned via env vars at all. In a concurrent/resumed session "the latest" task may not be the
+one this hook's tool call actually belongs to, enforcing the wrong task's hard_boundaries."""
+
+
+class _FakeState:
+    pass
+
+
+def test_no_env_vars_returns_none_without_calling_load_latest():
+    with mock.patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("NINE_TO_FIVE_TASK_FILE", None)
+        os.environ.pop("NINE_TO_FIVE_TASK_ID", None)
+        with mock.patch("state.task.TaskState.loadLatest") as m:
+            m.return_value = _FakeState()   # would be a WRONG-task guess if ever called
+            state, explicit = _resolveState()
+    m.assert_not_called()
+    assert state is None
+    assert explicit is False
+
+
+def test_task_id_env_var_failure_still_falls_back_to_load_latest():
+    # A real degraded case (env var WAS set but resolution failed) is not the same bug --
+    # falling back here is a reasonable degrade, not a guess from nothing.
+    with mock.patch.dict(os.environ, {"NINE_TO_FIVE_TASK_ID": "does-not-exist"}, clear=False):
+        os.environ.pop("NINE_TO_FIVE_TASK_FILE", None)
+        with mock.patch("state.task.TaskState.load", side_effect=RuntimeError("missing")), \
+             mock.patch("state.task.TaskState.loadLatest") as m:
+            fake = _FakeState()
+            m.return_value = fake
+            state, explicit = _resolveState()
+    m.assert_called_once()
+    assert state is fake
+    assert explicit is False
+
+
+# =============================================================================
+# Merged from test_hooks_selfmod_writes.py
+# =============================================================================
+"""Bash write-detection must cover PowerShell verbs and downloaders (B11).
+
+If a write command is not recognised as a write, ``_parseBashGuardInput`` returns
+``should_exit0=True`` (treated as read-only, safe) and the boundary check is skipped.
+"""
+
+_POWERSHELL_WRITES = [
+    "Set-Content -Path foo.txt -Value bar",
+    "Out-File -FilePath foo.txt",
+    "Add-Content foo.txt 'x'",
+    "New-Item -ItemType File foo.txt",
+    "Remove-Item foo.txt",
+    "Clear-Content foo.txt",
+]
+
+_DOWNLOADERS = [
+    "curl -o out.bin https://example.com/x",
+    "curl -O https://example.com/x",
+    "iwr https://example.com/x -OutFile out.bin",
+    "wget https://example.com/x",
+]
+
+
+@pytest.mark.parametrize("cmd", _POWERSHELL_WRITES + _DOWNLOADERS)
+def test_write_command_is_not_flagged_readonly(cmd):
+    _bash, is_secret, should_exit0 = _parseBashGuardInput({"command": cmd})
+    assert is_secret is False
+    # should_exit0 True would mean "read-only, skip boundary check" -- a write must NOT be that.
+    assert should_exit0 is False, f"write command treated as read-only: {cmd!r}"
+
+
+def test_plain_read_still_readonly():
+    _bash, is_secret, should_exit0 = _parseBashGuardInput({"command": "cat README.md"})
+    assert is_secret is False
+    assert should_exit0 is True
+
+
+def test_bare_curl_get_still_readonly():
+    # curl without -o just prints to stdout -- not a write.
+    _bash, _is_secret, should_exit0 = _parseBashGuardInput({"command": "curl https://example.com"})
+    assert should_exit0 is True
+
+
+# =============================================================================
+# Merged from test_self_mod_guard_failclosed.py
+# =============================================================================
+"""The self_modification_guard PreToolUse hook must FAIL CLOSED: if the guard itself crashes
+while a write target is identified, it must BLOCK (exit 2), never silently allow the edit -- a
+malformed task meta must not become a way to edit .env / .git / state / core loop files."""
 
 
 class TestGuardFailClosed(unittest.TestCase):
@@ -128,3 +231,7 @@ class TestGuardFailClosed(unittest.TestCase):
                 mock.patch.object(hooks_selfmod, "_coreLockFor", return_value=(False, ())):
             data = {"tool_name": "Edit", "tool_input": {"file_path": r"C:\project\src\app.py"}}
             self.assertEqual(self._run(data), 0)
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__, "-q"]))
