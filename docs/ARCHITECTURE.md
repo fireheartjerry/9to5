@@ -365,6 +365,12 @@ already encodes the worktree-isolation flip (peer-safe once each worker edits it
   (`block_destructive`, `self_modification_guard`) are registered in
   `.claude/settings.json`, composed per-run via `composeRunSettings()`, and fail
   CLOSED (a crashing guard hook blocks the action).
+- **Hook environment** — the executor pins hook context via env vars, one channel per
+  concern, all optional/degrade-safe: `NINE_TO_FIVE_HOOK_CTX` (JSON: guard alert +
+  log paths, read by `hooks_destructive.readHookCtx()`), `NINE_TO_FIVE_TASK_FILE` /
+  `NINE_TO_FIVE_TASK_ID` (pin `_resolveState()` to the run's own task instead of
+  guessing via `loadLatest()`), and `NINE_TO_FIVE_SUBTASK_ID` (tell `write_obsidian`
+  which subtask note to append to, overriding the in-progress-subtask scan).
 
 ## Deleted subsystems (2026-07-01 first-principles rewrite)
 
