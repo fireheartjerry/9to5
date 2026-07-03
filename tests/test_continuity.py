@@ -112,7 +112,7 @@ def test_multiple_letters_accumulate(tmp_path):
 
 def test_default_letters_dir_uses_state_dir():
     """Default letters_dir is derived from config.STATE_DIR, which conftest isolates."""
-    result = write_letter("task-default", {"x": 1})
+    result = write_letter("11111111-1111-4111-8111-111111111111", {"x": 1})
     fpath = Path(result["path"])
     # File must be under the (conftest-isolated) STATE_DIR
     assert str(config.STATE_DIR) in str(fpath)
@@ -120,11 +120,20 @@ def test_default_letters_dir_uses_state_dir():
 
 
 def test_read_letters_default_dir_reads_what_write_wrote():
-    texts = read_letters("task-roundtrip")
+    tid = "22222222-2222-4222-8222-222222222222"
+    texts = read_letters(tid)
     initial_count = len(texts)
 
-    write_letter("task-roundtrip", {"step": "a"})
-    write_letter("task-roundtrip", {"step": "b"})
+    write_letter(tid, {"step": "a"})
+    write_letter(tid, {"step": "b"})
 
-    texts_after = read_letters("task-roundtrip")
+    texts_after = read_letters(tid)
     assert len(texts_after) == initial_count + 2
+
+
+def test_default_letters_dir_rejects_path_traversal_task_id():
+    # BUG-008: a non-UUID task_id (e.g. path-traversal payload) must be rejected before any
+    # path is constructed under STATE_DIR, not silently resolved outside it.
+    import pytest
+    with pytest.raises(ValueError):
+        write_letter("../../.env", {"x": 1})

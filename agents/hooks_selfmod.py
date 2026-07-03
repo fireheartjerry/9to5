@@ -81,7 +81,10 @@ def _resolveState():
     explicit is True ONLY when an executor-pinned task resolved. Resolution order:
       1. NINE_TO_FIVE_TASK_FILE -- absolute state-file path the executor exported.
       2. NINE_TO_FIVE_TASK_ID via the configured STATE_DIR.
-      3. loadLatest() -- manual/standalone fallback (not explicit).
+      3. loadLatest() -- ONLY when an env var WAS set but failed to resolve (degraded, not a
+         guess). When NEITHER env var is set at all, there is no run to guess at: in a
+         concurrent/resumed session "the latest" task may not be the one this hook's tool call
+         actually belongs to, which would enforce the WRONG task's hard_boundaries (BUG-012).
     Never raises; logs to stderr on a degrade so a silent fail-open is visible.
     """
     try:
@@ -101,6 +104,8 @@ def _resolveState():
             return TaskState.load(tid), True
         except Exception as e:
             sys.stderr.write(f"hooks._resolveState: load({tid}) failed ({e}); falling back to loadLatest\n")
+    if not _envTaskRequested():
+        return None, False
     try:
         return TaskState.loadLatest(), False
     except Exception:

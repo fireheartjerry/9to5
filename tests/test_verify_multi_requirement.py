@@ -138,6 +138,23 @@ class TestBuildRequirementsVerifyEndToEnd(unittest.TestCase):
         self.assertIsNotNone(kept)
         self.assertTrue(verifier.isStrictVerify(kept))
 
+    def test_target_path_with_both_quote_characters_does_not_break_shell_quoting(self):
+        # BUG-002: repr()-embedding target_path into the shell-double-quoted `python -c "..."`
+        # command let a path containing BOTH quote characters emit an unescaped literal `"`
+        # (Python's repr() picks single-quote delimiters and only escapes embedded single quotes),
+        # closing the outer shell double-quote early. Verify a path with both quote characters in
+        # its name (and a matching marker) still constructs a safe, sanitizable, correctly-passing
+        # verify -- not one whose command line got truncated/hijacked.
+        with tempfile.TemporaryDirectory() as tmp:
+            evil_name = "it's a \"quoted\" file.py"
+            target = Path(tmp) / evil_name
+            target.write_text("refresh elapsed green\n", encoding="utf-8")
+            v = verifier.buildContentScanVerify([["refresh"], ["elapsed"], ["green"]], str(target))
+            self.assertNotIn('""', v["cmd"], "the command must not contain an unescaped bare quote pair")
+            self.assertIsNotNone(verifier.sanitizeVerify(v), "must still pass sanitization")
+            res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
+            self.assertTrue(res["passed"], f"verify should pass against the quote-named file: {res}")
+
 
 if __name__ == "__main__":
     unittest.main()

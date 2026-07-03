@@ -150,11 +150,23 @@ def buildContentScanVerify(marker_groups: list[list[str]], target_path: str) -> 
     # marker that is a substring of an unrelated identifier ('red' in 'predicate', 'log' in
     # 'getLogger', 'task' in 'subtask'), satisfies the group. Tokenising to a word set and testing
     # membership requires the marker to actually appear as its own identifier/word.
+    # target_path/groups are base64-embedded (decoded at runtime via plain base64.b64decode/
+    # json.loads -- no exec/eval, so this still passes verifier_sanitize's AST check) rather than
+    # interpolated via repr(): repr() of a string containing BOTH quote characters emits an
+    # unescaped literal `"` (Python picks single-quote delimiters and only escapes embedded single
+    # quotes), which would close the outer shell double-quote early and let anything following
+    # execute as a separate shell command. Base64's alphabet is pure [A-Za-z0-9+/=], so no quote or
+    # shell metacharacter can ever reach the shell-quoted argument, regardless of what
+    # target_path/groups contain.
+    import base64
+    import json
+    target_b64 = base64.b64encode(str(target_path).encode("utf-8")).decode("ascii")
+    groups_b64 = base64.b64encode(json.dumps(groups).encode("utf-8")).decode("ascii")
     code = (
-        "import io,sys,re; "
-        f"s=io.open({str(target_path)!r},encoding='utf-8',errors='ignore').read().lower(); "
+        "import io,sys,re,json,base64; "
+        f"s=io.open(base64.b64decode('{target_b64}').decode('utf-8'),encoding='utf-8',errors='ignore').read().lower(); "
         "toks=set(re.findall(r'[a-z0-9_]+', s)); "
-        f"g={groups!r}; "
+        f"g=json.loads(base64.b64decode('{groups_b64}').decode('utf-8')); "
         "miss=[grp for grp in g if not any(k in toks for k in grp)]; "
         "print('MISSING_REQUIREMENTS '+repr(miss)) if miss else print('ALL_REQUIREMENTS_PRESENT'); "
         "sys.exit(1 if miss else 0)"

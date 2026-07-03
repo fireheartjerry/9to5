@@ -92,5 +92,36 @@ class TestRepoGrounding(unittest.TestCase):
         self.assertIn("platform_core", prompt)
 
 
+class TestRepoContextCacheStaleness(unittest.TestCase):
+    """BUG-018: a cache entry populated before an AGENTS.md write must not be reused after the
+    write -- otherwise a self-referential run that regenerates AGENTS.md mid-process keeps
+    injecting the FIRST task's now-stale snapshot into every later elaboration."""
+
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.mkdtemp()
+        elaborator._REPO_CTX_CACHE.pop(self.dir, None)
+
+    def tearDown(self):
+        elaborator._REPO_CTX_CACHE.pop(self.dir, None)
+
+    def test_cache_invalidates_after_agents_md_write(self):
+        import os
+        import time
+        agents_md = os.path.join(self.dir, "AGENTS.md")
+        with open(agents_md, "w", encoding="utf-8") as fh:
+            fh.write("# v1 map\npackage_a/\n")
+        first = elaborator._repoContext(self.dir)
+        self.assertIn("package_a", first)
+
+        time.sleep(0.01)   # ensure a distinct mtime on filesystems with coarse resolution
+        with open(agents_md, "w", encoding="utf-8") as fh:
+            fh.write("# v2 map\npackage_b/\n")
+        os.utime(agents_md, None)   # force mtime forward even under a very coarse clock
+        second = elaborator._repoContext(self.dir)
+        self.assertIn("package_b", second)
+        self.assertNotIn("package_a", second, "stale cache entry was reused after AGENTS.md changed")
+
+
 if __name__ == "__main__":
     unittest.main()

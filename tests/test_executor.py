@@ -29,6 +29,16 @@ class TestScanDestructive(unittest.TestCase):
         self.assertEqual(executor.scanDestructive("we could run rm later if needed"), [])
         self.assertEqual(executor.scanDestructive("perform a git push to main"), [])
         self.assertEqual(executor.scanDestructive(""), [])
+        self.assertEqual(executor.scanDestructive("python reformatter.py"), [])
+
+    def test_flags_rf_variants_with_extra_letters(self):
+        # BUG-010: -[rf]{2} required exactly "-rf"/"-fr" verbatim; real-world variants with an
+        # extra flag in the same cluster (verbose, etc.) must still be caught.
+        self.assertTrue(executor.scanDestructive("rm -rfv /tmp/x"))
+        self.assertTrue(executor.scanDestructive("rm -rvf /tmp/x"))
+        self.assertTrue(executor.scanDestructive("rm -vrf /tmp/x"))
+        self.assertTrue(executor.scanDestructive("rm -Rf /tmp/x"))
+        self.assertTrue(executor.scanDestructive("sudo rm -rfv /"))
 
     def test_fork_bomb_and_disk_write(self):
         self.assertTrue(executor.scanDestructive(":(){ :|:& };:"))

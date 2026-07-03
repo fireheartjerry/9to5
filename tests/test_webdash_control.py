@@ -112,6 +112,35 @@ class TestControlToken(unittest.TestCase):
         self.assertEqual(post({"X-9to5-Token": "wrong"}), 403, "bad token was accepted")
         self.assertEqual(post({"X-9to5-Token": token}), 200, "valid console token was rejected")
 
+    def test_empty_server_token_always_rejects_post(self):
+        # BUG-005: an unset/empty control token must ALWAYS reject control POSTs, never fall
+        # through to unconditional allow. startWebDashboard always generates a real random
+        # token, so drive a bare handler bound to an explicitly EMPTY token to lock this in.
+        import urllib.error
+        import urllib.request
+        from http.server import ThreadingHTTPServer
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), webdash._makeHandler("task-empty-token", ""))
+        thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.shutdown)
+        self.addCleanup(server.server_close)
+        port = server.server_address[1]
+
+        def post(headers):
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/control", data=b'{"action":"pause"}',
+                headers={"content-type": "application/json", **headers}, method="POST")
+            try:
+                return urllib.request.urlopen(req, timeout=3).status
+            except urllib.error.HTTPError as e:
+                return e.code
+
+        self.assertEqual(post({}), 403, "empty server token allowed a headerless POST")
+        self.assertEqual(post({"X-9to5-Token": ""}), 403, "empty server token matched an empty header")
+        self.assertEqual(post({"X-9to5-Token": "anything"}), 403,
+                         "empty server token allowed an arbitrary client-supplied header")
+
 
 if __name__ == "__main__":
     unittest.main()

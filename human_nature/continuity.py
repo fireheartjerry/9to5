@@ -9,7 +9,7 @@ not hidden state. This is the anti-drift narrative anchor (F3).
 EXPORTS:
   write_letter(task_id: str, body_state: dict[str, Any], *, letters_dir: Optional[Any]=None, stamp: Optional[str]=None) -> dict[str, Any]  -- Compose and save a letter to the future self for *task_id*.
   read_letters(task_id: str, *, letters_dir: Optional[Any]=None) -> list[str]  -- Read all letters for *task_id*, in filename-sorted (chronological) order.
-DEPENDS-ON: config
+DEPENDS-ON: config, state.task_io
 SIDE-EFFECTS: writes markdown files under STATE_DIR/task_id/letters/ (or letters_dir)
 RUN/TEST: python -m pytest tests/test_continuity.py
 """
@@ -47,7 +47,8 @@ What follows is a deliberately preserved artifact — trust this over vague reco
 
 def _default_letters_dir(task_id: str) -> Path:
     """Return the default letters directory for a task (under isolated STATE_DIR)."""
-    return Path(config.STATE_DIR) / task_id / "letters"
+    from state.task_io import validateTaskId
+    return Path(config.STATE_DIR) / validateTaskId(task_id) / "letters"
 
 
 def _state_lines(body_state: dict[str, Any]) -> str:

@@ -22,7 +22,6 @@
     "platform_core",
     "run_all_tests",
     "scheduling",
-    "scratch_seed_hunt",
     "selfmod",
     "society",
     "src",
@@ -517,14 +516,14 @@
           "kind": "function",
           "signature": "(goal_raw: str, work_dir: str | None=None) -> str",
           "summary": "Return the elaborated specification for ``goal_raw`` (never raises",
-          "lineno": 127
+          "lineno": 140
         },
         {
           "name": "extractUniverse",
           "kind": "function",
           "signature": "(goal_raw: str, goal_elaborated: str, work_dir: str) -> dict",
           "summary": "Extract the operating universe (scope boundary) from the goal (with safe defaults).",
-          "lineno": 162
+          "lineno": 175
         }
       ],
       "depends_on": [
@@ -623,7 +622,7 @@
           "kind": "function",
           "signature": "(text: str) -> list[str]",
           "summary": "",
-          "lineno": 140
+          "lineno": 145
         }
       ],
       "depends_on": [
@@ -754,28 +753,28 @@
           "kind": "function",
           "signature": "(data)",
           "summary": "Notification: forward the message to Discord as a compact embed.",
-          "lineno": 118
+          "lineno": 124
         },
         {
           "name": "logAll",
           "kind": "function",
           "signature": "(data)",
           "summary": "PostToolUse / any: append one JSON line {time, tool_name} to the log.",
-          "lineno": 135
+          "lineno": 141
         },
         {
           "name": "logTelemetry",
           "kind": "function",
           "signature": "(data)",
           "summary": "Any Claude hook: append compact non-blocking iteration telemetry.",
-          "lineno": 155
+          "lineno": 161
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "()",
           "summary": "Dispatch to the requested handler based on argv[1].",
-          "lineno": 168
+          "lineno": 174
         }
       ],
       "depends_on": [
@@ -791,6 +790,7 @@
       "test": [
         "tests/test_hooks_action_risk_parity.py",
         "tests/test_hooks_registration.py",
+        "tests/test_hooks_resolve_state.py",
         "tests/test_hooks_self_path.py",
         "tests/test_hooks_selfmod_writes.py"
       ],
@@ -853,7 +853,7 @@
           "kind": "function",
           "signature": "(data)",
           "summary": "PreToolUse: block edits to hard boundaries and core loop files",
-          "lineno": 253
+          "lineno": 258
         }
       ],
       "depends_on": [
@@ -1398,14 +1398,14 @@
           "kind": "function",
           "signature": "(goal: str, target_path: str) -> Optional[dict]",
           "summary": "Synthesize a compound content-scan verify for an enumerated multi-deliverable `goal` ag…",
-          "lineno": 165
+          "lineno": 177
         },
         {
           "name": "isStrictVerify",
           "kind": "function",
           "signature": "(verify: Optional[dict]) -> bool",
           "summary": "True for a deliberate multi-requirement verify (compound expect or ``strict`` flag)",
-          "lineno": 185
+          "lineno": 197
         }
       ],
       "depends_on": [
@@ -1432,7 +1432,8 @@
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_loop_replan_mixin",
         "platform_core.orchestration.run_phase_mixin",
-        "platform_core.orchestration.subtask"
+        "platform_core.orchestration.subtask",
+        "society.worker"
       ]
     },
     "agents.verifier_runner": {
@@ -1505,6 +1506,126 @@
         "agents.executor_env"
       ]
     },
+    "check_bugs": {
+      "path": "check_bugs.py",
+      "purpose": "Validate that a bug report output file exists and meets minimum quality criteria.",
+      "exports": [
+        {
+          "name": "parseArgs",
+          "kind": "function",
+          "signature": "() -> argparse.Namespace",
+          "summary": "",
+          "lineno": 26
+        },
+        {
+          "name": "validateBugReport",
+          "kind": "function",
+          "signature": "(path: Path) -> 'tuple[bool, list[str], list[str]]'",
+          "summary": "Return (ok, passes, failures).",
+          "lineno": 32
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 73
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "check_code_changes": {
+      "path": "check_code_changes.py",
+      "purpose": "Validate that bug-fix code changes have been applied to the 9TO5 codebase.",
+      "exports": [
+        {
+          "name": "parseArgs",
+          "kind": "function",
+          "signature": "() -> argparse.Namespace",
+          "summary": "",
+          "lineno": 46
+        },
+        {
+          "name": "resolveRoot",
+          "kind": "function",
+          "signature": "(source_dir_arg: str) -> Path",
+          "summary": "Return the real repo root: the given path if it exists, else the script's parent.",
+          "lineno": 54
+        },
+        {
+          "name": "validateCodeChanges",
+          "kind": "function",
+          "signature": "(root: Path) -> 'tuple[bool, list[str], list[str]]'",
+          "summary": "Return (ok, passes, failures).",
+          "lineno": 66
+        },
+        {
+          "name": "writeOutput",
+          "kind": "function",
+          "signature": "(path: Path, passes: list[str], failures: list[str]) -> None",
+          "summary": "",
+          "lineno": 85
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 102
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "check_workflow": {
+      "path": "check_workflow.py",
+      "purpose": "Validate completion of a bug-fixing workflow.",
+      "exports": [
+        {
+          "name": "parseArgs",
+          "kind": "function",
+          "signature": "() -> argparse.Namespace",
+          "summary": "",
+          "lineno": 26
+        },
+        {
+          "name": "checkFile",
+          "kind": "function",
+          "signature": "(path: Path, label: str) -> list[str]",
+          "summary": "Return list of failure messages for a required file.",
+          "lineno": 32
+        },
+        {
+          "name": "validateWorkflow",
+          "kind": "function",
+          "signature": "(workflow_file: Path) -> tuple[bool, list[str], list[str]]",
+          "summary": "Return (ok, passes, failures).",
+          "lineno": 42
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 91
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "config": {
       "path": "config.py",
       "purpose": "9TO5 -- central configuration.",
@@ -1514,21 +1635,21 @@
           "kind": "function",
           "signature": "(knob: str, value) -> bool",
           "summary": "Persist + live-apply a meta-optimizer knob change (whitelisted knobs only).",
-          "lineno": 89
+          "lineno": 90
         },
         {
           "name": "validateEnv",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Return the names of required-but-missing environment values.",
-          "lineno": 134
+          "lineno": 135
         },
         {
           "name": "getLogger",
           "kind": "function",
           "signature": "(name: str='9to5') -> logging.Logger",
           "summary": "Return a child of the configured ``9to5`` logger.",
-          "lineno": 174
+          "lineno": 180
         }
       ],
       "depends_on": [
@@ -1541,6 +1662,7 @@
         "unannotated"
       ],
       "test": [
+        "tests/test_config_logging_lock.py",
         "tests/test_config_robust_env.py",
         "tests/test_durable_config.py",
         "tests/test_epic2_config.py",
@@ -2039,18 +2161,19 @@
           "kind": "function",
           "signature": "(task_id: str, body_state: dict[str, Any], *, letters_dir: Optional[Any]=None, stamp: Optional[str]=None) -> dict[str, Any]",
           "summary": "Compose and save a letter to the future self for *task_id*.",
-          "lineno": 97
+          "lineno": 98
         },
         {
           "name": "read_letters",
           "kind": "function",
           "signature": "(task_id: str, *, letters_dir: Optional[Any]=None) -> list[str]",
           "summary": "Read all letters for *task_id*, in filename-sorted (chronological) order.",
-          "lineno": 131
+          "lineno": 132
         }
       ],
       "depends_on": [
-        "config"
+        "config",
+        "state.task_io"
       ],
       "side_effects": [
         "writes markdown files under STATE_DIR/task_id/letters/ (or letters_dir)"
@@ -5357,21 +5480,21 @@
           "kind": "function",
           "signature": "(timeout: Optional[float]=None) -> None",
           "summary": "Wait for queued REST syncs to drain (used on shutdown / before resume reads).",
-          "lineno": 69
+          "lineno": 99
         },
         {
           "name": "writeClaudioMd",
           "kind": "function",
           "signature": "(task_state, subtask: Optional[dict], additional_context: str='', work_dir: Optional[str]=None, executor_playbook: str='') -> Path",
           "summary": "Write a fresh per-subtask CLAUDE.md to the working directory.",
-          "lineno": 78
+          "lineno": 108
         },
         {
           "name": "ObsidianClient",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 166
+          "lineno": 196
         }
       ],
       "depends_on": [
@@ -6685,6 +6808,7 @@
       "test": [
         "tests/test_bus_documentation.py",
         "tests/test_config_robust_env.py",
+        "tests/test_control_bus_drain.py",
         "tests/test_dashboard_bus.py",
         "tests/test_event_bus.py",
         "tests/test_event_bus_lanes.py",
@@ -10235,7 +10359,7 @@
           "kind": "function",
           "signature": "(repo_url: str, ref: str | None=None) -> Path",
           "summary": "Clone a remote repo into 9to5's managed external workspace.",
-          "lineno": 33
+          "lineno": 58
         }
       ],
       "depends_on": [
@@ -10468,7 +10592,8 @@
         "platform_core.orchestration.run_loop_replan_mixin",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.solution_space",
-        "society.roles"
+        "society.roles",
+        "society.society_batch"
       ]
     },
     "platform_core.orchestration.adversary_loop": {
@@ -10739,21 +10864,21 @@
           "kind": "function",
           "signature": "(ollama_chat: Callable, goal: str, recent: str) -> Optional[dict]",
           "summary": "One tiny per-step Progress Ledger call (autogen ORCHESTRATOR_PROGRESS_LEDGER_PROMPT, mi…",
-          "lineno": 117
+          "lineno": 118
         },
         {
           "name": "updateStallCount",
           "kind": "function",
           "signature": "(progress: dict, current: int) -> int",
           "summary": "autogen n_stalls: +1 when in a loop OR no progress",
-          "lineno": 130
+          "lineno": 131
         },
         {
           "name": "rootCauseReplan",
           "kind": "function",
           "signature": "(ollama_chat: Callable, goal: str, ledger: 'tl.TaskLedger', failure_summary: str) -> 'Optional[tl.TaskLedger]'",
           "summary": "autogen TASK_LEDGER_FACTS_UPDATE then ..._PLAN_UPDATE: explain the root cause, rewrite …",
-          "lineno": 139
+          "lineno": 140
         }
       ],
       "depends_on": [
@@ -10819,21 +10944,21 @@
           "kind": "function",
           "signature": "(work_dir: str) -> dict",
           "summary": "Best-effort, re-derivable git facts for the receipt: head sha, working-tree diff text, …",
-          "lineno": 101
+          "lineno": 104
         },
         {
           "name": "runEvidenceGate",
           "kind": "function",
           "signature": "(orch, state, subtask: dict, result: dict, exec_cwd: str, vresult: dict, sid: str) -> 'tuple[dict, bool]'",
           "summary": "For a code-change subtask that PASSED the deterministic gate: run the independent verif…",
-          "lineno": 141
+          "lineno": 144
         },
         {
           "name": "persistReceipt",
           "kind": "function",
           "signature": "(orch, state, sid: str, receipt: dict) -> None",
           "summary": "Write the Evidence Receipt as a per-subtask Obsidian note (durable audit artifact).",
-          "lineno": 197
+          "lineno": 200
         }
       ],
       "depends_on": [
@@ -12146,6 +12271,7 @@
       ],
       "test": [
         "tests/test_bot_control_auth.py",
+        "tests/test_control_bus_drain.py",
         "tests/test_control_concurrency.py",
         "tests/test_fuzz_control.py",
         "tests/test_granular_controls.py",
@@ -12575,63 +12701,63 @@
           "kind": "class",
           "signature": "",
           "summary": "Stand-in for ``ollama.Client``",
-          "lineno": 49
+          "lineno": 50
         },
         {
           "name": "simRunClaude",
           "kind": "function",
           "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw)",
           "summary": "Fake executor",
-          "lineno": 79
+          "lineno": 80
         },
         {
           "name": "simReplan",
           "kind": "function",
           "signature": "(*args, **kwargs)",
           "summary": "",
-          "lineno": 91
+          "lineno": 92
         },
         {
           "name": "simReview",
           "kind": "function",
           "signature": "(subtask_title, trigger_reason, executor_output, *, ollama_chat=None, goal='')",
           "summary": "",
-          "lineno": 95
+          "lineno": 96
         },
         {
           "name": "SimObs",
           "kind": "class",
           "signature": "",
           "summary": "In-memory Obsidian double: records writes, never touches disk or REST.",
-          "lineno": 100
+          "lineno": 101
         },
         {
           "name": "buildOrchestrator",
           "kind": "function",
           "signature": "(n_subtasks: int=3)",
           "summary": "An Orchestrator wired entirely with simulation doubles (no external services).",
-          "lineno": 123
+          "lineno": 124
         },
         {
           "name": "BuilderBrain",
           "kind": "class",
           "signature": "",
           "summary": "Plans N subtasks, each producing a real file under ``work_dir`` with a REAL",
-          "lineno": 144
+          "lineno": 145
         },
         {
           "name": "builderRunClaude",
           "kind": "function",
-          "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw)",
+          "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, _project_root=None, **_kw)",
           "summary": "Fake hands that ACTUALLY write the target file parsed from the subtask's verify cmd,",
-          "lineno": 170
+          "lineno": 175
         },
         {
           "name": "buildBuilderOrchestrator",
           "kind": "function",
           "signature": "(work_dir: str, n_subtasks: int=3)",
           "summary": "An Orchestrator that produces real artifacts under work_dir and verifies them for real.",
-          "lineno": 197
+          "lineno": 211
         }
       ],
       "depends_on": [
@@ -12701,6 +12827,44 @@
       "depends_on": [
         "workflows.scheduler"
       ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "scripts.bug_triage": {
+      "path": "scripts/bug_triage.py",
+      "purpose": "Bug triage script for 9TO5 bug reports.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 86
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "scripts.generate_narrow_change": {
+      "path": "scripts/generate_narrow_change.py",
+      "purpose": "Generate and verify narrowest safe changes for remaining bugs in 9TO5.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 79
+        }
+      ],
+      "depends_on": [],
       "side_effects": [
         "unannotated"
       ],
@@ -13008,6 +13172,7 @@
         "config",
         "memory.experience",
         "platform_core.app_config.paths",
+        "platform_core.orchestration",
         "society.blackboard",
         "society.coordinator"
       ],
@@ -13033,6 +13198,7 @@
       ],
       "depends_on": [
         "agents.executor",
+        "agents.verifier",
         "config",
         "society.inbox",
         "state.task"
@@ -13168,46 +13334,53 @@
       "purpose": "TaskState file I/O: atomic save, load, iteration, and list helpers.",
       "exports": [
         {
+          "name": "validateTaskId",
+          "kind": "function",
+          "signature": "(task_id: str) -> str",
+          "summary": "Return task_id if it is UUID-shaped, else raise ValueError",
+          "lineno": 41
+        },
+        {
           "name": "save",
           "kind": "function",
           "signature": "(state: 'TaskState') -> Path",
           "summary": "Atomic JSON save with monotonic state_epoch stamp.",
-          "lineno": 57
+          "lineno": 72
         },
         {
           "name": "load",
           "kind": "function",
           "signature": "(task_id: str) -> 'TaskState'",
           "summary": "Load task JSON from the state store",
-          "lineno": 87
+          "lineno": 102
         },
         {
           "name": "loadSafe",
           "kind": "function",
           "signature": "(task_id: str) -> 'Optional[TaskState]'",
           "summary": "Like ``load`` but returns None for a missing/corrupt file instead of raising.",
-          "lineno": 97
+          "lineno": 112
         },
         {
           "name": "iterStored",
           "kind": "function",
           "signature": "()",
           "summary": "Yield ``(path, data)`` for every readable task JSON in the store.",
-          "lineno": 105
+          "lineno": 120
         },
         {
           "name": "loadLatest",
           "kind": "function",
           "signature": "() -> 'Optional[TaskState]'",
           "summary": "Prefer the most-recently-STARTED active (non-terminal) task.",
-          "lineno": 123
+          "lineno": 138
         },
         {
           "name": "listRecent",
           "kind": "function",
           "signature": "(n: int=10) -> list[dict[str, Any]]",
           "summary": "Lightweight summaries of recent tasks, newest first",
-          "lineno": 140
+          "lineno": 155
         }
       ],
       "depends_on": [
@@ -13219,6 +13392,7 @@
       ],
       "test": [],
       "callers": [
+        "human_nature.continuity",
         "state.task_schema"
       ]
     },

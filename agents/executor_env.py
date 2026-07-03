@@ -130,8 +130,13 @@ def effortFlag(effort_level: str) -> Optional[str]:
 # with word boundaries -- so benign prose like "format the output" or "run rm later" never blocks.
 # An optional sudo/doas privilege prefix is consumed so `sudo rm -rf /` is still caught at command
 # position (this only ADDS matches over already-destructive commands -- no new false positives).
+# BUG-010: `-[rf]{2}\b` required EXACTLY 2 chars from {r,f} (i.e. only "-rf"/"-fr" verbatim),
+# missing real-world variants with extra flags in the same cluster (`rm -rfv`, `rm -rvf`,
+# `rm -vrf`, ...). The lookahead form below requires the flag cluster to contain an 'r' AND an
+# 'f' somewhere (any order, any other letters mixed in) -- catching every ordering/variant.
 _DESTRUCTIVE_RE = re.compile(
-    r"(?:^|[\n;&|`]\s*)(?:sudo\s+|doas\s+)?(rm\s+-[rf]{2}\b|rmdir\s+/s\b|del\s+/[fsq]\b|format\s+[a-z]:|"
+    r"(?:^|[\n;&|`]\s*)(?:sudo\s+|doas\s+)?(rm\s+-(?=[a-z]*r)(?=[a-z]*f)[a-z]+\b|rmdir\s+/s\b|"
+    r"del\s+/[fsq]\b|format\s+[a-z]:|"
     r"drop\s+table\b|git\s+push\s+(?:--force\b|-f\b)|mkfs\b|:\(\)\s*\{|>\s*/dev/sd[a-z])",
     re.IGNORECASE | re.MULTILINE,
 )

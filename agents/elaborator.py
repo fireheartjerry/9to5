@@ -23,7 +23,17 @@ import knowledge
 
 LOG = config.getLogger("elaborator")
 _OLLAMA = None
-_REPO_CTX_CACHE: dict[str, str] = {}
+# (mtime, context) keyed by work_dir. AGENTS.md's mtime is the staleness signal: a self-
+# referential run that regenerates AGENTS.md mid-process must not keep injecting the FIRST
+# task's now-stale snapshot into every later elaboration in the same process (BUG-018).
+_REPO_CTX_CACHE: dict[str, tuple[float, str]] = {}
+
+
+def _agentsMdMtime(work_dir: str) -> float:
+    try:
+        return os.path.getmtime(os.path.join(work_dir, "AGENTS.md"))
+    except OSError:
+        return 0.0
 
 
 def _repoContext(work_dir: str | None) -> str:
@@ -34,12 +44,15 @@ def _repoContext(work_dir: str | None) -> str:
     history -- which surfaces real, currently-existing file paths and directly
     satisfies goals that say "check the git history". Never raises: returns "" when
     grounding is unavailable, so the run degrades to the old (ungrounded) behaviour
-    instead of crashing the very first brain touch. Cached per work_dir."""
+    instead of crashing the very first brain touch. Cached per work_dir; invalidated
+    when AGENTS.md's mtime changes."""
     if not work_dir:
         return ""
     key = str(work_dir)
-    if key in _REPO_CTX_CACHE:
-        return _REPO_CTX_CACHE[key]
+    mtime = _agentsMdMtime(key)
+    cached = _REPO_CTX_CACHE.get(key)
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
     parts: list[str] = []
     try:
         with open(os.path.join(key, "AGENTS.md"), encoding="utf-8") as fh:
@@ -63,7 +76,7 @@ def _repoContext(work_dir: str | None) -> str:
     block = "\n\n".join(parts).strip()
     if len(block) > 7000:  # keep well inside num_ctx alongside the capabilities block
         block = block[:7000] + "\n...(truncated)"
-    _REPO_CTX_CACHE[key] = block
+    _REPO_CTX_CACHE[key] = (mtime, block)
     return block
 
 

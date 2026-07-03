@@ -19,6 +19,13 @@ class TestHooksSelfPath(unittest.TestCase):
         self.assertNotIn('sys.path.insert(0, r"C:\\9to5")', src)
         self.assertNotIn("sys.path.insert(0, r'C:\\9to5')", src)
 
+    def test_log_path_is_not_hardcoded_and_derives_from_config(self):
+        # BUG-004: LOG_PATH must not be a hardcoded C:\9to5 literal -- a relocated install or a
+        # git worktree must log under its OWN config.LOG_PATH, not someone else's install root.
+        import config
+        self.assertNotEqual(hooks.LOG_PATH, r"C:\9to5\logs\hooks.log")
+        self.assertEqual(hooks.LOG_PATH, str(Path(config.LOG_PATH) / "hooks.log"))
+
 
 if __name__ == "__main__":
     unittest.main()

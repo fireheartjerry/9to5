@@ -39,7 +39,10 @@ def runAttemptVerify(orch, state, subtask: dict, result: dict, exec_cwd: str,
     # FX-1: synthesize a behavioral verify when none was authored.
     effective_verify = verify_spec
     if not (verify_spec or {}).get("cmd"):
-        synth = orch._repairVerify(subtask, exec_cwd, attempt_started)
+        # BUG-009: _repairVerify() extracts a path from Ollama-authored description text; route it
+        # through sanitizeVerify() same as every planner-authored verify, rather than trusting it
+        # unsanitized (defense-in-depth against shell-chaining metacharacters/non-stdlib imports).
+        synth = verifier.sanitizeVerify(orch._repairVerify(subtask, exec_cwd, attempt_started))
         if synth:
             effective_verify = synth
             LOG.info("%s: no verify authored -> synthesized behavioral check %s", sid, synth["cmd"])
@@ -49,7 +52,7 @@ def runAttemptVerify(orch, state, subtask: dict, result: dict, exec_cwd: str,
         vresult["unverified"] = True   # exit-zero fallback only; no behavioral assertion ran
     # VERIFY REPAIR: rescue brittle single-fact verifies; strict compound verifies are never rescued.
     if not passed and not verifier.isStrictVerify(verify_spec):
-        repaired = orch._repairVerify(subtask, exec_cwd, attempt_started)
+        repaired = verifier.sanitizeVerify(orch._repairVerify(subtask, exec_cwd, attempt_started))
         same = bool(repaired) and (repaired.get("cmd"), repaired.get("expect")) == \
             ((verify_spec or {}).get("cmd"), (verify_spec or {}).get("expect"))
         if repaired and not same:
