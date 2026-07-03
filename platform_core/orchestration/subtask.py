@@ -5,7 +5,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: agents.verifier, config, platform_core.core.epoch
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/orchestration/test_subtask_files_touched.py tests/test_subtask_note.py
+RUN/TEST: python -m pytest tests/orchestration/test_subtask_files_touched.py tests/orchestration/test_subtask_note.py
 """
 from __future__ import annotations
 

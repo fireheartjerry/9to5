@@ -707,7 +707,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_executor_session_lock.py"
+        "tests/execution/test_executor_session_lock.py"
       ],
       "callers": [
         "agents.executor"
@@ -933,7 +933,7 @@
         "appends logs/guard_alerts.jsonl when the guard blocks"
       ],
       "test": [
-        "tests/test_hooks_selfmod_writes.py"
+        "tests/control/test_hooks_selfmod_writes.py"
       ],
       "callers": [
         "agents.hooks",
@@ -1035,7 +1035,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_native_executor_cleanup.py"
+        "tests/orchestration/test_native_executor_cleanup.py"
       ],
       "callers": []
     },
@@ -1719,11 +1719,11 @@
         "tests/notifications/test_notification_config.py",
         "tests/orchestration/test_society_config.py",
         "tests/platform/test_config_bootstrap.py",
+        "tests/platform/test_config_logging_lock.py",
         "tests/platform/test_config_robust_env.py",
         "tests/platform/test_durable_config.py",
         "tests/platform/test_epic2_config.py",
-        "tests/platform/test_solution_fork_config.py",
-        "tests/test_config_logging_lock.py"
+        "tests/platform/test_solution_fork_config.py"
       ],
       "callers": [
         "agents.adversary_review",
@@ -2036,7 +2036,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_adversary_trust.py"
+        "tests/orchestration/test_adversary_trust.py"
       ],
       "callers": [
         "platform_core.orchestration.review_mixin",
@@ -5378,8 +5378,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/slow/test_simulation_core.py",
-        "tests/test_orch_core_bugs.py"
+        "tests/orchestration/test_orch_core_bugs.py",
+        "tests/slow/test_simulation_core.py"
       ],
       "callers": [
         "notifications.command_bot"
@@ -7624,7 +7624,7 @@
       "test": [
         "tests/control/test_webdash_control.py",
         "tests/notifications/test_bloomberg_webdash.py",
-        "tests/test_webdash_page_split.py"
+        "tests/notifications/test_webdash_page_split.py"
       ],
       "callers": [
         "orchestrator",
@@ -7657,7 +7657,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_webdash_page_split.py"
+        "tests/notifications/test_webdash_page_split.py"
       ],
       "callers": [
         "notifications.webdash"
@@ -9737,7 +9737,7 @@
         "guarded, fail-open)"
       ],
       "test": [
-        "tests/test_retention.py"
+        "tests/platform/test_retention.py"
       ],
       "callers": []
     },
@@ -9834,7 +9834,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_wipe.py"
+        "tests/control/test_wipe.py"
       ],
       "callers": [
         "notifications.views_subtask"
@@ -10385,9 +10385,9 @@
         "unannotated"
       ],
       "test": [
+        "tests/execution/test_execute_mixin_teardown.py",
         "tests/orchestration/test_execute_mixin_env.py",
-        "tests/orchestration/test_execute_mixin_fork_wiring.py",
-        "tests/test_execute_mixin_teardown.py"
+        "tests/orchestration/test_execute_mixin_fork_wiring.py"
       ],
       "callers": [
         "orchestrator"
@@ -11346,7 +11346,7 @@
       ],
       "test": [
         "tests/orchestration/test_subtask_files_touched.py",
-        "tests/test_subtask_note.py"
+        "tests/orchestration/test_subtask_note.py"
       ],
       "callers": [
         "orchestrator",
@@ -11692,8 +11692,8 @@
         "tests/control/test_control_store.py",
         "tests/control/test_granular_controls.py",
         "tests/control/test_webdash_control.py",
-        "tests/slow/test_fuzz_control.py",
-        "tests/test_bot_control_auth.py"
+        "tests/notifications/test_bot_control_auth.py",
+        "tests/slow/test_fuzz_control.py"
       ],
       "callers": [
         "main",
@@ -12150,7 +12150,7 @@
         "unannotated"
       ],
       "test": [
-        "tests/test_bot_replay.py"
+        "tests/notifications/test_bot_replay.py"
       ],
       "callers": []
     },
@@ -12196,7 +12196,7 @@
         "none"
       ],
       "test": [
-        "tests/test_chaos_sim.py"
+        "tests/slow/test_chaos_sim.py"
       ],
       "callers": [
         "main"
@@ -12681,7 +12681,7 @@
         "tests/control/test_task_save_concurrent.py",
         "tests/control/test_task_schema_hn.py",
         "tests/orchestration/test_subtask_files_touched.py",
-        "tests/test_subtask_note.py"
+        "tests/orchestration/test_subtask_note.py"
       ],
       "callers": [
         "agents.hooks_selfmod",

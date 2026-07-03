@@ -88,14 +88,14 @@ hand-rolling `monkeypatch.setattr(config, "FLAG", value, raising=False)` per fla
 `pin_flags(SOCIETY_ENABLED=True, WORKTREE_ISOLATION_ENABLED=True)`. It isolates a test from the
 live `.env` the same way, just without the boilerplate.
 
-**Combined-flags smoke test:** `tests/test_epic_flags_combined.py` turns SEVERAL epic flags on
+**Combined-flags smoke test:** `tests/slow/test_epic_flags_combined.py` turns SEVERAL epic flags on
 TOGETHER (Society, Worktree Isolation, Solution Fork, Semantic Safety, Cost Budget, Compaction,
 Execution Fabric) against a real `BuilderBrain` run — every other epic test exercises flags in
 isolation, never in combination, so this is the only place cross-epic interaction bugs surface.
 Run it after changing any epic-flagged code path:
 
 ```bash
-python -m pytest tests/test_epic_flags_combined.py -q
+python -m pytest tests/slow/test_epic_flags_combined.py -q
 ```
 
 ### Tier 3: full suite
@@ -191,7 +191,7 @@ blank so the REST chokepoint (`notifications/discord_client._request`) short-cir
 no-op — nothing touches the network. Use it instead of spinning up a second gateway.
 
 ```bash
-python -m pytest tests/test_bot_replay.py -q
+python -m pytest tests/notifications/test_bot_replay.py -q
 ```
 
 The matrix covers: every registered `!` command, malformed/unicode-garbage args, unauthorized

@@ -4,7 +4,7 @@ Every case asserts (a) NO unhandled exception escaped the command spine and (b) 
 behaviour (authorization gating, dedup, cursor replay, REST safety). This is the safe substitute
 for a second live gateway -- see docs/TESTING.md.
 
-RUN/TEST: python -m pytest tests/test_bot_replay.py -q
+RUN/TEST: python -m pytest tests/notifications/test_bot_replay.py -q
 """
 from __future__ import annotations
 

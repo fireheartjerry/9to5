@@ -8,7 +8,7 @@ These are not all mandatory on day one. Add them incrementally when useful. Beca
 > `--settings <repo>/.claude/settings.json`, whose `hooks.PreToolUse` block registers
 > `block_destructive` and `self_modification_guard` (Bash) and `self_modification_guard`
 > (Edit/Write/MultiEdit), plus `PostToolUse` telemetry. A prior commit had stripped this to
-> `"hooks": {}`, silently disabling every guard; `tests/test_hooks_registration.py` now asserts
+> `"hooks": {}`, silently disabling every guard; `tests/control/test_hooks_registration.py` now asserts
 > that the registrations in `settings.json` and the handlers in `agents/hooks.py` stay in parity,
 > so a future strip fails CI. Blocking guards fail **closed**: if a guard sub-module can't be
 > imported, the dispatch exits non-zero (blocks the tool call) rather than allowing it.

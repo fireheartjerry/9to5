@@ -21,7 +21,7 @@ EXPORTS:
   resetTransport() -> None  -- Zero the REST breaker + 401 latch so replays / 429-401 probes are independent.
 DEPENDS-ON: config, learning.human_feedback, notifications.commands, notifications.discord_client, notifications.ops, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_bot_replay.py
+RUN/TEST: python -m pytest tests/notifications/test_bot_replay.py
 """
 from __future__ import annotations
 

@@ -5,7 +5,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: config, notifications.discord_bot
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_executor_session_lock.py
+RUN/TEST: python -m pytest tests/execution/test_executor_session_lock.py
 """
 from __future__ import annotations
 

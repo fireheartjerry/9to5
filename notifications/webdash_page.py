@@ -12,7 +12,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: notifications.webdash_markup, notifications.webdash_script, notifications.webdash_styles
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_webdash_page_split.py
+RUN/TEST: python -m pytest tests/notifications/test_webdash_page_split.py
 """
 from __future__ import annotations
 

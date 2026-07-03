@@ -5,7 +5,7 @@ EXPORTS:
   selfModificationGuard(data)  -- PreToolUse: block edits to hard boundaries and core loop files
 DEPENDS-ON: agents.hooks_destructive, config, platform_core.runtime.action_risk, state.task
 SIDE-EFFECTS: appends logs/guard_alerts.jsonl when the guard blocks
-RUN/TEST: python -m pytest tests/test_hooks_selfmod_writes.py
+RUN/TEST: python -m pytest tests/control/test_hooks_selfmod_writes.py
 """
 from __future__ import annotations
 

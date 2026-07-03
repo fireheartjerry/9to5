@@ -18,7 +18,7 @@ EXPORTS:
   buildChaosOrchestrator(work_dir: str, seed: int=0, n_subtasks: int=3)  -- An Orchestrator wired entirely with chaos doubles (no external services)
 DEPENDS-ON: config, orchestrator.Orchestrator, platform_core.simulator
 SIDE-EFFECTS: none
-RUN/TEST: python -m pytest tests/test_chaos_sim.py
+RUN/TEST: python -m pytest tests/slow/test_chaos_sim.py
 """
 from __future__ import annotations
 
