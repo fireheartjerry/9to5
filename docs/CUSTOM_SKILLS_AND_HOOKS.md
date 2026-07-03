@@ -91,14 +91,17 @@ scripts/suggest_tests.py
 Examples:
 
 Note: this already exists as `python tools/affected_tests.py <files>` (and
-`python tools/dev.py check <file>`). Tests are flat under `tests/test_*.py`:
+`python tools/dev.py check <file>`). Tests live under domain subdirectories, not flat
+(`tests/evolution/`, `tests/execution/`, `tests/orchestration/`, `tests/control/`,
+`tests/notifications/`, `tests/workflows/`, `tests/platform/`, plus `tests/slow/` for
+heavyweight tests):
 
 | Changed file | Suggested command |
 |---|---|
-| `agents/verifier.py` | `python -m pytest tests/test_verify_multi_requirement.py tests/test_verify_shell_safety.py -q` |
-| `platform_core/runtime/control.py` | `python -m pytest tests/test_control_concurrency.py -q` |
-| `notifications/dashboard.py` | `python -m pytest tests/test_dashboard.py -q` |
-| `memory/obsidian.py` | `python -m pytest tests/test_obsidian_write.py -q` |
+| `agents/verifier.py` | `python -m pytest tests/execution/test_verifier.py -q` |
+| `platform_core/runtime/control.py` | `python -m pytest tests/control/test_control_concurrency.py -q` |
+| `notifications/dashboard.py` | `python -m pytest tests/notifications/test_dashboard.py -q` |
+| `memory/obsidian.py` | `python -m pytest tests/notifications/test_obsidian_write.py -q` |
 
 ### 4. Repo health command
 

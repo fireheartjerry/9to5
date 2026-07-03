@@ -22,8 +22,14 @@ python -m pytest -m "not slow" -q           # fast lane (excludes slow/integrati
 
 Canonical commands in THIS repo (there is no `scripts/check.py`): the fast inner
 loop is `python tools/dev.py check <file>` (lint + typecheck + affected tests +
-repo-map drift for one file). Tests live FLAT under `tests/test_*.py` — there are
-no `tests/verification/`, `tests/control/`, or `tests/integration/` subdirs.
+repo-map drift for one file). Tests live under domain subdirectories, not flat:
+`tests/evolution/`, `tests/execution/`, `tests/orchestration/`, `tests/control/`,
+`tests/notifications/`, `tests/workflows/`, `tests/platform/` hold the fast-lane
+tests by domain, and `tests/slow/` holds heavyweight subprocess/e2e/integration/fuzz/
+simulation tests (see "Slow lane is directory-based" below). `tests/conftest.py`,
+`tests/factories.py`, and `tests/progress_reporter.py` stay at the `tests/` root.
+`tools/repo_map.py::find_tests` and `tools/affected_tests.py` resolve tests
+recursively, so module→test mapping works across all subdirectories.
 
 Test files never carry `@AI-MAP` headers: `tools/repo_map.py` neither indexes nor
 header-splices `tests/` (a bad splice there corrupted the suite — 2026-07 incident).
@@ -37,9 +43,9 @@ Use after changing one module.
 Examples:
 
 ```bash
-python -m pytest tests/test_verify_multi_requirement.py -q
-python -m pytest tests/test_control_concurrency.py -q
-python -m pytest tests/test_dashboard.py -q
+python -m pytest tests/execution/test_verifier.py -q
+python -m pytest tests/control/test_control_concurrency.py -q
+python -m pytest tests/notifications/test_dashboard.py -q
 python tools/affected_tests.py $(git diff --name-only)   # auto-pick tests for changed files
 ```
 
@@ -50,21 +56,21 @@ python tools/affected_tests.py $(git diff --name-only)   # auto-pick tests for c
 python -m pytest tests/slow/test_learning_loop.py -v
 
 # experience_pr SQLite round-trip (record/fetch/upsert/filter)
-python -m pytest tests/test_experience_pr.py tests/test_memory_experience_pr.py -v
+python -m pytest tests/evolution/test_experience_pr.py -v
 
 # SIE pr_consolidate: failure-mode + lesson emission
-python -m pytest tests/test_learning_sie.py -v
+python -m pytest tests/evolution/test_sie.py -v
 
 # Adaptive curriculum trigger (>=5 new feedback records)
-python -m pytest tests/test_curriculum_adaptive_trigger.py -v
+python -m pytest tests/evolution/test_curriculum.py -v
 
 # Discord feedback embed + FeedbackView buttons
-python -m pytest tests/test_feedback_flow.py -v
+python -m pytest tests/notifications/test_feedback_flow.py -v
 
 # Run all PR-feedback focused tests together
-python -m pytest tests/slow/test_learning_loop.py tests/test_experience_pr.py \
-    tests/test_memory_experience_pr.py tests/test_learning_sie.py \
-    tests/test_curriculum_adaptive_trigger.py tests/test_feedback_flow.py -v
+python -m pytest tests/slow/test_learning_loop.py tests/evolution/test_experience_pr.py \
+    tests/evolution/test_sie.py tests/evolution/test_curriculum.py \
+    tests/notifications/test_feedback_flow.py -v
 ```
 
 These tests use temp SQLite databases and a mocked `gh` CLI — no live GitHub access required.
@@ -75,12 +81,19 @@ Target runtime: under 60 seconds.
 
 Use after changing lifecycle, execution, ControlBus, state, verifier, replanner, dashboards, or agent interfaces.
 
+**Slow lane is directory-based, not filename-based.** `tests/conftest.py::pytest_collection_modifyitems`
+auto-marks every test collected from under `tests/slow/` with `@pytest.mark.slow` plus a
+300s timeout. There is no filename-substring matching anymore (the old `_SLOW_PATTERNS`
+mechanism is gone). **To make a test slow, put it in `tests/slow/`** — marking a test
+`@pytest.mark.slow` by hand outside that directory has no special CI effect beyond the
+marker itself.
+
 Examples:
 
 ```bash
 python -m pytest tests/slow/test_integration_loop.py -q
-python -m pytest tests/test_notification_integration.py -q
-python -m pytest tests/test_webdash_control.py -q
+python -m pytest tests/notifications/ -q
+python -m pytest tests/control/test_webdash_control.py -q
 ```
 
 **Epic-flag isolation:** use the `pin_flags` factory fixture (`tests/conftest.py`) instead of
@@ -139,13 +152,32 @@ uses the simulation doubles.
 | Docs-only | repo-map drift check only |
 | Workflow-only | workflow validation + workflow registry tests |
 | Tooling-only | repo-map/tooling/dev-command tests |
-| Push to `main` with core changes | fast lane py3.12, slow lane, dry-run smoke, E2E smoke |
-| PR with core changes | fast lane py3.11+3.12, slow lane py3.12, dry-run smoke, E2E smoke |
-| Nightly/manual | exhaustive slow lane (`NINE_TO_FIVE_FUZZ_SEEDS=150`) + smoke commands |
+| PR with core changes | `classify` job runs `tools/ci_affected.py`; fast lane (py3.12) runs **affected tests only** when safe, else falls back to the full `-m "not slow"` fast lane — no slow lane, no smokes |
+| Push to `main` with core changes | fast lane (py3.12, full `-m "not slow"`), slow lane, dry-run smoke, E2E smoke — all run **in parallel**, none gated on `fast` |
+| Nightly/manual | `exhaustive` (full slow lane, `NINE_TO_FIVE_FUZZ_SEEDS=150`) + `nightly-fast-py311` (fast lane on Python 3.11) + smoke commands |
 
-Classification **fails closed**: a change set that mixes "excluded" categories (e.g. docs +
-tools) or whose diff base is unverifiable (force-push) runs the full core lanes rather than
-silently skipping everything. Every job carries a `timeout-minutes` cap.
+**PR lane is affected-tests-only, fail-closed.** The `classify` job (`tools/ci_affected.py`)
+maps the PR's changed files to the tests that cover them and runs only those, WITHOUT the
+`-m "not slow"` filter — so a slow test covering changed code still runs on its own PR. It
+falls back to the full fast lane (`-m "not slow" -n auto --dist loadscope`) whenever ANY of
+these hold:
+
+- more than 25 changed files
+- any non-`.py` file changed
+- any deleted or renamed file
+- a sensitive file changed: `tests/conftest.py`, any `*/conftest.py` at any depth,
+  `pytest.ini`, `config.py`, `tests/factories.py`, `tests/progress_reporter.py`,
+  `tools/repo_map.py`, `tools/affected_tests.py`, `tools/ci_affected.py`,
+  `.github/workflows/*`, or `requirements*`
+- any changed non-test `.py` file that maps to zero tests
+
+Classification of the docs/workflow/tooling/core split **also fails closed** independently:
+a change set that mixes "excluded" categories (e.g. docs + tools) or whose diff base is
+unverifiable (force-push) runs the full core lanes rather than silently skipping everything.
+Every job carries a `timeout-minutes` cap.
+
+**PR fast lane is Python 3.12 only.** The 3.11 compatibility leg was dropped from PRs and
+moved to nightly as `nightly-fast-py311`.
 
 The fast job runs `python -m compileall -q tests` BEFORE pytest so corrupt test
 files fail in seconds, not at collection.
@@ -284,11 +316,11 @@ Good:
 ```txt
 Verification failed for step step_042.
 Expected: stdout contains "3 passed"
-Command: pytest tests/test_verify_multi_requirement.py -q
+Command: pytest tests/execution/test_verifier.py -q
 Exit code: 1
 Suggested files:
 - agents/verifier.py
-- tests/test_verify_multi_requirement.py
+- tests/execution/test_verifier.py
 ```
 
 ## Final verification reporting
