@@ -12213,6 +12213,48 @@
       "test": [],
       "callers": []
     },
+    "tools.ci_affected": {
+      "path": "tools/ci_affected.py",
+      "purpose": "Decide whether a change set is safe for affected-only CI test selection (fail closed).",
+      "exports": [
+        {
+          "name": "Decision",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 38
+        },
+        {
+          "name": "targets_for_safe",
+          "kind": "function",
+          "signature": "(files: list[str]) -> list[str]",
+          "summary": "",
+          "lineno": 44
+        },
+        {
+          "name": "decide",
+          "kind": "function",
+          "signature": "(files: list[str], repo_root: Path) -> Decision",
+          "summary": "",
+          "lineno": 48
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str]) -> int",
+          "summary": "",
+          "lineno": 72
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/platform/test_ci_affected.py"
+      ],
+      "callers": []
+    },
     "tools.claude_metrics": {
       "path": "tools/claude_metrics.py",
       "purpose": "Small JSONL telemetry helpers for Claude/agent iteration speed.",
