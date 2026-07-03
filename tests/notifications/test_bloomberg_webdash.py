@@ -48,3 +48,36 @@ def test_snapshot_has_surface_keys(monkeypatch, tmp_path):
 def test_snapshot_missing_task_is_empty(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "STATE_DIR", tmp_path)
     assert webdash._snapshot("does-not-exist") == {"empty": True}
+
+
+def test_snapshot_caches_derived_metrics(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(config, "WEBDASH_DERIVED_TTL_SECONDS", 60, raising=False)
+    webdash._DERIVED_CACHE.clear()
+    calls = {"wisdom": 0, "curve": 0, "comparative": 0}
+
+    def wisdom(goal):  # noqa: ANN001
+        calls["wisdom"] += 1
+        return [{"summary": goal, "run": "abc"}]
+
+    def curve():
+        calls["curve"] += 1
+        return [{"domain": "tests", "pct": 100}]
+
+    def comparative(task_id):  # noqa: ANN001
+        calls["comparative"] += 1
+        return {"pace": 1, "innovation": 1, "adversary": 0, "replans": 0}
+
+    monkeypatch.setattr(webdash, "_wisdom_trail", wisdom)
+    monkeypatch.setattr(webdash, "_intelligence_curve", curve)
+    monkeypatch.setattr(webdash, "_comparative", comparative)
+
+    from state.task import TaskState
+    state = TaskState.create("cache dashboard widgets", 1.0)
+    state.save()
+
+    first = webdash._snapshot(state.task_id)
+    second = webdash._snapshot(state.task_id)
+
+    assert first["wisdom_trail"] == second["wisdom_trail"]
+    assert calls == {"wisdom": 1, "curve": 1, "comparative": 1}

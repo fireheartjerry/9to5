@@ -20,6 +20,10 @@ state/experience.db-wal
 state/experience.db-shm
 # SIE runtime artifacts (LoRA adapters, datasets, sie state)
 state/adapters/
+state/ann_index/
+state/epoch_fingerprint_cache.db
+state/perf.jsonl
+state/validation_cache.db
 state/sie_state.json
 # Phase 2 second brain (Gemini): trust telemetry log
 state/adversary_trust.jsonl

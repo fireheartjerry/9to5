@@ -12,7 +12,7 @@ from __future__ import annotations
 SCRIPT = r"""
 const __T="__WEBDASH_TOKEN__";
 const TUNNEL_ICON='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="4" width="20" height="14" rx="1"/><path d="M8 21h8M12 17v4"/></svg>';
-let EVENTS=[], LOCKED=true;
+let EVENTS=[], LOCKED=true, NEXT_POLL_MS=2000;
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 const DESTRUCTIVE=new Set(['abort','reject']);
 function toast(msg,ok){
@@ -102,6 +102,8 @@ function kv(k,v){return '<div class="kv"><span class="k">'+esc(k)+'</span><span 
 function renderState(r){
   if(r.empty){document.getElementById('status').textContent='no task';return;}
   const m=r.meta;
+  const active=(m.status||'')==='executing'||(m.status||'')==='planning'||(r.control&&r.control.pending_gate);
+  NEXT_POLL_MS=active?__ACTIVE_POLL__:__IDLE_POLL__;
   document.getElementById('codename').textContent=m.codename||'RUN';
   document.getElementById('status').textContent=(m.status||'').toUpperCase();
   document.title='9TO5 · '+(m.codename||'RUN')+' · '+(m.status||'').toUpperCase();
@@ -148,7 +150,11 @@ function renderState(r){
   }
 }
 function fmt(s){s=Math.max(0,s|0);let h=s/3600|0,m=(s%3600)/60|0,x=s%60;return h+'h'+String(m).padStart(2,'0')+'m'+String(x).padStart(2,'0')+'s';}
-async function poll(){try{const r=await (await fetch('/api/state')).json();renderState(r);}catch(e){}}
+async function poll(){
+  try{const r=await (await fetch('/api/state')).json();renderState(r);}
+  catch(e){}
+  finally{setTimeout(poll,NEXT_POLL_MS);}
+}
 document.addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();document.getElementById('search').focus();}
   else if(e.key==='Escape'){
@@ -157,5 +163,5 @@ document.addEventListener('keydown',e=>{
     if(open)open.click();
   }
 });
-startSSE();poll();setInterval(poll,2000);
+startSSE();poll();
 """

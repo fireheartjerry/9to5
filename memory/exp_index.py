@@ -42,6 +42,12 @@ class NullIndex:
     def query(self, vec: list[float], k: int, threshold: float) -> list[dict]:
         return []
 
+    def addFailurePair(self, uid: str, vec: list[float], payload: dict) -> None:
+        return None
+
+    def queryFailures(self, vec: list[float], k: int, threshold: float) -> list[dict]:
+        return []
+
     def persist(self) -> None:
         return None
 
@@ -62,20 +68,28 @@ class ChromaIndex:
             path=persist_dir,
             settings=chromadb.config.Settings(anonymized_telemetry=False, allow_reset=True))
         self._col = self._client.get_or_create_collection(
-            name=_collectionName(), metadata={"hnsw:space": "cosine"})
+            name=_collectionName("passed"), metadata={"hnsw:space": "cosine"})
+        self._fail_col = self._client.get_or_create_collection(
+            name=_collectionName("failed"), metadata={"hnsw:space": "cosine"})
 
-    def addPair(self, uid: str, vec: list[float], payload: dict) -> None:
+    def _add(self, col, uid: str, vec: list[float], payload: dict) -> None:
         try:
             meta = {k: v for k, v in (payload or {}).items()
                     if isinstance(v, (str, int, float, bool)) and v is not None}
-            self._col.upsert(ids=[uid], embeddings=[list(vec)], metadatas=[meta or {"_": ""}])
+            col.upsert(ids=[uid], embeddings=[list(vec)], metadatas=[meta or {"_": ""}])
         except Exception as e:  # noqa: BLE001
             LOG.debug("ChromaIndex.addPair failed (ignored): %s", e)
 
-    def query(self, vec: list[float], k: int, threshold: float) -> list[dict]:
+    def addPair(self, uid: str, vec: list[float], payload: dict) -> None:
+        self._add(self._col, uid, vec, payload)
+
+    def addFailurePair(self, uid: str, vec: list[float], payload: dict) -> None:
+        self._add(self._fail_col, uid, vec, payload)
+
+    def _query(self, col, vec: list[float], k: int, threshold: float) -> list[dict]:
         try:
-            res = self._col.query(query_embeddings=[list(vec)], n_results=max(1, int(k)),
-                                  include=["distances", "metadatas"])
+            res = col.query(query_embeddings=[list(vec)], n_results=max(1, int(k)),
+                            include=["distances", "metadatas"])
         except Exception as e:  # noqa: BLE001
             LOG.debug("ChromaIndex.query failed (ignored): %s", e)
             return []
@@ -90,13 +104,19 @@ class ChromaIndex:
             out.append({"uid": uid, "score": score, "payload": dict(meta or {})})
         return out
 
+    def query(self, vec: list[float], k: int, threshold: float) -> list[dict]:
+        return self._query(self._col, vec, k, threshold)
+
+    def queryFailures(self, vec: list[float], k: int, threshold: float) -> list[dict]:
+        return self._query(self._fail_col, vec, k, threshold)
+
     def persist(self) -> None:
         return None                          # PersistentClient writes through automatically
 
 
-def _collectionName() -> str:
+def _collectionName(kind: str = "passed") -> str:
     """Embedder-pinned collection name so a model/dim swap starts a fresh space."""
-    raw = f"exp_{config.EMBED_MODEL}_{int(config.ANN_EMBED_DIM)}"
+    raw = f"exp_{kind}_{config.EMBED_MODEL}_{int(config.ANN_EMBED_DIM)}"
     return re.sub(r"[^A-Za-z0-9_.-]", "-", raw)[:60]
 
 

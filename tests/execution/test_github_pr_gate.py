@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 from platform_core.orchestration import github
+from platform_core.orchestration.validation_cache import ValidationResult
 
 
 def _cp(returncode: int = 0, stdout: str = "", stderr: str = ""):
@@ -32,24 +33,21 @@ def _state():
 
 class TestPrePrSuiteGate(unittest.TestCase):
     def test_self_ref_gate_runs_repo_map_before_checks_and_fast_lane(self):
-        passed = _cp(stdout="ok")
-        with mock.patch("platform_core.orchestration.github.subprocess.run", return_value=passed) as run:
+        passed = ValidationResult(True, "ok")
+        with mock.patch("platform_core.orchestration.github.run_validation_suite",
+                        return_value=passed) as suite:
             ok, _ = github._prePrSuiteGate(_state(), "C:\\9to5")
         self.assertTrue(ok)
-        commands = [call.args[0] for call in run.call_args_list]
-        self.assertEqual(commands[0][1:], ["tools\\repo_map.py"])
-        self.assertEqual(commands[1][1:], ["tools\\repo_map.py", "--check"])
-        self.assertEqual(commands[2][1:], ["validate_workflows.py"])
-        self.assertEqual(commands[3][1:4], ["-m", "pytest", "-m"])
-        self.assertIn("not slow", commands[3])
+        suite.assert_called_once_with("pre_pr_full", "C:\\9to5")
 
     def test_self_ref_gate_blocks_on_first_failure(self):
-        failed = _cp(returncode=1, stdout="repo map stale")
-        with mock.patch("platform_core.orchestration.github.subprocess.run", return_value=failed) as run:
+        failed = ValidationResult(False, "repo map stale")
+        with mock.patch("platform_core.orchestration.github.run_validation_suite",
+                        return_value=failed) as suite:
             ok, detail = github._prePrSuiteGate(_state(), "C:\\9to5")
         self.assertFalse(ok)
         self.assertIn("repo map stale", detail)
-        self.assertEqual(run.call_count, 1)
+        suite.assert_called_once_with("pre_pr_full", "C:\\9to5")
 
 
 class TestCreatePullRequestStaging(unittest.TestCase):

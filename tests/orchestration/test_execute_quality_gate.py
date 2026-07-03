@@ -6,10 +6,7 @@ import threading
 from unittest import mock
 
 from platform_core.orchestration.execute_mixin import OrchestratorExecuteMixin
-
-
-def _cp(returncode: int = 0, stdout: str = "", stderr: str = ""):
-    return mock.Mock(returncode=returncode, stdout=stdout, stderr=stderr)
+from platform_core.orchestration.validation_cache import ValidationResult
 
 
 class _ConcreteExecuteMixin(OrchestratorExecuteMixin):
@@ -22,45 +19,31 @@ class _ConcreteExecuteMixin(OrchestratorExecuteMixin):
 
 class TestSelfRefQualityGate(unittest.TestCase):
     def test_runs_repo_gates_then_affected_tests(self):
-        calls: list[list[str]] = []
-
-        def fake_run(cmd, **kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            if cmd[1:] == ["tools\\affected_tests.py"]:
-                return _cp(stdout="tests/execution/test_github_pr_gate.py\n")
-            return _cp(stdout="ok")
-
-        with mock.patch("platform_core.orchestration.self_ref_gate.subprocess.run", side_effect=fake_run):
+        result = ValidationResult(True, "ok", commands=[["python", "tools\\repo_map.py"]])
+        with mock.patch("platform_core.orchestration.self_ref_gate.run_validation_suite",
+                        return_value=result) as suite:
             ok, detail = _ConcreteExecuteMixin()._selfRefQualityGate("C:\\9to5")
 
         self.assertTrue(ok, detail)
-        self.assertEqual(calls[0][1:], ["tools\\repo_map.py"])
-        self.assertEqual(calls[1][1:], ["tools\\repo_map.py", "--check"])
-        self.assertEqual(calls[2][1:], ["validate_workflows.py"])
-        self.assertEqual(calls[3][1:], ["tools\\affected_tests.py"])
-        self.assertEqual(calls[4][1:4], ["-m", "pytest", "tests/execution/test_github_pr_gate.py"])
+        suite.assert_called_once_with("self_ref_incremental", "C:\\9to5")
 
     def test_skips_pytest_when_no_affected_tests_map(self):
-        calls: list[list[str]] = []
-
-        def fake_run(cmd, **kwargs):  # noqa: ANN001
-            calls.append(cmd)
-            return _cp(stdout="")
-
-        with mock.patch("platform_core.orchestration.self_ref_gate.subprocess.run", side_effect=fake_run):
+        result = ValidationResult(True, "no affected tests", cached=True)
+        with mock.patch("platform_core.orchestration.self_ref_gate.run_validation_suite",
+                        return_value=result):
             ok, _ = _ConcreteExecuteMixin()._selfRefQualityGate("C:\\9to5")
 
         self.assertTrue(ok)
-        self.assertEqual(len(calls), 4)
 
     def test_blocks_on_repo_gate_failure(self):
-        failed = _cp(returncode=1, stdout="stale repo map")
-        with mock.patch("platform_core.orchestration.self_ref_gate.subprocess.run", return_value=failed) as run:
+        failed = ValidationResult(False, "stale repo map")
+        with mock.patch("platform_core.orchestration.self_ref_gate.run_validation_suite",
+                        return_value=failed) as suite:
             ok, detail = _ConcreteExecuteMixin()._selfRefQualityGate("C:\\9to5")
 
         self.assertFalse(ok)
         self.assertIn("stale repo map", detail)
-        self.assertEqual(run.call_count, 1)
+        suite.assert_called_once_with("self_ref_incremental", "C:\\9to5")
 
 
 class TestRunAttemptVerifyQualityGate(unittest.TestCase):

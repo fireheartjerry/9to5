@@ -20,24 +20,23 @@ EXPORTS:
   unpack(blob: bytes) -> list[float]  -- Inverse of ``pack``
   cosine(a: list[float], b: list[float]) -> float  -- Cosine similarity in [-1, 1]
   signature_text(goal: str, title: str='') -> str  -- The text we embed for a subtask/goal
-  embed_and_store(run_id: str, st_id: str, goal: str, title: str='', db_path: Optional[Path]=None) -> bool  -- Compute + persist a subtask's embedding AND seed the ANN index (derived cache
+  embed_and_store(run_id: str, st_id: str, goal: str, title: str='', db_path: Optional[Path]=None, verify_passed: bool=True) -> bool  -- Compute + persist a subtask's embedding AND seed the ANN index (derived cache
   top_k_similar(query_vec: list[float], k: int=5, *, only_passed: bool=True, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- The ``k`` most-similar embedded subtasks to ``query_vec``, each annotated with a
   top_k_failures(query_vec: list[float], k: int=2, *, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- The ``k`` most-similar embedded subtasks that FAILED verification (``verify_passed==0``…
   retrieve(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Embed the (goal, title) query and return the top-K similar past successes.
   retrieve_failures(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Embed the (goal, title) query and return up to ``k`` similar past FAILED subtasks.
   retrieve_content(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Embed the query, look up the ANN index (fallback: O(n) scan), and JOIN each hit to
-  render_lessons(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str  -- Render neighbors into a compact lessons block, truncated to the token budget.
-  render_solutions(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str  -- Render neighbors into a compact block of ACTUAL solution content (sanitized),
-  render_failures(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str  -- Render similar past FAILED subtasks into a DISTINCTLY-tagged warning block.
   backfill_embeddings(db_path: Optional[Path]=None) -> dict[str, int]  -- Embed every verify-passing subtask that lacks an embedding (run off the hot path,
+  rebuild_retrieval_index(db_path: Optional[Path]=None, include_failures: bool=True) -> dict[str, int]  -- Rebuild the derived ANN index from SQLite embeddings
   lessons_block(goal: str, title: str='', *, db_path: Optional[Path]=None) -> str  -- Orchestrator-facing one-call helper: retrieve + render, fully best-effort.
-DEPENDS-ON: config, memory.exp_index, memory.experience, memory.experience_content, memory.memory_sanitizer, memory.retrieval_rank
+DEPENDS-ON: config, memory.exp_index, memory.experience, memory.experience_content, memory.retrieval_rank, memory.retrieval_render, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_retrieval.py
 """
 from __future__ import annotations
 
 import array
+import heapq
 import math
 import time
 from pathlib import Path
@@ -48,7 +47,14 @@ from memory import experience
 from memory import experience_content
 from memory import exp_index
 from memory import retrieval_rank
-from memory.memory_sanitizer import sanitizeInjectedField
+from memory.retrieval_render import (
+    approx_tokens as _approx_tokens,
+    render_failures,
+    render_lessons,
+    render_solutions,
+    sanitize_field as _sanitizeField,
+)
+from platform_core.runtime import perf
 
 LOG = config.getLogger("sie.retrieval")
 
@@ -155,7 +161,7 @@ def _embedText(goal: str, title: str = "") -> Optional[list[float]]:
 
 
 def embed_and_store(run_id: str, st_id: str, goal: str, title: str = "",
-                    db_path: Optional[Path] = None) -> bool:
+                    db_path: Optional[Path] = None, verify_passed: bool = True) -> bool:
     """Compute + persist a subtask's embedding AND seed the ANN index (derived cache; the
     BLOB column stays source of truth). Best-effort."""
     vec = _embedText(goal, title)
@@ -163,8 +169,13 @@ def embed_and_store(run_id: str, st_id: str, goal: str, title: str = "",
         return False
     ok = experience.set_subtask_embedding(run_id, st_id, pack(vec), db_path=db_path)
     try:
-        exp_index.getIndex().addPair(_uid(run_id, st_id), vec,
-                                     {"run_id": run_id, "st_id": st_id, "title": title})
+        idx = exp_index.getIndex()
+        payload = {"run_id": run_id, "st_id": st_id, "title": title,
+                   "verify_passed": 1 if verify_passed else 0}
+        if verify_passed:
+            idx.addPair(_uid(run_id, st_id), vec, payload)
+        elif hasattr(idx, "addFailurePair"):
+            idx.addFailurePair(_uid(run_id, st_id), vec, payload)
     except Exception as e:  # noqa: BLE001
         LOG.debug("index seed skipped (ignored): %s", e)
     return ok
@@ -172,12 +183,34 @@ def embed_and_store(run_id: str, st_id: str, goal: str, title: str = "",
 
 # --------------------------------------------------------------------- top-K
 
-def top_k_similar(query_vec: list[float], k: int = 5, *, only_passed: bool = True,
-                  db_path: Optional[Path] = None) -> list[dict[str, Any]]:
-    """The ``k`` most-similar embedded subtasks to ``query_vec``, each annotated with a
-    ``score``. Pulls only verify-passing rows by default (we learn from wins)."""
+def _tie(row: dict[str, Any]) -> tuple[str, str, str]:
+    return (str(row.get("created_at") or ""), str(row.get("run_id") or ""),
+            str(row.get("st_id") or ""))
+
+
+def _heapTopK(scored_rows, k: int) -> list[dict[str, Any]]:
+    """Exact top-k using a fixed min-heap: O(n log k), deterministic ties."""
+    if k <= 0:
+        return []
+    heap: list[tuple[tuple[float, str, str, str], int, dict[str, Any]]] = []
+    seq = 0
+    for row in scored_rows:
+        score = float(row.get("score") or 0.0)
+        key = (score, *_tie(row))
+        item = (key, seq, row)
+        seq += 1
+        if len(heap) < k:
+            heapq.heappush(heap, item)
+        elif key > heap[0][0]:
+            heapq.heapreplace(heap, item)
+    out = [item[2] for item in heap]
+    out.sort(key=lambda r: (float(r.get("score") or 0.0), *_tie(r)), reverse=True)
+    return out
+
+
+def _scoredEmbeddedRows(query_vec: list[float], *, only_passed: bool,
+                        db_path: Optional[Path] = None):
     floor = float(getattr(config, "RETRIEVAL_MIN_SCORE", 0.0) or 0.0)
-    out: list[dict[str, Any]] = []
     for row in experience.embedded_subtasks(only_passed=only_passed, db_path=db_path):
         blob = row.get("embedding")
         if not blob:
@@ -186,38 +219,36 @@ def top_k_similar(query_vec: list[float], k: int = 5, *, only_passed: bool = Tru
             score = cosine(query_vec, unpack(blob))
         except Exception:  # noqa: BLE001 -- a corrupt blob just doesn't compete
             continue
-        if score < floor:        # below the relevance floor -> irrelevant noise, don't inject it
+        if score < floor:
             continue
-        out.append({**row, "score": score})
-    out.sort(key=lambda r: r["score"], reverse=True)
-    return out[:k]
+        yield {**row, "score": score}
+
+
+def _annCandidateK(k: int) -> int:
+    mult = max(1, int(getattr(config, "ANN_INDEX_CANDIDATE_MULTIPLIER", 10) or 1))
+    return max(k, k * mult, 50 if k > 0 else 0)
+
+def top_k_similar(query_vec: list[float], k: int = 5, *, only_passed: bool = True,
+                  db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    """The ``k`` most-similar embedded subtasks to ``query_vec``, each annotated with a
+    ``score``. Pulls only verify-passing rows by default (we learn from wins)."""
+    return _heapTopK(
+        _scoredEmbeddedRows(query_vec, only_passed=only_passed, db_path=db_path),
+        k,
+    )
 
 
 def top_k_failures(query_vec: list[float], k: int = 2, *,
                    db_path: Optional[Path] = None) -> list[dict[str, Any]]:
     """The ``k`` most-similar embedded subtasks that FAILED verification (``verify_passed==0``).
 
-    Mirrors ``top_k_similar`` but over the FAILED pool -- reusing the exact same O(n) cosine
-    scan (``embedded_subtasks(only_passed=False)``), so no separate store/index is needed. The
-    ANN index only ever holds successes, so failures always come from this scan. ``None``
-    (skipped/unknown) rows are excluded -- only explicit failures become anti-pattern warnings."""
-    floor = float(getattr(config, "RETRIEVAL_MIN_SCORE", 0.0) or 0.0)
-    out: list[dict[str, Any]] = []
-    for row in experience.embedded_subtasks(only_passed=False, db_path=db_path):
-        if row.get("verify_passed") != 0:    # keep only rows that explicitly FAILED verify
-            continue
-        blob = row.get("embedding")
-        if not blob:
-            continue
-        try:
-            score = cosine(query_vec, unpack(blob))
-        except Exception:  # noqa: BLE001 -- a corrupt blob just doesn't compete
-            continue
-        if score < floor:        # below the relevance floor -> not a relevant failure
-            continue
-        out.append({**row, "score": score})
-    out.sort(key=lambda r: r["score"], reverse=True)
-    return out[:k]
+    Mirrors ``top_k_similar`` but over the FAILED pool. The fallback is an exact heap top-k
+    scan, so it avoids sorting every embedded row when ANN is unavailable."""
+    return _heapTopK(
+        (r for r in _scoredEmbeddedRows(query_vec, only_passed=False, db_path=db_path)
+         if r.get("verify_passed") == 0),
+        k,
+    )
 
 
 def retrieve(goal: str, title: str = "", *, k: Optional[int] = None,
@@ -237,18 +268,38 @@ def retrieve_failures(goal: str, title: str = "", *, k: Optional[int] = None,
     cosine scan, so surfacing failures costs one extra scan over an already-loaded pool, not a
     new store. ``k`` defaults to ``config.RETRIEVAL_FAILURES_K``; ``k<=0`` short-circuits."""
     k = k if k is not None else int(getattr(config, "RETRIEVAL_FAILURES_K", 2) or 0)
+    t0 = time.perf_counter()
     if k <= 0:
         return []
     qvec = embed(signature_text(goal, title))
     if not qvec:
         return []
-    return top_k_failures(qvec, k, db_path=db_path)
+    floor = float(getattr(config, "RETRIEVAL_MIN_SCORE", 0.0) or 0.0)
+    try:
+        idx = exp_index.getIndex()
+        hits = idx.queryFailures(qvec, _annCandidateK(k), floor) if hasattr(idx, "queryFailures") else []
+    except Exception:  # noqa: BLE001
+        hits = []
+    if hits:
+        rows = []
+        for h in hits:
+            payload = dict(h.get("payload") or {})
+            payload["score"] = h.get("score")
+            payload.setdefault("uid", h.get("uid"))
+            rows.append(payload)
+        out = retrieval_rank.rerank(rows)[:k]
+        perf.record("retrieval_failures", time.perf_counter() - t0, ann_hit=True, k=k)
+        return out
+    out = top_k_failures(qvec, k, db_path=db_path)
+    perf.record("retrieval_failures", time.perf_counter() - t0, ann_hit=False, k=k)
+    return out
 
 
 def retrieve_content(goal: str, title: str = "", *, k: Optional[int] = None,
                      db_path: Optional[Path] = None) -> list[dict[str, Any]]:
     """Embed the query, look up the ANN index (fallback: O(n) scan), and JOIN each hit to
     its exp_content row. Best-effort: empty list on any failure."""
+    t0 = time.perf_counter()
     qvec = embed(signature_text(goal, title))
     if not qvec:
         return []
@@ -256,9 +307,10 @@ def retrieve_content(goal: str, title: str = "", *, k: Optional[int] = None,
     floor = float(getattr(config, "RETRIEVAL_MIN_SCORE", 0.0) or 0.0)
     neighbors: list[dict[str, Any]] = []
     try:
-        hits = exp_index.getIndex().query(qvec, k, floor)
+        hits = exp_index.getIndex().query(qvec, _annCandidateK(k), floor)
     except Exception:  # noqa: BLE001 -- a broken index never blocks retrieval
         hits = []
+    joined = 0
     if hits:
         for h in hits:
             payload = dict(h.get("payload") or {})
@@ -271,125 +323,18 @@ def retrieve_content(goal: str, title: str = "", *, k: Optional[int] = None,
         row = experience_content.fetchSolutionContent(
             n.get("run_id"), n.get("st_id"), db_path=db_path)
         if row:
+            joined += 1
             n["solution_content"] = row.get("solution_content")
             n["post_mortem"] = row.get("post_mortem")
             n["created_at"] = row.get("created_at")
             if row.get("importance") is not None:
                 n["importance"] = row.get("importance")
+    if hits and joined == 0:
+        neighbors = top_k_similar(qvec, k, db_path=db_path)
     neighbors = retrieval_rank.rerank(neighbors)
-    return neighbors[:k]
-
-
-# --------------------------------------------------------------------- rendering
-
-def _approx_tokens(text: str) -> int:
-    """Cheap token estimate (~4 chars/token) -- good enough to honor the ctx budget."""
-    return max(1, len(text) // 4)
-
-
-def render_lessons(neighbors: list[dict[str, Any]],
-                   max_tokens: Optional[int] = None) -> str:
-    """Render neighbors into a compact lessons block, truncated to the token budget.
-
-    One line per neighbor: the effort that worked, any skills, and (if it needed >1
-    attempt) a 'took N tries' nudge -- the high-signal residue, not the full history."""
-    budget = max_tokens or config.RETRIEVAL_MAX_TOKENS
-    if not neighbors:
-        return ""
-    header = "## RELEVANT PAST LESSONS (from similar subtasks that PASSED)\n"
-    lines: list[str] = []
-    for n in neighbors:
-        title = sanitizeInjectedField((n.get("title") or "untitled"), max_chars=120)
-        effort = n.get("effort") or "default"
-        attempts = n.get("attempt_count")
-        bits = [f"- \"{title}\": effort={effort}"]
-        if n.get("model"):
-            bits.append(f"model={n['model']}")
-        try:
-            _attempts_int = int(float(attempts)) if attempts is not None else 0
-        except (TypeError, ValueError):
-            _attempts_int = 0
-        if _attempts_int > 1:
-            bits.append(f"needed {_attempts_int} tries -- be careful")
-        line = ", ".join(bits)
-        candidate = header + "\n".join(lines + [line])
-        if _approx_tokens(candidate) > budget:
-            break
-        lines.append(line)
-    if not lines:
-        return ""
-    return header + "\n".join(lines) + "\n"
-
-
-def _sanitizeField(text: Any, limit: int = 400) -> str:
-    """Collapse a retrieved field to ONE safe inline line before it is injected verbatim
-    into a brain prompt: strip control chars, collapse all whitespace/newlines, defang a
-    leading markdown heading and any code fences (prompt-injection hardening, see spec 6)."""
-    if not text:
-        return ""
-    s = "".join(ch for ch in str(text) if ch >= " " or ch in "\t\n")
-    s = " ".join(s.split())            # all runs of whitespace (incl newlines) -> single space
-    s = s.lstrip("#").lstrip()         # defang leading heading
-    s = s.replace("```", "'''")        # defang fences
-    return s[:limit]
-
-
-def render_solutions(neighbors: list[dict[str, Any]],
-                     max_tokens: Optional[int] = None) -> str:
-    """Render neighbors into a compact block of ACTUAL solution content (sanitized),
-    budgeted by RETRIEVAL_CONTENT_MAX_TOKENS. Returns "" when no neighbor carries content
-    (the caller then degrades to render_lessons)."""
-    budget = max_tokens or config.RETRIEVAL_CONTENT_MAX_TOKENS
-    if not neighbors:
-        return ""
-    header = "## RELEVANT PAST SOLUTIONS (content from similar PASSED subtasks)\n"
-    lines: list[str] = []
-    for n in neighbors:
-        content = _sanitizeField(n.get("solution_content"))
-        if not content:
-            continue
-        title = _sanitizeField(n.get("title") or "untitled", 80)
-        line = f'- "{title}": {content}'
-        lesson = _sanitizeField(n.get("post_mortem"), 200)
-        if lesson:
-            line += f" [lesson: {lesson}]"
-        candidate = header + "\n".join(lines + [line])
-        if _approx_tokens(candidate) > budget:
-            break
-        lines.append(line)
-    if not lines:
-        return ""
-    return header + "\n".join(lines) + "\n"
-
-
-def render_failures(neighbors: list[dict[str, Any]],
-                    max_tokens: Optional[int] = None) -> str:
-    """Render similar past FAILED subtasks into a DISTINCTLY-tagged warning block.
-
-    Shares the RETRIEVAL_MAX_TOKENS budget with the lessons block (same order of magnitude as
-    the metadata block; the point is a short "don't re-walk this dead-end" nudge, not a full
-    history). Every line is prefixed ``FAILURE`` so the brain reads these as anti-patterns to
-    avoid, never as templates to copy. Returns "" for an empty/over-budget neighbor list."""
-    budget = max_tokens or config.RETRIEVAL_MAX_TOKENS
-    if not neighbors:
-        return ""
-    header = "## SIMILAR PAST FAILURES (these subtasks FAILED verification -- avoid repeating)\n"
-    lines: list[str] = []
-    for n in neighbors:
-        title = sanitizeInjectedField((n.get("title") or "untitled"), max_chars=120)
-        effort = n.get("effort") or "default"
-        bits = [f"- FAILURE \"{title}\": effort={effort}"]
-        lesson = _sanitizeField(n.get("post_mortem"), 200)
-        if lesson:
-            bits.append(f"why: {lesson}")
-        line = ", ".join(bits)
-        candidate = header + "\n".join(lines + [line])
-        if _approx_tokens(candidate) > budget:
-            break
-        lines.append(line)
-    if not lines:
-        return ""
-    return header + "\n".join(lines) + "\n"
+    out = neighbors[:k]
+    perf.record("retrieval_content", time.perf_counter() - t0, ann_hit=bool(hits), k=k)
+    return out
 
 
 def backfill_embeddings(db_path: Optional[Path] = None) -> dict[str, int]:
@@ -398,7 +343,7 @@ def backfill_embeddings(db_path: Optional[Path] = None) -> dict[str, int]:
     is unavailable so it doesn't spin on a dead server."""
     embedded = skipped = 0
     for row in experience.fetch_subtasks(db_path=db_path):
-        if row.get("embedding") or row.get("verify_passed") != 1:
+        if row.get("embedding") or row.get("verify_passed") not in (0, 1):
             skipped += 1
             continue
         # The goal text isn't on the subtask row; title is the strongest available signal. Route
@@ -411,14 +356,64 @@ def backfill_embeddings(db_path: Optional[Path] = None) -> dict[str, int]:
             continue
         experience.set_subtask_embedding(row["run_id"], row["st_id"], pack(vec), db_path=db_path)
         try:
-            exp_index.getIndex().addPair(
-                _uid(row["run_id"], row["st_id"]), vec,
-                {"run_id": row["run_id"], "st_id": row["st_id"], "title": row.get("title") or ""})
+            idx = exp_index.getIndex()
+            payload = {"run_id": row["run_id"], "st_id": row["st_id"],
+                       "title": row.get("title") or "",
+                       "verify_passed": int(row.get("verify_passed") or 0),
+                       "importance": row.get("importance") or 0.0,
+                       "created_at": row.get("ended_at") or row.get("started_at") or ""}
+            if row.get("verify_passed") == 1:
+                idx.addPair(_uid(row["run_id"], row["st_id"]), vec, payload)
+            elif hasattr(idx, "addFailurePair"):
+                idx.addFailurePair(_uid(row["run_id"], row["st_id"]), vec, payload)
         except Exception as e:  # noqa: BLE001
             LOG.debug("backfill index seed skipped (ignored): %s", e)
         embedded += 1
     LOG.info("embedding backfill: %d embedded, %d skipped", embedded, skipped)
     return {"embedded": embedded, "skipped": skipped}
+
+
+def rebuild_retrieval_index(db_path: Optional[Path] = None,
+                            include_failures: bool = True) -> dict[str, int]:
+    """Rebuild the derived ANN index from SQLite embeddings. Best-effort and safe to run
+    offline; SQLite remains the source of truth."""
+    indexed = skipped = failures = 0
+    try:
+        idx = exp_index.getIndex()
+        for row in experience.embedded_subtasks(only_passed=False, db_path=db_path):
+            passed = row.get("verify_passed")
+            if passed not in (0, 1) or (passed == 0 and not include_failures):
+                skipped += 1
+                continue
+            vec = unpack(row.get("embedding"))
+            if not vec:
+                skipped += 1
+                continue
+            payload = {
+                "run_id": row.get("run_id") or "",
+                "st_id": row.get("st_id") or "",
+                "title": row.get("title") or "",
+                "verify_passed": int(passed),
+                "importance": row.get("importance") or 0.0,
+                "created_at": row.get("ended_at") or row.get("started_at") or "",
+            }
+            uid = _uid(payload["run_id"], payload["st_id"])
+            if passed == 1:
+                idx.addPair(uid, vec, payload)
+            elif hasattr(idx, "addFailurePair"):
+                idx.addFailurePair(uid, vec, payload)
+                failures += 1
+            else:
+                skipped += 1
+                continue
+            indexed += 1
+        try:
+            idx.persist()
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception as e:  # noqa: BLE001
+        LOG.debug("rebuild_retrieval_index failed (ignored): %s", e)
+    return {"indexed": indexed, "failures": failures, "skipped": skipped}
 
 
 def lessons_block(goal: str, title: str = "", *, db_path: Optional[Path] = None) -> str:

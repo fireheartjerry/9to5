@@ -9,7 +9,7 @@ EXPORTS:
   Epoch
   snapshot(*, universe: Optional[dict]=None, brain_tag: Optional[str]=None) -> Epoch  -- Freeze governing state at process/run start
   diverged(pinned: Epoch) -> bool  -- True iff the on-disk self.code differs from what was pinned at snapshot time.
-DEPENDS-ON: config, platform_core.core.identity
+DEPENDS-ON: config, platform_core.core.identity, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_epoch.py
 """
@@ -17,11 +17,15 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import sqlite3
 import subprocess
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional
 
 import platform_core.core.identity as identity
+from platform_core.runtime import perf
 
 
 def _gitSha() -> Optional[str]:
@@ -33,18 +37,89 @@ def _gitSha() -> Optional[str]:
         return None
 
 
+def _cachePath() -> "Any":
+    return getattr(config, "PROJECT_ROOT", identity.PROJECT_ROOT) / "state" / "epoch_fingerprint_cache.db"
+
+
+def _cacheConn() -> sqlite3.Connection:
+    path = _cachePath()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path), timeout=30.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS file_hashes (
+            path     TEXT PRIMARY KEY,
+            size     INTEGER,
+            mtime_ns INTEGER,
+            sha256   TEXT
+        )"""
+    )
+    return conn
+
+
+def _hashFile(path: str) -> str:
+    try:
+        with open(path, "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()
+    except OSError:
+        return hashlib.sha256(b"").hexdigest()
+
+
+def _rootHash(files: dict[str, str]) -> str:
+    h = hashlib.sha256()
+    for path, digest in sorted(files.items()):
+        h.update(path.encode("utf-8", errors="replace"))
+        h.update(b"\0")
+        h.update(digest.encode("ascii", errors="replace"))
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+def _fingerprintCached(paths: list[str]) -> dict[str, str]:
+    files: dict[str, str] = {}
+    seen = {str(p).lower() for p in paths}
+    try:
+        with _cacheConn() as conn:
+            cached = {r["path"]: r for r in conn.execute("SELECT * FROM file_hashes")}
+            for raw in paths:
+                key = str(raw).lower()
+                try:
+                    st = Path(raw).stat()
+                except Exception:
+                    st = None
+                size = int(getattr(st, "st_size", -1)) if st is not None else -1
+                mtime_ns = int(getattr(st, "st_mtime_ns", -1)) if st is not None else -1
+                row = cached.get(key)
+                if row and int(row["size"]) == size and int(row["mtime_ns"]) == mtime_ns:
+                    digest = str(row["sha256"])
+                else:
+                    digest = _hashFile(raw)
+                    conn.execute(
+                        """INSERT OR REPLACE INTO file_hashes(path, size, mtime_ns, sha256)
+                           VALUES (?, ?, ?, ?)""",
+                        (key, size, mtime_ns, digest),
+                    )
+                files[key] = digest
+            if seen:
+                stale = [p for p in cached if p not in seen]
+                conn.executemany("DELETE FROM file_hashes WHERE path=?", [(p,) for p in stale])
+        return files
+    except Exception:  # noqa: BLE001 -- cache failure falls back to exact full hash
+        return {str(path).lower(): _hashFile(path) for path in paths}
+
+
 def fingerprint() -> dict[str, Any]:
     """A content hash of every self.code module + the git SHA. Two runs with identical
     loop code produce identical fingerprints; any edit flips one file's hash."""
-    files: dict[str, str] = {}
-    for path in identity.selfCodeFiles():
-        try:
-            with open(path, "rb") as fh:
-                data = fh.read()
-        except OSError:
-            data = b""
-        files[str(path).lower()] = hashlib.sha256(data).hexdigest()
-    return {"git_sha": _gitSha(), "files": files}
+    t0 = time.perf_counter()
+    paths = identity.selfCodeFiles()
+    if getattr(config, "REPO_MERKLE_CACHE_ENABLED", True):
+        files = _fingerprintCached(paths)
+    else:
+        files = {str(path).lower(): _hashFile(path) for path in paths}
+    result = {"git_sha": _gitSha(), "files": files, "root_hash": _rootHash(files)}
+    perf.record("epoch_fingerprint", time.perf_counter() - t0, files=len(files))
+    return result
 
 
 import config  # noqa: E402 -- intentional late import to avoid circular deps

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -39,23 +40,39 @@ def _git_changed() -> list[str]:
         return []
 
 
+@lru_cache(maxsize=4096)
+def _tests_for_abs(path_text: str) -> tuple[str, ...]:
+    p = Path(path_text)
+    rel = p.relative_to(REPO_ROOT).as_posix() if str(p).startswith(str(REPO_ROOT)) else path_text
+    if rel.startswith("tests/") and p.name.startswith("test_"):
+        return (rel,)
+    dotted = repo_map.module_dotted(p)
+    return tuple(repo_map.find_tests(dotted, p.stem))
+
+
 def targets_for(files: list[str]) -> list[str]:
     """Union of covering tests for ``files`` (repo-relative or absolute), deterministic + deduped."""
-    tests: set[str] = set()
+    all_tests: list[str] = []
+    seen_tests: dict[str, int] = {}
+    bitset = 0
     for f in files:
         p = Path(f)
         if not p.is_absolute():
             p = REPO_ROOT / f
         if not p.exists() or p.suffix != ".py":
             continue
-        rel = p.relative_to(REPO_ROOT).as_posix() if str(p).startswith(str(REPO_ROOT)) else f
-        if rel.startswith("tests/") and p.name.startswith("test_"):
-            tests.add(rel)                       # a changed test covers itself
+        if not getattr(__import__("config"), "AFFECTED_TEST_BITSET_ENABLED", True):
+            all_tests.extend(_tests_for_abs(str(p)))
             continue
-        dotted = repo_map.module_dotted(p)
-        for t in repo_map.find_tests(dotted, p.stem):
-            tests.add(t)
-    return sorted(tests)
+        local_bits = 0
+        for t in _tests_for_abs(str(p)):
+            idx = seen_tests.setdefault(t, len(seen_tests))
+            local_bits |= 1 << idx
+        bitset |= local_bits
+    if bitset:
+        by_idx = {idx: test for test, idx in seen_tests.items()}
+        return sorted(by_idx[i] for i in range(len(by_idx)) if bitset & (1 << i))
+    return sorted(set(all_tests))
 
 
 def main(argv: list[str]) -> int:

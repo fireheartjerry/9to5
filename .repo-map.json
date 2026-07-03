@@ -1798,6 +1798,7 @@
         "memory.obsidian",
         "memory.retrieval",
         "memory.retrieval_rank",
+        "memory.retrieval_render",
         "memory.user_prefs",
         "notifications.ask",
         "notifications.audit",
@@ -1842,6 +1843,7 @@
         "notifications.visuals_cards",
         "notifications.visuals_components",
         "notifications.webdash",
+        "notifications.webdash_page",
         "notifications.work_launcher",
         "orchestrator",
         "platform_core.cli.main_cli",
@@ -1893,16 +1895,17 @@
         "platform_core.orchestration.run_phase_outcome",
         "platform_core.orchestration.run_phase_surface_mixin",
         "platform_core.orchestration.safety_mixin",
-        "platform_core.orchestration.self_ref_gate",
         "platform_core.orchestration.solution_space",
         "platform_core.orchestration.step_resume",
         "platform_core.orchestration.step_sink",
         "platform_core.orchestration.subtask",
+        "platform_core.orchestration.validation_cache",
         "platform_core.orchestration.winner_merge",
         "platform_core.runtime.control",
         "platform_core.runtime.control_store",
         "platform_core.runtime.cost_budget",
         "platform_core.runtime.heartbeat",
+        "platform_core.runtime.perf",
         "platform_core.runtime.resilience",
         "platform_core.runtime.trajectory",
         "platform_core.runtime.worktree",
@@ -3721,21 +3724,21 @@
           "kind": "class",
           "signature": "",
           "summary": "Disk-persistent chromadb collection fed 9to5's OWN nomic-embed-text vectors.",
-          "lineno": 49
+          "lineno": 55
         },
         {
           "name": "getIndex",
           "kind": "function",
           "signature": "() -> 'AnnIndex'",
           "summary": "Cached singleton",
-          "lineno": 115
+          "lineno": 135
         },
         {
           "name": "resetIndex",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Drop the cached singleton (tests, or after a known backfill rebuild).",
-          "lineno": 132
+          "lineno": 152
         }
       ],
       "depends_on": [
@@ -4511,7 +4514,7 @@
         "tests/evolution/test_memory_sanitizer.py"
       ],
       "callers": [
-        "memory.retrieval",
+        "memory.retrieval_render",
         "platform_core.orchestration.plan_mixin",
         "platform_core.orchestration.plan_spec_mixin"
       ]
@@ -4571,119 +4574,105 @@
           "kind": "function",
           "signature": "(text: str) -> Optional[list[float]]",
           "summary": "Best-effort embedding of ``text`` (returns None when unavailable).",
-          "lineno": 82
+          "lineno": 88
         },
         {
           "name": "reset_embed_cache",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Clear the negative cache (used by tests, and after a known embedder restart).",
-          "lineno": 100
+          "lineno": 106
         },
         {
           "name": "pack",
           "kind": "function",
           "signature": "(vec: list[float]) -> bytes",
           "summary": "Pack a float vector into compact float32 bytes for the BLOB column.",
-          "lineno": 106
+          "lineno": 112
         },
         {
           "name": "unpack",
           "kind": "function",
           "signature": "(blob: bytes) -> list[float]",
           "summary": "Inverse of ``pack``",
-          "lineno": 113
+          "lineno": 119
         },
         {
           "name": "cosine",
           "kind": "function",
           "signature": "(a: list[float], b: list[float]) -> float",
           "summary": "Cosine similarity in [-1, 1]",
-          "lineno": 125
+          "lineno": 131
         },
         {
           "name": "signature_text",
           "kind": "function",
           "signature": "(goal: str, title: str='') -> str",
           "summary": "The text we embed for a subtask/goal",
-          "lineno": 139
+          "lineno": 145
         },
         {
           "name": "embed_and_store",
           "kind": "function",
-          "signature": "(run_id: str, st_id: str, goal: str, title: str='', db_path: Optional[Path]=None) -> bool",
+          "signature": "(run_id: str, st_id: str, goal: str, title: str='', db_path: Optional[Path]=None, verify_passed: bool=True) -> bool",
           "summary": "Compute + persist a subtask's embedding AND seed the ANN index (derived cache",
-          "lineno": 157
+          "lineno": 163
         },
         {
           "name": "top_k_similar",
           "kind": "function",
           "signature": "(query_vec: list[float], k: int=5, *, only_passed: bool=True, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "The ``k`` most-similar embedded subtasks to ``query_vec``, each annotated with a",
-          "lineno": 175
+          "lineno": 231
         },
         {
           "name": "top_k_failures",
           "kind": "function",
           "signature": "(query_vec: list[float], k: int=2, *, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "The ``k`` most-similar embedded subtasks that FAILED verification (``verify_passed==0``…",
-          "lineno": 196
+          "lineno": 241
         },
         {
           "name": "retrieve",
           "kind": "function",
           "signature": "(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "Embed the (goal, title) query and return the top-K similar past successes.",
-          "lineno": 223
+          "lineno": 254
         },
         {
           "name": "retrieve_failures",
           "kind": "function",
           "signature": "(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "Embed the (goal, title) query and return up to ``k`` similar past FAILED subtasks.",
-          "lineno": 232
+          "lineno": 263
         },
         {
           "name": "retrieve_content",
           "kind": "function",
           "signature": "(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "Embed the query, look up the ANN index (fallback: O(n) scan), and JOIN each hit to",
-          "lineno": 248
-        },
-        {
-          "name": "render_lessons",
-          "kind": "function",
-          "signature": "(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str",
-          "summary": "Render neighbors into a compact lessons block, truncated to the token budget.",
-          "lineno": 290
-        },
-        {
-          "name": "render_solutions",
-          "kind": "function",
-          "signature": "(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str",
-          "summary": "Render neighbors into a compact block of ACTUAL solution content (sanitized),",
-          "lineno": 337
-        },
-        {
-          "name": "render_failures",
-          "kind": "function",
-          "signature": "(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str",
-          "summary": "Render similar past FAILED subtasks into a DISTINCTLY-tagged warning block.",
-          "lineno": 365
+          "lineno": 298
         },
         {
           "name": "backfill_embeddings",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
           "summary": "Embed every verify-passing subtask that lacks an embedding (run off the hot path,",
-          "lineno": 395
+          "lineno": 340
+        },
+        {
+          "name": "rebuild_retrieval_index",
+          "kind": "function",
+          "signature": "(db_path: Optional[Path]=None, include_failures: bool=True) -> dict[str, int]",
+          "summary": "Rebuild the derived ANN index from SQLite embeddings",
+          "lineno": 376
         },
         {
           "name": "lessons_block",
           "kind": "function",
           "signature": "(goal: str, title: str='', *, db_path: Optional[Path]=None) -> str",
           "summary": "Orchestrator-facing one-call helper: retrieve + render, fully best-effort.",
-          "lineno": 424
+          "lineno": 419
         }
       ],
       "depends_on": [
@@ -4691,8 +4680,9 @@
         "memory.exp_index",
         "memory.experience",
         "memory.experience_content",
-        "memory.memory_sanitizer",
-        "memory.retrieval_rank"
+        "memory.retrieval_rank",
+        "memory.retrieval_render",
+        "platform_core.runtime"
       ],
       "side_effects": [
         "unannotated"
@@ -4727,6 +4717,58 @@
       "test": [
         "tests/evolution/test_retrieval_rank.py"
       ],
+      "callers": [
+        "memory.retrieval"
+      ]
+    },
+    "memory.retrieval_render": {
+      "path": "memory/retrieval_render.py",
+      "purpose": "Rendering helpers for retrieved lessons, solutions, and failure warnings.",
+      "exports": [
+        {
+          "name": "approx_tokens",
+          "kind": "function",
+          "signature": "(text: str) -> int",
+          "summary": "Cheap token estimate (~4 chars/token), sufficient for retrieval budget caps.",
+          "lineno": 22
+        },
+        {
+          "name": "sanitize_field",
+          "kind": "function",
+          "signature": "(text: Any, limit: int=400) -> str",
+          "summary": "Collapse retrieved text to one prompt-safe inline line.",
+          "lineno": 27
+        },
+        {
+          "name": "render_lessons",
+          "kind": "function",
+          "signature": "(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str",
+          "summary": "Render compact metadata lessons from similar passing subtasks.",
+          "lineno": 38
+        },
+        {
+          "name": "render_solutions",
+          "kind": "function",
+          "signature": "(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str",
+          "summary": "Render sanitized solution content from similar passing subtasks.",
+          "lineno": 64
+        },
+        {
+          "name": "render_failures",
+          "kind": "function",
+          "signature": "(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str",
+          "summary": "Render distinctly tagged warnings from similar failed subtasks.",
+          "lineno": 87
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.memory_sanitizer"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
       "callers": [
         "memory.retrieval"
       ]
@@ -7590,14 +7632,14 @@
           "kind": "function",
           "signature": "(task_id: str, port: Optional[int]=None) -> Optional[str]",
           "summary": "Start the dashboard in a daemon thread",
-          "lineno": 317
+          "lineno": 354
         },
         {
           "name": "stopWebDashboard",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Shut down the running dashboard server (frees the port)",
-          "lineno": 345
+          "lineno": 382
         }
       ],
       "depends_on": [
@@ -7607,6 +7649,7 @@
         "notifications.health_aura",
         "notifications.webdash_page",
         "platform_core.core.best_effort",
+        "platform_core.runtime",
         "platform_core.runtime.control",
         "state.task"
       ],
@@ -7641,6 +7684,7 @@
       "purpose": "Bloomberg-terminal HTML page for the live web dashboard (data only, no logic).",
       "exports": [],
       "depends_on": [
+        "config",
         "notifications.webdash_markup",
         "notifications.webdash_script",
         "notifications.webdash_styles"
@@ -8017,7 +8061,7 @@
           "kind": "function",
           "signature": "() -> SieCfg",
           "summary": "",
-          "lineno": 332
+          "lineno": 342
         }
       ],
       "depends_on": [
@@ -8259,7 +8303,7 @@
         "platform_core.orchestration.github",
         "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.run_loop",
-        "platform_core.orchestration.self_ref_gate",
+        "platform_core.orchestration.validation_cache",
         "platform_core.runtime.heartbeat",
         "platform_core.runtime.trajectory",
         "platform_core.runtime.worktree",
@@ -8554,33 +8598,34 @@
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "A content hash of every self.code module + the git SHA",
-          "lineno": 36
+          "lineno": 111
         },
         {
           "name": "Epoch",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 61
+          "lineno": 136
         },
         {
           "name": "snapshot",
           "kind": "function",
           "signature": "(*, universe: Optional[dict]=None, brain_tag: Optional[str]=None) -> Epoch",
           "summary": "Freeze governing state at process/run start",
-          "lineno": 83
+          "lineno": 158
         },
         {
           "name": "diverged",
           "kind": "function",
           "signature": "(pinned: Epoch) -> bool",
           "summary": "True iff the on-disk self.code differs from what was pinned at snapshot time.",
-          "lineno": 94
+          "lineno": 169
         }
       ],
       "depends_on": [
         "config",
-        "platform_core.core.identity"
+        "platform_core.core.identity",
+        "platform_core.runtime"
       ],
       "side_effects": [
         "unannotated"
@@ -10488,12 +10533,13 @@
           "kind": "function",
           "signature": "(state, work_dir: str) -> dict",
           "summary": "Create a PR for the completed run",
-          "lineno": 22
+          "lineno": 23
         }
       ],
       "depends_on": [
         "config",
-        "platform_core.core"
+        "platform_core.core",
+        "platform_core.orchestration.validation_cache"
       ],
       "side_effects": [
         "unannotated"
@@ -11168,12 +11214,11 @@
           "kind": "function",
           "signature": "(work_dir: str) -> 'tuple[bool, str]'",
           "summary": "Run cheap Windows repo gates after a self-ref subtask passes its own verify.",
-          "lineno": 36
+          "lineno": 19
         }
       ],
       "depends_on": [
-        "config",
-        "platform_core.core"
+        "platform_core.orchestration.validation_cache"
       ],
       "side_effects": [
         "unannotated"
@@ -11398,6 +11443,48 @@
         "platform_core.orchestration.run_phase_outcome"
       ]
     },
+    "platform_core.orchestration.validation_cache": {
+      "path": "platform_core/orchestration/validation_cache.py",
+      "purpose": "Validation DAG cache for self-ref and pre-PR gates.",
+      "exports": [
+        {
+          "name": "ValidationResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 54
+        },
+        {
+          "name": "diff_fingerprint",
+          "kind": "function",
+          "signature": "(work_dir: str) -> str",
+          "summary": "Stable hash for the tracked code state relative to HEAD.",
+          "lineno": 97
+        },
+        {
+          "name": "run_validation_suite",
+          "kind": "function",
+          "signature": "(suite_id: str, work_dir: str, *, cache: bool=True) -> ValidationResult",
+          "summary": "Run a named validation suite through the DAG cache.",
+          "lineno": 271
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.core",
+        "platform_core.runtime"
+      ],
+      "side_effects": [
+        "writes state/validation_cache.db derived cache"
+      ],
+      "test": [
+        "tests/test_validation_cache.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.github",
+        "platform_core.orchestration.self_ref_gate"
+      ]
+    },
     "platform_core.orchestration.winner_merge": {
       "path": "platform_core/orchestration/winner_merge.py",
       "purpose": "Winner merge-back + loser GC + optional advisory graft (Epic 6).",
@@ -11530,7 +11617,10 @@
       "test": [],
       "callers": [
         "main",
+        "memory.retrieval",
         "notifications.bot.core",
+        "notifications.webdash",
+        "platform_core.core.epoch",
         "platform_core.execution.backends.worktree",
         "platform_core.orchestration.adversary_loop",
         "platform_core.orchestration.control_mixin",
@@ -11540,6 +11630,7 @@
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.safety_mixin",
+        "platform_core.orchestration.validation_cache",
         "platform_core.runtime.autonomy_allowance",
         "platform_core.runtime.control"
       ]
@@ -11916,6 +12007,36 @@
         "notifications.work_launcher",
         "state.task_io"
       ]
+    },
+    "platform_core.runtime.perf": {
+      "path": "platform_core/runtime/perf.py",
+      "purpose": "Lightweight throughput telemetry for Nightclaw overhead accounting.",
+      "exports": [
+        {
+          "name": "record",
+          "kind": "function",
+          "signature": "(metric: str, elapsed_s: float, **fields: Any) -> None",
+          "summary": "Append one best-effort timing row",
+          "lineno": 26
+        },
+        {
+          "name": "summarize",
+          "kind": "function",
+          "signature": "(limit: int=500) -> dict[str, float]",
+          "summary": "Aggregate recent telemetry by metric.",
+          "lineno": 38
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "appends state/perf.jsonl"
+      ],
+      "test": [
+        "tests/test_perf_telemetry.py"
+      ],
+      "callers": []
     },
     "platform_core.runtime.resilience": {
       "path": "platform_core/runtime/resilience.py",
@@ -12825,14 +12946,14 @@
           "kind": "function",
           "signature": "(files: list[str]) -> list[str]",
           "summary": "Union of covering tests for ``files`` (repo-relative or absolute), deterministic + dedu…",
-          "lineno": 42
+          "lineno": 53
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: list[str]) -> int",
           "summary": "",
-          "lineno": 61
+          "lineno": 78
         }
       ],
       "depends_on": [],

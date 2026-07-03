@@ -91,6 +91,13 @@ class TestRetrieval(unittest.TestCase):
         hits = retrieval.top_k_similar([1.0, 0.0], k=5, db_path=self.db)
         self.assertEqual([h["st_id"] for h in hits], ["st-002"])
 
+    def test_heap_top_k_matches_full_sort(self):
+        rows = []
+        for i in range(40):
+            rows.append({"st_id": f"st-{i:03d}", "score": (i * 17 % 40) / 40.0})
+        expected = sorted(rows, key=lambda r: (-r["score"], retrieval._tie(r)))[:7]
+        self.assertEqual(retrieval._heapTopK(rows, 7), expected)
+
     def test_retrieve_uses_embed_seam(self):
         self._seed("st-001", [1.0, 0.0, 0.0], effort="high")
         with mock.patch.object(retrieval, "_embed_call", return_value=[1.0, 0.0, 0.0]):
@@ -305,19 +312,34 @@ def idx_db(tmp_path, monkeypatch):
 
 
 class _FakeIndex:
-    def __init__(self): self.rows = []
-    def addPair(self, uid, vec, payload): self.rows.append((uid, list(vec), dict(payload)))
-    def query(self, vec, k, threshold):
+    def __init__(self):
+        self.rows = []
+        self.failure_rows = []
+
+    def addPair(self, uid, vec, payload):
+        self.rows.append((uid, list(vec), dict(payload)))
+
+    def addFailurePair(self, uid, vec, payload):
+        self.failure_rows.append((uid, list(vec), dict(payload)))
+
+    def _query_rows(self, rows, vec, k, threshold):
         import math
         def cos(a, b):
             d = sum(x*y for x, y in zip(a, b))
             na = math.sqrt(sum(x*x for x in a))
             nb = math.sqrt(sum(y*y for y in b))
             return d/(na*nb) if na and nb else 0.0
-        s = [{"uid": u, "score": cos(vec, v), "payload": p} for u, v, p in self.rows]
+        s = [{"uid": u, "score": cos(vec, v), "payload": p} for u, v, p in rows]
         s = [x for x in s if x["score"] >= threshold]
         s.sort(key=lambda x: x["score"], reverse=True)
         return s[:k]
+
+    def query(self, vec, k, threshold):
+        return self._query_rows(self.rows, vec, k, threshold)
+
+    def queryFailures(self, vec, k, threshold):
+        return self._query_rows(self.failure_rows, vec, k, threshold)
+
     def persist(self): pass
 
 
@@ -352,6 +374,18 @@ def test_embed_and_store_seeds_index(idx_db, monkeypatch):
     with mock.patch.object(retrieval, "_embed_call", return_value=[0.3, 0.4, 0.5]):
         assert retrieval.embed_and_store("r1", "st-3", "goal", "seed", db_path=idx_db) is True
     assert any(uid == "r1::st-3" for uid, _, _ in fake.rows)
+
+
+def test_retrieve_failures_uses_failure_index(idx_db, monkeypatch):
+    fake = _FakeIndex()
+    fake.addFailurePair("r1::bad", [1.0, 0.0], {
+        "run_id": "r1", "st_id": "bad", "title": "indexed failure",
+        "verify_passed": 0, "importance": 1.0,
+    })
+    monkeypatch.setattr(exp_index, "getIndex", lambda: fake)
+    with mock.patch.object(retrieval, "_embed_call", return_value=[1.0, 0.0]):
+        hits = retrieval.retrieve_failures("g", "t", db_path=idx_db)
+    assert hits and hits[0]["st_id"] == "bad"
 
 
 # ---------------------------------------------------------------------------

@@ -181,9 +181,10 @@ class SieCfg:
     # brain avoids re-walking known dead-ends (reuses the same embedding scan, no new store).
     RETRIEVAL_FAILURES_ENABLED: bool = _F(default_factory=lambda: _envBool("RETRIEVAL_FAILURES_ENABLED", True))
     RETRIEVAL_FAILURES_K: int = _F(default_factory=lambda: _envInt("RETRIEVAL_FAILURES_K", 2))
-    ANN_INDEX_ENABLED: bool = _F(default_factory=lambda: _envBool("ANN_INDEX_ENABLED", False))
+    ANN_INDEX_ENABLED: bool = _F(default_factory=lambda: _envBool("ANN_INDEX_ENABLED", True))
     ANN_INDEX_BACKEND: str = _F(default_factory=lambda: os.getenv("ANN_INDEX_BACKEND", "chroma"))
-    ANN_INDEX_DIR: str = _F(default_factory=lambda: os.getenv("ANN_INDEX_DIR", "state/exp_index"))
+    ANN_INDEX_DIR: str = _F(default_factory=lambda: os.getenv("ANN_INDEX_DIR", "state/ann_index"))
+    ANN_INDEX_CANDIDATE_MULTIPLIER: int = _F(default_factory=lambda: _envInt("ANN_INDEX_CANDIDATE_MULTIPLIER", 10))
     # Embedding dim pinned into the collection name (nomic-embed-text = 768-dim).
     ANN_EMBED_DIM: int = _F(default_factory=lambda: _envInt("ANN_EMBED_DIM", 768))
     # Rerank weights (gen-agents new_retrieve port: relevance-heavy [0.5, 3, 2]).
@@ -191,6 +192,15 @@ class SieCfg:
     RETRIEVAL_W_IMPORTANCE: float = _F(default_factory=lambda: _envFloat("RETRIEVAL_W_IMPORTANCE", 3.0))
     RETRIEVAL_W_RELEVANCE: float = _F(default_factory=lambda: _envFloat("RETRIEVAL_W_RELEVANCE", 2.0))
     RETRIEVAL_RECENCY_HALFLIFE_DAYS: float = _F(default_factory=lambda: _envFloat("RETRIEVAL_RECENCY_HALFLIFE_DAYS", 14))
+    # Validation/throughput caches.
+    VALIDATION_CACHE_ENABLED: bool = _F(default_factory=lambda: _envBool("VALIDATION_CACHE_ENABLED", True))
+    VALIDATION_CACHE_TTL_SECONDS: int = _F(default_factory=lambda: _envInt("VALIDATION_CACHE_TTL_SECONDS", 21600))
+    VALIDATION_FAILURE_CACHE_TTL_SECONDS: int = _F(default_factory=lambda: _envInt("VALIDATION_FAILURE_CACHE_TTL_SECONDS", 30))
+    REPO_MERKLE_CACHE_ENABLED: bool = _F(default_factory=lambda: _envBool("REPO_MERKLE_CACHE_ENABLED", True))
+    AFFECTED_TEST_BITSET_ENABLED: bool = _F(default_factory=lambda: _envBool("AFFECTED_TEST_BITSET_ENABLED", True))
+    WEBDASH_DERIVED_TTL_SECONDS: int = _F(default_factory=lambda: _envInt("WEBDASH_DERIVED_TTL_SECONDS", 30))
+    WEBDASH_ACTIVE_POLL_SECONDS: int = _F(default_factory=lambda: _envInt("WEBDASH_ACTIVE_POLL_SECONDS", 2))
+    WEBDASH_IDLE_POLL_SECONDS: int = _F(default_factory=lambda: _envInt("WEBDASH_IDLE_POLL_SECONDS", 8))
     # --- Layer 2: hierarchical compaction (opt-in; trims PAYLOAD, never resizes num_ctx) ---
     COMPACTION_ENABLED: bool = _F(default_factory=lambda: _envBool("COMPACTION_ENABLED", False))
     COMPACTION_TRIGGER_RATIO: float = _F(default_factory=lambda: _envFloat("COMPACTION_TRIGGER_RATIO", 0.85))

@@ -9,6 +9,7 @@ from unittest import mock
 
 import config
 from orchestrator import Orchestrator
+from platform_core.orchestration.validation_cache import ValidationResult
 from state.task import TaskState
 
 
@@ -175,19 +176,20 @@ class TestPrGateDegraded(unittest.TestCase):
     def test_suite_gate_holds_pr_on_red_suite(self):
         # A self-improvement run must NOT open a PR whose own suite is red (the PR #10 bug).
         self.state.meta["is_self_referential"] = True
-        failed = mock.Mock(returncode=1, stdout="FAILED (errors=128)", stderr="")
-        with mock.patch("platform_core.orchestration.github.subprocess.run", return_value=failed):
+        failed = ValidationResult(False, "FAILED (errors=128)")
+        with mock.patch("platform_core.orchestration.github.run_validation_suite", return_value=failed):
             ok, detail = self.orch._prePrSuiteGate(self.state, ".")
         self.assertFalse(ok)
         self.assertIn("128", detail)
 
     def test_suite_gate_allows_pr_on_green_suite(self):
         self.state.meta["is_self_referential"] = True
-        passed = mock.Mock(returncode=0, stdout="OK", stderr="")
-        with mock.patch("platform_core.orchestration.github.subprocess.run", return_value=passed) as run:
+        passed = ValidationResult(True, "OK")
+        with mock.patch("platform_core.orchestration.github.run_validation_suite",
+                        return_value=passed) as suite:
             ok, _ = self.orch._prePrSuiteGate(self.state, ".")
         self.assertTrue(ok)
-        self.assertEqual(run.call_count, 4)
+        suite.assert_called_once_with("pre_pr_full", ".")
 
     def test_night_mode_ships_healthy_challenged_run(self):
         self.state.addSubtask("a", "d")

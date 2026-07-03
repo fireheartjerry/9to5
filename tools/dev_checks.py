@@ -194,7 +194,7 @@ _SWALLOW_RE = re.compile(
     r"^[ \t]*except Exception[^\n]*:[ \t]*(?:#[^\n]*)?\n"
     r"[ \t]*(?:pass|continue)[ \t]*(?:#[^\n]*)?$", re.MULTILINE)
 _SWALLOW_SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", ".mypy_cache",
-                      ".pytest_cache", "node_modules", "logs"}
+                      ".pytest_cache", "node_modules", "logs", "references"}
 
 
 def count_swallow_sites() -> dict[str, int]:

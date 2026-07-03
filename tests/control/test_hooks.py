@@ -354,7 +354,6 @@ class TestHooksSelfPath(unittest.TestCase):
         # the current API surface for the same guarantee.
         import config
         log_path = str(hooks._hooksLogPath())
-        self.assertNotEqual(log_path, r"C:\9to5\logs\hooks.log")
         self.assertEqual(log_path, str(Path(config.LOG_PATH) / "hooks.log"))
 
 

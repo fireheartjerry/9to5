@@ -21,7 +21,7 @@ Routes:
 EXPORTS:
   startWebDashboard(task_id: str, port: Optional[int]=None) -> Optional[str]  -- Start the dashboard in a daemon thread
   stopWebDashboard() -> None  -- Shut down the running dashboard server (frees the port)
-DEPENDS-ON: config, memory.experience, notifications.event_bus, notifications.health_aura, notifications.webdash_page, platform_core.core.best_effort, platform_core.runtime.control, state.task
+DEPENDS-ON: config, memory.experience, notifications.event_bus, notifications.health_aura, notifications.webdash_page, platform_core.core.best_effort, platform_core.runtime, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_webdash_control.py tests/notifications/test_bloomberg_webdash.py tests/notifications/test_webdash_page_split.py
 """
@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import queue
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
@@ -39,6 +40,7 @@ from notifications.event_bus import get_bus
 from notifications.health_aura import aura_color, compute_health
 from notifications.webdash_page import PAGE as _PAGE
 from platform_core.core.best_effort import best_effort, degradationLine, degradationSummary
+from platform_core.runtime import perf
 from platform_core.runtime.control import GATES, ControlBus
 from state.task import TaskState
 
@@ -46,6 +48,8 @@ LOG = config.getLogger("webdash")
 
 _SSE_STOP = threading.Event()
 _CONTROL_TOKEN = ""  # per-run control token; printed to local console/log ONLY, never served in HTML
+_DERIVED_CACHE: dict[str, tuple[float, dict]] = {}
+_DERIVED_LOCK = threading.Lock()
 
 
 # --------------------------------------------------------------------------- payload builders
@@ -60,18 +64,25 @@ def _wisdom_trail(goal: str) -> list:
     """Top-3 past-run lessons relevant to ``goal`` (keyword match over SIE reflections)."""
     with best_effort("webdash.wisdom_trail", log=LOG):
         from memory import experience
+        import heapq
         rows = experience.fetch_reflections()
         tokens = {w for w in (goal or "").lower().split() if len(w) > 3}
-        scored = []
+        heap = []
+        seq = 0
         for r in rows:
             text = " ".join(str(r.get(k) or "") for k in ("reusable_recipe", "approach", "verify_critique"))
             summary = (r.get("reusable_recipe") or r.get("approach") or "").strip()
             if not summary:
                 continue
             score = sum(1 for t in tokens if t in text.lower())
-            scored.append((score, {"summary": summary[:80], "run": str(r.get("run_id") or "")[:8]}))
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [s[1] for s in scored[:3] if s[0] > 0] or [s[1] for s in scored[:3]]
+            item = (score, seq, {"summary": summary[:80], "run": str(r.get("run_id") or "")[:8]})
+            seq += 1
+            if len(heap) < 3:
+                heapq.heappush(heap, item)
+            elif item[:2] > heap[0][:2]:
+                heapq.heapreplace(heap, item)
+        scored = sorted(heap, reverse=True)
+        return [s[2] for s in scored if s[0] > 0] or [s[2] for s in scored]
     return []
 
 
@@ -79,9 +90,9 @@ def _intelligence_curve() -> list:
     """Domain-by-domain confidence (best-effort; [] when the ledger has nothing usable)."""
     with best_effort("webdash.intelligence_curve", log=LOG):
         from memory import experience
-        rows = experience.fetch_subtasks() if hasattr(experience, "fetch_subtasks") else []
+        rows = experience.fetch_subtasks(limit=300) if hasattr(experience, "fetch_subtasks") else []
         buckets: dict[str, list] = {}
-        for r in rows[-300:]:
+        for r in rows:
             title = str(r.get("title") or r.get("subtask_id") or "").lower()
             domain = next((w for w in title.split() if len(w) > 4), None)
             if not domain:
@@ -129,7 +140,30 @@ def _timing(meta: dict) -> "tuple[float, float]":
     return 0.0, 0.0
 
 
+def _derived(task_id: str, goal: str) -> dict:
+    ttl = max(1, int(getattr(config, "WEBDASH_DERIVED_TTL_SECONDS", 30) or 30))
+    now = time.monotonic()
+    key = f"{task_id}:{goal}"
+    with _DERIVED_LOCK:
+        hit = _DERIVED_CACHE.get(key)
+        if hit and now - hit[0] < ttl:
+            return dict(hit[1])
+    data = {
+        "wisdom_trail": _wisdom_trail(goal),
+        "intelligence_curve": _intelligence_curve(),
+        "comparative": _comparative(task_id),
+    }
+    with _DERIVED_LOCK:
+        _DERIVED_CACHE[key] = (now, dict(data))
+        if len(_DERIVED_CACHE) > 32:
+            oldest = sorted(_DERIVED_CACHE.items(), key=lambda kv: kv[1][0])[:8]
+            for old_key, _ in oldest:
+                _DERIVED_CACHE.pop(old_key, None)
+    return data
+
+
 def _snapshot(task_id: str) -> dict:
+    t0 = time.perf_counter()
     try:
         state = TaskState.load(task_id)
     except Exception:  # noqa: BLE001
@@ -141,7 +175,8 @@ def _snapshot(task_id: str) -> dict:
     elapsed_s, eta_s = _timing(state.meta)
     score = compute_health(state)
     notifs = state.data.get("notifications", [])
-    return {
+    derived = _derived(task_id, state.meta.get("goal_raw") or "")
+    payload = {
         "empty": False,
         "meta": m,
         "model": _derive_model(state),
@@ -156,9 +191,9 @@ def _snapshot(task_id: str) -> dict:
         "health": {"score": score, "color": aura_color(score)},
         "arc": state.meta.get("arc") or [],
         "discovery": _discovery_block(state.meta),
-        "wisdom_trail": _wisdom_trail(state.meta.get("goal_raw") or ""),
-        "intelligence_curve": _intelligence_curve(),
-        "comparative": _comparative(task_id),
+        "wisdom_trail": derived["wisdom_trail"],
+        "intelligence_curve": derived["intelligence_curve"],
+        "comparative": derived["comparative"],
         "degradations": degradationSummary(),
         "degraded_line": degradationLine(),
         "subtasks": [
@@ -173,6 +208,8 @@ def _snapshot(task_id: str) -> dict:
         "events": state.data.get("notifications", []),
         "control": {"abort": bus["abort"], "pause": bus["pause"], "pending_gate": bus.get("pending_gate")},
     }
+    perf.record("webdash_snapshot", time.perf_counter() - t0, task_id=task_id)
+    return payload
 
 
 def _applyControl(task_id: str, action: str, arg: Optional[str]) -> dict:
