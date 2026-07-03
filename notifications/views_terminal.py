@@ -12,7 +12,7 @@ EXPORTS:
   TerminalView
 DEPENDS-ON: notifications.commands, notifications.discord_bot, notifications.terminal_ipc
 SIDE-EFFECTS: writes nav intent via notifications.terminal_ipc; reads the mirror for snapshots
-RUN/TEST: python -m pytest tests/test_views_terminal.py
+RUN/TEST: python -m pytest tests/control/test_views_terminal.py
 """
 from __future__ import annotations
 

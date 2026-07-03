@@ -5,6 +5,15 @@ logs/
 vault/
 state/tasks/
 state/control/
+# Control plane v2 (SQLite ControlBus) + run-lifecycle runtime dirs
+state/control.db
+state/control.db-wal
+state/control.db-shm
+state/heartbeats/
+state/launch/
+state/ipc/
+state/compaction/
+state/blackboard/
 # SIE Experience Ledger (runtime SQLite, accumulates per run)
 state/experience.db
 state/experience.db-wal
@@ -40,6 +49,11 @@ C:\\supercritical/
 !.agents/**
 !.claude/**
 references/
+
+# runtime state that earlier lived in git by mistake (untracked 2026-07-02)
+state/exp_index/
+state/sie_overrides.json
+state/evolution/reports/
 .env.backup
 # Second-instance bot secret (separate Discord app token) — NEVER commit
 .env.nightclaw2

@@ -21,20 +21,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py block_destructive"
-          },
-          {
-            "type": "command",
-            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py self_modification_guard"
+            "command": "python \"agents/hooks.py\" block_destructive"
           }
         ]
       },
       {
-        "matcher": "Edit|Write|MultiEdit",
+        "matcher": "Bash|Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py self_modification_guard"
+            "command": "python \"agents/hooks.py\" self_modification_guard"
           }
         ]
       }
@@ -45,7 +41,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py write_obsidian"
+            "command": "python \"agents/hooks.py\" write_obsidian"
           }
         ]
       },
@@ -54,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:\\9to5\\venv\\Scripts\\python.exe C:\\9to5\\agents\\hooks.py log_all"
+            "command": "python \"agents/hooks.py\" log_all"
           }
         ]
       }

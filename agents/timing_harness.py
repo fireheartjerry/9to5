@@ -14,7 +14,7 @@ EXPORTS:
   updateSpeedupRatio(workflow_path: Path, result: TimingResult) -> None  -- Update speedup_model.estimated_wall_clock_ratio in *workflow_path* with measured ratio.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_timing_harness.py
+RUN/TEST: python -m pytest tests/orchestration/test_timing_harness.py
 """
 from __future__ import annotations
 

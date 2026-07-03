@@ -19,7 +19,7 @@ from typing import Optional
 # repo_map.py re-exports write_outputs via a lazy wrapper; these top-level imports are safe
 # because by the time repo_map_outputs is first imported, repo_map is already fully loaded.
 from repo_map import (  # noqa: E402
-    build_map, iter_py_files, module_dotted, render_header, splice_header,
+    build_map, is_test_path, iter_py_files, module_dotted, render_header, splice_header,
     _read_source, HEADER_SENTINEL, REPO_ROOT, REMEDIATION,
 )
 from repo_map_render import (
@@ -35,8 +35,12 @@ _ROOT_AGENTS = REPO_ROOT / "AGENTS.md"
 def _spliceHeaders(
     m: dict, drift: list, no_doc: list, *, check: bool, only: Optional[str]
 ) -> None:
-    """Splice (or drift-check) @AI-MAP headers into source files."""
+    """Splice (or drift-check) @AI-MAP headers into source files. Test trees are excluded
+    OUTRIGHT (belt to build_map's braces): a header in tests/ is pure noise and a bad
+    splice there corrupts the suite, so the splice path must never touch them."""
     for path in iter_py_files(None if check else only):
+        if is_test_path(path):  # never splice test code, even if it somehow got mapped
+            continue
         rec = m["modules"].get(module_dotted(path))
         if rec is None:  # unparseable (skipped in build_map) -> don't touch
             continue
@@ -65,10 +69,15 @@ def _writeJsonMap(json_text: str, *, check: bool, drift: list) -> None:
 
 
 def _writeAgentsMd(*, check: bool, root_md: str, pkg_mds: dict, drift: list) -> None:
-    """Write or drift-check root AGENTS.md and per-package AGENTS.md files."""
+    """Write or drift-check root AGENTS.md and per-package AGENTS.md files.
+
+    AGENTS.md files are gitignored derived artifacts: on a clean checkout they simply do
+    not exist, so in check mode a MISSING file is not drift -- only a present-but-stale
+    one is. (Same adoption rule as headers; keeps `--check` green in CI clean clones.)"""
     def _cmp(path: Path, want: str) -> None:
-        have = path.read_text(encoding="utf-8") if path.exists() else None
-        if have != want:
+        if not path.exists():
+            return
+        if path.read_text(encoding="utf-8") != want:
             drift.append(str(path.relative_to(REPO_ROOT)))
 
     if check:

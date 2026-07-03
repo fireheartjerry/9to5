@@ -7,7 +7,7 @@ EXPORTS:
   getCapabilities() -> str
   ensureCapabilities() -> str  -- Lazily build the capabilities summary OFFLINE (no web fetch) from the on-disk
   injectCapabilities(system_prompt: str) -> str  -- Prepend the cached CLAUDE CODE CAPABILITIES block to ANY brain system prompt.
-DEPENDS-ON: config, platform_core.knowledge_base.builder, platform_core.knowledge_base.scraper
+DEPENDS-ON: platform_core.app_config, platform_core.knowledge_base.builder, platform_core.knowledge_base.scraper
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -17,7 +17,8 @@ import re
 import threading
 from typing import Optional
 
-import config
+# Direction rule (R12): platform_core modules read the in-platform registry facade.
+from platform_core import app_config as config
 from platform_core.knowledge_base.builder import _topHeadings
 from platform_core.knowledge_base.scraper import (
     _readText,

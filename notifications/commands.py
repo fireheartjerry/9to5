@@ -12,10 +12,10 @@ EXPORTS:
   resolveTargetTask() -> Optional[TaskState]
   isRunActive(state: Optional[TaskState]) -> bool  -- A run is 'active' iff its status is not terminal
   footerHelp() -> str  -- Short, never-stale command hint derived from the registry (used by the dashboard).
-  applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str  -- Perform the bus mutation and return human markdown text ('' for silent control ops).
+  applyCommand(bus: ControlBus, state: TaskState, cmd: Command, *, source_msg_id: Optional[str]=None) -> str  -- Perform the bus mutation and return human markdown text ('' for silent control ops).
 DEPENDS-ON: config, learning.human_feedback, memory.user_prefs, notifications.discord_bot, notifications.event_bus, notifications.run_arc, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_commands.py
+RUN/TEST: python -m pytest tests/notifications/test_commands.py
 """
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ COMMAND_REGISTRY: dict[str, dict] = {
     "reject":  {"arg": "none",     "mutating": True,  "help": "reject the pending gate"},
     "skip":    {"arg": "required", "mutating": True,  "help": "skip a pending subtask: !skip st-00N"},
     "add":     {"arg": "required", "mutating": True,  "help": "queue a new subtask: !add <title>"},
-    "retry":   {"arg": "none",     "mutating": True,  "help": "re-run the current subtask"},
+    "retry":   {"arg": "none",     "mutating": True,  "help": "re-run the current subtask (each !retry queues one retry)"},
     "logs":    {"arg": "optional", "mutating": False, "help": "last 100 raw stdout lines: !logs [st-00N]"},
     "stdout":  {"arg": "optional", "mutating": False, "help": "last 500 raw stdout lines: !stdout [st-00N]"},
     "arc":     {"arg": "none",     "mutating": False, "help": "the run's narrative arc"},
@@ -209,10 +209,10 @@ def _historyText(state: TaskState, last_n: int = 50) -> str:
         return "(history unavailable)"
 
 
-def _applyIntent(bus: ControlBus, cmd: Command) -> str:
+def _applyIntent(bus: ControlBus, cmd: Command, source_msg_id: Optional[str] = None) -> str:
     arg = cmd.arg.strip()
     if arg.lower() == "clear":
-        bus.pushOp({"op": "intent_clear"})
+        bus.pushOp({"op": "intent_clear"}, source_msg_id=source_msg_id)
         return "Cleared active intents."
     if arg.lower().startswith("persist "):
         text = arg[len("persist "):].strip()
@@ -220,19 +220,20 @@ def _applyIntent(bus: ControlBus, cmd: Command) -> str:
         prefs = user_prefs.load()
         prefs["persistent_intents"] = list(prefs.get("persistent_intents") or []) + [text]
         user_prefs.save(prefs)
-        bus.pushOp({"op": "intent", "text": text})
+        bus.pushOp({"op": "intent", "text": text}, source_msg_id=source_msg_id)
         return f"Persisted intent (every run) + active now: {text}"
     if not arg:
         return "usage: `!intent <text>` | `!intent clear` | `!intent persist <text>`"
-    bus.pushOp({"op": "intent", "text": arg})
+    bus.pushOp({"op": "intent", "text": arg}, source_msg_id=source_msg_id)
     return f"Intent noted — the brain will weigh it at the next decision: {arg}"
 
 
-def _applyIntelCommand(bus: ControlBus, state: TaskState, cmd: Command) -> Optional[str]:
+def _applyIntelCommand(bus: ControlBus, state: TaskState, cmd: Command,
+                       source_msg_id: Optional[str] = None) -> Optional[str]:
     """Spec B intelligence/control commands. Returns None for an unrecognized name."""
     n = cmd.name
     if n == "intent":
-        return _applyIntent(bus, cmd)
+        return _applyIntent(bus, cmd, source_msg_id)
     if n == "prefer":
         from memory import user_prefs
         return user_prefs.applyPrefer(cmd.arg)
@@ -246,14 +247,16 @@ def _applyIntelCommand(bus: ControlBus, state: TaskState, cmd: Command) -> Optio
         lvl = cmd.arg.strip().lower()
         if lvl not in config.EFFORT_FLAG_MAP:
             return f"usage: `!effort <{'|'.join(sorted(set(config.EFFORT_FLAG_MAP)))}>`"
-        bus.pushOp({"op": "set_run_effort", "level": lvl})
+        bus.pushOp({"op": "set_run_effort", "level": lvl}, source_msg_id=source_msg_id)
         return f"Run effort -> `{lvl}` for all future subtasks this run."
     if n == "mode":
         m = cmd.arg.strip().lower()
         if m not in ("gated", "watch"):
             return "usage: `!mode gated|watch`"
-        state.setControlMode(m)
-        return f"Control mode -> `{m}`."
+        # SINGLE-WRITER RULE: this layer also runs in the gateway-bot process, which must
+        # never write task JSON. Queue the change; the run loop drains + applies it.
+        bus.pushOp({"op": "set_mode", "mode": m}, source_msg_id=source_msg_id)
+        return f"Control mode -> `{m}` (applies at the next loop tick)."
     if n == "replan":
         bus.requestForceReplan()
         return "Replanning pass requested — runs at the next loop tick."
@@ -262,28 +265,35 @@ def _applyIntelCommand(bus: ControlBus, state: TaskState, cmd: Command) -> Optio
         if not m:
             return "usage: `!deadline +1h` or `!deadline +30m`"
         secs = float(m.group(1)) * (3600 if m.group(2) == "h" else 60)
-        bus.pushOp({"op": "extend_deadline", "delta_seconds": secs})
+        bus.pushOp({"op": "extend_deadline", "delta_seconds": secs}, source_msg_id=source_msg_id)
         return f"Deadline extension queued: +{cmd.arg.strip()}"
     if n == "kill":
         bus.requestKillSubprocess()
-        return "Kill signal sent — the current Claude attempt will be terminated."
+        return (f"Kill signal sent — the in-flight Claude attempt's process tree will be "
+                f"killed within ~{config.CANCEL_POLL_SECONDS:g}s. The run continues; the "
+                "killed attempt does not burn a retry slot.")
     if n == "inject":
         if not cmd.arg.strip():
             return "usage: `!inject <text>`"
-        bus.pushOp({"op": "inject_context", "text": cmd.arg.strip()})
+        bus.pushOp({"op": "inject_context", "text": cmd.arg.strip()},
+                   source_msg_id=source_msg_id)
         return "Context queued for the next attempt (no replan)."
     if n == "set-effort":
         parts = cmd.arg.split()
         if (len(parts) != 2 or not _SKIP_ID_RE.match(parts[0])
                 or parts[1].lower() not in config.EFFORT_FLAG_MAP):
             return "usage: `!set-effort st-00N <level>`"
-        bus.pushOp({"op": "set_effort", "subtask_id": parts[0], "level": parts[1].lower()})
+        bus.pushOp({"op": "set_effort", "subtask_id": parts[0], "level": parts[1].lower()},
+                   source_msg_id=source_msg_id)
         return f"Effort override queued for `{parts[0]}` -> `{parts[1].lower()}`."
     return None
 
 
-def applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str:
-    """Perform the bus mutation and return human markdown text ('' for silent control ops)."""
+def applyCommand(bus: ControlBus, state: TaskState, cmd: Command, *,
+                 source_msg_id: Optional[str] = None) -> str:
+    """Perform the bus mutation and return human markdown text ('' for silent control ops).
+    ``source_msg_id`` (the origin Discord message id) rides into every ``bus.pushOp`` so the
+    SAME message ingested twice is ONE op; two identical user messages are two ops."""
     if state is None:
         return NO_TASK
     n = cmd.name
@@ -325,15 +335,16 @@ def applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str:
     if n == "skip":
         if not _SKIP_ID_RE.match(cmd.arg):
             return "usage: `!skip st-00N` (e.g. `!skip st-003`)"
-        bus.pushOp({"op": "skip", "subtask_id": cmd.arg})
+        bus.pushOp({"op": "skip", "subtask_id": cmd.arg}, source_msg_id=source_msg_id)
         return f" Queued skip of `{cmd.arg}`."
     if n == "add":
         if not cmd.arg:
             return "usage: `!add <title>`"
-        bus.pushOp({"op": "add", "title": cmd.arg, "description": cmd.arg})
+        bus.pushOp({"op": "add", "title": cmd.arg, "description": cmd.arg},
+                   source_msg_id=source_msg_id)
         return f" Queued new subtask: {cmd.arg}"
     if n == "retry":
-        bus.pushOp({"op": "retry"})
+        bus.pushOp({"op": "retry"}, source_msg_id=source_msg_id)
         return "Queued retry of the current subtask."
     if n == "logs":
         return _logsText(state, cmd.arg, 100)
@@ -343,7 +354,7 @@ def applyCommand(bus: ControlBus, state: TaskState, cmd: Command) -> str:
         return _arcText(state)
     if n == "history":
         return _historyText(state)
-    intel = _applyIntelCommand(bus, state, cmd)
+    intel = _applyIntelCommand(bus, state, cmd, source_msg_id)
     if intel is not None:
         return intel
     return _helpText()

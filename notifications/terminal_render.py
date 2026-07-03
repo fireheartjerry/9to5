@@ -11,7 +11,7 @@ EXPORTS:
   terminalControlRows() -> list  -- Raw Discord action-row dicts for a REST-created/edited message
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none
-RUN/TEST: python -m pytest tests/test_terminal_render.py
+RUN/TEST: python -m pytest tests/notifications/test_terminal_render.py
 """
 from __future__ import annotations
 

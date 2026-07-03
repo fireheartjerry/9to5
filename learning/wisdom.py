@@ -15,7 +15,7 @@ EXPORTS:
   growthSummary(*, domain: Optional[str]=None, reflections: Optional[list]=None, runs: Optional[list]=None, limit: int=5) -> str  -- A short learning summary: what the most recent runs taught the system.
 DEPENDS-ON: config, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_wisdom.py
+RUN/TEST: python -m pytest tests/evolution/test_wisdom.py
 """
 from __future__ import annotations
 

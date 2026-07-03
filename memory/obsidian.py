@@ -13,16 +13,15 @@ EXPORTS:
   flushRest(timeout: Optional[float]=None) -> None  -- Wait for queued REST syncs to drain (used on shutdown / before resume reads).
   writeClaudioMd(task_state, subtask: Optional[dict], additional_context: str='', work_dir: Optional[str]=None, executor_playbook: str='') -> Path  -- Write a fresh per-subtask CLAUDE.md to the working directory.
   ObsidianClient
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.core, platform_core.core.best_effort
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_obsidian_atomic_claude_md.py tests/test_obsidian_write.py
+RUN/TEST: python -m pytest tests/notifications/test_obsidian_atomic_claude_md.py tests/notifications/test_obsidian_write.py
 """
 from __future__ import annotations
 
 import atexit
-import os
+import logging
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
@@ -32,6 +31,8 @@ import requests
 import urllib3
 
 import config
+from platform_core.core import fsio
+from platform_core.core.best_effort import best_effort, recordDegradation
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -84,16 +85,17 @@ def _restPool() -> ThreadPoolExecutor:
 
 
 def _restPut(base_url: str, headers: dict, rel_path: str, content: str) -> None:
-    """Best-effort REST sync to Obsidian (runs in the background pool)."""
+    """Best-effort REST sync to Obsidian (runs in the background pool). Disk already
+    has the note; REST is a bonus, so failures are swallowed (but counted). level=DEBUG:
+    a closed vault is an expected daily condition, not an alarm -- the DEGRADATIONS
+    registry still counts it for the run-end summary."""
     _warnIfNonLoopback(base_url)
-    try:
+    with best_effort("obsidian.rest_sync", log=LOG, level=logging.DEBUG):
         r = requests.put(f"{base_url}/vault/{rel_path}", data=content.encode("utf-8"),
                          headers={**headers, "Content-Type": "text/markdown"},
                          verify=False, timeout=10)
         if not (200 <= r.status_code < 300):
             LOG.debug("REST PUT %s -> %s (disk copy already written)", rel_path, r.status_code)
-    except Exception as e:  # noqa: BLE001 -- disk already has it; REST is a bonus
-        LOG.debug("REST PUT %s failed (%s); disk copy already written", rel_path, e)
 
 
 def flushRest(timeout: Optional[float] = None) -> None:
@@ -163,34 +165,16 @@ def writeClaudioMd(task_state, subtask: Optional[dict], additional_context: str 
 
 
 def _atomicWriteText(path: Path, content: str) -> None:
-    """Write text as a COMPLETE-file swap (unique temp + os.replace) so a concurrent reader never
-    sees a half-written file. Parallel non-self-referential subtasks share one ``work_dir/CLAUDE.md``
-    and the executor launches ``claude`` (which auto-reads it) right after writing -- a plain
-    truncate-then-write would let one worker read another's torn CLAUDE.md. Bounded retry mirrors
-    control.py's: on Windows ``os.replace`` raises PermissionError while a reader momentarily holds
-    the destination. FALLS BACK to a direct write if the swap can't complete, so this is never worse
-    than the previous plain write."""
-    tmp = path.parent / f"{path.name}.{os.getpid()}-{threading.get_ident()}-{os.urandom(4).hex()}.tmp"
+    """Write text as a COMPLETE-file swap so a concurrent reader never sees a half-written
+    file. Parallel non-self-referential subtasks share one ``work_dir/CLAUDE.md`` and the
+    executor launches ``claude`` (which auto-reads it) right after writing -- a plain
+    truncate-then-write would let one worker read another's torn CLAUDE.md. The swap itself
+    (unique temp + bounded Windows os.replace backoff) lives in the fsio kernel. FALLS BACK
+    to a direct write if the swap can't complete, so this is never worse than a plain write."""
     try:
-        tmp.write_text(content, encoding="utf-8")
-        delay = 0.02
-        for attempt in range(6):
-            try:
-                os.replace(tmp, path)
-                return
-            except PermissionError:
-                if attempt == 5:
-                    break
-                time.sleep(min(delay, 0.3))
-                delay *= 2
-        path.write_text(content, encoding="utf-8")   # swap kept failing: fall back (no regression)
-        tmp.unlink(missing_ok=True)
-    except Exception:
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
-        path.write_text(content, encoding="utf-8")   # last resort: behave exactly like the old code
+        fsio.atomicWriteText(path, content, retries=6, cap=0.3)
+    except Exception:  # noqa: BLE001 -- swap kept failing: behave exactly like the old code
+        path.write_text(content, encoding="utf-8")
 
 
 class ObsidianClient:
@@ -221,12 +205,10 @@ class ObsidianClient:
             disk = self._writeDisk(rel_path, content)
             result = {"ok": True, "via": "disk", "rel_path": rel_path, "disk_path": str(disk)}
         except Exception as e:  # noqa: BLE001 -- never raise into the run (documented contract)
-            LOG.error("writeNote disk write failed for %s: %s", rel_path, e)
+            recordDegradation("obsidian.disk_write", e, log=LOG, level=logging.ERROR)
             result = {"ok": False, "via": "none", "rel_path": rel_path, "error": str(e)}
-        try:
+        with best_effort("obsidian.rest_pool", log=LOG):   # background sync is a bonus
             _restPool().submit(_restPut, self.base_url, dict(self.headers), rel_path, content)
-        except Exception:  # noqa: BLE001 -- background sync is a bonus, never load-bearing
-            pass
         return result
 
     def _writeNoteSync(self, rel_path: str, content: str) -> dict:
@@ -250,12 +232,10 @@ class ObsidianClient:
     def readNote(self, rel_path: str) -> Optional[str]:
         url = f"{self.base_url}/vault/{rel_path}"
         _warnIfNonLoopback(url)
-        try:
+        with best_effort("obsidian.rest_read", log=LOG, level=logging.DEBUG):
             r = requests.get(url, headers=self.headers, verify=False, timeout=10)
             if 200 <= r.status_code < 300:
                 return r.text
-        except Exception:  # noqa: BLE001
-            pass
         p = self._diskPath(rel_path)
         if p.exists():
             return p.read_text(encoding="utf-8")
@@ -271,8 +251,8 @@ class ObsidianClient:
                 with p.open("a", encoding="utf-8") as fh:
                     fh.write(content)
                 return {"ok": True, "via": "disk-append", "rel_path": rel_path, "disk_path": str(p)}
-            except Exception as e:  # noqa: BLE001
-                LOG.warning("appendNote disk-append failed (%s); read+rewrite fallback", e)
+            except Exception as e:  # noqa: BLE001 -- fallback still needs to run; count it
+                recordDegradation("obsidian.disk_append", e, log=LOG)
                 existing = self.readNote(rel_path) or ""
                 return self.writeNote(rel_path, existing + content)
 

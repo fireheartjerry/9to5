@@ -11,24 +11,21 @@ EXPORTS:
   read_mirror() -> dict
   write_mirror(body: str, page_count: int, lanes: list) -> None
   clear() -> None
-DEPENDS-ON: config
-SIDE-EFFECTS: writes state/terminal_nav.json + state/terminal_mirror.json
-RUN/TEST: python -m pytest tests/test_terminal_ipc.py
+DEPENDS-ON: config, platform_core.core
+SIDE-EFFECTS: writes state/ipc/terminal_nav.json + state/ipc/terminal_mirror.json
+RUN/TEST: python -m pytest tests/control/test_terminal_ipc.py
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import config
+from platform_core.core import fsio
 
-# NOTE: these live in state/ (STATE_DIR.parent), NOT the task store STATE_DIR
-# (state/tasks/). loadLatest()/iterStored() glob STATE_DIR/*.json and treat every
-# hit as a TaskState; a loose terminal_mirror.json in there is picked up as the
-# "latest task" and blows up on state.task_id (KeyError). Keep IPC out of the store.
-_IPC_DIR: Path = config.STATE_DIR.parent
-NAV_PATH: Path = _IPC_DIR / "terminal_nav.json"
-MIRROR_PATH: Path = _IPC_DIR / "terminal_mirror.json"
+# IPC files live under state/ipc/ -- OUTSIDE the task store (state/tasks/), so task-store
+# scans (task_io.iterStored) can never misparse them as runs.
+NAV_PATH: Path = config.IPC_DIR / "terminal_nav.json"
+MIRROR_PATH: Path = config.IPC_DIR / "terminal_mirror.json"
 
 _NAV_DEFAULT = {"page_idx": 0, "mode": "summary", "frozen": False}
 _MIRROR_DEFAULT = {"body": "", "page_count": 0, "lanes": []}
@@ -36,7 +33,7 @@ _MIRROR_DEFAULT = {"body": "", "page_count": 0, "lanes": []}
 
 def _read(path: Path, default: dict) -> dict:
     try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        data = fsio.loadJson(path, default=None)
         if isinstance(data, dict):
             return {**default, **data}
     except Exception:  # noqa: BLE001 -- missing/garbage -> defaults
@@ -46,11 +43,7 @@ def _read(path: Path, default: dict) -> dict:
 
 def _write(path: Path, payload: dict) -> None:
     try:
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(p.suffix + ".tmp")
-        tmp.write_text(json.dumps(payload), encoding="utf-8")
-        tmp.replace(p)
+        fsio.atomicWriteJson(path, payload, indent=None)
     except Exception:  # noqa: BLE001 -- bridge writes never break a caller
         pass
 

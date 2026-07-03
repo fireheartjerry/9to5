@@ -80,29 +80,41 @@ def _validatePythonOneliner(code: str, cmd: str) -> bool:
 
 # ==== PUBLIC API ====
 
+def _targetsOnly(verify: dict) -> Optional[dict]:
+    """A cmd-less verify may still declare target files (R10 diff grounding): keep JUST the
+    targets so the receipt pipeline can fail an unchanged declared target. None otherwise."""
+    targets = [str(t) for t in (verify.get("targets") or []) if t]
+    return {"targets": targets} if targets else None
+
+
 def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
     """Drop a structurally-unreliable brain-authored verify so the subtask falls back to
     'executor exited 0' instead of failing forever on a bad check.
 
-    Catches two failure modes: a malformed ``python -c`` one-liner (SyntaxError, e.g. a
-    compound statement after ';'), AND a ``python -c`` that imports a non-stdlib / project
-    module -- the 'guessed internal symbol' pattern (``from fibonacci import fib``) that
-    fails even when the code under test is perfectly correct.
+    Catches: a malformed ``python -c`` one-liner (SyntaxError), a ``python -c`` that
+    imports a non-stdlib / project module (the 'guessed internal symbol' pattern), AND
+    (R10) a verify with NO expect -- the plan sanitizer rejects it here so the runner
+    never guesses one (expect is evaluated strictly downstream).
     """
     if not isinstance(verify, dict):
         return None
     cmd_raw = verify.get("cmd")
     cmd = cmd_raw.strip() if isinstance(cmd_raw, str) else ""
     if not cmd:
-        return None
+        return _targetsOnly(verify)
     if _checkAngleBrackets(cmd):
-        return None
+        return _targetsOnly(verify)
+    expect = verify.get("expect")
+    if not (isinstance(expect, str) and expect.strip()):
+        LOG.info("sanitizeVerify: dropping verify with missing expect (the runner never "
+                 "guesses one): %s", cmd)
+        return _targetsOnly(verify)
     m = re.match(r"""(?:py|python|python3)\s+-c\s+(['"])(.*)\1\s*$""", cmd, re.DOTALL)
     if m and not _validatePythonOneliner(m.group(2), cmd):
-        return None
+        return _targetsOnly(verify)
     # Defense-in-depth: non-python-c commands with shell-chaining metacharacters get dropped.
     # A MATCHED python -c is exempt: its body is ast-validated and the closing quote ends it.
     if m is None and re.search(r"[;&|`\n]|\$\(", cmd):
         LOG.info("sanitizeVerify: dropping verify with shell-chaining metacharacters: %s", cmd)
-        return None
+        return _targetsOnly(verify)
     return verify

@@ -11,7 +11,7 @@ EXPORTS:
   post_reflection(state: Any, text: str, comparative: Optional[dict]=None) -> None  -- Post the reflection to Discord as ``CODENAME — text`` with a comparative footer
 DEPENDS-ON: config, notifications.discord_bot
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_reflection_post.py
+RUN/TEST: python -m pytest tests/notifications/test_reflection_post.py
 """
 from __future__ import annotations
 

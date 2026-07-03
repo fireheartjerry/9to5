@@ -24,16 +24,36 @@ EXPORTS:
   buildPlaybook(profile: str) -> str  -- Richer role playbook rendered as a CLAUDE.md section (auto-read by Claude Code).
 DEPENDS-ON: config, learning.evolution
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_playbook.py
+RUN/TEST: python -m pytest tests/evolution/test_playbook.py
 """
 from __future__ import annotations
 
+import importlib.util
 import re
+from pathlib import Path
 from typing import Optional
 
 import config
 
 LOG = config.getLogger("playbook")
+
+
+def _loadFullSuite() -> str:
+    """Single-source the canonical full-suite command from tools/repo_map_render.FULL_SUITE
+    (tools/ is not a package, so load by path -- no sys.path mutation in a prod module).
+    Must be pytest: `unittest discover` bypasses the pytest-only conftest sandbox and fires
+    REAL Discord/Ollama with the live .env creds. Fallback keeps the briefing unbreakable."""
+    try:
+        path = Path(__file__).resolve().parent.parent / "tools" / "repo_map_render.py"
+        spec = importlib.util.spec_from_file_location("_repo_map_render_cmds", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return str(mod.FULL_SUITE)
+    except Exception:  # noqa: BLE001 -- the executor briefing must never break
+        return "python -m pytest -n auto -q"
+
+
+FULL_SUITE = _loadFullSuite()
 
 # ---------------------------------------------------------------------------
 # Common core -- the non-negotiables every executor role carries (no-forget floor)
@@ -137,21 +157,24 @@ PROFILES: dict[str, dict] = {
         "charter": (
             "Write/extend tests that check OBSERVABLE BEHAVIOR (inputs->outputs), never implementation details. "
             "Assertions must be robust (no guessed internal symbols). Put every test as a FLAT file "
-            "tests/test_<name>.py -- NEVER create a tests/<package>/ subdirectory. RUN the FULL suite "
-            "(python -m unittest discover -s tests) and ensure it is green before finishing."
+            f"tests/test_<name>.py -- NEVER create a tests/<package>/ subdirectory. RUN the FULL suite "
+            f"({FULL_SUITE}) via pytest ONLY -- other runners bypass the test sandbox -- and ensure it is "
+            "green before finishing."
         ),
         "playbook": (
             "### Testing discipline\n"
             "- Test behavior, not internals: never assert on a private function/constant name you guessed.\n"
             "- FILE PLACEMENT (critical): every test is a FLAT file `tests/test_<name>.py`. NEVER create a\n"
             "  `tests/<name>/` subdirectory -- if its name matches a real top-level package (e.g.\n"
-            "  `tests/notifications/`, `tests/memory/`) it SHADOWS that package during `unittest discover`\n"
+            "  `tests/notifications/`, `tests/memory/`) it SHADOWS that package during collection\n"
             "  and breaks EVERY import in the whole suite. Mirror the source name in the FILENAME instead\n"
             "  (e.g. tests for `memory/foo.py` go in `tests/test_memory_foo.py`).\n"
             "- Cover the happy path AND the edge/error cases the subtask implies.\n"
             "- Make assertions deterministic; avoid timing/order flakiness.\n"
-            "- Run the WHOLE suite (`python -m unittest discover -s tests`) and confirm it is green --\n"
-            "  not just your new file -- so a new test can't break the rest of the suite."
+            f"- Run the WHOLE suite (`{FULL_SUITE}`) and confirm it is green -- not just your new file --\n"
+            "  so a new test can't break the rest of the suite. pytest ONLY: the conftest sandbox that\n"
+            "  blanks live Discord/Ollama credentials exists only under pytest; never run tests through\n"
+            "  any other runner and never add `__main__` test-runner blocks to test files."
         ),
     },
     "docs": {

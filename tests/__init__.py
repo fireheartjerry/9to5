@@ -1,7 +1,7 @@
 # 9TO5 test package.
 # Disable the SIE auto-maintenance dispatch globally for tests: integration tests call
 # runFull many times and the implicit background learning pass would add GIL contention.
-# learning/sie.py is still exercised directly by tests/test_sie.py.
+# learning/sie.py is still exercised directly by tests/evolution/test_sie.py.
 import config as _config
 _config.SIE_AUTO_MAINTENANCE = False
 # Don't exercise the heavy per-authoring SIE context injection in unit tests (it does

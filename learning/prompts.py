@@ -20,7 +20,7 @@ EXPORTS:
   challengers(role: str, db_path: Optional[Path]=None) -> list[dict]
 DEPENDS-ON: config, memory.experience, platform_core.core.provenance
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_prompts.py
+RUN/TEST: python -m pytest tests/evolution/test_prompts.py
 """
 from __future__ import annotations
 

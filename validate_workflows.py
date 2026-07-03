@@ -5,7 +5,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: platform_core.ops.validate_workflows
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_validate_workflows.py
+RUN/TEST: python -m pytest tests/workflows/test_validate_workflows.py
 """
 from __future__ import annotations
 

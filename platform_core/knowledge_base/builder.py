@@ -4,16 +4,17 @@
 EXPORTS:
   buildUnifiedDoc(prior_doc: str, fetched: dict, local: dict, psk: dict, *, refreshed_at: str, sources: list[str], recs: Optional[dict]=None) -> str  -- Fold prior self-analysis + live docs + local capability surface +
   diffHeadings(prior_doc: str, new_doc: str) -> dict  -- Naive 'what changed' delta on top-level headings (for the refresh log).
-DEPENDS-ON: config, platform_core.knowledge_base.scraper
+DEPENDS-ON: platform_core.app_config, platform_core.knowledge_base.scraper
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_builder_sim.py
+RUN/TEST: python -m pytest tests/execution/test_builder_sim.py
 """
 from __future__ import annotations
 
 import re
 from typing import Optional
 
-import config
+# Direction rule (R12): platform_core modules read the in-platform registry facade.
+from platform_core import app_config as config
 from platform_core.knowledge_base.scraper import _SCRAPE_PROVENANCE_HEADER
 
 LOG = config.getLogger("knowledge.builder")

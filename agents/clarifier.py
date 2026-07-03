@@ -17,7 +17,7 @@ EXPORTS:
   answerClarifications(chat: Callable, goal: str, subtask: dict, claude_output: str, questions: list[str]) -> Optional[str]  -- Ask the Ollama brain (via the orchestrator's ``_ollamaChat`` callable) to answer the
 DEPENDS-ON: config, llm_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_clarifier.py
+RUN/TEST: python -m pytest tests/orchestration/test_clarifier.py
 """
 from __future__ import annotations
 

@@ -11,7 +11,7 @@ EXPORTS:
   diverged(pinned: Epoch) -> bool  -- True iff the on-disk self.code differs from what was pinned at snapshot time.
 DEPENDS-ON: config, platform_core.core.identity
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_epoch.py
+RUN/TEST: python -m pytest tests/evolution/test_epoch.py
 """
 from __future__ import annotations
 

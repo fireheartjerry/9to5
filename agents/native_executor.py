@@ -8,7 +8,7 @@ installed the call degrades cleanly (ok=False, is_error=True) so the run continu
 rather than crashing -- exactly like a failed terminal subtask.
 
 Deterministic + offline-testable: pywinauto is isolated behind ``_run_native_actions``
-(mockable); all tests in tests/test_phase_3_architecture.py mock that function so CI
+(mockable); all tests in tests/slow/test_phase_3_architecture.py mock that function so CI
 never requires a real Windows display session or pywinauto install.
 
 See docs/phase_3_architecture.md + orchestrator._selectExecutor for the wiring spec.
@@ -21,7 +21,7 @@ EXPORTS:
   selectForSurface(terminal_fn, spec: dict)  -- Routing helper: return runNative when surface=native and NATIVE_LAYER_ENABLED,
 DEPENDS-ON: agents.executor, config, notifications.lane_feed
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_native_executor_cleanup.py
+RUN/TEST: python -m pytest tests/orchestration/test_native_executor_cleanup.py
 """
 from __future__ import annotations
 

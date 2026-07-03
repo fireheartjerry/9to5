@@ -17,7 +17,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: platform_core.knowledge_base.builder, platform_core.knowledge_base.compress, platform_core.knowledge_base.scraper
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_knowledge.py
+RUN/TEST: python -m pytest tests/evolution/test_knowledge.py
 """
 from __future__ import annotations
 

@@ -11,7 +11,7 @@ EXPORTS:
   compute_health(state: Any) -> int  -- Composite 0-100 health score
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_health_aura.py
+RUN/TEST: python -m pytest tests/notifications/test_health_aura.py
 """
 from __future__ import annotations
 

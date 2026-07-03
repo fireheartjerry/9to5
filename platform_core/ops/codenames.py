@@ -9,7 +9,7 @@ EXPORTS:
   generate() -> str  -- Return a random ``ADJECTIVE_NOUN`` codename.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_codenames.py
+RUN/TEST: python -m pytest tests/platform/test_codenames.py
 """
 from __future__ import annotations
 

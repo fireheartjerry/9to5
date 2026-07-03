@@ -7,15 +7,18 @@ EXPORTS:
   cmd_check(args: list[str]) -> int  -- Fail-fast gate chain: ruff -> typecheck(changed) -> affected tests -> repo-map drift.
   cmd_test(args: list[str]) -> int
   cmd_fast(args: list[str]) -> int
+  count_swallow_sites() -> dict[str, int]  -- Per-file count of bare 'except Exception: pass/continue' swallow sites.
+  cmd_swallow_ratchet(args: list[str]) -> int  -- Ratchet gate: bare swallow count may only go DOWN vs the recorded baseline.
   cmd_ci_local(args: list[str]) -> int  -- Run the local CI gates in cheapest useful order.
 DEPENDS-ON: (stdlib only)
-SIDE-EFFECTS: unannotated
+SIDE-EFFECTS: --update rewrites tools/swallow_baseline.json
 RUN/TEST: (no mapped test)
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -146,11 +149,120 @@ def cmd_test(args: list[str]) -> int:
 
 
 def cmd_fast(args: list[str]) -> int:
+    rc = cmd_swallow_ratchet([])   # cheap static gate first: swallow count only goes down
+    if rc != 0:
+        return rc
     return _run([PY, "-m", "pytest", *_xdist(["-m", "not slow", "-q", *args])]).returncode
+
+
+# Test files must never carry a unittest runner block: `python tests/test_x.py` (and
+# `unittest discover`) bypass the pytest-only conftest sandbox and can fire REAL
+# Discord/Ollama side effects with the live creds in .env. pytest is the only runner.
+UNITTEST_MAIN_TOKEN = "unittest.main("
+
+
+def _bare_runner_offenders() -> list[str]:
+    """Test files containing a forbidden bare-runner block (see UNITTEST_MAIN_TOKEN).
+    Private: kept out of the AI-nav index so no generated artifact advertises the token."""
+    out: list[str] = []
+    for p in sorted((REPO_ROOT / "tests").rglob("*.py")):
+        if "__pycache__" in p.parts:
+            continue
+        if UNITTEST_MAIN_TOKEN in p.read_text(encoding="utf-8", errors="ignore"):
+            out.append(str(p.relative_to(REPO_ROOT)).replace("\\", "/"))
+    return out
+
+
+def _no_unittest_main_gate() -> int:
+    offenders = _bare_runner_offenders()
+    if offenders:
+        print(f"[dev] no-unittest-main: FAIL -- {len(offenders)} test file(s) carry a "
+              f"unittest.main() runner block (pytest is the only allowed runner):", file=sys.stderr)
+        for f in offenders[:10]:
+            print(f"  - {f}", file=sys.stderr)
+        return 1
+    print("[dev] no-unittest-main: ok")
+    return 0
+
+
+# ==== SWALLOW RATCHET ====
+# A bare swallow is `except Exception:` (with/without `as e` / trailing comment) whose body
+# is ONLY `pass`/`continue`. New code must route through platform_core.core.best_effort
+# instead; this ratchet lets the count only go DOWN against the recorded baseline.
+SWALLOW_BASELINE_FILE = REPO_ROOT / "tools" / "swallow_baseline.json"
+_SWALLOW_RE = re.compile(
+    r"^[ \t]*except Exception[^\n]*:[ \t]*(?:#[^\n]*)?\n"
+    r"[ \t]*(?:pass|continue)[ \t]*(?:#[^\n]*)?$", re.MULTILINE)
+_SWALLOW_SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", ".mypy_cache",
+                      ".pytest_cache", "node_modules", "logs"}
+
+
+def count_swallow_sites() -> dict[str, int]:
+    """Per-file count of bare 'except Exception: pass/continue' swallow sites."""
+    out: dict[str, int] = {}
+    for p in sorted(REPO_ROOT.rglob("*.py")):
+        if _SWALLOW_SKIP_DIRS.intersection(p.relative_to(REPO_ROOT).parts):
+            continue
+        try:
+            n = len(_SWALLOW_RE.findall(p.read_text(encoding="utf-8", errors="ignore")))
+        except OSError:
+            continue
+        if n:
+            out[str(p.relative_to(REPO_ROOT)).replace("\\", "/")] = n
+    return out
+
+
+def cmd_swallow_ratchet(args: list[str]) -> int:
+    """Ratchet gate: bare swallow count may only go DOWN vs the recorded baseline.
+    `--update` records the current (lower) count; refuses to RAISE the baseline."""
+    sites = count_swallow_sites()
+    count = sum(sites.values())
+    try:
+        baseline = int(json.loads(SWALLOW_BASELINE_FILE.read_text(encoding="utf-8"))["count"])
+    except (OSError, ValueError, KeyError, TypeError):
+        baseline = None
+    if "--update" in args:
+        if baseline is not None and count > baseline:
+            print(f"[dev] swallow-ratchet: REFUSING to raise baseline {baseline} -> {count}; "
+                  "convert the new bare swallows to best_effort() instead", file=sys.stderr)
+            return 1
+        SWALLOW_BASELINE_FILE.write_text(json.dumps(
+            {"count": count,
+             "note": "bare 'except Exception: pass/continue' sites; may only go down "
+                     "(see platform_core/core/best_effort.py)"}, indent=1) + "\n", encoding="utf-8")
+        print(f"[dev] swallow-ratchet: baseline updated {baseline} -> {count}")
+        return 0
+    if baseline is None:
+        print(f"[dev] swallow-ratchet: no baseline at {SWALLOW_BASELINE_FILE}; "
+              f"current count = {count}. Record it with: python tools/dev.py swallow-ratchet --update",
+              file=sys.stderr)
+        return 1
+    if count > baseline:
+        print(f"[dev] swallow-ratchet: FAIL -- {count} bare swallow site(s) > baseline {baseline}. "
+              "Route new swallows through platform_core.core.best_effort.best_effort().",
+              file=sys.stderr)
+        for f, n in sorted(sites.items(), key=lambda kv: -kv[1])[:10]:
+            print(f"  - {f}: {n}", file=sys.stderr)
+        return 1
+    hint = "" if count == baseline else \
+        " (improved; lock it in: python tools/dev.py swallow-ratchet --update)"
+    print(f"[dev] swallow-ratchet: ok ({count} <= baseline {baseline}){hint}")
+    return 0
 
 
 def cmd_ci_local(args: list[str]) -> int:  # noqa: ARG001
     """Run the local CI gates in cheapest useful order."""
+    # Step zero: corrupt/uncompilable test files must fail in seconds, never at collection.
+    print("[dev] compile-tests")
+    rc = _run([PY, "-m", "compileall", "-q", str(REPO_ROOT / "tests")]).returncode
+    if rc != 0:
+        return rc
+    rc = _no_unittest_main_gate()
+    if rc != 0:
+        return rc
+    rc = cmd_swallow_ratchet([])
+    if rc != 0:
+        return rc
     gates = [
         ("repo-map", [PY, str(REPO_ROOT / "tools" / "repo_map.py"), "--check"]),
         ("workflows", [PY, str(REPO_ROOT / "validate_workflows.py")]),

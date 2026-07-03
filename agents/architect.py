@@ -14,7 +14,7 @@ EXPORTS:
   authorArchitectPrompt(goal_elaborated: str, chat=None, discovery_report=None, work_profile=None) -> str  -- Ollama authors the prompt that will be sent to Claude Code CLI.
 DEPENDS-ON: config, knowledge, llm_io, platform_core.orchestration
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_phase_3_architecture.py
+RUN/TEST: python -m pytest tests/slow/test_phase_3_architecture.py
 """
 from __future__ import annotations
 
@@ -23,15 +23,6 @@ import knowledge
 import llm_io
 
 LOG = config.getLogger("architect")
-_OLLAMA: "ollama.Client | None" = None  # noqa: F821  (string annotation; ollama imported lazily)
-
-
-def _getOllama() -> "ollama.Client":  # noqa: F821
-    global _OLLAMA
-    if _OLLAMA is None:
-        import ollama  # deferred: ~0.3s SDK import paid only when a real brain call happens
-        _OLLAMA = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
-    return _OLLAMA
 
 ARCHITECT_SYSTEM_PROMPT = (
     "You are the Architect. You produce a single, thorough architecture and design "
@@ -51,7 +42,7 @@ _ARCHITECT_PROMPT_SYSTEM = (
 
 
 def _discoveryBlock(discovery_report) -> str:
-    """Render the DiscoveryReport context block injected into the architect prompt ("" if absent)."""
+    """Serialize an optional DiscoveryReport into the prompt block ('' when absent/broken)."""
     if discovery_report is None:
         return ""
     import json as _json
@@ -77,7 +68,7 @@ def _discoveryBlock(discovery_report) -> str:
 
 
 def _profileBlock(work_profile) -> str:
-    """Render the work-profile guidance block for the architect ("" if absent/on error)."""
+    """The work-profile guidance block ('' when absent/broken)."""
     if work_profile is None:
         return ""
     try:
@@ -104,16 +95,14 @@ def authorArchitectPrompt(goal_elaborated: str, chat=None, discovery_report=None
                           work_profile=None) -> str:
     """Ollama authors the prompt that will be sent to Claude Code CLI.
 
-    ``chat`` is an optional ``(system, user, *, want_json=False) -> resp`` callable
-    (the orchestrator's seamed ``_ollamaChat``); when given it is used instead of this
-    module's own client, so a dry-run / test can drive the architect phase offline.
+    ``chat`` is an optional ``(system, user, *, act=..., want_json=False) -> resp`` callable
+    (the orchestrator's seamed ``_ollamaChat``); when given it is used instead of the
+    blessed ``llm_io.chat``, so a dry-run / test can drive the architect phase offline.
     ``discovery_report`` is an optional DiscoveryReport injected when discovery ran.
     """
     LOG.info("Authoring architecture prompt via %s", config.OLLAMA_MODEL)
-
     discovery_block = _discoveryBlock(discovery_report)
     profile_block = _profileBlock(work_profile)
-
     user = (
         f"Specification:\n{goal_elaborated}"
         + discovery_block
@@ -121,15 +110,11 @@ def authorArchitectPrompt(goal_elaborated: str, chat=None, discovery_report=None
         + "\n\nWrite the architecture-design prompt."
     )
     if chat is not None:
-        resp = chat(_ARCHITECT_PROMPT_SYSTEM, user)   # _ollamaChat injects capabilities itself
+        # _ollamaChat injects capabilities itself; act forwarded only if the callable accepts it
+        resp = llm_io.callChat(chat, _ARCHITECT_PROMPT_SYSTEM, user, act="architect")
     else:
-        resp = _getOllama().chat(
-            model=config.OLLAMA_MODEL,
-            messages=[{"role": "system", "content": knowledge.injectCapabilities(_ARCHITECT_PROMPT_SYSTEM)},
-                      {"role": "user", "content": user}],
-            options={"num_ctx": config.OLLAMA_NUM_CTX},
-            keep_alive=config.OLLAMA_KEEP_ALIVE,
-        )
+        resp = llm_io.chat(knowledge.injectCapabilities(_ARCHITECT_PROMPT_SYSTEM), user,
+                           act="architect")
     # Safe extraction: handles dict AND the ollama-python PYDANTIC ChatResponse AND malformed
     # shapes (None / non-dict message / non-string content). The old isinstance(dict) gate made
     # every real (pydantic) reply look empty -> this always fell to the deterministic fallback.

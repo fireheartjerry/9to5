@@ -11,33 +11,45 @@ EXPORTS:
   handleRunAbort(orch, state, e: BaseException, web_url, dashboard) -> dict  -- Handle AbortRun/KeyboardInterrupt: persist aborted status and notify.
   handleRunCrash(orch, state, e: Exception, web_url, dashboard) -> dict  -- Handle unexpected crash: persist 'crashed' (non-terminal) status so recovery can resume.
   phase4PrCapture(orch, state, pr: dict) -> dict  -- Capture CI + review feedback for a created PR into the experience ledger.
+  finalizeSurfaces(orch, state, status: str, done: int, total: int, elapsed: str) -> None  -- Run-end surfaces: arc final beat, perfect-run moment, self-reflection post.
+  postGrowth(orch) -> None  -- Spec B: post a short '!growth' learning summary to Discord at teardown (best-effort).
   maybeInstinct(orch, state, bus) -> None  -- Throttled trigger for the periodic instinct call
   runInstinct(orch, state) -> None
-DEPENDS-ON: config, memory.user_prefs, notifications.discord_bot, notifications.instinct, platform_core.orchestration.pr_feedback, platform_core.orchestration.time_utils
+DEPENDS-ON: config, learning.wisdom, memory.experience, memory.user_prefs, notifications.discord_bot, notifications.instinct, notifications.reflection_post, notifications.run_arc, platform_core.core.best_effort, platform_core.orchestration.pr_feedback, platform_core.orchestration.time_utils
 SIDE-EFFECTS: posts Discord embeds; spawns the instinct thread; mutates run state status/notifications
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/control/test_run_phase_outcome.py
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 
 import config
 from notifications import discord_bot as discord
+from platform_core.core.best_effort import best_effort
 from platform_core.orchestration.time_utils import _elapsedSince, _fmtElapsed
 
 LOG = config.getLogger("orchestrator")
 
 
 def handleRunAbort(orch, state, e: BaseException, web_url, dashboard) -> dict:
-    """Handle AbortRun/KeyboardInterrupt: persist aborted status and notify."""
+    """Handle AbortRun/KeyboardInterrupt: persist aborted status and notify.
+
+    Persistence and notification are wrapped SEPARATELY (mirroring handleRunCrash): a
+    failing state save must not turn an operator ABORT into a 'crash' that recovery would
+    auto-resume -- the bus abort flag + run_with_recovery's abort check are the backstop.
+    """
     reason = "ctrl-c" if isinstance(e, KeyboardInterrupt) else str(e)
     elapsed = _elapsedSince(state.meta["started_at"])
-    state.setStatus("aborted", blocked_reason=reason)
-    orch.writeIndex(state)
-    discord.sendEmbed(discord.abortedEmbed(reason, _fmtElapsed(elapsed)))
-    state.addNotification("aborted", reason)
-    dashboard.update(state, "aborted", f"aborted: {reason}")
+    with best_effort("state.abort_persist", log=LOG, level=logging.ERROR):
+        # a failed save must not turn the abort into a crash; the bus flag stops recovery
+        state.setStatus("aborted", blocked_reason=reason)
+        orch.writeIndex(state)
+        state.addNotification("aborted", reason)
+    with best_effort("discord.abort_notify", log=LOG):
+        discord.sendEmbed(discord.abortedEmbed(reason, _fmtElapsed(elapsed)))
+        dashboard.update(state, "aborted", f"aborted: {reason}")
     LOG.warning("Run aborted: %s", reason)
     return {"task_id": state.task_id, "status": "aborted", "reason": reason,
             "elapsed_seconds": round(elapsed, 1), "web_dashboard": web_url,
@@ -49,21 +61,17 @@ def handleRunCrash(orch, state, e: Exception, web_url, dashboard) -> dict:
     """Handle unexpected crash: persist 'crashed' (non-terminal) status so recovery can resume."""
     elapsed = _elapsedSince(state.meta["started_at"])
     LOG.error("Run crashed: %s", e, exc_info=True)
-    try:
+    with best_effort("state.crash_persist", log=LOG):
         # Persist 'crashed' (NOT 'blocked'): 'blocked' is terminal so run_with_recovery would
         # return immediately -- defeating the crash auto-recovery. 'crashed' is non-terminal,
         # so the supervisor resumes the task (committed progress as source of truth) until it
         # finishes, the deadline passes, or the no-progress restart budget is exhausted.
         state.setStatus("crashed", blocked_reason=str(e))
         orch.writeIndex(state)
-    except Exception:  # noqa: BLE001
-        pass
-    try:
+    with best_effort("discord.crash_notify", log=LOG):
         discord.sendEmbed(discord.noticeEmbed(
             f"9to5 run crashed: {e} — supervisor will auto-recover if time remains"))
         dashboard.update(state, "crashed", f"crashed: {e}")
-    except Exception:  # noqa: BLE001
-        pass
     return {"task_id": state.task_id, "status": "crashed", "reason": str(e),
             "elapsed_seconds": round(elapsed, 1), "web_dashboard": web_url,
             "subtasks": [{"subtask_id": s["subtask_id"], "status": s["status"]}
@@ -86,8 +94,9 @@ def phase4PrCapture(orch, state, pr: dict) -> dict:
     try:
         from platform_core.orchestration.pr_feedback import capturePRFeedback
         capture_result = capturePRFeedback(pr_url, state.task_id, subtask_id=last_done)
-    except Exception as exc:  # noqa: BLE001
-        LOG.warning("_phase4PrCapture: capturePRFeedback import/call failed (%s); skipping", exc)
+    except Exception as exc:  # noqa: BLE001 -- caller needs the reason; count it, keep fallback
+        from platform_core.core.best_effort import recordDegradation
+        recordDegradation("pr_feedback.capture", exc, log=LOG)
         return {"ok": False, "skipped": True, "reason": str(exc)[:200]}
     if not capture_result.get("promote_safe", True):
         LOG.warning(
@@ -100,17 +109,46 @@ def phase4PrCapture(orch, state, pr: dict) -> dict:
     return capture_result
 
 
+def finalizeSurfaces(orch, state, status: str, done: int, total: int, elapsed: str) -> None:
+    """Run-end surfaces: arc final beat, perfect-run moment, self-reflection post.
+    Best-effort; never breaks teardown. (Moved from run_phase_mixin for size.)"""
+    with best_effort("surfaces.finalize", log=LOG):   # never break teardown
+        from notifications import reflection_post, run_arc
+        from memory import experience
+        run_arc.append_beat(state, run_arc.beat_complete(status, done, total, elapsed))
+        replans = sum(1 for n in state.data.get("notifications", [])
+                      if isinstance(n, dict) and n.get("kind") == "replan")
+        advs = len(state.data.get("adversary_reviews", []))
+        if replans == 0 and advs == 0:
+            orch._emitMoment("system",
+                             "⚡ MOMENT — A perfect run. Zero replans, zero adversary triggers.")
+        comparative = experience.compare_run(state.task_id)
+        text = reflection_post.write_reflection(state, chat=orch._ollamaChat,
+                                                comparative=comparative, obs=orch.obs)
+        if text:
+            reflection_post.post_reflection(state, text, comparative=comparative)
+        orch._narrate(f"{(state.meta.get('codename') or 'Run')} closed — {status}, "
+                      f"{done}/{total} in {elapsed}.", force=True)
+
+
+def postGrowth(orch) -> None:  # noqa: ARG001 -- orch kept for symmetry with siblings
+    """Spec B: post a short '!growth' learning summary to Discord at teardown (best-effort)."""
+    with best_effort("discord.growth_post", log=LOG):   # never blocks teardown
+        from learning import wisdom
+        line = wisdom.growthSummary()
+        if line:
+            discord.sendEmbed(discord.noticeEmbed(line, title="9TO5 growth"))
+
+
 def maybeInstinct(orch, state, bus) -> None:
     """Throttled trigger for the periodic instinct call. Fires OFF-THREAD so it never blocks
     the run loop; at most once per run (guarded by state.meta['instinct_flags'])."""
     if not config.INSTINCT_ENABLED or state.meta.get("instinct_flags"):
         return
-    try:
+    with best_effort("user_prefs.read", log=LOG):
         from memory import user_prefs
         if not user_prefs.get("instinct_enabled"):
             return
-    except Exception:  # noqa: BLE001
-        pass
     now = time.monotonic()
     if (now - getattr(orch, "_last_instinct_ts", 0.0)) < config.INSTINCT_INTERVAL_SECONDS:
         return
@@ -123,13 +161,12 @@ def maybeInstinct(orch, state, bus) -> None:
 
 def runInstinct(orch, state) -> None:
     try:
-        from notifications import instinct as instinct_mod
-        text = instinct_mod.NightclawInstinct().maybe_fire(state, chat=orch._instinctChat)
-        if text:
-            with orch._state_lock:
-                state.addInstinctFlag(text)
-            discord.sendEmbed(discord.noticeEmbed(text, title="Nightclaw instinct"))
-    except Exception:  # noqa: BLE001 -- instinct is best-effort, never affects the run
-        LOG.debug("instinct run failed (ignored)", exc_info=True)
+        with best_effort("instinct.fire", log=LOG):   # never affects the run
+            from notifications import instinct as instinct_mod
+            text = instinct_mod.NightclawInstinct().maybe_fire(state, chat=orch._instinctChat)
+            if text:
+                with orch._state_lock:
+                    state.addInstinctFlag(text)
+                discord.sendEmbed(discord.noticeEmbed(text, title="Nightclaw instinct"))
     finally:
         orch._instinct_inflight = False

@@ -15,7 +15,7 @@ EXPORTS:
   selfCodeFiles() -> list[str]  -- Every *.py under the project tree that the RUNNING orchestrator could import --
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_identity.py
+RUN/TEST: python -m pytest tests/control/test_identity.py
 """
 from __future__ import annotations
 

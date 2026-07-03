@@ -33,9 +33,9 @@ requirements.txt
 CLAUDE.md
 README.md
 
-agents/         # executor, architect, adversary, replanner, verifier, drivers
-learning/       # SIE subsystem (32 modules) — traces, retrieval, policy, finetune, rollout
-memory/         # obsidian + experience DB
+agents/         # executor, architect, adversary, replanner, verifier + verification receipts, drivers
+learning/       # SIE subsystem (~31 modules) — lessons, policy, curriculum, finetune, promotion, evals
+memory/         # obsidian + experience DB + retrieval
 state/
 notifications/  # Discord/web dashboards, command bot, cogs
 platform_core/  # internal platform plumbing: core, runtime, orchestration, ops, config internals
@@ -53,17 +53,20 @@ tests/
 | Execution | `agents/executor.py` | Claude Code subprocess execution |
 | Architecture drafting | `agents/architect.py` | Generates architecture/design notes |
 | Adversarial review | `agents/adversary.py` | Critique/review verdicts |
-| Verification | `agents/verifier.py` | Runs verify commands and decides pass/fail |
-| Run control | `platform_core/runtime/control.py` | ControlBus, pause/resume/abort/approval/plan ops |
-| Task state | `state/task.py`, `state/tasks/` | Task JSON structure and persistence |
+| Verification | `agents/verifier.py`, `agents/verification.py`, `agents/verification_diff.py` | Runs verify commands; typed Receipt pipeline decides pass/fail |
+| Run control | `platform_core/runtime/control.py` (facade), `platform_core/runtime/control_store.py` (SQLite `state/control.db`) | ControlBus, pause/resume/abort/approval/plan ops |
+| Liveness / recovery | `platform_core/runtime/heartbeat.py`, `platform_core/runtime/resilience.py` | Heartbeat files, crash recovery (abort-aware) |
+| Task state | `state/task.py`, `state/tasks/` | Task JSON structure and persistence (single-writer; `task_io.reapDeadRun` is the only out-of-process write) |
 | Memory | `memory/obsidian.py` | Obsidian REST API + disk fallback |
 | Discord dashboard | `notifications/dashboard.py`, `notifications/discord_bot.py` | Live embed and milestone embeds |
 | Web dashboard | `notifications/webdash.py`, `webdash_page.py`, `webdash_styles.py`, `webdash_markup.py`, `webdash_script.py` | Local web UI and controls (page split by content-type) |
 | Gateway bot | `notifications/command_bot.py`, `notifications/bot/` | Discord gateway command bot / cogs |
 | Nightclaw surfaces | `notifications/*`, especially `bot/`, `ask.py`, `cast.py`, `engagement.py`, `ops.py` | Bot, cogs, dashboards, engagement, UI |
-| Learning / SIE | `learning/` (32 modules: `trace*`, `policy.py`, `finetune.py`, `promotion.py`, `rollout.py`, …) | Consumes traces, proposes improvements — **downstream only**, never mutates a live run |
-| Guards / boundaries | `agents/hooks.py`, `platform_core/core/identity.py`, `platform_core/core/provenance.py`, `platform_core/core/epoch.py` | The only hard stops (self-modification guard) |
+| Learning / SIE | `learning/` (~31 modules: `sie.py`, `policy.py`, `finetune.py`, `promotion.py`, `lessons.py`, …) | Consumes traces, proposes improvements — **downstream only**, never mutates a live run |
+| Guards / boundaries | `agents/hooks.py` (registered in `.claude/settings.json`, fail CLOSED), `platform_core/core/identity.py`, `platform_core/core/provenance.py`, `platform_core/core/epoch.py` | The only hard stops (self-modification guard) |
 | Contracts / seams / status | `platform_core/core/contracts.py`, `platform_core/core/protocols.py`, `platform_core/core/lifecycle.py` | Cross-module shapes, replaceable-intelligence Protocols, canonical status vocab |
+| IO kernel / degradation | `platform_core/core/{fsio,jsonl_io,clock,git_io,best_effort}.py` | Atomic file IO, JSONL, time, git subprocess, best-effort degradation registry |
+| LLM seam | `llm_io.py` | The single blessed LLM call (`chat` + structured `act` tags), `parseJsonLoose` |
 | Resilience / self-mod | `platform_core/runtime/resilience.py`, `selfmod.py` | Crash recovery + self-modification baseline |
 | Dev / AI-nav tooling | `tools/repo_map.py`, `tools/dev.py`, `tools/affected_tests.py`, `tools/codemod.py` | `@AI-MAP` headers, `.repo-map.json`, `AGENTS.md`, fast check loop |
 | Config | `config.py`, `platform_core/app_config/`, `.env` | Runtime configuration |
@@ -91,7 +94,8 @@ tests/
 
 Likely files:
 
-- `agents/verifier.py`
+- `agents/verifier.py` (+ `verifier_sanitize.py`, `verifier_runner.py`)
+- `agents/verification.py` (typed Receipt pipeline, `verdictFor`)
 - tests for verifier behavior
 - `docs/TESTING.md`
 - `docs/edit_recipes/add_verification_mode.md`
@@ -163,13 +167,15 @@ Use `platform_core/` for internal plumbing. Keep root files as public facades an
 
 ```txt
 platform_core/
-  app_config/       # config internals re-exported by config.py
+  app_config/       # typed settings registry + env bootstrap re-exported by config.py
   cli/              # CLI parsing helpers used by main.py
   core/             # contracts, identity, epoch, provenance, lifecycle, tracing, surfaces
+                    # + IO kernel: fsio, jsonl_io, clock, git_io, best_effort
   knowledge_base/   # knowledge scrape/build/compress internals re-exported by knowledge.py
   ops/              # doctor, health, staging validation, workflow validation, wipe
   orchestration/    # orchestrator mixins and helpers used by orchestrator.py
-  runtime/          # ControlBus, retry/error handling, resilience
+  runtime/          # ControlBus + SQLite control store, heartbeat, resilience,
+                    # trajectory (append-only JSONL), action risk, cost budget, worktree
   simulator/        # dry-run simulation and simulation-safe parsing
 ```
 

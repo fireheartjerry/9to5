@@ -12,7 +12,7 @@ EXPORTS:
   WorktreeEnvironment  -- A disjoint git worktree per subtask
 DEPENDS-ON: config, platform_core.execution.environment, platform_core.runtime
 SIDE-EFFECTS: runs git via platform_core.runtime.worktree; creates/removes worktrees under STATE_DIR
-RUN/TEST: python -m pytest tests/test_worktree.py
+RUN/TEST: python -m pytest tests/execution/test_worktree.py
 """
 from __future__ import annotations
 

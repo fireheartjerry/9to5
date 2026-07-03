@@ -8,7 +8,7 @@ EXPORTS:
   sweepAll() -> dict  -- Run every sweep, gated by config.RETENTION_ENABLED
 DEPENDS-ON: config
 SIDE-EFFECTS: deletes/moves files under state/ (never .py; guarded, fail-open)
-RUN/TEST: python -m pytest tests/test_retention.py
+RUN/TEST: python -m pytest tests/platform/test_retention.py
 """
 from __future__ import annotations
 

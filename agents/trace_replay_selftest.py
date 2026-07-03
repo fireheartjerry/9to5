@@ -1,6 +1,6 @@
-"""Self-test sub-functions for agents/trace-replay.py.
+"""Self-test sub-functions for agents/trace_replay_cli.py.
 
-Each sub-function covers one logical group.  agents/trace-replay.py's
+Each sub-function covers one logical group.  agents/trace_replay_cli.py's
 _selfTest() assembles them and passes _replayEvents as replay_fn so that
 no circular import is needed between this module and the hyphen file.
 
@@ -84,7 +84,7 @@ def _selfTestCalibration() -> None:
 def _selfTestPipeline(replay_fn: Callable, fixtures: list) -> None:
     """Assert end-to-end replay through text and JSON output modes.
 
-    replay_fn is passed explicitly from trace-replay.py to avoid a
+    replay_fn is passed explicitly from trace_replay_cli.py to avoid a
     circular import between this module and the hyphen file.
     """
     div_count = replay_fn(fixtures, threshold=2, run_id="fixture-t")

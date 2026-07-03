@@ -1,11 +1,10 @@
 # 9TO5 — Notification System Reference
 
-> **Scope:** All notification surfaces, the `NotificationBus` fan-out layer,
-> the `NotificationEntry` schema, Discord dashboard and milestones, branding /
-> design system, slash commands, web dashboard, gateway command bot, audit log,
-> and metrics.  Reflects the state after the st-006 hardening pass and
-> subsequent surface additions (audit, metrics, slash, branding, views,
-> work_launcher).
+> **Scope:** All notification surfaces, the `NotificationEntry` schema,
+> Discord dashboard and milestones, branding / design system, slash commands,
+> web dashboard, gateway command bot, audit log, and metrics.  Reflects the
+> state after the st-006 hardening pass and subsequent surface additions
+> (audit, metrics, slash, branding, views, work_launcher).
 
 ---
 
@@ -15,13 +14,13 @@
 Orchestrator / subtask boundary
         │
         ▼
- NotificationBus.emit(event_type, payload)
+ direct surface calls (event_type, payload)
         │
         ├──▶ DiscordDashboard.handle()   ── PATCH the pinned live embed
         ├──▶ DiscordMilestone.handle()   ── POST discrete milestone embeds
         └──▶ WebdashSurface.handle()     ── write latest snapshot (1 s TTL)
 
-Orthogonal surfaces (not registered on the bus):
+Orthogonal surfaces (driven by their own entry points):
   notifications/command_bot.py  ── discord.py gateway bot; slash + ! commands
   orchestrator.py REST poll      ── inline ! command handling (no bot needed)
   notifications/audit.py         ── file-backed control-action audit log
@@ -33,155 +32,14 @@ at WARNING, and never propagates into the orchestrator run loop.
 
 ---
 
-## NotificationBus (`notifications/bus.py`)
+## NotificationBus (removed)
 
-### Purpose
-Single fan-out point.  Register surfaces once; emit events to all of them.
-
-### Protocol
-Any object with a `handle(event_type: str, payload: dict) -> None` method is a
-valid surface.  The `NotificationSurface` protocol (`@runtime_checkable`) makes
-this explicit — `isinstance(obj, NotificationSurface)` works at runtime.
-
-### Usage
-
-```python
-from notifications.bus import NotificationBus
-
-bus = NotificationBus()
-bus.register(my_discord_surface)
-bus.register(my_web_surface)
-
-# Emit from anywhere in the orchestrator
-bus.emit("subtask_done", {"subtask_id": "st-003", "title": "Add tests"})
-```
-
-### Isolation contract
-A surface that raises **never** stops downstream surfaces and **never** raises
-into the caller.  Every surface error is logged:
-
-```
-WARNING notifications.bus: surface <DiscordDashboard …> raised on event 'subtask_done' — suppressed
-```
-
-### Error handling
-
-#### Surface isolation contract
-
-`emit()` wraps every `surface.handle()` call in a `try/except BaseException`
-block.  A surface that raises — for any reason — is logged and skipped; all
-remaining surfaces still receive the event, and the caller never sees the error.
-
-```python
-except BaseException:  # surface errors must never reach callers
-    _log.exception("surface %r raised on event %r — suppressed", surface, event_type)
-```
-
-The logger name is `notifications.bus`, level `WARNING`.  Error output follows
-the stdlib `logging.exception()` format so the full traceback is captured.
-
-#### KeyboardInterrupt and SystemExit inside a surface
-
-`BaseException` (not `Exception`) is caught deliberately.  This means
-`KeyboardInterrupt` and `SystemExit` raised *inside* a surface's `handle()`
-method are also suppressed per-surface.
-
-**Why:** a surface must never be able to kill the orchestrator run loop.  Doing
-`sys.exit()` or pressing Ctrl-C while a surface is executing cannot cause the
-run to abort.
-
-**Implication for surface authors:** do not rely on `KeyboardInterrupt` or
-`SystemExit` propagating out of `handle()` — they won't.  Graceful shutdown
-signals must flow through `ControlBus`, not through exceptions raised inside
-surfaces.
-
-#### What is NOT suppressed
-
-Errors raised **before** `emit()` reaches the per-surface loop — e.g. a
-`TypeError` from passing wrong argument types to `emit()` — propagate normally
-to the caller.  Only per-surface exceptions are swallowed.
-
-#### Logging behaviour
-
-| Condition | Log level | Logger |
-|-----------|-----------|--------|
-| Surface raises any `BaseException` | `WARNING` (with traceback via `exception()`) | `notifications.bus` |
-| Normal emission (no errors) | *(silent)* | — |
-
-To capture bus error output in tests or production:
-
-```python
-import logging
-logging.getLogger("notifications.bus").setLevel(logging.WARNING)
-```
-
-#### Expected tracebacks in test output
-
-When running `test_notification_bus.py`, you will see tracebacks printed to
-stderr for every test that intentionally raises inside a surface.  **This is
-correct behaviour**, not a failure signal.  Each traceback comes from
-`logging.exception()` inside `bus.py`'s `emit()` loop — it records the full
-stack of the suppressed exception.  The tests still pass (`OK`) because the
-exception never reaches the caller.
-
-Example (expected — not an error):
-
-```
-surface <_RaisingSurface …> raised on event 'replan' — suppressed
-Traceback (most recent call last):
-  …
-ValueError: bad surface
-```
-
-Tests that assert on logging (e.g. `test_error_logged_as_warning`) use
-`assertLogs("notifications.bus", …)` which temporarily captures and suppresses
-the handler, so those tests produce no visible traceback.
-
-To silence bus tracebacks globally during a test run, disable the logger before
-the suite starts:
-
-```python
-import logging
-logging.getLogger("notifications.bus").disabled = True
-```
-
-Re-enable it before any test that asserts on log output.
-
-#### Running the bus test suite
-
-The acceptance test can be invoked directly or via the standard test runner:
-
-```bash
-# Direct invocation (uses sys.path.insert in the test file to locate the package)
-python C:\9to5\tests\test_notification_bus.py
-
-# Via unittest runner (no sys.path manipulation needed — runner sets PYTHONPATH)
-python -m unittest tests.test_notification_bus
-```
-
-The `sys.path.insert(0, ...)` at the top of the test file is present solely to
-support the direct-invocation form used by the acceptance check.  When using
-`python -m unittest` or `pytest` from the project root, the package is already
-on `sys.path` and the insert is a no-op.
-
-#### surface_count helper
-
-`bus.surface_count` returns the number of registered surfaces.  Use it in
-tests or health checks to confirm surfaces were registered before emitting:
-
-```python
-assert bus.surface_count == 2, "expected discord + web surfaces"
-```
-
-### Anti-patterns
-- Do **not** make `NotificationBus` a module-level singleton imported at run
-  start.  Instantiate one per run so surfaces can be re-registered cleanly on
-  restart.
-- Do **not** `bus.emit()` inside a surface's own `handle()` — recursive
-  emission is not guarded.
-- Do **not** raise from `handle()` to signal failure — the exception is
-  suppressed; use an out-of-band mechanism (e.g. a shared flag, a `ControlBus`
-  write) if a surface needs to communicate a fatal condition.
+The `NotificationBus` fan-out layer (`notifications/bus.py`) was removed: it was
+a second pub/sub beside the live event bus and had no production callers.
+Surfaces are invoked directly, and live UI events flow through
+`notifications/event_bus.py` (`LiveEventBus`).  The isolation contract survives
+at the surface level: every surface call is wrapped so a raising surface is
+logged at WARNING and never propagates into the orchestrator run loop.
 
 ---
 
@@ -400,35 +258,19 @@ except Exception as exc:
     raise   # re-raise so the loop body's exit code is non-zero
 ```
 
-### Retry mechanisms with `retryTask`
+### Retry mechanisms
 
-Use `retryTask` (see [Orchestrator error handling](#orchestrator-error-handling))
-to auto-retry unstable operations before the failure bubbles up:
-
-```python
-from error_handling import retryTask, MAX_RETRIES
-
-# Up to MAX_RETRIES (default 3) attempts; raises RetryExhausted on exhaustion
-result = retryTask(fetch_external_data, args=(url,))
-
-# With an alert callback — returns {"ok": False} instead of raising
-result = retryTask(
-    fetch_external_data,
-    args=(url,),
-    max_retries=MAX_RETRIES,
-    on_alert=lambda msg, n: bus.emit("subtask_failed", {"error": msg, "attempts": n}),
-)
-if not result["ok"]:
-    # handle gracefully — alert already fired
-    ...
-```
+The old `retryTask` helper was removed with the dead `error_handling` module.
+For programmatic retry/recovery inside the orchestrator use
+`platform_core.runtime.resilience.run_with_recovery`, which wraps a callable
+with bounded retries and failure capture.
 
 ### Anti-patterns
 
 | Wrong | Right |
 |-------|-------|
 | `subprocess.run(["claude", "/loop", ...])` | Type `/loop` directly in Claude Code |
-| Calling `/loop` from a 9TO5 orchestrator Python function | `/loop` is a CLI-level feature; use `retryTask` for programmatic retry |
+| Calling `/loop` from a 9TO5 orchestrator Python function | `/loop` is a CLI-level feature; use `platform_core.runtime.resilience.run_with_recovery` for programmatic retry |
 | Swallowing all exceptions in a loop body | Re-raise or emit `subtask_failed` so the orchestrator can track failures |
 
 ---
@@ -711,28 +553,14 @@ for subtask in pending_subtasks:
 
 ### Wiring surfaces at run start
 
-```python
-# main.py / orchestrator.py — surface registration order matters for logging
-bus = NotificationBus()
-
-dash = DiscordDashboard()
-milestone = DiscordMilestone()
-webdash = WebdashSurface(state)
-
-bus.register(dash)       # live embed — registered first; highest priority
-bus.register(milestone)  # discrete embeds
-bus.register(webdash)    # 1-second TTL JSON snapshot
-
-# Start the web dashboard daemon thread
-webdash.start()
-
-# Kick off the live Discord embed (creates + pins)
-dash.start(state, phase="starting", state_lock=rw_lock)
-```
-
-After this block, every `bus.emit()` call fans out to all three surfaces in
-registration order.  A surface that raises is skipped; the others still receive
-the event.
+Surfaces are wired **directly** (the `NotificationBus` fan-out layer was removed —
+see *NotificationBus (removed)* above). The orchestrator run preamble
+(`platform_core/orchestration/run_phase_mixin.py`) constructs `DiscordDashboard`,
+starts the web dashboard (`notifications/webdash.py`), and calls each surface
+explicitly (`dashboard.update(state, phase, detail)` etc.); live streaming events
+fan out through the process-global `notifications/event_bus.py` (`get_bus()`).
+Every surface call is best-effort: an exception in one surface is caught and
+logged, never propagated into the run loop.
 
 ### Adding a custom surface
 
@@ -801,76 +629,11 @@ gate from an owner super-reaction (`on_raw_reaction_add`) and runs a silence wat
 
 ## Orchestrator error handling
 
-The `error_handling` module (and its re-export `enhanced_error_handling`) provides
-`retryTask` — a retry-before-alert wrapper for any callable inside the orchestrator.
-Failed tasks are retried up to `MAX_RETRIES` times before the alert fires.
-
-### `retryTask` — retry-before-alert
-
-```python
-from error_handling import retryTask, MAX_RETRIES, RETRY_DELAY_SECONDS, RetryExhausted
-
-# Basic usage — raises RetryExhausted if all attempts fail
-result = retryTask(my_function, args=(arg1, arg2))
-# {"ok": True, "result": <return value>, "attempts": <n>}
-
-# With an alert callback — returns {"ok": False, ...} instead of raising
-def on_alert(error_msg: str, attempts: int) -> None:
-    bus.emit("subtask_failed", {"error": error_msg, "attempts": attempts})
-
-result = retryTask(
-    my_function,
-    kwargs={"key": "value"},
-    max_retries=3,
-    delay=1.0,
-    on_alert=on_alert,
-)
-# {"ok": False, "error": "ValueError: ...", "attempts": 3}
-```
-
-### Key parameters and constants
-
-| Name | Default | Description |
-|------|---------|-------------|
-| `MAX_RETRIES` | `3` | Default retry ceiling (auto-retries before alerting) |
-| `RETRY_DELAY_SECONDS` | `1.0` | Sleep between attempts (seconds) |
-| `on_alert` | `None` | Callback `(error_msg, attempts)` fired after exhaustion |
-
-### Return shape
-
-| Key | Condition |
-|-----|-----------|
-| `{"ok": True, "result": ..., "attempts": n}` | At least one attempt succeeded |
-| `{"ok": False, "error": ..., "attempts": n}` | All failed, `on_alert` set |
-| raises `RetryExhausted` | All failed, `on_alert` is `None` |
-
-### Sleep-after-last-attempt guard
-
-Sleep fires **only between attempts** (never after the final attempt) so no
-unnecessary latency is added before the alert fires:
-
-```python
-if attempt < max_retries:   # explicit guard
-    time.sleep(delay)
-```
-
-### Logging behaviour
-
-| Event | Level | Logger |
-|-------|-------|--------|
-| Attempt failed | `WARNING` | `9to5.error_handling` |
-| Recovered on later attempt | `INFO` | `9to5.error_handling` |
-| All attempts exhausted | `CRITICAL` | `9to5.error_handling` |
-
-### Import paths
-
-```python
-# Canonical
-from error_handling import retryTask, MAX_RETRIES, RETRY_DELAY_SECONDS, RetryExhausted
-
-# Deliverable alias (re-exports the canonical module identically)
-from enhanced_error_handling import retryTask
-```
+The former `error_handling` / `enhanced_error_handling` retry stack
+(`retryTask`, `RetryPolicy`) was removed as dead code.  Recovery of failing
+orchestrator operations is owned by `platform_core.runtime.resilience` --
+`run_with_recovery(fn, ...)` retries a callable with bounded attempts and
+captures the failure for the run ledger.  See `docs/error_handling.md`.
 
 ---
 

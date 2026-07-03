@@ -11,7 +11,7 @@ EXPORTS:
   SubprocessFeed
 DEPENDS-ON: notifications.event_bus
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_subprocess_feed.py
+RUN/TEST: python -m pytest tests/notifications/test_subprocess_feed.py
 """
 from __future__ import annotations
 

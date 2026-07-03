@@ -84,7 +84,7 @@ class OrchestratorExecuteAttemptMixin:
         (result, combined, vresult, passed, resume_session,
          failure_feedback) = self._finalizeAttemptResult(
             state, subtask, result, bus, sid, attempt, exec_cwd, verify_spec,
-            attempt_started, dashboard, resume_session)
+            attempt_started, dashboard, resume_session, failure_feedback)
         return spec, result, vresult, combined, passed, resume_session, failure_feedback
 
     def _recordAttemptSession(self, state: TaskState, subtask: dict, spec: dict,
@@ -167,7 +167,8 @@ class OrchestratorExecuteAttemptMixin:
     def _finalizeAttemptResult(self, state: TaskState, subtask: dict, result, bus: "ControlBus",
                                sid: str, attempt: int, exec_cwd: str, verify_spec: "dict | None",
                                attempt_started: float, dashboard: "DiscordDashboard",
-                               resume_session: "str | None") -> tuple:
+                               resume_session: "str | None",
+                               failure_feedback: "str | None" = None) -> tuple:
         """Post-run: kill-subprocess handling, result coercion, cost metering, session carry, verify.
         Returns (result, combined, vresult, passed, resume_session, failure_feedback)."""
         if bus.isKillSubprocess():
@@ -194,6 +195,12 @@ class OrchestratorExecuteAttemptMixin:
         stderr_text = _resultText(result, "stderr")
         if stderr_text:
             combined += "\n[stderr]\n" + stderr_text
+        # R6: operator kill = CONTROL FLOW, not a failed attempt: skip verify, keep the incoming
+        # failure_feedback unsynthesized; the loop's control branch handles abort/pause/slot.
+        if result.get("subtype") == "operator_killed":
+            vresult = {"passed": False, "operator_killed": True, "cmd": None,
+                       "returncode": result.get("returncode"), "stderr": stderr_text}
+            return result, combined, vresult, False, resume_session, failure_feedback
         vresult, passed, resume_session, failure_feedback = self._runAttemptVerify(
             state, subtask, result, exec_cwd, verify_spec, attempt_started,
             sid, combined, dashboard, resume_session)

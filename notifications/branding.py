@@ -17,7 +17,7 @@ EXPORTS:
   auditEmbed(entries) -> dict
 DEPENDS-ON: config, notifications.commands, notifications.discord_bot, notifications.icons
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_branding.py
+RUN/TEST: python -m pytest tests/notifications/test_branding.py
 """
 from __future__ import annotations
 

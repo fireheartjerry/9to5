@@ -11,7 +11,7 @@ EXPORTS:
   DockerEnvironment  -- A container per subtask
 DEPENDS-ON: config, platform_core.execution.environment, platform_core.execution.security
 SIDE-EFFECTS: runs `docker` (behind _run_docker); starts/removes containers
-RUN/TEST: python -m pytest tests/test_execution_docker.py
+RUN/TEST: python -m pytest tests/execution/test_execution_docker.py
 """
 from __future__ import annotations
 

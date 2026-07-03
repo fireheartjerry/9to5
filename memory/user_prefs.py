@@ -16,17 +16,17 @@ EXPORTS:
   applyPrefer(text: str, path: Optional[Path]=None) -> str
   applyBriefSet(text: str, path: Optional[Path]=None) -> str
   formatPrefs(prefs: dict) -> str
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.core
 SIDE-EFFECTS: writes user_prefs.json
-RUN/TEST: python -m pytest tests/test_user_prefs.py
+RUN/TEST: python -m pytest tests/evolution/test_user_prefs.py
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Optional
 
 import config
+from platform_core.core import fsio
 
 LOG = config.getLogger("user_prefs")
 
@@ -59,26 +59,20 @@ def _path(path: Optional[Path]) -> Path:
 
 
 def load(path: Optional[Path] = None) -> dict:
-    """Merged defaults + stored prefs. Missing/corrupt -> a fresh copy of DEFAULTS."""
+    """Merged defaults + stored prefs. Missing/corrupt -> a fresh copy of DEFAULTS
+    (fsio.loadJson warns on a corrupt file instead of silently resetting)."""
     merged = {**DEFAULTS, "persistent_intents": list(DEFAULTS["persistent_intents"])}
-    try:
-        raw = json.loads(_path(path).read_text(encoding="utf-8"))
-        if isinstance(raw, dict):
-            for k, v in raw.items():
-                if k in DEFAULTS:
-                    merged[k] = v
-    except FileNotFoundError:
-        pass
-    except Exception as e:  # noqa: BLE001 -- corrupt file degrades to defaults
-        LOG.warning("user_prefs load failed (defaults used): %s", e)
+    raw = fsio.loadJson(_path(path), default=None)
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            if k in DEFAULTS:
+                merged[k] = v
     return merged
 
 
 def save(prefs: dict, path: Optional[Path] = None) -> bool:
     try:
-        p = _path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(prefs, indent=2, ensure_ascii=False), encoding="utf-8")
+        fsio.atomicWriteJson(_path(path), prefs, indent=2)
         return True
     except Exception as e:  # noqa: BLE001
         LOG.warning("user_prefs save failed (ignored): %s", e)

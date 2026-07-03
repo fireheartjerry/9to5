@@ -8,7 +8,7 @@ EXPORTS:
   runIsStale(state, now_ts: float, threshold_s: int=STALE_SECONDS) -> bool  -- True only if the run is ACTIVE (non-terminal, non-paused) yet has emitted no event for
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_ops.py
+RUN/TEST: python -m pytest tests/notifications/test_ops.py
 """
 from __future__ import annotations
 

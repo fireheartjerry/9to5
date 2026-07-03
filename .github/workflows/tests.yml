@@ -9,9 +9,15 @@ on:
   schedule:
     - cron: "17 8 * * *"
 
+# Per-event groups: a push to main must NOT cancel the nightly exhaustive run (schedule and
+# push previously shared the group "tests-refs/heads/main"). Only PR runs auto-cancel their
+# superseded predecessors.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 env:
   NINE_TO_FIVE_TEST_PROGRESS: "1"
@@ -20,15 +26,23 @@ env:
 jobs:
   classify:
     runs-on: windows-latest
+    timeout-minutes: 10
     outputs:
       docs_only: ${{ steps.paths.outputs.docs_only }}
       workflow_only: ${{ steps.paths.outputs.workflow_only }}
       tooling_only: ${{ steps.paths.outputs.tooling_only }}
       core: ${{ steps.paths.outputs.core }}
+      affected_ok: ${{ steps.affected.outputs.affected_ok }}
+      affected_reason: ${{ steps.affected.outputs.affected_reason }}
+      affected_targets: ${{ steps.affected.outputs.affected_targets }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
       - id: paths
         shell: bash
@@ -38,9 +52,19 @@ jobs:
           elif [[ -n "${{ github.event.before }}" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
             base="${{ github.event.before }}"
           else
-            base="HEAD~1"
+            base=""
           fi
-          git diff --name-only "$base"...HEAD > /tmp/changed.txt || git diff --name-only HEAD~1 HEAD > /tmp/changed.txt || true
+          # A force-push (or shallow history) can hand us a base SHA that no longer exists;
+          # validate it and FAIL CLOSED (treat everything as changed) instead of silently
+          # diffing one commit.
+          if [[ -n "$base" ]] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base=""
+          fi
+          if [[ -n "$base" ]]; then
+            git diff --name-only "$base"...HEAD > /tmp/changed.txt || echo "." > /tmp/changed.txt
+          else
+            echo "." > /tmp/changed.txt
+          fi
           if [[ ! -s /tmp/changed.txt ]]; then
             echo "." > /tmp/changed.txt
           fi
@@ -54,16 +78,23 @@ jobs:
             if [[ ! "$f" =~ ^(docs/|.*\.md$|LLM_MAP\.md$|CAPABILITIES\.md$|README\.md$) ]]; then
               docs_only=false
             fi
-            if [[ ! "$f" =~ ^(\.github/workflows/|workflows/|validate_workflows\.py|tests/test_.*workflow.*\.py|tests/test_validate_workflows\.py) ]]; then
+            if [[ ! "$f" =~ ^(\.github/workflows/|workflows/|validate_workflows\.py|tests/workflows/.*\.py) ]]; then
               workflow_only=false
             fi
-            if [[ ! "$f" =~ ^(tools/|tests/test_(repo_map|tools)\.py|\.repo-map\.json) ]]; then
+            if [[ ! "$f" =~ ^(tools/|tests/platform/test_(repo_map|tools|dev_commands)\.py|\.repo-map\.json) ]]; then
               tooling_only=false
             fi
             if [[ ! "$f" =~ ^(docs/|.*\.md$|\.github/workflows/|tools/|\.repo-map\.json) ]]; then
               core=true
             fi
           done < /tmp/changed.txt
+
+          # Fail closed: a change set mixing "excluded" categories (e.g. docs + tools) used to
+          # produce all-false outputs -- every job skipped and the PR went green with ZERO tests
+          # run. If no single specialized lane claims the whole change set, run the core lanes.
+          if [[ "$core" == "false" && "$docs_only" == "false" && "$workflow_only" == "false" && "$tooling_only" == "false" ]]; then
+            core=true
+          fi
 
           if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             docs_only=false
@@ -79,28 +110,44 @@ jobs:
             echo "core=$core"
           } >> "$GITHUB_OUTPUT"
 
+      - id: affected
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" && -s /tmp/changed.txt && "$(head -c1 /tmp/changed.txt)" != "." ]]; then
+            python tools/ci_affected.py < /tmp/changed.txt >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "affected_ok=false"
+              echo "affected_reason=not-a-PR-or-unknown-change-set"
+              echo "affected_targets="
+            } >> "$GITHUB_OUTPUT"
+          fi
+
   docs:
     needs: classify
     if: needs.classify.outputs.docs_only == 'true'
     runs-on: windows-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Repo-map generate
-        run: python tools/repo_map.py
+      - name: Repo-map drift check
+        run: python tools/repo_map.py --check
 
   workflow-validation:
     needs: classify
     if: needs.classify.outputs.workflow_only == 'true'
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -108,60 +155,72 @@ jobs:
       - name: Validate workflow definitions
         run: python validate_workflows.py
       - name: Workflow tests
-        run: python -m pytest tests/test_validate_workflows.py tests/test_workflows.py tests/test_workflows_registry_load.py tests/test_workflows_registry_validators.py tests/test_workflow_registry.py -q
+        run: python -m pytest tests/workflows/test_validate_workflows.py tests/workflows/test_workflows.py tests/workflows/test_workflows_registry.py tests/workflows/test_workflow_registry.py -q
 
   tooling:
     needs: classify
     if: needs.classify.outputs.tooling_only == 'true'
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies
         run: uv pip install --system -r requirements.txt -r requirements-dev.txt
+      - name: Repo-map drift check
+        run: python tools/repo_map.py --check
       - name: Tooling tests
-        run: python -m pytest tests/test_repo_map.py tests/test_tools.py -q
+        run: python -m pytest tests/platform/test_repo_map.py tests/platform/test_tools.py tests/platform/test_dev_commands.py -q
 
   fast:
     needs: classify
     if: needs.classify.outputs.core == 'true'
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: >-
-          ${{ (github.event_name == 'pull_request')
-              && fromJSON('["3.11","3.12"]') || fromJSON('["3.12"]') }}
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
       - name: Install dependencies
         run: uv pip install --system -r requirements.txt -r requirements-dev.txt
-      - name: Fast lane
-        run: python -m pytest -m "not slow" -n auto --dist loadscope -q
+      - name: Compile tests (corrupt files fail in seconds, not at collection)
+        run: python -m compileall -q tests
+      - name: Affected tests (PR, fail-closed) or full fast lane
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" && "${{ needs.classify.outputs.affected_ok }}" == "true" ]]; then
+            echo "affected-only lane: ${{ needs.classify.outputs.affected_targets }}"
+            python -m pytest ${{ needs.classify.outputs.affected_targets }} -n auto --dist loadscope -q
+          else
+            echo "full fast lane (reason: ${{ needs.classify.outputs.affected_reason }})"
+            python -m pytest -m "not slow" -n auto --dist loadscope -q
+          fi
       - name: Validate workflow definitions
         run: python validate_workflows.py
 
   slow:
-    needs: [classify, fast]
-    if: github.event_name == 'pull_request' && needs.classify.outputs.core == 'true'
+    needs: classify
+    if: github.event_name == 'push' && needs.classify.outputs.core == 'true'
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -170,15 +229,17 @@ jobs:
         run: python -m pytest -m slow -n auto --dist loadscope --durations=30 -q
 
   dry-run-smoke:
-    needs: [classify, fast]
-    if: github.event_name == 'pull_request' && needs.classify.outputs.core == 'true'
+    needs: classify
+    if: github.event_name == 'push' && needs.classify.outputs.core == 'true'
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -187,15 +248,17 @@ jobs:
         run: python main.py --dry-run --goal "ci smoke build a thing" --hours 1 --no-web
 
   e2e-smoke:
-    needs: [classify, fast]
-    if: github.event_name == 'pull_request' && needs.classify.outputs.core == 'true'
+    needs: classify
+    if: github.event_name == 'push' && needs.classify.outputs.core == 'true'
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -203,15 +266,35 @@ jobs:
       - name: Virtual-operator E2E suite
         run: python main.py --e2e
 
+  nightly-fast-py311:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
+      - name: Fast lane (3.11 compatibility)
+        run: python -m pytest -m "not slow" -n auto --dist loadscope -q
+
   exhaustive:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-python@v5
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies

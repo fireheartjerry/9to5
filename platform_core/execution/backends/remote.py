@@ -13,7 +13,7 @@ EXPORTS:
   RemoteEnvironment  -- A remote box/microVM per subtask
 DEPENDS-ON: config, platform_core.execution.environment, platform_core.execution.security
 SIDE-EFFECTS: runs `ssh` / remote SDKs (behind _run_remote)
-RUN/TEST: python -m pytest tests/test_execution_remote.py
+RUN/TEST: python -m pytest tests/execution/test_execution_remote.py
 """
 from __future__ import annotations
 

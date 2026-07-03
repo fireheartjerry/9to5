@@ -9,7 +9,7 @@ EXPORTS:
   registerLane(lane: str, label: str='') -> None  -- Set a friendly label for ``lane`` before its first line
 DEPENDS-ON: notifications.event_bus
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_lane_feed.py
+RUN/TEST: python -m pytest tests/notifications/test_lane_feed.py
 """
 from __future__ import annotations
 

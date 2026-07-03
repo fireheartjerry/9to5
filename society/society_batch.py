@@ -29,21 +29,39 @@ def societyGate(ready: list) -> bool:
     return bool(config.SOCIETY_ENABLED) and len(ready) >= 2
 
 
+def _priorSpend(blackboard) -> float:
+    """Sum cost_usd from `result` entries already on the board (earlier batches, restarts).
+
+    Makes SOCIETY_TOKEN_BUDGET_USD run-wide: each handleSocietyBatch call builds a fresh
+    Coordinator, so the durable blackboard is the only place spend survives between
+    batches. Worker results nest the cost at value.value.cost_usd (entry value = the
+    WorkerMessage, whose own value carries cost_usd)."""
+    total = 0.0
+    for rec in blackboard.readAll():
+        if rec.get("kind") != "result":
+            continue
+        cost = ((rec.get("value") or {}).get("value") or {}).get("cost_usd")
+        if isinstance(cost, (int, float)):
+            total += float(cost)
+    return total
+
+
 def handleSocietyBatch(state, ready: list, work_dir: str, parallelism: int,
                        state_lock, *, run_fn: Optional[Callable] = None) -> "tuple[int, None]":
     """Delegate a ready batch to the society Coordinator (worktree-isolated workers).
 
     Returns (count_started, None) -- each worker verifies and lands its own terminal
-    status (done/failed) before returning. Crash containment lives in
-    Coordinator._handleSocietyBatch (mirrors _handleParallelBatch)."""
+    status (done/failed) before returning. Crash containment + the hard pre-spawn
+    budget gate live in Coordinator._handleSocietyBatch (mirrors _handleParallelBatch)."""
     from memory import experience
     from platform_core.app_config.paths import BLACKBOARD_DIR
     from platform_core.orchestration import parallel_safety
     from society.blackboard import Blackboard
-    from society.coordinator import Coordinator
-    bb = Blackboard.forTask(state.task_id, base_dir=BLACKBOARD_DIR)
+    from society.coordinator import Coordinator, busMirror
+    bb = Blackboard.forTask(state.task_id, base_dir=BLACKBOARD_DIR,
+                            on_append=busMirror(state.task_id))
     coord = Coordinator(state, bb, state_lock, work_dir=work_dir)
-    coord.attachBus()
+    coord.spent_usd = _priorSpend(bb)   # budget is run-wide, not per-batch
     batch = coord.selectDisjointBatch(ready, min(parallelism, config.SOCIETY_MAX_WORKERS),
                                       file_sets_fn=parallel_safety.filesTouched)
     messages = coord._handleSocietyBatch(batch, parallelism, run_fn=run_fn)
@@ -51,4 +69,7 @@ def handleSocietyBatch(state, ready: list, work_dir: str, parallelism: int,
         experience.close_pool()   # match _handleParallelBatch SQLite cleanup (CB-3)
     except Exception:  # noqa: BLE001
         pass
-    return len(messages), None
+    # Lost-claim messages (kind="claim") mean the worker never executed -- counting them
+    # as loop progress would advance `position` on batches that did no work at all.
+    started = sum(1 for m in messages if m.get("kind") == "result")
+    return started, None

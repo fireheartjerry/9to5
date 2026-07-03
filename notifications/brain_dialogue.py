@@ -13,7 +13,7 @@ EXPORTS:
   answer(kind: str, arg: str, state, *, chat: Optional[Callable[[str, str], str]]=None) -> str  -- Answer a brain-dialogue command
 DEPENDS-ON: config, llm_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_brain_dialogue.py
+RUN/TEST: python -m pytest tests/orchestration/test_brain_dialogue.py
 """
 from __future__ import annotations
 

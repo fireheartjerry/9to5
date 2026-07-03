@@ -11,7 +11,7 @@ EXPORTS:
   classifyRole(subtask: dict, hint: str='', work_profile=None) -> RoleSpec  -- Pick the best-fit role
 DEPENDS-ON: agents.playbook, config, platform_core.orchestration
 SIDE-EFFECTS: none
-RUN/TEST: python -m pytest tests/test_society_roles.py
+RUN/TEST: python -m pytest tests/orchestration/test_society_roles.py
 """
 from __future__ import annotations
 

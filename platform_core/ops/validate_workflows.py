@@ -8,7 +8,7 @@ EXPORTS:
   main() -> int
 DEPENDS-ON: workflows.registry
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_validate_workflows.py
+RUN/TEST: python -m pytest tests/workflows/test_validate_workflows.py
 """
 from __future__ import annotations
 

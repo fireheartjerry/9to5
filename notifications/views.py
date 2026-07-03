@@ -11,7 +11,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: notifications.views_control, notifications.views_feedback, notifications.views_run, notifications.views_subtask
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_views.py
+RUN/TEST: python -m pytest tests/control/test_views.py
 """
 from __future__ import annotations
 

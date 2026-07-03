@@ -33,7 +33,7 @@ EXPORTS:
   lessons_block(goal: str, title: str='', *, db_path: Optional[Path]=None) -> str  -- Orchestrator-facing one-call helper: retrieve + render, fully best-effort.
 DEPENDS-ON: config, memory.exp_index, memory.experience, memory.experience_content, memory.memory_sanitizer, memory.retrieval_rank
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_retrieval.py
+RUN/TEST: python -m pytest tests/evolution/test_retrieval.py
 """
 from __future__ import annotations
 

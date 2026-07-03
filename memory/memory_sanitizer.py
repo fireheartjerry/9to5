@@ -7,7 +7,7 @@ EXPORTS:
   sanitizeInjectedField(text, *, max_chars: int=DEFAULT_MAX_CHARS) -> str  -- Collapse one untrusted field to a single inline, defanged line.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none (pure)
-RUN/TEST: python -m pytest tests/test_memory_sanitizer.py
+RUN/TEST: python -m pytest tests/evolution/test_memory_sanitizer.py
 """
 from __future__ import annotations
 

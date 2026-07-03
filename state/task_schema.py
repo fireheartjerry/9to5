@@ -10,7 +10,7 @@ EXPORTS:
   TaskState  -- Wraps the lean state dict and persists it to ``state/tasks/<id>.json``.
 DEPENDS-ON: config, memory.experience, notifications.entry, platform_core.ops, state.task_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_task_schema_hn.py
+RUN/TEST: (no mapped test)
 """
 from __future__ import annotations
 
@@ -70,7 +70,6 @@ class TaskState:
                 "subtask_seq": 0,
                 "universe": None,
                 "epoch": None,
-                "state_epoch": 0,
                 "discovery_report": None,
                 "codename": _gen_codename(),
                 "tunnel_url": None,
@@ -79,8 +78,8 @@ class TaskState:
                 "user_intents": [],
                 "instinct_flags": [],
                 "injected_context": [],
-                "self_state": None,      # human_nature interior (lazily initialised by the layer)
-                "autonomy": None,        # human_nature earned-autonomy ceilings per domain
+                "self_state": None,      # parked human-nature layer interior (code at a7b1b2d)
+                "autonomy": None,        # parked human-nature earned-autonomy ceilings per domain
                 "charter_version": None, # ratified Cast-charter version in effect
                 "work_profile": None,
                 "run_intent_policy": None,

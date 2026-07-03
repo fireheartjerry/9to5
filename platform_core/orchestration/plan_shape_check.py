@@ -10,7 +10,7 @@ EXPORTS:
   shapeViolationReport(violations: list) -> str  -- Build the single corrective re-prompt handed back to the brain.
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_plan_shape_check.py
+RUN/TEST: python -m pytest tests/orchestration/test_plan_shape_check.py
 """
 from __future__ import annotations
 

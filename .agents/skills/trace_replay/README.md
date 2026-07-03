@@ -25,16 +25,16 @@ For 9TO5 runs, use the built-in CLI tool directly:
 
 ```sh
 # replay the most recent run
-python agents/trace-replay.py
+python agents/trace_replay_cli.py
 
 # replay a specific run by ID
-python agents/trace-replay.py --run-id <RUN_ID>
+python agents/trace_replay_cli.py --run-id <RUN_ID>
 
 # print calibrated high-activity threshold and exit
-python agents/trace-replay.py --calibrate
+python agents/trace_replay_cli.py --calibrate
 
 # validate internal logic with synthetic fixtures (no trace needed)
-python agents/trace-replay.py --self-test
+python agents/trace_replay_cli.py --self-test
 ```
 
 ## Trace types supported
@@ -108,7 +108,7 @@ A subtask with more events than the calibrated threshold is flagged as high-acti
 - Read the full trace before concluding. First visible error is rarely root cause.
 - Timestamps matter. A warning before an error is often the cause.
 - Do not patch symptoms. Patch the earliest link in the root cause chain.
-- If the trace has zero events, run `python agents/trace-replay.py --self-test` to
+- If the trace has zero events, run `python agents/trace_replay_cli.py --self-test` to
   verify the tool itself is working correctly before assuming the run produced no data.
 
 ## See also

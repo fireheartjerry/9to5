@@ -8,7 +8,7 @@ These are not all mandatory on day one. Add them incrementally when useful. Beca
 > `--settings <repo>/.claude/settings.json`, whose `hooks.PreToolUse` block registers
 > `block_destructive` and `self_modification_guard` (Bash) and `self_modification_guard`
 > (Edit/Write/MultiEdit), plus `PostToolUse` telemetry. A prior commit had stripped this to
-> `"hooks": {}`, silently disabling every guard; `tests/test_hooks_registration.py` now asserts
+> `"hooks": {}`, silently disabling every guard; `tests/control/test_hooks_registration.py` now asserts
 > that the registrations in `settings.json` and the handlers in `agents/hooks.py` stay in parity,
 > so a future strip fails CI. Blocking guards fail **closed**: if a guard sub-module can't be
 > imported, the dispatch exits non-zero (blocks the tool call) rather than allowing it.
@@ -91,14 +91,17 @@ scripts/suggest_tests.py
 Examples:
 
 Note: this already exists as `python tools/affected_tests.py <files>` (and
-`python tools/dev.py check <file>`). Tests are flat under `tests/test_*.py`:
+`python tools/dev.py check <file>`). Tests live under domain subdirectories, not flat
+(`tests/evolution/`, `tests/execution/`, `tests/orchestration/`, `tests/control/`,
+`tests/notifications/`, `tests/workflows/`, `tests/platform/`, plus `tests/slow/` for
+heavyweight tests):
 
 | Changed file | Suggested command |
 |---|---|
-| `agents/verifier.py` | `python -m pytest tests/test_verify_multi_requirement.py tests/test_verify_shell_safety.py -q` |
-| `platform_core/runtime/control.py` | `python -m pytest tests/test_control_concurrency.py -q` |
-| `notifications/dashboard.py` | `python -m pytest tests/test_dashboard.py -q` |
-| `memory/obsidian.py` | `python -m pytest tests/test_memory_subtask_manager.py -q` |
+| `agents/verifier.py` | `python -m pytest tests/execution/test_verifier.py -q` |
+| `platform_core/runtime/control.py` | `python -m pytest tests/control/test_control_concurrency.py -q` |
+| `notifications/dashboard.py` | `python -m pytest tests/notifications/test_dashboard.py -q` |
+| `memory/obsidian.py` | `python -m pytest tests/notifications/test_obsidian_write.py -q` |
 
 ### 4. Repo health command
 

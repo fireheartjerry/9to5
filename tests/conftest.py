@@ -12,7 +12,7 @@ short-circuit to ``None`` BEFORE any network call -- exactly the path production
 when Discord is simply not configured (every caller already handles that ``None`` gracefully).
 The 'bus' control surface is unaffected because it drives control through the file-backed
 ControlBus, not Discord. Tests that exercise the REST chokepoint itself
-(tests/test_discord_rest.py) set their own token via ``mock.patch`` inside each test and so are
+(tests/notifications/test_discord_rest.py) set their own token via ``mock.patch`` inside each test and so are
 unaffected by this ambient default.
 """
 import os
@@ -70,19 +70,16 @@ def _fast_sleep(monkeypatch):
     monkeypatch.setattr(_time, "sleep", _capped)
     yield
 
-# Heavyweight test files auto-marked `slow` (subprocess/e2e/integration/fuzz/sim) so the fast lane
-# `pytest -m "not slow"` skips them -- without editing 137 files. Filename-substring based.
-_SLOW_PATTERNS = ("e2e", "integration", "fuzz", "simulation", "full_autonomy",
-                  "phase2", "phase_3", "selfplay", "_loop", "chaos")
-
-
+# Heavyweight tests (subprocess/e2e/integration/fuzz/sim) live under tests/slow/ and are
+# auto-marked `slow` by directory so the fast lane `pytest -m "not slow"` skips them.
+# Directory placement IS the marker -- no filename-substring magic.
 def pytest_collection_modifyitems(config, items):  # noqa: ARG001 -- pytest hook signature
     for item in items:
-        name = str(getattr(item, "fspath", "")).replace("\\", "/").lower()
-        if any(p in name for p in _SLOW_PATTERNS):
+        path = str(item.path).replace("\\", "/").lower()
+        if "/tests/slow/" in path:
             item.add_marker(pytest.mark.slow)
-            # Slow tests (e.g. the 150-iteration fuzz property tests) legitimately exceed the
-            # 60s default; give them headroom while the fast lane keeps the tight hang-catching cap.
+            # Slow tests (e.g. 150-iteration fuzz property tests) legitimately exceed the
+            # 60s default; give headroom while the fast lane keeps the tight hang-catching cap.
             item.add_marker(pytest.mark.timeout(300))
 
 
@@ -193,6 +190,23 @@ def _isolate_state(monkeypatch, tmp_path):
     cd.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(config, "STATE_DIR", sd, raising=False)
     monkeypatch.setattr(config, "CONTROL_DIR", cd, raising=False)
+    # Sibling state dirs (R9): heartbeats / launch handshakes / IPC must never leak into
+    # (or read from) the real state tree either. fsio creates parents on write.
+    monkeypatch.setattr(config, "HEARTBEAT_DIR", tmp_path / "state_heartbeats", raising=False)
+    monkeypatch.setattr(config, "LAUNCH_DIR", tmp_path / "state_launch", raising=False)
+    monkeypatch.setattr(config, "IPC_DIR", tmp_path / "state_ipc", raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_control_db(monkeypatch, tmp_path):
+    """R8: pin the SQLite control store (state/control.db) to a per-test database. The store
+    derives its path from ``config.STATE_DIR`` at call time -- already per-test via
+    ``_isolate_state`` -- but tests that re-patch STATE_DIR/CONTROL_DIR mid-test (unittest
+    setUp with mkdtemp) would otherwise move the db mid-flight; the explicit override keeps
+    ONE stable per-test control.db. Cross-process tests pass this path to their workers."""
+    from platform_core.runtime import control_store
+    monkeypatch.setattr(control_store, "_DB_OVERRIDE", tmp_path / "control.db", raising=False)
     yield
 
 
@@ -216,15 +230,36 @@ def _isolate_experience_db(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
-def _isolate_conviction_db(monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "CONVICTION_DB_PATH", tmp_path / "conviction.db", raising=False)
+def _no_real_tunnel(monkeypatch):
+    """Never let a test start a real tunnel provider. runFull's tunnel start is gated on
+    WEB_DASHBOARD, but a test that exercises a dashboard-on path would still auto-download
+    cloudflared and expose a LIVE public tunnel to the test dashboard. Blank the provider
+    list at the binding TunnelManager actually uses -- start() no-ops on an empty list.
+    tests/notifications/test_tunnel.py constructs with explicit fake providers and is unaffected."""
+    from notifications import tunnel as _tunnel_mod
+    monkeypatch.setattr(_tunnel_mod, "default_providers", lambda: [])
     yield
 
 
 @pytest.fixture(autouse=True)
-def _isolate_ab_harness_db(monkeypatch, tmp_path):
-    """Point the A/B harness at a per-test tmp DB (mirrors _isolate_conviction_db)."""
-    monkeypatch.setattr(config, "AB_HARNESS_DB_PATH", tmp_path / "ab_runs.db", raising=False)
+def _no_knowledge_refresh(monkeypatch):
+    """Stub the living-knowledge refresh at the binding _runPreamble calls. The real refresh
+    reads/writes INSTALL_ROOT's knowledge cache and (when stale) scrapes the Claude docs --
+    machine state + network that must not leak into runFull-driving tests. Tests that exercise
+    refresh logic import platform_core.orchestration.knowledge_refresh directly (unaffected)."""
+    from platform_core.orchestration import run_phase_mixin as _rpm
+    monkeypatch.setattr(_rpm, "refreshClaudeKnowledge", lambda *a, **k: None)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_sie_overrides(monkeypatch, tmp_path):
+    """Pin the meta-optimizer's persisted-override file to a per-test path. Without this,
+    setOverride() wrote the REAL state/sie_overrides.json -- persisted knob changes then warped
+    every later run (order-dependent flakiness) and dirtied the working tree. settings.setOverride
+    honors this facade shadow (see settings.py)."""
+    monkeypatch.setattr(config, "SIE_OVERRIDES_PATH", tmp_path / "sie_overrides.json",
+                        raising=False)
     yield
 
 

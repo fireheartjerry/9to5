@@ -5,7 +5,7 @@ EXPORTS:
   compute() -> dict
 DEPENDS-ON: config, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_metrics.py
+RUN/TEST: python -m pytest tests/notifications/test_metrics.py
 """
 from __future__ import annotations
 

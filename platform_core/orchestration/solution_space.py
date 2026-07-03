@@ -10,7 +10,7 @@ EXPORTS:
   runForked(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec) -> tuple  -- Fork N branches, judge, merge the winner, reclaim losers
 DEPENDS-ON: config, platform_core.orchestration, state.task
 SIDE-EFFECTS: writes/removes state/<task_id>__fork_<branch>.json (throwaway branch states)
-RUN/TEST: python -m pytest tests/test_solution_space.py
+RUN/TEST: python -m pytest tests/orchestration/test_solution_space.py
 """
 from __future__ import annotations
 

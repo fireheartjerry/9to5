@@ -1,14 +1,14 @@
 # Trace Replay Subagent
 
 **Module:** `agents/trace_replay.py`  
-**CLI script:** `agents/trace-replay.py`  
+**CLI script:** `agents/trace_replay_cli.py`  
 **Companion docs:** `docs/trace_replay.md`, `.claude/skills/trace_replay.md`
 
 ---
 
 ## What it does
 
-`agents/trace_replay.py` is the orchestration-level wrapper around the `agents/trace-replay.py`
+`agents/trace_replay.py` is the orchestration-level wrapper around the `agents/trace_replay_cli.py`
 CLI script. It provides Python functions for the 9TO5 orchestrator to dispatch trace-replay
 diagnostics as a structured subagent step — with pre-built invocation specs, JSON output
 parsing, and a fast-path skip when no archived runs exist.
@@ -21,7 +21,7 @@ Key optimizations vs bare CLI invocation:
 - JSON output mode (`--format json --no-color`): skips ANSI rendering; structured result
   is O(1) to parse.
 - Calibration capped at 20 recent runs instead of 100.
-- Existence pre-check via `tracing.recentRunIds()`: no subprocess spawned when no traces
+- Existence pre-check via `tracing.recentRunIds()`: no replay attempted when no traces
   exist.
 
 ---
@@ -48,7 +48,7 @@ Keys:
 | `skills_to_invoke` | `[]` — no additional skills needed |
 | `effort_level` | `"default"` |
 | `subagent` | `None` |
-| `prompt` | Instruction to run `trace-replay.py --format json --no-color` |
+| `prompt` | Instruction to run `trace_replay_cli.py --format json --no-color` |
 | `pre_tool_hooks` | `[]` |
 | `post_tool_hooks` | `["write_obsidian"]` — result is persisted to Obsidian |
 
@@ -108,14 +108,14 @@ else:
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `ok` | `bool` | `True` when subprocess exited 0. |
+| `ok` | `bool` | `True` when the in-process replay completed. |
 | `run_id` | `str \| None` | Resolved run ID that was replayed. |
 | `divergence_count` | `int` | Number of FAIL/REPLAN/CHALLENGE events found. |
 | `high_activity_count` | `int` | Number of subtasks flagged as high-activity. |
 | `parallel_moments` | `int` | Number of concurrent execution moments detected. |
 | `total_events` | `int` | Total events in the replayed trace. |
 | `divergences` | `list[dict]` | Structured list of divergence events (see below). |
-| `raw` | `str` | Raw stdout from the subprocess (JSON string). |
+| `raw` | `str` | JSON-serialized replay report. |
 | `error` | `str \| None` | Error message on failure; `None` on success. |
 
 **`divergences` entry schema:**
@@ -134,7 +134,7 @@ else:
 | `error` value | Meaning |
 |---------------|---------|
 | `None` | Success. |
-| `"no_traces"` | No archived run traces found; subprocess skipped. |
+| `"no_traces"` | No archived run traces found; replay skipped. |
 | `"timeout"` | Subprocess exceeded 60 s time limit. |
 | `"json_parse_error"` | Subprocess output could not be parsed as JSON. |
 | `"exit N: <stderr>"` | Subprocess exited with non-zero code. |
@@ -159,7 +159,7 @@ spec = buildStepSpec(run_id="run_20260624_103000")
 ### `getDecisionPoints(run_id, limit, calibrate_limit) -> dict`
 
 Run trace-replay and return structured decision points (divergences repackaged for
-step-by-step debugging). Delegates subprocess management to `runWorkflow()`.
+step-by-step debugging). Delegates the replay to `runWorkflow()`.
 
 ```python
 from agents.trace_replay import getDecisionPoints
@@ -243,13 +243,13 @@ for dp in result["decision_points"]:
 
 ```sh
 # Human-readable text report
-python agents/trace-replay.py --run-id run_20260624_103000
+python agents/trace_replay_cli.py --run-id run_20260624_103000
 
 # Machine-readable JSON (same as runWorkflow output)
-python agents/trace-replay.py --run-id run_20260624_103000 --format json --no-color
+python agents/trace_replay_cli.py --run-id run_20260624_103000 --format json --no-color
 
 # Validate tool logic without a trace
-python agents/trace-replay.py --self-test
+python agents/trace_replay_cli.py --self-test
 ```
 
 ---
@@ -299,7 +299,7 @@ for i, dp in enumerate(result["decision_points"], 1):
 ### Example 4 — JSON output via CLI (CI integration)
 
 ```sh
-python agents/trace-replay.py --run-id run_abc123 --format json --no-color
+python agents/trace_replay_cli.py --run-id run_abc123 --format json --no-color
 ```
 
 Output:
@@ -330,7 +330,7 @@ Output:
 ## Rules
 
 - Always check `result["ok"]` before reading `divergence_count` or `divergences`.
-- When `error == "no_traces"`, no subprocess was spawned — the result is valid but empty.
+- When `error == "no_traces"`, no replay was attempted — the result is valid but empty.
 - Use `buildSpec()` / `buildStepSpec()` when you need an invocation spec dict for the
   orchestrator; use `runWorkflow()` / `getDecisionPoints()` when you want results directly.
 - The `post_tool_hooks: ["write_obsidian"]` default persists replay results to Obsidian.
@@ -344,5 +344,5 @@ Output:
 - `docs/trace_replay.md` — full CLI reference and six-phase protocol
 - `.claude/skills/trace_replay.md` — LLM-facing skill (invoked via `/trace-replay`)
 - `.claude/skills/trace_replay/README.md` — quick reference card
-- `agents/trace-replay.py` — the underlying CLI script
+- `agents/trace_replay_cli.py` — the underlying CLI script
 - `docs/TESTING.md` — how to run the narrowest useful test after a patch

@@ -13,7 +13,7 @@ EXPORTS:
   NightclawInstinct  -- Periodic 'something feels off' pattern layer
 DEPENDS-ON: config, llm_io, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_instinct.py
+RUN/TEST: python -m pytest tests/notifications/test_instinct.py
 """
 from __future__ import annotations
 

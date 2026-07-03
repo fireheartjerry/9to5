@@ -13,7 +13,7 @@ EXPORTS:
   duel(subtask_title: str, verdict: str, *, trust: Optional[float]=None, thread_id: Optional[str]=None) -> bool  -- On an adversary CHALLENGE, post a Pillow VS-card AS the Adversary persona (T8 cinematic…
 DEPENDS-ON: config, notifications.discord_bot, notifications.icons, notifications.personas, notifications.visuals
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_cast.py
+RUN/TEST: python -m pytest tests/notifications/test_cast.py
 """
 from __future__ import annotations
 

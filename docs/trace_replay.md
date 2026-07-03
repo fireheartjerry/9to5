@@ -2,7 +2,7 @@
 
 **Location:** `.claude/skills/trace_replay.md`  
 **Companion README:** `.claude/skills/trace_replay/README.md`  
-**CLI tool:** `agents/trace-replay.py`
+**CLI tool:** `agents/trace_replay_cli.py`
 
 ---
 
@@ -35,35 +35,35 @@ the first divergence is faster and more precise than guessing or re-running live
 
 ## CLI reference
 
-All flags for `agents/trace-replay.py`:
+All flags for `agents/trace_replay_cli.py`:
 
 ```sh
 # replay the most recent run (auto-detected)
-python agents/trace-replay.py
+python agents/trace_replay_cli.py
 
 # replay a specific run by ID
-python agents/trace-replay.py --run-id <RUN_ID>
+python agents/trace_replay_cli.py --run-id <RUN_ID>
 
 # limit how many recent runs are scanned when --run-id is omitted
-python agents/trace-replay.py --limit 10
+python agents/trace_replay_cli.py --limit 10
 
 # print calibrated high-activity threshold and exit without replaying
-python agents/trace-replay.py --calibrate
+python agents/trace_replay_cli.py --calibrate
 
 # validate internal logic against synthetic fixtures (no trace needed)
-python agents/trace-replay.py --self-test
+python agents/trace_replay_cli.py --self-test
 
 # print ASCII bar chart of per-subtask event distribution
-python agents/trace-replay.py --chart
+python agents/trace_replay_cli.py --chart
 
 # emit machine-readable JSON report (suitable for CI pipelines)
-python agents/trace-replay.py --format json
+python agents/trace_replay_cli.py --format json
 
 # disable ANSI colour output
-python agents/trace-replay.py --no-color
+python agents/trace_replay_cli.py --no-color
 
 # combine flags
-python agents/trace-replay.py --run-id run_abc123 --chart --format json
+python agents/trace_replay_cli.py --run-id run_abc123 --chart --format json
 ```
 
 | Flag | Default | Description |
@@ -125,7 +125,7 @@ Read the raw content in full. Do not summarize before reading.
 For 9TO5 runs, list available traces and replay the most recent:
 
 ```sh
-python agents/trace-replay.py --limit 5
+python agents/trace_replay_cli.py --limit 5
 ```
 
 ### Phase 2 — Build the event timeline
@@ -264,7 +264,7 @@ Verify with: pip install "httpx>=0.20" && python -c "from httpx import AsyncClie
 **Replay using CLI:**
 
 ```sh
-python agents/trace-replay.py --run-id run_20260601_100000
+python agents/trace_replay_cli.py --run-id run_20260601_100000
 ```
 
 **Output (abridged):**
@@ -288,7 +288,7 @@ Verify: re-run step with no-output script; confirm exit 0 → verify_pass.
 ### Example 3 — JSON output for CI pipeline integration
 
 ```sh
-python agents/trace-replay.py --run-id run_abc123 --format json
+python agents/trace_replay_cli.py --run-id run_abc123 --format json
 ```
 
 **Output:**
@@ -329,7 +329,7 @@ python agents/trace-replay.py --run-id run_abc123 --format json
 Use `--self-test` to verify the tool's internal logic is intact without needing any archived trace:
 
 ```sh
-python agents/trace-replay.py --self-test
+python agents/trace_replay_cli.py --self-test
 ```
 
 Expected output:
@@ -349,7 +349,7 @@ The self-test validates:
 ### Example 5 — ASCII bar chart
 
 ```sh
-python agents/trace-replay.py --chart
+python agents/trace_replay_cli.py --chart
 ```
 
 Appends to the text report:
@@ -382,7 +382,7 @@ EVENT DISTRIBUTION PER SUBTASK
 
 ### Decision-point extraction — `_extractDecisionPoints`
 
-**Location:** `agents/trace-replay.py`
+**Location:** `agents/trace_replay_cli.py`
 
 `_extractDecisionPoints(events, context_window=2)` scans a pre-loaded event list and
 returns one structured record per divergence event (`FAIL`, `REPLAN`, `CHALLENGE`),
@@ -415,14 +415,14 @@ enriched with the surrounding context window.
 
 ```python
 # Load events manually, then call the private function
-spec = importlib.util.spec_from_file_location("tr", "agents/trace-replay.py")
+spec = importlib.util.spec_from_file_location("tr", "agents/trace_replay_cli.py")
 tr = importlib.util.module_from_spec(spec); spec.loader.exec_module(tr)
 
 events = [...]  # from a JSONL trace
 points = tr._extractDecisionPoints(events, context_window=3)
 ```
 
-For everyday use, prefer `getDecisionPoints()` (see below) — it handles subprocess
+For everyday use, prefer `getDecisionPoints()` (see below) — it handles replay
 management and returns the same shape without manual JSONL loading.
 
 ---
@@ -477,7 +477,7 @@ def getDecisionPoints(
 
 ```python
 {
-    "ok": True,                  # bool: False on subprocess failure
+    "ok": True,                  # bool: False on replay failure
     "run_id": "run_abc123",      # resolved run ID that was replayed
     "decision_points": [...],    # list of divergence dicts (FAIL/REPLAN/CHALLENGE)
     "total_events": 42,          # total event count in the trace

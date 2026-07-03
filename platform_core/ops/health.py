@@ -7,9 +7,9 @@ or `python health.py`. Exits 0 only if every check passes.
 EXPORTS:
   collectHealth() -> list[dict]  -- Run every check and return structured results (used by the bot's /diagnostics).
   runHealthChecks() -> bool
-DEPENDS-ON: agents.executor, config
+DEPENDS-ON: agents.executor, agents.executor_env, config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_health_aura.py tests/test_health_collect.py tests/test_repo_health.py
+RUN/TEST: python -m pytest tests/notifications/test_health_aura.py tests/platform/test_health_collect.py tests/platform/test_repo_health.py
 """
 from __future__ import annotations
 
@@ -155,15 +155,23 @@ def _git() -> tuple[bool, str, str]:
 
 
 def _hooks() -> tuple[bool, str, str]:
+    """HARD check (R7): the guard hooks (block_destructive, self_modification_guard) must be
+    registered in settings AND survive per-run settings generation -- 'hooks: {}' is a failure."""
     p = config.CLAUDE_SETTINGS_PATH
     if not p.exists():
         return False, "no .claude/settings.json", "create .claude/settings.json with hooks"
     try:
         import json
+        from agents.executor_env import composeRunSettingsDict, settingsHasGuardHooks
         data = json.loads(p.read_text(encoding="utf-8"))
         hooks = data.get("hooks") or {}
-        return bool(hooks), f"hooks configured: {sorted(hooks.keys())}", \
-            ("" if hooks else "add a hooks block to settings.json")
+        if not settingsHasGuardHooks(data):
+            return False, f"guard hooks NOT registered (hooks={sorted(hooks.keys())})", \
+                "register HOOKS_SPEC guards in .claude/settings.json (see agents/executor_env.py)"
+        if not settingsHasGuardHooks(composeRunSettingsDict(p)):
+            return False, "generated per-run settings LOST the guard hooks block", \
+                "fix agents/executor_env.buildHooksBlock / composeRunSettingsDict"
+        return True, f"guard hooks registered: {sorted(hooks.keys())}", ""
     except Exception as e:  # noqa: BLE001
         return False, str(e), "fix .claude/settings.json JSON"
 

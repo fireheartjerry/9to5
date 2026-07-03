@@ -12,7 +12,7 @@ EXPORTS:
   setup(bot: dpy_commands.Bot) -> None
 DEPENDS-ON: config, notifications.audit, notifications.commands, notifications.views, notifications.work_launcher, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_plan_cog.py
+RUN/TEST: python -m pytest tests/notifications/test_plan_cog.py
 """
 from __future__ import annotations
 

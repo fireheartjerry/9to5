@@ -3,7 +3,13 @@
 Living doc tracking bottlenecks and fixes to speed up every feedback loop in 9TO5
 (GitHub CI, local test runs, and the autonomous orchestrate→execute→verify loop).
 
-Status: **initial findings captured; full multi-surface audit pending.**
+Status: **shipped (see Results); sections below are dated findings/history.**
+
+> **Update 2026-07-01 (first-principles rewrite):** the `unittest` references below are
+> historical — the suite is pytest-only, and `python tools/dev.py ci-local` now also runs
+> `compileall -q tests`, a no-unittest-main gate, and the swallow-ratchet gate
+> (`tools/swallow_baseline.json`). CI's fast job compiles `tests/` before pytest.
+> `monitoring/` and `scheduling/` (referenced in Surface 4) were deleted as dead code.
 
 ---
 
@@ -205,9 +211,9 @@ the fingerprint walk to 0.057s, making the "4 walks/run" cost ~0.2s. Adding cach
 - `test_notification_integration.py::...test_start_creates_message_and_records_id` — from other
   uncommitted `notifications/*` work on this branch (fails identically with this work reverted).
 
-**Follow-ups (not done, out of surgical scope):** stale `unittest discover` references in
-`scripts/repo_health.py:96` and `tools/repo_map.py:368` should move to the pytest command when the
-repo-map is next regenerated.
+**Follow-ups:** ~~stale `unittest discover` references in `scripts/repo_health.py` and
+`tools/repo_map.py`~~ — DONE in the 2026-07-01 rewrite; pytest is the single-sourced
+runner (`FULL_SUITE` in `tools/repo_map_render.py`).
 
 ---
 
@@ -258,3 +264,58 @@ before major refactors. Default targets:
 - Files: ideal <=300 lines, acceptable <=450, must split >450.
 - Functions: preferred <=25 lines, absolute max 70.
 - Per edit: load no more than 8 files and about 2000 lines of code context.
+
+## 2026-07-03 — Affected-test PR lane + domain reorg + consolidation
+
+Fourth optimization pass: cut PR feedback latency by running only the tests a PR's diff can
+affect, reorganized the flat `tests/` directory into domain subdirectories, and removed
+duplicate/redundant test files accumulated across the earlier waves.
+
+1. **Domain reorg.** `tests/` is no longer flat. Fast-lane tests now live under
+   `tests/evolution/`, `tests/execution/`, `tests/orchestration/`, `tests/control/`,
+   `tests/notifications/`, `tests/workflows/`, `tests/platform/`. Heavyweight
+   subprocess/e2e/integration/fuzz/simulation tests live under `tests/slow/`.
+   `tests/conftest.py`, `tests/factories.py`, and `tests/progress_reporter.py` stay at
+   the `tests/` root.
+2. **Slow marking is directory-based, not filename-based.** `tests/conftest.py::pytest_collection_modifyitems`
+   auto-marks anything collected from under `tests/slow/` as `@pytest.mark.slow` +
+   `timeout(300)`. The old `_SLOW_PATTERNS` filename-substring mechanism (matching on
+   `e2e`/`integration`/`fuzz`/`simulation`/etc. in the filename) is gone. To make a test
+   slow now, put it in `tests/slow/`.
+3. **PR CI runs affected tests only, fail-closed.** The `classify` job
+   (`.github/workflows/tests.yml`) shells out to `tools/ci_affected.py`, which maps a PR's
+   changed files to the tests that cover them via `tools/affected_tests.py` and runs only
+   those — WITHOUT the `-m "not slow"` filter, so a slow test covering changed code still
+   runs on its own PR. It falls back to the full fast lane whenever ANY of these hold:
+   more than 25 changed files; any non-`.py` file changed; any deleted/renamed file; a
+   sensitive file changed (`tests/conftest.py`, any `*/conftest.py` at any depth,
+   `pytest.ini`, `config.py`, `tests/factories.py`, `tests/progress_reporter.py`,
+   `tools/repo_map.py`, `tools/affected_tests.py`, `tools/ci_affected.py`,
+   `.github/workflows/*`, `requirements*`); or any changed non-test `.py` file that maps
+   to zero tests.
+4. **PR fast lane dropped to Python 3.12 only.** The 3.11 matrix leg no longer runs on
+   PRs; it moved to nightly as a new `nightly-fast-py311` job.
+5. **Push-to-main runs the full suite in parallel.** `fast` (full `-m "not slow"`),
+   `slow`, `dry-run-smoke`, and `e2e-smoke` all run concurrently on push — the `slow` and
+   smoke jobs no longer `needs: fast`, so they no longer wait on it.
+6. **Nightly (schedule/workflow_dispatch)** runs `exhaustive` (full slow lane, fuzz
+   seeds) plus the new `nightly-fast-py311` job (3.11 fast lane) plus smokes.
+7. **Test mapping is recursive.** `tools/repo_map.py::find_tests` and
+   `tools/affected_tests.py` resolve tests in subdirectories, so the domain reorg didn't
+   break changed-file → test mapping.
+8. **Consolidation.** ~40 same-subject test files were merged into cohesive per-domain
+   modules, and 53 provably-redundant tests were removed (duplicate import-shim tests and
+   exact-duplicate/subset tests). Net collection went from 3301 to 3248 tests.
+
+### Measured results (local, `-n auto --dist loadscope`)
+
+| Metric | Before | After |
+|---|---|---|
+| Full fast lane | ~63s (post-integration-merge) | ~35-39s |
+| Slow lane | — | ~95s (191 tests) |
+| repo_map/footgun test cluster | 22.6s | 11.9s (module/session-scoped caching fixtures) |
+| Suite pass/fail | — | fast ~3057 pass, slow 191 pass, 0 failures |
+
+The fast-lane drop from ~63s to ~35-39s is largely from moving a 34.9s chaos-sim test into
+`tests/slow/`. One pre-existing socket-teardown flake remains in
+`tests/control/test_webdash_control.py`, unrelated to this work.

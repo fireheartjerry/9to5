@@ -18,7 +18,7 @@ EXPORTS:
   reset_cache() -> None  -- Clear the detection cache (tests / after a driver change).
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_compute.py
+RUN/TEST: python -m pytest tests/execution/test_compute.py
 """
 from __future__ import annotations
 

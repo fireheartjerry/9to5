@@ -19,7 +19,7 @@ EXPORTS:
   hint(goal: str, title: str, *, rng: Optional[random.Random]=None, db_path: Optional[Path]=None) -> str  -- Orchestrator-facing best-effort one-liner: the learned effort prior, or "".
 DEPENDS-ON: config, learning.lessons, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_policy.py
+RUN/TEST: python -m pytest tests/evolution/test_policy.py
 """
 from __future__ import annotations
 

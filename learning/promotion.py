@@ -19,7 +19,7 @@ EXPORTS:
   run_promotions(*, rng: Optional[random.Random]=None, db_path: Optional[Path]=None) -> dict  -- Auto-evaluate one challenger per role and promote it if the gate passes
 DEPENDS-ON: config, learning.prompts, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_promotion.py
+RUN/TEST: python -m pytest tests/evolution/test_promotion.py
 """
 from __future__ import annotations
 

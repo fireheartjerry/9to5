@@ -5,7 +5,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none
-RUN/TEST: python -m pytest tests/test_evolver_prompts.py
+RUN/TEST: python -m pytest tests/evolution/test_evolver_prompts.py
 """
 from __future__ import annotations
 

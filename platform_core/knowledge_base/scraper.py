@@ -7,7 +7,7 @@ EXPORTS:
   scanLocalClaude(roots: Optional[tuple]=None) -> dict  -- Recursively read every installed ``.claude`` surface
   readProductSelfKnowledge(roots: Optional[tuple]=None) -> dict  -- Locate + read the product-self-knowledge skill (Claude Code's own current
   readRecommendations(path: Optional[Path]=None) -> dict  -- Read the expert recommendations doc (how 9to5 should wield Claude Code)
-DEPENDS-ON: config, platform_core.core.provenance
+DEPENDS-ON: platform_core.app_config, platform_core.core.provenance
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -20,7 +20,9 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
 
-import config
+# Direction rule (R12): platform_core modules read the in-platform registry facade,
+# never the root config module (same call shape: config.X / config.getLogger).
+from platform_core import app_config as config
 import platform_core.core.provenance as _prov
 
 LOG = config.getLogger("knowledge.scraper")

@@ -10,7 +10,7 @@ EXPORTS:
   CostBudget  -- Accumulate per-run USD; emit one warn + one ceiling event
 DEPENDS-ON: config, notifications.event_bus
 SIDE-EFFECTS: emits Events on the live bus
-RUN/TEST: python -m pytest tests/test_cost_budget.py
+RUN/TEST: python -m pytest tests/execution/test_cost_budget.py
 """
 from __future__ import annotations
 

@@ -15,7 +15,7 @@ EXPORTS:
   setup(bot: dpy_commands.Bot) -> None
 DEPENDS-ON: config, learning.wisdom, memory.user_prefs, notifications.brain_dialogue, notifications.briefing, notifications.commands, notifications.slash
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_log_cog.py
+RUN/TEST: python -m pytest tests/notifications/test_log_cog.py
 """
 from __future__ import annotations
 

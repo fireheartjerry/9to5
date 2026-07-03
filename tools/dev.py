@@ -8,13 +8,14 @@ Subcommands:
   check [files] [--json] ruff + typecheck + affected tests + repo-map drift
   test [pytest-args]    run tests (default: full suite)
   fast                  run the fast lane: pytest -m "not slow"
-  ci-local              local CI gate: repo-map, workflows, affected tests, fast fallback
+  ci-local              local CI gate: compile tests, no-unittest-main, repo-map, workflows, affected tests, fast fallback
   slow-report           run slow lane with heartbeat + durations; write logs/slow-test-report.md
   heartbeat-test        prove pytest heartbeat output with an explicit slow fixture
   context-check         validate Claude-facing context budgets
   iteration-health      summarize recent iteration metrics and next validation hints
   bench-iteration       run/list the iteration benchmark suite
   size-audit            bucket tracked Python files and functions by line count
+  swallow-ratchet       bare except-swallow count vs baseline (--update to lower it)
   affected              print pytest targets for `git diff` (delegates to affected_tests.py)
   watch [files]         re-run affected tests on .py changes
   outline <file>        signatures + docstring-first-lines + anchors only
@@ -39,7 +40,7 @@ EXPORTS:
   main(argv: list[str]) -> int
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_dev_commands.py
+RUN/TEST: python -m pytest tests/platform/test_dev_commands.py
 """
 from __future__ import annotations
 
@@ -56,6 +57,7 @@ from dev_checks import (  # noqa: E402
     REPO_ROOT, PY, _run,
     _progress_env,  # noqa: F401 -- re-exported for backward compat (test_dev_commands.py)
     cmd_lint, cmd_typecheck, cmd_check, cmd_test, cmd_fast, cmd_ci_local,
+    cmd_swallow_ratchet,
 )
 from dev_reports import (  # noqa: E402
     _run_tee,  # noqa: F401 -- re-exported for backward compat (test_dev_commands.py)
@@ -108,6 +110,7 @@ COMMANDS = {
     "affected": cmd_affected, "watch": cmd_watch,
     "outline": cmd_outline, "where": cmd_where, "lint": cmd_lint, "typecheck": cmd_typecheck,
     "run": cmd_run, "dryrun": cmd_dryrun, "e2e": cmd_e2e, "codemod": cmd_codemod,
+    "swallow-ratchet": cmd_swallow_ratchet,
 }
 
 

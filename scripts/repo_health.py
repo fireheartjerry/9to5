@@ -19,7 +19,7 @@ EXPORTS:
   main(argv: 'list[str] | None'=None) -> int
 DEPENDS-ON: config, platform_core.core.tracing
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_repo_health.py
+RUN/TEST: python -m pytest tests/platform/test_repo_health.py
 """
 from __future__ import annotations
 
@@ -32,6 +32,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+if str(REPO_ROOT / "tools") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+
+from repo_map_render import FULL_SUITE  # noqa: E402  (single-sourced canonical test command)
 
 
 def _git(*args: str) -> str:
@@ -45,7 +49,7 @@ def _git(*args: str) -> str:
 
 def _testCount() -> int:
     try:
-        return len(list((REPO_ROOT / "tests").glob("test_*.py")))
+        return len(list((REPO_ROOT / "tests").rglob("test_*.py")))
     except Exception:
         return 0
 
@@ -93,7 +97,7 @@ def gather() -> dict:
         "optional_services": _optionalServices(),
         "suggested_commands": [
             "python tools/dev.py check <file>      # fast lint+type+affected-tests for one file",
-            "python -m pytest tests -q            # full suite (CI-canonical)",
+            f"{FULL_SUITE}                # full suite (CI-canonical; pytest ONLY, sandboxed by conftest)",
             "python -m pytest -m 'not slow' -q     # fast lane",
             "python tools/repo_map.py --check      # AI-nav drift check",
         ],

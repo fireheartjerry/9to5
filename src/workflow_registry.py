@@ -17,7 +17,7 @@ EXPORTS:
   WorkflowRegistry  -- Thread-safe mutable registry of WorkflowDefinition entries.
 DEPENDS-ON: platform_core.core.contracts
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_workflow_registry.py
+RUN/TEST: python -m pytest tests/workflows/test_workflow_registry.py
 """
 from __future__ import annotations
 

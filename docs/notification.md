@@ -1,5 +1,13 @@
 # 9TO5 — Notification System Reference
 
+> **SUPERSEDED — historical (st-006 era).** The current reference is
+> `docs/notification_system.md`. In the 2026-07-01 first-principles rewrite the
+> `NotificationBus` fan-out layer (`notifications/bus.py`) and `predictive.py`
+> were **deleted** (zero production callers — surfaces are wired directly and via
+> `notifications/event_bus.py`). The `NotificationBus` sections below describe
+> removed code; the `NotificationEntry` schema and surface descriptions remain
+> broadly accurate.
+
 > **Scope:** All notification surfaces, the `NotificationBus` fan-out layer,
 > the `NotificationEntry` schema, the Discord dashboard, milestone embeds, web
 > dashboard, and the gateway command bot.  This document reflects the state of
@@ -29,7 +37,7 @@ WARNING, and never propagates into the orchestrator run loop.
 
 ---
 
-## NotificationBus (`notifications/bus.py`)
+## NotificationBus (`notifications/bus.py`) — REMOVED 2026-07-01
 
 ### Purpose
 Single fan-out point.  Register surfaces once; emit events to all of them.

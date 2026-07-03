@@ -225,10 +225,10 @@ ERROR orchestrator.pr_feedback: record_pr_outcome failed — PR outcome data may
 |---|---|
 | `tests/test_pr_feedback.py` | `capturePRFeedback` end-to-end with mocked `gh` |
 | `tests/test_experience_pr.py` | `record_pr_outcome` / `fetch_pr_outcomes` SQLite writes |
-| `tests/test_learning_loop.py` | SIE integration with PR feedback signal |
+| `tests/slow/test_learning_loop.py` | SIE integration with PR feedback signal |
 
 Run all three:
 
 ```bash
-python -m pytest tests/test_pr_feedback.py tests/test_experience_pr.py tests/test_learning_loop.py -v
+python -m pytest tests/test_pr_feedback.py tests/test_experience_pr.py tests/slow/test_learning_loop.py -v
 ```

@@ -21,21 +21,26 @@ EXPORTS:
   resetTransport() -> None  -- Zero the REST breaker + 401 latch so replays / 429-401 probes are independent.
 DEPENDS-ON: config, learning.human_feedback, notifications.commands, notifications.discord_client, notifications.ops, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_bot_replay.py
+RUN/TEST: python -m pytest tests/notifications/test_bot_replay.py
 """
 from __future__ import annotations
 
 import contextlib
 import copy
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import config
-from platform_core.runtime.control import ControlBus, _PROCESS_LOCK, _blank
+from platform_core.runtime.control import ControlBus, _blank
 from notifications import commands as spine
 from notifications import discord_client as _dc
 
 LOG = config.getLogger("bot_replay")
+
+# HEAD's ControlBus moved to a SQLite backend and no longer needs a process-wide file
+# lock -- this simulator's in-memory store still does, so it keeps its own local one.
+_PROCESS_LOCK = threading.Lock()
 
 # Mirror notifications.bot.core: replies are clamped before the gateway would send them.
 MAX_REPLY_CHARS = config.DISCORD_MAX_CONTENT - 100
@@ -49,12 +54,17 @@ BOTH = "both"
 class InMemoryControlBus(ControlBus):
     """A ``ControlBus`` whose backing store is a process dict -- no disk IO, no lock files --
     yet preserving the REAL ``_blank`` schema, the forward-compatible merge, and the
-    ``pushOp`` identity-dedup, so dual-consumer / duplicate behaviour is exercised for real."""
+    ``pushOp`` identity-dedup, so dual-consumer / duplicate behaviour is exercised for real.
+
+    HEAD's real ``ControlBus`` has no single internal read/write hook to intercept (each
+    method calls ``control_store.*`` directly against SQLite) -- so every public method is
+    reimplemented here against ``self._store`` instead of relying on inherited plumbing."""
 
     def __init__(self, task_id: str):
         self.task_id = task_id
         self.path = None  # never touched: all IO is overridden below
         self._store: dict[str, Any] = _blank()
+        self._seen_op_ids: set = set()
 
     def load(self) -> dict[str, Any]:
         base = _blank()
@@ -71,12 +81,99 @@ class InMemoryControlBus(ControlBus):
             self._store = copy.deepcopy(base)
         return self._store
 
+    # ---- abort / pause ----------------------------------------------------
+    def requestAbort(self) -> None:
+        self._mutate(lambda b: b.__setitem__("abort", True))
+
+    def isAbort(self) -> bool:
+        return bool(self.load()["abort"])
+
+    def requestPause(self) -> None:
+        self._mutate(lambda b: b.__setitem__("pause", True))
+
+    def clearPause(self) -> None:
+        self._mutate(lambda b: b.__setitem__("pause", False))
+
+    def isPaused(self) -> bool:
+        return bool(self.load()["pause"])
+
+    # ---- Spec B: granular mid-run control signals --------------------------
+    def requestKillSubprocess(self) -> None:
+        self._mutate(lambda b: b.__setitem__("kill_subprocess", True))
+
+    def isKillSubprocess(self) -> bool:
+        return bool(self.load()["kill_subprocess"])
+
+    def clearKillSubprocess(self) -> None:
+        self._mutate(lambda b: b.__setitem__("kill_subprocess", False))
+
+    def requestForceReplan(self) -> None:
+        self._mutate(lambda b: b.__setitem__("force_replan", True))
+
+    def isForceReplan(self) -> bool:
+        return bool(self.load()["force_replan"])
+
+    def clearForceReplan(self) -> None:
+        self._mutate(lambda b: b.__setitem__("force_replan", False))
+
+    # ---- approval decisions (gated mode) ------------------------------------
+    def decide(self, gate: str, verdict: str) -> None:
+        def _set(b):
+            b["decisions"][gate] = verdict
+        self._mutate(_set)
+
+    def getDecision(self, gate: str) -> Optional[str]:
+        return self.load()["decisions"].get(gate)
+
+    def clearDecision(self, gate: str) -> None:
+        def _clear(b):
+            b["decisions"][gate] = None
+        self._mutate(_clear)
+
+    def setPendingGate(self, gate: Optional[str]) -> None:
+        self._mutate(lambda b: b.__setitem__("pending_gate", gate))
+
+    def getPendingGate(self) -> Optional[str]:
+        return self.load()["pending_gate"]
+
+    # ---- queued plan operations ---------------------------------------------
+    def pushOp(self, op: dict[str, Any], source_msg_id: Optional[str] = None) -> None:
+        """Mirrors control_store.pushOp's UNIQUE(task_id, source_msg_id) semantics: the
+        SAME id dedups (one message, one op); no id (None) never dedups."""
+        with _PROCESS_LOCK:
+            if source_msg_id is not None:
+                key = str(source_msg_id)
+                if key in self._seen_op_ids:
+                    return
+                self._seen_op_ids.add(key)
+        self._mutate(lambda b: b["plan_ops"].append(dict(op)))
+
     def drainOps(self) -> list[dict[str, Any]]:
         with _PROCESS_LOCK:
             ops = list(self._store.get("plan_ops") or [])
             if ops:
                 self._store["plan_ops"] = []
         return ops
+
+    # ---- Discord poll cursor ------------------------------------------------
+    def setSeen(self, message_id: Optional[str]) -> None:
+        self._mutate(lambda b: b.__setitem__("seen_discord_id", message_id))
+
+    def getSeen(self) -> Optional[str]:
+        return self.load()["seen_discord_id"]
+
+    # ---- lifecycle ------------------------------------------------------------
+    def clear(self) -> None:
+        with _PROCESS_LOCK:
+            self._store = _blank()
+            self._seen_op_ids = set()
+
+    def clearForRunStart(self) -> None:
+        def _reset(b):
+            b["plan_ops"] = []
+            b["seen_discord_id"] = None
+            b["pending_gate"] = None
+        self._mutate(_reset)
 
 
 @dataclass
@@ -199,7 +296,7 @@ class BotReplay:
             self.result.ignored.append((msg.msg_id, reason or "ignored"))
             return
         try:
-            reply = spine.applyCommand(self.bus, self.state, cmd)
+            reply = spine.applyCommand(self.bus, self.state, cmd, source_msg_id=str(msg.msg_id))
             self.result.applied.append((GATEWAY, cmd.name))
         except Exception as exc:  # noqa: BLE001 -- a raise here is exactly the bug we hunt
             self.result.errors.append((msg.msg_id, repr(exc)))
@@ -213,7 +310,7 @@ class BotReplay:
             self.result.ignored.append((msg.msg_id, reason or "ignored"))
             return
         try:
-            spine.applyCommand(self.bus, self.state, cmd)
+            spine.applyCommand(self.bus, self.state, cmd, source_msg_id=str(msg.msg_id))
             self.result.applied.append((POLLER, cmd.name))
         except Exception as exc:  # noqa: BLE001
             self.result.errors.append((msg.msg_id, repr(exc)))

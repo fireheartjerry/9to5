@@ -7,3 +7,6 @@ pytest-timeout>=2.3
 # optional -- exp_index.getIndex() import-guards it and falls open to the O(n) cosine scan
 # when absent, so runtime never requires it. Installed only for the ChromaIndex test lane.
 chromadb>=0.5
+# YAML frontmatter parsing in .claude/skills/skill-gap-analysis.py and its tests; declared
+# explicitly rather than relying on the transitive copy pulled in via chromadb.
+pyyaml>=6.0

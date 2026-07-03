@@ -14,23 +14,22 @@ EXPORTS:
   record(review_type: str, verdict: dict, *, tier: Optional[str]=None, ollama_verdict: Optional[str]=None, upheld: Optional[bool]=None, task_id: Optional[str]=None) -> None  -- Append one consult row
   summary(task_id: Optional[str]=None) -> dict  -- Aggregate trust metrics (optionally for one task): consult counts by tier, challenge ra…
   dashboard_line(task_id: Optional[str]=None) -> str  -- One compact line for the live Discord dashboard / logs.
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.core
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_adversary_trust.py
+RUN/TEST: python -m pytest tests/orchestration/test_adversary_trust.py
 """
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import config
+from platform_core.core import clock, jsonl_io
 
 LOG = config.getLogger("adversary_trust")
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return clock.nowIsoUtc()
 
 
 def record(review_type: str, verdict: dict, *, tier: Optional[str] = None,
@@ -52,34 +51,22 @@ def record(review_type: str, verdict: dict, *, tier: Optional[str] = None,
         "upheld": upheld,
     }
     try:
-        path = config.ADVERSARY_TRUST_LOG
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(row) + "\n")
+        jsonl_io.appendRecord(config.ADVERSARY_TRUST_LOG, row)
     except Exception as e:  # noqa: BLE001 -- telemetry must never break a run
         LOG.warning("trust record write failed: %s", e)
 
 
 def _rows() -> list[dict]:
+    # Per-line parse: ONE torn line (a crash mid-append) no longer erases the whole
+    # trust history -- only that line is skipped.
     try:
-        path = config.ADVERSARY_TRUST_LOG
-        if not path.exists():
-            return []
-        lines = path.read_text(encoding="utf-8").splitlines()
+        rows, skipped = jsonl_io.iterRecords(config.ADVERSARY_TRUST_LOG)
     except Exception as e:  # noqa: BLE001
         LOG.warning("trust log unreadable: %s", e)
         return []
-    # Parse per line so ONE torn/partial JSONL row (e.g. an interrupted append) is skipped
-    # instead of sinking the entire log -- trust telemetry must degrade, never disappear.
-    out: list[dict] = []
-    for ln in lines:
-        if not ln.strip():
-            continue
-        try:
-            out.append(json.loads(ln))
-        except Exception:  # noqa: BLE001 -- skip a corrupt line, keep the good ones
-            LOG.debug("trust log: skipping unparseable line")
-    return out
+    if skipped:
+        LOG.warning("trust log: skipped %d unreadable line(s)", skipped)
+    return [r for r in rows if isinstance(r, dict)]
 
 
 def summary(task_id: Optional[str] = None) -> dict:

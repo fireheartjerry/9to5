@@ -1,6 +1,8 @@
 # Gnarly-audit: remaining MEDIUM/LOW findings
 
 > **Historical record.** Findings referencing the ChatGPT/CDP second-brain layer (`chatgpt_driver`, `BROWSER_LAYER_ENABLED`, "GPT" second brain) are superseded by the 2026-06-26 migration to Google Gemini via the `google-genai` SDK (`agents/gemini_driver.py`). Kept as-is for provenance.
+>
+> **2026-07-01 note:** the first-principles rewrite fixed the `stdout_contains*`-ignores-return-code finding (all stdout expect modes now require rc==0; `agents/verification.py::verdictFor`) and deleted several audited modules (`learning/adapter_ops.py`, retry stack, `monitoring/`, `scheduling/`). See `docs/superpowers/specs/2026-07-01-first-principles-rewrite-design.md`.
 
 The 30-agent systematic-debugging audit (2026-06-25) confirmed 42 real bugs. **All CRITICAL, HIGH,
 MEDIUM, and LOW findings are now FIXED** on this branch (audit/gnarly-bug-hunt) with regression

@@ -29,7 +29,7 @@ EXPORTS:
   GeminiSession  -- A long-lived Gemini chat session
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_gemini_driver.py
+RUN/TEST: python -m pytest tests/orchestration/test_gemini_driver.py
 """
 from __future__ import annotations
 

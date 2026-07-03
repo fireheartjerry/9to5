@@ -27,7 +27,7 @@ EXPORTS:
   Brain  -- The authoring intelligence: given a system+user prompt, return the model's text/JSON.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_protocols.py
+RUN/TEST: python -m pytest tests/platform/test_protocols.py
 """
 from __future__ import annotations
 

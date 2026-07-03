@@ -8,7 +8,7 @@ EXPORTS:
   forkPlan(subtask: dict, *, n: int, angles: tuple=DIVERSITY_ANGLES, work_profile=None) -> ForkPlan  -- Build N diversity seeds spanning effort x angle
 DEPENDS-ON: config, platform_core.orchestration, platform_core.orchestration.subtask
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_fork_policy.py
+RUN/TEST: python -m pytest tests/orchestration/test_fork_policy.py
 """
 from __future__ import annotations
 

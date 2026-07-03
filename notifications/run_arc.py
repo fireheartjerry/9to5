@@ -14,7 +14,7 @@ EXPORTS:
   beat_complete(status: str, done: int, total: int, elapsed: str) -> str
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_run_arc.py
+RUN/TEST: python -m pytest tests/control/test_run_arc.py
 """
 from __future__ import annotations
 

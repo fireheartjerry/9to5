@@ -18,7 +18,7 @@ EXPORTS:
   runCommandBot() -> None  -- Start the Nightclaw gateway (delegates to :func:`notifications.bot.core.runBot`).
 DEPENDS-ON: config, notifications.bot.core, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_command_bot.py
+RUN/TEST: python -m pytest tests/notifications/test_command_bot.py
 """
 from __future__ import annotations
 

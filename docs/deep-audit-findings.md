@@ -1,6 +1,8 @@
 # 9to5 deep-audit findings (multi-agent, adversarially verified)
 
 > **Historical record.** Findings referencing the ChatGPT/CDP second-brain layer (`chatgpt_driver`, `vlm_healer`, `profile_hygiene`, `BROWSER_LAYER_ENABLED`, "GPT-5.5") are superseded by the 2026-06-26 migration to Google Gemini via the `google-genai` SDK (`agents/gemini_driver.py`). Kept as-is for provenance; see `docs/ARCHITECTURE.md` and `agents/README.md` for current architecture.
+>
+> **2026-07-01 note:** the first-principles rewrite deleted several audited subjects (`memory/subtask_manager.py`, `learning/adapter_ops.py`, the retry stack, `monitoring/`, `scheduling/`, `human_nature/`) and replaced the file-mailbox ControlBus with SQLite (`state/control.db`) — findings about the O_EXCL sidecar-lock bypass are moot. See `docs/superpowers/specs/2026-07-01-first-principles-rewrite-design.md`.
 
 From the `deep-audit` workflow on consolidated `integration/unify-all`. **47 unique findings** confirmed real (is_real, confidence ≥ 0.6). Most are PRE-EXISTING (not merge-introduced). Only the wipe source-deletion guard (CRITICAL) was fixed in this PR — the rest are catalogued here for the ultrareview to triage.
 

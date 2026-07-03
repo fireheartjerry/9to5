@@ -11,7 +11,7 @@ EXPORTS:
   restore_skill(target: str, *, db_path: Optional[Path]=None) -> bool  -- Recover an archived/stale skill back to champion (archive is never a delete).
 DEPENDS-ON: config, memory.experience
 SIDE-EFFECTS: flips candidate states; writes state/evolution/reports
-RUN/TEST: python -m pytest tests/test_evolution_curator.py
+RUN/TEST: python -m pytest tests/evolution/test_evolution_curator.py
 """
 from __future__ import annotations
 
@@ -36,7 +36,9 @@ def _age_days(ts: Optional[str], now: datetime) -> float:
 
 def _write_report(report: dict[str, Any]) -> None:
     try:
-        rep_dir = Path(config.PROJECT_ROOT) / "state" / "evolution" / "reports"
+        # Derive from STATE_DIR (state/tasks) so per-test isolation redirects this too --
+        # the PROJECT_ROOT form appended to the COMMITTED CURATOR.md on every test run.
+        rep_dir = Path(config.STATE_DIR).parent / "evolution" / "reports"
         rep_dir.mkdir(parents=True, exist_ok=True)
         with (rep_dir / "CURATOR.md").open("a", encoding="utf-8") as fh:
             fh.write(f"- curator run dry={report['dry_run']} archived={report['archived']} "

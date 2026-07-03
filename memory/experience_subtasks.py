@@ -8,7 +8,7 @@ EXPORTS:
   set_subtask_importance(run_id: str, st_id: str, importance: float, db_path: Optional[Path]=None) -> bool  -- Denormalize write-time salience onto the subtask row (so rerank has it even for
   embedded_subtasks(only_passed: bool=True, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Subtask rows that carry an embedding
   fetch_subtasks(run_id: Optional[str]=None, *, limit: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]
-DEPENDS-ON: config, memory.experience_content, memory.experience_schema
+DEPENDS-ON: config, memory.experience_content, memory.experience_schema, platform_core.core.best_effort
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -19,6 +19,7 @@ from typing import Any, Optional
 
 import config
 from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _j
+from platform_core.core.best_effort import best_effort
 
 
 def _subtask_params(run_id: str, st: dict[str, Any]) -> dict[str, Any]:
@@ -70,7 +71,7 @@ def record_subtask(run_id: str, st: dict[str, Any], db_path: Optional[Path] = No
     if not isinstance(st, dict) or not (st.get("subtask_id") or "").strip():
         LOG.warning("record_subtask: missing or empty subtask_id, skipping")
         return False
-    try:
+    with best_effort("ledger.subtasks", log=LOG):
         with _WRITE_LOCK, _connect(db_path) as conn:
             conn.execute(
                 """INSERT INTO subtasks
@@ -111,9 +112,7 @@ def record_subtask(run_id: str, st: dict[str, Any], db_path: Optional[Path] = No
                 _subtask_params(run_id, st),
             )
         return True
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("record_subtask failed (ignored): %s", e)
-        return False
+    return False
 
 
 def sync_subtask(state_data: dict[str, Any], st: dict[str, Any],
@@ -150,7 +149,7 @@ def sync_subtask(state_data: dict[str, Any], st: dict[str, Any],
     ok = record_subtask(state_data.get("task_id"), enriched, db_path=db_path)
     # Layer-1 widen: persist the REAL solution content + denormalize importance. Best-effort:
     # a content-store failure must NEVER change the subtask-record result.
-    try:
+    with best_effort("ledger.exp_content", log=LOG):
         from memory import experience_content
         run_id = state_data.get("task_id")
         if experience_content.recordFromSubtask(run_id, enriched, db_path=db_path):
@@ -161,50 +160,42 @@ def sync_subtask(state_data: dict[str, Any], st: dict[str, Any],
                 adversary_verdict=enriched.get("_adversary_verdict"),
                 cost_usd=session.get("cost_usd"))
             set_subtask_importance(run_id, enriched["subtask_id"], importance, db_path=db_path)
-    except Exception as e:  # noqa: BLE001
-        LOG.debug("sync_subtask content write-back skipped (ignored): %s", e)
     return ok
 
 
 def set_subtask_embedding(run_id: str, st_id: str, blob: bytes,
                           db_path: Optional[Path] = None) -> bool:
     """Attach an embedding BLOB to an existing subtask row (Layer 1 retrieval). Best-effort."""
-    try:
+    with best_effort("ledger.subtasks", log=LOG):
         with _WRITE_LOCK, _connect(db_path) as conn:
             conn.execute("UPDATE subtasks SET embedding=? WHERE run_id=? AND st_id=?",
                          (blob, run_id, st_id))
         return True
-    except Exception as e:  # noqa: BLE001
-        LOG.warning("set_subtask_embedding failed (ignored): %s", e)
-        return False
+    return False
 
 
 def set_subtask_importance(run_id: str, st_id: str, importance: float,
                            db_path: Optional[Path] = None) -> bool:
     """Denormalize write-time salience onto the subtask row (so rerank has it even for
     rows that predate exp_content). Best-effort; mirrors set_subtask_embedding."""
-    try:
+    with best_effort("ledger.subtasks", log=LOG):
         with _WRITE_LOCK, _connect(db_path) as conn:
             conn.execute("UPDATE subtasks SET importance=? WHERE run_id=? AND st_id=?",
                          (float(importance), run_id, st_id))
         return True
-    except Exception as e:  # noqa: BLE001
-        LOG.debug("set_subtask_importance failed (ignored): %s", e)
-        return False
+    return False
 
 
 def embedded_subtasks(only_passed: bool = True,
                       db_path: Optional[Path] = None) -> list[dict[str, Any]]:
     """Subtask rows that carry an embedding -- the candidate pool for top-K retrieval."""
-    try:
+    with best_effort("ledger.subtasks_read", log=LOG):   # missing/corrupt DB -> empty pool
         with _connect(db_path) as conn:
             sql = "SELECT * FROM subtasks WHERE embedding IS NOT NULL"
             if only_passed:
                 sql += " AND verify_passed=1"
             return [dict(r) for r in conn.execute(sql)]
-    except Exception as e:  # noqa: BLE001 -- missing/corrupt DB degrades to empty pool
-        LOG.warning("embedded_subtasks failed (ignored): %s", e)
-        return []
+    return []
 
 
 def fetch_subtasks(run_id: Optional[str] = None, *, limit: Optional[int] = None,

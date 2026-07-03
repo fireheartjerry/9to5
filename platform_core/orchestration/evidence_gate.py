@@ -14,9 +14,9 @@ EXPORTS:
   gitDiffFacts(work_dir: str) -> dict  -- Best-effort, re-derivable git facts for the receipt: head sha, working-tree diff text, …
   runEvidenceGate(orch, state, subtask: dict, result: dict, exec_cwd: str, vresult: dict, sid: str) -> 'tuple[dict, bool]'  -- For a code-change subtask that PASSED the deterministic gate: run the independent verif…
   persistReceipt(orch, state, sid: str, receipt: dict) -> None  -- Write the Evidence Receipt as a per-subtask Obsidian note (durable audit artifact).
-DEPENDS-ON: agents.completion_envelope, agents.evidence_receipt, agents.independent_verifier, agents.verifier, config, platform_core.orchestration
+DEPENDS-ON: agents.completion_envelope, agents.evidence_receipt, agents.independent_verifier, agents.verification, agents.verifier, config, platform_core.core.best_effort, platform_core.orchestration
 SIDE-EFFECTS: spawns a read-only Claude subprocess; writes an Obsidian note; mutates state notifications
-RUN/TEST: python -m pytest tests/test_evidence_gate.py
+RUN/TEST: python -m pytest tests/execution/test_evidence_gate.py
 """
 from __future__ import annotations
 
@@ -30,48 +30,106 @@ from agents.completion_envelope import summarizeEnvelope
 LOG = config.getLogger("orchestrator")
 
 
+def _effectiveVerify(orch, subtask: dict, exec_cwd: str, verify_spec,
+                     attempt_started: float, declared: list, sid: str):
+    """FX-1: synthesize a behavioral verify when none was authored (declared diff-grounding
+    targets survive the synthesis -- they are part of the acceptance contract, R10).
+
+    BUG-009: ``_repairVerify`` extracts a path from Ollama-authored description text; route it
+    through ``sanitizeVerify`` same as every planner-authored verify, rather than trusting it
+    unsanitized (defense-in-depth against shell-chaining metacharacters/non-stdlib imports)."""
+    if (verify_spec or {}).get("cmd"):
+        return verify_spec
+    synth = verifier.sanitizeVerify(orch._repairVerify(subtask, exec_cwd, attempt_started))
+    if not synth:
+        return verify_spec
+    if declared:
+        synth.setdefault("targets", declared)
+    LOG.info("%s: no verify authored -> synthesized behavioral check %s", sid, synth["cmd"])
+    return synth
+
+
+def _repairBrittleVerify(orch, subtask: dict, exec_cwd: str, verify_spec,
+                         attempt_started: float, declared: list, result: dict,
+                         cancel, sid: str, vresult: dict, passed: bool) -> "tuple[dict, bool]":
+    """VERIFY REPAIR: rescue brittle single-fact verifies; strict compound verifies are never
+    rescued. Returns the (possibly repaired) (vresult, passed)."""
+    if passed or verifier.isStrictVerify(verify_spec):
+        return vresult, passed
+    repaired = verifier.sanitizeVerify(orch._repairVerify(subtask, exec_cwd, attempt_started))
+    same = bool(repaired) and (repaired.get("cmd"), repaired.get("expect")) == \
+        ((verify_spec or {}).get("cmd"), (verify_spec or {}).get("expect"))
+    if repaired and not same:
+        if declared:
+            repaired.setdefault("targets", declared)
+        rv = verifier.runVerification(repaired, exec_cwd, result, cancel_check=cancel)
+        if rv.get("passed"):
+            LOG.info("%s: brittle verify repaired -> PASS via %s", sid, repaired["cmd"])
+            return rv, True
+    return vresult, passed
+
+
+def _selfRefGateDowngrade(orch, state, sid: str, vresult: dict, passed: bool) -> "tuple[dict, bool]":
+    """After a verify PASS on a self-improvement run, apply the cheap repo quality gates."""
+    if not (passed and state.meta.get("is_self_referential")):
+        return vresult, passed
+    gate_ok, gate_detail = orch._selfRefQualityGate(str(config.PROJECT_ROOT))
+    if gate_ok:
+        return vresult, passed
+    vresult = dict(vresult)
+    vresult.update({
+        "passed": False,
+        "returncode": 1,
+        "stderr": gate_detail,
+        "quality_gate": "self_ref",
+    })
+    LOG.warning("%s: self-ref quality gate failed after verify pass", sid)
+    return vresult, False
+
+
+def _failureFeedback(orch, state, subtask: dict, combined: str, dashboard,
+                     vresult: dict, resume_session) -> tuple:
+    """Build the retry feedback for a FAILED verify. Returns (failure_feedback, resume_session)."""
+    failure_feedback = (
+        f"cmd: {vresult.get('cmd')}\nexpect: {vresult.get('expect')}\n"
+        f"rc: {vresult.get('returncode')}\nstdout:\n{vresult.get('stdout')}\n"
+        f"stderr:\n{vresult.get('stderr')}"
+    )
+    # R10: the typed Receipt carries the actionable line (missing needles, unchanged
+    # declared target, unevaluable expect) -- lead with it so the retry fixes the cause.
+    receipt = getattr(vresult, "receipt", None)
+    if receipt is not None and receipt.failure_feedback:
+        failure_feedback = receipt.failure_feedback + "\n\n" + failure_feedback
+    # If the executor asked a human, the Ollama brain answers so the next attempt is autonomous.
+    answer = orch._resolveClarifications(state, subtask, combined, dashboard)
+    if answer:
+        failure_feedback += (
+            "\n\n[ORCHESTRATOR ANSWERS YOUR QUESTIONS -- proceed now, do NOT ask again]\n"
+            + answer
+        )
+        resume_session = None   # approach is changing -> start the next attempt fresh
+    return failure_feedback, resume_session
+
+
 def runAttemptVerify(orch, state, subtask: dict, result: dict, exec_cwd: str,
                      verify_spec, attempt_started: float, sid: str, combined: str,
                      dashboard, resume_session) -> tuple:
     """Run verify, repair if brittle, apply the self-ref + evidence-gate downgrades, record.
     Returns (vresult, passed, resume_session, failure_feedback). Extracted from execute_mixin so the
     mixin stays under the size threshold; takes the Orchestrator as ``orch``."""
-    # FX-1: synthesize a behavioral verify when none was authored.
-    effective_verify = verify_spec
-    if not (verify_spec or {}).get("cmd"):
-        # BUG-009: _repairVerify() extracts a path from Ollama-authored description text; route it
-        # through sanitizeVerify() same as every planner-authored verify, rather than trusting it
-        # unsanitized (defense-in-depth against shell-chaining metacharacters/non-stdlib imports).
-        synth = verifier.sanitizeVerify(orch._repairVerify(subtask, exec_cwd, attempt_started))
-        if synth:
-            effective_verify = synth
-            LOG.info("%s: no verify authored -> synthesized behavioral check %s", sid, synth["cmd"])
-    vresult = verifier.runVerification(effective_verify, exec_cwd, result)
+    declared = [t for t in ((verify_spec or {}).get("targets") or []) if t] \
+        if isinstance(verify_spec, dict) else []
+    cancel = (lambda: orch._deadlinePassed(state))
+    effective_verify = _effectiveVerify(orch, subtask, exec_cwd, verify_spec,
+                                        attempt_started, declared, sid)
+    vresult = verifier.runVerification(effective_verify, exec_cwd, result, cancel_check=cancel)
     passed = bool(vresult["passed"])
     if not (effective_verify or {}).get("cmd"):
         vresult["unverified"] = True   # exit-zero fallback only; no behavioral assertion ran
-    # VERIFY REPAIR: rescue brittle single-fact verifies; strict compound verifies are never rescued.
-    if not passed and not verifier.isStrictVerify(verify_spec):
-        repaired = verifier.sanitizeVerify(orch._repairVerify(subtask, exec_cwd, attempt_started))
-        same = bool(repaired) and (repaired.get("cmd"), repaired.get("expect")) == \
-            ((verify_spec or {}).get("cmd"), (verify_spec or {}).get("expect"))
-        if repaired and not same:
-            rv = verifier.runVerification(repaired, exec_cwd, result)
-            if rv.get("passed"):
-                LOG.info("%s: brittle verify repaired -> PASS via %s", sid, repaired["cmd"])
-                vresult, passed = rv, True
-    if passed and state.meta.get("is_self_referential"):
-        gate_ok, gate_detail = orch._selfRefQualityGate(str(config.PROJECT_ROOT))
-        if not gate_ok:
-            passed = False
-            vresult = dict(vresult)
-            vresult.update({
-                "passed": False,
-                "returncode": 1,
-                "stderr": gate_detail,
-                "quality_gate": "self_ref",
-            })
-            LOG.warning("%s: self-ref quality gate failed after verify pass", sid)
+    vresult, passed = _repairBrittleVerify(orch, subtask, exec_cwd, verify_spec,
+                                           attempt_started, declared, result, cancel,
+                                           sid, vresult, passed)
+    vresult, passed = _selfRefGateDowngrade(orch, state, sid, vresult, passed)
     # Epic 2 (steal #3): execution-grounded downgrade. Runs ONLY when the deterministic gate
     # already passed; can never upgrade a fail. MODE-DEPENDENT NOT_VERIFIED handled inside.
     # Skip for unverified subtasks (no verify cmd = exit-zero fallback only, not a code-change
@@ -85,19 +143,8 @@ def runAttemptVerify(orch, state, subtask: dict, result: dict, exec_cwd: str,
                      f"{sid} verify {'PASS' if passed else 'FAIL'} ({vresult.get('cmd') or 'exit'})")
     failure_feedback = None
     if not passed:
-        failure_feedback = (
-            f"cmd: {vresult.get('cmd')}\nexpect: {vresult.get('expect')}\n"
-            f"rc: {vresult.get('returncode')}\nstdout:\n{vresult.get('stdout')}\n"
-            f"stderr:\n{vresult.get('stderr')}"
-        )
-        # If the executor asked a human, the Ollama brain answers so the next attempt is autonomous.
-        answer = orch._resolveClarifications(state, subtask, combined, dashboard)
-        if answer:
-            failure_feedback += (
-                "\n\n[ORCHESTRATOR ANSWERS YOUR QUESTIONS -- proceed now, do NOT ask again]\n"
-                + answer
-            )
-            resume_session = None   # approach is changing -> start the next attempt fresh
+        failure_feedback, resume_session = _failureFeedback(orch, state, subtask, combined,
+                                                            dashboard, vresult, resume_session)
     return vresult, passed, resume_session, failure_feedback
 
 
@@ -149,6 +196,11 @@ def runEvidenceGate(orch, state, subtask: dict, result: dict, exec_cwd: str,
     try:
         git_info = orch._gitDiffFacts(getattr(orch, "_work_dir", None) or exec_cwd)
         has_code_change = bool(git_info) and git_info.get("files_changed", 0) > 0
+        # R10: the Receipt already recorded the changed-file set at verify time -- reuse it
+        # instead of recomputing when the run-root diff came back empty.
+        receipt = getattr(vresult, "receipt", None)
+        if not has_code_change and receipt is not None and receipt.diff_files:
+            has_code_change = True
         tree_shared = orch._remediationUnsafe(exec_cwd)
         if not independent_verifier.shouldRunIndependentVerify(
                 enabled=config.INDEPENDENT_VERIFY_ENABLED,
@@ -176,7 +228,7 @@ def runEvidenceGate(orch, state, subtask: dict, result: dict, exec_cwd: str,
         indep_checks = list((parse.envelope.test_results if parse.envelope else []) or [])
         criteria_reported = len(parse.envelope.acceptance_criteria_status) if parse.envelope else 0
         det_check = {"command": vresult.get("cmd"), "exit_code": vresult.get("returncode")}
-        receipt = evidence_receipt.buildReceipt(
+        receipt_note = evidence_receipt.buildReceipt(
             goal=goal, git_info=git_info, det_check=det_check, indep_checks=indep_checks,
             criteria_reported=criteria_reported,
             assessments={"criteria": (parse.envelope.acceptance_criteria_status
@@ -184,9 +236,17 @@ def runEvidenceGate(orch, state, subtask: dict, result: dict, exec_cwd: str,
                          "verifier_summary": summarizeEnvelope(parse.envelope),
                          "verdict_passed": verdict.passed,
                          "inconclusive": verdict.inconclusive})
-        headline = receipt["headline"]
+        headline = receipt_note["headline"]
         if config.EVIDENCE_RECEIPT_ENABLED:
-            orch._persistReceipt(state, sid, receipt)
+            orch._persistReceipt(state, sid, receipt_note)
+        # Evidence outcomes are ANNOTATIONS on the one typed Receipt -- never verdict overrides.
+        if receipt is not None:
+            from agents import verification as _verification
+            _verification.annotate(receipt, "evidence_headline", headline)
+            _verification.annotate(receipt, "independent_verdict",
+                                   {"passed": verdict.passed, "unmet": verdict.unmet,
+                                    "failed_commands": verdict.failed_commands,
+                                    "inconclusive": verdict.inconclusive})
         if headline == evidence_receipt.NOT_VERIFIED:
             return _applyDowngrade(orch, state, sid, vresult, verdict, headline)
         vresult = dict(vresult)
@@ -199,9 +259,8 @@ def runEvidenceGate(orch, state, subtask: dict, result: dict, exec_cwd: str,
 
 def persistReceipt(orch, state, sid: str, receipt: dict) -> None:
     """Write the Evidence Receipt as a per-subtask Obsidian note (durable audit artifact)."""
-    try:
+    from platform_core.core.best_effort import best_effort
+    with best_effort("obsidian.write", log=LOG):
         rel = f"{state.vaultTaskDir()}/subtasks/{sid}-receipt.md"
         body = "# Evidence Receipt " + sid + "\n\n```json\n" + json.dumps(receipt, indent=2) + "\n```\n"
         orch.obs.writeNote(rel, body)
-    except Exception:  # noqa: BLE001
-        pass

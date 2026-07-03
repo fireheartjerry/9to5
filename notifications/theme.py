@@ -24,7 +24,7 @@ EXPORTS:
   phaseEmoji(phase) -> str
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_theme.py
+RUN/TEST: python -m pytest tests/notifications/test_theme.py
 """
 from __future__ import annotations
 

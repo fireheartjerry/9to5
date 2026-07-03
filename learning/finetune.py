@@ -25,7 +25,7 @@ EXPORTS:
   consider_promotion(adapter_id: int, *, challenger_fitness: float, champion_fitness: float, replay_ok: bool=True, db_path: Optional[Path]=None) -> dict[str, Any]  -- Gate an adapter through the harness result + replay set (invariant I4: never promote
 DEPENDS-ON: config, learning.compute, learning.distill, learning.preferences, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_finetune.py
+RUN/TEST: python -m pytest tests/evolution/test_finetune.py
 """
 from __future__ import annotations
 

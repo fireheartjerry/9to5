@@ -18,7 +18,7 @@ EXPORTS:
   safety_gate(work_dir: str, *, is_self_referential: bool, test_runner: Optional[Callable[[str], tuple[bool, str]]]=None, code_diverged: bool=False) -> dict[str, Any]  -- Run the post-run core-change safety gate
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_selfmod.py
+RUN/TEST: python -m pytest tests/evolution/test_selfmod.py
 """
 from __future__ import annotations
 

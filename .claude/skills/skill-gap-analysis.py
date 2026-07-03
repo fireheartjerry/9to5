@@ -41,8 +41,13 @@ _cfg_inputs = _YAML_CONFIG.get("inputs", {})
 _cfg_model  = _YAML_CONFIG.get("coverage_model", {})
 _cfg_reco   = _YAML_CONFIG.get("recommendations", {})
 
-SKILLS_DIR = pathlib.Path(_cfg_inputs.get("skills_dir", "C:/9to5/skills"))
-TASKS_DIR  = pathlib.Path(_cfg_inputs.get("tasks_dir",  "C:/9to5/state/tasks"))
+# Resolve configured dirs against the repo root (this file lives at <repo>/.claude/skills/)
+# so relative YAML values work in any checkout. Joining with an absolute right-hand side
+# replaces the base, so an absolute override in the YAML still takes effect.
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+SKILLS_DIR = _REPO_ROOT / _cfg_inputs.get("skills_dir", "skills")
+TASKS_DIR  = _REPO_ROOT / _cfg_inputs.get("tasks_dir",  "state/tasks")
 
 # Skills needed to fully saturate coverage for a domain (any additional skills beyond this
 # contribute nothing to coverage_fraction, which is capped at 1.0).

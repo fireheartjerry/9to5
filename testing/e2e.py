@@ -15,6 +15,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Optional
 
 import config
@@ -45,7 +46,46 @@ class ScenarioResult:
 # `unittest discover` bypasses it). Mirrors conftest._no_real_discord so the harness is hermetic.
 _FORCED = {"WEB_DASHBOARD": False, "DISCORD_DASHBOARD": False,
            "CLAUDE_DOC_FETCH": False, "DISCORD_POLL_SECONDS": 0.02,
-           "DISCORD_BOT_TOKEN": "", "DISCORD_CHANNEL_ID": 0}
+           "DISCORD_BOT_TOKEN": "", "DISCORD_CHANNEL_ID": 0,
+           # The virtual operator IS a human at the controls: night mode (which a
+           # production .env may enable) would auto-resume pauses and drop the PR hold,
+           # breaking the very interactions these scenarios script.
+           "NIGHT_MODE": False,
+           # Hermetic like conftest: a production .env (loaded from INSTALL_ROOT by ANY
+           # runner, pytest or not) must not let a scenario probe the REAL Gemini API
+           # (observed: live 429 quota burn per scenario) or the browser layer.
+           "GEMINI_ENABLED": False, "BROWSER_LAYER_ENABLED": False,
+           # Scenarios must run the same planner CI's default config runs: the dual-ledger
+           # path adds depends_on chains that change skip/add gate semantics mid-scenario.
+           "DUAL_LEDGER_PLANNER_ENABLED": False}
+
+
+def _isolateState() -> dict:
+    """Point the state/control/heartbeat tree at a scenario-scoped temp dir (mirrors
+    tests/conftest._isolate_state -- this harness runs OUTSIDE pytest, so without it every
+    scenario wrote task files into the REAL state/tasks, and the self-modification guard's
+    loadLatest() fallback then enforced a finished e2e scenario's universe on the next
+    interactive session). Returns the {attr: saved_value} map for restore."""
+    from platform_core.runtime import control_store
+    base = Path(tempfile.mkdtemp(prefix="9to5-e2e-state-"))
+    saved = {}
+    for attr, sub in (("STATE_DIR", "state_tasks"), ("CONTROL_DIR", "state_control"),
+                      ("HEARTBEAT_DIR", "state_heartbeats"), ("LAUNCH_DIR", "state_launch"),
+                      ("IPC_DIR", "state_ipc")):
+        saved[attr] = getattr(config, attr)
+        d = base / sub
+        d.mkdir(parents=True, exist_ok=True)
+        setattr(config, attr, d)
+    saved["_DB_OVERRIDE"] = getattr(control_store, "_DB_OVERRIDE", None)
+    control_store._DB_OVERRIDE = base / "control.db"
+    return saved
+
+
+def _restoreState(saved: dict) -> None:
+    from platform_core.runtime import control_store
+    control_store._DB_OVERRIDE = saved.pop("_DB_OVERRIDE", None)
+    for attr, val in saved.items():
+        setattr(config, attr, val)
 
 
 def runScenario(name: str, goal: str, script: Callable[[VirtualOperator], None], *,
@@ -55,6 +95,17 @@ def runScenario(name: str, goal: str, script: Callable[[VirtualOperator], None],
     saved = {k: getattr(config, k) for k in _FORCED}
     for k, v in _FORCED.items():
         setattr(config, k, v)
+    saved_state = _isolateState()
+    # WEB_DASHBOARD / CLAUDE_DOC_FETCH are run-scoped flags (R12): platform_core readers
+    # (e.g. knowledge_refresh) resolve them via settings.runFlags(), which a shadow on the
+    # root config module does not reach -- force + restore the flag object too.
+    from platform_core.app_config import settings as _app_settings
+    flags = _app_settings.runFlags()
+    saved_flags = {"WEB_DASHBOARD": flags.WEB_DASHBOARD, "CLAUDE_DOC_FETCH": flags.CLAUDE_DOC_FETCH,
+                   "NIGHT_MODE": flags.NIGHT_MODE}
+    flags.WEB_DASHBOARD = False
+    flags.CLAUDE_DOC_FETCH = False
+    flags.NIGHT_MODE = False
     box: dict = {}
     t0 = time.time()
     try:
@@ -89,8 +140,11 @@ def runScenario(name: str, goal: str, script: Callable[[VirtualOperator], None],
                               err or box.get("error"), thread.is_alive(), round(time.time() - t0, 2),
                               box.get("summary") or {})
     finally:
+        _restoreState(saved_state)
         for k, v in saved.items():
             setattr(config, k, v)
+        for k, v in saved_flags.items():
+            setattr(flags, k, v)
 
 
 # --------------------------------------------------------------------------
@@ -168,6 +222,13 @@ def buildSuite() -> list:
 
 
 def runSuite() -> list:
+    # Pre-warm the one-time per-process work (offline capabilities build) OUTSIDE any
+    # scenario, so scenario 1 doesn't spend most of its 15s operator budget on it on a
+    # cold runner. Best-effort: a failure here surfaces in the scenario itself.
+    from platform_core.core.best_effort import best_effort
+    with best_effort("e2e.prewarm_capabilities"):
+        import knowledge
+        knowledge.ensureCapabilities()
     results = []
     for _name, runner in buildSuite():
         results.append(runner())

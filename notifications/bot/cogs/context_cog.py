@@ -10,7 +10,7 @@ EXPORTS:
   setup(bot: dpy_commands.Bot) -> None
 DEPENDS-ON: config, memory.user_prefs, notifications.brain_dialogue, notifications.briefing, notifications.commands
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_context_cog.py
+RUN/TEST: python -m pytest tests/notifications/test_context_cog.py
 """
 from __future__ import annotations
 

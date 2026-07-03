@@ -16,7 +16,7 @@ EXPORTS:
   Orchestrator  -- Brain + autonomous loop
 DEPENDS-ON: agents.adversary, agents.executor, agents.replanner, agents.verifier, config, learning.eval_runner, memory.obsidian, notifications.dashboard, notifications.webdash, platform_core.core.epoch, platform_core.orchestration.brain_io, platform_core.orchestration.control_mixin, platform_core.orchestration.execute_mixin, platform_core.orchestration.knowledge_refresh, platform_core.orchestration.llm_mixin, platform_core.orchestration.plan_mixin, platform_core.orchestration.review_mixin, platform_core.orchestration.run_loop, platform_core.orchestration.run_loop_mixin, platform_core.orchestration.run_phase_mixin, platform_core.orchestration.safety_mixin, platform_core.orchestration.subtask, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_orchestrator_poll.py tests/test_orchestrator_with_registry.py
+RUN/TEST: python -m pytest tests/orchestration/test_orchestrator_poll.py tests/orchestration/test_orchestrator_with_registry.py
 """
 from __future__ import annotations
 

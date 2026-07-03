@@ -12,7 +12,7 @@ EXPORTS:
   rollback(candidate_id: int, *, db_path: Optional[Path]=None) -> bool  -- One-row reversal: retire a champion candidate so its target falls back to the prior
 DEPENDS-ON: config, learning.evolution.validate, learning.prompts, learning.safety, memory.experience
 SIDE-EFFECTS: flips champion rows; writes audit reports
-RUN/TEST: python -m pytest tests/test_evolution_promote.py
+RUN/TEST: python -m pytest tests/evolution/test_evolution_promote.py
 """
 from __future__ import annotations
 
@@ -67,7 +67,8 @@ def _fence(cand: dict[str, Any]) -> Optional[str]:
 def _audit(action: str, cand: dict[str, Any], detail: str) -> None:
     """Best-effort audit (REPORT.md trail). Never raises."""
     try:
-        rep_dir = Path(config.PROJECT_ROOT) / "state" / "evolution" / "reports"
+        # Derive from STATE_DIR (state/tasks) so per-test isolation redirects this too.
+        rep_dir = Path(config.STATE_DIR).parent / "evolution" / "reports"
         rep_dir.mkdir(parents=True, exist_ok=True)
         with (rep_dir / "REPORT.md").open("a", encoding="utf-8") as fh:
             fh.write(f"- [{action}] {cand.get('kind')}:{cand.get('target')} "

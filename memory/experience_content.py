@@ -10,9 +10,9 @@ EXPORTS:
   recordSolutionContent(run_id: str, st_id: str, *, solution_content: str, post_mortem: str, importance: float, model_id: Optional[str], db_path: Optional[Path]=None) -> bool  -- Upsert one ``exp_content`` row keyed by ``(run_id, st_id)``
   recordFromSubtask(run_id: str, st: dict[str, Any], db_path: Optional[Path]=None) -> bool  -- Convenience: extract content + compute importance from ``st`` then store
   fetchSolutionContent(run_id: str, st_id: str, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]  -- The stored content row for ``(run_id, st_id)``, or None
-DEPENDS-ON: memory.experience_schema
+DEPENDS-ON: memory.experience_schema, platform_core.core.best_effort
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_experience_content.py
+RUN/TEST: python -m pytest tests/evolution/test_experience_content.py
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _nowIso
+from platform_core.core.best_effort import best_effort
 
 _CONTESTED = {"challenged", "fail", "failed", "blocked", "reject", "rejected"}
 
@@ -63,7 +64,7 @@ def recordSolutionContent(run_id: str, st_id: str, *, solution_content: str,
     """Upsert one ``exp_content`` row keyed by ``(run_id, st_id)``. Best-effort."""
     if not (run_id or "").strip() or not (st_id or "").strip():
         return False
-    try:
+    with best_effort("ledger.exp_content", log=LOG):   # learning never blocks a run
         with _WRITE_LOCK, _connect(db_path) as conn:
             conn.execute(
                 """INSERT INTO exp_content
@@ -77,9 +78,7 @@ def recordSolutionContent(run_id: str, st_id: str, *, solution_content: str,
                 (run_id, st_id, solution_content, post_mortem, float(importance),
                  model_id, _nowIso()))
         return True
-    except Exception as e:  # noqa: BLE001 -- learning never blocks a run
-        LOG.debug("recordSolutionContent failed (ignored): %s", e)
-        return False
+    return False
 
 
 def recordFromSubtask(run_id: str, st: dict[str, Any], db_path: Optional[Path] = None) -> bool:
@@ -103,12 +102,10 @@ def recordFromSubtask(run_id: str, st: dict[str, Any], db_path: Optional[Path] =
 def fetchSolutionContent(run_id: str, st_id: str,
                          db_path: Optional[Path] = None) -> Optional[dict[str, Any]]:
     """The stored content row for ``(run_id, st_id)``, or None. Best-effort (None on error)."""
-    try:
+    with best_effort("ledger.exp_content_read", log=LOG):
         with _connect(db_path) as conn:
             row = conn.execute(
                 "SELECT * FROM exp_content WHERE run_id=? AND st_id=?",
                 (run_id, st_id)).fetchone()
             return dict(row) if row else None
-    except Exception as e:  # noqa: BLE001
-        LOG.debug("fetchSolutionContent failed (ignored): %s", e)
-        return None
+    return None

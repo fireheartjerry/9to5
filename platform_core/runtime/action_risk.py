@@ -13,11 +13,14 @@ EXPORTS:
   RiskTier
   ActionDescriptor
   AuthDecision
+  scanDestructive(text: str) -> list[str]  -- Destructive command tokens found at command position (pure)
+  bashReadsSecret(cmd: str) -> bool  -- True when a Bash command READS a secret-family file (.env / .env.*, not .envrc) to
+  isWritingBash(cmd: str) -> bool  -- Public writing-Bash marker: redirects, sed -i/-delete, git write verbs, file write
   classifyActionRisk(action: ActionDescriptor) -> RiskTier  -- Pure taxonomy: tag an action by risk tier
   decideAuthorization(action: ActionDescriptor, *, allowance_usd: float, already_spent_usd: float, autonomous: bool) -> AuthDecision  -- Eliza three-way routing (pure): read/dry_run -> auto
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none (pure)
-RUN/TEST: python -m pytest tests/test_action_risk.py
+RUN/TEST: python -m pytest tests/execution/test_action_risk.py
 """
 from __future__ import annotations
 
@@ -52,12 +55,37 @@ class AuthDecision:
     metered_cost_usd: "float | None"
 
 
-# Hard-blocked substrings (case-insensitive). Source of truth -- agents/hooks_destructive.py
-# imports this so the hook block decision and the classifier never disagree.
+# Human-readable hard set (labels / compat re-export). MATCHING is done by the anchored
+# DESTRUCTIVE_COMMAND_RE below, never by substring -- agents/hooks_destructive.py imports both
+# so the hook block decision and the classifier never disagree.
 DESTRUCTIVE_PATTERNS: tuple[str, ...] = (
     "rm -rf", "rm -fr", "rmdir /s", "del /f", "del /s", "format ",
     "DROP TABLE", "git push --force", "git push -f", "mkfs", ":(){", ">/dev/sda",
 )
+
+# ONE anchored taxonomy (absorbed from executor_env's headless pre-scan). A destructive
+# command must appear at a COMMAND POSITION -- start of line/segment or after a shell
+# separator (; & | ` newline) -- optionally behind a sudo/doas privilege prefix, so benign
+# prose like "please format the output" or "the del /s flag" never blocks (the substring
+# false-positive class is gone). The device-redirect alternative (`> /dev/sdX`) matches
+# ANYWHERE: a redirect is destructive regardless of its position on the command line.
+DESTRUCTIVE_COMMAND_RE = re.compile(
+    r"(?:^|[\n;&|`]\s*)(?:sudo\s+|doas\s+)?"
+    # BUG-010: rm's flag cluster may carry extra letters around r/f (-rfv, -rvf, -vrf, ...),
+    # not just the exact 2-char "-rf"/"-fr" -- require both r and f present, in any order.
+    r"(rm\s+-(?=[a-z]*r)(?=[a-z]*f)[a-z]+\b|rmdir\s+/s\b|del\s+/[fsq]\b|format\s+[a-z]:|"
+    r"drop\s+table\b|git\s+push\s+(?:--force\b|-f\b)|mkfs\b|:\(\)\s*\{)"
+    r"|(>\s*/dev/sd[a-z])",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def scanDestructive(text: str) -> list[str]:
+    """Destructive command tokens found at command position (pure). ONE source consumed by
+    BOTH enforcement layers: the PreToolUse hook block decision and executor_env's headless
+    pre-scan (dual enforcement is kept deliberately -- headless --print may not run hooks)."""
+    return [(m.group(1) or m.group(2) or "").strip()
+            for m in DESTRUCTIVE_COMMAND_RE.finditer(text or "")]
 
 # Tools the executor surfaces. ClaudeRun is the synthetic per-attempt "paid" action.
 _READ_TOOLS: frozenset[str] = frozenset({"Read", "Glob", "Grep", "NotebookRead", "Ls", "LS"})
@@ -68,15 +96,19 @@ _FILE_WRITE_TOOLS: frozenset[str] = frozenset({"Edit", "Write", "MultiEdit"})
 _SECRET_TOKEN_RE = re.compile(r"(?:^|[\s\"'=/\\])\.env(?:\.[a-z0-9_]+)?(?=$|[\s\"'&|;)<>]|$)")
 # Dry-run / read-only inspection markers.
 _DRY_RUN_RE = re.compile(r"--dry-run\b|--check\b|--no-\w|\bgit\s+(status|diff|log)\b")
-# Writing Bash markers (mirrors hooks_selfmod._parseBashGuardInput, kept pure here).
+# Writing Bash markers (pattern SOURCE for hooks_selfmod._parseBashGuardInput, kept pure here).
 _WRITE_CMD_RE = re.compile(
     r"\b(mv|cp|rm|tee|dd|truncate|del|erase|unlink|shred|ren|rename|move|copy)\b")
 _INTERP_WRITE_RE = re.compile(r"\b(python3?|py|perl|node|ruby|pwsh|powershell)\b\s*-[ce]\b")
 _GIT_WRITE_RE = re.compile(r"git\s+(checkout|reset|restore|rm|mv)\b")
+# Bash read commands that print file contents (absorbed from hooks_selfmod).
+_READ_CMD_RE = re.compile(
+    r"\b(cat|tac|type|more|less|head|tail|strings|od|xxd|nl|bat|gc|get-content"
+    r"|grep|egrep|fgrep|rg|awk|sed)\b")
 
 
-def _matchesDestructive(cmd_low: str) -> bool:
-    return any(p.lower() in cmd_low for p in DESTRUCTIVE_PATTERNS)
+def _matchesDestructive(cmd: str) -> bool:
+    return bool(DESTRUCTIVE_COMMAND_RE.search(cmd or ""))
 
 
 def _hitsSecret(text: str) -> bool:
@@ -89,6 +121,20 @@ def _isWritingBash(cmd: str, cmd_low: str) -> bool:
                 or _WRITE_CMD_RE.search(cmd_low) or _INTERP_WRITE_RE.search(cmd_low))
 
 
+def bashReadsSecret(cmd: str) -> bool:
+    """True when a Bash command READS a secret-family file (.env / .env.*, not .envrc) to
+    stdout. Shared source for hooks_selfmod's exfiltration guard (pure, stdlib-only)."""
+    low = (cmd or "").lower()
+    return bool(low and _READ_CMD_RE.search(low) and _SECRET_TOKEN_RE.search(low))
+
+
+def isWritingBash(cmd: str) -> bool:
+    """Public writing-Bash marker: redirects, sed -i/-delete, git write verbs, file write
+    commands, or inline interpreter writes. Shared source for hooks_selfmod's guard parse."""
+    c = cmd or ""
+    return _isWritingBash(c, c.lower())
+
+
 def classifyActionRisk(action: ActionDescriptor) -> RiskTier:
     """Pure taxonomy: tag an action by risk tier. Destructive/secret checks run FIRST
     (fail-closed); unrecognized inputs fall through to UNKNOWN, never READ."""
@@ -96,8 +142,8 @@ def classifyActionRisk(action: ActionDescriptor) -> RiskTier:
     cmd = action.command or ""
     cmd_low = cmd.lower()
     path = action.file_path or ""
-    # 1. DESTRUCTIVE first -- hard patterns or a secret-family target (defense-in-depth).
-    if cmd and _matchesDestructive(cmd_low):
+    # 1. DESTRUCTIVE first -- hard patterns at command position, or a secret-family target.
+    if cmd and _matchesDestructive(cmd):
         return RiskTier.DESTRUCTIVE
     if _hitsSecret(path) or _hitsSecret(cmd):
         return RiskTier.DESTRUCTIVE

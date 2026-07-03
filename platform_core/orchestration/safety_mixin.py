@@ -14,7 +14,7 @@ EXPORTS:
   OrchestratorSafetyMixin  -- Classify -> decide -> route one executor action through the existing gate surface.
 DEPENDS-ON: agents.executor, config, notifications.dashboard, platform_core.runtime, platform_core.runtime.action_risk, platform_core.runtime.control, state.task
 SIDE-EFFECTS: may block on the Discord gate; reads/writes the autonomy ledger
-RUN/TEST: python -m pytest tests/test_safety_mixin.py
+RUN/TEST: python -m pytest tests/control/test_safety_mixin.py
 """
 from __future__ import annotations
 

@@ -114,17 +114,41 @@ Dashboards, Obsidian, ControlBus, learning traces, and Discord events should obs
 
 | Concern | Source of truth |
 |---|---|
-| Current run state | task JSON / canonical state store / SQLite if introduced |
-| Control commands | ControlBus |
+| Current run state | task JSON `state/tasks/<task_id>.json` — **single writer: the run process** (see `docs/STATE.md`) |
+| Control commands | ControlBus over SQLite `state/control.db` (`platform_core/runtime/control_store.py`) |
+| Process liveness | heartbeat files `state/heartbeats/` (`platform_core/runtime/heartbeat.py`) |
 | Persistent notes/context | Obsidian + disk fallback |
-| Execution transcript | run logs / task notes / trace records |
-| Verification status | verifier result object |
-| Human control | Discord/web UI commands |
+| Execution transcript | run logs / task notes / append-only trajectory JSONL (`state/trajectories/<run_id>.jsonl`) |
+| Verification status | typed `Receipt` (`agents/verification.py`) |
+| Human control | Discord/web UI commands ingested into the ControlBus |
 | File safety boundaries | Universe + self-modification guard |
 | Coordination artifacts (Epic 5) | Blackboard — facts/results/proposals/votes (NOT status; task JSON still owns status/claim) |
+| Degradation picture | `platform_core/core/best_effort.py` registry (surfaced in doctor, webdash, final embed) |
 | Dashboard display | derived view only |
 
 Discord and web dashboards are windows into state, not state machines.
+
+## Control plane (2026-07 rewrite)
+
+`docs/STATE.md` is canonical; the shape:
+
+- **ControlBus = SQLite.** `platform_core/runtime/control.py` is a thin facade over the
+  transactional store `platform_core/runtime/control_store.py` (`state/control.db`, WAL;
+  tables: `flags`, `decisions`, `ops`, `ledger`). Every mutation is one `BEGIN IMMEDIATE`
+  transaction — SQLite is the cross-process serializer. `pushOp(op, source_msg_id=...)`
+  dedups the same Discord message via `UNIQUE(task_id, source_msg_id)`; the autonomy spend
+  ledger is idempotent per `attempt_id`. Gate waits go through `bus.waitDecision(...)`.
+- **One Discord ingestion authority.** The gateway bot owns `!`-command ingestion; the
+  in-run REST poller engages only while `heartbeat.isBotAlive()` is False.
+- **Liveness = heartbeats.** The run loop and the bot write `state/heartbeats/*.json`;
+  `isRunAlive`/`isBotAlive` (heartbeat fresh OR pid alive) are the only liveness checks —
+  no mtime heuristics. Unprovable liveness counts as alive.
+- **Single-writer task JSON.** Only the run process writes its task JSON; the launcher's
+  stale cleanup goes through `state/task_io.py:reapDeadRun`, which refuses unless the run
+  is provably dead. Launches carry `--launch-id`; the spawned run confirms via
+  `state/launch/<token>.json`. Terminal IPC bridge files live in `state/ipc/`.
+- **Abort survives crashes.** Crash recovery (`platform_core/runtime/resilience.py`)
+  checks `bus.isAbort()` before resuming — an aborted run stays aborted.
 
 ## Surface layer (Observability & Surfaces)
 
@@ -157,23 +181,37 @@ All live surfaces are fed by one process-global nervous system; nothing bypasses
 
 ## Verification gate
 
-Verifier executes a brain-authored `{cmd, expect}`.
+Verifier executes a brain-authored `{cmd, expect}` (optionally `targets`) through the
+typed **Receipt pipeline** (`agents/verification.py`): `runReceipt` produces one frozen
+`Receipt` with a `Verdict` (`PASS`/`FAIL`/`ERROR`/`SKIPPED`), the exec'd arg vector, rc,
+matched/missing needles, diff-grounded files, duration, and failure feedback.
+`verdictFor(rc, output, expect)` is a **pure function** — no cmd-shape special cases.
 
-Supported expectation modes:
+Supported expectation modes (evaluated STRICTLY; a verify without an `expect` is
+rejected by the sanitizer):
 
 ```txt
 exit_zero
-stdout_contains:<text>
-stdout_regex:<regex>
-stdout_contains_all:<t1>|||<t2>|||...   # all listed texts must be present
-stdout_regex_all:<p1>|||<p2>|||...      # all listed patterns must match
+stdout_contains:<text>              # text in stdout AND rc==0
+stdout_regex:<regex>                # regex matches stdout AND rc==0
+stdout_contains_all:<t1>||<t2>||... # EVERY ||-separated text present (AND rc==0)
+stdout_regex_all:<p1>||<p2>||...    # EVERY ||-separated pattern matches (AND rc==0)
 ```
+
+Strictness rules (R10 — these overrides are dead on purpose):
+
+- **No test-runner FAIL→PASS override.** A green suite with a wrong stdout needle FAILS.
+- **No token-scan of executor output.** Only the verify command's own rc/stdout decide.
+- `verify.targets` (file paths) are **diff-grounded**: the receipt records whether the
+  declared files actually changed (`agents/verification_diff.py`).
+- Receipt `annotations` (envelope self-report, independent verifier, adversary verdict)
+  are non-binding and NEVER override the verdict.
 
 A subtask is done only if verification passes.
 
 If verification fails:
 
-1. Capture command, stdout, stderr, exit code.
+1. Capture command, stdout, stderr, exit code (all carried on the Receipt).
 2. Feed failure context into a retry prompt.
 3. Retry up to `MAX_SUBTASK_ATTEMPTS`.
 4. Trigger adversary or replanner if repeated failure occurs.
@@ -188,6 +226,10 @@ Trigger adversary review on:
 - pre-PR boundary
 
 Adversary verdicts are advisory unless the current run mode treats them as blocking.
+
+Verdict parsing fails CLOSED (`agents/adversary_review.py`): a garbled or
+off-contract adversary response is treated as **CHALLENGED**, never as a silent
+approve — a real challenge expressed off-contract must not neuter the PR-hold.
 
 ## Universe-constrained execution
 
@@ -273,10 +315,14 @@ an optional 9to5-owned **multi-agent workforce** behind `config.SOCIETY_ENABLED`
 - **`society/blackboard.py` — `Blackboard`**: append-only per-run JSONL coordination surface
   (threadlock + best-effort cross-process file lock, malformed-line tolerant). Holds ONLY
   coordination artifacts; every append mirrors to `event_bus` for live surfaces.
-- **`society/roles.py`**, **`society/inbox.py`**, **`society/debate.py`**: role registry +
-  capability router, addressing/cursor helpers, and bounded structured debate
-  (`selectNextSpeaker` + arbiter via `agents/second_brain.py::consult`, round-cap + diff-hash
-  oscillation guard). Debate verdicts are **advisory**; the verifier still gates.
+- **`society/roles.py`**: role registry + capability router.
+  (`society/inbox.py` and `society/debate.py` were deleted 2026-07-01 — unwired halves
+  with zero production callers.)
+
+**Budget gate is WIRED:** `Coordinator._handleSocietyBatch` consults `budgetExceeded()`
+before EVERY worker spawn (hard pre-spawn gate against `SOCIETY_TOKEN_BUDGET_USD`), and
+`society/society_batch.py` seeds `coord.spent_usd` from prior blackboard `budget`/cost
+entries so the budget is run-wide, not per-batch.
 
 **LOCKED concurrency boundary:** threads + per-worker git worktree filesystem isolation
 (mirrors `run_loop_mixin._handleParallelBatch`), NOT process-per-worker. Run-loop wiring lives
@@ -290,34 +336,77 @@ defaults to deps-only batching (`file_sets_fn=None`), workers default to the sha
 (advisory mode, serial), `BlackboardEntry.span_id` stays `None`, and `_remediationUnsafe`
 already encodes the worktree-isolation flip (peer-safe once each worker edits its own tree).
 
+## Platform kernel (2026-07 rewrite)
+
+- **IO kernel** — `platform_core/core/{fsio,jsonl_io,clock,git_io}.py` are the single
+  homes for atomic file IO, JSONL append/read, time, and git subprocess calls; do not
+  hand-roll copies. The run trajectory is true append-only JSONL
+  (`platform_core/runtime/trajectory.py` → `state/trajectories/<run_id>.jsonl`).
+- **Degradation registry** — `platform_core/core/best_effort.py` (`best_effort()`,
+  `recordDegradation`): swallowed best-effort failures are counted, deduped, and
+  surfaced in `doctor`, the web dashboard, and one aggregated line on the final
+  Discord embed. The bare-swallow count is ratcheted down by
+  `python tools/dev.py swallow-ratchet` (`tools/swallow_baseline.json`).
+- **Config v2** — `config.py` is a PEP 562 facade over the typed frozen registry
+  `platform_core/app_config/settings.py` (layers: coded defaults < `.env` <
+  `state/sie_overrides.json` as a first-class, whitelisted+bounds-checked layer).
+  `platform_core/app_config/_env.py` is THE one place that touches `.env`
+  (`loadEnvOnce`) and computes `PROJECT_ROOT` from repo markers (`.git`/`pyproject`),
+  never from cwd. Run-scoped flags (`NIGHT_MODE`, `WEB_DASHBOARD`, ...) live on
+  `settings.runFlags()` — main.py mutates that object, never module globals.
+  Logging: `NINE_TO_FIVE_LOG_LEVEL` env knob + rotating file handler.
+- **LLM seam** — `llm_io.chat(system, user, *, act=...)` is the single blessed LLM
+  call; every call carries a structured `act` tag and simulator doubles dispatch on
+  `act`, never on prompt wording. `parseJsonLoose` is the one JSON-recovery ladder.
+- **Operator control** — `!kill` / `!abort` land within ~one `CANCEL_POLL_SECONDS`
+  poll (default 2s): a cancel watcher tree-kills the in-flight Claude subprocess
+  (`taskkill /T`), the result carries `subtype="operator_killed"` (distinct from
+  `timeout`), and the attempt slot is NOT burned. Guard hooks
+  (`block_destructive`, `self_modification_guard`) are registered in
+  `.claude/settings.json`, composed per-run via `composeRunSettings()`, and fail
+  CLOSED (a crashing guard hook blocks the action).
+
+## Deleted subsystems (2026-07-01 first-principles rewrite)
+
+Zero-production-caller subsystems were removed (~-22k LOC): `human_nature/`
+(recoverable at commit `a7b1b2d`; specs remain in `docs/human-nature/`), `monitoring/`,
+`scheduling/`, `workflows/scheduler.py`, `notifications/bus.py` + `predictive.py`,
+`agents/orchestration_pipeline*`, `learning/{rollout,counterfactual,adapter_ops,reward}.py`,
+`memory/{subtask_manager,reflection_consolidate}.py`, the retry stack
+(`error_handling`/`retry_policy`/`enhanced_error_handling` — recovery is
+`platform_core/runtime/resilience.py`), `society/{debate,inbox}.py`, and
+`llm_epic_flags.py`. Portfolio: `docs/superpowers/specs/2026-07-01-first-principles-rewrite-design.md`.
+
 ## Module layout (post-modularization)
 
-As of 2026-06-27, the codebase uses sub-module extraction to keep every file ≤450 lines
+The codebase uses sub-module extraction to keep every file ≤450 lines
 and every function ≤70 lines. Key patterns:
 
 ### Mixin decomposition — `orchestrator.py`
-The `Orchestrator` class is assembled from 7 focused mixin files:
+The `Orchestrator` class is assembled from 8 focused mixins in
+`platform_core/orchestration/`:
 
 | Mixin | Responsibility |
 |---|---|
-| `orchestrator_llm_mixin.py` | LLM/Ollama chat, eval, model selection |
-| `orchestrator_plan_mixin.py` | Subtask planning, spec authoring, backfill |
-| `orchestrator_control_mixin.py` | Gate handling, ControlBus, Discord commands |
-| `orchestrator_execute_mixin.py` | Attempt loop, SIE, replan, subtask enrichment |
-| `orchestrator_review_mixin.py` | Adversary review, Gemini session, PR gate, git helpers |
-| `orchestrator_run_loop_mixin.py` | Execution loop, backfill drain, livelock, parallel batch |
-| `orchestrator_run_phase_mixin.py` | Run lifecycle: preamble, phases, teardown, crash/abort |
+| `llm_mixin.py` | LLM/Ollama chat, eval, model selection |
+| `plan_mixin.py` | Subtask planning, spec authoring, backfill |
+| `control_mixin.py` | Gate handling, ControlBus, Discord commands |
+| `execute_mixin.py` | Attempt loop, SIE, replan, subtask enrichment |
+| `review_mixin.py` | Adversary review, Gemini session, PR gate, git helpers |
+| `run_loop_mixin.py` | Execution loop, backfill drain, livelock, parallel batch |
+| `run_phase_mixin.py` | Run lifecycle: preamble, phases, teardown, crash/abort |
+| `safety_mixin.py` | Semantic action-risk authorization (Epic 4) |
 
-Helper modules re-exported into `orchestrator.py` namespace:
-`orchestrator_brain_io.py`, `orchestrator_knowledge.py`, `orchestrator_time.py`
+Helper modules re-exported into the `orchestrator.py` namespace include
+`brain_io.py`, `knowledge_refresh.py`, and `time_utils.py` (same package).
 
 ### Sub-module extraction with re-export facade
 
 | Facade | Sub-modules |
 |---|---|
-| `config.py` | `config_paths.py`, `config_discord.py`, `config_llm.py` |
-| `knowledge.py` | `knowledge_scraper.py`, `knowledge_builder.py`, `knowledge_compress.py` |
-| `memory/experience.py` | `experience_schema.py`, `experience_runs.py`, `experience_subtasks.py`, `experience_policy.py`, `experience_adapters.py`, `experience_solutions.py` |
+| `config.py` | `platform_core/app_config/{settings,_env,paths,discord,llm}.py` |
+| `knowledge.py` | `platform_core/knowledge_base/{scraper,builder,compress}.py` |
+| `memory/experience.py` | `experience_{schema,runs,subtasks,policy,adapters,solutions,evolution,pr,journal}.py` |
 | `notifications/discord_bot.py` | `discord_client.py`, `discord_embeds.py`, `discord_channels.py` |
 | `notifications/views.py` | `views_control.py`, `views_run.py`, `views_subtask.py` |
 | `notifications/visuals.py` | `visuals_components.py`, `visuals_cards.py` |

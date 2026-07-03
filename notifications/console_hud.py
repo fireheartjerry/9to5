@@ -12,7 +12,7 @@ EXPORTS:
   render(state, phase: str, *, events: Optional[list]=None, width: int=36) -> str  -- Return the full ```ansi HUD block for ``state``
 DEPENDS-ON: notifications.cv2, notifications.theme
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_console_hud.py
+RUN/TEST: python -m pytest tests/notifications/test_console_hud.py
 """
 from __future__ import annotations
 

@@ -7,13 +7,55 @@ State schema and source-of-truth rules for 9TO5.
 | Concern | Canonical source |
 |---|---|
 | Current run/task state | `state/tasks/<task_id>.json` or canonical state store |
-| Control commands | `ControlBus` under `state/control/` |
+| Control commands | `ControlBus` over SQLite `state/control.db` |
 | Persistent notes/context | Obsidian + disk fallback |
 | Execution transcript | logs / task notes / traces |
 | Verification status | verifier result object |
 | Dashboard display | derived view only |
 
 Do not make Discord, web dashboard, or generated embeds canonical state.
+
+## Single-writer rule (task JSON)
+
+**Only the orchestrator run process writes `state/tasks/<task_id>.json`.** Every other
+process (gateway bot, launcher, web dashboard, cogs) expresses intent through the
+ControlBus (`requestAbort`, `pushOp`) and the run loop drains + applies it. Concretely:
+
+- `!mode` queues a `set_mode` plan op; the run applies it at the next drain tick (~seconds).
+- The launcher's stale cleanup (`work_launcher._reapStale`) calls `bus.requestAbort()` +
+  `pushOp({"op": "mark_stale", ...})` and then `state/task_io.py:reapDeadRun(task_id)` —
+  the **only** sanctioned out-of-process task-JSON write, and it refuses unless
+  `heartbeat.isRunAlive(task_id)` is False and the task is still non-terminal.
+- In-run daemon threads that touch shared `TaskState` (tunnel supervisor, dashboard)
+  must hold the orchestrator's `_state_lock` (`TunnelManager(state=..., state_lock=...)`,
+  `dashboard.start(..., state_lock=...)`).
+
+There is no `state_epoch` field anymore — it was a write-side stamp with zero readers.
+
+## Liveness (heartbeats)
+
+`platform_core/runtime/heartbeat.py` is the ONE liveness primitive (no mtime heuristics):
+
+- The run loop writes `state/heartbeats/<task_id>.json` (~every 10s, throttled `beat`).
+- The gateway bot writes `state/heartbeats/gateway-bot.json` from its presence loop.
+- `isRunAlive(task_id, grace_s=45)` = heartbeat fresh OR recorded pid alive (falls back
+  to the task JSON's `meta.run_pid`); `isBotAlive(grace_s=90)` is the bot-side twin.
+- Unprovable liveness (psutil missing but a pid recorded) counts as ALIVE — never
+  false-abort a run you cannot prove dead.
+
+## Launch handshake
+
+`/work` launches carry `--launch-id <token>`; the spawned `main.py` writes
+`state/launch/<token>.json` (`{task_id, pid, at}`) at startup and the launcher confirms
+by reading it (`work_launcher.waitForLaunch`) — never by polling for the newest state
+file. The check-active → spawn → confirm window is serialized by an in-process lock plus
+the O_EXCL sidecar `state/launch/launching.lock`.
+
+## IPC files
+
+Cross-process bridge files (Live Terminal nav/mirror) live under `state/ipc/`, OUTSIDE
+the task store, so `task_io.iterStored` scans can never misparse them. `iterStored`
+additionally requires task shape (`task_id` + dict `meta`) and counts+logs skipped files.
 
 ## Task state location
 
@@ -111,17 +153,30 @@ updating `lifecycle.py`, its tests, and dashboard consumers.
 
 ## ControlBus
 
-`ControlBus` lives in:
+`ControlBus` (`platform_core/runtime/control.py`) is a thin facade over the transactional
+SQLite store `platform_core/runtime/control_store.py`:
 
 ```txt
-platform_core/runtime/control.py
+state/control.db        (WAL, busy_timeout=30s; tables: flags, decisions, ops, ledger)
 ```
 
-It stores one JSON per task under:
+Every mutation is one `BEGIN IMMEDIATE` transaction on a per-call connection — SQLite is
+the cross-process serializer (no sidecar locks, no atomic-replace retries). The legacy
+`state/control/<task_id>.json` mailboxes are retired: the first time a `control.db` is
+created, any remaining files are imported one-shot and renamed `*.json.migrated`.
 
-```txt
-state/control/
-```
+Ingestion authority: the **gateway bot owns Discord ingestion**; the in-run REST poller
+(`control_mixin._translateDiscord`) engages only while `heartbeat.isBotAlive()` is False
+(logged once per transition). Every ingested `!` command carries its Discord message id
+into `pushOp(op, source_msg_id=...)` — `UNIQUE(task_id, source_msg_id)` makes the same
+message ingested twice ONE op, while two identical user messages (two ids) are two ops
+(so `!retry` twice retries twice; the old whole-op identity dedup is gone).
+
+The autonomy spend ledger is a `ledger` table (`attempt_id UNIQUE`, `spent = SUM(usd)`):
+idempotent per attempt and structurally impossible to zero by a corrupt-rebuild.
+
+Gate waits go through `bus.waitDecision(gate, timeout, poll)` — one shared wait with
+abort / timeout / deadline-escape / night-mode escapes instead of per-caller sleep loops.
 
 It is shared by:
 
