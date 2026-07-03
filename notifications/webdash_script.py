@@ -11,6 +11,10 @@ from __future__ import annotations
 
 SCRIPT = r"""
 const __T="__WEBDASH_TOKEN__";
+// The per-run token is NEVER baked into the served HTML (it would leak over the public tunnel).
+// The operator opens the tokenized URL printed to the local console (.../?token=XXX); we read it
+// here and attach it to every API call. A tunnel visitor without the token gets only this shell.
+const __TOK=__T||(new URLSearchParams(location.search).get('token'))||"";
 const TUNNEL_ICON='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="4" width="20" height="14" rx="1"/><path d="M8 21h8M12 17v4"/></svg>';
 let EVENTS=[], LOCKED=true, NEXT_POLL_MS=2000;
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -51,7 +55,7 @@ async function ctl(action,arg,btn){
   }
   if(btn){btn.classList.add('busy');btn.disabled=true;}
   try{
-    const res=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-9to5-token':__T},body:JSON.stringify({action,arg})});
+    const res=await fetch('/api/control',{method:'POST',headers:{'content-type':'application/json','x-9to5-token':__TOK},body:JSON.stringify({action,arg})});
     const body=await res.json();
     if(!res.ok||body.ok===false)throw new Error(body.error||('HTTP '+res.status));
     toast(action+' sent',true);
@@ -78,7 +82,7 @@ function setConn(state){
 }
 function startSSE(){
   try{
-    const es=new EventSource('/api/events');
+    const es=new EventSource('/api/events?token='+encodeURIComponent(__TOK));
     es.onopen=()=>setConn('live');
     es.onmessage=ev=>{try{pushEvent(JSON.parse(ev.data));}catch(e){}};
     es.onerror=()=>{setConn('reconnecting');es.close();setTimeout(startSSE,3000);};
@@ -87,7 +91,7 @@ function startSSE(){
 async function expandRaw(sid,el){
   if(el.dataset.open==='1'){el.dataset.open='0';const n=el.nextSibling;if(n&&n.className==='raw')n.remove();el.textContent='▼ EXPAND RAW STDOUT';return;}
   el.dataset.open='1';el.textContent='▲ COLLAPSE RAW STDOUT';
-  let lines=[];try{lines=await (await fetch('/api/raw?sid='+encodeURIComponent(sid))).json();}catch(e){}
+  let lines=[];try{lines=await (await fetch('/api/raw?sid='+encodeURIComponent(sid)+'&token='+encodeURIComponent(__TOK))).json();}catch(e){}
   const d=document.createElement('div');d.className='raw';
   d.textContent=(lines||[]).map(r=>r.line).join('\n');el.after(d);d.scrollTop=d.scrollHeight;
   const copyBtn=document.createElement('button');
@@ -151,7 +155,7 @@ function renderState(r){
 }
 function fmt(s){s=Math.max(0,s|0);let h=s/3600|0,m=(s%3600)/60|0,x=s%60;return h+'h'+String(m).padStart(2,'0')+'m'+String(x).padStart(2,'0')+'s';}
 async function poll(){
-  try{const r=await (await fetch('/api/state')).json();renderState(r);}
+  try{const r=await (await fetch('/api/state?token='+encodeURIComponent(__TOK))).json();renderState(r);}
   catch(e){}
   finally{setTimeout(poll,NEXT_POLL_MS);}
 }

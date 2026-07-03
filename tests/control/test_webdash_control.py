@@ -119,6 +119,37 @@ class TestControlToken(unittest.TestCase):
         self.assertEqual(post({"X-9to5-Token": "wrong"}), 403, "bad token was accepted")
         self.assertEqual(post({"X-9to5-Token": token}), 200, "valid console token was rejected")
 
+    def test_token_gates_data_gets(self):
+        # The data routes (state/events/raw) disclose goal, work_dir, cost and raw stdout, and
+        # are reachable over the public tunnel, so they MUST require the per-run token. Only the
+        # bare HTML shell is served openly (it carries no run data).
+        import socket
+        import urllib.error
+        import urllib.request
+        config_patch = mock.patch.object(config, "WEB_DASHBOARD", True)
+        config_patch.start()
+        self.addCleanup(config_patch.stop)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        url = webdash.startWebDashboard("task-token", port=port)
+        self.addCleanup(webdash.stopWebDashboard)
+        self.assertTrue(url, f"dashboard failed to bind OS-assigned port {port}")
+        token = webdash._CONTROL_TOKEN
+
+        def get(path):
+            try:
+                return urllib.request.urlopen(url.rstrip("/") + path, timeout=3).status
+            except urllib.error.HTTPError as e:
+                return e.code
+
+        self.assertEqual(get("/api/state"), 403, "tokenless data GET was not forbidden")
+        self.assertEqual(get("/api/state?token=wrong"), 403, "bad token accepted on data GET")
+        self.assertEqual(get("/api/raw?sid=st-1"), 403, "tokenless raw GET was not forbidden")
+        self.assertEqual(get(f"/api/state?token={token}"), 200, "valid token rejected on data GET")
+        # The HTML shell stays open (no run data) so the operator's browser can bootstrap.
+        self.assertEqual(get("/"), 200, "HTML shell should be served without a token")
+
     def test_empty_server_token_always_rejects_post(self):
         # BUG-005: an unset/empty control token must ALWAYS reject control POSTs, never fall
         # through to unconditional allow. startWebDashboard always generates a real random
