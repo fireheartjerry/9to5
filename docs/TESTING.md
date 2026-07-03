@@ -79,6 +79,21 @@ python -m pytest tests/test_notification_integration.py -q
 python -m pytest tests/test_webdash_control.py -q
 ```
 
+**Epic-flag isolation:** use the `pin_flags` factory fixture (`tests/conftest.py`) instead of
+hand-rolling `monkeypatch.setattr(config, "FLAG", value, raising=False)` per flag — e.g.
+`pin_flags(SOCIETY_ENABLED=True, WORKTREE_ISOLATION_ENABLED=True)`. It isolates a test from the
+live `.env` the same way, just without the boilerplate.
+
+**Combined-flags smoke test:** `tests/test_epic_flags_combined.py` turns SEVERAL epic flags on
+TOGETHER (Society, Worktree Isolation, Solution Fork, Semantic Safety, Cost Budget, Compaction,
+Execution Fabric) against a real `BuilderBrain` run — every other epic test exercises flags in
+isolation, never in combination, so this is the only place cross-epic interaction bugs surface.
+Run it after changing any epic-flagged code path:
+
+```bash
+python -m pytest tests/test_epic_flags_combined.py -q
+```
+
 ### Tier 3: full suite
 
 Use after focused tests pass or before merging large changes.

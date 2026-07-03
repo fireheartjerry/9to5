@@ -2,9 +2,9 @@
 import config
 
 
-def test_society_disabled_by_default(monkeypatch):
-    # monkeypatch isolates from live .env; test verifies intended ship-dark default.
-    monkeypatch.setattr(config, "SOCIETY_ENABLED", False, raising=False)
+def test_society_disabled_by_default(pin_flags):
+    # pin_flags isolates from live .env; test verifies intended ship-dark default.
+    pin_flags(SOCIETY_ENABLED=False)
     assert config.SOCIETY_ENABLED is False
 
 

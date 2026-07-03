@@ -165,7 +165,8 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
             return
         for s in capped:
             state.addSubtask(s.get("title", "untitled"), s.get("description", ""),
-                             layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))
+                             layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")),
+                             files_touched=s.get("files_touched"))
 
     def _runPreamble(self, state: TaskState, work_dir: str, control_mode: "str | None",
                      resume: bool, bus: "ControlBus",

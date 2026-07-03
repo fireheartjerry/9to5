@@ -7,9 +7,9 @@ from platform_core.execution import router
 from platform_core.execution.backends.local import LocalEnvironment
 
 
-def test_execution_config_defaults_to_today(monkeypatch):
-    # monkeypatch isolates from live .env; test verifies intended ship-dark default.
-    monkeypatch.setattr(config, "EXECUTION_FABRIC_ENABLED", False, raising=False)
+def test_execution_config_defaults_to_today(pin_flags):
+    # pin_flags isolates from live .env; test verifies intended ship-dark default.
+    pin_flags(EXECUTION_FABRIC_ENABLED=False)
     assert config.EXECUTION_FABRIC_ENABLED is False     # master gate OFF by default
     assert config.EXECUTION_BACKEND == "local"          # default backend
     assert isinstance(config.EXECUTION_BACKEND_BY_RISK, dict)

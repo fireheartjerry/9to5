@@ -102,7 +102,8 @@ class OrchestratorRunLoopMixin(OrchestratorRunLoopReplanMixin):
         with self._state_lock:
             for s in batch[:room]:
                 state.addSubtask(s.get("title", "improvement"), s.get("description", ""),
-                                 layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")))
+                                 layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")),
+                                 files_touched=s.get("files_touched"))
                 added += 1
             if added:
                 state.addNotification("backfill", f"+{added} improvement subtasks ({remaining:.1f}h left)")
@@ -359,7 +360,7 @@ class OrchestratorRunLoopMixin(OrchestratorRunLoopReplanMixin):
             # Epic 5: 9to5-owned workforce on the blackboard (flag ON, >=2 ready).
             # Separate `position2` accumulator keeps the OFF-path `position` untouched.
             position2, abort = self._handleSocietyBatch(
-                state, batch, work_dir, parallelism)
+                state, batch, work_dir, parallelism, run_fn=self._run_claude)
             position += position2
         else:
             position, abort = self._handleParallelBatch(

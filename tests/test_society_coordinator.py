@@ -56,7 +56,7 @@ def test_handle_society_batch_runs_workers_and_collects(tmp_path):
     ready = [s for s in state.subtasks if s["status"] == "pending"]
     msgs = coord._handleSocietyBatch(ready, parallelism=2, run_fn=fake_run)
     assert len(ran) == 2 and all(m["ok"] for m in msgs)
-    assert {s["status"] for s in state.subtasks} == {"in_progress"}  # claimed; verifier lands later
+    assert {s["status"] for s in state.subtasks} == {"done"}  # verified and landed
 
 
 def test_detect_contested_flags_failed_result(tmp_path):

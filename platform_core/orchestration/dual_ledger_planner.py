@@ -109,7 +109,8 @@ def materializeDag(state, subs: list) -> list:
         dep_ids = [created[idx]["subtask_id"] for idx in (s.get("depends_on") or [])
                    if isinstance(idx, int) and 0 <= idx < len(created)]
         st = state.addSubtask(s.get("title", "step"), s.get("description", ""),
-                              layer=s.get("layer", 3), depends_on=dep_ids, verify=s.get("verify"))
+                              layer=s.get("layer", 3), depends_on=dep_ids, verify=s.get("verify"),
+                              files_touched=s.get("files_touched"))
         created.append(st)
     return created
 
