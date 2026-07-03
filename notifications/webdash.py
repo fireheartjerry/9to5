@@ -269,6 +269,18 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                        "text/html; charset=utf-8")
 
     def do_POST(self):  # noqa: N802
+        # Drain the request body FIRST, before any response path. Responding (especially with
+        # an error) while unread bytes remain in the socket buffer makes Windows close the
+        # connection with an RST, which surfaces on the client as an intermittent
+        # ConnectionAbortedError [WinError 10053]. Reading it up front means every path below
+        # (404/403/200) has consumed it, so the close is always graceful.
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            length = 0
+        length = max(0, min(length, 64_000))   # cap the read; control payloads are tiny
+        raw_body = self.rfile.read(length) if length else b""
+
         if not self.path.startswith("/api/control"):
             self._send(404, b"{}", "application/json")
             return
@@ -279,12 +291,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._send(403, b'{"ok":false,"error":"forbidden"}', "application/json")
             return
         try:
-            length = int(self.headers.get("Content-Length") or 0)
-        except (TypeError, ValueError):
-            length = 0
-        length = max(0, min(length, 64_000))   # cap the read; control payloads are tiny
-        try:
-            payload = json.loads(self.rfile.read(length) or b"{}")
+            payload = json.loads(raw_body or b"{}")
             if not isinstance(payload, dict):
                 payload = {}
         except Exception:  # noqa: BLE001

@@ -130,8 +130,18 @@ class TestControlToken(unittest.TestCase):
         server = ThreadingHTTPServer(("127.0.0.1", 0), webdash._makeHandler("task-empty-token", ""))
         thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        self.addCleanup(server.shutdown)
-        self.addCleanup(server.server_close)
+
+        def _stop_server():
+            # Stop the serve_forever loop BEFORE closing the socket, then join the thread.
+            # Two separate addCleanup calls run LIFO, which would close the listening socket
+            # out from under serve_forever's select() -> OSError WinError 10038 in the daemon
+            # thread (a flaky PytestUnhandledThreadExceptionWarning under parallel load).
+            # Mirror production notifications/webdash.stopWebDashboard: shut down, then close.
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.addCleanup(_stop_server)
         port = server.server_address[1]
 
         def post(headers):
