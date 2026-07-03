@@ -7,7 +7,7 @@ EXPORTS:
   WipeConfirmView  -- Final confirm/cancel for a wipe
 DEPENDS-ON: notifications.views_control, platform_core.ops.wipe
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/control/test_views.py
 """
 from __future__ import annotations
 

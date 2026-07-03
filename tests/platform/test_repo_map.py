@@ -177,3 +177,13 @@ class TestFindTestsRecursive:
         (tests_dir / "d" / "test_widget_extra.py").write_text("def test_x():\n    pass\n")
         monkeypatch.setattr(repo_map, "TESTS_DIR", tests_dir)
         assert repo_map.find_tests("agents.widget", "widget") == ["tests/d/test_widget_extra.py"]
+
+    def test_prefix_exact_fallback_maps_helper_splits(self, tmp_path, monkeypatch):
+        tests_dir = tmp_path / "tests"
+        (tests_dir / "control").mkdir(parents=True)
+        (tests_dir / "control" / "test_hooks.py").write_text("def test_x():\n    pass\n")
+        monkeypatch.setattr(repo_map, "TESTS_DIR", tests_dir)
+
+        assert repo_map.find_tests("agents.hooks_destructive", "hooks_destructive") == [
+            "tests/control/test_hooks.py",
+        ]

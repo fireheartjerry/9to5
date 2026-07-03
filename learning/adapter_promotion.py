@@ -12,7 +12,7 @@ EXPORTS:
   run(*, db_path: Optional[Path]=None) -> dict[str, Any]  -- Evaluate challenger adapters and promote the best one that beats the champion.
 DEPENDS-ON: config, learning.eval_runner, learning.finetune, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_eval_runner.py
 """
 from __future__ import annotations
 

@@ -12,7 +12,7 @@ EXPORTS:
   cmd_ci_local(args: list[str]) -> int  -- Run the local CI gates in cheapest useful order.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: --update rewrites tools/swallow_baseline.json
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_selfmod_runner.py tests/orchestration/test_best_effort.py tests/platform/test_dev_commands.py
 """
 from __future__ import annotations
 

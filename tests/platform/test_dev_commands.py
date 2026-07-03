@@ -17,6 +17,10 @@ def test_new_agent_commands_are_registered():
         "context-check",
         "iteration-health",
         "bench-iteration",
+        "smart",
+        "flakes",
+        "slowest",
+        "map-audit",
     } <= set(dev.COMMANDS)
 
 

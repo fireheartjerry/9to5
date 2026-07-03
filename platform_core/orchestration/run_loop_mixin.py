@@ -5,7 +5,7 @@ EXPORTS:
   OrchestratorRunLoopMixin  -- Handles the execution loop, backfill, livelock guard, and replan application.
 DEPENDS-ON: agents.verifier, config, memory.experience, notifications.dashboard, notifications.discord_bot, platform_core.orchestration, platform_core.orchestration.run_loop, platform_core.orchestration.run_loop_replan_mixin, platform_core.orchestration.subtask, platform_core.runtime, platform_core.runtime.control, society.society_batch, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_worktree_batch.py tests/orchestration/test_files_touched_propagation.py tests/orchestration/test_orch_core_bugs.py tests/orchestration/test_society_off_invariance.py
 """
 from __future__ import annotations
 

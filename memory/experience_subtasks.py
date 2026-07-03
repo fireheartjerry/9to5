@@ -10,7 +10,7 @@ EXPORTS:
   fetch_subtasks(run_id: Optional[str]=None, *, limit: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]
 DEPENDS-ON: config, memory.experience_content, memory.experience_schema, platform_core.core.best_effort
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_insight.py
 """
 from __future__ import annotations
 

@@ -1,15 +1,18 @@
 """Pytest progress heartbeat for long-running CI and agent-observed test runs."""
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable
 
 import pytest
 
 _REPORTER: "ProgressReporter | None" = None
+_HISTORY: "TestHistoryRecorder | None" = None
 
 
 def _env_truthy(name: str) -> bool:
@@ -39,6 +42,12 @@ def should_enable(config) -> bool:
     args = [str(a) for a in getattr(config, "args", [])]
     # Local default: full/slow runs get heartbeats; focused file/node runs stay quiet.
     return "slow" in markexpr or args == ["tests"]
+
+
+def should_record_history(config) -> bool:  # noqa: ARG001
+    if _env_disabled("NINE_TO_FIVE_TEST_HISTORY"):
+        return False
+    return _env_truthy("NINE_TO_FIVE_TEST_HISTORY") or _env_truthy("CI")
 
 
 @dataclass
@@ -113,16 +122,78 @@ class ProgressReporter:
             self._write(self.state.line(self.clock()))
 
 
+class TestHistoryRecorder:
+    def __init__(self, config, *, clock: Callable[[], float] = time.time) -> None:
+        self.config = config
+        self.clock = clock
+        self.records: dict[str, dict] = {}
+        self.markers: dict[str, list[str]] = {}
+        self.run_id = os.getenv("GITHUB_RUN_ID") or str(os.getpid())
+        self.run_attempt = os.getenv("GITHUB_RUN_ATTEMPT", "")
+        self.job = os.getenv("GITHUB_JOB", "")
+        self.sha = os.getenv("GITHUB_SHA", "")
+        self.shard = os.getenv("NINE_TO_FIVE_TEST_SHARD", "")
+        root = Path(getattr(config, "rootpath", Path.cwd()))
+        self.out_dir = Path(os.getenv("NINE_TO_FIVE_TEST_HISTORY_DIR") or root / ".testbrain" / "runs")
+
+    def collect(self, items) -> None:
+        for item in items:
+            self.markers[str(item.nodeid)] = sorted(mark.name for mark in item.iter_markers())
+
+    def report(self, report) -> None:
+        when = str(getattr(report, "when", "") or "")
+        if when not in {"setup", "call", "teardown"}:
+            return
+        nodeid = str(getattr(report, "nodeid", "") or "")
+        if not nodeid:
+            return
+        rec = self.records.setdefault(nodeid, {
+            "schema": 1,
+            "run_id": self.run_id,
+            "run_attempt": self.run_attempt,
+            "job": self.job,
+            "sha": self.sha,
+            "shard": self.shard,
+            "nodeid": nodeid,
+            "outcome": "passed",
+            "duration_seconds": 0.0,
+            "markers": self.markers.get(nodeid, []),
+        })
+        rec["duration_seconds"] = float(rec.get("duration_seconds") or 0.0) + \
+            float(getattr(report, "duration", 0.0) or 0.0)
+        rec["timestamp"] = self.clock()
+        rec["worker"] = str(getattr(report, "worker_id", "") or os.getenv("PYTEST_XDIST_WORKER") or "main")
+        if getattr(report, "failed", False):
+            rec["outcome"] = "failed" if when == "call" else "error"
+        elif getattr(report, "skipped", False) and rec.get("outcome") == "passed":
+            rec["outcome"] = "skipped"
+
+    def write(self) -> None:
+        if not self.records:
+            return
+        worker = os.getenv("PYTEST_XDIST_WORKER", "main")
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        path = self.out_dir / f"{int(self.clock())}-{self.run_id}-{worker}-{os.getpid()}.jsonl"
+        with path.open("w", encoding="utf-8") as fh:
+            for rec in sorted(self.records.values(), key=lambda r: str(r["nodeid"])):
+                fh.write(json.dumps(rec, sort_keys=True) + "\n")
+
+
 def pytest_configure(config) -> None:
-    global _REPORTER
+    global _HISTORY, _REPORTER
     if should_enable(config):
         _REPORTER = ProgressReporter(config)
         config._nine_to_five_progress = _REPORTER  # noqa: SLF001
+    if should_record_history(config):
+        _HISTORY = TestHistoryRecorder(config)
+        config._nine_to_five_history = _HISTORY  # noqa: SLF001
 
 
 def pytest_collection_modifyitems(config, items) -> None:
     if _REPORTER is not None:
         _REPORTER.state.collect(len(items))
+    if _HISTORY is not None:
+        _HISTORY.collect(items)
 
 
 @pytest.hookimpl(optionalhook=True)
@@ -137,7 +208,10 @@ def pytest_sessionstart(session) -> None:
 
 
 def pytest_sessionfinish(session, exitstatus) -> None:  # noqa: ARG001
-    global _REPORTER
+    global _HISTORY, _REPORTER
+    if _HISTORY is not None:
+        _HISTORY.write()
+        _HISTORY = None
     if _REPORTER is not None:
         _REPORTER._write(_REPORTER.state.line(_REPORTER.clock()))  # noqa: SLF001
         _REPORTER.stop()
@@ -151,6 +225,8 @@ def pytest_runtest_logstart(nodeid, location) -> None:  # noqa: ARG001
 
 
 def pytest_runtest_logreport(report) -> None:
+    if _HISTORY is not None:
+        _HISTORY.report(report)
     if _REPORTER is None:
         return
     worker = str(getattr(report, "worker_id", "") or "main")

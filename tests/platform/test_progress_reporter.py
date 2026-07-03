@@ -10,6 +10,7 @@ class _Config:
     def __init__(self, *, markexpr: str = "", args: list[str] | None = None) -> None:
         self.option = SimpleNamespace(markexpr=markexpr)
         self.args = args or []
+        self.rootpath = "."
 
 
 def _report(nodeid: str = "tests/test_x.py::test_y", *, when: str = "call",
@@ -88,3 +89,23 @@ def test_xdist_collection_hook_sets_controller_total(monkeypatch):
     progress_reporter.pytest_xdist_node_collection_finished(None, ["a", "b", "c"])
 
     assert reporter.state.total == 3
+
+
+def test_history_recorder_captures_ci_metadata(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_RUN_ID", "run-1")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    monkeypatch.setenv("GITHUB_JOB", "fast")
+    monkeypatch.setenv("GITHUB_SHA", "abc123")
+    monkeypatch.setenv("NINE_TO_FIVE_TEST_SHARD", "3")
+    monkeypatch.setenv("NINE_TO_FIVE_TEST_HISTORY_DIR", str(tmp_path))
+    recorder = progress_reporter.TestHistoryRecorder(_Config(), clock=lambda: 123.0)
+
+    recorder.report(_report(worker_id="gw1"))
+
+    rec = recorder.records["tests/test_x.py::test_y"]
+    assert rec["run_id"] == "run-1"
+    assert rec["run_attempt"] == "2"
+    assert rec["job"] == "fast"
+    assert rec["sha"] == "abc123"
+    assert rec["shard"] == "3"
+    assert rec["worker"] == "gw1"

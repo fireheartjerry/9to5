@@ -8,7 +8,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: config, platform_core.core.tracing
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_trace_replay.py
 """
 from __future__ import annotations
 

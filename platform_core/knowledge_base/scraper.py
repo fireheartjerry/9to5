@@ -9,7 +9,7 @@ EXPORTS:
   readRecommendations(path: Optional[Path]=None) -> dict  -- Read the expert recommendations doc (how 9to5 should wield Claude Code)
 DEPENDS-ON: platform_core.app_config, platform_core.core.provenance
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/platform/test_scraper.py
 """
 from __future__ import annotations
 

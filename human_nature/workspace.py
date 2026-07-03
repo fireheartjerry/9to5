@@ -10,7 +10,7 @@ EXPORTS:
   Workspace  -- Global Workspace: specialists compete, winner is broadcast.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none (pure; broadcast may call specialist.on_broadcast callbacks)
-RUN/TEST: python -m pytest tests/test_workspace.py
+RUN/TEST: python -m pytest tests/human_nature/test_workspace.py
 """
 from __future__ import annotations
 

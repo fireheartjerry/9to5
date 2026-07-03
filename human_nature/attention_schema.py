@@ -22,7 +22,7 @@ EXPORTS:
   AttentionSchema  -- Model of the system's own attention.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none (pure; mutates own internal state only)
-RUN/TEST: python -m pytest tests/test_attention_schema.py
+RUN/TEST: python -m pytest tests/human_nature/test_attention_schema.py
 """
 from __future__ import annotations
 

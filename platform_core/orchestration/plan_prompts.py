@@ -15,7 +15,7 @@ EXPORTS:
   horizonFillSystem(room: int, remaining_hours: float) -> str  -- The HORIZON-FILL planner system prompt (self-improvement runs with time left).
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_dry_run.py
 """
 from __future__ import annotations
 

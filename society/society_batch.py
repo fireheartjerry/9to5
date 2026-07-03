@@ -12,7 +12,7 @@ EXPORTS:
   handleSocietyBatch(state, ready: list, work_dir: str, parallelism: int, state_lock, *, run_fn: Optional[Callable]=None) -> 'tuple[int, None]'  -- Delegate a ready batch to the society Coordinator (worktree-isolated workers).
 DEPENDS-ON: config, memory.experience, platform_core.app_config.paths, platform_core.core.best_effort, platform_core.orchestration, society.blackboard, society.coordinator
 SIDE-EFFECTS: runs society workers (claims/updates task JSON, appends to the blackboard)
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_society_batch.py
 """
 from __future__ import annotations
 

@@ -18,7 +18,7 @@ EXPORTS:
   prompt_field_stats(prompt_set_id: str, db_path: Optional[Path]=None) -> dict[str, int]  -- First-pass field outcomes for subtasks of runs authored by ``prompt_set_id``:
 DEPENDS-ON: memory.experience_schema
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_lessons.py tests/evolution/test_policy.py
 """
 from __future__ import annotations
 

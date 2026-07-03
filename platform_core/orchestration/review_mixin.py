@@ -5,7 +5,7 @@ EXPORTS:
   OrchestratorReviewMixin  -- Handles adversary review routing, Gemini session lifecycle, git helpers, and the PR gat…
 DEPENDS-ON: agents.adversary, agents.browser_executor, agents.second_brain, config, learning.adversary_trust, notifications.cast, notifications.discord_bot, platform_core.orchestration, platform_core.orchestration.github, platform_core.orchestration.pr_feedback, platform_core.runtime, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_control_review_mixin.py
 """
 from __future__ import annotations
 

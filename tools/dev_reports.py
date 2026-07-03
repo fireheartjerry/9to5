@@ -11,7 +11,7 @@ EXPORTS:
   cmd_watch(args: list[str]) -> int  -- Poll .py mtimes; on any change, run the affected tests
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_selfmod_runner.py tests/platform/test_dev_commands.py
 """
 from __future__ import annotations
 

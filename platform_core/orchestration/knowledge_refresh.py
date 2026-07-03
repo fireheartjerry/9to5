@@ -9,7 +9,7 @@ EXPORTS:
   refreshClaudeKnowledge(obs: 'ObsidianClient | None'=None, *, fetch_web: bool | None=None, log_session: bool=True, force: bool=False) -> str  -- Refresh and cache Claude Code capabilities for Ollama brain prompts.
 DEPENDS-ON: knowledge, memory.obsidian, platform_core.app_config, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_knowledge.py
 """
 from __future__ import annotations
 

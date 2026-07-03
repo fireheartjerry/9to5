@@ -11,7 +11,7 @@ EXPORTS:
   replan(goal_elaborated: str, subtasks: list[dict], last_subtask: dict, executor_output: str, self_referential: bool=False, remaining_hours: 'float | None'=None, work_profile=None, chat=None) -> dict  -- Return the replan decision dict (always well-formed).
 DEPENDS-ON: config, knowledge, llm_io, platform_core.orchestration
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_living_knowledge.py tests/orchestration/test_module_globals.py
 """
 from __future__ import annotations
 

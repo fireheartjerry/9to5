@@ -9,7 +9,7 @@ EXPORTS:
   renderIcon(concept: str, size: int=128, color: 'tuple | None'=None) -> 'bytes | None'  -- A square RGBA PNG of the concept's icon
 DEPENDS-ON: config, notifications.theme
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/notifications/test_iconset.py
 """
 from __future__ import annotations
 

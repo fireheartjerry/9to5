@@ -20,7 +20,7 @@ EXPORTS:
   at_teardown(state: Any, scored_judgments: list[dict[str, Any]], reflections: list[str], *, chat: Optional[Callable]=None) -> Optional[dict[str, Any]]  -- Run the consolidation cycle at run teardown
 DEPENDS-ON: config, human_nature.appraisal, human_nature.consolidation, human_nature.instinct, human_nature.intuition, human_nature.self_state
 SIDE-EFFECTS: mutates state["meta"] (or state.data["meta"]) when enabled
-RUN/TEST: python -m pytest tests/test_integration.py
+RUN/TEST: python -m pytest tests/human_nature/test_integration_hn.py tests/slow/test_discovery_integration.py tests/slow/test_integration_loop.py
 """
 from __future__ import annotations
 

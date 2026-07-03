@@ -14,7 +14,7 @@ EXPORTS:
   compare(*, db_path: Optional[Path]=None) -> dict[str, Any]  -- Aggregate per-arm averages and return the on-minus-off delta.
 DEPENDS-ON: config
 SIDE-EFFECTS: creates/writes the ab_runs SQLite db at AB_HARNESS_DB_PATH (or db_path)
-RUN/TEST: python -m pytest tests/test_ab_harness.py
+RUN/TEST: python -m pytest tests/human_nature/test_ab_harness.py
 """
 from __future__ import annotations
 

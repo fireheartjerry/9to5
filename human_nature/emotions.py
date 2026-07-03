@@ -21,7 +21,7 @@ EXPORTS:
   regulate(pad: dict[str, Any], *, decay: float=0.7) -> dict[str, Any]  -- Homeostatic decay of all PAD dimensions toward the zero setpoint.
 DEPENDS-ON: config
 SIDE-EFFECTS: none (pure)
-RUN/TEST: python -m pytest tests/test_emotions.py
+RUN/TEST: python -m pytest tests/human_nature/test_emotions.py
 """
 from __future__ import annotations
 

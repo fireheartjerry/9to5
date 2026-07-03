@@ -14,7 +14,7 @@ EXPORTS:
   gateCommands(tier: str) -> 'list[list[str]]'  -- Fresh mutable copies of a GATE_COMMANDS tier so callers can't mutate the table.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: spawns subprocesses (git, gh, python gate commands)
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/platform/test_git_io.py
 """
 from __future__ import annotations
 

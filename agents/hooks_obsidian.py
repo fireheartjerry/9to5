@@ -4,8 +4,8 @@
 EXPORTS:
   writeObsidian(data)  -- PostToolUse: log the edited file path to the in-progress subtask note.
 DEPENDS-ON: agents.hooks_selfmod, memory.obsidian, platform_core.core.best_effort
-SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+SIDE-EFFECTS: appends a line to the active subtask's Obsidian note (best-effort, never blocks)
+RUN/TEST: python -m pytest tests/control/test_hooks_obsidian.py
 """
 from __future__ import annotations
 

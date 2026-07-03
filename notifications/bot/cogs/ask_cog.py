@@ -9,7 +9,7 @@ EXPORTS:
   setup(bot: dpy_commands.Bot) -> None
 DEPENDS-ON: config, notifications.ask, notifications.audit, notifications.commands, notifications.views, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/control/test_audit_correctness.py
 """
 from __future__ import annotations
 

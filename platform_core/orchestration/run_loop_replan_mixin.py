@@ -8,7 +8,7 @@ EXPORTS:
   OrchestratorRunLoopReplanMixin  -- Forced replan, replan application, dependent cascade reset, stall root-cause replan.
 DEPENDS-ON: agents.verifier, config, notifications.dashboard, platform_core.orchestration, platform_core.orchestration.subtask, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_run_loop_replan_mixin.py
 """
 from __future__ import annotations
 

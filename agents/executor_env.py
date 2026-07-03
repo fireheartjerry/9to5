@@ -11,8 +11,9 @@ EXPORTS:
   buildHookCtxEnv(boundaries=None) -> str  -- JSON for the NINE_TO_FIVE_HOOK_CTX env var: ONE channel for hook context (boundaries +
 DEPENDS-ON: agents.workflow_resolver, config, notifications.discord_bot, platform_core.runtime.action_risk
 SIDE-EFFECTS: composeRunSettings writes the per-run settings JSON
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_executor.py
 """
+
 from __future__ import annotations
 
 import json
@@ -27,13 +28,18 @@ LOG = config.getLogger("executor.env")
 def normalizeSpec(spec_or_prompt: Union[dict, str, None]) -> dict:
     """Accept a full invocation spec dict OR a bare prompt string; return a full spec."""
     base = {
-        "prompt": "", "claude_md_inject": "", "skills_to_invoke": [],
-        "effort_level": "default", "subagent": None,
-        "pre_tool_hooks": [], "post_tool_hooks": [],
-        "use_workflow": False, "workflow_definition": None,
+        "prompt": "",
+        "claude_md_inject": "",
+        "skills_to_invoke": [],
+        "effort_level": "default",
+        "subagent": None,
+        "pre_tool_hooks": [],
+        "post_tool_hooks": [],
+        "use_workflow": False,
+        "workflow_definition": None,
         # Surface routing (rich cross-surface automation): which "hands" execute this spec.
-        "surface": "terminal",          # terminal (Claude CLI, L3) | browser (CDP, L1)
-        "browser_actions": [],          # structured CDP steps when surface == browser
+        "surface": "terminal",  # terminal (Claude CLI, L3) | browser (CDP, L1)
+        "browser_actions": [],  # structured CDP steps when surface == browser
     }
     if isinstance(spec_or_prompt, str):
         base["prompt"] = spec_or_prompt
@@ -63,7 +69,7 @@ def _composeWorkflowPrompt(definition: dict, base_prompt: str) -> str:
     desc = definition.get("description") or ""
     phases = definition.get("phases") or []
     lines: list[str] = [
-        f"EXECUTE THIS DYNAMIC WORKFLOW — \"{name}\".",
+        f'EXECUTE THIS DYNAMIC WORKFLOW — "{name}".',
         "This subtask is structured as a multi-phase workflow. Run it as one: for each phase, dispatch the "
         "listed agents (use the Task tool, one subagent per agent; if a Workflow/`/workflows` primitive is "
         "available to you, you may run it natively instead). Run a phase's agents CONCURRENTLY when it is "
@@ -112,6 +118,7 @@ def _composePrompt(spec: dict, system_prompt: Optional[str], extra: Optional[str
     # registry-rejected definitions render outside registry control.
     if spec.get("use_workflow"):
         from agents.workflow_resolver import resolveWorkflowDefinition
+
         wf_def = resolveWorkflowDefinition(spec)
         if wf_def is not None:
             parts.append(_composeWorkflowPrompt(wf_def, spec.get("prompt") or ""))
@@ -134,10 +141,7 @@ def effortFlag(effort_level: str) -> Optional[str]:
 # PreToolUse hooks, never instead of them. The pattern SOURCE is the one shared taxonomy in
 # platform_core.runtime.action_risk (anchored command-position regex with sudo/doas and
 # chained-command handling), so the two enforcement layers can never drift apart.
-from platform_core.runtime.action_risk import (  # noqa: E402
-    DESTRUCTIVE_COMMAND_RE as _DESTRUCTIVE_RE,  # compat alias for existing callers
-    scanDestructive,
-)
+from platform_core.runtime.action_risk import scanDestructive  # noqa: E402,F401
 
 # ---------------------------------------------------------------------------
 # Guard-hook registration -- single source: HOOKS_SPEC.
@@ -175,10 +179,12 @@ def buildHooksBlock(project_root=None) -> dict:
     py = _hookInterpreter()
     events: dict = {}
     for event, matcher, hook_name in HOOKS_SPEC:
-        events.setdefault(event, []).append({
-            "matcher": matcher,
-            "hooks": [{"type": "command", "command": f'{py} "{hooks_py}" {hook_name}'}],
-        })
+        events.setdefault(event, []).append(
+            {
+                "matcher": matcher,
+                "hooks": [{"type": "command", "command": f'{py} "{hooks_py}" {hook_name}'}],
+            }
+        )
     return events
 
 
@@ -233,19 +239,20 @@ def composeRunSettings(base_settings_path=None, out_path=None) -> Path:
     """Write the per-run --settings file (see composeRunSettingsDict) and return its path."""
     out = Path(out_path) if out_path else (Path(config.LOG_PATH) / "claude_run_settings.json")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(composeRunSettingsDict(base_settings_path), indent=2),
-                   encoding="utf-8")
+    out.write_text(json.dumps(composeRunSettingsDict(base_settings_path), indent=2), encoding="utf-8")
     return out
 
 
 def buildHookCtxEnv(boundaries=None) -> str:
     """JSON for the NINE_TO_FIVE_HOOK_CTX env var: ONE channel for hook context (boundaries +
     log/alert paths from config) so guard entrypoints need no config import of their own."""
-    return json.dumps({
-        "log_path": str(Path(config.LOG_PATH) / "hooks.log"),
-        "guard_alerts": str(Path(config.LOG_PATH) / "guard_alerts.jsonl"),
-        "boundaries": [str(b) for b in (boundaries or [])],
-    })
+    return json.dumps(
+        {
+            "log_path": str(Path(config.LOG_PATH) / "hooks.log"),
+            "guard_alerts": str(Path(config.LOG_PATH) / "guard_alerts.jsonl"),
+            "boundaries": [str(b) for b in (boundaries or [])],
+        }
+    )
 
 
 def _alertBlocked(reason: str) -> None:
@@ -253,6 +260,7 @@ def _alertBlocked(reason: str) -> None:
     # "human decision required" framing and no @-ping -- 9to5 already handled it autonomously.
     try:
         from notifications import discord_bot as discord
+
         discord.sendEmbed(discord.noticeEmbed(reason, title="🛡️ 9TO5 — auto-refused (safety)"))
     except Exception as e:  # noqa: BLE001
         LOG.warning("blocked-alert failed: %s", e)

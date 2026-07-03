@@ -11,7 +11,7 @@ EXPORTS:
   buildDiscordCfg() -> DiscordCfg  -- Construct from env
 DEPENDS-ON: platform_core.app_config, platform_core.app_config._env
 SIDE-EFFECTS: none
-RUN/TEST: python -m pytest tests/notifications/test_discord_rest.py tests/notifications/test_discord_surfaces.py
+RUN/TEST: python -m pytest tests/notifications/test_discord_channels.py tests/notifications/test_discord_embeds.py tests/notifications/test_discord_rest.py tests/notifications/test_discord_surfaces.py
 """
 from __future__ import annotations
 

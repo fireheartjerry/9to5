@@ -8,7 +8,7 @@ EXPORTS:
   available() -> bool
 DEPENDS-ON: config, notifications.theme
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/notifications/test_visuals.py
 """
 from __future__ import annotations
 

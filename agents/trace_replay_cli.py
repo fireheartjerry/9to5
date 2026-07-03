@@ -29,7 +29,7 @@ EXPORTS:
   main() -> int
 DEPENDS-ON: agents.trace_replay_events, agents.trace_replay_output, agents.trace_replay_selftest, config, platform_core.core.tracing
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_trace_replay.py
 """
 from __future__ import annotations
 

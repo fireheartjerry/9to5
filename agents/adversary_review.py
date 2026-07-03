@@ -10,7 +10,7 @@ EXPORTS:
   review(subtask_title: str, trigger_reason: str, executor_output: str, *, ollama_chat: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict  -- Critique the executor output and return a verdict dict.
 DEPENDS-ON: config, llm_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_adversary.py
 """
 from __future__ import annotations
 

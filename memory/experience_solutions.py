@@ -10,7 +10,7 @@ EXPORTS:
   fetch_reflections(trusted_only: bool=False, db_path: Optional[Path]=None) -> list[dict[str, Any]]
 DEPENDS-ON: memory.experience_schema
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_solution_cache_provenance.py
 """
 from __future__ import annotations
 

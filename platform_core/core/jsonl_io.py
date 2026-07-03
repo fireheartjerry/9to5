@@ -12,7 +12,7 @@ EXPORTS:
   readTail(path, n: int=20) -> list  -- The last ``n`` records (oldest-first within the window)
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: appends to the given path; rotates to <name>.1; creates parent dirs
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/platform/test_jsonl_io.py
 """
 from __future__ import annotations
 

@@ -11,7 +11,7 @@ EXPORTS:
   remediate(orch, state, subtask: dict, architect_doc: str, exec_cwd: str, concerns: list, cancel_check=None) -> dict  -- Bounded remediation LOOP (up to ADVERSARY_REMEDIATION_MAX_ATTEMPTS) on a subtask that
 DEPENDS-ON: agents.adversary, agents.second_brain, agents.verifier, config, notifications.cast, notifications.discord_bot, platform_core.runtime
 SIDE-EFFECTS: spawns Claude subprocesses; snapshots/restores the git tree; mutates state verify + notifications
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_adversary.py
 """
 from __future__ import annotations
 

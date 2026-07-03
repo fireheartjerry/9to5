@@ -8,7 +8,7 @@ EXPORTS:
   retryFailedSubtasks(state: 'TaskState') -> int  -- Reset every 'failed' subtask back to 'pending' so the run loop's ready-set selector
 DEPENDS-ON: config, orchestrator.refreshClaudeKnowledge, platform_core.ops.doctor, platform_core.orchestration.run_loop, state.task
 SIDE-EFFECTS: none
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/platform/test_main_cli.py
 """
 from __future__ import annotations
 

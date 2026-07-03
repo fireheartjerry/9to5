@@ -14,7 +14,7 @@ EXPORTS:
   ensureDirs() -> None  -- Create every directory 9TO5 needs (idempotent)
 DEPENDS-ON: platform_core.app_config, platform_core.app_config._env
 SIDE-EFFECTS: ensureDirs creates the runtime directory tree
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_society_coordinator.py tests/orchestration/test_society_off_invariance.py tests/platform/test_config_bootstrap.py tests/slow/test_epic_flags_combined.py
 """
 from __future__ import annotations
 

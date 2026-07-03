@@ -12,7 +12,7 @@ EXPORTS:
   run_cycle(self_state: dict[str, Any], scored_judgments: list[dict[str, Any]], reflections: list[str], *, chat: Optional[Callable]=None) -> dict[str, Any]  -- Run the consolidation cycle (the 'sleep' phase).
 DEPENDS-ON: config, human_nature.charter, human_nature.self_state, llm_io
 SIDE-EFFECTS: mutates self_state in place (competence update); no I/O otherwise
-RUN/TEST: python -m pytest tests/test_consolidation.py
+RUN/TEST: python -m pytest tests/human_nature/test_consolidation.py
 """
 from __future__ import annotations
 

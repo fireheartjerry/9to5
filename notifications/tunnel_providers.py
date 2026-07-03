@@ -18,7 +18,7 @@ EXPORTS:
   default_providers() -> list  -- Providers in priority order (cloudflared first, localtunnel last).
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/notifications/test_tunnel.py
 """
 from __future__ import annotations
 

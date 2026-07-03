@@ -12,7 +12,7 @@ EXPORTS:
   set_affect(ss: dict[str, Any], valence: float, arousal: float, control: float) -> None
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: mutates the passed-in dict in place
-RUN/TEST: python -m pytest tests/test_self_state.py
+RUN/TEST: python -m pytest tests/human_nature/test_self_state.py
 """
 from __future__ import annotations
 

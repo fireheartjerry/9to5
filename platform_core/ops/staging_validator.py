@@ -14,7 +14,7 @@ EXPORTS:
   main(quiet: bool=False) -> int
 DEPENDS-ON: config
 SIDE-EFFECTS: stdout
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/platform/test_staging_validator.py
 """
 from __future__ import annotations
 

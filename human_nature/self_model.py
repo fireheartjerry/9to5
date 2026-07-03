@@ -20,7 +20,7 @@ EXPORTS:
   honest_phenomenology() -> str  -- Return the fixed, honest access-vs-phenomenal paragraph.
 DEPENDS-ON: human_nature.self_state
 SIDE-EFFECTS: none (pure)
-RUN/TEST: python -m pytest tests/test_self_model.py
+RUN/TEST: python -m pytest tests/human_nature/test_self_model.py
 """
 from __future__ import annotations
 

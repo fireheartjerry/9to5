@@ -8,7 +8,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: config, memory.experience, memory.experience_pr
 SIDE-EFFECTS: writes to experience ledger (record_feedback, record_reflection, record_pr_outcome)
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_pr_feedback.py
 """
 from __future__ import annotations
 

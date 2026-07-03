@@ -9,7 +9,7 @@ EXPORTS:
   injectCapabilities(system_prompt: str) -> str  -- Prepend the cached CLAUDE CODE CAPABILITIES block to ANY brain system prompt.
 DEPENDS-ON: platform_core.app_config, platform_core.knowledge_base.builder, platform_core.knowledge_base.scraper
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/platform/test_compress.py
 """
 from __future__ import annotations
 

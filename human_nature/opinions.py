@@ -19,7 +19,7 @@ EXPORTS:
   rederive(user_assertion: str, my_stance: str, evidence: str, *, chat: Optional[Callable]=None) -> dict  -- Neutral-judge re-derivation on pushback (F5).
 DEPENDS-ON: config, llm_io
 SIDE-EFFECTS: calls Ollama (HN_FAST_MODEL) when rederive chat=None
-RUN/TEST: python -m pytest tests/test_opinions.py
+RUN/TEST: python -m pytest tests/human_nature/test_opinions.py
 """
 from __future__ import annotations
 

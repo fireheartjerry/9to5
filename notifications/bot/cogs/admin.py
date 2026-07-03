@@ -9,7 +9,7 @@ EXPORTS:
   setup(bot: dpy_commands.Bot) -> None
 DEPENDS-ON: config, notifications.commands, notifications.console_hud, notifications.cv2, notifications.discord_bot
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/notifications/test_admin.py
 """
 from __future__ import annotations
 

@@ -24,7 +24,7 @@ EXPORTS:
   selfRefEmbed(branch: str, protected: tuple) -> dict
 DEPENDS-ON: config, notifications.discord_client, notifications.icons
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/notifications/test_discord_embeds.py
 """
 from __future__ import annotations
 

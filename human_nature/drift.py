@@ -11,7 +11,7 @@ EXPORTS:
   has_drifted(expressed: Sequence[float], target: float, threshold: float=0.3) -> bool
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none (pure)
-RUN/TEST: python -m pytest tests/test_drift.py
+RUN/TEST: python -m pytest tests/human_nature/test_drift.py
 """
 from __future__ import annotations
 

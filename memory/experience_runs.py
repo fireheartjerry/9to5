@@ -13,7 +13,7 @@ EXPORTS:
   compare_run(task_id: str, db_path: Optional[Path]=None) -> dict[str, Any]  -- This run vs the rolling average of prior terminal runs
 DEPENDS-ON: config, memory.experience_schema, memory.experience_subtasks, platform_core.core.best_effort, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_experience_ledger.py
 """
 from __future__ import annotations
 

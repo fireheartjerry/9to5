@@ -9,7 +9,7 @@ EXPORTS:
   render_failures(neighbors: list[dict[str, Any]], max_tokens: Optional[int]=None) -> str  -- Render distinctly tagged warnings from similar failed subtasks.
 DEPENDS-ON: config, memory.memory_sanitizer
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_retrieval.py
 """
 from __future__ import annotations
 

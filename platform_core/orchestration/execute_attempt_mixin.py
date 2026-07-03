@@ -9,7 +9,7 @@ EXPORTS:
   OrchestratorExecuteAttemptMixin  -- Runs ONE subtask attempt: spec authoring, live feed/trajectory, hands invocation, verif…
 DEPENDS-ON: config, notifications.dashboard, notifications.event_bus, notifications.subprocess_feed, platform_core.core.surfaces, platform_core.execution.wiring, platform_core.orchestration.brain_io, platform_core.orchestration.step_resume, platform_core.orchestration.step_sink, platform_core.runtime, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_execute_attempt_mixin.py
 """
 from __future__ import annotations
 

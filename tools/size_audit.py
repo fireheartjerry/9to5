@@ -11,7 +11,7 @@ EXPORTS:
   main(args: list[str]) -> int
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/platform/test_dev_commands.py
 """
 from __future__ import annotations
 

@@ -20,7 +20,7 @@ EXPORTS:
   snapshot(model: dict[str, Any]) -> dict[str, Any]  -- Return a fully inspectable, deep-copied view of the user model.
 DEPENDS-ON: memory.user_prefs
 SIDE-EFFECTS: none in-module (persistence delegated to _prefs when available)
-RUN/TEST: python -m pytest tests/test_user_model.py
+RUN/TEST: python -m pytest tests/human_nature/test_user_model.py
 """
 from __future__ import annotations
 

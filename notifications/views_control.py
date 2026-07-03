@@ -7,7 +7,7 @@ EXPORTS:
   ControlPanelView  -- Persistent (timeout=None)
 DEPENDS-ON: config, notifications.audit, notifications.commands, notifications.icons, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/control/test_views.py
 """
 from __future__ import annotations
 
