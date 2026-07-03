@@ -11,8 +11,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-# ── locate repo root (tests/ lives one level below C:\9to5) ──────────────────
-REPO_ROOT = Path(__file__).resolve().parent.parent
+# ── locate repo root (tests/slow/ lives two levels below the repo root) ──────
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 

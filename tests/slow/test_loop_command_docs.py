@@ -3,7 +3,7 @@ import pathlib
 import sys
 import unittest
 
-DOC = pathlib.Path(__file__).parent.parent / "docs" / "loop_command.md"
+DOC = pathlib.Path(__file__).parent.parent.parent / "docs" / "loop_command.md"
 
 REQUIRED_SECTIONS = [
     "## What `/loop` does",
