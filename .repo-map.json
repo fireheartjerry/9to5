@@ -12872,7 +12872,7 @@
           "kind": "function",
           "signature": "(argv: list[str]) -> int",
           "summary": "",
-          "lineno": 72
+          "lineno": 77
         }
       ],
       "depends_on": [],
