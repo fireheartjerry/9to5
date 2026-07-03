@@ -5,7 +5,7 @@ Usage:
 
 The --source-dir is the repository root to inspect.  If the path does not
 exist, the script falls back to the directory containing this script (the
-actual 9TO5 install root, C:\9to5).
+actual 9TO5 install root, C:\\9to5).
 
 Exits 0 when all mandatory fix markers are present in their target files.
 Exits 1 otherwise.

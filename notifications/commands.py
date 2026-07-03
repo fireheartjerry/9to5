@@ -54,7 +54,11 @@ COMMAND_REGISTRY: dict[str, dict] = {
     # Spec B: intelligence & control commands (fast: bus op or file IO only)
     "intent":  {"arg": "required", "mutating": True,  "help": "steer the run: !intent <text> | clear | persist <text>"},
     "prefer":  {"arg": "required", "mutating": True,  "help": "set a preference: !prefer brief without cost"},
-    "prefs":   {"arg": "optional", "mutating": False, "help": "show/reset preferences: !prefs [show|reset]"},
+    # "reset" mutates the shared user_prefs.json; "show" (default/no-arg) does not. Registered
+    # mutating=True (matching the more-restrictive sub-action) since COMMAND_REGISTRY's
+    # mutating flag is the SOLE authorization gate in views_control.py::_applyControl and the
+    # sole audit-trail trigger in slash.py::_runControl -- both are per-command, not per-arg.
+    "prefs":   {"arg": "optional", "mutating": True, "help": "show/reset preferences: !prefs [show|reset]"},
     "effort":  {"arg": "required", "mutating": True,  "help": "run-level effort: !effort high"},
     "mode":    {"arg": "required", "mutating": True,  "help": "switch control mode: !mode gated|watch"},
     "replan":  {"arg": "none",     "mutating": True,  "help": "force a replanning pass now"},

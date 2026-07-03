@@ -103,10 +103,11 @@ class _FakeState:
         self.notifications = []
         self._n = 0
 
-    def addSubtask(self, title, description="", layer=3, verify=None):
+    def addSubtask(self, title, description="", layer=3, verify=None, files_touched=None):
         self._n += 1
         st = {"subtask_id": f"s{self._n}", "title": title, "description": description,
-              "status": "pending", "layer": layer, "verify": verify}
+              "status": "pending", "layer": layer, "verify": verify,
+              "files_touched": files_touched or []}
         self.subtasks.append(st)
         return st
 

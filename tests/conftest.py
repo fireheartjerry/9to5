@@ -228,6 +228,19 @@ def _isolate_ab_harness_db(monkeypatch, tmp_path):
     yield
 
 
+@pytest.fixture
+def pin_flags(monkeypatch):
+    """Factory fixture: pin one or more config flags for the duration of a test.
+
+    Usage: pin_flags(SOCIETY_ENABLED=True, WORKTREE_ISOLATION_ENABLED=True). Deduplicates the
+    hand-rolled ``monkeypatch.setattr(config, "FLAG", value, raising=False)`` pattern used across
+    the epic-flag test files; monkeypatch restores every value automatically at teardown."""
+    def _pin(**flags):
+        for name, value in flags.items():
+            monkeypatch.setattr(config, name, value, raising=False)
+    return _pin
+
+
 @pytest.fixture(autouse=True)
 def _no_real_browser(monkeypatch):
     """Never let a test drive the real generic browser (CDP) layer.

@@ -2,9 +2,9 @@
 import config
 
 
-def test_dual_ledger_default_off(monkeypatch):
-    # monkeypatch isolates from live .env; test verifies intended ship-dark default.
-    monkeypatch.setattr(config, "DUAL_LEDGER_PLANNER_ENABLED", False, raising=False)
+def test_dual_ledger_default_off(pin_flags):
+    # pin_flags isolates from live .env; test verifies intended ship-dark default.
+    pin_flags(DUAL_LEDGER_PLANNER_ENABLED=False)
     assert config.DUAL_LEDGER_PLANNER_ENABLED is False
 
 

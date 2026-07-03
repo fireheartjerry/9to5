@@ -94,3 +94,23 @@ def test_product_run_not_verified_continues_with_gaps():
         assert vres.get("evidence_gap")  # loud gap note attached
     finally:
         p.stop()
+
+
+def test_repaired_verify_is_sanitized_before_use():
+    """BUG-009: _repairVerify()'s output must be routed through sanitizeVerify() same as every
+    planner-authored verify -- a repaired verify carrying shell-chaining metacharacters must be
+    dropped, not executed."""
+    from platform_core.orchestration import evidence_gate
+    orch, st, p = _orch_state(self_ref=False)
+    try:
+        sub = st.getSubtask("st-001")
+        unsafe = {"cmd": "python a.py; rm -rf /tmp/x", "expect": "exit_zero"}
+        with mock.patch.object(orch, "_repairVerify", return_value=unsafe):
+            vres, passed, *_ = evidence_gate.runAttemptVerify(
+                orch, st, sub, {"ok": True, "stdout": ""}, str(config.PROJECT_ROOT),
+                None, 0.0, "st-001", "", mock.Mock(), None)
+        # sanitizeVerify drops the unsafe cmd entirely -> falls back to the exit-zero envelope
+        # check (unverified=True), NEVER the raw shell-chained command.
+        assert vres.get("cmd") != unsafe["cmd"]
+    finally:
+        p.stop()

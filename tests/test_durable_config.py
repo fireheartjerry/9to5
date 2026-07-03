@@ -4,16 +4,14 @@
 import config
 
 
-def test_epic1_flag_defaults(monkeypatch):
+def test_epic1_flag_defaults(pin_flags):
     # Additive observability: on by default (zero behavior change).
     assert isinstance(config.TRAJECTORY_ENABLED, bool)
     assert isinstance(config.STEP_JOURNAL_ENABLED, bool)
     # Behavior-changing units ship dark: OFF by default.
-    # Use monkeypatch so the test is independent of the live .env (which may enable these
+    # Use pin_flags so the test is independent of the live .env (which may enable these
     # in development); the test verifies the intended default, not the operator's override.
-    monkeypatch.setattr(config, "STEP_RESUME_ENABLED", False)
-    monkeypatch.setattr(config, "WORKTREE_ISOLATION_ENABLED", False)
-    monkeypatch.setattr(config, "COST_BUDGET_ENABLED", False)
+    pin_flags(STEP_RESUME_ENABLED=False, WORKTREE_ISOLATION_ENABLED=False, COST_BUDGET_ENABLED=False)
     assert config.STEP_RESUME_ENABLED is False
     assert config.WORKTREE_ISOLATION_ENABLED is False
     assert config.COST_BUDGET_ENABLED is False

@@ -25,13 +25,14 @@ EXPORTS:
   getLogger(name: str='9to5') -> logging.Logger  -- Return a child of the configured ``9to5`` logger.
 DEPENDS-ON: platform_core.app_config.discord, platform_core.app_config.human_nature, platform_core.app_config.llm, platform_core.app_config.paths
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_config_robust_env.py tests/test_durable_config.py tests/test_epic2_config.py tests/test_hn_config.py tests/test_notification_config.py tests/test_society_config.py tests/test_solution_fork_config.py
+RUN/TEST: python -m pytest tests/test_config_logging_lock.py tests/test_config_robust_env.py tests/test_durable_config.py tests/test_epic2_config.py tests/test_hn_config.py tests/test_notification_config.py tests/test_society_config.py tests/test_solution_fork_config.py
 """
 from __future__ import annotations
 
 import logging
 import os
 import sys
+import threading
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -148,27 +149,32 @@ def validateEnv() -> list[str]:
 # ---------------------------------------------------------------------------
 
 _LOGGER_CONFIGURED = False
+_LOGGING_LOCK = threading.Lock()
 
 
 def _configureLogging() -> None:
     global _LOGGER_CONFIGURED
-    if _LOGGER_CONFIGURED:
-        return
-    # Honor NINE_TO_FIVE_LOG_DIR so tests (and alternate deploys) can redirect the FILE log away
-    # from the real logs/9to5.log; fall back to the configured LOG_PATH when unset.
-    log_dir = Path(os.getenv("NINE_TO_FIVE_LOG_DIR") or LOG_PATH)  # type: ignore[name-defined]  # noqa: F405  (LOG_PATH from app_config.paths via *)
-    log_dir.mkdir(parents=True, exist_ok=True)
-    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-    base = logging.getLogger("9to5")
-    base.setLevel(logging.INFO)
-    fh = logging.FileHandler(log_dir / "9to5.log", encoding="utf-8")
-    fh.setFormatter(fmt)
-    ch = logging.StreamHandler()
-    ch.setFormatter(fmt)
-    base.addHandler(fh)
-    base.addHandler(ch)
-    base.propagate = False
-    _LOGGER_CONFIGURED = True
+    # BUG-016: two threads racing the check-and-set below (both calling getLogger() before either
+    # finishes) both passed the flag check and each added a FileHandler/StreamHandler, doubling
+    # every log line. The lock serializes the whole check-configure-set sequence.
+    with _LOGGING_LOCK:
+        if _LOGGER_CONFIGURED:
+            return
+        # Honor NINE_TO_FIVE_LOG_DIR so tests (and alternate deploys) can redirect the FILE log away
+        # from the real logs/9to5.log; fall back to the configured LOG_PATH when unset.
+        log_dir = Path(os.getenv("NINE_TO_FIVE_LOG_DIR") or LOG_PATH)  # type: ignore[name-defined]  # noqa: F405  (LOG_PATH from app_config.paths via *)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+        base = logging.getLogger("9to5")
+        base.setLevel(logging.INFO)
+        fh = logging.FileHandler(log_dir / "9to5.log", encoding="utf-8")
+        fh.setFormatter(fmt)
+        ch = logging.StreamHandler()
+        ch.setFormatter(fmt)
+        base.addHandler(fh)
+        base.addHandler(ch)
+        base.propagate = False
+        _LOGGER_CONFIGURED = True
 
 
 def getLogger(name: str = "9to5") -> logging.Logger:

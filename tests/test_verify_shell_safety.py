@@ -26,6 +26,14 @@ class TestVerifyShellSafety(unittest.TestCase):
         out = self._san('python -c "print(1 | 2)"')
         self.assertIsNotNone(out)
 
+    def test_python_dash_c_with_trailing_shell_content_is_dropped(self):
+        # BUG-001/BUG-006: a `python -c "safe_code" && evil_cmd` shape must be dropped, not
+        # exempted as a validated python -c body -- the closing quote does NOT end the command
+        # here, so the exemption (AST-validated body, closing quote ends the cmd) must not apply.
+        self.assertIsNone(self._san('python -c "print(1)" && evil_cmd'))
+        self.assertIsNone(self._san('python -c "print(1)"; rm -rf x'))
+        self.assertIsNone(self._san('python -c "print(1)" | tee out'))
+
 
 if __name__ == "__main__":
     unittest.main()

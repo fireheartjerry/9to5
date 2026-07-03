@@ -50,7 +50,14 @@ class TestStrengthenPlanVerifies(unittest.TestCase):
         out = self.orc._strengthenPlanVerifies(GOAL, subs)
         v = out[0]["verify"]
         self.assertTrue(verifier.isStrictVerify(v), "covering subtask must get a strict verify")
-        self.assertIn("webdash.py", v["cmd"], "verify must point at the resolved target file")
+        # BUG-002: target_path is base64-embedded (decoded at runtime), not plaintext in cmd --
+        # decode it to confirm the verify still points at the resolved target file.
+        import base64
+        import re
+        m = re.search(r"base64\.b64decode\('([^']+)'\)\.decode\('utf-8'\),encoding", v["cmd"])
+        self.assertIsNotNone(m, "verify cmd must base64-embed the target path")
+        target_path = base64.b64decode(m.group(1)).decode("utf-8")
+        self.assertIn("webdash.py", target_path, "verify must point at the resolved target file")
 
     def test_single_deliverable_goal_left_untouched(self):
         original = {"cmd": "python C:/x.py", "expect": "exit_zero"}

@@ -15,7 +15,7 @@ EXPORTS:
   ControlBus
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_bot_control_auth.py tests/test_control_concurrency.py tests/test_fuzz_control.py tests/test_granular_controls.py tests/test_webdash_control.py
+RUN/TEST: python -m pytest tests/test_bot_control_auth.py tests/test_control_bus_drain.py tests/test_control_concurrency.py tests/test_fuzz_control.py tests/test_granular_controls.py tests/test_webdash_control.py
 """
 from __future__ import annotations
 
@@ -296,7 +296,15 @@ class ControlBus:
     def drainOps(self) -> list[dict[str, Any]]:
         with _PROCESS_LOCK:              # serialize same-process writers even if the sidecar is bypassed
             with _fileLock(self.path):   # don't lose ops a bot/web pushed between our load and write
-                data = self.load()
+                try:
+                    data = self._readRaw(strict=True)   # never clobber unreadable-but-present ops (CB-5)
+                except _CorruptBus as e:
+                    LOG.error("control bus %s corrupt during drainOps; nothing to drain: %s",
+                              self.path.name, e)
+                    return []
+                except OSError as e:
+                    LOG.warning("control bus read failed under drainOps; preserving on-disk state: %s", e)
+                    return []
                 ops = list(data.get("plan_ops") or [])
                 if ops:
                     data["plan_ops"] = []

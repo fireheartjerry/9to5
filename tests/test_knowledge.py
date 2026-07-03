@@ -90,5 +90,26 @@ def test_scan_excludes_vendored_subprojects(tmp_path):
     assert "keep" in names and "drop" not in names
 
 
+def test_read_product_self_knowledge_excludes_nested_worktrees(tmp_path):
+    """Fresh bug hunt: readProductSelfKnowledge is a sibling of scanLocalClaude that never got
+    the same .claude/worktrees exclusion -- a nested/foreign copy must not be picked up."""
+    root = tmp_path / ".claude"
+    foreign = root / "worktrees" / "wt" / ".claude" / "product-self-knowledge" / "SKILL.md"
+    foreign.parent.mkdir(parents=True, exist_ok=True)
+    foreign.write_text("foreign product-self-knowledge", encoding="utf-8")
+    out = scraper.readProductSelfKnowledge(roots=(root,))
+    assert out["found"] is False
+
+
+def test_read_product_self_knowledge_finds_real_skill(tmp_path):
+    root = tmp_path / ".claude"
+    real = root / "product-self-knowledge" / "SKILL.md"
+    real.parent.mkdir(parents=True, exist_ok=True)
+    real.write_text("real product-self-knowledge", encoding="utf-8")
+    out = scraper.readProductSelfKnowledge(roots=(root,))
+    assert out["found"] is True
+    assert "real product-self-knowledge" in out["text"]
+
+
 if __name__ == "__main__":
     unittest.main()

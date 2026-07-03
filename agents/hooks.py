@@ -15,7 +15,7 @@ EXPORTS:
   main()  -- Dispatch to the requested handler based on argv[1].
 DEPENDS-ON: agents.hooks_destructive, agents.hooks_obsidian, agents.hooks_selfmod, config, notifications.discord_bot
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_hooks_action_risk_parity.py tests/test_hooks_registration.py tests/test_hooks_self_path.py tests/test_hooks_selfmod_writes.py
+RUN/TEST: python -m pytest tests/test_hooks_action_risk_parity.py tests/test_hooks_registration.py tests/test_hooks_resolve_state.py tests/test_hooks_self_path.py tests/test_hooks_selfmod_writes.py
 """
 
 import sys
@@ -100,7 +100,13 @@ def _runBlockingGuard(hook_name, data):
             pass
         sys.exit(2)
 
-LOG_PATH = r"C:\9to5\logs\hooks.log"
+# Derived from config.LOG_PATH (honors NINE_TO_FIVE_LOG_DIR / an operator override) so hooks
+# logs land in the right place under a relocated install or a git worktree; falls back to a
+# path relative to this file's own repo root if config failed to import.
+if config is not None:
+    LOG_PATH = str(_Path(config.LOG_PATH) / "hooks.log")
+else:
+    LOG_PATH = str(_Path(__file__).resolve().parent.parent / "logs" / "hooks.log")
 
 
 def _readEvent():

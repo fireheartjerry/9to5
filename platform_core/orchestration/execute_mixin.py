@@ -5,7 +5,7 @@ EXPORTS:
   OrchestratorExecuteMixin  -- Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment.
 DEPENDS-ON: agents.adversary, agents.verifier, config, notifications.cast, notifications.dashboard, notifications.discord_bot, platform_core.execution, platform_core.execution.wiring, platform_core.orchestration, platform_core.orchestration.execute_attempt_mixin, platform_core.orchestration.self_ref_gate, platform_core.orchestration.subtask, platform_core.runtime.control, platform_core.runtime.cost_budget, platform_core.runtime.trajectory, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/test_execute_mixin_env.py tests/test_execute_mixin_fork_wiring.py
+RUN/TEST: python -m pytest tests/test_execute_mixin_env.py tests/test_execute_mixin_fork_wiring.py tests/test_execute_mixin_teardown.py
 """
 from __future__ import annotations
 
@@ -279,30 +279,35 @@ class OrchestratorExecuteMixin(OrchestratorExecuteAttemptMixin):
         env, handle, env_ctx, exec_cwd = _env_wiring.provisionForSubtask(state, subtask, exec_cwd)
         with self._state_lock:
             subtask["env_handle_meta"] = {"backend": handle.backend, "meta": handle.meta}
-        spec, result, vresult, combined, passed, attempt = self._runSubtaskAttempts(
-            state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec,
-            env_ctx=env_ctx)
-        if spec is None or (state.getSubtask(sid) or {}).get("status") == "removed":
-            _env_wiring.finalizeQuietly(env, handle, state, subtask, sid, LOG)   # removed mid-loop
-            return "removed"
-        # COMMIT the verified outcome FIRST -- it is the source of truth. Everything below
-        # (notes, adversary, replan, index) is best-effort enrichment that must never be able to
-        # change a verified result.
-        final = "done" if passed else "failed"
-        with self._state_lock:
-            state.updateSubtask(sid, status=final, completed_at=nowIso())
+        # finalizeQuietly (collect+teardown) must run on EVERY exit path, including an AbortRun
+        # (or any other exception) raised out of _runSubtaskAttempts -- previously it only ran on
+        # the two normal-return paths, so an abort mid-attempt leaked the provisioned env (a
+        # Docker container that never self-exits despite --rm, or a remote host's /tmp tree).
+        try:
+            spec, result, vresult, combined, passed, attempt = self._runSubtaskAttempts(
+                state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec,
+                env_ctx=env_ctx)
+            if spec is None or (state.getSubtask(sid) or {}).get("status") == "removed":
+                return "removed"
+            # COMMIT the verified outcome FIRST -- it is the source of truth. Everything below
+            # (notes, adversary, replan, index) is best-effort enrichment that must never be able
+            # to change a verified result.
+            final = "done" if passed else "failed"
+            with self._state_lock:
+                state.updateSubtask(sid, status=final, completed_at=nowIso())
+                if not passed:
+                    state.addNotification("subtask_failed",
+                                          f"{sid} failed verification after {attempt} attempts")
+            if passed:
+                self._surfaceSubtaskPass(state, sid, attempt)
             if not passed:
-                state.addNotification("subtask_failed",
-                                      f"{sid} failed verification after {attempt} attempts")
-        if passed:
-            self._surfaceSubtaskPass(state, sid, attempt)
-        if not passed:
-            discord.sendEmbed(discord.subtaskFailedEmbed(sid, subtask["title"], vresult, attempt))
-        dashboard.update(state, "executing", f"{sid} -> {final}")
-        cast.speak("verifier" if not passed else "executor",
-                   (f"❌ `{sid}` failed verification after {attempt} attempt(s)." if not passed
-                    else f"⚙️ `{sid}` {subtask['title']} — done ✅"))
-        self._postSubtaskEnrich(state, subtask, spec, result, vresult, combined,
-                                passed, final, exec_cwd, architect_doc, bus, dashboard, attempt)
-        _env_wiring.finalizeQuietly(env, handle, state, subtask, sid, LOG)   # Epic 8: collect+teardown
-        return final
+                discord.sendEmbed(discord.subtaskFailedEmbed(sid, subtask["title"], vresult, attempt))
+            dashboard.update(state, "executing", f"{sid} -> {final}")
+            cast.speak("verifier" if not passed else "executor",
+                       (f"❌ `{sid}` failed verification after {attempt} attempt(s)." if not passed
+                        else f"⚙️ `{sid}` {subtask['title']} — done ✅"))
+            self._postSubtaskEnrich(state, subtask, spec, result, vresult, combined,
+                                    passed, final, exec_cwd, architect_doc, bus, dashboard, attempt)
+            return final
+        finally:
+            _env_wiring.finalizeQuietly(env, handle, state, subtask, sid, LOG)   # Epic 8: collect+teardown

@@ -397,14 +397,22 @@ def scanLocalClaude(roots: Optional[tuple] = None) -> dict:
 def readProductSelfKnowledge(roots: Optional[tuple] = None) -> dict:
     """Locate + read the product-self-knowledge skill (Claude Code's own current
     state). Returns ``{found: bool, path: str|None, text: str}``. Never raises."""
-    search_roots = list(roots or config.CLAUDE_SCAN_ROOTS) + [
-        Path.home() / ".claude", config.INSTALL_ROOT]
+    # .claude-scoped roots only (mirrors scanLocalClaude/config.CLAUDE_SCAN_ROOTS) -- the bare
+    # config.INSTALL_ROOT this used to include was an unbounded recursive glob over the WHOLE
+    # project tree (.git, venvs, node_modules, ...) on every knowledge refresh, and (like
+    # scanLocalClaude before its own fix) never excluded .claude/worktrees/** nested repo
+    # copies or the vendored fable-rewrite/nightclaw subtrees -- so a nested/foreign
+    # product-self-knowledge skill could be picked up (non-deterministic glob order) instead of
+    # this install's real one.
+    search_roots = list(roots or config.CLAUDE_SCAN_ROOTS) + [Path.home() / ".claude"]
     for root in search_roots:
         root = Path(root)
         if not root.exists():
             continue
         for pattern in _PRODUCT_SELF_KNOWLEDGE_GLOBS:
             for hit in root.glob(pattern):
+                if _isExcludedScanPath(hit, root):
+                    continue
                 if hit.is_file():
                     txt = _readText(hit, limit=60_000)
                     if txt:

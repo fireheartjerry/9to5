@@ -81,7 +81,8 @@ class OrchestratorRunLoopReplanMixin:
                 diff.append(f"(skipped add '{title}' -- MAX_SUBTASKS cap)")
                 break
             st = state.addSubtask(title, add.get("description", ""),
-                                  layer=add.get("layer", 3), verify=verifier.sanitizeVerify(add.get("verify")))
+                                  layer=add.get("layer", 3), verify=verifier.sanitizeVerify(add.get("verify")),
+                                  files_touched=add.get("files_touched"))
             live_titles.add(title.lower())
             active += 1
             diff.append(f"+ {st['subtask_id']} {st['title']}")

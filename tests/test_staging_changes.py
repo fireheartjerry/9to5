@@ -117,6 +117,7 @@ class TestWorkflowRegistryCRUD(unittest.TestCase):
         import threading
         self._reg._lock = threading.Lock()
         self._reg._store = {}
+        self._reg._builtin = frozenset()
 
     def _wf(self, name: str = "staging-test") -> dict:
         return {
