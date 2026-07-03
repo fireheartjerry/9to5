@@ -12,7 +12,7 @@ still gates. Workers never spawn sub-workers.
 EXPORTS:
   busMirror(task_id: str, bus=None) -> Callable[[dict], None]  -- Build a presentation-only on_append hook mirroring blackboard appends to the bus.
   Coordinator  -- Owns workforce orchestration over the blackboard
-DEPENDS-ON: config, notifications.event_bus, society.blackboard, society.roles, society.worker, state.task
+DEPENDS-ON: config, notifications.event_bus, society.blackboard, society.debate, society.roles, society.worker, state.task
 SIDE-EFFECTS: claims/updates task JSON, runs workers, appends to the blackboard
 RUN/TEST: python -m pytest tests/orchestration/test_society_coordinator.py
 """
@@ -134,6 +134,31 @@ class Coordinator:
             if any(v is False for v in verdicts):
                 contested.append(sid)
         return sorted(c for c in contested if c)
+
+    def resolveContested(self, messages: list) -> list:
+        """Run bounded debate for each contested subtask id; advisory only (never re-gates).
+
+        Roster = distinct roles that posted a message for that subtask id. Fewer than 2
+        roles means there is nothing to debate (single-claim CAS means this is a no-op on
+        today's one-worker-per-subtask path; it activates once multiple workers can post
+        competing results for the same subtask, e.g. Epic-6 solution-space forking).
+        Debate failures are logged and swallowed -- the verifier already landed the
+        subtask's terminal status; debate can never re-open or override it here."""
+        verdicts = []
+        for sid in self.detectContested(messages):
+            roster = sorted({m.get("role") for m in messages
+                             if m.get("subtask_id") == sid and m.get("role")})
+            if len(roster) < 2:
+                continue
+            try:
+                from society.debate import runDebate
+                goal = (self._state.meta or {}).get("goal", "")
+                v = runDebate(self._blackboard, sid, roster, goal=goal)
+            except Exception as e:  # noqa: BLE001 -- debate is advisory; never break the batch
+                LOG.warning("debate failed for %s: %s", sid, e, exc_info=True)
+                continue
+            verdicts.append({"subtask_id": sid, **v})
+        return verdicts
 
     def budgetExceeded(self) -> bool:
         """True once accumulated worker spend breaches SOCIETY_TOKEN_BUDGET_USD."""

@@ -102,3 +102,25 @@ def test_judge_weights_present_and_normalized_to_one():
     total = config.W_FACT + config.W_RUBRIC + config.W_RISK + config.W_COST
     assert abs(total - 1.0) < 1e-9
     assert config.W_FACT >= config.W_RUBRIC   # facts outweigh opinion
+
+
+# ---------------------------------------------------------------------------
+# Human-Nature layer: behaviour-coupling config knobs (tests/test_hn_config.py)
+# ---------------------------------------------------------------------------
+
+def test_human_nature_flags_default_off(monkeypatch):
+    for k in ("HUMAN_NATURE_ENABLED", "HN_OPINIONS_BEHAVIOR",
+              "HN_EMOTIONS_BEHAVIOR", "HN_INTUITION_SHORTCUT"):
+        monkeypatch.delenv(k, raising=False)
+    flags = EpicFlags()   # coded defaults < (no env)
+    assert flags.HUMAN_NATURE_ENABLED is False
+    assert flags.HN_OPINIONS_BEHAVIOR is False
+    assert flags.HN_EMOTIONS_BEHAVIOR is False
+    assert flags.HN_INTUITION_SHORTCUT is False
+
+
+def test_human_nature_thresholds_and_paths_present():
+    assert config.HN_THETA_HARD > config.HN_THETA_SOFT
+    assert config.HN_RECAL_TEMPERATURE > 1.0
+    assert str(config.CONVICTION_DB_PATH).endswith("conviction.db")
+    assert str(config.AB_HARNESS_DB_PATH).endswith("ab_runs.db")

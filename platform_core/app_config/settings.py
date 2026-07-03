@@ -108,6 +108,18 @@ class EpicFlags:
     EXECUTION_REMOTE_KIND: str = _F(default_factory=lambda: os.getenv("EXECUTION_REMOTE_KIND", "ssh"))
     EXECUTION_REMOTE_HOST: str = _F(default_factory=lambda: os.getenv("EXECUTION_REMOTE_HOST", ""))
     EXECUTION_PROVISION_TIMEOUT_SECONDS: int = _F(default_factory=lambda: _envInt("EXECUTION_PROVISION_TIMEOUT_SECONDS", 120))
+    # --- Human-Nature layer (behaviour-coupling OFF until an in-house A/B proves it) ---
+    HUMAN_NATURE_ENABLED: bool = _F(default_factory=lambda: _envBool("HUMAN_NATURE_ENABLED", False))
+    HN_OPINIONS_BEHAVIOR: bool = _F(default_factory=lambda: _envBool("HN_OPINIONS_BEHAVIOR", False))
+    HN_EMOTIONS_BEHAVIOR: bool = _F(default_factory=lambda: _envBool("HN_EMOTIONS_BEHAVIOR", False))
+    HN_INTUITION_SHORTCUT: bool = _F(default_factory=lambda: _envBool("HN_INTUITION_SHORTCUT", False))
+    # Opinion veto thresholds (Q1/Q3): soft-vote vs hard-veto conviction floors.
+    HN_THETA_SOFT: float = _F(default_factory=lambda: _envFloat("HN_THETA_SOFT", 0.60))
+    HN_THETA_HARD: float = _F(default_factory=lambda: _envFloat("HN_THETA_HARD", 0.85))
+    # Conviction recalibration temperature (F11: RLHF overconfidence correction).
+    HN_RECAL_TEMPERATURE: float = _F(default_factory=lambda: _envFloat("HN_RECAL_TEMPERATURE", 2.5))
+    # Cheap Ollama model for the pre-verbal / fast faculties.
+    HN_FAST_MODEL: str = _F(default_factory=lambda: os.getenv("HN_FAST_MODEL", "qwen2.5:1.5b"))
 
 
 _GEMINI_PREAMBLE_DEFAULT = (

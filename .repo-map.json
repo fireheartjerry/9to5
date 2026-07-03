@@ -9,6 +9,7 @@
     "check_workflow",
     "config",
     "conftest",
+    "human_nature",
     "knowledge",
     "learning",
     "llm_io",
@@ -8095,14 +8096,14 @@
           "kind": "function",
           "signature": "() -> PathsCfg",
           "summary": "Compute every path from env (after loadEnvOnce) + the repo-root bootstrap.",
-          "lineno": 94
+          "lineno": 97
         },
         {
           "name": "ensureDirs",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Create every directory 9TO5 needs (idempotent)",
-          "lineno": 139
+          "lineno": 144
         }
       ],
       "depends_on": [
@@ -8135,84 +8136,84 @@
           "kind": "class",
           "signature": "",
           "summary": "The big authored prompt/brief strings (env-overridable where they always were).",
-          "lineno": 161
+          "lineno": 173
         },
         {
           "name": "Settings",
           "kind": "class",
           "signature": "",
           "summary": "The whole typed registry: one frozen composite per process (swap-on-override).",
-          "lineno": 175
+          "lineno": 187
         },
         {
           "name": "buildSettings",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "Fresh registry: coded defaults < .env (loadEnvOnce) < sie_overrides.json.",
-          "lineno": 222
+          "lineno": 234
         },
         {
           "name": "settings",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "The process-wide registry singleton (lazy, thread-safe).",
-          "lineno": 236
+          "lineno": 248
         },
         {
           "name": "allNames",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Every legacy ALL_CAPS constant name the registry serves (for the facade __all__/__dir__…",
-          "lineno": 261
+          "lineno": 273
         },
         {
           "name": "lookup",
           "kind": "function",
           "signature": "(name: str) -> Any",
           "summary": "Constant by legacy name",
-          "lineno": 266
+          "lineno": 278
         },
         {
           "name": "lookupDomain",
           "kind": "function",
           "signature": "(domains: tuple[str, ...], name: str) -> Any",
           "summary": "lookup() restricted to the given domains (PEP 562 seam for the domain modules).",
-          "lineno": 276
+          "lineno": 288
         },
         {
           "name": "RunFlags",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 296
+          "lineno": 308
         },
         {
           "name": "runFlags",
           "kind": "function",
           "signature": "() -> RunFlags",
           "summary": "The run-scoped flag singleton, seeded from the registry's coded/env defaults.",
-          "lineno": 306
+          "lineno": 318
         },
         {
           "name": "reload",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "Rebuild the registry from the current env + overrides file and reseed run flags.",
-          "lineno": 320
+          "lineno": 332
         },
         {
           "name": "setOverride",
           "kind": "function",
           "signature": "(knob: str, value: Any) -> tuple[bool, bool]",
           "summary": "Live-apply + persist a whitelisted, bounds-checked SIE knob.",
-          "lineno": 334
+          "lineno": 346
         },
         {
           "name": "getLogger",
           "kind": "function",
           "signature": "(name: str='9to5') -> logging.Logger",
           "summary": "Return a child of the configured ``9to5`` logger.",
-          "lineno": 430
+          "lineno": 442
         }
       ],
       "depends_on": [
@@ -8375,7 +8376,8 @@
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.run_phase_outcome",
-        "platform_core.runtime.resilience"
+        "platform_core.runtime.resilience",
+        "society.society_batch"
       ]
     },
     "platform_core.core.clock": {
@@ -11051,6 +11053,7 @@
         "platform_core.ops",
         "platform_core.orchestration",
         "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.human_nature_bridge",
         "platform_core.orchestration.knowledge_refresh",
         "platform_core.orchestration.run_phase_surface_mixin",
         "platform_core.orchestration.step_resume",
@@ -12517,6 +12520,7 @@
       "depends_on": [
         "society.blackboard",
         "society.coordinator",
+        "society.debate",
         "society.roles",
         "society.worker"
       ],
@@ -12591,6 +12595,7 @@
         "config",
         "notifications.event_bus",
         "society.blackboard",
+        "society.debate",
         "society.roles",
         "society.worker",
         "state.task"
@@ -12650,20 +12655,21 @@
           "kind": "function",
           "signature": "(ready: list) -> bool",
           "summary": "True when the workforce should engage: flag ON and >=2 disjoint-ready subtasks.",
-          "lineno": 24
+          "lineno": 27
         },
         {
           "name": "handleSocietyBatch",
           "kind": "function",
           "signature": "(state, ready: list, work_dir: str, parallelism: int, state_lock, *, run_fn: Optional[Callable]=None) -> 'tuple[int, None]'",
           "summary": "Delegate a ready batch to the society Coordinator (worktree-isolated workers).",
-          "lineno": 49
+          "lineno": 52
         }
       ],
       "depends_on": [
         "config",
         "memory.experience",
         "platform_core.app_config.paths",
+        "platform_core.core.best_effort",
         "platform_core.orchestration",
         "society.blackboard",
         "society.coordinator"

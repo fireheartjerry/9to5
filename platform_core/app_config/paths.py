@@ -56,6 +56,9 @@ class PathsCfg:
     BLACKBOARD_DIR: Path          # Agent Society / Workforce (Epic 5) blackboard
     # --- SIE / learning ---
     EXPERIENCE_DB_PATH: Path
+    # --- Human-Nature layer (mirrors EXPERIENCE_DB_PATH location) ---
+    CONVICTION_DB_PATH: Path      # ledger-grounded conviction/calibration history
+    AB_HARNESS_DB_PATH: Path      # behaviour-coupling A/B validation runs
     EVAL_SUITE_DIR: Path
     EVOLUTION_SUITE_DIR: Path     # Epic 7 evolution (flags + ints live in llm.py)
     EVOLUTION_SKILL_DIR: Path
@@ -116,6 +119,8 @@ def buildPathsCfg() -> PathsCfg:
         IPC_DIR=state / "ipc",
         BLACKBOARD_DIR=state / "blackboard",
         EXPERIENCE_DB_PATH=state / "experience.db",
+        CONVICTION_DB_PATH=state / "conviction.db",
+        AB_HARNESS_DB_PATH=state / "ab_runs.db",
         EVAL_SUITE_DIR=root / "learning" / "eval_suite",
         EVOLUTION_SUITE_DIR=state / "evolution" / "eval_suite",
         EVOLUTION_SKILL_DIR=root / ".claude" / "skills" / "evolved",

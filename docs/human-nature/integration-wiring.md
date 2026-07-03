@@ -1,13 +1,20 @@
 # Human-Nature Layer — Integration Wiring Checklist
 
-> **Code removed 2026-07-02 (R3-human-nature-amputation):** the `human_nature/` package,
-> `memory/conviction_ledger.py`, and the `HN_*` config knobs were deleted from the tree
-> (zero production imports). The full implementation is recoverable at pre-deletion commit
-> `a7b1b2d`. These specs remain the source of truth for any revival.
+> **Restored 2026-07-03:** the `human_nature/` package, `memory/conviction_ledger.py`,
+> and the `HN_*` config knobs (now in `platform_core/app_config/settings.py::EpicFlags`
+> and `paths.py::PathsCfg`, matching the config-v2 registry that landed after the R3
+> deletion) are back in the tree. Hooks 1, 3, 5, 6 below are LIVE, wired through
+> `platform_core/orchestration/human_nature_bridge.py` (called from `_runPreamble` /
+> `_runTeardown` in `run_phase_mixin.py`). Hooks 2 and 4 are deliberately NOT wired yet
+> -- see "Deferred hooks" at the bottom.
 
-**Status:** Ready for merge-time insertion into the run loop (Spec A + Spec B must land first).
-**Key guarantee:** ALL wiring is behind `config.HUMAN_NATURE_ENABLED` (default `False`).
-Until the flag is explicitly set, the merged run loop is byte-identical to pre-layer behaviour.
+**Status:** Hooks 1/3/5/6 wired and tested (`tests/orchestration/test_human_nature_bridge.py`).
+Hooks 2/4 remain deferred (hot-path, higher risk -- see bottom of doc).
+**Key guarantee:** ALL behavior-changing wiring is behind `config.HUMAN_NATURE_ENABLED`
+(default `False`). Until the flag is explicitly set, the run loop's OBSERVABLE behavior
+(subtask outcomes, PR content) is unchanged -- only `state.meta.self_state`/`autonomy` and
+a continuity letter get written, plus one A/B harness row per run (both arms, always-on,
+by design -- see hook 6).
 
 ---
 
@@ -168,14 +175,36 @@ No flag flips to `True` by default until the A/B harness shows non-inferior task
 
 ---
 
-## Files Touched at Merge Time
+## Files Touched at Merge Time (2026-07-03 restoration)
 
-| File | Change |
-|---|---|
-| `platform_core/orchestration/run_phase_mixin.py` | Add hooks 1, 3, 4, 5, 6 |
-| `platform_core/orchestration/execute_mixin.py` | Add hook 2 |
-| `notifications/cv2.py` / `notifications/webdash.py` | Psyche surface integration (hook 5c) |
-| `notifications/bot/cogs/` | `!psyche` / `!dial` / `!charter` / `!whatyouknow` / `!why-i-feel` |
+| File | Change | Status |
+|---|---|---|
+| `platform_core/orchestration/human_nature_bridge.py` | New bridge module: hooks 1, 3, 5, 6 | DONE |
+| `platform_core/orchestration/run_phase_mixin.py` | `_runPreamble` calls `runPreambleHooks`; `_runTeardown` gained a `state` param + calls `runTeardownHooks` | DONE |
+| `orchestrator.py` | `runFull`'s `finally:` passes `state` to `_runTeardown` | DONE |
+| `platform_core/app_config/settings.py` / `paths.py` | `HUMAN_NATURE_ENABLED` + `HN_*` flags, `CONVICTION_DB_PATH`, `AB_HARNESS_DB_PATH` (config-v2 registry, not the old standalone module) | DONE |
+| `tests/conftest.py` | `_isolate_conviction_db` / `_isolate_ab_harness_db` autouse fixtures restored | DONE |
+| `platform_core/orchestration/execute_mixin.py` / `execute_attempt_mixin.py` | Hook 2 (pre-act routing) | **DEFERRED** |
+| Mid-run instinct checkpoint (hook 4) | Needs a call site inside the attempt loop or run_loop tick | **DEFERRED** |
+| `notifications/cv2.py` / `notifications/webdash.py` | Psyche surface integration (hook 5c) | not started |
+| `notifications/bot/cogs/` | `!psyche` / `!dial` / `!charter` / `!whatyouknow` / `!why-i-feel` | not started (psyche_commands.py routers exist and are tested; no cog wires them to Discord yet) |
 
-Do NOT edit `run_phase_mixin.py` or `execute_mixin.py` before Spec A + Spec B land —
-those files have unmerged concurrent edits; a 3-way touch would conflict.
+## Deferred hooks (2, 4) — why and what's needed
+
+**Hook 2 (`route_pre_act`, dual-process routing)** was deliberately left unwired this pass.
+It lives on `_runOneAttempt` in `execute_attempt_mixin.py` -- the hottest, most
+behavior-sensitive path in the whole orchestrator, and it requires new signal plumbing
+(`p_true`, `self_consistency`, `ood`) that doesn't exist yet at that call site. Wiring it
+means the "fast" return value can skip deliberation on a live run, so it deserves its own
+reviewed change with its own test pass, not a bundled add. `HN_INTUITION_SHORTCUT` stays a
+real, tested, importable knob (`human_nature/intuition.py::route`) -- just not yet reachable
+from a live subtask attempt.
+
+**Hook 4 (mid-run instinct checkpoint)** needs a "phase boundary" call site -- either inside
+the attempt loop (same hot-path concern as hook 2) or at the `run_loop.py` tick level (a
+core orchestration file per `.claude/rules/orchestration.md`). Left for a follow-up pass so
+this restoration stays confined to run-boundary hooks only.
+
+Both are safe to defer: `HUMAN_NATURE_ENABLED=False` is still the tree default, and even
+with it on, neither hook fires today -- `human_nature.intuition.route` / `.instinct.maybe_flag`
+are fully implemented and tested in isolation, just not yet reachable from a live run.

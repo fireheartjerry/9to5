@@ -144,4 +144,4 @@ class Orchestrator(OrchestratorLlmMixin, OrchestratorPlanMixin, OrchestratorCont
         except Exception as e:  # noqa: BLE001 -- the core loop must NEVER crash silently
             return self._handleRunCrash(state, e, web_url, dashboard)
         finally:
-            self._runTeardown(bus, dashboard, work_dir)
+            self._runTeardown(bus, dashboard, work_dir, state)

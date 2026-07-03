@@ -10,7 +10,7 @@ byte-identically.
 EXPORTS:
   societyGate(ready: list) -> bool  -- True when the workforce should engage: flag ON and >=2 disjoint-ready subtasks.
   handleSocietyBatch(state, ready: list, work_dir: str, parallelism: int, state_lock, *, run_fn: Optional[Callable]=None) -> 'tuple[int, None]'  -- Delegate a ready batch to the society Coordinator (worktree-isolated workers).
-DEPENDS-ON: config, memory.experience, platform_core.app_config.paths, platform_core.orchestration, society.blackboard, society.coordinator
+DEPENDS-ON: config, memory.experience, platform_core.app_config.paths, platform_core.core.best_effort, platform_core.orchestration, society.blackboard, society.coordinator
 SIDE-EFFECTS: runs society workers (claims/updates task JSON, appends to the blackboard)
 RUN/TEST: (no mapped test)
 """
@@ -19,6 +19,9 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 import config
+from platform_core.core.best_effort import best_effort
+
+LOG = config.getLogger("society.society_batch")
 
 
 def societyGate(ready: list) -> bool:
@@ -65,6 +68,8 @@ def handleSocietyBatch(state, ready: list, work_dir: str, parallelism: int,
     batch = coord.selectDisjointBatch(ready, min(parallelism, config.SOCIETY_MAX_WORKERS),
                                       file_sets_fn=parallel_safety.filesTouched)
     messages = coord._handleSocietyBatch(batch, parallelism, run_fn=run_fn)
+    with best_effort("society.debate", log=LOG):
+        coord.resolveContested(messages)   # advisory debate; never overrides landed status
     try:
         experience.close_pool()   # match _handleParallelBatch SQLite cleanup (CB-3)
     except Exception:  # noqa: BLE001

@@ -18,6 +18,13 @@ state/blackboard/
 state/experience.db
 state/experience.db-wal
 state/experience.db-shm
+# Human-Nature layer (runtime SQLite, accumulates per run)
+state/conviction.db
+state/conviction.db-wal
+state/conviction.db-shm
+state/ab_runs.db
+state/ab_runs.db-wal
+state/ab_runs.db-shm
 # SIE runtime artifacts (LoRA adapters, datasets, sie state)
 state/adapters/
 state/ann_index/
