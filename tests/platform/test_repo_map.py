@@ -27,12 +27,32 @@ except Exception:  # noqa: BLE001 -- old/partial checkout: skip rather than erro
     repo_map = None
 
 
+@pytest.fixture(scope="module")
+def _write_outputs_check_result():
+    """The real repo_map.write_outputs(check=True, only=None, no_headers=False) call, run ONCE
+    and shared by every test that asserts against this exact invocation. test_no_drift and
+    test_check_run_never_flags_a_test_file both call it with identical args and only READ the
+    result -- check=True never writes to disk (tools/repo_map_outputs.py: _spliceHeaders,
+    _writeJsonMap, and _writeAgentsMd all guard their path.write_text calls behind `if not
+    check`), so sharing one real invocation changes nothing about what either test proves.
+    Captures this file's bytes immediately before/after the SAME call so the no-mutation
+    assertion doesn't need a second full invocation to check."""
+    this_file = Path(__file__)
+    before = this_file.read_bytes()
+    rc = repo_map.write_outputs(check=True, only=None, no_headers=False)
+    after = this_file.read_bytes()
+    return rc, before, after
+
+
 @unittest.skipIf(repo_map is None, "tools/repo_map.py not importable")
 class TestRepoMapDrift(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def _inject_write_outputs(self, _write_outputs_check_result):
+        self._wo_rc, self._wo_before, self._wo_after = _write_outputs_check_result
+
     def test_no_drift(self):
         """Committed artifacts + adopted headers are current. Fix: python tools/repo_map.py"""
-        rc = repo_map.write_outputs(check=True, only=None, no_headers=False)
-        self.assertEqual(rc, 0, "repo-map / AGENTS.md / AI-MAP headers are STALE. "
+        self.assertEqual(self._wo_rc, 0, "repo-map / AGENTS.md / AI-MAP headers are STALE. "
                                 "Run:  python tools/repo_map.py")
 
 
@@ -80,23 +100,25 @@ class TestTestsExcluded(unittest.TestCase):
     """The test trees are never mapped and never spliced -- headers there are pure noise and a
     bad splice corrupts the suite. Guards the exclusion + splice-run idempotency."""
 
+    @pytest.fixture(autouse=True)
+    def _inject_shared(self, repo_build_map, _write_outputs_check_result):
+        self._repo_build_map = repo_build_map
+        self._wo_rc, self._wo_before, self._wo_after = _write_outputs_check_result
+
     def test_is_test_path_covers_test_trees(self):
         self.assertTrue(repo_map.is_test_path(REPO_ROOT / "tests" / "test_x.py"))
         self.assertTrue(repo_map.is_test_path(REPO_ROOT / "testing" / "e2e.py"))
         self.assertFalse(repo_map.is_test_path(REPO_ROOT / "agents" / "executor.py"))
 
     def test_map_has_no_test_modules(self):
-        m = repo_map.build_map()
+        m = self._repo_build_map
         offenders = [k for k, r in m["modules"].items()
                      if r["path"].split("/")[0] in ("tests", "testing")]
         self.assertEqual(offenders, [], f"test modules leaked into the map: {offenders}")
 
     def test_check_run_never_flags_a_test_file(self):
         # A --check pass must never report a tests/ file as drift (it is out of scope entirely).
-        this = Path(__file__)
-        before = this.read_bytes()
-        repo_map.write_outputs(check=True, only=None, no_headers=False)
-        self.assertEqual(this.read_bytes(), before, "check mode mutated a test file")
+        self.assertEqual(self._wo_after, self._wo_before, "check mode mutated a test file")
 
 
 @unittest.skipIf(repo_map is None, "tools/repo_map.py not importable")

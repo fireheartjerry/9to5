@@ -14,8 +14,7 @@ for _p in (REPO_ROOT, REPO_ROOT / "tools"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-import repo_map  # noqa: E402  (tools/ injected above)
-import repo_map_render  # noqa: E402
+import repo_map_render  # noqa: E402  (tools/ injected above)
 from agents import playbook  # noqa: E402
 
 
@@ -24,8 +23,10 @@ def test_full_suite_is_pytest_only():
     assert "unittest" not in repo_map_render.FULL_SUITE
 
 
-def test_generated_agents_md_has_no_unittest():
-    root_md = repo_map_render.render_root_agents_md(repo_map.build_map())
+def test_generated_agents_md_has_no_unittest(repo_build_map):
+    # repo_build_map is the shared session-scoped repo_map.build_map() result (see
+    # tests/platform/conftest.py) -- this test only reads it, never mutates it.
+    root_md = repo_map_render.render_root_agents_md(repo_build_map)
     assert "unittest" not in root_md
     assert repo_map_render.FULL_SUITE in root_md
 
