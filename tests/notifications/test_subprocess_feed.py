@@ -1,4 +1,5 @@
 """Tests for SubprocessFeed -- the real-time Claude stdout tap."""
+
 import json
 import time
 
@@ -18,8 +19,16 @@ def _last(bus):
 def test_edit_tool_event():
     bus = LiveEventBus()
     f = _feed(bus)
-    f.consume(json.dumps({"type": "assistant", "message": {"content": [
-        {"type": "tool_use", "name": "Edit", "input": {"file_path": "a/b.py"}}]}}))
+    f.consume(
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [{"type": "tool_use", "name": "Edit", "input": {"file_path": "a/b.py"}}]
+                },
+            }
+        )
+    )
     e = _last(bus)
     assert e["kind"] == "tool_use"
     assert "b.py" in e["text"] and "editing" in e["text"]
@@ -50,8 +59,11 @@ def test_bash_truncated():
 def test_agent_spawn():
     bus = LiveEventBus()
     f = _feed(bus)
-    f.consume(json.dumps({"type": "tool_use", "name": "Task",
-                          "input": {"description": "research the thing deeply"}}))
+    f.consume(
+        json.dumps(
+            {"type": "tool_use", "name": "Task", "input": {"description": "research the thing deeply"}}
+        )
+    )
     assert "agent" in _last(bus)["text"]
 
 
@@ -60,7 +72,7 @@ def test_non_json_raw_only():
     f = _feed(bus)
     before = len(bus.history(last_n=9999))
     f.consume("not json at all")
-    assert len(bus.history(last_n=9999)) == before          # no structured event emitted
+    assert len(bus.history(last_n=9999)) == before  # no structured event emitted
     assert bus.raw_history("st-001")[-1]["line"] == "not json at all"  # raw stored
 
 
@@ -117,7 +129,7 @@ def test_drain_streaming_taps_every_line():
             self.stderr = io.StringIO("")
             self.pid = 4321
 
-        def wait(self):
+        def wait(self, timeout=None):
             return 0
 
     bus = LiveEventBus()
@@ -134,20 +146,25 @@ def test_drain_streaming_taps_every_line():
 def test_on_step_callback_fires_with_parsed_event():
     bus = LiveEventBus()
     seen = []
-    f = SubprocessFeed(bus, "st-002", time.monotonic(), heartbeat=False,
-                       on_step=lambda idx, tool, summary, inp: seen.append((idx, tool, inp)))
+    f = SubprocessFeed(
+        bus,
+        "st-002",
+        time.monotonic(),
+        heartbeat=False,
+        on_step=lambda idx, tool, summary, inp: seen.append((idx, tool, inp)),
+    )
     f.consume(json.dumps({"type": "tool_use", "name": "Edit", "input": {"file_path": "z.py"}}))
     f.consume(json.dumps({"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}))
-    assert [s[0] for s in seen] == [0, 1]          # zero-based step_idx
+    assert [s[0] for s in seen] == [0, 1]  # zero-based step_idx
     assert seen[0][1] == "Edit" and seen[0][2] == {"file_path": "z.py"}
     assert seen[1][1] == "Bash"
 
 
 def test_on_step_none_is_unchanged_behavior():
     bus = LiveEventBus()
-    f = SubprocessFeed(bus, "st-003", time.monotonic(), heartbeat=False)   # on_step defaults None
+    f = SubprocessFeed(bus, "st-003", time.monotonic(), heartbeat=False)  # on_step defaults None
     f.consume(json.dumps({"type": "tool_use", "name": "Read", "input": {"file_path": "c.py"}}))
-    assert "reading" in _last(bus)["text"]          # feed still works, no callback required
+    assert "reading" in _last(bus)["text"]  # feed still works, no callback required
 
 
 def test_on_step_sink_error_never_breaks_consume():
@@ -158,4 +175,4 @@ def test_on_step_sink_error_never_breaks_consume():
 
     f = SubprocessFeed(bus, "st-004", time.monotonic(), heartbeat=False, on_step=_boom)
     f.consume(json.dumps({"type": "tool_use", "name": "Edit", "input": {"file_path": "z.py"}}))
-    assert "editing" in _last(bus)["text"]          # raw/structured emit still happened
+    assert "editing" in _last(bus)["text"]  # raw/structured emit still happened

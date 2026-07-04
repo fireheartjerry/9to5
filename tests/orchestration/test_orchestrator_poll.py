@@ -11,6 +11,7 @@ it statically: parse orchestrator source files and assert every
 NOTE: After the package split the definition and call sites live under
 platform_core/orchestration/; we scan the facade plus package modules.
 """
+
 import ast
 import pathlib
 import threading
@@ -20,10 +21,12 @@ from unittest import mock
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 # Scan all orchestrator source files (main + all mixin modules).
-_SRCS = sorted([
-    *_ROOT.glob("orchestrator*.py"),
-    *(_ROOT / "platform_core" / "orchestration").glob("*.py"),
-])
+_SRCS = sorted(
+    [
+        *_ROOT.glob("orchestrator*.py"),
+        *(_ROOT / "platform_core" / "orchestration").glob("*.py"),
+    ]
+)
 
 
 def _trees():
@@ -35,11 +38,13 @@ def _trees():
 def _translateDiscordCalls(tree: ast.AST) -> list[ast.Call]:
     calls = []
     for node in ast.walk(tree):
-        if (isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "_translateDiscord"
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "self"):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "_translateDiscord"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "self"
+        ):
             calls.append(node)
     return calls
 
@@ -56,17 +61,25 @@ class TestTranslateDiscordArity(unittest.TestCase):
         self.assertGreater(len(all_calls), 0, "expected at least one _translateDiscord call site")
         for fname, call in all_calls:
             self.assertEqual(
-                len(call.args), 2,
+                len(call.args),
+                2,
                 f"_translateDiscord call in {fname}:{call.lineno} passes {len(call.args)} "
-                f"positional arg(s); it requires (bus, state)")
+                f"positional arg(s); it requires (bus, state)",
+            )
             self.assertFalse(call.keywords, f"unexpected kwargs in {fname}:{call.lineno}")
 
     def test_signature_unchanged(self):
         """If the signature ever changes, this guard's arity assumption must be revisited."""
         func = None
         for _src, tree in self.all_trees:
-            func = next((n for n in ast.walk(tree)
-                         if isinstance(n, ast.FunctionDef) and n.name == "_translateDiscord"), None)
+            func = next(
+                (
+                    n
+                    for n in ast.walk(tree)
+                    if isinstance(n, ast.FunctionDef) and n.name == "_translateDiscord"
+                ),
+                None,
+            )
             if func:
                 break
         self.assertIsNotNone(func)
@@ -96,8 +109,10 @@ class TestPollerGating(unittest.TestCase):
     def test_bot_alive_means_zero_rest_calls(self):
         host = _Host()
         bus = ControlBus("t-poll")
-        with mock.patch.object(cm.heartbeat, "isBotAlive", return_value=True), \
-                mock.patch.object(cm.discord, "fetchMessagesAfter") as fetch:
+        with (
+            mock.patch.object(cm.heartbeat, "isBotAlive", return_value=True),
+            mock.patch.object(cm.discord, "fetchMessagesAfter") as fetch,
+        ):
             for _ in range(3):
                 host._translateDiscord(bus, _state())
         fetch.assert_not_called()
@@ -105,9 +120,10 @@ class TestPollerGating(unittest.TestCase):
     def test_bot_dead_engages_rest_poller(self):
         host = _Host()
         bus = ControlBus("t-poll2")
-        with mock.patch.object(cm.heartbeat, "isBotAlive", return_value=False), \
-                mock.patch.object(cm.discord, "fetchMessagesAfter",
-                                  return_value=([], None)) as fetch:
+        with (
+            mock.patch.object(cm.heartbeat, "isBotAlive", return_value=False),
+            mock.patch.object(cm.discord, "fetchMessagesAfter", return_value=([], None)) as fetch,
+        ):
             host._translateDiscord(bus, _state("t-poll2"))
         fetch.assert_called_once()
 
@@ -115,14 +131,16 @@ class TestPollerGating(unittest.TestCase):
         host = _Host()
         bus = ControlBus("t-poll3")
         alive = {"v": False}
-        with mock.patch.object(cm.heartbeat, "isBotAlive", side_effect=lambda: alive["v"]), \
-                mock.patch.object(cm.discord, "fetchMessagesAfter", return_value=([], None)), \
-                mock.patch.object(cm, "LOG") as log:
-            host._translateDiscord(bus, _state("t-poll3"))   # dead -> engage (warn once)
-            host._translateDiscord(bus, _state("t-poll3"))   # still dead -> silent
+        with (
+            mock.patch.object(cm.heartbeat, "isBotAlive", side_effect=lambda: alive["v"]),
+            mock.patch.object(cm.discord, "fetchMessagesAfter", return_value=([], None)),
+            mock.patch.object(cm, "LOG") as log,
+        ):
+            host._translateDiscord(bus, _state("t-poll3"))  # dead -> engage (warn once)
+            host._translateDiscord(bus, _state("t-poll3"))  # still dead -> silent
             alive["v"] = True
-            host._translateDiscord(bus, _state("t-poll3"))   # back -> disengage (info once)
-            host._translateDiscord(bus, _state("t-poll3"))   # still alive -> silent
+            host._translateDiscord(bus, _state("t-poll3"))  # back -> disengage (info once)
+            host._translateDiscord(bus, _state("t-poll3"))  # still alive -> silent
         self.assertEqual(log.warning.call_count, 1, "degraded-mode entry must log exactly once")
         self.assertEqual(log.info.call_count, 1, "recovery must log exactly once")
 
@@ -132,14 +150,62 @@ class TestPollerGating(unittest.TestCase):
         host = _Host()
         bus = ControlBus("t-poll4")
         msg = {"id": "424242", "content": "!retry", "author_is_bot": False, "author_id": "7"}
-        with mock.patch.object(cm.heartbeat, "isBotAlive", return_value=False), \
-                mock.patch.object(cm.discord, "fetchMessagesAfter",
-                                  return_value=([msg], "424242")), \
-                mock.patch.object(cm.config, "DISCORD_HUMAN_USER_ID", "7"), \
-                mock.patch.object(cm.audit, "record"):
+        with (
+            mock.patch.object(cm.heartbeat, "isBotAlive", return_value=False),
+            mock.patch.object(cm.discord, "fetchMessagesAfter", return_value=([msg], "424242")),
+            mock.patch.object(cm.config, "DISCORD_HUMAN_USER_ID", "7"),
+            mock.patch.object(cm.audit, "record"),
+        ):
             host._translateDiscord(bus, _state("t-poll4"))
-            bus.setSeen(None)   # simulate a cursor rewind re-delivering the same message
+            bus.setSeen(None)  # simulate a cursor rewind re-delivering the same message
             host._translateDiscord(bus, _state("t-poll4"))
         ops = bus.drainOps()
         self.assertEqual(len(ops), 1, "the same Discord message must queue exactly one op")
         self.assertEqual(ops[0]["op"], "retry")
+
+    def test_apply_command_raising_does_not_advance_cursor_past_it(self):
+        """If applyCommand raises (e.g. a transient control-store error), the poll cursor
+        must NOT be advanced past the failed message -- otherwise the next poll treats it
+        as already 'seen' and the operator's command is silently, permanently lost. The
+        exception must also not escape _translateDiscord (it would crash on_tick during a
+        plan/pre_pr gate wait, per CB control-bus rules)."""
+        host = _Host()
+        bus = ControlBus("t-poll5")
+        msg = {"id": "555", "content": "!retry", "author_is_bot": False, "author_id": "7"}
+        with (
+            mock.patch.object(cm.heartbeat, "isBotAlive", return_value=False),
+            mock.patch.object(cm.discord, "fetchMessagesAfter", return_value=([msg], "555")),
+            mock.patch.object(cm.config, "DISCORD_HUMAN_USER_ID", "7"),
+            mock.patch.object(cm.audit, "record"),
+            mock.patch.object(cm.commands, "applyCommand", side_effect=RuntimeError("control-store locked")),
+        ):
+            host._translateDiscord(bus, _state("t-poll5"))  # must not raise
+        self.assertNotEqual(bus.getSeen(), "555", "cursor must not advance past a message whose apply failed")
+
+    def test_apply_command_raising_mid_batch_retries_only_failed_and_later_messages(self):
+        """Two messages in one poll: the first applies fine, the second raises. The cursor
+        must land BEFORE the failed message (not at `latest`), so a retry re-delivers only
+        the failed message onward -- the already-applied first message is not re-queued
+        because pushOp/applyCommand dedup on source_msg_id (idempotent replay, CB-7)."""
+        host = _Host()
+        bus = ControlBus("t-poll6")
+        msg_ok = {"id": "601", "content": "!retry", "author_is_bot": False, "author_id": "7"}
+        msg_bad = {"id": "602", "content": "!retry", "author_is_bot": False, "author_id": "7"}
+        real_apply = cm.commands.applyCommand
+
+        def _flaky(bus_, state_, cmd_, *, source_msg_id=None):
+            if source_msg_id == "602":
+                raise RuntimeError("control-store locked")
+            return real_apply(bus_, state_, cmd_, source_msg_id=source_msg_id)
+
+        with (
+            mock.patch.object(cm.heartbeat, "isBotAlive", return_value=False),
+            mock.patch.object(cm.discord, "fetchMessagesAfter", return_value=([msg_ok, msg_bad], "602")),
+            mock.patch.object(cm.config, "DISCORD_HUMAN_USER_ID", "7"),
+            mock.patch.object(cm.audit, "record"),
+            mock.patch.object(cm.commands, "applyCommand", side_effect=_flaky),
+        ):
+            host._translateDiscord(bus, _state("t-poll6"))  # must not raise
+        self.assertEqual(bus.getSeen(), "601", "cursor must stop at the last successfully-applied message")
+        ops = bus.drainOps()
+        self.assertEqual(len(ops), 1, "only the successfully-applied message queued an op")

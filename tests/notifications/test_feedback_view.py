@@ -7,6 +7,7 @@ Covers:
   - Feedback recording via implicit human_feedback.record()
   - Button icon application via _applyButtonIcons
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -144,22 +145,22 @@ class TestRejectButton(unittest.TestCase):
 class TestSkipButton(unittest.TestCase):
     """FeedbackView.skip button behavior."""
 
-    def test_skip_calls_runControl(self):
-        """Clicking Skip must call slash._runControl(interaction, 'skip')."""
+    def test_skip_calls_skipCurrent(self):
+        """Clicking Skip must call views_control._skipCurrent(interaction, 'feedback')."""
         view = FeedbackView()
         interaction = mock.AsyncMock(spec=discord.Interaction)
         button = mock.Mock()
 
         raw_skip = FeedbackView.__dict__["skip"]
 
-        with mock.patch("notifications.views_feedback.slash._runControl") as mock_run:
-            mock_run.return_value = None
+        with mock.patch("notifications.views_feedback._skipCurrent") as mock_skip:
+            mock_skip.return_value = None
             _run(raw_skip(view, interaction, button))
 
-        mock_run.assert_called_once()
-        args, kwargs = mock_run.call_args
+        mock_skip.assert_called_once()
+        args, kwargs = mock_skip.call_args
         self.assertEqual(args[0], interaction)
-        self.assertEqual(args[1], "skip")
+        self.assertEqual(args[1], "feedback")
 
     def test_skip_error_sends_ephemeral(self):
         """If skip fails, send an ephemeral error message."""
@@ -173,7 +174,7 @@ class TestSkipButton(unittest.TestCase):
         async def raise_error(*args, **kwargs):
             raise Exception("Skip failed")
 
-        with mock.patch("notifications.views_feedback.slash._runControl", side_effect=raise_error):
+        with mock.patch("notifications.views_feedback._skipCurrent", side_effect=raise_error):
             _run(raw_skip(view, interaction, button))
 
         interaction.followup.send.assert_called_once()
@@ -221,29 +222,37 @@ class TestIntegrationWithRunControl(unittest.TestCase):
     """Integration tests showing button -> slash._runControl pipeline."""
 
     def test_all_buttons_route_to_runControl(self):
-        """All four buttons must route through slash._runControl with correct kind."""
+        """Approve/Reject/Retry route through slash._runControl; Skip routes through _skipCurrent."""
         view = FeedbackView()
         interaction = mock.AsyncMock(spec=discord.Interaction)
         button = mock.Mock()
 
         # Patch _runControl to capture all calls
         kinds_called = []
+        skip_called = []
 
         async def capture_call(inter, kind, *args):
             kinds_called.append(kind)
+
+        async def capture_skip(inter, source):
+            skip_called.append(source)
 
         raw_approve = FeedbackView.__dict__["approve"]
         raw_reject = FeedbackView.__dict__["reject"]
         raw_skip = FeedbackView.__dict__["skip"]
         raw_retry = FeedbackView.__dict__["retry"]
 
-        with mock.patch("notifications.views_feedback.slash._runControl", side_effect=capture_call):
+        with (
+            mock.patch("notifications.views_feedback.slash._runControl", side_effect=capture_call),
+            mock.patch("notifications.views_feedback._skipCurrent", side_effect=capture_skip),
+        ):
             _run(raw_approve(view, interaction, button))
             _run(raw_reject(view, interaction, button))
             _run(raw_skip(view, interaction, button))
             _run(raw_retry(view, interaction, button))
 
-        self.assertEqual(kinds_called, ["approve", "reject", "skip", "retry"])
+        self.assertEqual(kinds_called, ["approve", "reject", "retry"])
+        self.assertEqual(skip_called, ["feedback"])
 
     def test_runControl_receives_interaction(self):
         """slash._runControl must receive the interaction object unchanged."""

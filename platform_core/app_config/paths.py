@@ -16,6 +16,7 @@ DEPENDS-ON: platform_core.app_config, platform_core.app_config._env
 SIDE-EFFECTS: ensureDirs creates the runtime directory tree
 RUN/TEST: python -m pytest tests/orchestration/test_society_coordinator.py tests/orchestration/test_society_off_invariance.py tests/platform/test_config_bootstrap.py tests/slow/test_epic_flags_combined.py
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -38,29 +39,29 @@ class PathsCfg:
     # --- core roots ---
     PROJECT_ROOT: Path
     LOG_PATH: Path
-    INSTALL_ROOT: Path            # durable home of vault/logs/knowledge, worktree-independent
+    INSTALL_ROOT: Path  # durable home of vault/logs/knowledge, worktree-independent
     # --- living Claude Code knowledge base ---
     KNOWLEDGE_DIR: Path
     CLAUDE_KNOWLEDGE_PATH: Path
     CLAUDE_RECOMMENDATIONS_PATH: Path
-    CLAUDE_SCAN_ROOTS: tuple[Path, ...]   # roots scanned recursively for installed .claude surfaces
+    CLAUDE_SCAN_ROOTS: tuple[Path, ...]  # roots scanned recursively for installed .claude surfaces
     # --- Obsidian vault ---
     OBSIDIAN_VAULT_PATH: Path
-    VAULT_DISK_ROOT: Path         # physical folder that actually contains ``.obsidian/``
+    VAULT_DISK_ROOT: Path  # physical folder that actually contains ``.obsidian/``
     # --- task state and control ---
     STATE_DIR: Path
     CONTROL_DIR: Path
-    HEARTBEAT_DIR: Path           # liveness heartbeats -- one JSON per run + gateway bot (R9)
-    LAUNCH_DIR: Path              # launch handshake files (work_launcher <-> main --launch-id) (R9)
-    IPC_DIR: Path                 # cross-process IPC (Live Terminal nav/mirror), OUTSIDE state/tasks (R9)
-    BLACKBOARD_DIR: Path          # Agent Society / Workforce (Epic 5) blackboard
+    HEARTBEAT_DIR: Path  # liveness heartbeats -- one JSON per run + gateway bot (R9)
+    LAUNCH_DIR: Path  # launch handshake files (work_launcher <-> main --launch-id) (R9)
+    IPC_DIR: Path  # cross-process IPC (Live Terminal nav/mirror), OUTSIDE state/tasks (R9)
+    BLACKBOARD_DIR: Path  # Agent Society / Workforce (Epic 5) blackboard
     # --- SIE / learning ---
     EXPERIENCE_DB_PATH: Path
     # --- Human-Nature layer (mirrors EXPERIENCE_DB_PATH location) ---
-    CONVICTION_DB_PATH: Path      # ledger-grounded conviction/calibration history
-    AB_HARNESS_DB_PATH: Path      # behaviour-coupling A/B validation runs
+    CONVICTION_DB_PATH: Path  # ledger-grounded conviction/calibration history
+    AB_HARNESS_DB_PATH: Path  # behaviour-coupling A/B validation runs
     EVAL_SUITE_DIR: Path
-    EVOLUTION_SUITE_DIR: Path     # Epic 7 evolution (flags + ints live in llm.py)
+    EVOLUTION_SUITE_DIR: Path  # Epic 7 evolution (flags + ints live in llm.py)
     EVOLUTION_SKILL_DIR: Path
     EVOLUTION_CANDIDATE_DIR: Path
     LORA_OUTPUT_DIR: Path
@@ -69,14 +70,17 @@ class PathsCfg:
     SIE_OVERRIDES_PATH: Path
     # --- audit log (who issued which control command) ---
     AUDIT_LOG_PATH: Path
+    # --- perf telemetry (best-effort throughput timing rows) ---
+    PERF_TELEMETRY_PATH: Path
     # --- Claude Code primitives ---
     CLAUDE_DIR: Path
     CLAUDE_SETTINGS_PATH: Path
-    VENV_PYTHON: Path             # absolute venv python so hooks run with our deps regardless of cwd
+    VENV_PYTHON: Path  # absolute venv python so hooks run with our deps regardless of cwd
     # --- state retention sweep (best-effort GC of per-run artifacts) ---
     ARCHIVE_DIR: Path
     # --- literal defaults ---
-    AUDIT_MAX_BYTES: int = 1_000_000   # rotate audit.jsonl past ~1 MB
+    AUDIT_MAX_BYTES: int = 1_000_000  # rotate audit.jsonl past ~1 MB
+    PERF_TELEMETRY_MAX_BYTES: int = 2_000_000  # rotate perf.jsonl past ~2 MB
     TASKS_DIR_REL: str = "tasks"
     SESSIONS_DIR_REL: str = "sessions"
     # The blackboard/compaction dirs accumulate one file per run and were never pruned;
@@ -88,10 +92,18 @@ class PathsCfg:
 
     def requiredDirs(self) -> tuple[Path, ...]:
         """Directories that must exist for a run (see ensureDirs)."""
-        return (self.LOG_PATH, self.STATE_DIR, self.CONTROL_DIR, self.HEARTBEAT_DIR,
-                self.LAUNCH_DIR, self.IPC_DIR, self.CLAUDE_DIR, self.VAULT_DISK_ROOT,
-                self.VAULT_DISK_ROOT / self.TASKS_DIR_REL,
-                self.VAULT_DISK_ROOT / self.SESSIONS_DIR_REL)
+        return (
+            self.LOG_PATH,
+            self.STATE_DIR,
+            self.CONTROL_DIR,
+            self.HEARTBEAT_DIR,
+            self.LAUNCH_DIR,
+            self.IPC_DIR,
+            self.CLAUDE_DIR,
+            self.VAULT_DISK_ROOT,
+            self.VAULT_DISK_ROOT / self.TASKS_DIR_REL,
+            self.VAULT_DISK_ROOT / self.SESSIONS_DIR_REL,
+        )
 
 
 def buildPathsCfg() -> PathsCfg:
@@ -129,6 +141,7 @@ def buildPathsCfg() -> PathsCfg:
         ADVERSARY_TRUST_LOG=state / "adversary_trust.jsonl",
         SIE_OVERRIDES_PATH=state / "sie_overrides.json",
         AUDIT_LOG_PATH=state / "audit.jsonl",
+        PERF_TELEMETRY_PATH=state / "perf.jsonl",
         CLAUDE_DIR=root / ".claude",
         CLAUDE_SETTINGS_PATH=root / ".claude" / "settings.json",
         VENV_PYTHON=root / "venv" / "Scripts" / "python.exe",
@@ -144,6 +157,7 @@ def buildPathsCfg() -> PathsCfg:
 def ensureDirs() -> None:
     """Create every directory 9TO5 needs (idempotent). Reads the LIVE registry."""
     from platform_core.app_config import settings as _settings
+
     for d in _settings.settings().paths.requiredDirs():
         Path(d).mkdir(parents=True, exist_ok=True)
 
@@ -152,4 +166,5 @@ def __getattr__(name: str):
     """PEP 562: ``paths.STATE_DIR`` etc. resolve from the live registry. A value
     setattr'd onto this module (test monkeypatching) shadows this and wins."""
     from platform_core.app_config import settings as _settings
+
     return _settings.lookupDomain(("paths",), name)

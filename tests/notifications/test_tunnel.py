@@ -1,4 +1,7 @@
 """Tests for tunnel providers and the supervised TunnelManager. No real network/binaries."""
+
+import hashlib
+import io
 import time
 
 from notifications import tunnel_providers as tp
@@ -34,6 +37,93 @@ def test_default_providers_order():
     names = [p.name for p in tp.default_providers()]
     assert names[0] == "cloudflared"
     assert {"cloudflared", "ngrok", "bore", "localtunnel"} <= set(names)
+
+
+# --------------------------------------------------------------------------- _download_binary
+class _FakeHttpResp(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_download_binary_passes_bounded_timeout(monkeypatch, tmp_path):
+    """B(hang): urlopen must be called with a finite timeout, never the default (None/block
+    forever) that urlretrieve used."""
+    seen = {}
+
+    def _fake_urlopen(req, timeout=None):
+        seen["timeout"] = timeout
+        return _FakeHttpResp(b"binary-bytes")
+
+    monkeypatch.setattr(tp.urllib.request, "urlopen", _fake_urlopen)
+    dest = tmp_path / "cloudflared.exe"
+    assert tp.TunnelProvider._download_binary("https://example.com/cloudflared", dest) is True
+    assert seen["timeout"] == tp._DOWNLOAD_TIMEOUT_S
+    assert seen["timeout"] is not None
+    assert dest.read_bytes() == b"binary-bytes"
+
+
+def test_download_binary_checksum_match_succeeds(monkeypatch, tmp_path):
+    payload = b"totally-a-real-cloudflared-binary"
+    digest = hashlib.sha256(payload).hexdigest()
+    monkeypatch.setattr(tp.urllib.request, "urlopen", lambda req, timeout=None: _FakeHttpResp(payload))
+    dest = tmp_path / "cloudflared"
+    ok = tp.TunnelProvider._download_binary("https://example.com/cloudflared", dest, expected_sha256=digest)
+    assert ok is True
+    assert dest.exists()
+
+
+def test_download_binary_checksum_mismatch_deletes_and_fails(monkeypatch, tmp_path):
+    """A(integrity): a digest mismatch must delete the file and return False -- the caller
+    must never chmod/execute an unverified binary."""
+    monkeypatch.setattr(
+        tp.urllib.request, "urlopen", lambda req, timeout=None: _FakeHttpResp(b"tampered-payload")
+    )
+    dest = tmp_path / "cloudflared"
+    ok = tp.TunnelProvider._download_binary("https://example.com/cloudflared", dest, expected_sha256="0" * 64)
+    assert ok is False
+    assert not dest.exists()
+
+
+def test_cloudflared_ensure_available_refuses_unpinned_arch(monkeypatch, tmp_path):
+    """When there is no pinned checksum for the current (os, arch), ensure_available must
+    refuse to download rather than fetching an unverifiable binary."""
+    p = tp.CloudflaredProvider()
+    monkeypatch.setattr(tp.shutil, "which", lambda name: None)
+    monkeypatch.setattr(p, "_cached_path", lambda: tmp_path / "cloudflared")
+    monkeypatch.setattr(tp, "_plat", lambda: ("windows", "arm64", ".exe"))
+    called = {"count": 0}
+
+    def _boom(*a, **k):
+        called["count"] += 1
+        raise AssertionError("should not attempt download without a pinned checksum")
+
+    monkeypatch.setattr(tp.urllib.request, "urlopen", _boom)
+    assert p.ensure_available() is False
+    assert called["count"] == 0
+
+
+def test_cloudflared_ensure_available_downloads_and_verifies(monkeypatch, tmp_path):
+    """ensure_available uses the pinned version tag + expected digest end-to-end."""
+    p = tp.CloudflaredProvider()
+    payload = b"fake-cloudflared-binary"
+    digest = hashlib.sha256(payload).hexdigest()
+    monkeypatch.setattr(tp.shutil, "which", lambda name: None)
+    monkeypatch.setattr(p, "_cached_path", lambda: tmp_path / "cloudflared.exe")
+    monkeypatch.setattr(tp, "_plat", lambda: ("windows", "amd64", ".exe"))
+    monkeypatch.setitem(tp._CLOUDFLARED_SHA256, ("windows", "amd64"), digest)
+    seen_urls = []
+
+    def _fake_urlopen(req, timeout=None):
+        seen_urls.append(req.full_url if hasattr(req, "full_url") else req)
+        return _FakeHttpResp(payload)
+
+    monkeypatch.setattr(tp.urllib.request, "urlopen", _fake_urlopen)
+    assert p.ensure_available() is True
+    assert seen_urls and tp._CLOUDFLARED_VERSION in seen_urls[0]
+    assert "latest" not in seen_urls[0]
 
 
 def test_probe_non5xx(monkeypatch):
@@ -219,6 +309,7 @@ def test_manager_stop_is_clean():
 def test_announce_saves_state_under_the_state_lock():
     """The supervisor daemon thread mutates shared TaskState -- _announce must hold the
     orchestrator's state lock around meta mutation + save (same discipline as dashboard)."""
+
     class _SpyLock:
         def __init__(self):
             self.held = 0
@@ -256,12 +347,12 @@ def test_announce_saves_state_under_the_state_lock():
 def test_stop_joins_promptly_when_no_url():
     """B15(a): the supervisor must wake on stop() even while blocked waiting for a URL that
     never arrives -- otherwise stop() hangs for the full URL_WAIT_TIMEOUT (the join hang)."""
-    prov = _FakeProvider(probe_ok=False)   # a URL is parsed but never validates -> never announced
+    prov = _FakeProvider(probe_ok=False)  # a URL is parsed but never validates -> never announced
     mgr = TunnelManager(providers=[prov])
     mgr.POLL_INTERVAL = 0.01
     mgr.PROBE_INTERVAL = 0.02
     mgr.VALIDATE_TIMEOUT = 0.05
-    mgr.URL_WAIT_TIMEOUT = 30.0   # unpatched stop() would block here for 30s
+    mgr.URL_WAIT_TIMEOUT = 30.0  # unpatched stop() would block here for 30s
     mgr.BACKOFF_BASE = 0.01
     mgr.BACKOFF_CAP = 0.02
     mgr.start(8787)
@@ -275,12 +366,13 @@ def test_stop_joins_promptly_when_no_url():
 def test_same_url_reannounces_after_restart():
     """B15(b): a fresh provider session must re-announce even an identical URL so consumers are
     re-notified after a tunnel restart (a stable/named tunnel keeps the same host)."""
+
     class _DyingPopen:
         def __init__(self, line):
             self._lines = iter([line + "\n"])
             self.stdout = self
             self.pid = 1
-            self._polls = 1   # alive for exactly one watch poll, then reports exit
+            self._polls = 1  # alive for exactly one watch poll, then reports exit
 
         def __iter__(self):
             return self._lines
@@ -313,5 +405,5 @@ def test_same_url_reannounces_after_restart():
     mgr.start(8787)
     assert _wait_until(lambda: len(got) >= 2, timeout=4.0), "same URL was not re-announced"
     assert got[0] == got[1] == "https://live.example.com"
-    assert prov.started >= 2   # the session actually restarted
+    assert prov.started >= 2  # the session actually restarted
     mgr.stop()

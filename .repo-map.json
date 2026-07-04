@@ -728,7 +728,7 @@
           "kind": "function",
           "signature": "(run_cmd: list, run_prompt: str, *, work: str, timeout: int, env: dict, creationflags: int, spec: dict, effort: str, flag, profile, playbook_md: str, claude_md_path, model: str, feed=None, cancel_check=None) -> dict",
           "summary": "Execute one Claude subprocess and return a normalised result dict.",
-          "lineno": 303
+          "lineno": 396
         }
       ],
       "depends_on": [
@@ -1012,28 +1012,28 @@
           "kind": "class",
           "signature": "",
           "summary": "Raised when pywinauto is not installed",
-          "lineno": 44
+          "lineno": 45
         },
         {
           "name": "nativeActions",
           "kind": "function",
           "signature": "(app: str, steps: list[dict[str, Any]]) -> list[dict[str, Any]]",
           "summary": "Build a canonical action list from a high-level recipe",
-          "lineno": 140
+          "lineno": 174
         },
         {
           "name": "runNative",
           "kind": "function",
           "signature": "(spec_or_prompt, *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, resume_session: Optional[str]=None, **_kw) -> dict",
           "summary": "Execute a native UI subtask",
-          "lineno": 146
+          "lineno": 180
         },
         {
           "name": "selectForSurface",
           "kind": "function",
           "signature": "(terminal_fn, spec: dict)",
           "summary": "Routing helper: return runNative when surface=native and NATIVE_LAYER_ENABLED,",
-          "lineno": 167
+          "lineno": 208
         }
       ],
       "depends_on": [
@@ -1546,7 +1546,7 @@
           "kind": "function",
           "signature": "(verify: Optional[dict]) -> Optional[dict]",
           "summary": "Drop a structurally-unreliable brain-authored verify so the subtask falls back to",
-          "lineno": 90
+          "lineno": 151
         }
       ],
       "depends_on": [
@@ -1680,28 +1680,28 @@
           "kind": "function",
           "signature": "() -> argparse.Namespace",
           "summary": "",
-          "lineno": 26
+          "lineno": 27
         },
         {
           "name": "checkFile",
           "kind": "function",
           "signature": "(path: Path, label: str) -> list[str]",
           "summary": "Return list of failure messages for a required file.",
-          "lineno": 32
+          "lineno": 33
         },
         {
           "name": "validateWorkflow",
           "kind": "function",
           "signature": "(workflow_file: Path) -> tuple[bool, list[str], list[str]]",
           "summary": "Return (ok, passes, failures).",
-          "lineno": 42
+          "lineno": 43
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "() -> int",
           "summary": "",
-          "lineno": 91
+          "lineno": 92
         }
       ],
       "depends_on": [],
@@ -1720,21 +1720,28 @@
           "kind": "function",
           "signature": "() -> None",
           "summary": "Rebuild the registry from the current env + overrides file (tests).",
-          "lineno": 76
+          "lineno": 83
+        },
+        {
+          "name": "set_override_detailed",
+          "kind": "function",
+          "signature": "(knob: str, value) -> tuple[bool, bool]",
+          "summary": "Persist + live-apply a meta-optimizer knob change",
+          "lineno": 93
         },
         {
           "name": "set_override",
           "kind": "function",
           "signature": "(knob: str, value) -> bool",
           "summary": "Persist + live-apply a meta-optimizer knob change (whitelisted knobs only).",
-          "lineno": 85
+          "lineno": 106
         },
         {
           "name": "validateEnv",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Return the names of required-but-missing environment values.",
-          "lineno": 102
+          "lineno": 126
         }
       ],
       "depends_on": [
@@ -3119,8 +3126,7 @@
       ],
       "callers": [
         "learning.meta_opt",
-        "learning.selfplay",
-        "learning.sie"
+        "learning.selfplay"
       ]
     },
     "learning.dataset": {
@@ -3560,70 +3566,70 @@
           "kind": "function",
           "signature": "(base_model: str, lora_path: str) -> str",
           "summary": "An Ollama Modelfile that layers a LoRA adapter over the frozen base.",
-          "lineno": 86
+          "lineno": 88
         },
         {
           "name": "write_modelfile",
           "kind": "function",
           "signature": "(path: Path, base_model: str, lora_path: str) -> Path",
           "summary": "",
-          "lineno": 91
+          "lineno": 93
         },
         {
           "name": "default_trainer",
           "kind": "function",
           "signature": "() -> Optional[Trainer]",
           "summary": "A real local LoRA (SFT) trainer, routed through the compute router",
-          "lineno": 97
+          "lineno": 99
         },
         {
           "name": "default_dpo_trainer",
           "kind": "function",
           "signature": "() -> Optional[Callable[[str, str, float], str]]",
           "summary": "A real local DPO trainer (chosen/rejected pairs), routed through compute.",
-          "lineno": 112
+          "lineno": 116
         },
         {
           "name": "default_ollama_runner",
           "kind": "function",
           "signature": "() -> Optional[OllamaRunner]",
           "summary": "Build the new Ollama model from a Modelfile via the `ollama` CLI, if present.",
-          "lineno": 160
+          "lineno": 176
         },
         {
           "name": "active_brain_tag",
           "kind": "function",
           "signature": "(role: str='all', db_path: Optional[Path]=None) -> str",
           "summary": "The model tag the orchestrator should call NOW for a brain ``role`` (per-role MoE).",
-          "lineno": 173
+          "lineno": 193
         },
         {
           "name": "rollback_to_base",
           "kind": "function",
           "signature": "(role: Optional[str]=None, db_path: Optional[Path]=None) -> bool",
           "summary": "Retire the champion adapter (of ``role``, or all) -> active tag falls back to base.",
-          "lineno": 195
+          "lineno": 215
         },
         {
           "name": "run_finetune_cycle",
           "kind": "function",
           "signature": "(*, trainer: Optional[Trainer]=None, ollama_runner: Optional[OllamaRunner]=None, out_dir: Optional[Path]=None, min_examples: Optional[int]=None, suite: Optional[list[dict[str, Any]]]=None, db_path: Optional[Path]=None) -> dict[str, Any]",
           "summary": "One automatic distillation cycle: build gold dataset -> (if enough) train LoRA ->",
-          "lineno": 204
+          "lineno": 224
         },
         {
           "name": "run_dpo_cycle",
           "kind": "function",
           "signature": "(*, trainer: Optional[Callable[[str, str, float], str]]=None, ollama_runner: Optional[OllamaRunner]=None, out_dir: Optional[Path]=None, min_pairs: Optional[int]=None, suite: Optional[list[dict[str, Any]]]=None, db_path: Optional[Path]=None) -> dict[str, Any]",
           "summary": "One automatic DPO cycle: build preference pairs -> (if enough) train a DPO LoRA with",
-          "lineno": 242
+          "lineno": 272
         },
         {
           "name": "consider_promotion",
           "kind": "function",
           "signature": "(adapter_id: int, *, challenger_fitness: float, champion_fitness: float, replay_ok: bool=True, db_path: Optional[Path]=None) -> dict[str, Any]",
           "summary": "Gate an adapter through the harness result + replay set (invariant I4: never promote",
-          "lineno": 280
+          "lineno": 321
         }
       ],
       "depends_on": [
@@ -3820,14 +3826,14 @@
           "kind": "function",
           "signature": "(*, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "Heuristic knob suggestions from observed outcomes",
-          "lineno": 29
+          "lineno": 30
         },
         {
           "name": "apply",
           "kind": "function",
           "signature": "(*, db_path: Optional[Path]=None) -> dict[str, Any]",
           "summary": "Auto-apply suggestions within safe bounds (hands-off)",
-          "lineno": 57
+          "lineno": 71
         }
       ],
       "depends_on": [
@@ -3855,42 +3861,42 @@
           "kind": "function",
           "signature": "(row: dict[str, Any]) -> float",
           "summary": "Composite reward for one subtask outcome (higher is better).",
-          "lineno": 45
+          "lineno": 66
         },
         {
           "name": "context_key",
           "kind": "function",
           "signature": "(title: str, signature_tags: Optional[str]=None) -> str",
           "summary": "The bandit context",
-          "lineno": 65
+          "lineno": 88
         },
         {
           "name": "action_of",
           "kind": "function",
           "signature": "(row: dict[str, Any]) -> dict[str, Any]",
           "summary": "The action a past subtask took (what the policy chooses among).",
-          "lineno": 70
+          "lineno": 93
         },
         {
           "name": "rebuild_from_ledger",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
           "summary": "Recompute every arm's reward statistics from the full ledger (idempotent).",
-          "lineno": 79
+          "lineno": 102
         },
         {
           "name": "select",
           "kind": "function",
           "signature": "(ck: str, actions: list[dict[str, Any]], *, rng: Optional[random.Random]=None, db_path: Optional[Path]=None) -> dict[str, Any]",
           "summary": "Thompson-pick the best action for context ``ck`` among ``actions``.",
-          "lineno": 112
+          "lineno": 134
         },
         {
           "name": "hint",
           "kind": "function",
           "signature": "(goal: str, title: str, *, rng: Optional[random.Random]=None, db_path: Optional[Path]=None) -> str",
           "summary": "Orchestrator-facing best-effort one-liner: the learned effort prior, or \"\".",
-          "lineno": 125
+          "lineno": 152
         }
       ],
       "depends_on": [
@@ -4197,9 +4203,7 @@
       "test": [
         "tests/evolution/test_curriculum.py"
       ],
-      "callers": [
-        "learning.sie"
-      ]
+      "callers": []
     },
     "learning.safety": {
       "path": "learning/safety.py",
@@ -4304,28 +4308,27 @@
           "kind": "function",
           "signature": "(*, reason: str='post-run', force: bool=False, throttle_seconds: float=DEFAULT_THROTTLE_SECONDS, db_path: Optional[Path]=None) -> dict[str, Any]",
           "summary": "Run the throttled learning passes once (idempotent, best-effort, locked).",
-          "lineno": 136
+          "lineno": 138
         },
         {
           "name": "run_maintenance_async",
           "kind": "function",
           "signature": "(**kwargs)",
           "summary": "Start maintenance on a daemon thread and RETURN the thread so the caller can join it wi…",
-          "lineno": 343
+          "lineno": 356
         }
       ],
       "depends_on": [
         "config",
         "learning.adapter_promotion",
         "learning.bootstrap",
-        "learning.curriculum",
         "learning.eval_runner",
         "learning.evolution",
         "learning.finetune",
         "learning.meta_opt",
         "learning.promotion",
-        "learning.release",
         "learning.selfplay",
+        "learning.sie_curriculum",
         "learning.sie_steps",
         "memory.experience",
         "notifications.work_launcher",
@@ -6234,14 +6237,14 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 30
+          "lineno": 32
         },
         {
           "name": "setup",
           "kind": "function",
           "signature": "(bot: dpy_commands.Bot) -> None",
           "summary": "",
-          "lineno": 102
+          "lineno": 107
         }
       ],
       "depends_on": [
@@ -8276,42 +8279,42 @@
           "kind": "class",
           "signature": "",
           "summary": "Base interface",
-          "lineno": 46
+          "lineno": 67
         },
         {
           "name": "CloudflaredProvider",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 97
+          "lineno": 136
         },
         {
           "name": "NgrokProvider",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 137
+          "lineno": 186
         },
         {
           "name": "BoreProvider",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 164
+          "lineno": 213
         },
         {
           "name": "LocaltunnelProvider",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 189
+          "lineno": 238
         },
         {
           "name": "default_providers",
           "kind": "function",
           "signature": "() -> list",
           "summary": "Providers in priority order (cloudflared first, localtunnel last).",
-          "lineno": 215
+          "lineno": 272
         }
       ],
       "depends_on": [
@@ -8406,7 +8409,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Persistent (timeout=None) feedback view for subtask completion.",
-          "lineno": 21
+          "lineno": 22
         }
       ],
       "depends_on": [
@@ -8648,14 +8651,14 @@
           "kind": "function",
           "signature": "(task_id: str, port: Optional[int]=None) -> Optional[str]",
           "summary": "Start the dashboard in a daemon thread",
-          "lineno": 354
+          "lineno": 376
         },
         {
           "name": "stopWebDashboard",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Shut down the running dashboard server (frees the port)",
-          "lineno": 382
+          "lineno": 408
         }
       ],
       "depends_on": [
@@ -8883,7 +8886,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Brain + autonomous loop",
-          "lineno": 67
+          "lineno": 68
         }
       ],
       "depends_on": [
@@ -9085,7 +9088,7 @@
           "kind": "function",
           "signature": "() -> SieCfg",
           "summary": "",
-          "lineno": 342
+          "lineno": 352
         }
       ],
       "depends_on": [
@@ -9112,21 +9115,21 @@
           "kind": "class",
           "signature": "",
           "summary": "Every 9TO5 path constant (plus the audit rotation size that rides with them).",
-          "lineno": 35
+          "lineno": 36
         },
         {
           "name": "buildPathsCfg",
           "kind": "function",
           "signature": "() -> PathsCfg",
           "summary": "Compute every path from env (after loadEnvOnce) + the repo-root bootstrap.",
-          "lineno": 97
+          "lineno": 109
         },
         {
           "name": "ensureDirs",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Create every directory 9TO5 needs (idempotent)",
-          "lineno": 144
+          "lineno": 157
         }
       ],
       "depends_on": [
@@ -9342,6 +9345,7 @@
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.validation_cache",
         "platform_core.runtime.heartbeat",
+        "platform_core.runtime.perf",
         "platform_core.runtime.trajectory",
         "platform_core.runtime.worktree",
         "state.task_io"
@@ -9639,28 +9643,28 @@
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "A content hash of every self.code module + the git SHA",
-          "lineno": 111
+          "lineno": 141
         },
         {
           "name": "Epoch",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 136
+          "lineno": 170
         },
         {
           "name": "snapshot",
           "kind": "function",
           "signature": "(*, universe: Optional[dict]=None, brain_tag: Optional[str]=None) -> Epoch",
           "summary": "Freeze governing state at process/run start",
-          "lineno": 158
+          "lineno": 223
         },
         {
           "name": "diverged",
           "kind": "function",
           "signature": "(pinned: Epoch) -> bool",
           "summary": "True iff the on-disk self.code differs from what was pinned at snapshot time.",
-          "lineno": 169
+          "lineno": 240
         }
       ],
       "depends_on": [
@@ -9686,51 +9690,51 @@
         {
           "name": "atomicWriteText",
           "kind": "function",
-          "signature": "(path, text: str, *, retries: int=12, backoff: float=0.02, cap: float=1.0, encoding: str='utf-8') -> None",
+          "signature": "(path, text: str, *, retries: int=12, backoff: float=0.02, cap: float=1.0, encoding: str='utf-8', durable: bool=False) -> None",
           "summary": "Write ``text`` as a COMPLETE-file swap (unique temp + os.replace).",
-          "lineno": 64
+          "lineno": 97
         },
         {
           "name": "atomicWriteJson",
           "kind": "function",
-          "signature": "(path, obj: Any, *, indent: Optional[int]=2, ensure_ascii: bool=False, retries: int=12, backoff: float=0.02, cap: float=1.0) -> None",
+          "signature": "(path, obj: Any, *, indent: Optional[int]=2, ensure_ascii: bool=False, retries: int=12, backoff: float=0.02, cap: float=1.0, durable: bool=False) -> None",
           "summary": "Serialize ``obj`` and atomically swap it into ``path`` (see atomicWriteText).",
-          "lineno": 85
+          "lineno": 136
         },
         {
           "name": "loadJson",
           "kind": "function",
           "signature": "(path, default: Any=None) -> Any",
           "summary": "Parse JSON from ``path``",
-          "lineno": 92
+          "lineno": 158
         },
         {
           "name": "updateJson",
           "kind": "function",
           "signature": "(path, mutate_fn: Callable[[Any], Any], *, default: Any=None, lock: bool=False, stale_after: float=3600.0, timeout: float=10.0, indent: Optional[int]=2) -> Any",
           "summary": "Read-mutate-write ``path`` with an atomic swap",
-          "lineno": 129
+          "lineno": 195
         },
         {
           "name": "tryAcquireLock",
           "kind": "function",
           "signature": "(path, *, stale_after: float=3600.0, owner_alive: Optional[Callable[[int], bool]]=None) -> bool",
           "summary": "One non-blocking acquire attempt (O_CREAT|O_EXCL) writing our pid as the owner.",
-          "lineno": 192
+          "lineno": 264
         },
         {
           "name": "releaseLock",
           "kind": "function",
           "signature": "(path) -> None",
           "summary": "Best-effort unlink of the lock file",
-          "lineno": 216
+          "lineno": 289
         },
         {
           "name": "fileLock",
           "kind": "function",
           "signature": "(path, *, stale_after: float=3600.0, timeout: float=10.0, poll: float=0.05)",
           "summary": "Hold the pid lock at ``path`` for the ``with`` body",
-          "lineno": 225
+          "lineno": 298
         }
       ],
       "depends_on": [],
@@ -9795,42 +9799,42 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 67
+          "lineno": 72
         },
         {
           "name": "roleOf",
           "kind": "function",
           "signature": "(path: str | os.PathLike) -> Role",
           "summary": "Classify ``path`` into exactly one Role",
-          "lineno": 121
+          "lineno": 130
         },
         {
           "name": "isObeyable",
           "kind": "function",
           "signature": "(path: str | os.PathLike) -> bool",
           "summary": "True only for directives 9to5 may treat as its OWN instructions.",
-          "lineno": 136
+          "lineno": 145
         },
         {
           "name": "isEditable",
           "kind": "function",
           "signature": "(path: str | os.PathLike) -> bool",
           "summary": "Editing is unrestricted EXCEPT the narrow hard_boundary set.",
-          "lineno": 141
+          "lineno": 150
         },
         {
           "name": "isCodeSelf",
           "kind": "function",
           "signature": "(path: str | os.PathLike) -> bool",
           "summary": "",
-          "lineno": 146
+          "lineno": 155
         },
         {
           "name": "selfCodeFiles",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Every *.py under the project tree that the RUNNING orchestrator could import --",
-          "lineno": 150
+          "lineno": 159
         }
       ],
       "depends_on": [
@@ -10640,63 +10644,63 @@
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "The local brain",
-          "lineno": 38
+          "lineno": 40
         },
         {
           "name": "check_claude_cli",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "The Claude Code hands",
-          "lineno": 56
+          "lineno": 68
         },
         {
           "name": "check_embedder",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "Local embedder for retrieval (degraded feature: no retrieval until present).",
-          "lineno": 65
+          "lineno": 82
         },
         {
           "name": "check_git",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "Git repo",
-          "lineno": 84
+          "lineno": 116
         },
         {
           "name": "check_gh",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "GitHub CLI",
-          "lineno": 99
+          "lineno": 141
         },
         {
           "name": "check_gpu",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "GPU",
-          "lineno": 107
+          "lineno": 154
         },
         {
           "name": "check_degradations",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "Surfaces swallowed best_effort failures recorded this process (structured",
-          "lineno": 115
+          "lineno": 167
         },
         {
           "name": "run",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "Run every preflight check",
-          "lineno": 126
+          "lineno": 184
         },
         {
           "name": "render",
           "kind": "function",
           "signature": "(report: dict[str, Any]) -> str",
           "summary": "",
-          "lineno": 134
+          "lineno": 199
         }
       ],
       "depends_on": [
@@ -10787,28 +10791,42 @@
           "kind": "function",
           "signature": "(directory=None, keep_recent=None, max_age_days=None) -> int",
           "summary": "",
-          "lineno": 67
+          "lineno": 70
         },
         {
           "name": "sweepCompaction",
           "kind": "function",
           "signature": "(directory=None, keep_recent=None, max_age_days=None) -> int",
           "summary": "",
-          "lineno": 74
+          "lineno": 77
         },
         {
           "name": "archiveTerminalTasks",
           "kind": "function",
           "signature": "(max_age_days=None) -> int",
           "summary": "Move terminal-status task JSON older than the archive horizon into state/archive/",
-          "lineno": 96
+          "lineno": 99
+        },
+        {
+          "name": "sweepHookLogs",
+          "kind": "function",
+          "signature": "(path=None, max_bytes=None) -> int",
+          "summary": "Truncate logs/hooks.log to its tail once it exceeds ``max_bytes``",
+          "lineno": 156
+        },
+        {
+          "name": "sweepGuardAlerts",
+          "kind": "function",
+          "signature": "(path=None, max_bytes=None) -> int",
+          "summary": "Truncate logs/guard_alerts.jsonl to its tail once it exceeds ``max_bytes``",
+          "lineno": 166
         },
         {
           "name": "sweepAll",
           "kind": "function",
           "signature": "() -> dict",
           "summary": "Run every sweep, gated by config.RETENTION_ENABLED",
-          "lineno": 123
+          "lineno": 175
         }
       ],
       "depends_on": [
@@ -10816,7 +10834,8 @@
       ],
       "side_effects": [
         "deletes/moves files under state/ (never .py",
-        "guarded, fail-open)"
+        "guarded, fail-open)",
+        "truncates logs/hooks.log and logs/guard_alerts.jsonl"
       ],
       "test": [
         "tests/platform/test_retention.py"
@@ -11139,7 +11158,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles Discord control polling, approval gates, Obsidian index, and second-opinion rev…",
-          "lineno": 36
+          "lineno": 37
         }
       ],
       "depends_on": [
@@ -11206,7 +11225,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Dual-brain second-opinion dispatcher, GPT cost guard, plan/architecture reviews.",
-          "lineno": 30
+          "lineno": 31
         }
       ],
       "depends_on": [
@@ -11453,7 +11472,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment.",
-          "lineno": 39
+          "lineno": 42
         }
       ],
       "depends_on": [
@@ -11469,11 +11488,9 @@
         "platform_core.execution.wiring",
         "platform_core.orchestration",
         "platform_core.orchestration.execute_attempt_mixin",
-        "platform_core.orchestration.self_ref_gate",
+        "platform_core.orchestration.execute_delegates_mixin",
         "platform_core.orchestration.subtask",
         "platform_core.runtime.control",
-        "platform_core.runtime.cost_budget",
-        "platform_core.runtime.trajectory",
         "state.task"
       ],
       "side_effects": [
@@ -12330,9 +12347,7 @@
         "tests/execution/test_github_pr_gate.py",
         "tests/orchestration/test_execute_quality_gate.py"
       ],
-      "callers": [
-        "platform_core.orchestration.execute_mixin"
-      ]
+      "callers": []
     },
     "platform_core.orchestration.solution_space": {
       "path": "platform_core/orchestration/solution_space.py",
@@ -12575,7 +12590,7 @@
           "kind": "function",
           "signature": "(suite_id: str, work_dir: str, *, cache: bool=True) -> ValidationResult",
           "summary": "Run a named validation suite through the DAG cache.",
-          "lineno": 271
+          "lineno": 275
         }
       ],
       "depends_on": [
@@ -13037,9 +13052,7 @@
       "test": [
         "tests/execution/test_cost_budget.py"
       ],
-      "callers": [
-        "platform_core.orchestration.execute_mixin"
-      ]
+      "callers": []
     },
     "platform_core.runtime.heartbeat": {
       "path": "platform_core/runtime/heartbeat.py",
@@ -13128,21 +13141,22 @@
           "kind": "function",
           "signature": "(metric: str, elapsed_s: float, **fields: Any) -> None",
           "summary": "Append one best-effort timing row",
-          "lineno": 26
+          "lineno": 27
         },
         {
           "name": "summarize",
           "kind": "function",
           "signature": "(limit: int=500) -> dict[str, float]",
           "summary": "Aggregate recent telemetry by metric.",
-          "lineno": 38
+          "lineno": 36
         }
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.core"
       ],
       "side_effects": [
-        "appends state/perf.jsonl"
+        "appends + size-rotates state/perf.jsonl"
       ],
       "test": [
         "tests/test_perf_telemetry.py"
@@ -13249,9 +13263,7 @@
       "test": [
         "tests/orchestration/test_trajectory.py"
       ],
-      "callers": [
-        "platform_core.orchestration.execute_mixin"
-      ]
+      "callers": []
     },
     "platform_core.runtime.worktree": {
       "path": "platform_core/runtime/worktree.py",
@@ -13591,21 +13603,21 @@
           "kind": "function",
           "signature": "(work_dir: str) -> list[str]",
           "summary": "Core protected files with uncommitted changes in ``work_dir`` (or []).",
-          "lineno": 37
+          "lineno": 38
         },
         {
           "name": "revert_core",
           "kind": "function",
           "signature": "(work_dir: str, files: list[str]) -> None",
           "summary": "Revert the given core files to HEAD (discard the breaking self-edit).",
-          "lineno": 67
+          "lineno": 79
         },
         {
           "name": "safety_gate",
           "kind": "function",
-          "signature": "(work_dir: str, *, is_self_referential: bool, test_runner: Optional[Callable[[str], tuple[bool, str]]]=None, code_diverged: bool=False) -> dict[str, Any]",
+          "signature": "(work_dir: str, *, is_self_referential: bool, test_runner: Optional[Callable[[str], tuple]]=None, code_diverged: bool=False) -> dict[str, Any]",
           "summary": "Run the post-run core-change safety gate",
-          "lineno": 100
+          "lineno": 127
         }
       ],
       "depends_on": [
@@ -13984,56 +13996,56 @@
           "kind": "function",
           "signature": "(task_id: str) -> str",
           "summary": "Return task_id if it is UUID-shaped, else raise ValueError",
-          "lineno": 47
+          "lineno": 72
         },
         {
           "name": "save",
           "kind": "function",
           "signature": "(state: 'TaskState') -> Path",
-          "summary": "Atomic JSON save (unique temp + os.replace via the fsio kernel).",
-          "lineno": 58
+          "summary": "Durable JSON save: prior good state backed up to ``.bak``, then a real-fd fsync +",
+          "lineno": 107
         },
         {
           "name": "load",
           "kind": "function",
           "signature": "(task_id: str) -> 'TaskState'",
           "summary": "Load task JSON from the state store",
-          "lineno": 71
+          "lineno": 150
         },
         {
           "name": "loadSafe",
           "kind": "function",
           "signature": "(task_id: str) -> 'Optional[TaskState]'",
           "summary": "Like ``load`` but returns None for a missing/corrupt file instead of raising.",
-          "lineno": 81
+          "lineno": 160
         },
         {
           "name": "iterStored",
           "kind": "function",
           "signature": "()",
           "summary": "Yield ``(path, data)`` for every readable, task-shaped JSON in the store.",
-          "lineno": 95
+          "lineno": 174
         },
         {
           "name": "loadLatest",
           "kind": "function",
           "signature": "() -> 'Optional[TaskState]'",
           "summary": "Prefer the most-recently-STARTED active (non-terminal) task.",
-          "lineno": 118
+          "lineno": 201
         },
         {
           "name": "listRecent",
           "kind": "function",
           "signature": "(n: int=10) -> list[dict[str, Any]]",
           "summary": "Lightweight summaries of recent tasks, newest first",
-          "lineno": 135
+          "lineno": 225
         },
         {
           "name": "reapDeadRun",
           "kind": "function",
           "signature": "(task_id: str, *, reason: str='orchestrator process dead (no heartbeat, pid gone)') -> bool",
           "summary": "Finalize a PROVABLY-DEAD, still-non-terminal run as ``aborted``.",
-          "lineno": 155
+          "lineno": 249
         }
       ],
       "depends_on": [
@@ -14043,7 +14055,7 @@
         "state.task_schema"
       ],
       "side_effects": [
-        "writes state/tasks/<id>.json"
+        "writes state/tasks/<id>.json (+ <id>.json.bak safeguard copy)"
       ],
       "test": [
         "tests/control/test_task.py"

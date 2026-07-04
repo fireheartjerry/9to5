@@ -15,6 +15,7 @@ DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -48,7 +49,7 @@ def validateWorkflow(workflow_file: Path) -> tuple[bool, list[str], list[str]]:
         failures.append(f"Workflow file not found: {workflow_file}")
         return False, passes, failures
 
-    with workflow_file.open() as f:
+    with workflow_file.open(encoding="utf-8") as f:
         workflow = json.load(f)
 
     passes.append(f"Workflow file valid JSON: {workflow_file.name}")

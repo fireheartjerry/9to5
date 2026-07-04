@@ -282,6 +282,11 @@ class SieCfg:
     SELFPLAY_START_HOUR: int = _F(default_factory=lambda: _envInt("SELFPLAY_START_HOUR", 9))
     SELFPLAY_END_HOUR: int = _F(default_factory=lambda: _envInt("SELFPLAY_END_HOUR", 17))
     SIE_BOOTSTRAP: bool = _F(default_factory=lambda: _envBool("SIE_BOOTSTRAP", True))
+    # Curriculum auto-queue bypasses the human approval gate -- default OFF, opt-in only.
+    CURRICULUM_AUTO_QUEUE_ENABLED: bool = _F(
+        default_factory=lambda: _envBool("CURRICULUM_AUTO_QUEUE_ENABLED", False))
+    CURRICULUM_AUTO_QUEUE_MAX_PER_DAY: int = _F(
+        default_factory=lambda: _envInt("CURRICULUM_AUTO_QUEUE_MAX_PER_DAY", 3))
     # --- run supervision (auto-resume crashed runs; slow deterministic backoff per CB-13) ---
     RUN_MAX_RESTARTS: int = _F(default_factory=lambda: _envInt("RUN_MAX_RESTARTS", 5))
     RUN_RESTART_MAX_BACKOFF: float = _F(default_factory=lambda: _envFloat("RUN_RESTART_MAX_BACKOFF", 300))

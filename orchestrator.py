@@ -18,6 +18,7 @@ DEPENDS-ON: agents.adversary, agents.executor, agents.replanner, agents.verifier
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_orchestrator_poll.py tests/orchestration/test_orchestrator_with_registry.py
 """
+
 from __future__ import annotations
 
 import threading
@@ -64,10 +65,16 @@ def _chatJson(resp):
     return _brain_io.parseJsonText(text)
 
 
-class Orchestrator(OrchestratorLlmMixin, OrchestratorPlanMixin, OrchestratorControlMixin,
-                   OrchestratorExecuteMixin, OrchestratorReviewMixin,
-                   OrchestratorRunLoopMixin, OrchestratorRunPhaseMixin,
-                   OrchestratorSafetyMixin):
+class Orchestrator(
+    OrchestratorLlmMixin,
+    OrchestratorPlanMixin,
+    OrchestratorControlMixin,
+    OrchestratorExecuteMixin,
+    OrchestratorReviewMixin,
+    OrchestratorRunLoopMixin,
+    OrchestratorRunPhaseMixin,
+    OrchestratorSafetyMixin,
+):
     """Brain + autonomous loop.  All methods live in the five mixin modules above;
     only __init__ and runFull (the public entry point) are defined here."""
 
@@ -80,6 +87,7 @@ class Orchestrator(OrchestratorLlmMixin, OrchestratorPlanMixin, OrchestratorCont
             self.ollama = brain
         else:
             import ollama  # deferred: the ~0.3s SDK import is paid only on a real (non-injected) run
+
             self.ollama = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
         self.obs = obs if obs is not None else ObsidianClient()
         self._run_claude = run_claude or executor.runClaude
@@ -90,36 +98,44 @@ class Orchestrator(OrchestratorLlmMixin, OrchestratorPlanMixin, OrchestratorCont
         # Phase 2 second-brain session state (only used when GEMINI_ENABLED + probe passes).
         self._gemini_session = None
         self._gemini_session_ok = False
-        self._gemini_ask = None        # bound (message)->reply once the session is live
-        self._last_review_hash = None   # cost guard: skip Gemini on near-duplicate output
+        self._gemini_ask = None  # bound (message)->reply once the session is live
+        self._last_review_hash = None  # cost guard: skip Gemini on near-duplicate output
+        self._review_hash_lock = threading.Lock()  # serialize _review_hashes across parallel workers
+        self._review_hashes: dict = {}  # per-subtask GPT-review dedup cursor (keyed by sid)
         self._state_lock = threading.Lock()
-        self._poll_lock = threading.Lock()      # serialize Discord poll cursor across parallel workers (CB-7)
-        self._selfref_prompt_cache: dict = {}   # task_id -> self-ref system-prompt prefix (built once)
-        self._brain_tag_override: str | None = None   # force a model tag (adapter A/B eval)
+        self._poll_lock = threading.Lock()  # serialize Discord poll cursor across parallel workers (CB-7)
+        self._selfref_prompt_cache: dict = {}  # task_id -> self-ref system-prompt prefix (built once)
+        self._brain_tag_override: str | None = None  # force a model tag (adapter A/B eval)
         # SIE: register a per-adapter fitness evaluator so adapter promotion is autonomous.
         # The brain authors a spec for each golden goal under the candidate tag; the held-out
         # verify scores it. Best-effort registration; skips cleanly if the brain is offline.
         try:
             from learning import eval_runner
+
             eval_runner.register(fitness_under_tag=self._fitnessUnderTag)
         except Exception:  # noqa: BLE001
             pass
 
     # All other methods are provided by the mixin classes (see module-level imports above).
 
-
     # ===================================================================
     # Full pipeline (with resume + parallelism)
     # ===================================================================
-    def runFull(self, state: TaskState, work_dir: str, auto_pr: bool = True,
-                control_mode: str | None = None, resume: bool = False, parallelism: int = 1) -> dict:
+    def runFull(
+        self,
+        state: TaskState,
+        work_dir: str,
+        auto_pr: bool = True,
+        control_mode: str | None = None,
+        resume: bool = False,
+        parallelism: int = 1,
+    ) -> dict:
         bus = ControlBus(state.task_id)
         dashboard = DiscordDashboard()
         web_url: str | None = None
         self._active_work_profile = (state.meta or {}).get("work_profile")
         try:
-            web_url, elaborated = self._runPreamble(
-                state, work_dir, control_mode, resume, bus, dashboard)
+            web_url, elaborated = self._runPreamble(state, work_dir, control_mode, resume, bus, dashboard)
             if not resume and self._detectSelfReferential(state, work_dir):
                 self._prepareSelfReferential(state, work_dir, bus, dashboard)
             if resume and state.subtasks:
@@ -128,15 +144,18 @@ class Orchestrator(OrchestratorLlmMixin, OrchestratorPlanMixin, OrchestratorCont
                 architect_doc = self._freshRunPhase(state, work_dir, bus, dashboard, elaborated)
             # --- Epoch pin (run-start snapshot; observe-only, never blocks) ---
             try:
-                state.setEpoch(epoch.snapshot(
-                    universe=(state.meta.get("universe") or {}),
-                    brain_tag=(state.meta.get("active_brain_tag")
-                               if isinstance(state.meta, dict) else None)))
+                state.setEpoch(
+                    epoch.snapshot(
+                        universe=(state.meta.get("universe") or {}),
+                        brain_tag=(
+                            state.meta.get("active_brain_tag") if isinstance(state.meta, dict) else None
+                        ),
+                    )
+                )
             except Exception:  # noqa: BLE001 -- epoch is observability; never break a run
                 pass
             state.setStatus("executing")
-            self.runExecutionLoop(state, architect_doc, work_dir, bus, dashboard,
-                                  parallelism=parallelism)
+            self.runExecutionLoop(state, architect_doc, work_dir, bus, dashboard, parallelism=parallelism)
             self._selfmodGate(state, work_dir, dashboard)
             return self._phase4PrComplete(state, work_dir, auto_pr, bus, dashboard, web_url)
         except (AbortRun, KeyboardInterrupt) as e:

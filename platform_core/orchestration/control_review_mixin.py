@@ -10,6 +10,7 @@ DEPENDS-ON: agents.second_brain, config, notifications.dashboard, platform_core.
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_control_review_mixin.py
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -37,16 +38,13 @@ class OrchestratorControlReviewMixin:
         return orchestrator_run_loop._goalText(state)
 
     def _reviewHashLock(self) -> threading.Lock:
-        lk = getattr(self, "_review_hash_lock", None)
-        if lk is None:
-            lk = self._review_hash_lock = threading.Lock()
-        return lk
+        # Eagerly initialized in Orchestrator.__init__ -- no lazy check-then-set here, so
+        # parallel pool workers never race to construct (and thus split across) separate locks.
+        return self._review_hash_lock
 
     def _reviewHashes(self) -> dict:
-        hs = getattr(self, "_review_hashes", None)
-        if hs is None:
-            hs = self._review_hashes = {}
-        return hs
+        # Eagerly initialized in Orchestrator.__init__ (see _reviewHashLock).
+        return self._review_hashes
 
     def _worthGptReview(self, output: str, sid: "str | None" = None, *, commit: bool = True) -> bool:
         """Cost guard: skip a GPT call on trivially-short or near-duplicate executor output (the
@@ -60,6 +58,7 @@ class OrchestratorControlReviewMixin:
         min_chars = config.GEMINI_MIN_OUTPUT_CHARS
         try:
             from platform_core.orchestration import work_profile as _wp
+
             pol = _wp.policy(_wp.resolve(getattr(self, "_active_work_profile", None)))
             if pol.review_thresholds.get("review_short_outputs"):
                 min_chars = max(80, min_chars // 2)
@@ -87,26 +86,33 @@ class OrchestratorControlReviewMixin:
         with self._reviewHashLock():
             self._reviewHashes()[sid] = h
 
-    def _consult(self, state: TaskState, review_type: str, title: str, reason: str,
-                 content: str, *, worth: bool = True) -> dict:
+    def _consult(
+        self, state: TaskState, review_type: str, title: str, reason: str, content: str, *, worth: bool = True
+    ) -> dict:
         """Second-opinion entry for the plan / architecture / pre-PR touchpoints. Honors an
         injected reviewer (tests) via the legacy signature; otherwise routes to the dual brain."""
         # Detect a test-injected reviewer: when _review is our own bound _adversaryReview the
         # __func__ matches the class-level method; otherwise it's an external callable.
         if getattr(self._review, "__func__", None) is not type(self)._adversaryReview:
-            rv = self._review(title, reason, content, ollama_chat=self._ollamaChat,
-                              goal=self._goalText(state))
+            rv = self._review(
+                title, reason, content, ollama_chat=self._ollamaChat, goal=self._goalText(state)
+            )
             if isinstance(rv, dict):
                 rv.setdefault("tier", "ollama" if not rv.get("stub") else "stub")
             return rv
         try:
             from platform_core.orchestration import work_profile as _wp
-            content = _wp.guidance_block(state.meta.get("work_profile"),
-                                         context=f"second-brain:{review_type}") + "\n" + content
+
+            content = (
+                _wp.guidance_block(state.meta.get("work_profile"), context=f"second-brain:{review_type}")
+                + "\n"
+                + content
+            )
         except Exception:  # noqa: BLE001
             pass
-        return self._adversaryReview(title, reason, content, goal=self._goalText(state),
-                                     review_type=review_type, worth=worth)
+        return self._adversaryReview(
+            title, reason, content, goal=self._goalText(state), review_type=review_type, worth=worth
+        )
 
     def _planReview(self, state: TaskState, elaborated: str, dashboard: DiscordDashboard) -> None:
         """Gemini critiques the proposed plan BEFORE execution; a blocking challenge feeds the
@@ -115,7 +121,8 @@ class OrchestratorControlReviewMixin:
             return
         try:
             from agents import second_brain
-            plan_text = "\n".join(f"- {s['title']}: {s.get('description','')}" for s in state.subtasks)
+
+            plan_text = "\n".join(f"- {s['title']}: {s.get('description', '')}" for s in state.subtasks)
             rv = self._consult(state, "plan", "plan review", "plan review", plan_text)
             with self._state_lock:
                 state.addAdversaryReview("plan", "plan review", rv.get("verdict", "approved"), None)
@@ -127,23 +134,28 @@ class OrchestratorControlReviewMixin:
         except Exception as e:  # noqa: BLE001
             LOG.warning("plan review failed (non-fatal): %s", e)
 
-    def _architectureReview(self, state: TaskState, architect_doc: str,
-                            dashboard: DiscordDashboard) -> str:
+    def _architectureReview(self, state: TaskState, architect_doc: str, dashboard: DiscordDashboard) -> str:
         """Gemini second opinion on the architecture doc; concerns are appended to the doc so the
         planner sees them. Returns the (possibly annotated) doc. Best-effort."""
         if not config.ADVERSARY_REVIEW_ARCH:
             return architect_doc
         try:
-            rv = self._consult(state, "architecture", "architecture review",
-                               "architecture review", architect_doc)
+            rv = self._consult(
+                state, "architecture", "architecture review", "architecture review", architect_doc
+            )
             with self._state_lock:
-                state.addAdversaryReview("architecture", "architecture review",
-                                         rv.get("verdict", "approved"), None)
+                state.addAdversaryReview(
+                    "architecture", "architecture review", rv.get("verdict", "approved"), None
+                )
             notes = (rv.get("must_fix") or []) + (rv.get("concerns") or [])
             if rv.get("verdict") == "challenged" and notes:
                 dashboard.update(state, "architecting", "architecture concerns noted for planning")
                 state.addNotification("architecture_challenged", "; ".join(notes)[:300])
-                return architect_doc + "\n\n## Adversary concerns (address in planning)\n- " + "\n- ".join(notes[:8])
+                return (
+                    architect_doc
+                    + "\n\n## Adversary concerns (address in planning)\n- "
+                    + "\n- ".join(notes[:8])
+                )
         except Exception as e:  # noqa: BLE001
             LOG.warning("architecture review failed (non-fatal): %s", e)
         return architect_doc

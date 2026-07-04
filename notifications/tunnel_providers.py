@@ -20,8 +20,10 @@ DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_tunnel.py
 """
+
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
 import re
@@ -41,6 +43,25 @@ _CF_RE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 _NGROK_RE = re.compile(r"https://[-a-z0-9]+\.ngrok(?:[-a-z0-9.]*)?\.(?:app|io)")
 _BORE_RE = re.compile(r"bore\.pub:(\d+)")
 _LT_RE = re.compile(r"https://[a-z0-9-]+\.loca\.lt")
+
+# Bounded download timeout (seconds). urlretrieve has no timeout of its own and a
+# post-handshake CDN stall would block the calling thread forever; urlopen honors this.
+_DOWNLOAD_TIMEOUT_S = 60
+
+# Pinned cloudflared release -- bump both the tag and the digests below together when
+# upgrading (never move to "latest": that made the download unverifiable/unpinned).
+# Digests are the vendor-published SHA256 checksums for release 2026.6.1, taken verbatim
+# from the GitHub release's "SHA256 Checksums" block:
+# https://github.com/cloudflare/cloudflared/releases/tag/2026.6.1
+_CLOUDFLARED_VERSION = "2026.6.1"
+_CLOUDFLARED_SHA256 = {
+    ("windows", "amd64"): "5253e66f1f493c4e13539749f1aa86fd0c61e3072900fec29a44ba046a6d97e2",
+    ("windows", "arm64"): None,  # no windows-arm64 asset published upstream
+    ("linux", "amd64"): "5861a10a438fe8ddcfebb3b830f83966cbf193edafce0fe2eeb198fbae1f7a22",
+    ("linux", "arm64"): "59816ce9b16db71f5bc2a86d59b3632a96c8c3ee934bde2bc8641ee83a6070eb",
+    ("darwin", "amd64"): "3f74d697045ecf56dd2fbeb42f59767ecdf4067c409d55f080563923e8a1bb32",
+    ("darwin", "arm64"): "ae6ee90188ae5833c687ce937c3693e28403677607c06c65a2ff2b6a022f50e4",
+}
 
 
 class TunnelProvider:
@@ -64,20 +85,38 @@ class TunnelProvider:
         """True when an HTTP GET returns a non-5xx status (end-to-end reachability)."""
         try:
             req = urllib.request.Request(url, method="GET", headers={"User-Agent": "9to5-probe"})
-            with urllib.request.urlopen(req, timeout=timeout) as resp:   # noqa: S310 -- known https
+            with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 -- known https
                 return int(getattr(resp, "status", 200)) < 500
-        except urllib.error.HTTPError as e:   # an HTTP error code is still "reachable" if <500
+        except urllib.error.HTTPError as e:  # an HTTP error code is still "reachable" if <500
             return int(getattr(e, "code", 500)) < 500
         except Exception:  # noqa: BLE001 -- connection refused / timeout / DNS -> unreachable
             return False
 
     # ---- shared download helper ----------------------------------------
     @staticmethod
-    def _download_binary(url: str, dest: Path) -> bool:
-        """Download a binary to ``dest`` and mark it executable. Best-effort."""
+    def _download_binary(url: str, dest: Path, expected_sha256: Optional[str] = None) -> bool:
+        """Download a binary to ``dest`` and mark it executable. Best-effort.
+
+        Bounded by ``_DOWNLOAD_TIMEOUT_S`` so a stalled CDN connection cannot block the
+        calling thread forever (``urlretrieve`` has no timeout of its own). When
+        ``expected_sha256`` is given, the downloaded file's digest must match or the file
+        is deleted and the download is treated as failed -- it is never chmod'd/executed
+        on a mismatch.
+        """
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
-            urllib.request.urlretrieve(url, dest)   # noqa: S310 -- pinned vendor URL
+            req = urllib.request.Request(url, headers={"User-Agent": "9to5-dl"})
+            with urllib.request.urlopen(req, timeout=_DOWNLOAD_TIMEOUT_S) as resp:  # noqa: S310 -- pinned vendor URL
+                with open(dest, "wb") as f:
+                    shutil.copyfileobj(resp, f)
+            if expected_sha256 is not None:
+                digest = hashlib.sha256(dest.read_bytes()).hexdigest()
+                if digest.lower() != expected_sha256.lower():
+                    LOG.warning(
+                        "binary checksum mismatch (%s): expected %s, got %s", url, expected_sha256, digest
+                    )
+                    dest.unlink(missing_ok=True)
+                    return False
             dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             return dest.exists()
         except Exception as e:  # noqa: BLE001
@@ -101,7 +140,7 @@ class CloudflaredProvider(TunnelProvider):
         self._bin: Optional[str] = None
 
     def available(self) -> bool:
-        return True   # binary is auto-downloadable with no account
+        return True  # binary is auto-downloadable with no account
 
     def _cached_path(self) -> Path:
         _os, _arch, suffix = _plat()
@@ -117,9 +156,19 @@ class CloudflaredProvider(TunnelProvider):
             self._bin = str(cached)
             return True
         os_token, arch, suffix = _plat()
-        url = ("https://github.com/cloudflare/cloudflared/releases/latest/download/"
-               f"cloudflared-{os_token}-{arch}{suffix}")
-        if self._download_binary(url, cached):
+        expected_sha256 = _CLOUDFLARED_SHA256.get((os_token, arch))
+        if expected_sha256 is None:
+            LOG.warning(
+                "no pinned cloudflared checksum for (%s, %s); refusing to download unverified binary",
+                os_token,
+                arch,
+            )
+            return False
+        url = (
+            "https://github.com/cloudflare/cloudflared/releases/download/"
+            f"{_CLOUDFLARED_VERSION}/cloudflared-{os_token}-{arch}{suffix}"
+        )
+        if self._download_binary(url, cached, expected_sha256=expected_sha256):
             self._bin = str(cached)
             return True
         return False
@@ -150,7 +199,7 @@ class NgrokProvider(TunnelProvider):
         if found:
             self._bin = found
             return True
-        return False   # ngrok install needs an account flow; do not auto-fetch
+        return False  # ngrok install needs an account flow; do not auto-fetch
 
     def start(self, port: int) -> "subprocess.Popen":
         binary = self._bin or "ngrok"
@@ -175,7 +224,7 @@ class BoreProvider(TunnelProvider):
         if found:
             self._bin = found
             return True
-        return False   # bore release assets are versioned tarballs; require a pre-installed binary
+        return False  # bore release assets are versioned tarballs; require a pre-installed binary
 
     def start(self, port: int) -> "subprocess.Popen":
         binary = self._bin or "bore"
@@ -207,9 +256,17 @@ def _spawn(cmd: list) -> "subprocess.Popen":
     """Launch a tunnel process with a line-buffered text stdout pipe."""
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     return subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-        text=True, encoding="utf-8", errors="replace", bufsize=1,
-        creationflags=creationflags, start_new_session=(os.name != "nt"))
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+        creationflags=creationflags,
+        start_new_session=(os.name != "nt"),
+    )
 
 
 def default_providers() -> list:

@@ -4,10 +4,11 @@
 EXPORTS:
   record(metric: str, elapsed_s: float, **fields: Any) -> None  -- Append one best-effort timing row
   summarize(limit: int=500) -> dict[str, float]  -- Aggregate recent telemetry by metric.
-DEPENDS-ON: config
-SIDE-EFFECTS: appends state/perf.jsonl
+DEPENDS-ON: config, platform_core.core
+SIDE-EFFECTS: appends + size-rotates state/perf.jsonl
 RUN/TEST: python -m pytest tests/test_perf_telemetry.py
 """
+
 from __future__ import annotations
 
 import json
@@ -16,21 +17,18 @@ from pathlib import Path
 from typing import Any
 
 import config
+from platform_core.core import jsonl_io
 
 
 def _path() -> Path:
-    return Path(getattr(config, "PERF_TELEMETRY_PATH",
-                        config.PROJECT_ROOT / "state" / "perf.jsonl"))
+    return Path(getattr(config, "PERF_TELEMETRY_PATH", config.PROJECT_ROOT / "state" / "perf.jsonl"))
 
 
 def record(metric: str, elapsed_s: float, **fields: Any) -> None:
     """Append one best-effort timing row. Never raises into hot paths."""
     try:
-        path = _path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         row = {"at": time.time(), "metric": metric, "elapsed_s": float(elapsed_s), **fields}
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+        jsonl_io.appendRecord(_path(), row, max_bytes=getattr(config, "PERF_TELEMETRY_MAX_BYTES", 2_000_000))
     except Exception:  # noqa: BLE001
         return
 
@@ -38,7 +36,7 @@ def record(metric: str, elapsed_s: float, **fields: Any) -> None:
 def summarize(limit: int = 500) -> dict[str, float]:
     """Aggregate recent telemetry by metric."""
     try:
-        lines = _path().read_text(encoding="utf-8").splitlines()[-max(1, int(limit)):]
+        lines = _path().read_text(encoding="utf-8").splitlines()[-max(1, int(limit)) :]
     except Exception:  # noqa: BLE001
         return {}
     totals: dict[str, float] = {}

@@ -18,10 +18,11 @@ run, and two overlapping runs can't double-process. See the spec (meta-loop / X1
 EXPORTS:
   run_maintenance(*, reason: str='post-run', force: bool=False, throttle_seconds: float=DEFAULT_THROTTLE_SECONDS, db_path: Optional[Path]=None) -> dict[str, Any]  -- Run the throttled learning passes once (idempotent, best-effort, locked).
   run_maintenance_async(**kwargs)  -- Start maintenance on a daemon thread and RETURN the thread so the caller can join it wi…
-DEPENDS-ON: config, learning.adapter_promotion, learning.bootstrap, learning.curriculum, learning.eval_runner, learning.evolution, learning.finetune, learning.meta_opt, learning.promotion, learning.release, learning.selfplay, learning.sie_steps, memory.experience, notifications.work_launcher, platform_core.core
+DEPENDS-ON: config, learning.adapter_promotion, learning.bootstrap, learning.eval_runner, learning.evolution, learning.finetune, learning.meta_opt, learning.promotion, learning.selfplay, learning.sie_curriculum, learning.sie_steps, memory.experience, notifications.work_launcher, platform_core.core
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_sie.py
 """
+
 from __future__ import annotations
 
 import sys as _sys
@@ -33,6 +34,7 @@ if _repo_root not in _sys.path:
     _sys.path.insert(0, _repo_root)
 
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -58,7 +60,7 @@ def _lock_path() -> Path:
 
 
 def _read_state() -> dict[str, Any]:
-    data = fsio.loadJson(_state_path(), default=None)   # corrupt -> warned, not silent
+    data = fsio.loadJson(_state_path(), default=None)  # corrupt -> warned, not silent
     return data if isinstance(data, dict) else {}
 
 
@@ -89,6 +91,7 @@ def _lock_owner_alive(lp: Path) -> bool:
         return True
     try:
         import psutil
+
         return psutil.pid_exists(pid)
     except Exception:  # noqa: BLE001 -- psutil missing/errored -> unknown, assume alive
         return True
@@ -100,13 +103,13 @@ def _should_reclaim(lp: Path) -> bool:
     and the lock is older than 1h. A lock held by a LIVE owner is NEVER stolen, however old it is
     (the old time-only rule wrongly killed a long-running, still-live maintenance pass)."""
     if not _lock_owner_alive(lp):
-        return True                                  # proven dead -> reclaim immediately
-    if _owner_pid(lp) is None:                        # owner unknowable -> only once stale
+        return True  # proven dead -> reclaim immediately
+    if _owner_pid(lp) is None:  # owner unknowable -> only once stale
         try:
             return time.time() - lp.stat().st_mtime > 3600
         except OSError:
             return False
-    return False                                     # live, readable owner -> keep
+    return False  # live, readable owner -> keep
 
 
 def _acquire_lock() -> Optional[Path]:
@@ -117,8 +120,7 @@ def _acquire_lock() -> Optional[Path]:
     authority via ``owner_alive``. Returns the lock path, or None if held by a live owner. The
     kernel's re-stat-before-unlink closes the old remove-fresh-lock race."""
     lp = _lock_path()
-    got = fsio.tryAcquireLock(lp, stale_after=float("inf"),
-                              owner_alive=lambda _pid: _lock_owner_alive(lp))
+    got = fsio.tryAcquireLock(lp, stale_after=float("inf"), owner_alive=lambda _pid: _lock_owner_alive(lp))
     return lp if got else None
 
 
@@ -133,9 +135,13 @@ def _due(state: dict[str, Any], throttle_seconds: float) -> bool:
     return elapsed >= throttle_seconds
 
 
-def run_maintenance(*, reason: str = "post-run", force: bool = False,
-                    throttle_seconds: float = DEFAULT_THROTTLE_SECONDS,
-                    db_path: Optional[Path] = None) -> dict[str, Any]:
+def run_maintenance(
+    *,
+    reason: str = "post-run",
+    force: bool = False,
+    throttle_seconds: float = DEFAULT_THROTTLE_SECONDS,
+    db_path: Optional[Path] = None,
+) -> dict[str, Any]:
     """Run the throttled learning passes once (idempotent, best-effort, locked).
 
     Returns a summary dict. ``skipped`` reasons: ``kill_switch`` (SIE off), ``not_due``
@@ -150,7 +156,10 @@ def run_maintenance(*, reason: str = "post-run", force: bool = False,
     lock = _acquire_lock()
     if lock is None:
         return {"skipped": "locked"}
-    summary: dict[str, Any] = {"reason": reason, "ran_at": datetime.now().astimezone().isoformat(timespec="seconds")}
+    summary: dict[str, Any] = {
+        "reason": reason,
+        "ran_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
     try:
         experience.init(db_path)
         # Zero-touch setup so the user only ever presses start: provision the training
@@ -158,6 +167,7 @@ def run_maintenance(*, reason: str = "post-run", force: bool = False,
         if config.SIE_BOOTSTRAP:
             try:
                 from learning import bootstrap
+
                 summary["bootstrap"] = bootstrap.ensure_all()
             except Exception as e:  # noqa: BLE001
                 LOG.debug("bootstrap failed (ignored): %s", e)
@@ -206,8 +216,9 @@ def _weekly_due(state: dict[str, Any]) -> bool:
     return elapsed >= WEEKLY_THROTTLE_SECONDS
 
 
-def _count_new_feedback_since_last_consolidation(state: dict[str, Any],
-                                                  db_path: Optional[Path] = None) -> int:
+def _count_new_feedback_since_last_consolidation(
+    state: dict[str, Any], db_path: Optional[Path] = None
+) -> int:
     """Count feedback records created since the last consolidation run. Adaptive trigger for
     curriculum auto-queue: if >=5 new feedback appear, consolidation should run to learn from them."""
     try:
@@ -217,6 +228,7 @@ def _count_new_feedback_since_last_consolidation(state: dict[str, Any],
         last_ts = datetime.fromisoformat(last_consolidation)
         # Fetch all feedback and filter by timestamp after last consolidation.
         from memory import experience
+
         feedback = experience.fetch_feedback(db_path=db_path)
         count = 0
         for fb in feedback:
@@ -235,6 +247,7 @@ def _count_new_feedback_since_last_consolidation(state: dict[str, Any],
 
 def _prompt_promotion(db_path: Optional[Path]):
     from learning import promotion
+
     return promotion.run_promotions(db_path=db_path)
 
 
@@ -242,12 +255,14 @@ def _lora_distillation(db_path: Optional[Path]):
     # Automatic LoRA cycle; skips cleanly ("not_enough"/"no_trainer") until a host
     # with enough gold examples + a GPU/backend is available. Never promotes here.
     from learning import finetune
+
     return finetune.run_finetune_cycle(db_path=db_path)
 
 
 def _dpo_distillation(db_path: Optional[Path]):
     # Preference-optimization cycle (learn what NOT to do); same skip-clean contract.
     from learning import finetune
+
     return finetune.run_dpo_cycle(db_path=db_path)
 
 
@@ -255,12 +270,14 @@ def _adapter_promotion(db_path: Optional[Path]):
     # Evaluate challenger adapters vs champion and promote winners (I4 no-regression).
     # Skips ("no_evaluator") until a brain can serve per-tag fitness.
     from learning import adapter_promotion as ap
+
     return ap.run(db_path=db_path)
 
 
 def _meta_optimize(db_path: Optional[Path]):
     # Auto-tune the engine's own knobs within safe bounds (persisted across restarts).
     from learning import meta_opt
+
     return meta_opt.apply(db_path=db_path)
 
 
@@ -273,71 +290,67 @@ def _self_play(db_path: Optional[Path]):
     def launch(goal: str, hours: float):
         return work_launcher.spawn(work_launcher.WorkRequest(goal=goal, hours=hours))
 
-    return selfplay.run(launch_fn=launch,
-                        is_busy=lambda: work_launcher.activeRun() is not None,
-                        db_path=db_path)
+    return selfplay.run(
+        launch_fn=launch, is_busy=lambda: work_launcher.activeRun() is not None, db_path=db_path
+    )
 
 
+# The curriculum auto-queue step (_curriculum_and_report) lives in sie_curriculum.py to keep
+# this module under the size threshold. Re-exported so sie._curriculum_and_report (and the
+# tests that call it) keep resolving. Injected callables (state I/O + feedback counter) avoid
+# a circular import back into this facade, matching the sie_steps.py contract.
 def _curriculum_and_report(db_path: Optional[Path]):
-    # Author practice goals for the weakest families + write the "what did I learn"
-    # report. Both best-effort and human-facing -- the system narrates its own progress.
-    # ADAPTIVE TRIGGER: if >=5 new feedback records appeared since last consolidation,
-    # auto-queue generated curriculum goals directly into the work queue (bypass human approval).
-    from learning import curriculum, release
-    goals = curriculum.generate_goals(db_path=db_path)
-    curriculum.write_suggestions(goals)
-    release.write_report(db_path=db_path)
-    result: dict[str, Any] = {"curriculum_goals": len(goals), "auto_queued": 0}
+    from learning.sie_curriculum import _curriculum_and_report as _impl
 
-    # Check adaptive trigger: >=5 new feedback since last consolidation?
-    state = _read_state()
-    new_feedback_count = _count_new_feedback_since_last_consolidation(state, db_path=db_path)
-    if new_feedback_count >= 5 and goals:
-        try:
-            from notifications import work_launcher
-            for goal_dict in goals:
-                req = work_launcher.WorkRequest(goal=goal_dict["goal"], hours=1.0)
-                work_launcher.spawn(req)
-                result["auto_queued"] += 1
-            LOG.info("curriculum: auto-queued %d goals (%d new feedback)", result["auto_queued"], new_feedback_count)
-        except Exception as e:  # noqa: BLE001
-            LOG.debug("curriculum auto-queue failed (ignored): %s", e)
-
-    return result
+    return _impl(
+        db_path,
+        read_state=_read_state,
+        write_state=_write_state,
+        count_new_feedback=_count_new_feedback_since_last_consolidation,
+    )
 
 
 def _weekly_steps(db_path: Optional[Path]):
     """Slower tier: prompt/adapter promotion + capability evolution -- all gated by the eval
     harness + field metrics, never premature. Runs automatically; the human only
     start/abort/checks. The evolution steps are no-ops unless EVOLUTION_* flags are enabled."""
+
     def evolve():
         from learning.evolution import evolver
+
         return evolver.propose_candidates(db_path=db_path)
 
     def evolve_promote():
         from learning.evolution import promote
         from learning import eval_runner
+
         # active_runner() -> runner(goal)->result (1-arg); the evolution harness needs
         # runner(goal, body). Wrap to ignore body (no capability-aware runner exists yet).
         base = eval_runner.active_runner()
-        runner = (lambda goal, body: base(goal)) if base is not None else (
-            lambda goal, body: {"attempts": 1, "checks": {c: True for c in goal.get("checks", [])}})
+        runner = (
+            (lambda goal, body: base(goal))
+            if base is not None
+            else (lambda goal, body: {"attempts": 1, "checks": {c: True for c in goal.get("checks", [])}})
+        )
         return promote.run_evolution_promotions(runner=runner, db_path=db_path)
 
     def curate():
         from learning.evolution import curator
+
         return curator.run_curator(db_path=db_path)
 
-    return [("prompt_promotion", lambda: _prompt_promotion(db_path)),
-            ("lora_distillation", lambda: _lora_distillation(db_path)),
-            ("dpo_distillation", lambda: _dpo_distillation(db_path)),
-            ("adapter_promotion", lambda: _adapter_promotion(db_path)),
-            ("meta_optimize", lambda: _meta_optimize(db_path)),
-            ("self_play", lambda: _self_play(db_path)),
-            ("evolve", evolve),
-            ("evolve_promote", evolve_promote),
-            ("curate", curate),
-            ("curriculum_and_report", lambda: _curriculum_and_report(db_path))]
+    return [
+        ("prompt_promotion", lambda: _prompt_promotion(db_path)),
+        ("lora_distillation", lambda: _lora_distillation(db_path)),
+        ("dpo_distillation", lambda: _dpo_distillation(db_path)),
+        ("adapter_promotion", lambda: _adapter_promotion(db_path)),
+        ("meta_optimize", lambda: _meta_optimize(db_path)),
+        ("self_play", lambda: _self_play(db_path)),
+        ("evolve", evolve),
+        ("evolve_promote", evolve_promote),
+        ("curate", curate),
+        ("curriculum_and_report", lambda: _curriculum_and_report(db_path)),
+    ]
 
 
 def run_maintenance_async(**kwargs):
@@ -365,24 +378,39 @@ def _test_pr_consolidate() -> None:
     try:
         experience.init(tmp)
         experience.record_pr_outcome(
-            "run-t1", "https://github.com/org/repo/pull/1",
-            {"ci_status": "failure", "ci_summary": "2 checks failed",
-             "review_state": "", "promote_safe": False,
-             "provenance": {"subtask_id": "st-001"}},
+            "run-t1",
+            "https://github.com/org/repo/pull/1",
+            {
+                "ci_status": "failure",
+                "ci_summary": "2 checks failed",
+                "review_state": "",
+                "promote_safe": False,
+                "provenance": {"subtask_id": "st-001"},
+            },
             db_path=tmp,
         )
         experience.record_pr_outcome(
-            "run-t2", "https://github.com/org/repo/pull/2",
-            {"ci_status": "success", "ci_summary": "all passed",
-             "review_state": "approved", "promote_safe": True,
-             "provenance": {"subtask_id": "st-002"}},
+            "run-t2",
+            "https://github.com/org/repo/pull/2",
+            {
+                "ci_status": "success",
+                "ci_summary": "all passed",
+                "review_state": "approved",
+                "promote_safe": True,
+                "provenance": {"subtask_id": "st-002"},
+            },
             db_path=tmp,
         )
         experience.record_pr_outcome(
-            "run-t3", "https://github.com/org/repo/pull/3",
-            {"ci_status": "success", "ci_summary": "all passed",
-             "review_state": "changes_requested", "promote_safe": False,
-             "provenance": {"subtask_id": "st-003"}},
+            "run-t3",
+            "https://github.com/org/repo/pull/3",
+            {
+                "ci_status": "success",
+                "ci_summary": "all passed",
+                "review_state": "changes_requested",
+                "promote_safe": False,
+                "provenance": {"subtask_id": "st-003"},
+            },
             db_path=tmp,
         )
         result = _pr_consolidate(db_path=tmp)
@@ -404,6 +432,7 @@ def _test_pr_consolidate() -> None:
 
 if __name__ == "__main__":  # pragma: no cover
     import sys
+
     if sys.argv[1:] == ["--test", "pr_consolidate"]:
         _test_pr_consolidate()
         sys.exit(0)

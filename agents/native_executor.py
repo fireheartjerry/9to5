@@ -23,6 +23,7 @@ DEPENDS-ON: agents.executor, config, notifications.lane_feed
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_native_executor_cleanup.py
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -35,10 +36,10 @@ LOG = config.getLogger("native_executor")
 
 # These will eventually live in config.py (see docs/phase_3_architecture.md).
 # Defined here with sensible defaults until the core file is updated for Phase 3.
-NATIVE_ACTION_TIMEOUT_MS: int = int(
-    getattr(config, "NATIVE_ACTION_TIMEOUT_MS", 10000))
+NATIVE_ACTION_TIMEOUT_MS: int = int(getattr(config, "NATIVE_ACTION_TIMEOUT_MS", 10000))
 NATIVE_SCREENSHOT_DIR: "Path" = getattr(
-    config, "NATIVE_SCREENSHOT_DIR", config.PROJECT_ROOT / "state" / "native_screenshots")
+    config, "NATIVE_SCREENSHOT_DIR", config.PROJECT_ROOT / "state" / "native_screenshots"
+)
 
 
 class NativeUnavailable(RuntimeError):
@@ -48,93 +49,126 @@ class NativeUnavailable(RuntimeError):
 def _result(spec: dict, *, ok: bool, is_error: bool, stdout: str = "", stderr: str = "") -> dict:
     """runClaude-shaped result so the orchestrator treats native output identically."""
     return {
-        "ok": ok, "returncode": 0 if ok else 1, "stdout": stdout, "stderr": stderr,
-        "is_error": is_error, "effort": spec.get("effort_level", "default"),
-        "effort_flag": None, "spec": spec, "claude_md_path": None,
-        "profile": "native_ui_operator", "blocked": False, "surface": "native",
+        "ok": ok,
+        "returncode": 0 if ok else 1,
+        "stdout": stdout,
+        "stderr": stderr,
+        "is_error": is_error,
+        "effort": spec.get("effort_level", "default"),
+        "effort_flag": None,
+        "spec": spec,
+        "claude_md_path": None,
+        "profile": "native_ui_operator",
+        "blocked": False,
+        "surface": "native",
     }
 
 
-def _execNativeAction(act: dict[str, Any], i: int, app, window, *,
-                      timeout_ms: int, screenshot_dir: Optional[str]) -> tuple:
-    """Execute one UIA action; return (app, window, transcript_line). Raises on failure."""
+def _execNativeAction(
+    act: dict[str, Any], i: int, app, window, *, timeout_ms: int, screenshot_dir: Optional[str]
+) -> tuple:
+    """Execute one UIA action; return (app, window, transcript_line, launched, closed).
+
+    ``launched`` is True only when this action just launched a brand-new app handle
+    (so the caller can later kill it if nothing closes it explicitly); it is False for
+    'connect' (pre-existing, user-owned app -- must never be killed by us) and for
+    every other action kind. ``closed`` is True only for an explicit 'close' action,
+    so the caller knows not to kill again in its cleanup. Raises on failure."""
     import pywinauto  # type: ignore  -- cached; guaranteed installed past _run_native_actions' guard
+
     kind = (act.get("action") or "").lower()
     from notifications.lane_feed import laneTap
+
     laneTap("native", f"{kind}: {str(act.get('app') or act.get('title') or act)[:80]}")
     if kind == "launch":
         app = pywinauto.Application(backend="uia").start(act["app"])
-        return app, window, f"launch {act['app']!r}"
+        return app, window, f"launch {act['app']!r}", True, False
     if kind == "connect":
         app = pywinauto.Application(backend="uia").connect(title_re=act.get("app", ".*"))
-        return app, window, f"connect to {act.get('app')!r}"
+        return app, window, f"connect to {act.get('app')!r}", False, False
     if kind == "find":
         if app is None:
             raise RuntimeError("no app connected; use 'launch' or 'connect' first")
         window = app.window(title=act.get("title"), control_type=act.get("control_type"))
         window.wait("ready", timeout=timeout_ms / 1000)
-        return app, window, f"find {act.get('title')!r} [{act.get('control_type')}]"
+        return app, window, f"find {act.get('title')!r} [{act.get('control_type')}]", False, False
     if kind == "click":
         ctrl = window.child_window(title=act.get("title"), control_type=act.get("control_type"))
         ctrl.click_input()
-        return app, window, f"click {act.get('title')!r}"
+        return app, window, f"click {act.get('title')!r}", False, False
     if kind == "type":
         ctrl = window or app.top_window()
         ctrl.type_keys(act.get("text", ""), with_spaces=True)
-        return app, window, f"type {repr(act.get('text', ''))[:40]}"
+        return app, window, f"type {repr(act.get('text', ''))[:40]}", False, False
     if kind == "press":
         ctrl = window or app.top_window()
         ctrl.type_keys(act.get("key", ""), with_spaces=True)
-        return app, window, f"press {act.get('key')!r}"
+        return app, window, f"press {act.get('key')!r}", False, False
     if kind == "extract":
         ctrl = window or app.top_window()
-        return app, window, f"extract:\n{ctrl.window_text()[:2000]}"
+        return app, window, f"extract:\n{ctrl.window_text()[:2000]}", False, False
     if kind == "screenshot":
         name = act.get("path") or f"native-screenshot-{i}.png"
         sd = screenshot_dir or str(NATIVE_SCREENSHOT_DIR)
-        Path(sd).mkdir(parents=True, exist_ok=True)   # create the target dir before saving
+        Path(sd).mkdir(parents=True, exist_ok=True)  # create the target dir before saving
         path = str(Path(sd) / name)
         (window or app.top_window()).capture_as_image().save(path)
-        return app, window, f"screenshot -> {path}"
+        return app, window, f"screenshot -> {path}", False, False
     if kind == "close":
         target = app or pywinauto.Application(backend="uia").connect(title_re=act.get("app", ".*"))
         target.kill()
-        return app, window, f"close {act.get('app')!r}"
-    return app, window, f"(skipped unknown action {kind!r})"
+        return app, window, f"close {act.get('app')!r}", False, True
+    return app, window, f"(skipped unknown action {kind!r})", False, False
 
 
-def _run_native_actions(actions: list[dict[str, Any]], *,
-                        timeout_ms: int = NATIVE_ACTION_TIMEOUT_MS,
-                        screenshot_dir: Optional[str] = None) -> str:
+def _run_native_actions(
+    actions: list[dict[str, Any]],
+    *,
+    timeout_ms: int = NATIVE_ACTION_TIMEOUT_MS,
+    screenshot_dir: Optional[str] = None,
+) -> str:
     """Execute structured UIA actions via pywinauto; return a transcript. Raises
     NativeUnavailable if pywinauto is not installed (caller degrades cleanly).
 
     Supported actions: launch, connect, find, click, type, press, extract,
     screenshot, close. Each transcript line records the action + observable result.
-    On any action failure the launched app is terminated so no orphan window leaks."""
+
+    Orphan-process safety: an app this call LAUNCHES (action="launch") is tracked and
+    killed in the ``finally`` block unless an explicit 'close' action already killed
+    it -- covering both the failure path and the prior happy-path leak (success with
+    no trailing 'close'). An app this call only CONNECTS to (action="connect") is
+    pre-existing and user-owned; it is never killed here, on failure or success."""
     try:
         import pywinauto  # type: ignore  # noqa: F401
     except Exception as e:  # noqa: BLE001
-        raise NativeUnavailable(
-            "native layer unavailable: `pip install pywinauto`") from e
+        raise NativeUnavailable("native layer unavailable: `pip install pywinauto`") from e
 
     lines: list[str] = []
     app = None
     window = None
-    for i, act in enumerate(actions):
-        try:
-            app, window, line = _execNativeAction(
-                act, i, app, window, timeout_ms=timeout_ms, screenshot_dir=screenshot_dir)
-            lines.append(line)
-        except Exception as e:  # noqa: BLE001
-            lines.append(f"ERROR in action {i}: {e}")
-            if app is not None:   # terminate the launched app so it does not leak on failure
-                try:
-                    app.kill()
-                except Exception:  # noqa: BLE001
-                    pass
-            raise
-    return "\n".join(lines)
+    launched_by_us = False  # True once a 'launch' action hands us a fresh app handle
+    closed = False  # True once an explicit 'close' action has run
+    try:
+        for i, act in enumerate(actions):
+            try:
+                app, window, line, was_launch, was_close = _execNativeAction(
+                    act, i, app, window, timeout_ms=timeout_ms, screenshot_dir=screenshot_dir
+                )
+                if was_launch:
+                    launched_by_us = True
+                if was_close:
+                    closed = True
+                lines.append(line)
+            except Exception as e:  # noqa: BLE001
+                lines.append(f"ERROR in action {i}: {e}")
+                raise
+        return "\n".join(lines)
+    finally:
+        if launched_by_us and not closed and app is not None:
+            try:
+                app.kill()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def nativeActions(app: str, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -143,15 +177,22 @@ def nativeActions(app: str, steps: list[dict[str, Any]]) -> list[dict[str, Any]]
     return [{"action": "launch", "app": app}] + steps + [{"action": "close", "app": app}]
 
 
-def runNative(spec_or_prompt, *, work_dir: Optional[str] = None, task_state=None,
-              subtask: Optional[dict] = None, resume_session: Optional[str] = None,
-              **_kw) -> dict:
+def runNative(
+    spec_or_prompt,
+    *,
+    work_dir: Optional[str] = None,
+    task_state=None,
+    subtask: Optional[dict] = None,
+    resume_session: Optional[str] = None,
+    **_kw,
+) -> dict:
     """Execute a native UI subtask. Matches executor.runClaude's signature + result shape."""
     spec = executor.normalizeSpec(spec_or_prompt)
     actions: list[dict[str, Any]] = spec.get("native_actions") or []
     if not actions:
-        return _result(spec, ok=False, is_error=True,
-                       stderr="native surface needs 'native_actions' in the spec")
+        return _result(
+            spec, ok=False, is_error=True, stderr="native surface needs 'native_actions' in the spec"
+        )
     try:
         transcript = _run_native_actions(actions, screenshot_dir=work_dir)
         LOG.info("native run: %d actions ok", len(actions))

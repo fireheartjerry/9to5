@@ -5,11 +5,14 @@ EXPORTS:
   sweepBlackboard(directory=None, keep_recent=None, max_age_days=None) -> int
   sweepCompaction(directory=None, keep_recent=None, max_age_days=None) -> int
   archiveTerminalTasks(max_age_days=None) -> int  -- Move terminal-status task JSON older than the archive horizon into state/archive/
+  sweepHookLogs(path=None, max_bytes=None) -> int  -- Truncate logs/hooks.log to its tail once it exceeds ``max_bytes``
+  sweepGuardAlerts(path=None, max_bytes=None) -> int  -- Truncate logs/guard_alerts.jsonl to its tail once it exceeds ``max_bytes``
   sweepAll() -> dict  -- Run every sweep, gated by config.RETENTION_ENABLED
 DEPENDS-ON: config
-SIDE-EFFECTS: deletes/moves files under state/ (never .py; guarded, fail-open)
+SIDE-EFFECTS: deletes/moves files under state/ (never .py; guarded, fail-open); truncates logs/hooks.log and logs/guard_alerts.jsonl
 RUN/TEST: python -m pytest tests/platform/test_retention.py
 """
+
 from __future__ import annotations
 
 import shutil
@@ -85,11 +88,11 @@ def _isTerminalTaskFile(path: Path) -> bool:
     is never archived out from under the orchestrator."""
     try:
         import json
+
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         return False
-    status = ((data.get("meta") or {}).get("status")
-              or data.get("status") or "")
+    status = (data.get("meta") or {}).get("status") or data.get("status") or ""
     return str(status).lower() in _TERMINAL_STATUSES
 
 
@@ -120,17 +123,82 @@ def archiveTerminalTasks(max_age_days=None) -> int:
     return archived
 
 
+def _truncateToTail(path: Path, max_bytes: int) -> int:
+    """Keep only the last ``max_bytes`` of ``path``, dropping everything before it (and
+    any partial first line so the kept content starts on a clean record boundary).
+    Returns bytes trimmed (0 if under the cap, missing, or on any error). Fail-open:
+    a read/write failure here must never abort the sweep."""
+    try:
+        size = path.stat().st_size
+    except FileNotFoundError:
+        return 0
+    except Exception as e:  # noqa: BLE001
+        LOG.debug("retention: cannot stat %s: %s", path, e)
+        return 0
+    if size <= max_bytes:
+        return 0
+    try:
+        with path.open("rb") as fh:
+            fh.seek(size - max_bytes)
+            tail = fh.read()
+        nl = tail.find(b"\n")
+        if nl != -1:
+            tail = tail[nl + 1 :]
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_bytes(tail)
+        tmp.replace(path)
+        return size - path.stat().st_size
+    except Exception as e:  # noqa: BLE001
+        LOG.debug("retention: could not truncate %s: %s", path, e)
+        return 0
+
+
+def sweepHookLogs(path=None, max_bytes=None) -> int:
+    """Truncate logs/hooks.log to its tail once it exceeds ``max_bytes``. hooks.log is
+    appended on essentially every tool-use hook fire (the highest-frequency write in the
+    system) with no rotation at the write site -- retention trims it out-of-band instead,
+    so the hook append itself stays a plain fast write (non-blocking)."""
+    p = _resolveDir(path if path is not None else Path(config.LOG_PATH) / "hooks.log")
+    mb = config.HOOKS_LOG_MAX_BYTES if max_bytes is None else max_bytes
+    return _truncateToTail(p, mb)
+
+
+def sweepGuardAlerts(path=None, max_bytes=None) -> int:
+    """Truncate logs/guard_alerts.jsonl to its tail once it exceeds ``max_bytes``. Same
+    rationale as sweepHookLogs: the guard block path is a fire-and-forget append with no
+    rotation, so retention trims it out-of-band instead."""
+    p = _resolveDir(path if path is not None else Path(config.LOG_PATH) / "guard_alerts.jsonl")
+    mb = config.GUARD_ALERTS_MAX_BYTES if max_bytes is None else max_bytes
+    return _truncateToTail(p, mb)
+
+
 def sweepAll() -> dict:
     """Run every sweep, gated by config.RETENTION_ENABLED. Fail-open: never raises."""
     if not getattr(config, "RETENTION_ENABLED", True):
         return {"enabled": False}
-    result = {"enabled": True, "blackboard": 0, "compaction": 0, "archived": 0}
+    result = {
+        "enabled": True,
+        "blackboard": 0,
+        "compaction": 0,
+        "archived": 0,
+        "hooks_log_trimmed": 0,
+        "guard_alerts_trimmed": 0,
+    }
     try:
         result["blackboard"] = sweepBlackboard()
         result["compaction"] = sweepCompaction()
         result["archived"] = archiveTerminalTasks()
-        LOG.info("retention sweep: blackboard=-%d compaction=-%d archived=%d",
-                 result["blackboard"], result["compaction"], result["archived"])
+        result["hooks_log_trimmed"] = sweepHookLogs()
+        result["guard_alerts_trimmed"] = sweepGuardAlerts()
+        LOG.info(
+            "retention sweep: blackboard=-%d compaction=-%d archived=%d "
+            "hooks_log_trimmed=%d guard_alerts_trimmed=%d",
+            result["blackboard"],
+            result["compaction"],
+            result["archived"],
+            result["hooks_log_trimmed"],
+            result["guard_alerts_trimmed"],
+        )
     except Exception as e:  # noqa: BLE001 -- retention must never break a run
         LOG.warning("retention sweep failed (ignored): %s", e)
     return result

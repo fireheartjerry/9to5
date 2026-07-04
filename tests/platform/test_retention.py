@@ -4,6 +4,7 @@ Retention prunes per-run blackboard/compaction artifacts (keep newest N + anythi
 younger than max_age_days) and ARCHIVES (never deletes) terminal-status task JSON.
 It must never touch .py and never raise.
 """
+
 from __future__ import annotations
 
 import json
@@ -27,6 +28,7 @@ def _touch(path: Path, *, age_days: float, content: str = "{}") -> Path:
     path.write_text(content, encoding="utf-8")
     ts = time.time() - age_days * _DAY
     import os
+
     os.utime(path, (ts, ts))
     return path
 
@@ -69,18 +71,15 @@ def test_archive_terminal_tasks_moves_not_deletes(tmp_path, monkeypatch):
     archive = tmp_path / "archive"
     monkeypatch.setattr(config, "STATE_DIR", state, raising=False)
     monkeypatch.setattr(config, "ARCHIVE_DIR", archive, raising=False)
-    old_done = _touch(state / "old.json", age_days=40,
-                      content=json.dumps({"meta": {"status": "done"}}))
-    _touch(state / "recent.json", age_days=1,
-           content=json.dumps({"meta": {"status": "done"}}))
-    _touch(state / "old_live.json", age_days=40,
-           content=json.dumps({"meta": {"status": "running"}}))
+    old_done = _touch(state / "old.json", age_days=40, content=json.dumps({"meta": {"status": "done"}}))
+    _touch(state / "recent.json", age_days=1, content=json.dumps({"meta": {"status": "done"}}))
+    _touch(state / "old_live.json", age_days=40, content=json.dumps({"meta": {"status": "running"}}))
     n = retention.archiveTerminalTasks(max_age_days=30)
     assert n == 1
-    assert not old_done.exists()                       # moved out of the live dir
-    assert (archive / "old.json").exists()             # archived, NOT deleted
-    assert (state / "recent.json").exists()            # too young
-    assert (state / "old_live.json").exists()          # non-terminal, never archived
+    assert not old_done.exists()  # moved out of the live dir
+    assert (archive / "old.json").exists()  # archived, NOT deleted
+    assert (state / "recent.json").exists()  # too young
+    assert (state / "old_live.json").exists()  # non-terminal, never archived
 
 
 def test_sweep_all_disabled_is_noop(tmp_path, monkeypatch):
@@ -92,6 +91,57 @@ def test_sweep_all_disabled_is_noop(tmp_path, monkeypatch):
 def test_sweep_missing_dir_is_safe(tmp_path):
     # No such directory -> 0 removed, no raise.
     assert retention.sweepBlackboard(directory=tmp_path / "nope", keep_recent=5, max_age_days=14) == 0
+
+
+def test_sweep_hook_logs_truncates_past_cap(tmp_path):
+    log = tmp_path / "hooks.log"
+    # 20 one-line JSON records, each ~30 bytes -> well past a tiny cap.
+    lines = [json.dumps({"i": i}) for i in range(20)]
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    original_size = log.stat().st_size
+    trimmed = retention.sweepHookLogs(path=log, max_bytes=100)
+    assert trimmed > 0
+    assert log.stat().st_size < original_size
+    assert log.stat().st_size <= 100 + 40  # tail cap plus at most one partial-line's worth
+    # The remaining content is intact, torn-line-free JSON (last lines survive).
+    remaining = [ln for ln in log.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    for ln in remaining:
+        json.loads(ln)  # never raises: no partial/torn line at the head
+    assert remaining[-1] == lines[-1]  # newest record always survives
+
+
+def test_sweep_hook_logs_under_cap_is_noop(tmp_path):
+    log = tmp_path / "hooks.log"
+    log.write_text('{"i": 0}\n', encoding="utf-8")
+    assert retention.sweepHookLogs(path=log, max_bytes=1_000_000) == 0
+    assert log.read_text(encoding="utf-8") == '{"i": 0}\n'
+
+
+def test_sweep_hook_logs_missing_file_is_safe(tmp_path):
+    assert retention.sweepHookLogs(path=tmp_path / "nope.log", max_bytes=100) == 0
+
+
+def test_sweep_guard_alerts_truncates_past_cap(tmp_path):
+    alerts = tmp_path / "guard_alerts.jsonl"
+    lines = [json.dumps({"hook": "block_destructive", "i": i}) for i in range(20)]
+    alerts.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    trimmed = retention.sweepGuardAlerts(path=alerts, max_bytes=100)
+    assert trimmed > 0
+    assert alerts.stat().st_size <= 100 + 60
+
+
+def test_sweep_all_includes_hook_log_trim(tmp_path, monkeypatch):
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    hooks_log = log_dir / "hooks.log"
+    hooks_log.write_text("\n".join(json.dumps({"i": i}) for i in range(50)) + "\n", encoding="utf-8")
+    monkeypatch.setattr(config, "LOG_PATH", log_dir, raising=False)
+    monkeypatch.setattr(config, "HOOKS_LOG_MAX_BYTES", 50, raising=False)
+    monkeypatch.setattr(config, "GUARD_ALERTS_MAX_BYTES", 50, raising=False)
+    result = retention.sweepAll()
+    assert result["enabled"] is True
+    assert result["hooks_log_trimmed"] > 0
+    assert hooks_log.stat().st_size <= 50 + 40
 
 
 if __name__ == "__main__":

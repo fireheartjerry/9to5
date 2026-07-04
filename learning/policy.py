@@ -21,12 +21,14 @@ DEPENDS-ON: config, learning.lessons, memory.experience
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_policy.py
 """
+
 from __future__ import annotations
 
 import json
 import math
 import random
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -40,6 +42,25 @@ LOG = config.getLogger("sie.policy")
 _OPTIMISTIC_MEAN = 1.0
 _OPTIMISTIC_STD = 1.0
 _COST_CAP = 1.0  # USD at which norm_cost saturates
+# Seconds at which norm_wallclock saturates -- mirrors CLAUDE_CLI_TIMEOUT_SECONDS'
+# default (600s), the existing per-subtask executor budget, so "slow" here means
+# "took about as long as one subtask is allowed to run".
+_WALL_CAP = 600.0
+
+
+def _wallclock_seconds(row: dict[str, Any]) -> float:
+    """Duration in seconds between ``started_at`` and ``ended_at`` (both ISO timestamps).
+
+    Falls back to 0.0 (no penalty) when either timestamp is missing or unparseable --
+    some rows predate these columns or never completed, and this must never raise."""
+    started, ended = row.get("started_at"), row.get("ended_at")
+    if not started or not ended:
+        return 0.0
+    try:
+        delta = datetime.fromisoformat(ended) - datetime.fromisoformat(started)
+        return max(0.0, delta.total_seconds())
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def compute_reward(row: dict[str, Any]) -> float:
@@ -55,11 +76,13 @@ def compute_reward(row: dict[str, Any]) -> float:
     except (TypeError, ValueError):
         attempts = 1
     norm_cost = min(1.0, float(row.get("cost_usd") or 0.0) / _COST_CAP)
-    norm_wall = min(1.0, float(row.get("_norm_wallclock") or 0.0))
-    return (w["first_pass"] * first_pass
-            - w["attempts"] * (attempts - 1)
-            - w["cost"] * norm_cost
-            - w["wallclock"] * norm_wall)
+    norm_wall = min(1.0, _wallclock_seconds(row) / _WALL_CAP)
+    return (
+        w["first_pass"] * first_pass
+        - w["attempts"] * (attempts - 1)
+        - w["cost"] * norm_cost
+        - w["wallclock"] * norm_wall
+    )
 
 
 def context_key(title: str, signature_tags: Optional[str] = None) -> str:
@@ -92,8 +115,7 @@ def rebuild_from_ledger(db_path: Optional[Path] = None) -> dict[str, int]:
 
     experience.clear_arms(db_path=db_path)
     for (ck, aj), (pulls, rsum, rsq) in acc.items():
-        experience.set_arm(ck, aj, pulls=int(pulls), reward_sum=rsum,
-                           reward_sq_sum=rsq, db_path=db_path)
+        experience.set_arm(ck, aj, pulls=int(pulls), reward_sum=rsum, reward_sq_sum=rsq, db_path=db_path)
     LOG.info("policy rebuild: %d arms", len(acc))
     return {"arms": len(acc)}
 
@@ -109,8 +131,13 @@ def _sample_arm(stats: Optional[dict[str, Any]], rng: random.Random) -> float:
     return rng.gauss(mean, std)
 
 
-def select(ck: str, actions: list[dict[str, Any]], *, rng: Optional[random.Random] = None,
-           db_path: Optional[Path] = None) -> dict[str, Any]:
+def select(
+    ck: str,
+    actions: list[dict[str, Any]],
+    *,
+    rng: Optional[random.Random] = None,
+    db_path: Optional[Path] = None,
+) -> dict[str, Any]:
     """Thompson-pick the best action for context ``ck`` among ``actions``."""
     rng = rng or random
     arms = {a["action_json"]: a for a in experience.fetch_arms(ck, db_path=db_path)}
@@ -122,8 +149,9 @@ def select(ck: str, actions: list[dict[str, Any]], *, rng: Optional[random.Rando
     return best_action
 
 
-def hint(goal: str, title: str, *, rng: Optional[random.Random] = None,
-         db_path: Optional[Path] = None) -> str:
+def hint(
+    goal: str, title: str, *, rng: Optional[random.Random] = None, db_path: Optional[Path] = None
+) -> str:
     """Orchestrator-facing best-effort one-liner: the learned effort prior, or "".
 
     Returns "" when there is no evidence yet (the chosen arm was never pulled), so the

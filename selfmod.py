@@ -15,11 +15,12 @@ The test runner is an injectable seam so the gate logic is offline-testable. Pur
 EXPORTS:
   core_files_changed(work_dir: str) -> list[str]  -- Core protected files with uncommitted changes in ``work_dir`` (or []).
   revert_core(work_dir: str, files: list[str]) -> None  -- Revert the given core files to HEAD (discard the breaking self-edit).
-  safety_gate(work_dir: str, *, is_self_referential: bool, test_runner: Optional[Callable[[str], tuple[bool, str]]]=None, code_diverged: bool=False) -> dict[str, Any]  -- Run the post-run core-change safety gate
+  safety_gate(work_dir: str, *, is_self_referential: bool, test_runner: Optional[Callable[[str], tuple]]=None, code_diverged: bool=False) -> dict[str, Any]  -- Run the post-run core-change safety gate
 DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_selfmod.py
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -53,15 +54,26 @@ def core_files_changed(work_dir: str) -> list[str]:
 DEFAULT_TEST_COMMAND = ["python", "-m", "pytest", "tests", "-x", "-q"]
 
 
-def _default_test_runner(work_dir: str) -> tuple[bool, str]:
-    """Run the project test suite in a fresh interpreter; return (passed, tail-of-output)."""
+def _default_test_runner(work_dir: str) -> tuple[bool, str, str]:
+    """Run the project test suite in a fresh interpreter.
+
+    Returns ``(passed, status, tail-of-output)`` where ``status`` is one of
+    ``"passed"``, ``"failed"``, or ``"timeout"``. A hang (``subprocess.TimeoutExpired``)
+    must NOT be indistinguishable from a genuine assertion failure -- ``safety_gate``
+    needs to fail closed (revert unconditionally) on a timeout, since a hang in core
+    code means the suite never actually finished exercising the change.
+    """
     try:
-        r = subprocess.run(DEFAULT_TEST_COMMAND,
-                           cwd=work_dir, capture_output=True, text=True, timeout=1800)
+        r = subprocess.run(DEFAULT_TEST_COMMAND, cwd=work_dir, capture_output=True, text=True, timeout=1800)
         out = (r.stdout or "") + (r.stderr or "")
-        return r.returncode == 0, out[-1500:]
+        status = "passed" if r.returncode == 0 else "failed"
+        return r.returncode == 0, status, out[-1500:]
+    except subprocess.TimeoutExpired as e:
+        detail = f"test runner TIMEOUT after {getattr(e, 'timeout', 1800)}s (possible hang in core change)"
+        LOG.warning("selfmod: %s", detail)
+        return False, "timeout", detail
     except Exception as e:  # noqa: BLE001
-        return False, f"test runner error: {e}"
+        return False, "failed", f"test runner error: {e}"
 
 
 def revert_core(work_dir: str, files: list[str]) -> None:
@@ -97,16 +109,134 @@ def _unstash_core(work_dir: str, *, restore: bool) -> None:
         LOG.error("selfmod unstash (%s) failed: %s", "pop" if restore else "drop", e)
 
 
-def safety_gate(work_dir: str, *, is_self_referential: bool,
-                test_runner: Optional[Callable[[str], tuple[bool, str]]] = None,
-                code_diverged: bool = False) -> dict[str, Any]:
+def _run_and_classify(runner: Callable[[str], tuple], work_dir: str) -> tuple[bool, str, str]:
+    """Call ``runner`` and normalize its result to ``(passed, status, detail)``.
+
+    Accepts the current 3-tuple contract ``(passed, status, detail)`` as well as the legacy
+    2-tuple ``(passed, detail)`` (still used by some injected test doubles) for backward
+    compatibility -- a legacy 2-tuple never reports "timeout", only "passed"/"failed".
+    """
+    result = runner(work_dir)
+    if len(result) == 3:
+        passed, status, detail = result
+        return bool(passed), status, detail
+    passed, detail = result
+    return bool(passed), ("passed" if passed else "failed"), detail
+
+
+def _divergedResult() -> dict[str, Any]:
+    LOG.warning(
+        "selfmod safety gate: code_diverged=True -- self.code was edited mid-run but "
+        "this process ran pre-edit bytecode; edits are inert until next process restart. "
+        "Refusing to bless as verified by this run."
+    )
+    return {
+        "ran": False,
+        "reason": "self.code diverged mid-run; edits inert until next process -- not verified by this run",
+    }
+
+
+def _revertOnTimeout(work_dir: str, changed: list[str], status: str, output: str) -> dict[str, Any]:
+    # A hang in core code is not something we can reason causality about against a baseline --
+    # fail closed, unconditionally, without ever entering the "keep despite double failure" path.
+    revert_core(work_dir, changed)
+    LOG.warning(
+        "selfmod: first run TIMED OUT (possible hang in core change) -> reverted unconditionally: %s",
+        ", ".join(changed),
+    )
+    return {
+        "ran": True,
+        "passed": False,
+        "status": status,
+        "changed": changed,
+        "reverted": True,
+        "output_tail": output[-500:],
+    }
+
+
+def _revertUnisolated(work_dir: str, changed: list[str], status: str, output: str) -> dict[str, Any]:
+    # couldn't isolate the change -> conservative fallback: revert (old behavior)
+    revert_core(work_dir, changed)
+    LOG.warning("selfmod: could not isolate change for baseline; reverted conservatively: %s", changed)
+    return {
+        "ran": True,
+        "passed": False,
+        "status": status,
+        "changed": changed,
+        "reverted": True,
+        "output_tail": output[-500:],
+    }
+
+
+def _resolveBaselineCausality(
+    work_dir: str, changed: list[str], status: str, output: str, runner: Callable[[str], tuple]
+) -> dict[str, Any]:
+    """Re-run the suite on the stashed (clean) baseline and decide whether the first-run failure
+    is caused by the change (revert) or pre-existing/flaky (keep)."""
+    base_passed, base_status, base_output = _run_and_classify(runner, work_dir)
+    # Only conclude "pre-existing, keep the change" when the baseline is itself a genuine FAILED
+    # result. A baseline TIMEOUT is a different failure signature (its own hang/env hiccup) and
+    # must not be conflated with the first run's failure -- fail closed and revert.
+    if base_status == "failed" and not base_passed:
+        _unstash_core(work_dir, restore=True)  # baseline also genuinely red -> pre-existing -> KEEP
+        LOG.warning(
+            "selfmod: baseline ALSO fails (pre-existing/flaky, not caused by the change) -> "
+            "KEEPING core change: %s",
+            ", ".join(changed),
+        )
+        return {
+            "ran": True,
+            "passed": False,
+            "status": status,
+            "changed": changed,
+            "reverted": False,
+            "kept_despite_failure": True,
+            "output_tail": output[-500:],
+            "baseline_output_tail": base_output[-300:],
+        }
+    # Baseline PASSED (the change broke it) OR baseline TIMED OUT (different/unclear signature) --
+    # either way, revert.
+    _unstash_core(work_dir, restore=False)
+    if base_passed:
+        LOG.warning("selfmod: baseline GREEN, change broke the build -> reverted: %s", ", ".join(changed))
+    else:
+        LOG.warning(
+            "selfmod: baseline TIMED OUT (differs from first-run failure) -> reverting conservatively: %s",
+            ", ".join(changed),
+        )
+    return {
+        "ran": True,
+        "passed": False,
+        "status": status,
+        "changed": changed,
+        "reverted": True,
+        "output_tail": output[-500:],
+        "baseline_status": base_status,
+        "baseline_output_tail": base_output[-300:],
+    }
+
+
+def safety_gate(
+    work_dir: str,
+    *,
+    is_self_referential: bool,
+    test_runner: Optional[Callable[[str], tuple]] = None,
+    code_diverged: bool = False,
+) -> dict[str, Any]:
     """Run the post-run core-change safety gate. Returns a report dict.
 
     No-op unless self-ref + SELFMOD_ALLOW_CORE + core files actually changed. When the suite fails
     WITH the core change, the gate does NOT blindly revert: it re-runs the suite on a clean baseline
-    to decide CAUSALITY. Only if the baseline is GREEN (so the change is what broke it) does it
-    revert. If the baseline ALSO fails, the failure is pre-existing/flaky -- the core improvement is
-    KEPT (the overnight run threw away good work exactly because flaky tests tripped a blind revert).
+    to decide CAUSALITY (see ``_resolveBaselineCausality``). Only if the baseline is GREEN (so the
+    change is what broke it) does it revert. If the baseline ALSO fails -- with a genuine FAILED
+    result, not a timeout -- the failure is pre-existing/flaky, and the core improvement is KEPT
+    (the overnight run threw away good work exactly because flaky tests tripped a blind revert).
+
+    A TIMEOUT is NOT a failure we can reason about causality for: a hang in core code must fail
+    closed, unconditionally. So (a) a first-run TIMEOUT reverts immediately, never entering the
+    baseline/causality dance; and (b) even when the first run genuinely FAILED, the change is only
+    KEPT if the baseline result is itself a genuine FAILED (not a TIMEOUT) -- two failures of
+    different character (one hang, one assertion failure) must never collapse into "pre-existing."
 
     ``code_diverged`` (Task 5.2): when True, on-disk self.code was edited mid-run but this process
     kept running the pre-edit bytecode -- so any test run here would exercise the edited modules,
@@ -114,12 +244,7 @@ def safety_gate(work_dir: str, *, is_self_referential: bool,
     Short-circuit immediately with ran=False and a clear reason; never touch or revert files.
     """
     if code_diverged:
-        LOG.warning("selfmod safety gate: code_diverged=True -- self.code was edited mid-run but "
-                    "this process ran pre-edit bytecode; edits are inert until next process restart. "
-                    "Refusing to bless as verified by this run.")
-        return {"ran": False,
-                "reason": "self.code diverged mid-run; edits inert until next process -- "
-                          "not verified by this run"}
+        return _divergedResult()
 
     if not (is_self_referential and getattr(config, "SELFMOD_ALLOW_CORE", False)):
         return {"ran": False, "reason": "not_enabled"}
@@ -129,27 +254,16 @@ def safety_gate(work_dir: str, *, is_self_referential: bool,
 
     runner = test_runner or _default_test_runner
     LOG.info("selfmod safety gate: core files changed (%s) -> running test suite", changed)
-    passed, output = runner(work_dir)
+    passed, status, output = _run_and_classify(runner, work_dir)
     if passed:
         LOG.info("selfmod safety gate PASSED -- core self-improvement is safe to ship")
         return {"ran": True, "passed": True, "changed": changed}
 
-    # Failed WITH the change. Establish causality against a clean baseline before discarding work.
+    if status == "timeout":
+        return _revertOnTimeout(work_dir, changed, status, output)
+
+    # Failed WITH the change (genuine failure, not a timeout). Establish causality against a
+    # clean baseline before discarding work.
     if not _stash_core(work_dir, changed):
-        # couldn't isolate the change -> conservative fallback: revert (old behavior)
-        revert_core(work_dir, changed)
-        LOG.warning("selfmod: could not isolate change for baseline; reverted conservatively: %s", changed)
-        return {"ran": True, "passed": False, "changed": changed, "reverted": True,
-                "output_tail": output[-500:]}
-    base_passed, base_output = runner(work_dir)
-    if base_passed:
-        _unstash_core(work_dir, restore=False)   # baseline green -> the change broke it -> stay reverted
-        LOG.warning("selfmod: baseline GREEN, change broke the build -> reverted: %s", ", ".join(changed))
-        return {"ran": True, "passed": False, "changed": changed, "reverted": True,
-                "output_tail": output[-500:]}
-    _unstash_core(work_dir, restore=True)        # baseline also red -> pre-existing failure -> KEEP change
-    LOG.warning("selfmod: baseline ALSO fails (pre-existing/flaky, not caused by the change) -> "
-                "KEEPING core change: %s", ", ".join(changed))
-    return {"ran": True, "passed": False, "changed": changed, "reverted": False,
-            "kept_despite_failure": True, "output_tail": output[-500:],
-            "baseline_output_tail": base_output[-300:]}
+        return _revertUnisolated(work_dir, changed, status, output)
+    return _resolveBaselineCausality(work_dir, changed, status, output, runner)
