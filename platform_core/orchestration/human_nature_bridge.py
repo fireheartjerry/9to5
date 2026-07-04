@@ -245,7 +245,9 @@ def attemptSignals(state: Any, subtask: dict) -> dict:
     cold). NEVER fabricates confidence: with no real source it returns {} so intuition
     honestly stays on the "deliberate" default. Gated (no-op {} when HN off), best-effort
     (any error -> {}), never raises."""
-    if not config.HUMAN_NATURE_ENABLED:
+    # Gate on the shortcut too: when it's off, intuition.route can only return "deliberate", so
+    # the (local-Ollama) retrieval embeds here would be pure hot-path waste that can't change routing.
+    if not (config.HUMAN_NATURE_ENABLED and config.HN_INTUITION_SHORTCUT):
         return {}
     try:
         goal = (_meta(state).get("goal_elaborated") or _meta(state).get("goal_raw") or "")
