@@ -235,6 +235,9 @@ class SieCfg:
     PROMPT_PROMOTE_Z: float = _F(default_factory=lambda: _envFloat("PROMPT_PROMOTE_Z", 1.64))
     # --- SIE maintenance / kill switch / training ---
     SIE_AUTO_MAINTENANCE: bool = _F(default_factory=lambda: _envBool("SIE_AUTO_MAINTENANCE", True))
+    # FULL_STACK forces the weekly self-evolution tier (evolve/self-play/curriculum) every run
+    # instead of only in its weekly window; the per-day + idle spawn caps still apply (runaway guard).
+    SIE_FORCE_WEEKLY: bool = _F(default_factory=lambda: _envBool("SIE_FORCE_WEEKLY", _fullStack()))
     SIE_MAINTENANCE_JOIN_SECONDS: float = _F(default_factory=lambda: _envFloat("SIE_MAINTENANCE_JOIN_SECONDS", 180))
     # Global kill switch: revert to the frozen base model + freeze all promotions.
     SIE_KILL_SWITCH: bool = _F(default_factory=lambda: _envBool("SIE_KILL_SWITCH", False))
