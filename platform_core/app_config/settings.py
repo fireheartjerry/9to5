@@ -38,6 +38,7 @@ import os
 import sys
 import threading
 from dataclasses import dataclass, field, fields, replace
+from pathlib import Path
 from typing import Any, Optional
 
 from platform_core.app_config._env import _envBool, _envFloat, _envInt, loadEnvOnce
@@ -423,7 +424,9 @@ def _configureLoggingLocked() -> None:
             except OSError:
                 pass
 
-    log_dir = settings().paths.LOG_PATH
+    # NINE_TO_FIVE_LOG_DIR redirects the log FileHandler (read live so conftest's sandbox works; prod uses LOG_PATH).
+    _override = os.getenv("NINE_TO_FIVE_LOG_DIR", "").strip()
+    log_dir = Path(_override) if _override else settings().paths.LOG_PATH
     log_dir.mkdir(parents=True, exist_ok=True)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     base = logging.getLogger("9to5")

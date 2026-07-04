@@ -51,7 +51,7 @@ LOG = config.getLogger("work_launcher")
 # survives the test, edits the repo, and -- because the child runs its own post-run SIE
 # maintenance in-window -- recursively spawns MORE runs. The guard makes _spawnArgv a
 # no-op returning a sentinel pid whenever a test runner is active or NINE_TO_FIVE_TEST_MODE
-# is set. Production never imports unittest/pytest and never sets the var, so real runs are
+# is set. Production never imports pytest and never sets the var, so real runs are
 # unaffected. Set NINE_TO_FIVE_TEST_MODE=0 to force the real path (the spawn argv tests do).
 _SPAWN_BLOCKED_PID: int = -1
 
@@ -63,9 +63,9 @@ def _spawnBlocked() -> bool:
         return False                       # explicit opt-out: tests that assert the real Popen path
     if env in {"1", "true", "yes", "on"}:
         return True
-    # env unset -> auto-detect a live test runner so a forgotten guard never spawns a real run.
-    # Safe: no production module imports unittest/pytest (only test modules do).
-    return "unittest" in sys.modules or "pytest" in sys.modules
+    # env unset -> block only under a REAL test runner. NOT "unittest" in sys.modules (numpy.testing
+    # / torch import it at load, so real runs carry it -- see discord_client). Detect pytest instead.
+    return os.getenv("PYTEST_CURRENT_TEST") is not None or "pytest" in sys.modules
 
 HOURS_MIN: float = 0.1
 HOURS_MAX: float = 24.0

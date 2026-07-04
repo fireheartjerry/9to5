@@ -146,6 +146,9 @@ def test_env_override_and_rotating_handler_smoke(tmp_path, monkeypatch):
     monkeypatch.setattr(settings_mod, "settings",
                         lambda: replace(real, paths=replace(real.paths, LOG_PATH=tmp_path)))
     monkeypatch.setenv("NINE_TO_FIVE_LOG_LEVEL", "DEBUG")
+    # conftest sets NINE_TO_FIVE_LOG_DIR session-wide (it now redirects the FileHandler); clear it
+    # here so this test's monkeypatched LOG_PATH controls the handler dir instead.
+    monkeypatch.delenv("NINE_TO_FIVE_LOG_DIR", raising=False)
     base.handlers = []
     try:
         settings_mod._configureLogging()

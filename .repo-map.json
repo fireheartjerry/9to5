@@ -697,7 +697,7 @@
       ],
       "callers": [
         "agents.executor",
-        "agents.executor_stream",
+        "agents.executor_stream_results",
         "platform_core.ops.health"
       ]
     },
@@ -728,11 +728,11 @@
           "kind": "function",
           "signature": "(run_cmd: list, run_prompt: str, *, work: str, timeout: int, env: dict, creationflags: int, spec: dict, effort: str, flag, profile, playbook_md: str, claude_md_path, model: str, feed=None, cancel_check=None) -> dict",
           "summary": "Execute one Claude subprocess and return a normalised result dict.",
-          "lineno": 396
+          "lineno": 359
         }
       ],
       "depends_on": [
-        "agents.executor_env",
+        "agents.executor_stream_results",
         "config"
       ],
       "side_effects": [
@@ -745,6 +745,24 @@
         "agents.executor"
       ]
     },
+    "agents.executor_stream_results": {
+      "path": "agents/executor_stream_results.py",
+      "purpose": "Result/metric building for the Claude executor subprocess (split out of executor_stream.py",
+      "exports": [],
+      "depends_on": [
+        "agents.executor_env",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_executor_stream.py"
+      ],
+      "callers": [
+        "agents.executor_stream"
+      ]
+    },
     "agents.gemini_driver": {
       "path": "agents/gemini_driver.py",
       "purpose": "gemini_driver -- the second-brain transport: Google Gemini via the google-genai SDK.",
@@ -754,42 +772,42 @@
           "kind": "class",
           "signature": "",
           "summary": "Base for any Gemini transport failure.",
-          "lineno": 67
+          "lineno": 69
         },
         {
           "name": "GeminiAuthError",
           "kind": "class",
           "signature": "",
           "summary": "Missing / invalid API key (analogue of the old login wall).",
-          "lineno": 71
+          "lineno": 73
         },
         {
           "name": "GeminiBlocked",
           "kind": "class",
           "signature": "",
           "summary": "A safety / permission block stopped the response (analogue of a Cloudflare wall).",
-          "lineno": 75
+          "lineno": 77
         },
         {
           "name": "GeminiRateLimited",
           "kind": "class",
           "signature": "",
           "summary": "Gemini reported a usage / rate / quota limit.",
-          "lineno": 79
+          "lineno": 81
         },
         {
           "name": "GeminiUnavailable",
           "kind": "class",
           "signature": "",
           "summary": "The SDK is not installed, blocked under a test runner, or a transient transport error.",
-          "lineno": 83
+          "lineno": 85
         },
         {
           "name": "GeminiSession",
           "kind": "class",
           "signature": "",
           "summary": "A long-lived Gemini chat session",
-          "lineno": 137
+          "lineno": 139
         }
       ],
       "depends_on": [
@@ -1775,6 +1793,7 @@
         "agents.executor_env",
         "agents.executor_session",
         "agents.executor_stream",
+        "agents.executor_stream_results",
         "agents.gemini_driver",
         "agents.hooks",
         "agents.hooks_selfmod",
@@ -1830,6 +1849,7 @@
         "learning.safety",
         "learning.selfplay",
         "learning.sie",
+        "learning.sie_curriculum",
         "learning.sie_steps",
         "learning.solution_cache",
         "learning.toolsmith",
@@ -1924,6 +1944,7 @@
         "platform_core.orchestration.evidence_gate",
         "platform_core.orchestration.evolution_hook",
         "platform_core.orchestration.execute_attempt_mixin",
+        "platform_core.orchestration.execute_delegates_mixin",
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.fork_policy",
         "platform_core.orchestration.github",
@@ -3126,7 +3147,8 @@
       ],
       "callers": [
         "learning.meta_opt",
-        "learning.selfplay"
+        "learning.selfplay",
+        "learning.sie_curriculum"
       ]
     },
     "learning.dataset": {
@@ -4203,7 +4225,9 @@
       "test": [
         "tests/evolution/test_curriculum.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.sie_curriculum"
+      ]
     },
     "learning.safety": {
       "path": "learning/safety.py",
@@ -4342,6 +4366,24 @@
       ],
       "callers": [
         "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "learning.sie_curriculum": {
+      "path": "learning/sie_curriculum.py",
+      "purpose": "SIE curriculum-and-report step -- extracted from sie.py to hold the size budget.",
+      "exports": [],
+      "depends_on": [
+        "config",
+        "learning.curriculum",
+        "learning.release",
+        "notifications.work_launcher"
+      ],
+      "side_effects": [
+        "may spawn a detached orchestrator run via notifications.work_launcher.spawn"
+      ],
+      "test": [],
+      "callers": [
+        "learning.sie"
       ]
     },
     "learning.sie_steps": {
@@ -6926,6 +6968,7 @@
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.control_review_mixin",
         "platform_core.orchestration.execute_attempt_mixin",
+        "platform_core.orchestration.execute_delegates_mixin",
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.llm_mixin",
         "platform_core.orchestration.run_loop_mixin",
@@ -7142,7 +7185,7 @@
           "kind": "function",
           "signature": "(text, n: int) -> str",
           "summary": "Clamp to n chars, marking a clip with a trailing ellipsis.",
-          "lineno": 156
+          "lineno": 171
         }
       ],
       "depends_on": [
@@ -8872,6 +8915,7 @@
       ],
       "callers": [
         "learning.sie",
+        "learning.sie_curriculum",
         "notifications.bot.cogs.plan_cog",
         "notifications.bot.cogs.runs_cog",
         "notifications.views_run"
@@ -9160,91 +9204,91 @@
           "kind": "class",
           "signature": "",
           "summary": "Epic 1/2/5/6/8 feature flags (formerly llm_epic_flags.py).",
-          "lineno": 60
+          "lineno": 61
         },
         {
           "name": "PromptsCfg",
           "kind": "class",
           "signature": "",
           "summary": "The big authored prompt/brief strings (env-overridable where they always were).",
-          "lineno": 173
+          "lineno": 174
         },
         {
           "name": "Settings",
           "kind": "class",
           "signature": "",
           "summary": "The whole typed registry: one frozen composite per process (swap-on-override).",
-          "lineno": 187
+          "lineno": 188
         },
         {
           "name": "buildSettings",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "Fresh registry: coded defaults < .env (loadEnvOnce) < sie_overrides.json.",
-          "lineno": 234
+          "lineno": 235
         },
         {
           "name": "settings",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "The process-wide registry singleton (lazy, thread-safe).",
-          "lineno": 248
+          "lineno": 249
         },
         {
           "name": "allNames",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Every legacy ALL_CAPS constant name the registry serves (for the facade __all__/__dir__…",
-          "lineno": 273
+          "lineno": 274
         },
         {
           "name": "lookup",
           "kind": "function",
           "signature": "(name: str) -> Any",
           "summary": "Constant by legacy name",
-          "lineno": 278
+          "lineno": 279
         },
         {
           "name": "lookupDomain",
           "kind": "function",
           "signature": "(domains: tuple[str, ...], name: str) -> Any",
           "summary": "lookup() restricted to the given domains (PEP 562 seam for the domain modules).",
-          "lineno": 288
+          "lineno": 289
         },
         {
           "name": "RunFlags",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 308
+          "lineno": 309
         },
         {
           "name": "runFlags",
           "kind": "function",
           "signature": "() -> RunFlags",
           "summary": "The run-scoped flag singleton, seeded from the registry's coded/env defaults.",
-          "lineno": 318
+          "lineno": 319
         },
         {
           "name": "reload",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "Rebuild the registry from the current env + overrides file and reseed run flags.",
-          "lineno": 332
+          "lineno": 333
         },
         {
           "name": "setOverride",
           "kind": "function",
           "signature": "(knob: str, value: Any) -> tuple[bool, bool]",
           "summary": "Live-apply + persist a whitelisted, bounds-checked SIE knob.",
-          "lineno": 346
+          "lineno": 347
         },
         {
           "name": "getLogger",
           "kind": "function",
           "signature": "(name: str='9to5') -> logging.Logger",
           "summary": "Return a child of the configured ``9to5`` logger.",
-          "lineno": 442
+          "lineno": 445
         }
       ],
       "depends_on": [
@@ -10968,6 +11012,7 @@
         "platform_core.orchestration.dual_ledger_planner",
         "platform_core.orchestration.dual_ledger_replan",
         "platform_core.orchestration.evidence_gate",
+        "platform_core.orchestration.execute_delegates_mixin",
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.fork_policy",
         "platform_core.orchestration.judge_panel",
@@ -11459,6 +11504,36 @@
       "test": [
         "tests/orchestration/test_execute_attempt_mixin.py"
       ],
+      "callers": [
+        "platform_core.orchestration.execute_mixin"
+      ]
+    },
+    "platform_core.orchestration.execute_delegates_mixin": {
+      "path": "platform_core/orchestration/execute_delegates_mixin.py",
+      "purpose": "Execute-mixin delegates – quality gate, evidence gate, adversary/SIE delegates, lazy caches.",
+      "exports": [
+        {
+          "name": "OrchestratorExecuteDelegatesMixin",
+          "kind": "class",
+          "signature": "",
+          "summary": "Thin delegates to self_ref_gate/evidence_gate/adversary_loop/dual_ledger_replan, plus l…",
+          "lineno": 28
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.dashboard",
+        "platform_core.orchestration",
+        "platform_core.orchestration.self_ref_gate",
+        "platform_core.runtime.control",
+        "platform_core.runtime.cost_budget",
+        "platform_core.runtime.trajectory",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
       "callers": [
         "platform_core.orchestration.execute_mixin"
       ]
@@ -12347,7 +12422,9 @@
         "tests/execution/test_github_pr_gate.py",
         "tests/orchestration/test_execute_quality_gate.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.execute_delegates_mixin"
+      ]
     },
     "platform_core.orchestration.solution_space": {
       "path": "platform_core/orchestration/solution_space.py",
@@ -12919,6 +12996,7 @@
         "orchestrator",
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.execute_attempt_mixin",
+        "platform_core.orchestration.execute_delegates_mixin",
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.run_loop_mixin",
@@ -13052,7 +13130,9 @@
       "test": [
         "tests/execution/test_cost_budget.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.execute_delegates_mixin"
+      ]
     },
     "platform_core.runtime.heartbeat": {
       "path": "platform_core/runtime/heartbeat.py",
@@ -13263,7 +13343,9 @@
       "test": [
         "tests/orchestration/test_trajectory.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.execute_delegates_mixin"
+      ]
     },
     "platform_core.runtime.worktree": {
       "path": "platform_core/runtime/worktree.py",
@@ -13617,7 +13699,7 @@
           "kind": "function",
           "signature": "(work_dir: str, *, is_self_referential: bool, test_runner: Optional[Callable[[str], tuple]]=None, code_diverged: bool=False) -> dict[str, Any]",
           "summary": "Run the post-run core-change safety gate",
-          "lineno": 127
+          "lineno": 219
         }
       ],
       "depends_on": [
@@ -13969,6 +14051,7 @@
         "platform_core.orchestration.control_review_mixin",
         "platform_core.orchestration.dual_ledger_replan",
         "platform_core.orchestration.execute_attempt_mixin",
+        "platform_core.orchestration.execute_delegates_mixin",
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.knowledge_refresh",
         "platform_core.orchestration.llm_mixin",

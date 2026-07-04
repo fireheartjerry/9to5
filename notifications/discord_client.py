@@ -38,8 +38,21 @@ def _realDiscordBlocked() -> bool:
         return False                       # explicit opt-out: tests that assert the real path
     if allow in {"1", "true", "yes", "on"}:
         return True
-    # env unset -> auto-detect a live test runner so a forgotten/bypassed sandbox never posts live.
-    return "unittest" in sys.modules or "pytest" in sys.modules
+    # env unset -> block only under a REAL test runner. We do NOT sniff "unittest" in sys.modules:
+    # numpy.testing / torch import unittest at load, so every real run carries it -- that false
+    # positive silently killed the live Discord surface (2026-07-03). Detect pytest instead.
+    return os.getenv("PYTEST_CURRENT_TEST") is not None or "pytest" in sys.modules
+
+
+def _warnDiscordBlockedOnce() -> None:
+    """Log ONCE that the guard is suppressing every Discord send -- mirrors gemini_driver's
+    visible refusal (a silent no-op made missing embeds impossible to diagnose)."""
+    global _TEST_GUARD_LOGGED
+    if _TEST_GUARD_LOGGED:
+        return
+    _TEST_GUARD_LOGGED = True
+    LOG.warning("Discord suppressed: test runner (pytest) detected -> all sends dropped (dashboard, "
+                "live terminal, notices). Set NINE_TO_FIVE_TEST_MODE=0 for a deliberate live/sim run.")
 
 _API = "https://discord.com/api/v10"
 
@@ -47,6 +60,7 @@ _API = "https://discord.com/api/v10"
 # Rate-limit state and auth
 # =====================================================================
 _DISABLED = False   # latched ON only by a hard 401 (bad token); never by 403/404
+_TEST_GUARD_LOGGED = False   # once-per-process latch: _realDiscordBlocked() logs its refusal once
 # Global 429 circuit breaker: a monotonic deadline. While now < this, EVERY REST call short-circuits
 # locally (returns None without touching the network). Discord rate-limits are global to the bot, so
 # without this any caller -- the 4s control poll, the dashboard PATCH, parallel workers -- keeps
@@ -99,6 +113,7 @@ def _request(method: str, path: str, *, json: Optional[dict] = None,
     if _DISABLED or not config.DISCORD_BOT_TOKEN or not config.DISCORD_CHANNEL_ID:
         return None
     if _realDiscordBlocked():
+        _warnDiscordBlockedOnce()
         return None
     # Global 429 circuit breaker: while inside the rate-limit window, do not touch the network at all.
     if time.monotonic() < _RATE_LIMITED_UNTIL:

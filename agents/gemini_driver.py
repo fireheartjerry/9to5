@@ -48,8 +48,9 @@ def _realApiBlocked() -> bool:
 
     A live call costs quota and uses the real API key; a test that reaches this path would do
     so slowly and non-deterministically. Mirrors the old driver's ``_realBrowserBlocked`` and
-    ``notifications.work_launcher._spawnBlocked``: production never imports pytest/unittest and
-    never sets the env var, so real runs are unaffected. A deliberate live script opts in with
+    ``notifications.work_launcher._spawnBlocked``: production never imports pytest and never sets
+    the env var (unittest arrives transitively via numpy/torch), so real runs are unaffected. A
+    deliberate live script opts in with
     ``NINE_TO_FIVE_ALLOW_REAL_API=1``."""
     allow = os.getenv("NINE_TO_FIVE_ALLOW_REAL_API", "").strip().lower()
     if allow in {"1", "true", "yes", "on"}:
@@ -59,8 +60,9 @@ def _realApiBlocked() -> bool:
         return False
     if env in {"1", "true", "yes", "on"}:
         return True
-    # env unset -> auto-detect a live test runner so a forgotten mock never hits the API.
-    return "pytest" in sys.modules or "unittest" in sys.modules
+    # env unset -> block only under a REAL test runner. NOT "unittest" in sys.modules (numpy.testing
+    # / torch import it at load, so real runs carry it -- see discord_client). Detect pytest instead.
+    return os.getenv("PYTEST_CURRENT_TEST") is not None or "pytest" in sys.modules
 
 
 # --- typed failures -------------------------------------------------------------------------

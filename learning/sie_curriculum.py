@@ -20,7 +20,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: config, learning.curriculum, learning.release, notifications.work_launcher
 SIDE-EFFECTS: may spawn a detached orchestrator run via notifications.work_launcher.spawn
-RUN/TEST: python -m pytest tests/evolution/test_sie.py
+RUN/TEST: (no mapped test)
 """
 
 from __future__ import annotations

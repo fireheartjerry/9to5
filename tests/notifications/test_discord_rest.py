@@ -145,3 +145,64 @@ class TestFetch(unittest.TestCase):
     def test_baseline_returns_id_only(self):
         with _cfg(), mock.patch.object(d, "_request", return_value=_Resp(200, [{"id": "9"}])):
             self.assertEqual(d.baselineLatestId(), "9")
+
+
+class TestBlockedGuardLogging(unittest.TestCase):
+    """The guard must LOG its refusal ONCE, never drop every Discord send silently -- silent
+    refusal is what made a whole run's missing dashboard/terminal embeds undiagnosable."""
+
+    def test_guard_logs_once_when_blocking(self):
+        import contextlib
+        import logging
+        _dc_mod._DISABLED = False
+        _dc_mod._RATE_LIMITED_UNTIL = 0.0
+        records = []
+
+        class _Cap(logging.Handler):
+            def emit(self, r):
+                records.append(r)
+
+        cap = _Cap()
+        _dc_mod.LOG.addHandler(cap)
+        try:
+            with contextlib.ExitStack() as es:
+                es.enter_context(mock.patch.multiple(config, DISCORD_BOT_TOKEN="t", DISCORD_CHANNEL_ID=123))
+                es.enter_context(mock.patch.object(_dc_mod, "_realDiscordBlocked", return_value=True))
+                es.enter_context(mock.patch.object(_dc_mod, "_TEST_GUARD_LOGGED", False))
+                self.assertIsNone(_dc_mod._request("POST", "/x", json={}, retries=0))
+                self.assertIsNone(_dc_mod._request("POST", "/x", json={}, retries=0))
+        finally:
+            _dc_mod.LOG.removeHandler(cap)
+        warnings = [r for r in records
+                    if r.levelno == logging.WARNING and "test runner" in r.getMessage()]
+        self.assertEqual(len(warnings), 1, "guard must log its refusal exactly once per process")
+
+
+class TestGuardNoFalsePositiveInProd(unittest.TestCase):
+    """Regression (2026-07-03): the ML/vector stack every real run loads pulls ``unittest`` into
+    sys.modules (numpy.testing does ``from unittest import TestCase``; torch too). The OLD guard
+    sniffed ``"unittest" in sys.modules`` and silently suppressed the live Discord dashboard +
+    terminal on ordinary runs. A prod-like process (no pytest signals) with the ML stack loaded
+    must NOT trip the guard."""
+
+    def test_numpy_testing_import_does_not_block_discord_in_prod(self):
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        root = Path(_dc_mod.__file__).resolve().parents[1]
+        lines = [
+            "import sys, numpy.testing",
+            "assert 'unittest' in sys.modules",
+            "from notifications import discord_client as dc",
+            "assert dc._realDiscordBlocked() is False, 'guard false-positive: unittest present'",
+            "print('PROD_OK')",
+        ]
+        code = chr(10).join(lines)
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("PYTEST_CURRENT_TEST", "NINE_TO_FIVE_TEST_MODE")}
+        r = subprocess.run([sys.executable, "-c", code], cwd=str(root),
+                           capture_output=True, text=True, env=env, timeout=120)
+        self.assertEqual(r.returncode, 0, f"stdout={r.stdout!r} stderr={r.stderr[-800:]!r}")
+        self.assertIn("PROD_OK", r.stdout)
