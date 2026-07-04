@@ -25,6 +25,7 @@ expects still assert EVERY needle, enumerated-requirement extraction still power
 decomposition, targets survive sanitization, and the plan strengthener attaches
 diff-grounded targets to multi-requirement subtasks.
 """
+
 from __future__ import annotations
 
 import json
@@ -39,6 +40,7 @@ from agents import verification, verifier
 def _initRepo(tmp: str) -> None:
     def git(*args):
         subprocess.run(["git", "-C", tmp, *args], check=True, capture_output=True, text=True)
+
     subprocess.run(["git", "init", tmp], check=True, capture_output=True, text=True)
     git("config", "user.email", "t@example.com")
     git("config", "user.name", "9TO5-tests")
@@ -46,8 +48,9 @@ def _initRepo(tmp: str) -> None:
 
 def _commitAll(tmp: str, msg: str = "snap") -> None:
     subprocess.run(["git", "-C", tmp, "add", "-A"], check=True, capture_output=True, text=True)
-    subprocess.run(["git", "-C", tmp, "commit", "-m", msg, "--no-verify"],
-                   check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "-C", tmp, "commit", "-m", msg, "--no-verify"], check=True, capture_output=True, text=True
+    )
 
 
 class TestStrictExpectNoTestRunnerOverride(unittest.TestCase):
@@ -56,11 +59,10 @@ class TestStrictExpectNoTestRunnerOverride(unittest.TestCase):
     def test_green_test_script_with_missing_needle_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = Path(tmp) / "test_dummy.py"
-            script.write_text('print("1 passed")\n', encoding="utf-8")   # exits 0
+            script.write_text('print("1 passed")\n', encoding="utf-8")  # exits 0
             v = {"cmd": f'python "{script}"', "expect": "stdout_contains:NEEDLE_NOT_THERE"}
             res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
-            self.assertFalse(res["passed"],
-                             "rc==0 test-runner must NOT rescue a missed expect (R10)")
+            self.assertFalse(res["passed"], "rc==0 test-runner must NOT rescue a missed expect (R10)")
             self.assertIs(res.receipt.verdict, verification.Verdict.FAIL)
             self.assertIn("NEEDLE_NOT_THERE", res.receipt.missing)
 
@@ -74,8 +76,9 @@ class TestStrictExpectNoTestRunnerOverride(unittest.TestCase):
             self.assertIn("MARKER_OK", res.receipt.matched)
 
     def test_no_test_runner_symbol_remains(self):
-        self.assertFalse(hasattr(verification, "_isTestRunner"),
-                         "the cmd-shape special case must stay deleted")
+        self.assertFalse(
+            hasattr(verification, "_isTestRunner"), "the cmd-shape special case must stay deleted"
+        )
 
 
 class TestDiffGroundedTargets(unittest.TestCase):
@@ -86,14 +89,13 @@ class TestDiffGroundedTargets(unittest.TestCase):
             _initRepo(tmp)
             target = Path(tmp) / "webdash.py"
             target.write_text(
-                "# auto-refresh meta tag, elapsed-time line, green red color coding\n"
-                'print("ok")\n', encoding="utf-8")
-            _commitAll(tmp)          # committed and NOT changed since -> no diff
-            v = {"cmd": f'python "{target}"', "expect": "exit_zero",
-                 "targets": [str(target)]}
+                '# auto-refresh meta tag, elapsed-time line, green red color coding\nprint("ok")\n',
+                encoding="utf-8",
+            )
+            _commitAll(tmp)  # committed and NOT changed since -> no diff
+            v = {"cmd": f'python "{target}"', "expect": "exit_zero", "targets": [str(target)]}
             res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
-            self.assertFalse(res["passed"],
-                             "goal words in a comment must not certify unchanged work")
+            self.assertFalse(res["passed"], "goal words in a comment must not certify unchanged work")
             self.assertIs(res.receipt.verdict, verification.Verdict.FAIL)
 
     def test_unchanged_declared_target_fails_with_actionable_feedback(self):
@@ -115,7 +117,7 @@ class TestDiffGroundedTargets(unittest.TestCase):
             target = Path(tmp) / "feature.py"
             target.write_text('print("v1")\n', encoding="utf-8")
             _commitAll(tmp)
-            target.write_text('print("v2")\n', encoding="utf-8")   # modified -> in the diff
+            target.write_text('print("v2")\n', encoding="utf-8")  # modified -> in the diff
             v = {"cmd": f'python "{target}"', "expect": "exit_zero", "targets": [str(target)]}
             res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
             self.assertTrue(res["passed"], res.receipt.failure_feedback)
@@ -135,8 +137,7 @@ class TestDiffGroundedTargets(unittest.TestCase):
             target = Path(tmp) / "feature.py"
             target.write_text('print("ok")\n', encoding="utf-8")
             _commitAll(tmp)
-            res = verifier.runVerification({"targets": [str(target)]}, tmp,
-                                           {"ok": True, "returncode": 0})
+            res = verifier.runVerification({"targets": [str(target)]}, tmp, {"ok": True, "returncode": 0})
             self.assertFalse(res["passed"])
             self.assertIn("feature.py", res.receipt.failure_feedback)
 
@@ -154,8 +155,8 @@ class TestPureVerdict(unittest.TestCase):
         (0, "a c", "stdout_contains_all:a||b||c", verification.Verdict.FAIL),
         (0, "value=42", r"stdout_regex:value=\d+", verification.Verdict.PASS),
         (None, "x", "exit_zero", verification.Verdict.ERROR),
-        (0, "x", "", verification.Verdict.ERROR),                 # missing expect: never guessed
-        (0, "x", "made_up_mode", verification.Verdict.ERROR),     # unknown shape: fail closed
+        (0, "x", "", verification.Verdict.ERROR),  # missing expect: never guessed
+        (0, "x", "made_up_mode", verification.Verdict.ERROR),  # unknown shape: fail closed
         (0, "x", "stdout_regex:([", verification.Verdict.ERROR),  # bad regex: unevaluable
     ]
 
@@ -169,7 +170,7 @@ class TestPureVerdict(unittest.TestCase):
             v = {"cmd": 'python -c "print(42)"', "expect": "stdout_contains:42"}
             res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
             self.assertTrue(res["passed"])
-            json.dumps(res)   # dict subclass must persist through state.recordVerify
+            json.dumps(res)  # dict subclass must persist through state.recordVerify
 
 
 class TestSanitizerRejectsMissingExpect(unittest.TestCase):
@@ -180,8 +181,9 @@ class TestSanitizerRejectsMissingExpect(unittest.TestCase):
 
     def test_runner_never_guesses_a_missing_expect(self):
         with tempfile.TemporaryDirectory() as tmp:
-            res = verifier.runVerification({"cmd": 'python -c "print(1)"'}, tmp,
-                                           {"ok": True, "returncode": 0})
+            res = verifier.runVerification(
+                {"cmd": 'python -c "print(1)"'}, tmp, {"ok": True, "returncode": 0}
+            )
             # the verify is rejected -> executor-exit fallback, explicitly NOT a behavioral pass
             self.assertEqual(res["expect"], "executor_exit_zero")
             self.assertIsNone(res["cmd"])
@@ -216,10 +218,23 @@ class TestVerifyShellSafety(unittest.TestCase):
         self.assertIsNone(self._san('python -c "print(1)"; rm -rf x'))
         self.assertIsNone(self._san('python -c "print(1)" | tee out'))
 
+    def test_python_dash_c_unquoted_destructive_body_is_dropped(self):
+        # unquoted single-token body, no shell metachars -- previously bypassed AST validation
+        self.assertIsNone(self._san('python -c __import__("shutil").rmtree("C:/x")'))
+        self.assertIsNone(self._san("python -c os.system('echo hi')"))
+
+    def test_python_dash_c_unquoted_safe_body_is_still_dropped_fail_closed(self):
+        # even a harmless unquoted body is rejected fail-closed; the quoted-and-validated
+        # path (test_clean_commands_pass / test_python_dash_c_with_pipe_in_body_is_exempt)
+        # is unaffected.
+        self.assertIsNone(self._san("python -c print(1)"))
+
 
 # The exact goal from the multi-requirement bug report.
-_MULTI_REQ_GOAL = ("improve notifications/webdash.py with (1) auto-refresh meta tag, "
-                    "(2) elapsed-time line, (3) per-subtask green/red color coding.")
+_MULTI_REQ_GOAL = (
+    "improve notifications/webdash.py with (1) auto-refresh meta tag, "
+    "(2) elapsed-time line, (3) per-subtask green/red color coding."
+)
 
 
 class TestCompoundExpectation(unittest.TestCase):
@@ -227,22 +242,22 @@ class TestCompoundExpectation(unittest.TestCase):
 
     def test_contains_all_fails_when_only_one_of_three_present(self):
         haystack = '<meta http-equiv="refresh" content="5">'
-        self.assertFalse(
-            verifier._evaluate("stdout_contains_all:refresh||elapsed||green", 0, haystack))
+        self.assertFalse(verifier._evaluate("stdout_contains_all:refresh||elapsed||green", 0, haystack))
 
     def test_contains_all_passes_when_all_three_present(self):
-        haystack = 'refresh ... elapsed: 3s ... color:green'
-        self.assertTrue(
-            verifier._evaluate("stdout_contains_all:refresh||elapsed||green", 0, haystack))
+        haystack = "refresh ... elapsed: 3s ... color:green"
+        self.assertTrue(verifier._evaluate("stdout_contains_all:refresh||elapsed||green", 0, haystack))
 
     def test_regex_all_fails_when_one_pattern_missing(self):
         haystack = 'http-equiv="refresh" elapsed: 3s'
         self.assertFalse(
-            verifier._evaluate(r"stdout_regex_all:refresh||elapsed||color\s*:\s*(green|red)", 0, haystack))
+            verifier._evaluate(r"stdout_regex_all:refresh||elapsed||color\s*:\s*(green|red)", 0, haystack)
+        )
 
     def test_verdict_reports_matched_and_missing_needles(self):
         verdict, matched, missing = verifier.verdictFor(
-            0, "refresh only", "stdout_contains_all:refresh||elapsed||green")
+            0, "refresh only", "stdout_contains_all:refresh||elapsed||green"
+        )
         self.assertIs(verdict, verifier.Verdict.FAIL)
         self.assertEqual(matched, ("refresh",))
         self.assertEqual(set(missing), {"elapsed", "green"})
@@ -267,8 +282,7 @@ class TestDeclaredTargets(unittest.TestCase):
     be attached by the plan strengthener for multi-requirement subtasks."""
 
     def test_targets_survive_sanitize_alongside_a_real_cmd(self):
-        v = {"cmd": "python C:\\9to5\\x.py", "expect": "exit_zero",
-             "targets": ["notifications/webdash.py"]}
+        v = {"cmd": "python C:\\9to5\\x.py", "expect": "exit_zero", "targets": ["notifications/webdash.py"]}
         kept = verifier.sanitizeVerify(v)
         self.assertIsNotNone(kept)
         self.assertEqual(kept["targets"], ["notifications/webdash.py"])
@@ -276,23 +290,35 @@ class TestDeclaredTargets(unittest.TestCase):
     def test_targets_survive_when_cmd_is_dropped(self):
         # a rejected cmd (angle brackets) must NOT throw away the declared targets --
         # diff grounding is part of the acceptance contract even without a runnable cmd.
-        v = {"cmd": "python <ABSOLUTE path>", "expect": "exit_zero",
-             "targets": ["notifications/webdash.py"]}
+        v = {"cmd": "python <ABSOLUTE path>", "expect": "exit_zero", "targets": ["notifications/webdash.py"]}
         kept = verifier.sanitizeVerify(v)
         self.assertEqual(kept, {"targets": ["notifications/webdash.py"]})
 
     def test_strengthener_attaches_targets_to_multi_requirement_subtasks(self):
         from platform_core.orchestration.subtask import _strengthenPlanVerifies
-        subs = [{"title": "webdash refresh + elapsed",
-                 "description": "add the auto-refresh meta tag and the elapsed-time line",
-                 "verify": {"cmd": "python C:\\9to5\\x.py", "expect": "exit_zero"}}]
+
+        subs = [
+            {
+                "title": "webdash refresh + elapsed",
+                "description": "add the auto-refresh meta tag and the elapsed-time line",
+                "verify": {"cmd": "python C:\\9to5\\x.py", "expect": "exit_zero"},
+            }
+        ]
         out = _strengthenPlanVerifies(_MULTI_REQ_GOAL, subs)
-        self.assertTrue((out[0]["verify"] or {}).get("targets"),
-                        "multi-requirement subtask must declare a diff-grounded target")
+        self.assertTrue(
+            (out[0]["verify"] or {}).get("targets"),
+            "multi-requirement subtask must declare a diff-grounded target",
+        )
 
     def test_strengthener_skips_single_requirement_subtasks(self):
         from platform_core.orchestration.subtask import _strengthenPlanVerifies
-        subs = [{"title": "unrelated docs pass", "description": "tidy the readme wording",
-                 "verify": {"cmd": "python C:\\9to5\\x.py", "expect": "exit_zero"}}]
+
+        subs = [
+            {
+                "title": "unrelated docs pass",
+                "description": "tidy the readme wording",
+                "verify": {"cmd": "python C:\\9to5\\x.py", "expect": "exit_zero"},
+            }
+        ]
         out = _strengthenPlanVerifies(_MULTI_REQ_GOAL, subs)
         self.assertIsNone((out[0]["verify"] or {}).get("targets"))

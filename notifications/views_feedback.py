@@ -7,12 +7,13 @@ DEPENDS-ON: config, notifications.slash, notifications.views_control
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_views.py
 """
+
 from __future__ import annotations
 
 import discord
 
 import config
-from notifications.views_control import _applyButtonIcons
+from notifications.views_control import _applyButtonIcons, _skipCurrent
 import notifications.slash as slash
 
 LOG = config.getLogger("feedback_view")
@@ -23,13 +24,14 @@ class FeedbackView(discord.ui.View):
 
     Offers four feedback buttons (Approve/Reject/Skip/Retry) that capture human
     decisions and route them through the control layer. Each button click:
-    1. Calls slash._runControl() with the appropriate kind (approve/reject/skip/retry)
+    1. Calls slash._runControl() (approve/reject/retry) or views_control._skipCurrent() (skip)
     2. Captures the decision as implicit feedback (subsystem J) for RLHF training
     3. Shows ephemeral feedback to the user
     4. Logs to the audit trail (if mutating)
 
     This view is persistent (timeout=None) so it survives restarts.
     """
+
     def __init__(self):
         super().__init__(timeout=None)
         _applyButtonIcons(self)
@@ -41,9 +43,7 @@ class FeedbackView(discord.ui.View):
             await slash._runControl(interaction, "approve")
         except Exception:  # noqa: BLE001
             LOG.exception("Error approving subtask")
-            await interaction.followup.send(
-                "Feedback failed to save. Check logs.", ephemeral=True
-            )
+            await interaction.followup.send("Feedback failed to save. Check logs.", ephemeral=True)
 
     @discord.ui.button(label="Reject", style=discord.ButtonStyle.danger, custom_id="fb_reject")
     async def reject(self, interaction, button):  # noqa: ANN001
@@ -52,20 +52,16 @@ class FeedbackView(discord.ui.View):
             await slash._runControl(interaction, "reject")
         except Exception:  # noqa: BLE001
             LOG.exception("Error rejecting subtask")
-            await interaction.followup.send(
-                "Feedback failed to save. Check logs.", ephemeral=True
-            )
+            await interaction.followup.send("Feedback failed to save. Check logs.", ephemeral=True)
 
     @discord.ui.button(label="Skip", style=discord.ButtonStyle.secondary, custom_id="fb_skip")
     async def skip(self, interaction, button):  # noqa: ANN001
         """Skip the current subtask."""
         try:
-            await slash._runControl(interaction, "skip")
+            await _skipCurrent(interaction, "feedback")
         except Exception:  # noqa: BLE001
             LOG.exception("Error skipping subtask")
-            await interaction.followup.send(
-                "Feedback failed to save. Check logs.", ephemeral=True
-            )
+            await interaction.followup.send("Feedback failed to save. Check logs.", ephemeral=True)
 
     @discord.ui.button(label="Retry", style=discord.ButtonStyle.primary, custom_id="fb_retry")
     async def retry(self, interaction, button):  # noqa: ANN001
@@ -74,6 +70,4 @@ class FeedbackView(discord.ui.View):
             await slash._runControl(interaction, "retry")
         except Exception:  # noqa: BLE001
             LOG.exception("Error retrying subtask")
-            await interaction.followup.send(
-                "Feedback failed to save. Check logs.", ephemeral=True
-            )
+            await interaction.followup.send("Feedback failed to save. Check logs.", ephemeral=True)

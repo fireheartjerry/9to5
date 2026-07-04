@@ -27,7 +27,7 @@ LOG = config.getLogger("executor.env")
 
 def normalizeSpec(spec_or_prompt: Union[dict, str, None]) -> dict:
     """Accept a full invocation spec dict OR a bare prompt string; return a full spec."""
-    base = {
+    base: dict = {
         "prompt": "",
         "claude_md_inject": "",
         "skills_to_invoke": [],

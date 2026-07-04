@@ -9,10 +9,12 @@ DEPENDS-ON: config, notifications.audit, notifications.commands, notifications.d
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_ops.py
 """
+
 from __future__ import annotations
 
 import asyncio
 import time
+from typing import Optional
 
 from discord.ext import commands as dpy_commands
 from discord.ext import tasks
@@ -30,7 +32,7 @@ LOG = config.getLogger("cog.ops")
 class OpsCog(dpy_commands.Cog):
     def __init__(self, bot: dpy_commands.Bot) -> None:
         self.bot = bot
-        self._alerted: set = set()
+        self._alertedTaskId: Optional[str] = None
         if config.WATCHDOG_ENABLED:
             self.watchdog.start()
 
@@ -68,7 +70,7 @@ class OpsCog(dpy_commands.Cog):
         if not gate:
             return
         audit.record(user_id, verdict, state.task_id, "reaction")
-        if verdict == "abort":   # consistent with the poll path; reactions currently only emit approve/reject
+        if verdict == "abort":  # consistent with the poll path; reactions currently only emit approve/reject
             bus.requestAbort()
             LOG.info("super-reaction -> ABORT run (was at gate %s)", gate)
         else:
@@ -82,15 +84,18 @@ class OpsCog(dpy_commands.Cog):
             if state is None:
                 return
             if ops.runIsStale(state, time.time()):
-                if state.task_id not in self._alerted:
-                    self._alerted.add(state.task_id)
+                if state.task_id != self._alertedTaskId:
+                    self._alertedTaskId = state.task_id
                     await asyncio.to_thread(
                         discord.sendEmbed,
                         discord.noticeEmbed(
                             f"Run `{state.task_id[:8]}` has emitted no event for "
-                            f">{ops.STALE_SECONDS // 60}m — possible stall.", "Watchdog"))
-            else:
-                self._alerted.discard(state.task_id)
+                            f">{ops.STALE_SECONDS // 60}m — possible stall.",
+                            "Watchdog",
+                        ),
+                    )
+            elif state.task_id == self._alertedTaskId:
+                self._alertedTaskId = None
         except Exception:  # noqa: BLE001 -- the watchdog must never crash the gateway
             LOG.warning("watchdog tick failed", exc_info=True)
 

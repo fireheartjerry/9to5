@@ -13,8 +13,10 @@ DEPENDS-ON: config, platform_core.core.identity, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_epoch.py
 """
+
 from __future__ import annotations
 
+import contextlib
 import copy
 import hashlib
 import sqlite3
@@ -30,8 +32,13 @@ from platform_core.runtime import perf
 
 def _gitSha() -> Optional[str]:
     try:
-        out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(identity.PROJECT_ROOT),
-                             capture_output=True, text=True, timeout=10)
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(identity.PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
         return out.stdout.strip() or None
     except Exception:  # noqa: BLE001
         return None
@@ -79,33 +86,56 @@ def _fingerprintCached(paths: list[str]) -> dict[str, str]:
     files: dict[str, str] = {}
     seen = {str(p).lower() for p in paths}
     try:
-        with _cacheConn() as conn:
-            cached = {r["path"]: r for r in conn.execute("SELECT * FROM file_hashes")}
-            for raw in paths:
-                key = str(raw).lower()
-                try:
-                    st = Path(raw).stat()
-                except Exception:
-                    st = None
-                size = int(getattr(st, "st_size", -1)) if st is not None else -1
-                mtime_ns = int(getattr(st, "st_mtime_ns", -1)) if st is not None else -1
-                row = cached.get(key)
-                if row and int(row["size"]) == size and int(row["mtime_ns"]) == mtime_ns:
-                    digest = str(row["sha256"])
-                else:
-                    digest = _hashFile(raw)
-                    conn.execute(
-                        """INSERT OR REPLACE INTO file_hashes(path, size, mtime_ns, sha256)
-                           VALUES (?, ?, ?, ?)""",
-                        (key, size, mtime_ns, digest),
-                    )
-                files[key] = digest
-            if seen:
-                stale = [p for p in cached if p not in seen]
-                conn.executemany("DELETE FROM file_hashes WHERE path=?", [(p,) for p in stale])
+        # contextlib.closing: sqlite3's own context manager only commits/rolls back the
+        # transaction, it does NOT close the connection. Without an explicit close, every
+        # call here (invoked at every subtask boundary) leaks one open sqlite handle --
+        # hundreds over a long run -- relying on GC to eventually reclaim them, and on
+        # Windows an open handle can hold a file lock blocking later state/ cleanup.
+        with contextlib.closing(_cacheConn()) as conn:
+            with conn:
+                cached = {r["path"]: r for r in conn.execute("SELECT * FROM file_hashes")}
+                for raw in paths:
+                    key = str(raw).lower()
+                    try:
+                        st = Path(raw).stat()
+                    except Exception:
+                        st = None
+                    size = int(getattr(st, "st_size", -1)) if st is not None else -1
+                    mtime_ns = int(getattr(st, "st_mtime_ns", -1)) if st is not None else -1
+                    row = cached.get(key)
+                    if row and int(row["size"]) == size and int(row["mtime_ns"]) == mtime_ns:
+                        digest = str(row["sha256"])
+                    else:
+                        digest = _hashFile(raw)
+                        conn.execute(
+                            """INSERT OR REPLACE INTO file_hashes(path, size, mtime_ns, sha256)
+                               VALUES (?, ?, ?, ?)""",
+                            (key, size, mtime_ns, digest),
+                        )
+                    files[key] = digest
+                if seen:
+                    stale = [p for p in cached if p not in seen]
+                    conn.executemany("DELETE FROM file_hashes WHERE path=?", [(p,) for p in stale])
         return files
     except Exception:  # noqa: BLE001 -- cache failure falls back to exact full hash
         return {str(path).lower(): _hashFile(path) for path in paths}
+
+
+def _fingerprintFiles() -> dict[str, str]:
+    """Content hash of every self.code module, computed the SAME way regardless of the
+    ``REPO_MERKLE_CACHE_ENABLED`` cache knob, and WITHOUT ``_gitSha()``.
+
+    This exclusively feeds the safety-critical ``diverged()`` check, so it must always
+    hash file content rather than trust ``_fingerprintCached``'s (size, mtime_ns)
+    shortcut: a same-size in-place edit that lands on the same mtime_ns (a coarse-mtime
+    filesystem, an editor that restores timestamps, or a low-resolution clock) would
+    otherwise return a STALE hash, making ``diverged()`` say False for code that actually
+    changed -- silently defeating the divergence gate on the exact edits it exists to
+    catch. The self.code set is small (~0.3s to hash in full), so always hashing here is
+    affordable. ``git_sha`` is skipped too: ``diverged()`` never reads it, so computing it
+    would just be a wasted blocking git subprocess on this hot, lock-held path."""
+    paths = identity.selfCodeFiles()
+    return {str(p).lower(): _hashFile(p) for p in paths}
 
 
 def fingerprint() -> dict[str, Any]:
@@ -127,8 +157,12 @@ import config  # noqa: E402 -- intentional late import to avoid circular deps
 # The config constants whose values govern a run and must be pinned (the hook + loop read
 # these from the epoch, never a live re-import). Mirrors config.SIE_TUNABLE_KNOBS + flags.
 _PINNED_KNOBS: tuple[str, ...] = (
-    "MAX_SUBTASK_ATTEMPTS", "RETRIEVAL_K", "ADVERSARY_HEARTBEAT_EVERY",
-    "PROMPT_PROMOTE_MIN_USES", "CONFIDENCE_DEFER_THRESHOLD", "SELFMOD_ALLOW_CORE",
+    "MAX_SUBTASK_ATTEMPTS",
+    "RETRIEVAL_K",
+    "ADVERSARY_HEARTBEAT_EVERY",
+    "PROMPT_PROMOTE_MIN_USES",
+    "CONFIDENCE_DEFER_THRESHOLD",
+    "SELFMOD_ALLOW_CORE",
 )
 
 
@@ -137,35 +171,78 @@ class Epoch:
     config_knobs: dict[str, Any]
     universe: dict[str, Any]
     brain_tag: Optional[str]
-    code: dict[str, Any]            # the fingerprint()
-    core_protected_files: tuple     # pinned CORE_PROTECTED_FILES (so a mid-run edit cannot change it)
+    code: dict[str, Any]  # the fingerprint()
+    core_protected_files: tuple  # pinned CORE_PROTECTED_FILES (so a mid-run edit cannot change it)
 
     def toDict(self) -> dict[str, Any]:
-        return {"config_knobs": dict(self.config_knobs),
-                "universe": copy.deepcopy(self.universe),
-                "brain_tag": self.brain_tag,
-                "code": copy.deepcopy(self.code),
-                "core_protected_files": list(self.core_protected_files)}
+        return {
+            "config_knobs": dict(self.config_knobs),
+            "universe": copy.deepcopy(self.universe),
+            "brain_tag": self.brain_tag,
+            "code": copy.deepcopy(self.code),
+            "core_protected_files": list(self.core_protected_files),
+        }
 
     @classmethod
     def fromDict(cls, d: dict[str, Any]) -> "Epoch":
-        return cls(config_knobs=dict(d.get("config_knobs") or {}),
-                   universe=dict(d.get("universe") or {}),
-                   brain_tag=d.get("brain_tag"), code=d.get("code") or {},
-                   core_protected_files=tuple(d.get("core_protected_files") or []))
+        return cls(
+            config_knobs=dict(d.get("config_knobs") or {}),
+            universe=dict(d.get("universe") or {}),
+            brain_tag=d.get("brain_tag"),
+            code=d.get("code") or {},
+            core_protected_files=tuple(d.get("core_protected_files") or []),
+        )
+
+
+def _warnIfProjectRootMismatch() -> None:
+    """Log loudly (never raise) when ``config.PROJECT_ROOT`` disagrees with
+    ``identity.PROJECT_ROOT``. ``epoch``'s fingerprint/diverged/selfCodeFiles all root on
+    ``identity.PROJECT_ROOT``, but other subsystems (e.g. the run loop's self-referential
+    detection) root on ``config.PROJECT_ROOT``. If the two resolve to different trees, a
+    run can be classified self-referential (core-file locks applied) against one tree
+    while the epoch pins/diverges against a DIFFERENT one -- the safety gate then reasons
+    about a code set that isn't the one actually being edited. This is a visibility check,
+    not a hard failure: crashing snapshot() would be worse than a silent two-tree run."""
+    try:
+        cfg_root = Path(getattr(config, "PROJECT_ROOT", identity.PROJECT_ROOT)).resolve()
+        self_root = Path(identity.PROJECT_ROOT).resolve()
+    except Exception:  # noqa: BLE001 -- never let the check itself break snapshot()
+        return
+    if cfg_root != self_root:
+        import logging
+
+        logging.getLogger(__name__).error(
+            "epoch: config.PROJECT_ROOT (%s) != identity.PROJECT_ROOT (%s) -- the "
+            "self-referential/core-lock check and the epoch fingerprint/diverged check "
+            "may be reasoning about two different trees.",
+            cfg_root,
+            self_root,
+        )
 
 
 def snapshot(*, universe: Optional[dict] = None, brain_tag: Optional[str] = None) -> Epoch:
     """Freeze governing state at process/run start. Deep-copies values so later mutation
     of config or the universe dict cannot change what was pinned."""
+    _warnIfProjectRootMismatch()
     knobs = {k: getattr(config, k, None) for k in _PINNED_KNOBS}
     uni = dict(universe or {})
     uni["hard_boundaries"] = list(uni.get("hard_boundaries") or [])
     core_files = tuple(getattr(config, "CORE_PROTECTED_FILES", ()) or ())
-    return Epoch(config_knobs=knobs, universe=uni, brain_tag=brain_tag, code=fingerprint(),
-                 core_protected_files=core_files)
+    return Epoch(
+        config_knobs=knobs,
+        universe=uni,
+        brain_tag=brain_tag,
+        code=fingerprint(),
+        core_protected_files=core_files,
+    )
 
 
 def diverged(pinned: Epoch) -> bool:
-    """True iff the on-disk self.code differs from what was pinned at snapshot time."""
-    return fingerprint()["files"] != pinned.code.get("files", {})
+    """True iff the on-disk self.code differs from what was pinned at snapshot time.
+
+    Uses ``_fingerprintFiles()`` rather than ``fingerprint()``: this hot path is called
+    once per subtask boundary inside a serialized lock (see ``subtask.py``), needs only
+    the "files" hash set (``git_sha``/``root_hash`` are never consulted here), and must
+    not trust the mtime-based cache shortcut for a safety-critical check (see
+    ``_fingerprintFiles`` docstring)."""
+    return _fingerprintFiles() != pinned.code.get("files", {})

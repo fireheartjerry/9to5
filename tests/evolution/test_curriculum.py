@@ -6,6 +6,7 @@ family_stats/generate_goals/write_suggestions (+ learning/release.py), the secon
 as an integration test of the adaptive trigger that auto-queues curriculum goals
 from learning/sie.py::_curriculum_and_report once >=5 new feedback records land.
 """
+
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -15,6 +16,7 @@ from unittest import mock
 import config
 from learning import curriculum, release, sie
 from memory import experience, retrieval
+
 # The code under test (learning/sie.py::_curriculum_and_report) resolves spawn at call
 # time as `from notifications import work_launcher; work_launcher.spawn(...)` -- a plain
 # attribute lookup on this same module object. Import it once here and patch that
@@ -44,17 +46,23 @@ class _Base(unittest.TestCase):
 
     def _fam(self, fam, passed, n):
         for i in range(n):
-            experience.record_subtask("r1", {
-                "subtask_id": f"{fam}-{int(passed)}-{i}", "title": f"{fam} task",
-                "status": "done", "verify_result": {"passed": passed},
-                "session": {"attempts": 1, "effort": "high"},
-            }, db_path=self.db)
+            experience.record_subtask(
+                "r1",
+                {
+                    "subtask_id": f"{fam}-{int(passed)}-{i}",
+                    "title": f"{fam} task",
+                    "status": "done",
+                    "verify_result": {"passed": passed},
+                    "session": {"attempts": 1, "effort": "high"},
+                },
+                db_path=self.db,
+            )
 
 
 class TestCurriculum(_Base):
     def test_weakest_family_first(self):
-        self._fam("alpha", True, 5)              # strong: 100%
-        self._fam("beta", False, 5)             # weak: 0%
+        self._fam("alpha", True, 5)  # strong: 100%
+        self._fam("beta", False, 5)  # weak: 0%
         stats = curriculum.family_stats(min_support=3, db_path=self.db)
         self.assertEqual(stats[0]["family"], "beta")
         self.assertAlmostEqual(stats[0]["first_pass_rate"], 0.0)
@@ -82,9 +90,18 @@ class TestCurriculum(_Base):
 
 class TestRelease(_Base):
     def test_adapter_model_card(self):
-        card = release.model_card("adapter", {
-            "tag": "9to5-brain:v1", "base_model": "qwen2.5-coder:7b", "role": "planner",
-            "n_train_examples": 80, "trained_at": "now", "state": "champion", "lora_path": "/x"})
+        card = release.model_card(
+            "adapter",
+            {
+                "tag": "9to5-brain:v1",
+                "base_model": "qwen2.5-coder:7b",
+                "role": "planner",
+                "n_train_examples": 80,
+                "trained_at": "now",
+                "state": "champion",
+                "lora_path": "/x",
+            },
+        )
         self.assertIn("9to5-brain:v1", card)
         self.assertIn("frozen", card)
         self.assertIn("planner", card)
@@ -92,8 +109,9 @@ class TestRelease(_Base):
     def test_attribution_counts_and_fitness_delta(self):
         experience.record_eval({"fitness": 0.4}, db_path=self.db)
         experience.record_eval({"fitness": 0.7}, db_path=self.db)
-        experience.upsert_lesson("effort", "beta", "prefer high", support_count=5,
-                                 win_rate=0.9, db_path=self.db)
+        experience.upsert_lesson(
+            "effort", "beta", "prefer high", support_count=5, win_rate=0.9, db_path=self.db
+        )
         attr = release.attribution(db_path=self.db)
         self.assertEqual(attr["lessons"], 1)
         self.assertAlmostEqual(attr["fitness"]["delta"], 0.3)
@@ -139,11 +157,7 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
         """Add count feedback records to the ledger."""
         for i in range(count):
             experience.record_feedback(
-                kind="approve",
-                run_id=f"run-{i}",
-                subtask_id=f"st-{i}",
-                target="proposal",
-                db_path=self.db
+                kind="approve", run_id=f"run-{i}", subtask_id=f"st-{i}", target="proposal", db_path=self.db
             )
 
     def _seed_curriculum_context(self):
@@ -162,8 +176,15 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
             )
 
     def test_adaptive_trigger_fires_on_five_new_feedback(self):
-        """When >=5 feedback records exist, curriculum goals are auto-queued."""
-        with mock.patch.object(work_launcher, "spawn", return_value=12345) as mock_spawn:
+        """When >=5 feedback records exist AND the opt-in auto-queue flag is enabled,
+        curriculum goals are auto-queued. The auto-queue bypasses the human approval gate,
+        so it is disabled by default (see CURRICULUM_AUTO_QUEUE_ENABLED) -- this test
+        explicitly opts in to exercise the firing path."""
+        with (
+            mock.patch.object(config, "CURRICULUM_AUTO_QUEUE_ENABLED", True),
+            mock.patch.object(work_launcher, "activeRun", return_value=None),
+            mock.patch.object(work_launcher, "spawn", return_value=12345) as mock_spawn,
+        ):
             # First run with no feedback should not queue goals.
             out1 = sie.run_maintenance(force=True, db_path=self.db)
             self.assertIn("curriculum_and_report", out1["steps"])
@@ -175,8 +196,9 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
             # (the old "module caching" flake was really this timing race, which warm
             # imports after other test files made near-certain to lose).
             st = sie._read_state()
-            st["last_full_at"] = (datetime.now().astimezone()
-                                  - timedelta(minutes=1)).isoformat(timespec="seconds")
+            st["last_full_at"] = (datetime.now().astimezone() - timedelta(minutes=1)).isoformat(
+                timespec="seconds"
+            )
             sie._write_state(st)
 
             # Seed 5 new feedback records and curriculum context.
@@ -187,14 +209,23 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
             out2 = sie.run_maintenance(force=True, db_path=self.db)
             curriculum_result = out2["steps"]["curriculum_and_report"]
             self.assertIn("curriculum_and_report", out2["steps"])
-            self.assertGreater(curriculum_result.get("curriculum_goals", 0), 0,
-                              f"Expected curriculum goals; got {curriculum_result}")
+            self.assertGreater(
+                curriculum_result.get("curriculum_goals", 0),
+                0,
+                f"Expected curriculum goals; got {curriculum_result}",
+            )
             # Verify spawn was called for each generated goal
-            self.assertEqual(mock_spawn.call_count, curriculum_result.get("curriculum_goals", 0),
-                            f"Expected spawn to be called for each goal; got {mock_spawn.call_count} calls")
+            self.assertEqual(
+                mock_spawn.call_count,
+                curriculum_result.get("curriculum_goals", 0),
+                f"Expected spawn to be called for each goal; got {mock_spawn.call_count} calls",
+            )
             # Verify auto_queued counter matches spawn calls
-            self.assertGreater(curriculum_result.get("auto_queued", 0), 0,
-                              f"Expected auto_queued > 0 when >=5 feedback exist; got {curriculum_result}")
+            self.assertGreater(
+                curriculum_result.get("auto_queued", 0),
+                0,
+                f"Expected auto_queued > 0 when >=5 feedback exist; got {curriculum_result}",
+            )
             # Verify spawn was called with WorkRequest objects containing valid goals
             for call in mock_spawn.call_args_list:
                 args, kwargs = call
@@ -204,6 +235,19 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
                 self.assertIsNotNone(req.goal)
                 self.assertGreater(len(req.goal), 0, "goal should not be empty")
 
+    def test_adaptive_trigger_not_fired_by_default_even_with_five_feedback(self):
+        """Security regression: CURRICULUM_AUTO_QUEUE_ENABLED defaults to False, so even the
+        full run_maintenance -> curriculum_and_report path must NOT spawn any run when >=5
+        feedback records exist, unless the flag is explicitly opted into."""
+        self.assertFalse(config.CURRICULUM_AUTO_QUEUE_ENABLED)
+        with mock.patch.object(work_launcher, "spawn", return_value=12345) as mock_spawn:
+            self._seed_curriculum_context()
+            self._seed_feedback(5)
+            out = sie.run_maintenance(force=True, db_path=self.db)
+            curriculum_result = out["steps"]["curriculum_and_report"]
+        mock_spawn.assert_not_called()
+        self.assertEqual(curriculum_result.get("auto_queued", 0), 0)
+        self.assertEqual(curriculum_result.get("auto_queue_skipped"), "disabled")
 
     def test_adaptive_trigger_not_fired_on_less_than_five_feedback(self):
         """When <5 feedback records exist, curriculum goals are NOT auto-queued even if generated."""
@@ -220,7 +264,13 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
             self.assertIn("curriculum_and_report", out["steps"])
             # Goals may or may not be generated (depends on family stats),
             # but spawn should NOT be called because feedback count < 5.
-            self.assertEqual(mock_spawn.call_count, 0,
-                            f"spawn should NOT be called when feedback < 5; got {mock_spawn.call_count} calls")
-            self.assertEqual(curriculum_result.get("auto_queued", 0), 0,
-                            f"auto_queued should be 0 when feedback < 5; got {curriculum_result}")
+            self.assertEqual(
+                mock_spawn.call_count,
+                0,
+                f"spawn should NOT be called when feedback < 5; got {mock_spawn.call_count} calls",
+            )
+            self.assertEqual(
+                curriculum_result.get("auto_queued", 0),
+                0,
+                f"auto_queued should be 0 when feedback < 5; got {curriculum_result}",
+            )

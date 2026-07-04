@@ -17,6 +17,7 @@ DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_identity.py
 """
+
 from __future__ import annotations
 
 import os
@@ -27,15 +28,19 @@ from pathlib import Path
 import config
 
 # The running orchestrator's self-code root. Resolve it from THIS module's own on-disk location so a
-# worktree / CI clone still fingerprints the RIGHT tree: config.PROJECT_ROOT mis-resolves to a
-# sub-dir when the repo runs with no ``.env`` to pin it, which would make selfCodeFiles() walk the
-# wrong tree and drop every real loop module. identity.py lives at
+# worktree / CI clone still fingerprints the RIGHT tree. config.PROJECT_ROOT (see
+# platform_core/app_config/_env.py's locateRepoRoot()) is itself cwd-independent and walks UP from
+# _env.py to the nearest ``.git``/``pyproject.toml`` marker, so in the common case the two roots
+# already agree -- but a PROJECT_ROOT set on the PROCESS environment (tests/tools may re-point it
+# deliberately, e.g. to a scratch tmp_path tree) can point config's root at a DIFFERENT tree than
+# identity.py's own on-disk location. identity.py lives at
 # ``<root>/platform_core/core/identity.py`` -> parents[2] is the repo root.
 _SELF_ROOT: Path = Path(__file__).resolve().parents[2]
 _CFG_ROOT: Path = Path(config.PROJECT_ROOT).resolve()
-# Trust an explicitly-configured root only when it actually IS this module's tree (real installs pin
-# PROJECT_ROOT via .env and the two agree); otherwise fall back to the file-derived root -- never a
-# cwd or ``C:\9to5`` literal assumption.
+# Trust an explicitly-configured root only when it actually IS this module's tree (the common case);
+# otherwise fall back to the file-derived root -- never a cwd or ``C:\9to5`` literal assumption. When
+# the two disagree, epoch.snapshot() logs a loud warning (see epoch._warnIfProjectRootMismatch) so the
+# safety subsystem is never silently reasoning about two different trees.
 PROJECT_ROOT: Path = _CFG_ROOT if _CFG_ROOT == _SELF_ROOT else _SELF_ROOT
 
 
@@ -65,14 +70,14 @@ def _isUnder(path_canon: str, root: Path) -> bool:
 
 
 class Role(Enum):
-    SELF_CODE = "self.code"               # own modules; freely editable; fingerprinted
+    SELF_CODE = "self.code"  # own modules; freely editable; fingerprinted
     SELF_INSTRUCTIONS = "self.instructions"  # directives 9to5 OBEYS
-    SELF_OBJECT_META = "self.object_meta"    # metadata 9to5 EDITS but must never OBEY
-    SELF_LEARNED = "self.learned"            # task-produced memory; provenance-tagged
-    SELF_LIVE_STATE = "self.live_state"      # hot cross-process channel
+    SELF_OBJECT_META = "self.object_meta"  # metadata 9to5 EDITS but must never OBEY
+    SELF_LEARNED = "self.learned"  # task-produced memory; provenance-tagged
+    SELF_LIVE_STATE = "self.live_state"  # hot cross-process channel
     SELF_FROZEN_STATE = "self.frozen_state"  # orchestrator owns in RAM; disk is a checkpoint
-    HARD_BOUNDARY = "hard_boundary"          # the ONLY prohibition; narrow
-    OTHER_CONTENT = "other.content"          # the work target
+    HARD_BOUNDARY = "hard_boundary"  # the ONLY prohibition; narrow
+    OTHER_CONTENT = "other.content"  # the work target
 
 
 # Specific files override directory rules (checked first, most-specific wins).
@@ -94,7 +99,7 @@ _DIR_ROLES: tuple[tuple[Role, Path], ...] = (
     (Role.SELF_LEARNED, PROJECT_ROOT / "state" / "sie_overrides.json"),
     (Role.SELF_LEARNED, PROJECT_ROOT / "knowledge"),
     (Role.SELF_OBJECT_META, PROJECT_ROOT / "docs"),
-    (Role.SELF_CODE, PROJECT_ROOT),   # catch-all for anything else inside the install tree
+    (Role.SELF_CODE, PROJECT_ROOT),  # catch-all for anything else inside the install tree
 )
 
 # Files the CLI's memory walk reads as instructions but that live OUTSIDE the tree.
@@ -112,9 +117,13 @@ _FINGERPRINT_EXCLUDE_DIRS: tuple[Path, ...] = (PROJECT_ROOT / "tests", PROJECT_R
 # epoch hashes and reading as self-divergence whenever such a tree exists. (tools/repo_map.py excludes
 # `references` the same way.)
 _NON_SELF_TREES: tuple[Path, ...] = (
-    PROJECT_ROOT / ".claude", PROJECT_ROOT / ".claude" / "worktrees",
-    PROJECT_ROOT / ".git", PROJECT_ROOT / "venv", PROJECT_ROOT / "references",
-    PROJECT_ROOT / "fable-rewrite", PROJECT_ROOT / "nightclaw",
+    PROJECT_ROOT / ".claude",
+    PROJECT_ROOT / ".claude" / "worktrees",
+    PROJECT_ROOT / ".git",
+    PROJECT_ROOT / "venv",
+    PROJECT_ROOT / "references",
+    PROJECT_ROOT / "fable-rewrite",
+    PROJECT_ROOT / "nightclaw",
 )
 
 

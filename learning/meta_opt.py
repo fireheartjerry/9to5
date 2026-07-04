@@ -14,6 +14,7 @@ DEPENDS-ON: config, learning.curriculum, memory.experience
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_nextwave_batch2.py tests/slow/test_full_autonomy.py
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -35,23 +36,36 @@ def suggest(*, db_path: Optional[Path] = None) -> list[dict[str, Any]]:
         mean_fp = sum(f["first_pass_rate"] for f in fams) / len(fams)
         # If first-pass is chronically low, the bandit/effort floor is too timid.
         if mean_fp < 0.5:
-            suggestions.append({
-                "knob": "MAX_SUBTASK_ATTEMPTS", "current": config.MAX_SUBTASK_ATTEMPTS,
-                "suggested": config.MAX_SUBTASK_ATTEMPTS + 1,
-                "reason": f"mean first-pass {mean_fp:.0%} < 50% — allow one more retry"})
+            suggestions.append(
+                {
+                    "knob": "MAX_SUBTASK_ATTEMPTS",
+                    "current": config.MAX_SUBTASK_ATTEMPTS,
+                    "suggested": config.MAX_SUBTASK_ATTEMPTS + 1,
+                    "reason": f"mean first-pass {mean_fp:.0%} < 50% — allow one more retry",
+                }
+            )
     # If almost nothing is being retrieved, widen K.
     n_emb = len(experience.embedded_subtasks(only_passed=True, db_path=db_path))
     if n_emb > 50 and config.RETRIEVAL_K < 8:
-        suggestions.append({
-            "knob": "RETRIEVAL_K", "current": config.RETRIEVAL_K, "suggested": config.RETRIEVAL_K + 2,
-            "reason": f"{n_emb} embedded successes available — retrieve more context"})
+        suggestions.append(
+            {
+                "knob": "RETRIEVAL_K",
+                "current": config.RETRIEVAL_K,
+                "suggested": config.RETRIEVAL_K + 2,
+                "reason": f"{n_emb} embedded successes available — retrieve more context",
+            }
+        )
     return suggestions
 
 
 # Safe bounds so auto-apply can never push a knob somewhere harmful.
-_BOUNDS = {"MAX_SUBTASK_ATTEMPTS": (1, 5), "RETRIEVAL_K": (1, 12),
-           "ADVERSARY_HEARTBEAT_EVERY": (1, 10), "PROMPT_PROMOTE_MIN_USES": (5, 100),
-           "CONFIDENCE_DEFER_THRESHOLD": (0.1, 0.8)}
+_BOUNDS = {
+    "MAX_SUBTASK_ATTEMPTS": (1, 5),
+    "RETRIEVAL_K": (1, 12),
+    "ADVERSARY_HEARTBEAT_EVERY": (1, 10),
+    "PROMPT_PROMOTE_MIN_USES": (5, 100),
+    "CONFIDENCE_DEFER_THRESHOLD": (0.1, 0.8),
+}
 
 
 def apply(*, db_path: Optional[Path] = None) -> dict[str, Any]:
@@ -64,7 +78,13 @@ def apply(*, db_path: Optional[Path] = None) -> dict[str, Any]:
         lo, hi = _BOUNDS.get(knob, (None, None))
         if lo is not None and not (lo <= val <= hi):
             continue
-        if config.set_override(knob, val):
+        knob_applied, persisted = config.set_override_detailed(knob, val)
+        if knob_applied:
             applied.append({"knob": knob, "value": val, "reason": s["reason"]})
-            LOG.info("meta-opt auto-applied %s=%s (%s)", knob, val, s["reason"])
+            if persisted:
+                LOG.info("meta-opt auto-applied %s=%s (%s)", knob, val, s["reason"])
+            else:
+                LOG.warning(
+                    "meta-opt applied %s=%s live but failed to persist to disk (%s)", knob, val, s["reason"]
+                )
     return {"applied": applied}

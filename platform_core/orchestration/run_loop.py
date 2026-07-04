@@ -7,6 +7,7 @@ DEPENDS-ON: config, learning.confidence, learning.solution_cache, notifications.
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_dry_run.py tests/orchestration/test_execcwd_fabric.py tests/orchestration/test_orch_core_bugs.py
 """
+
 from __future__ import annotations
 
 import os
@@ -49,11 +50,11 @@ def _execCwd(state, sid: "str | None", work_dir: str) -> str:
     Epic 8: when the execution fabric is enabled with a NON-local backend, that backend's
     provision (e.g. a git worktree) supplies the isolated tree, so the .sc-ctx scratch is
     skipped -- it would be redundant. Fabric off, or the local backend, keeps today's scratch."""
-    if (config.EXECUTION_FABRIC_ENABLED
-            and (config.EXECUTION_BACKEND or "local") != "local"):
+    if config.EXECUTION_FABRIC_ENABLED and (config.EXECUTION_BACKEND or "local") != "local":
         return work_dir
-    if (state.meta.get("is_self_referential")
-            and os.path.abspath(work_dir) == os.path.abspath(str(config.PROJECT_ROOT))):
+    if state.meta.get("is_self_referential") and os.path.abspath(work_dir) == os.path.abspath(
+        str(config.PROJECT_ROOT)
+    ):
         ctx = os.path.join(str(config.PROJECT_ROOT), ".sc-ctx", sid or "architect")
         os.makedirs(ctx, exist_ok=True)
         return ctx
@@ -79,28 +80,35 @@ def _prepareSelfReferential(state, work_dir: str, bus, dashboard) -> None:
     directly on the live branch -- so on a nonzero checkout return code we alert and ABORT self-ref
     prep, leaving the run on the current branch without self-ref protection."""
     from notifications import discord_bot as discord
+
     branch = f"{config.SELF_REF_BRANCH_PREFIX}{state.task_id[:8]}"
     try:
         t = config.GIT_TIMEOUT_SECONDS
         repo_ok, _reason = git_io.gitPreflight(work_dir, timeout=t)
         if repo_ok:
-            exists = git_io.runGit("rev-parse", "--verify", branch,
-                                   cwd=work_dir, timeout=t).returncode == 0
-            co = git_io.runGit(*(("checkout", branch) if exists else ("checkout", "-B", branch)),
-                               cwd=work_dir, timeout=t)
+            exists = git_io.runGit("rev-parse", "--verify", branch, cwd=work_dir, timeout=t).returncode == 0
+            co = git_io.runGit(
+                *(("checkout", branch) if exists else ("checkout", "-B", branch)), cwd=work_dir, timeout=t
+            )
             if co.returncode != 0:
-                LOG.error("self-ref checkout of branch %s failed (rc=%d): %s",
-                          branch, co.returncode, (co.stderr or "").strip()[:200])
+                LOG.error(
+                    "self-ref checkout of branch %s failed (rc=%d): %s",
+                    branch,
+                    co.returncode,
+                    (co.stderr or "").strip()[:200],
+                )
                 try:
-                    discord.sendEmbed(discord.noticeEmbed(
-                        f"Self-referential isolation branch '{branch}' checkout FAILED "
-                        f"(rc={co.returncode}) — aborting self-ref prep; run continues on the "
-                        "current branch WITHOUT core-file isolation."))
+                    discord.sendEmbed(
+                        discord.noticeEmbed(
+                            f"Self-referential isolation branch '{branch}' checkout FAILED "
+                            f"(rc={co.returncode}) — aborting self-ref prep; run continues on the "
+                            "current branch WITHOUT core-file isolation."
+                        )
+                    )
                 except Exception:  # noqa: BLE001
                     pass
                 return
-            LOG.info("Self-referential task -> %s branch %s",
-                     "resumed" if exists else "created", branch)
+            LOG.info("Self-referential task -> %s branch %s", "resumed" if exists else "created", branch)
         else:
             LOG.warning("Self-ref task but %s is not a git repo; no isolation branch", work_dir)
     except Exception as e:  # noqa: BLE001
@@ -138,69 +146,76 @@ def _cascadeResetDependents(state, removed_ids: list) -> None:
             state.addNotification("cascade_reset", f"{did} (depended on {rid})")
 
 
-def _sequentialIteration(orch, state, architect_doc: str, work_dir: str, bus, dashboard,
-                         position: int, dry_backfills: int) -> "tuple[str, int, int]":
+def _sequentialIteration(
+    orch, state, architect_doc: str, work_dir: str, bus, dashboard, position: int, dry_backfills: int
+) -> "tuple[str, int, int]":
     """One sequential (parallelism<=1) iteration of the execution loop (moved from
     run_loop_mixin for size). Returns (signal, position, dry_backfills) where signal is
     "continue" or "break" for the caller's while-loop; AbortRun propagates."""
     subtask = state.nextActionable()
     if subtask is None:
-        cont, dry_backfills = orch._continueAfterDrain(
-            state, architect_doc, dashboard, dry_backfills)
+        cont, dry_backfills = orch._continueAfterDrain(state, architect_doc, dashboard, dry_backfills)
         return ("continue" if cont else "break"), position, dry_backfills
     from notifications.lane_feed import laneTap
-    laneTap("orchestrator", f"loop: {subtask.get('subtask_id', '?')} "
-                             f"{str(subtask.get('title', ''))[:60]}")
+
+    laneTap("orchestrator", f"loop: {subtask.get('subtask_id', '?')} {str(subtask.get('title', ''))[:60]}")
     position += 1
     try:
-        orch._executeSubtask(state, subtask, architect_doc, work_dir,
-                             bus, dashboard, position)
+        orch._executeSubtask(state, subtask, architect_doc, work_dir, bus, dashboard, position)
     except AbortRun:
         raise
     except Exception as e:  # noqa: BLE001 -- one bad subtask must not kill the run
         LOG.error("Subtask %s crashed: %s", subtask.get("subtask_id"), e, exc_info=True)
         try:
             from notifications import discord_bot as discord
-            discord.sendEmbed(discord.noticeEmbed(
-                f"Subtask {subtask.get('subtask_id')} crashed "
-                f"(marked failed, run continues): {e}"))
+
+            discord.sendEmbed(
+                discord.noticeEmbed(
+                    f"Subtask {subtask.get('subtask_id')} crashed (marked failed, run continues): {e}"
+                )
+            )
         except Exception:  # noqa: BLE001
             pass
         with orch._state_lock:
-            state.updateSubtask(subtask["subtask_id"], status="failed",
-                                completed_at=nowIso())
-            state.addNotification("subtask_crashed",
-                                  f"{subtask.get('subtask_id')}: {e}")
+            state.updateSubtask(subtask["subtask_id"], status="failed", completed_at=nowIso())
+            state.addNotification("subtask_crashed", f"{subtask.get('subtask_id')}: {e}")
     return "continue", position, dry_backfills
 
 
-def _parallelIteration(orch, state, architect_doc: str, work_dir: str, bus, dashboard,
-                       position: int, parallelism: int,
-                       dry_backfills: int) -> "tuple[str, int, int]":
+def _parallelIteration(
+    orch,
+    state,
+    architect_doc: str,
+    work_dir: str,
+    bus,
+    dashboard,
+    position: int,
+    parallelism: int,
+    dry_backfills: int,
+) -> "tuple[str, int, int]":
     """One parallel iteration: run the ready set (deps satisfied) concurrently (moved from
     run_loop_mixin for size). Returns (signal, position, dry_backfills) where signal is
     "continue" or "break"; a batch abort is re-raised here as in the inline original."""
     ready = orch._readySet(state)
     if not ready:
         if state.nextActionable() is None:
-            cont, dry_backfills = orch._continueAfterDrain(
-                state, architect_doc, dashboard, dry_backfills)
+            cont, dry_backfills = orch._continueAfterDrain(state, architect_doc, dashboard, dry_backfills)
             return ("continue" if cont else "break"), position, dry_backfills
         ready = [state.nextActionable()]
     from platform_core.orchestration import parallel_safety
-    if getattr(config, "WORKTREE_ISOLATION_ENABLED", False):
-        batch = parallel_safety.safeParallelSet(state, ready, parallelism)
-    else:
-        batch = ready[:parallelism]
+
+    batch = parallel_safety.safeParallelSet(state, ready, parallelism)
     if orch._societyGate(batch):
         # Epic 5: 9to5-owned workforce on the blackboard (flag ON, >=2 ready).
         # Separate `position2` accumulator keeps the OFF-path `position` untouched.
         position2, abort = orch._handleSocietyBatch(
-            state, batch, work_dir, parallelism, run_fn=orch._run_claude)
+            state, batch, work_dir, parallelism, run_fn=orch._run_claude
+        )
         position += position2
     else:
         position, abort = orch._handleParallelBatch(
-            state, batch, architect_doc, work_dir, bus, dashboard, position, parallelism)
+            state, batch, architect_doc, work_dir, bus, dashboard, position, parallelism
+        )
     if abort is not None:
         raise abort
     return "continue", position, dry_backfills
@@ -211,8 +226,10 @@ def _confidenceNudge(title: str) -> str:
     escalate effort and slow down."""
     prior = confidence.prior_success(title)
     if prior is not None and prior < config.CONFIDENCE_DEFER_THRESHOLD:
-        return (f"## LOW-CONFIDENCE ({prior:.0%} historical first-pass): use HIGHER effort "
-                "(high/xhigh), be extra careful, and verify thoroughly.\n\n")
+        return (
+            f"## LOW-CONFIDENCE ({prior:.0%} historical first-pass): use HIGHER effort "
+            "(high/xhigh), be extra careful, and verify thoroughly.\n\n"
+        )
     return ""
 
 
@@ -220,6 +237,8 @@ def _warmStartHint(title: str) -> str:
     """SIE subsystem O: surface a prior PASSING spec for a near-duplicate subtask."""
     prior = solution_cache.warm_start(title)
     if prior:
-        return ("## PRIOR WORKING SOLUTION for a near-identical subtask (adapt, don't "
-                f"blindly copy):\n{prior[:600]}\n\n")
+        return (
+            "## PRIOR WORKING SOLUTION for a near-identical subtask (adapt, don't "
+            f"blindly copy):\n{prior[:600]}\n\n"
+        )
     return ""

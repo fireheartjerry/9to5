@@ -4,6 +4,7 @@ Covers: the selfmod gate defaults to pytest (not `unittest discover`), the gener
 repo-health commands advertise pytest, `dev.py check` tolerates deleted paths, the slow-report
 subprocess pipe decodes UTF-8, and size-audit honestly documents its tracked-only scope.
 """
+
 import os
 import subprocess
 import sys
@@ -40,8 +41,9 @@ def test_default_runner_uses_pytest_not_unittest(monkeypatch):
         return _CP()
 
     monkeypatch.setattr(selfmod.subprocess, "run", _fake_run)
-    passed, _ = selfmod._default_test_runner("/some/dir")
+    passed, status, _ = selfmod._default_test_runner("/some/dir")
     assert passed is True
+    assert status == "passed"
     assert captured["cmd"] == ["python", "-m", "pytest", "tests", "-x", "-q"]
     assert "unittest" not in captured["cmd"]
 
@@ -102,12 +104,22 @@ def test_size_audit_docstring_admits_scope():
 # ==== size-audit still gates; none of the P7 files are must_split ====
 def test_size_audit_p7_files_not_must_split():
     import json
-    cp = subprocess.run([sys.executable, str(REPO_ROOT / "tools" / "size_audit.py"), "--json"],
-                        cwd=str(REPO_ROOT), capture_output=True, text=True)
+
+    cp = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "tools" / "size_audit.py"), "--json"],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+    )
     assert cp.returncode == 0
     data = json.loads(cp.stdout)
-    p7 = {"tools/dev_checks.py", "tools/dev_reports.py", "tools/size_audit.py",
-          "tools/repo_map_render.py", "scripts/repo_health.py", "selfmod.py"}
-    offenders = [r["path"] for r in data["files"]
-                 if r["path"] in p7 and r["bucket"] == "must_split"]
+    p7 = {
+        "tools/dev_checks.py",
+        "tools/dev_reports.py",
+        "tools/size_audit.py",
+        "tools/repo_map_render.py",
+        "scripts/repo_health.py",
+        "selfmod.py",
+    }
+    offenders = [r["path"] for r in data["files"] if r["path"] in p7 and r["bucket"] == "must_split"]
     assert offenders == [], f"P7 files over 450 lines: {offenders}"

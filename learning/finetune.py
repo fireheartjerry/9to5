@@ -27,6 +27,7 @@ DEPENDS-ON: config, learning.compute, learning.distill, learning.preferences, me
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_finetune.py
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -60,7 +61,7 @@ def _servable_tags() -> Optional[set]:
         proc = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=10)
         if proc.returncode == 0:
             tags = set()
-            for line in (proc.stdout or "").splitlines()[1:]:   # skip the NAME/ID/SIZE header
+            for line in (proc.stdout or "").splitlines()[1:]:  # skip the NAME/ID/SIZE header
                 parts = line.split()
                 if parts:
                     tags.add(parts[0])
@@ -78,9 +79,10 @@ def _servable(tag: str) -> bool:
     tags = _servable_tags()
     return bool(tags) and tag in tags
 
+
 # Seams: a trainer turns a dataset into an adapter dir; a runner builds the Ollama model.
-Trainer = Callable[[str, str], str]            # (dataset_path, out_dir) -> lora_path
-OllamaRunner = Callable[[str, str], Any]       # (tag, modelfile_path) -> Any
+Trainer = Callable[[str, str], str]  # (dataset_path, out_dir) -> lora_path
+OllamaRunner = Callable[[str, str], Any]  # (tag, modelfile_path) -> Any
 
 
 def modelfile_text(base_model: str, lora_path: str) -> str:
@@ -101,22 +103,26 @@ def default_trainer() -> Optional[Trainer]:
 
     On the user's GPU host with the deps installed, this trains for real."""
     from learning import compute
+
     if not compute.training_enabled() or not compute.should_use_gpu():
         return None
 
     def _train(dataset_path: str, out_dir: str) -> str:
         return _train_lora(dataset_path, out_dir, mode="sft", kl_beta=0.0)
+
     return _train
 
 
 def default_dpo_trainer() -> Optional[Callable[[str, str, float], str]]:
     """A real local DPO trainer (chosen/rejected pairs), routed through compute."""
     from learning import compute
+
     if not compute.training_enabled() or not compute.should_use_gpu():
         return None
 
     def _train(pairs_path: str, out_dir: str, kl_beta: float) -> str:
         return _train_lora(pairs_path, out_dir, mode="dpo", kl_beta=kl_beta)
+
     return _train
 
 
@@ -133,26 +139,36 @@ def _train_lora(data_path: str, out_dir: str, *, mode: str, kl_beta: float) -> s
     from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore
 
     from learning import compute
+
     LOG.info("LoRA %s training on %s (%s)", mode, compute.device(), compute.detect_gpu().get("name"))
     adapter_dir = str(_P(out_dir) / f"adapter-{mode}")
-    base = config.OLLAMA_MODEL.split(":")[0]  # HF repo id is configured separately in practice
+    base = config.LORA_HF_BASE_REPO
+    if not base:
+        raise ValueError(
+            "LORA_HF_BASE_REPO must be set to a valid HuggingFace repo id for the "
+            "configured OLLAMA_MODEL base -- e.g. Qwen/Qwen2.5-Coder-7B"
+        )
     tok = AutoTokenizer.from_pretrained(base)
     model = AutoModelForCausalLM.from_pretrained(base, torch_dtype=torch.bfloat16, device_map="auto")
-    peft_cfg = LoraConfig(r=config.LORA_RANK, lora_alpha=config.LORA_RANK * 2,
-                          task_type="CAUSAL_LM")
+    peft_cfg = LoraConfig(r=config.LORA_RANK, lora_alpha=config.LORA_RANK * 2, task_type="CAUSAL_LM")
     if mode == "dpo":
         from trl import DPOConfig, DPOTrainer  # type: ignore
+
         ds = load_dataset("json", data_files=data_path, split="train")
-        args = DPOConfig(output_dir=adapter_dir, num_train_epochs=config.LORA_EPOCHS,
-                         beta=kl_beta or config.DPO_KL_BETA)
-        DPOTrainer(model=model, args=args, processing_class=tok,
-                   train_dataset=ds, peft_config=peft_cfg).train()
+        args = DPOConfig(
+            output_dir=adapter_dir, num_train_epochs=config.LORA_EPOCHS, beta=kl_beta or config.DPO_KL_BETA
+        )
+        DPOTrainer(
+            model=model, args=args, processing_class=tok, train_dataset=ds, peft_config=peft_cfg
+        ).train()
     else:
         from trl import SFTConfig, SFTTrainer  # type: ignore
+
         ds = load_dataset("json", data_files=data_path, split="train")
         args = SFTConfig(output_dir=adapter_dir, num_train_epochs=config.LORA_EPOCHS)
-        SFTTrainer(model=model, args=args, processing_class=tok,
-                   train_dataset=ds, peft_config=peft_cfg).train()
+        SFTTrainer(
+            model=model, args=args, processing_class=tok, train_dataset=ds, peft_config=peft_cfg
+        ).train()
     model.save_pretrained(adapter_dir)
     return adapter_dir
 
@@ -160,13 +176,17 @@ def _train_lora(data_path: str, out_dir: str, *, mode: str, kl_beta: float) -> s
 def default_ollama_runner() -> Optional[OllamaRunner]:
     """Build the new Ollama model from a Modelfile via the `ollama` CLI, if present."""
     import shutil
+
     if not shutil.which("ollama"):
         return None
 
     def _create(tag: str, modelfile_path: str):
         import subprocess
-        return subprocess.run(["ollama", "create", tag, "-f", modelfile_path],
-                              capture_output=True, text=True, timeout=600)
+
+        return subprocess.run(
+            ["ollama", "create", tag, "-f", modelfile_path], capture_output=True, text=True, timeout=600
+        )
+
     return _create
 
 
@@ -179,7 +199,7 @@ def active_brain_tag(role: str = "all", db_path: Optional[Path] = None) -> str:
             return config.OLLAMA_MODEL
         # role-specific champion first, then the general 'all' adapter. Only route to a champion the
         # Ollama runtime can actually serve -- a dead tag would brick every brain call this run.
-        for r in ((role,) if role == "all" else (role, "all")):
+        for r in (role,) if role == "all" else (role, "all"):
             champ = experience.get_champion_adapter(r, db_path=db_path)
             if not champ:
                 continue
@@ -201,11 +221,15 @@ def _next_version(db_path: Optional[Path]) -> int:
     return len(experience.fetch_adapters(db_path=db_path)) + 1
 
 
-def run_finetune_cycle(*, trainer: Optional[Trainer] = None,
-                       ollama_runner: Optional[OllamaRunner] = None,
-                       out_dir: Optional[Path] = None, min_examples: Optional[int] = None,
-                       suite: Optional[list[dict[str, Any]]] = None,
-                       db_path: Optional[Path] = None) -> dict[str, Any]:
+def run_finetune_cycle(
+    *,
+    trainer: Optional[Trainer] = None,
+    ollama_runner: Optional[OllamaRunner] = None,
+    out_dir: Optional[Path] = None,
+    min_examples: Optional[int] = None,
+    suite: Optional[list[dict[str, Any]]] = None,
+    db_path: Optional[Path] = None,
+) -> dict[str, Any]:
     """One automatic distillation cycle: build gold dataset -> (if enough) train LoRA ->
     build the Ollama model -> register the adapter as a CHALLENGER. Best-effort; never
     promotes here (promotion is gated separately through the harness)."""
@@ -215,11 +239,11 @@ def run_finetune_cycle(*, trainer: Optional[Trainer] = None,
     ds = distill.build(db_path=db_path, out_path=out_dir / "dataset.jsonl", suite=suite)
     n = ds["examples"]
     need = config.LORA_MIN_EXAMPLES if min_examples is None else min_examples
-    if n < need:
+    if n < need or not ds.get("path"):
         return {"skipped": "not_enough", "examples": n, "need": need}
     trainer = trainer or default_trainer()
     if trainer is None:
-        return {"skipped": "no_trainer", "examples": n}   # no GPU/backend on this host
+        return {"skipped": "no_trainer", "examples": n}  # no GPU/backend on this host
     ollama_runner = ollama_runner or default_ollama_runner()
 
     try:
@@ -228,10 +252,16 @@ def run_finetune_cycle(*, trainer: Optional[Trainer] = None,
         tag = f"{config.BRAIN_MODEL_TAG}:v{ver}"
         mf = write_modelfile(out_dir / f"Modelfile.v{ver}", config.OLLAMA_MODEL, lora_path)
         if ollama_runner is not None:
-            ollama_runner(tag, str(mf))   # e.g. `ollama create <tag> -f <mf>`
+            ollama_runner(tag, str(mf))  # e.g. `ollama create <tag> -f <mf>`
         aid = experience.register_adapter(
-            base_model=config.OLLAMA_MODEL, tag=tag, lora_path=lora_path,
-            modelfile_path=str(mf), n_train_examples=n, state="challenger", db_path=db_path)
+            base_model=config.OLLAMA_MODEL,
+            tag=tag,
+            lora_path=lora_path,
+            modelfile_path=str(mf),
+            n_train_examples=n,
+            state="challenger",
+            db_path=db_path,
+        )
         LOG.info("trained adapter %s (%d examples)", tag, n)
         return {"status": "trained", "tag": tag, "adapter_id": aid, "examples": n}
     except Exception as e:  # noqa: BLE001 -- training failure must not crash maintenance
@@ -239,22 +269,27 @@ def run_finetune_cycle(*, trainer: Optional[Trainer] = None,
         return {"skipped": "error", "error": str(e)}
 
 
-def run_dpo_cycle(*, trainer: Optional[Callable[[str, str, float], str]] = None,
-                  ollama_runner: Optional[OllamaRunner] = None,
-                  out_dir: Optional[Path] = None, min_pairs: Optional[int] = None,
-                  suite: Optional[list[dict[str, Any]]] = None,
-                  db_path: Optional[Path] = None) -> dict[str, Any]:
+def run_dpo_cycle(
+    *,
+    trainer: Optional[Callable[[str, str, float], str]] = None,
+    ollama_runner: Optional[OllamaRunner] = None,
+    out_dir: Optional[Path] = None,
+    min_pairs: Optional[int] = None,
+    suite: Optional[list[dict[str, Any]]] = None,
+    db_path: Optional[Path] = None,
+) -> dict[str, Any]:
     """One automatic DPO cycle: build preference pairs -> (if enough) train a DPO LoRA with
     a KL anchor -> build the Ollama model -> register a CHALLENGER. The DPO trainer seam
     takes ``(pairs_path, out_dir, kl_beta)``. Best-effort; never promotes here."""
     if config.SIE_KILL_SWITCH:
         return {"skipped": "kill_switch"}
     from learning import preferences
+
     out_dir = Path(out_dir or config.LORA_OUTPUT_DIR)
     ds = preferences.build(db_path=db_path, out_path=out_dir / "preferences.jsonl", suite=suite)
     n = ds["pairs"]
     need = config.DPO_MIN_PAIRS if min_pairs is None else min_pairs
-    if n < need:
+    if n < need or not ds.get("path"):
         return {"skipped": "not_enough", "pairs": n, "need": need}
     trainer = trainer or default_dpo_trainer()
     if trainer is None:
@@ -268,8 +303,14 @@ def run_dpo_cycle(*, trainer: Optional[Callable[[str, str, float], str]] = None,
         if ollama_runner is not None:
             ollama_runner(tag, str(mf))
         aid = experience.register_adapter(
-            base_model=config.OLLAMA_MODEL, tag=tag, lora_path=lora_path,
-            modelfile_path=str(mf), n_train_examples=n, state="challenger", db_path=db_path)
+            base_model=config.OLLAMA_MODEL,
+            tag=tag,
+            lora_path=lora_path,
+            modelfile_path=str(mf),
+            n_train_examples=n,
+            state="challenger",
+            db_path=db_path,
+        )
         LOG.info("trained DPO adapter %s (%d pairs, beta=%.3f)", tag, n, config.DPO_KL_BETA)
         return {"status": "trained", "tag": tag, "adapter_id": aid, "pairs": n}
     except Exception as e:  # noqa: BLE001
@@ -277,8 +318,14 @@ def run_dpo_cycle(*, trainer: Optional[Callable[[str, str, float], str]] = None,
         return {"skipped": "error", "error": str(e)}
 
 
-def consider_promotion(adapter_id: int, *, challenger_fitness: float, champion_fitness: float,
-                       replay_ok: bool = True, db_path: Optional[Path] = None) -> dict[str, Any]:
+def consider_promotion(
+    adapter_id: int,
+    *,
+    challenger_fitness: float,
+    champion_fitness: float,
+    replay_ok: bool = True,
+    db_path: Optional[Path] = None,
+) -> dict[str, Any]:
     """Gate an adapter through the harness result + replay set (invariant I4: never promote
     on a regression). Live fitness is supplied by the eval harness; the decision is pure.
 
@@ -288,5 +335,9 @@ def consider_promotion(adapter_id: int, *, challenger_fitness: float, champion_f
     if challenger_fitness > champion_fitness and replay_ok:
         experience.promote_adapter(adapter_id, db_path=db_path)
         return {"decision": "promote", "challenger": challenger_fitness, "champion": champion_fitness}
-    return {"decision": "reject", "challenger": challenger_fitness, "champion": champion_fitness,
-            "replay_ok": replay_ok}
+    return {
+        "decision": "reject",
+        "challenger": challenger_fitness,
+        "champion": champion_fitness,
+        "replay_ok": replay_ok,
+    }

@@ -10,10 +10,12 @@ DEPENDS-ON: config
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_verifier.py
 """
+
 from __future__ import annotations
 
 import os
 import re
+import shlex
 from typing import Optional
 
 import config
@@ -23,20 +25,58 @@ LOG = config.getLogger("verifier")
 # ==== ALLOWLISTS / DENYLISTS ====
 
 _VERIFY_STDLIB_OK = {
-    "os", "sys", "json", "re", "pathlib", "math", "io", "time", "datetime",
-    "collections", "itertools", "functools", "typing", "string", "random", "statistics",
-    "textwrap", "glob", "argparse", "csv", "hashlib", "base64", "unittest",
-    "decimal", "fractions", "ast",
+    "os",
+    "sys",
+    "json",
+    "re",
+    "pathlib",
+    "math",
+    "io",
+    "time",
+    "datetime",
+    "collections",
+    "itertools",
+    "functools",
+    "typing",
+    "string",
+    "random",
+    "statistics",
+    "textwrap",
+    "glob",
+    "argparse",
+    "csv",
+    "hashlib",
+    "base64",
+    "unittest",
+    "decimal",
+    "fractions",
+    "ast",
 }
 # subprocess/shutil deliberately NOT allowed: a verify must only OBSERVE, never mutate.
 _VERIFY_DESTRUCTIVE_CALLS = {
-    "system", "popen", "remove", "unlink", "rmdir", "removedirs", "rename", "replace",
-    "truncate", "rmtree", "move", "chmod", "chown", "kill", "killpg", "execv", "execve",
+    "system",
+    "popen",
+    "remove",
+    "unlink",
+    "rmdir",
+    "removedirs",
+    "rename",
+    "replace",
+    "truncate",
+    "rmtree",
+    "move",
+    "chmod",
+    "chown",
+    "kill",
+    "killpg",
+    "execv",
+    "execve",
 }
 _VERIFY_DESTRUCTIVE_NAMES = {"eval", "exec", "compile", "__import__"}
 
 
 # ==== SUB-CHECKS ====
+
 
 def _checkAngleBrackets(cmd: str) -> bool:
     """Return True if cmd should be dropped: unresolved placeholder / redirection / Windows .sh."""
@@ -52,6 +92,7 @@ def _checkAngleBrackets(cmd: str) -> bool:
 def _validatePythonOneliner(code: str, cmd: str) -> bool:
     """Return True if the python -c body is safe to run; False means drop the whole verify."""
     import ast as _ast
+
     try:
         tree = _ast.parse(code, "<verify>", "exec")
     except SyntaxError:
@@ -78,7 +119,27 @@ def _validatePythonOneliner(code: str, cmd: str) -> bool:
     return True
 
 
+def _isUnquotedPythonDashC(cmd: str) -> bool:
+    """True if ``cmd`` is a ``python -c`` invocation whose body is NOT cleanly extractable
+    via the quote-wrapped regex in ``sanitizeVerify`` -- e.g. an unquoted single-token body
+    with no shell metacharacters, which would otherwise skip AST validation entirely. Uses
+    the same Windows-aware, non-posix arg-vector split as the real run path
+    (``agents.verification._splitCmd``) so detection matches actual execution semantics.
+    A parse failure (unbalanced quotes) also returns True (fail closed)."""
+    try:
+        lex = shlex.shlex(cmd, posix=False)
+        lex.whitespace_split = True
+        toks = list(lex)
+    except ValueError:
+        return True  # unbalanced quotes etc. -- can't reliably extract the body, fail closed
+    if len(toks) < 2:
+        return False
+    interpreter = toks[0].strip("'\"").lower()
+    return interpreter in ("py", "python", "python3") and toks[1] == "-c"
+
+
 # ==== PUBLIC API ====
+
 
 def _targetsOnly(verify: dict) -> Optional[dict]:
     """A cmd-less verify may still declare target files (R10 diff grounding): keep JUST the
@@ -106,11 +167,17 @@ def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
         return _targetsOnly(verify)
     expect = verify.get("expect")
     if not (isinstance(expect, str) and expect.strip()):
-        LOG.info("sanitizeVerify: dropping verify with missing expect (the runner never "
-                 "guesses one): %s", cmd)
+        LOG.info(
+            "sanitizeVerify: dropping verify with missing expect (the runner never guesses one): %s", cmd
+        )
         return _targetsOnly(verify)
     m = re.match(r"""(?:py|python|python3)\s+-c\s+(['"])(.*)\1\s*$""", cmd, re.DOTALL)
     if m and not _validatePythonOneliner(m.group(2), cmd):
+        return _targetsOnly(verify)
+    # A python -c body that isn't cleanly quote-extractable (e.g. an unquoted single-token
+    # body) would otherwise skip AST validation entirely -- fail closed instead.
+    if m is None and _isUnquotedPythonDashC(cmd):
+        LOG.info("sanitizeVerify: dropping unquoted/unvalidatable python -c verify: %s", cmd)
         return _targetsOnly(verify)
     # Defense-in-depth: non-python-c commands with shell-chaining metacharacters get dropped.
     # A MATCHED python -c is exempt: its body is ast-validated and the closing quote ends it.

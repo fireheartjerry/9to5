@@ -1,11 +1,18 @@
 """Tests for second-opinion review mixin helpers."""
+
 from __future__ import annotations
+
+import threading
 
 from platform_core.orchestration.control_review_mixin import OrchestratorControlReviewMixin
 
 
 class _Host(OrchestratorControlReviewMixin):
-    pass
+    def __init__(self) -> None:
+        # Mirrors the eager init Orchestrator.__init__ performs (see orchestrator.py) --
+        # _reviewHashLock/_reviewHashes are plain attribute reads now, not lazy check-then-set.
+        self._review_hash_lock = threading.Lock()
+        self._review_hashes: dict = {}
 
 
 def test_worth_gpt_review_dedupes_per_subtask(monkeypatch):

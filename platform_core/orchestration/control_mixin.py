@@ -7,6 +7,7 @@ DEPENDS-ON: config, notifications.audit, notifications.commands, notifications.d
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_audit_correctness.py tests/orchestration/test_orchestrator_poll.py
 """
+
 from __future__ import annotations
 
 import json
@@ -53,26 +54,43 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
             return
         if not getattr(self, "_rest_poll_degraded", False):
             self._rest_poll_degraded = True
-            LOG.warning("gateway bot heartbeat stale -- in-run REST control poller engaged "
-                        "(degraded mode)")
+            LOG.warning("gateway bot heartbeat stale -- in-run REST control poller engaged (degraded mode)")
         # Serialize the getSeen->fetch->apply->setSeen sequence: with parallelism>1 several worker
         # threads poll on the same cadence, and an unsynchronized cursor lets two threads fetch the
         # SAME message batch and apply each command TWICE (e.g. a !add creating duplicate subtasks),
         # while setSeen races backward and re-delivers (CB-7). The lock makes polling atomic.
         if not self._poll_lock.acquire(blocking=False):
-            return   # another worker is already polling this tick; skip (it covers our messages)
+            return  # another worker is already polling this tick; skip (it covers our messages)
         try:
             msgs, latest = discord.fetchMessagesAfter(bus.getSeen())
-            if latest != bus.getSeen():
-                bus.setSeen(latest)
+            last_ok = bus.getSeen()
+            all_ok = True
             for m in msgs:
                 author_id = m.get("author_id") or None
-                cmd = commands.decide(int(author_id) if author_id else None,
-                                      m.get("author_is_bot", False), m.get("content", ""))
-                if cmd:
-                    if commands.COMMAND_REGISTRY.get(cmd.name, {}).get("mutating"):
-                        audit.record(author_id, cmd.name, state.task_id, "discord-poll")
-                    commands.applyCommand(bus, state, cmd, source_msg_id=m.get("id"))
+                cmd = commands.decide(
+                    int(author_id) if author_id else None, m.get("author_is_bot", False), m.get("content", "")
+                )
+                try:
+                    if cmd:
+                        if commands.COMMAND_REGISTRY.get(cmd.name, {}).get("mutating"):
+                            audit.record(author_id, cmd.name, state.task_id, "discord-poll")
+                        commands.applyCommand(bus, state, cmd, source_msg_id=m.get("id"))
+                except Exception:  # noqa: BLE001 -- one bad message must not lose the batch
+                    LOG.exception(
+                        "control-poll: applyCommand failed for msg %s -- cursor "
+                        "held before it so it is retried next poll",
+                        m.get("id"),
+                    )
+                    all_ok = False
+                    break
+                last_ok = m.get("id")
+            # Advance the cursor only past messages that were actually applied. pushOp/decide
+            # are idempotent via source_msg_id dedup (control_store UNIQUE constraint), so
+            # re-polling a message already applied is a safe no-op -- never re-apply a
+            # message we failed to process (CB-7 cursor-vs-apply ordering).
+            new_seen = latest if all_ok else last_ok
+            if new_seen != bus.getSeen():
+                bus.setSeen(new_seen)
         finally:
             self._poll_lock.release()
 
@@ -80,12 +98,14 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
         """Drain queued plan ops and apply each under the state lock (single-writer rule:
         this run-loop drain is where bot/launcher intent becomes task-JSON writes)."""
         from platform_core.orchestration import control_ops
+
         for op in bus.drainOps():
             with self._state_lock:
                 control_ops.applyOp(state, op, dashboard)
 
-    def _waitWhilePaused(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard,
-                         label: str = "paused") -> None:
+    def _waitWhilePaused(
+        self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard, label: str = "paused"
+    ) -> None:
         """Block while the bus is paused, but ALWAYS escapable: returns on resume, on abort, on the
         night-mode pause timeout, or once the work-horizon deadline passes. Shared by _checkControl
         and the mid-subtask pause loop so a !pause can never wedge an unattended run forever (CB-1)."""
@@ -95,10 +115,12 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
         while bus.isPaused() and not bus.isAbort():
             if config.NIGHT_MODE and (time.time() - pause_start) > config.NIGHT_MODE_PAUSE_TIMEOUT:
                 bus.clearPause()
-                dashboard.event(f"night mode: auto-resumed after {config.NIGHT_MODE_PAUSE_TIMEOUT}s pause timeout")
+                dashboard.event(
+                    f"night mode: auto-resumed after {config.NIGHT_MODE_PAUSE_TIMEOUT}s pause timeout"
+                )
                 LOG.info("night mode: auto-resumed after pause timeout")
                 break
-            if self._deadlinePassed(state):   # never park past the 5pm horizon
+            if self._deadlinePassed(state):  # never park past the 5pm horizon
                 bus.clearPause()
                 LOG.warning("deadline reached while paused -- auto-resuming to finalize")
                 break
@@ -111,8 +133,11 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
         interaction). The plan is already brain-authored + self-critiqued, so this is a final sanity
         check: approve unless the plan is clearly broken. Any failure approves, and a soft reject is
         recorded but never wedges or aborts the autonomous run."""
-        subs = [{"title": s.get("title"), "expect": (s.get("verify") or {}).get("expect")}
-                for s in state.subtasks if s.get("status") != "removed"]
+        subs = [
+            {"title": s.get("title"), "expect": (s.get("verify") or {}).get("expect")}
+            for s in state.subtasks
+            if s.get("status") != "removed"
+        ]
         if not subs:
             return "reject", "empty plan"
         goal = state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "")
@@ -122,22 +147,29 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
             "Approve unless it is clearly broken (off-goal, or missing obviously-required work). "
             'Respond with JSON ONLY: {"approve": true|false, "reason": "..."}.'
         )
-        user = (f"GOAL:\n{goal[:1500]}\n\nPLAN ({len(subs)} subtasks):\n"
-                f"{json.dumps(subs, indent=2)[:2000]}\n\nReturn the verdict JSON.")
+        user = (
+            f"GOAL:\n{goal[:1500]}\n\nPLAN ({len(subs)} subtasks):\n"
+            f"{json.dumps(subs, indent=2)[:2000]}\n\nReturn the verdict JSON."
+        )
         with best_effort("work_profile.guidance", log=LOG):
             from platform_core.orchestration import work_profile as _wp
+
             user = _wp.guidance_block(state.meta.get("work_profile"), context="plan-gate") + "\n" + user
         # Jerry advisor (opt-in via JERRY_ADVISOR=1): a model of how the operator
         # usually decides, injected as a SECOND OPINION. The brain still decides.
         with best_effort("jerry.advise", log=LOG):
             import os
+
             if os.getenv("JERRY_ADVISOR") == "1":
                 from notifications import jerry_client
+
                 _adv = jerry_client.advise("plan", state)
                 if _adv:
-                    user += ("\n\nOPERATOR ADVISOR (a fine-tuned model of how the operator "
-                             "typically decides — ADVISORY ONLY, you remain the gatekeeper): "
-                             f"{_adv}")
+                    user += (
+                        "\n\nOPERATOR ADVISOR (a fine-tuned model of how the operator "
+                        "typically decides — ADVISORY ONLY, you remain the gatekeeper): "
+                        f"{_adv}"
+                    )
         try:
             data = _chatJson(self._ollamaChat(system, user, act="gatekeeper", want_json=True)) or {}
             approve = data.get("approve", True) if isinstance(data, dict) else True
@@ -146,19 +178,19 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
         except Exception as e:  # noqa: BLE001 -- the gate must never block the autonomous run
             return "approve", f"auto-approve (gate review failed: {e})"
 
-    def _handlePlanGate(self, state: TaskState, bus: ControlBus,
-                        dashboard: DiscordDashboard) -> None:
+    def _handlePlanGate(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard) -> None:
         """Auto-approve the plan through Ollama unless a human explicitly decides first.
         The wait itself is ``bus.waitDecision`` (shared abort/timeout/night-mode escapes)."""
         bus.clearDecision("plan")
         bus.setPendingGate("plan")
         dashboard.update(state, "awaiting plan", "plan gate — ollama auto-approves shortly")
         verdict = bus.waitDecision(
-            "plan", timeout=config.PLAN_GATE_AUTO_APPROVE_SECONDS,
+            "plan",
+            timeout=config.PLAN_GATE_AUTO_APPROVE_SECONDS,
             poll=config.DISCORD_POLL_SECONDS,
-            on_tick=lambda: (self._translateDiscord(bus, state),
-                             self._applyOps(state, bus, dashboard)),
-            escape=lambda: self._deadlinePassed(state))
+            on_tick=lambda: (self._translateDiscord(bus, state), self._applyOps(state, bus, dashboard)),
+            escape=lambda: self._deadlinePassed(state),
+        )
         if verdict == "abort":
             bus.setPendingGate(None)
             raise AbortRun("aborted at plan gate")
@@ -167,7 +199,7 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
             raise AbortRun("plan rejected")
         if verdict == "approve":
             dashboard.event("plan gate: approved (human)")
-        else:   # window elapsed / deadline -> Ollama gatekeeps (zero-human design)
+        else:  # window elapsed / deadline -> Ollama gatekeeps (zero-human design)
             auto, reason = self._autoApprovePlan(state)
             dashboard.event(f"plan gate: ollama auto-{auto} — {reason[:50]}")
             with self._state_lock:
@@ -176,19 +208,19 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
                 LOG.warning("plan gate: ollama auto-rejected (%s) -- proceeding autonomously", reason)
         bus.setPendingGate(None)
 
-    def _jerryShadowPredict(self, gate: str, state: TaskState,
-                            dashboard: DiscordDashboard) -> "dict | None":
+    def _jerryShadowPredict(self, gate: str, state: TaskState, dashboard: DiscordDashboard) -> "dict | None":
         """Jerry shadow mode (opt-in via JERRY_SHADOW=1; log-only, never affects the gate).
         Returns a context dict when shadow mode is on, else None."""
         with best_effort("jerry.shadow_predict", log=LOG):
             import os
+
             if os.getenv("JERRY_SHADOW") != "1":
                 return None
             from notifications import jerry_client
+
             pred = jerry_client.decide(gate, state)
             if pred:
-                dashboard.event(f"jerry(shadow) {gate}: {pred.get('verb')} "
-                                f"@{pred.get('confidence')}")
+                dashboard.event(f"jerry(shadow) {gate}: {pred.get('verb')} @{pred.get('confidence')}")
             return {"pred": pred}
         return None
 
@@ -198,10 +230,12 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
             return
         with best_effort("jerry.shadow_outcome", log=LOG):
             from notifications import jerry_client
+
             jerry_client.recordOutcome(gate, jerry["pred"], verdict)
 
-    def _handleOtherGate(self, gate: str, state: TaskState, bus: ControlBus,
-                         dashboard: DiscordDashboard) -> None:
+    def _handleOtherGate(
+        self, gate: str, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard
+    ) -> None:
         """Block at a human-approval gate (pre_pr or other), with deadline fallback. The
         wait itself is ``bus.waitDecision`` (shared abort/deadline/night-mode escapes)."""
         bus.clearDecision(gate)
@@ -209,14 +243,17 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
         discord.sendEmbed(discord.gateNeededEmbed(gate), content=discord.humanPing())
         if config.POLL_GATES:
             from notifications import engagement
+
             discord.createPoll(engagement.gatePollPayload(gate), content=discord.humanPing())
         dashboard.update(state, f"awaiting {gate}", f"awaiting approval for gate: {gate}")
         jerry = self._jerryShadowPredict(gate, state, dashboard)
         verdict = bus.waitDecision(
-            gate, timeout=None, poll=config.DISCORD_POLL_SECONDS,
-            on_tick=lambda: (self._translateDiscord(bus, state),
-                             self._applyOps(state, bus, dashboard)),
-            escape=lambda: self._deadlinePassed(state))
+            gate,
+            timeout=None,
+            poll=config.DISCORD_POLL_SECONDS,
+            on_tick=lambda: (self._translateDiscord(bus, state), self._applyOps(state, bus, dashboard)),
+            escape=lambda: self._deadlinePassed(state),
+        )
         bus.setPendingGate(None)
         if verdict == "abort":
             raise AbortRun("aborted at gate")
@@ -236,8 +273,9 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
         LOG.warning("gate '%s' timed out at deadline -- aborting to finalize", gate)
         raise AbortRun(f"gate '{gate}' timed out at deadline")
 
-    def _checkControl(self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard,
-                      gate: "str | None" = None) -> None:
+    def _checkControl(
+        self, state: TaskState, bus: ControlBus, dashboard: DiscordDashboard, gate: "str | None" = None
+    ) -> None:
         self._translateDiscord(bus, state)
         self._applyOps(state, bus, dashboard)
         self._waitWhilePaused(state, bus, dashboard)
@@ -275,8 +313,10 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
             vr = s.get("verify_result")
             mark = "" if vr is None else (" ✅" if vr.get("passed") else " ❌")
             eff = (s.get("session") or {}).get("effort") or ""
-            lines.append(f"- `{s['subtask_id']}` [{s['status']}]{mark} {s['title']} "
-                         f"{('· ' + eff) if eff else ''} -> {s.get('output_ref') or '-'}")
+            lines.append(
+                f"- `{s['subtask_id']}` [{s['status']}]{mark} {s['title']} "
+                f"{('· ' + eff) if eff else ''} -> {s.get('output_ref') or '-'}"
+            )
         lines += ["", "## Adversary reviews"]
         for r in state.data["adversary_reviews"]:
             lines.append(f"- {r['subtask_id']}: {r['verdict']} ({r['trigger_reason']})")
@@ -286,8 +326,9 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
         with best_effort("obsidian.write", log=LOG):
             self.obs.writeNote(state.indexNoteRel(), "\n".join(lines) + "\n")
 
-    def _subtaskNote(self, state: TaskState, subtask: dict, spec: dict, result: dict,
-                     vresult: "dict | None") -> str:
+    def _subtaskNote(
+        self, state: TaskState, subtask: dict, spec: dict, result: dict, vresult: "dict | None"
+    ) -> str:
         return orchestrator_subtask._subtaskNote(state, subtask, spec, result, vresult)
 
     def _reviewNote(self, subtask: dict, reason: str, review: dict, output: str) -> str:
@@ -299,8 +340,9 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
     def _detectSelfReferential(self, state: TaskState, work_dir: str) -> bool:
         return orchestrator_run_loop._detectSelfReferential(state, work_dir)
 
-    def _prepareSelfReferential(self, state: TaskState, work_dir: str,
-                                bus: ControlBus, dashboard: DiscordDashboard) -> None:
+    def _prepareSelfReferential(
+        self, state: TaskState, work_dir: str, bus: ControlBus, dashboard: DiscordDashboard
+    ) -> None:
         orchestrator_run_loop._prepareSelfReferential(state, work_dir, bus, dashboard)
 
     @staticmethod
@@ -317,10 +359,12 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
         """Run the self-modification safety gate (test suite + optional revert) for self-ref runs."""
         if not state.meta.get("is_self_referential"):
             return
-        with best_effort("selfmod.safety_gate", log=LOG):   # best-effort, never blocks
+        with best_effort("selfmod.safety_gate", log=LOG):  # best-effort, never blocks
             import selfmod
-            gate = selfmod.safety_gate(work_dir, is_self_referential=True,
-                                       code_diverged=state.meta.get("code_diverged", False))
+
+            gate = selfmod.safety_gate(
+                work_dir, is_self_referential=True, code_diverged=state.meta.get("code_diverged", False)
+            )
             if gate.get("ran"):
                 if gate.get("passed"):
                     verdict = "PASSED"
@@ -329,5 +373,6 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
                 else:
                     verdict = "KEPT (pre-existing test failure)"
                 dashboard.update(state, "executing", f"core self-mod gate: {verdict}")
-                state.addNotification("selfmod_gate", f"{verdict}: {gate.get('changed')}",
-                                      reverted=bool(gate.get("reverted")))
+                state.addNotification(
+                    "selfmod_gate", f"{verdict}: {gate.get('changed')}", reverted=bool(gate.get("reverted"))
+                )

@@ -1,4 +1,5 @@
 """Unit tests for SIE Layer 4 policy bandit (learning/policy.py)."""
+
 import random
 import tempfile
 import unittest
@@ -12,21 +13,44 @@ from memory import experience
 
 class TestReward(unittest.TestCase):
     def test_first_pass_no_cost_is_max(self):
-        self.assertAlmostEqual(
-            policy.compute_reward({"verify_passed": 1, "attempt_count": 1}), 1.0)
+        self.assertAlmostEqual(policy.compute_reward({"verify_passed": 1, "attempt_count": 1}), 1.0)
 
     def test_failure_is_zero(self):
-        self.assertAlmostEqual(
-            policy.compute_reward({"verify_passed": 0, "attempt_count": 1}), 0.0)
+        self.assertAlmostEqual(policy.compute_reward({"verify_passed": 0, "attempt_count": 1}), 0.0)
 
     def test_retries_penalized(self):
         # 1.0 - 0.3*(3-1) = 0.4
-        self.assertAlmostEqual(
-            policy.compute_reward({"verify_passed": 1, "attempt_count": 3}), 0.4)
+        self.assertAlmostEqual(policy.compute_reward({"verify_passed": 1, "attempt_count": 3}), 0.4)
 
     def test_cost_penalized(self):
         r = policy.compute_reward({"verify_passed": 1, "attempt_count": 1, "cost_usd": 1.0})
         self.assertAlmostEqual(r, 1.0 - config.POLICY_REWARD_WEIGHTS["cost"])
+
+    def test_wallclock_penalized(self):
+        # Duration at/above _WALL_CAP saturates norm_wall to 1.0.
+        row = {
+            "verify_passed": 1,
+            "attempt_count": 1,
+            "started_at": "2026-01-01T00:00:00",
+            "ended_at": "2026-01-01T00:20:00",  # 1200s >= 600s cap
+        }
+        r = policy.compute_reward(row)
+        self.assertAlmostEqual(r, 1.0 - config.POLICY_REWARD_WEIGHTS["wallclock"])
+
+    def test_wallclock_missing_timestamps_is_zero_penalty(self):
+        # No started_at/ended_at -> no penalty (never raises).
+        r = policy.compute_reward({"verify_passed": 1, "attempt_count": 1})
+        self.assertAlmostEqual(r, 1.0)
+
+    def test_wallclock_unparseable_timestamps_is_zero_penalty(self):
+        row = {
+            "verify_passed": 1,
+            "attempt_count": 1,
+            "started_at": "not-a-date",
+            "ended_at": "also-not-a-date",
+        }
+        r = policy.compute_reward(row)
+        self.assertAlmostEqual(r, 1.0)
 
 
 class TestBandit(unittest.TestCase):
@@ -46,11 +70,17 @@ class TestBandit(unittest.TestCase):
 
     def _seed(self, fam, effort, passed, n):
         for i in range(n):
-            experience.record_subtask("r1", {
-                "subtask_id": f"{fam}-{effort}-{int(passed)}-{i}", "title": f"{fam} thing",
-                "status": "done", "verify_result": {"passed": passed},
-                "session": {"effort": effort, "attempts": 1},
-            }, db_path=self.db)
+            experience.record_subtask(
+                "r1",
+                {
+                    "subtask_id": f"{fam}-{effort}-{int(passed)}-{i}",
+                    "title": f"{fam} thing",
+                    "status": "done",
+                    "verify_result": {"passed": passed},
+                    "session": {"effort": effort, "attempts": 1},
+                },
+                db_path=self.db,
+            )
 
     def test_rebuild_accumulates_arms(self):
         self._seed("discord", "high", True, 4)
@@ -60,17 +90,16 @@ class TestBandit(unittest.TestCase):
         arms = {a["action_json"]: a for a in experience.fetch_arms("discord", db_path=self.db)}
         high = arms['{"effort": "high"}']
         self.assertEqual(high["pulls"], 4)
-        self.assertAlmostEqual(high["reward_sum"], 4.0)   # 4 first-pass wins
+        self.assertAlmostEqual(high["reward_sum"], 4.0)  # 4 first-pass wins
 
     def test_select_favors_better_arm(self):
-        self._seed("discord", "high", True, 10)     # reward ~1.0
+        self._seed("discord", "high", True, 10)  # reward ~1.0
         self._seed("discord", "default", False, 10)  # reward ~0.0
         policy.rebuild_from_ledger(db_path=self.db)
         rng = random.Random(0)
         actions = [{"effort": "high"}, {"effort": "default"}]
-        picks = [policy.select("discord", actions, rng=rng, db_path=self.db)["effort"]
-                 for _ in range(50)]
-        self.assertGreater(picks.count("high"), 40)   # strongly prefers the winner
+        picks = [policy.select("discord", actions, rng=rng, db_path=self.db)["effort"] for _ in range(50)]
+        self.assertGreater(picks.count("high"), 40)  # strongly prefers the winner
 
     def test_hint_empty_without_evidence(self):
         # No arms for this family -> no hint.
