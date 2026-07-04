@@ -9097,42 +9097,42 @@
           "kind": "class",
           "signature": "",
           "summary": "Local Ollama brain + the Gemini second brain.",
-          "lineno": 37
+          "lineno": 38
         },
         {
           "name": "buildOllamaCfg",
           "kind": "function",
           "signature": "() -> OllamaCfg",
           "summary": "",
-          "lineno": 72
+          "lineno": 73
         },
         {
           "name": "ClaudeCliCfg",
           "kind": "class",
           "signature": "",
           "summary": "Claude Code CLI executor: timeouts, model/effort routing, doc-fetch, playbook.",
-          "lineno": 95
+          "lineno": 96
         },
         {
           "name": "buildClaudeCliCfg",
           "kind": "function",
           "signature": "() -> ClaudeCliCfg",
           "summary": "",
-          "lineno": 153
+          "lineno": 154
         },
         {
           "name": "SieCfg",
           "kind": "class",
           "signature": "",
           "summary": "SIE/learning + Obsidian service + adversary + orchestration/run-control knobs.",
-          "lineno": 159
+          "lineno": 160
         },
         {
           "name": "buildSieCfg",
           "kind": "function",
           "signature": "() -> SieCfg",
           "summary": "",
-          "lineno": 352
+          "lineno": 353
         }
       ],
       "depends_on": [
