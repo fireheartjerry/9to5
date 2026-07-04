@@ -82,6 +82,42 @@ def test_teardown_never_raises_on_malformed_subtasks(monkeypatch):
     runTeardownHooks(_FakeOrch(), state)  # must not raise
 
 
+def test_run_events_agency_is_numeric_not_self_string(monkeypatch):
+    """REGRESSION: _runEvents must emit a NUMERIC agency, never the string "self".
+
+    appraisal.appraise() coerces agency via float(); an agency of "self" raised
+    `ValueError: could not convert string to float: 'self'` inside the appraisal path,
+    which best_effort at teardown silently swallowed -- so affect was never written.
+    """
+    from human_nature.appraisal import appraise
+    from platform_core.orchestration.human_nature_bridge import _runEvents
+
+    state = TaskState.create("test goal", 1.0)
+    state.subtasks.append({"subtask_id": "st-1", "title": "a", "status": "done"})
+    state.subtasks.append({"subtask_id": "st-2", "title": "b", "status": "failed"})
+
+    events = _runEvents(state)
+    assert events, "expected appraisal events for done/failed subtasks"
+    for e in events:
+        assert isinstance(e["agency"], (int, float)) and not isinstance(e["agency"], bool)
+    # Previously raised on float("self"); must now appraise cleanly.
+    pad = appraise(events)
+    assert {"valence", "arousal", "control"}.issubset(pad)
+
+
+def test_teardown_writes_real_affect_when_enabled(monkeypatch):
+    """REGRESSION: with HN on and a completed subtask, teardown's appraisal must actually
+    WRITE affect into self_state. Before the fix the appraisal raised (agency="self") and
+    best_effort swallowed it, leaving affect unset -- the crash the live run surfaced."""
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    state = _make_state()  # one "done" subtask
+    runPreambleHooks(state)
+    runTeardownHooks(_FakeOrch(), state)
+    affect = state.meta["self_state"].get("affect")
+    assert affect is not None, "appraisal never wrote affect (silently swallowed crash)"
+    assert affect["valence"] > 0.0  # a single successful subtask -> positive valence
+
+
 def test_mid_run_instinct_off_is_noop(monkeypatch):
     import config
     from platform_core.orchestration import human_nature_bridge as hnb

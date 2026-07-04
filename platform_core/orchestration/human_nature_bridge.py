@@ -27,6 +27,7 @@ DEPENDS-ON: config, human_nature.ab_harness, human_nature.continuity, human_natu
 SIDE-EFFECTS: mutates state.meta when enabled; writes continuity letters + ab_runs.db rows
 RUN/TEST: python -m pytest tests/orchestration/test_human_nature_bridge.py
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -47,8 +48,8 @@ def midRunInstinct(state: Any, dashboard: Any = None) -> "str | None":
         from human_nature import integration
         from memory.experience_adapters import fetch_failure_modes
         from memory.experience_solutions import fetch_reflections
-        flag = integration.maybe_run_instinct(
-            state, fetch_reflections() or [], fetch_failure_modes() or [])
+
+        flag = integration.maybe_run_instinct(state, fetch_reflections() or [], fetch_failure_modes() or [])
         if flag:
             LOG.info("human-nature instinct: %s", flag)
             if dashboard is not None:
@@ -93,6 +94,7 @@ def _convictionFor(state: Any, domain: str) -> float:
     try:
         from human_nature.conviction import track_weight
         from memory.conviction_ledger import track_record
+
         track = track_record(_OPINION_JUDGMENT_TYPE, str(domain))
         return max(0.0, min(1.0, float(track_weight(track))))
     except Exception:  # noqa: BLE001
@@ -113,6 +115,7 @@ def opinionAdvisory(state: Any, dashboard: Any = None) -> "list[dict]":
     surfaced: list[dict] = []
     try:
         from human_nature import opinions
+
         for subtask in _subtasks(state):
             domain = _subtaskDomain(state, subtask)
             conviction = _convictionFor(state, domain)
@@ -132,7 +135,6 @@ def opinionAdvisory(state: Any, dashboard: Any = None) -> "list[dict]":
         LOG.debug("opinionAdvisory failed (ignored)", exc_info=True)
         return []
     return surfaced
-
 
 
 # --- Emotion faculty: affect -> emotion label -> advisory behavior coupling ------
@@ -191,6 +193,7 @@ def emotionAdvisory(state: Any, dashboard: Any = None) -> dict:
         return {}
     try:
         from human_nature import emotions
+
         meta = _meta(state)
         self_state = meta.get("self_state") or {}
         label = _affectToLabel(self_state.get("affect"))
@@ -220,6 +223,7 @@ def _retrievalSignals(goal: str, title: str) -> dict:
     pass fraction among near neighbours (successes vs. similar failures). Empty when nothing
     is retrieved -- no fabricated confidence. Never raises."""
     from memory import retrieval
+
     successes = list(retrieval.retrieve(goal, title) or [])
     if not successes:
         return {}
@@ -250,7 +254,7 @@ def attemptSignals(state: Any, subtask: dict) -> dict:
     if not (config.HUMAN_NATURE_ENABLED and config.HN_INTUITION_SHORTCUT):
         return {}
     try:
-        goal = (_meta(state).get("goal_elaborated") or _meta(state).get("goal_raw") or "")
+        goal = _meta(state).get("goal_elaborated") or _meta(state).get("goal_raw") or ""
         title = str(subtask.get("title") or "")
         signals = _retrievalSignals(str(goal), title)
         # Brain-authored confidence: only a source when retrieval didn't already give p_true.
@@ -272,6 +276,7 @@ def preActRouting(state: Any, domain: str, signals: "dict | None" = None) -> str
         return "deliberate"
     try:
         from human_nature import integration
+
         return integration.route_pre_act(state, str(domain), dict(signals or {}))
     except Exception:  # noqa: BLE001
         LOG.debug("preActRouting failed (ignored)", exc_info=True)
@@ -299,6 +304,7 @@ def runPreambleHooks(state: Any) -> None:
         return
     with best_effort("human_nature.preamble", log=LOG):
         from human_nature import integration
+
         integration.ensure_self_state(state)
 
 
@@ -322,14 +328,19 @@ def _runEvents(state: Any) -> list:
     for s in state.subtasks:
         if s.get("status") not in ("done", "failed"):
             continue
-        events.append({"outcome": "success" if s["status"] == "done" else "failure",
-                       "agency": "self", "novelty": 0.0})
+        # agency is a float in [0,1] (appraisal coerces it via float()); these are the run's
+        # OWN subtask outcomes, so self-agency is full (1.0). NOT the string "self" -- that
+        # raised ValueError: could not convert string to float: 'self' in the appraisal path.
+        events.append(
+            {"outcome": "success" if s["status"] == "done" else "failure", "agency": 1.0, "novelty": 0.0}
+        )
     return events
 
 
 def _abMetrics(state: Any) -> dict:
     """test_pass (fraction of verified subtasks that passed) + time_to_green (run elapsed)."""
     from platform_core.orchestration.time_utils import _elapsedSince
+
     verified = [s.get("verify_result") for s in state.subtasks if s.get("verify_result")]
     test_pass = (sum(1 for v in verified if v.get("passed")) / len(verified)) if verified else 0.0
     meta = _meta(state)
@@ -345,25 +356,33 @@ def runTeardownHooks(orch: Any, state: Any) -> None:
     arm = "on" if config.HUMAN_NATURE_ENABLED else "off"
     with best_effort("human_nature.ab_record", log=LOG):
         from human_nature.ab_harness import record_run
+
         record_run(run_id=state.task_id, arm=arm, metrics=_abMetrics(state))
     if not config.HUMAN_NATURE_ENABLED:
         return
     from human_nature import integration
+
     with best_effort("human_nature.observe", log=LOG):
         integration.observe_run_events(state, _runEvents(state))
     reflections: list = []
     with best_effort("human_nature.fetch_reflections", log=LOG):
         from memory.experience_solutions import fetch_reflections
-        reflections = [r.get("text", "") for r in (fetch_reflections(trusted_only=False) or [])
-                       if r.get("text")][:10]
+
+        reflections = [
+            r.get("text", "") for r in (fetch_reflections(trusted_only=False) or []) if r.get("text")
+        ][:10]
     with best_effort("human_nature.consolidation", log=LOG):
         chat = getattr(orch, "_ollamaChat", None)
         integration.at_teardown(state, _scoredJudgments(state), reflections, chat=chat)
     with best_effort("human_nature.continuity", log=LOG):
         from human_nature.continuity import write_letter
+
         meta = _meta(state)
         self_state = meta.get("self_state") or {}
-        write_letter(state.task_id, body_state={
-            "competence": self_state.get("competence"),
-            "affect": self_state.get("affect"),
-        })
+        write_letter(
+            state.task_id,
+            body_state={
+                "competence": self_state.get("competence"),
+                "affect": self_state.get("affect"),
+            },
+        )
