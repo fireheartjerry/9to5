@@ -23,7 +23,7 @@ EXPORTS:
   biasEffort(current_effort: str, routing: str) -> str  -- Pure ADVISORY bias: when *routing* == "fast", drop *current_effort* ONE tier on
   runPreambleHooks(state: Any) -> None  -- Hook 1: lazily initialise self_state at run start
   runTeardownHooks(orch: Any, state: Any) -> None  -- Hook 6 (A/B recording) always fires
-DEPENDS-ON: config, human_nature.ab_harness, human_nature.continuity, human_nature.emotions, human_nature.integration, human_nature.opinions, human_nature.self_state, memory.experience_adapters, memory.experience_solutions, memory.retrieval, platform_core.core.best_effort, platform_core.orchestration.time_utils
+DEPENDS-ON: config, human_nature.ab_harness, human_nature.continuity, human_nature.conviction, human_nature.emotions, human_nature.integration, human_nature.opinions, memory.conviction_ledger, memory.experience_adapters, memory.experience_solutions, memory.retrieval, platform_core.core.best_effort, platform_core.orchestration.time_utils
 SIDE-EFFECTS: mutates state.meta when enabled; writes continuity letters + ab_runs.db rows
 RUN/TEST: python -m pytest tests/orchestration/test_human_nature_bridge.py
 """
@@ -76,16 +76,25 @@ def _subtaskDomain(state: Any, subtask: dict) -> str:
     return str(dom)
 
 
+# judgment_type recorded for opinion/flag calibration in the conviction ledger.
+_OPINION_JUDGMENT_TYPE = "opinion"
+
+
 def _convictionFor(state: Any, domain: str) -> float:
-    """Best-effort conviction score in [0,1] for *domain*. Sourced from this run's
-    self_state calibrated competence (written by the HN layer); 0.0 when absent -- a
-    0.0 conviction maps to the "cosmetic" tier, i.e. a silent no-op. Never raises."""
+    """Best-effort conviction score in [0,1] for *domain*, sourced from the REAL
+    conviction ledger's per-domain track record. ``track_record`` returns the HONEST
+    hit-rate (fraction of times HN's past opinions in this domain proved correct);
+    ``conviction.track_weight`` folds in the ledger's cold-start floor (below
+    ``MIN_SAMPLES`` observations it yields 0.0, so a 1/1 record earns no teeth) and
+    otherwise returns that hit-rate directly. 0.0 when the ledger is empty, the domain
+    is unseen, or the accessor errors -- a 0.0 conviction maps to the "cosmetic" tier,
+    i.e. a silent no-op. No fabricated conviction, no LLM calls. Never raises. The
+    *state* arg is kept for signature stability (ledger scope is domain-wide, not per-run)."""
     try:
-        self_state = _meta(state).get("self_state") or {}
-        if not self_state:
-            return 0.0
-        from human_nature.self_state import get_competence
-        return float(get_competence(self_state, domain).get("p", 0.0) or 0.0)
+        from human_nature.conviction import track_weight
+        from memory.conviction_ledger import track_record
+        track = track_record(_OPINION_JUDGMENT_TYPE, str(domain))
+        return max(0.0, min(1.0, float(track_weight(track))))
     except Exception:  # noqa: BLE001
         return 0.0
 

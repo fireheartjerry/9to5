@@ -2330,7 +2330,8 @@
       ],
       "callers": [
         "human_nature.intuition",
-        "human_nature.momentary"
+        "human_nature.momentary",
+        "platform_core.orchestration.human_nature_bridge"
       ]
     },
     "human_nature.drift": {
@@ -2801,8 +2802,7 @@
       "callers": [
         "human_nature.consolidation",
         "human_nature.integration",
-        "human_nature.self_model",
-        "platform_core.orchestration.human_nature_bridge"
+        "human_nature.self_model"
       ]
     },
     "human_nature.user_model": {
@@ -4703,7 +4703,8 @@
         "tests/evolution/test_conviction_ledger.py"
       ],
       "callers": [
-        "human_nature.instinct"
+        "human_nature.instinct",
+        "platform_core.orchestration.human_nature_bridge"
       ]
     },
     "memory.exp_index": {
@@ -11729,66 +11730,67 @@
           "kind": "function",
           "signature": "(state: Any, dashboard: Any=None) -> 'list[dict]'",
           "summary": "Advisory-only opinion coupling on the plan gate",
-          "lineno": 93
+          "lineno": 102
         },
         {
           "name": "emotionNudge",
           "kind": "function",
           "signature": "(behavior_intent: 'str | None') -> int",
           "summary": "Pure helper: map a coupled behavior intent to a BOUNDED retry-budget delta in",
-          "lineno": 162
+          "lineno": 171
         },
         {
           "name": "emotionAdvisory",
           "kind": "function",
           "signature": "(state: Any, dashboard: Any=None) -> dict",
           "summary": "Wire the Human-Nature emotion faculty as an ADVISORY behavior coupling",
-          "lineno": 171
+          "lineno": 180
         },
         {
           "name": "attemptSignals",
           "kind": "function",
           "signature": "(state: Any, subtask: dict) -> dict",
           "summary": "Assemble REAL momentary confidence signals for ``preActRouting`` from data that",
-          "lineno": 230
+          "lineno": 239
         },
         {
           "name": "preActRouting",
           "kind": "function",
           "signature": "(state: Any, domain: str, signals: 'dict | None'=None) -> str",
           "summary": "Hook 2: best-effort thin wrapper over ``integration.route_pre_act``",
-          "lineno": 256
+          "lineno": 265
         },
         {
           "name": "biasEffort",
           "kind": "function",
           "signature": "(current_effort: str, routing: str) -> str",
           "summary": "Pure ADVISORY bias: when *routing* == \"fast\", drop *current_effort* ONE tier on",
-          "lineno": 270
+          "lineno": 279
         },
         {
           "name": "runPreambleHooks",
           "kind": "function",
           "signature": "(state: Any) -> None",
           "summary": "Hook 1: lazily initialise self_state at run start",
-          "lineno": 285
+          "lineno": 294
         },
         {
           "name": "runTeardownHooks",
           "kind": "function",
           "signature": "(orch: Any, state: Any) -> None",
           "summary": "Hook 6 (A/B recording) always fires",
-          "lineno": 329
+          "lineno": 338
         }
       ],
       "depends_on": [
         "config",
         "human_nature.ab_harness",
         "human_nature.continuity",
+        "human_nature.conviction",
         "human_nature.emotions",
         "human_nature.integration",
         "human_nature.opinions",
-        "human_nature.self_state",
+        "memory.conviction_ledger",
         "memory.experience_adapters",
         "memory.experience_solutions",
         "memory.retrieval",

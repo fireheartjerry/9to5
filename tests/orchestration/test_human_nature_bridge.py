@@ -227,6 +227,120 @@ def test_opinion_advisory_is_advisory_only_never_mutates_plan(monkeypatch):
         assert key not in state.meta
 
 
+# --- _convictionFor (ledger-grounded conviction sourcing) ----------------------
+
+
+def test_conviction_for_zero_when_ledger_empty(monkeypatch, tmp_path):
+    """Empty ledger / unseen domain -> 0.0 (cosmetic -> silent no-op)."""
+    import memory.conviction_ledger as ledger
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    # track_record on an empty db returns {"hits":0,"total":0,"rate":0.0}.
+    monkeypatch.setattr(
+        ledger,
+        "track_record",
+        lambda jt, dom, **k: {"hits": 0, "total": 0, "rate": 0.0},
+    )
+    assert hnb._convictionFor(_make_opinion_state(), "tactics") == 0.0
+
+
+def test_conviction_for_zero_when_accessor_raises(monkeypatch):
+    """Best-effort: a ledger accessor that raises -> 0.0, never propagates."""
+    import memory.conviction_ledger as ledger
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    def _boom(*a, **k):
+        raise RuntimeError("conviction db locked")
+
+    monkeypatch.setattr(ledger, "track_record", _boom)
+    assert hnb._convictionFor(_make_opinion_state(), "tactics") == 0.0
+
+
+def test_conviction_for_zero_below_min_samples(monkeypatch):
+    """A 1/1 perfect record is NOT full conviction -- cold-start floor gives no teeth."""
+    import memory.conviction_ledger as ledger
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(
+        ledger,
+        "track_record",
+        lambda jt, dom, **k: {"hits": 1, "total": 1, "rate": 1.0},
+    )
+    assert hnb._convictionFor(_make_opinion_state(), "tactics") == 0.0
+
+
+def test_conviction_for_returns_rate_when_enough_samples(monkeypatch):
+    """With a proven track record (>= MIN_SAMPLES), conviction == the hit-rate in [0,1]."""
+    import memory.conviction_ledger as ledger
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(
+        ledger,
+        "track_record",
+        lambda jt, dom, **k: {"hits": 9, "total": 10, "rate": 0.9},
+    )
+    conv = hnb._convictionFor(_make_opinion_state(), "tactics")
+    assert 0.0 <= conv <= 1.0
+    assert abs(conv - 0.9) < 1e-9
+
+
+def test_conviction_for_queries_opinion_type_and_domain(monkeypatch):
+    """The accessor is called with the opinion judgment_type and the passed domain."""
+    import memory.conviction_ledger as ledger
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    seen = {}
+
+    def _capture(judgment_type, domain, **k):
+        seen["jt"] = judgment_type
+        seen["dom"] = domain
+        return {"hits": 8, "total": 10, "rate": 0.8}
+
+    monkeypatch.setattr(ledger, "track_record", _capture)
+    hnb._convictionFor(_make_opinion_state(), "scope")
+    assert seen["dom"] == "scope"
+    assert seen["jt"]  # a non-empty judgment_type was used
+
+
+def test_opinion_advisory_surfaces_hard_from_real_ledger(monkeypatch):
+    """END-TO-END: HN + HN_OPINIONS_BEHAVIOR on, ledger yields a hit-rate >= HN_THETA_HARD
+    for the subtask's (hard-ceiling) domain -> a 'hard' advisory is surfaced into
+    state.meta['hn_opinions'] + a dashboard event fires -- and the plan is NEVER mutated."""
+    import memory.conviction_ledger as ledger
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_OPINIONS_BEHAVIOR", True)
+    # Proven, high hit-rate on a hard-ceiling domain -> conviction clears HN_THETA_HARD.
+    monkeypatch.setattr(
+        ledger,
+        "track_record",
+        lambda jt, dom, **k: {"hits": 19, "total": 20, "rate": 0.95},
+    )
+    events = []
+
+    class _Dash:
+        def event(self, msg):
+            events.append(msg)
+
+    state = _make_opinion_state()  # subtask type "tactics" (a hard-ceiling domain)
+    before_statuses = [s["status"] for s in state.subtasks]
+    before_count = len(state.subtasks)
+
+    advisories = hnb.opinionAdvisory(state, _Dash())
+
+    assert advisories, "expected a surfaced hard-tier advisory from the real ledger"
+    assert advisories[0]["tier"] == "hard"
+    assert advisories[0]["domain"] == "tactics"
+    assert state.meta["hn_opinions"] == advisories
+    assert any("opinion" in e for e in events), events
+    # advisory-only invariant still holds: plan/subtasks untouched.
+    assert [s["status"] for s in state.subtasks] == before_statuses
+    assert len(state.subtasks) == before_count
+    for key in ("abort", "reject", "hold", "plan_rejected"):
+        assert key not in state.meta
+
+
 # --- preActRouting + biasEffort (intuition dual-process → advisory effort bias) ---
 
 
