@@ -37,6 +37,7 @@ RUN/TEST: python -m pytest tests/control/test_control_store.py
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import sqlite3
 import threading
@@ -233,14 +234,18 @@ def clearDecision(task_id: str, gate: str) -> None:
 
 # ---- queued plan ops ---------------------------------------------------------
 def pushOp(task_id: str, op: dict, source_msg_id: Optional[str] = None) -> bool:
-    """Queue one plan op. Returns False when ``source_msg_id`` was already ingested for
-    this task (the SAME Discord message seen by two ingesters) -- one message, one op."""
+    """Queue one plan op. Returns False when this exact op was already ingested for this task.
+    The dedup key folds a hash of the op INTO source_msg_id, so the SAME message re-ingested lands
+    once, but an EDITED command (same message id, new content -> new op) is fresh and NOT dropped."""
+    op_json = json.dumps(op, ensure_ascii=False)
+    dedup = source_msg_id
+    if source_msg_id is not None:
+        dedup = f"{source_msg_id}:{hashlib.sha1(op_json.encode('utf-8')).hexdigest()[:12]}"
     with _tx() as conn:
         cur = conn.execute(
             "INSERT OR IGNORE INTO ops(task_id, op_json, source_msg_id, created_at) "
             "VALUES (?,?,?,?)",
-            (task_id, json.dumps(op, ensure_ascii=False),
-             str(source_msg_id) if source_msg_id is not None else None, nowIsoLocal()))
+            (task_id, op_json, str(dedup) if dedup is not None else None, nowIsoLocal()))
         return cur.rowcount > 0
 
 

@@ -4,36 +4,53 @@ Findings from a multi-agent adversarial audit + live probing of the Nightclaw Di
 layer (interaction handlers, dashboard/terminal surfaces, REST chokepoint, control
 ingestion). Confidence: **CONFIRMED** (verified in code) vs **PLAUSIBLE** (needs a repro).
 
-## Fixed in this pass (branch `fix/guard-unittest-false-positive`)
+**Status: backlog complete.** Fixes landed across three commits on branch
+`fix/guard-unittest-false-positive` (not pushed). Remaining items below are deliberate
+deferrals with reasons, not misses.
 
-| #   | Sev  | File:line                                                                                 | Fix                                                                                                                                                                                            |
-| --- | ---- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | High | `notifications/views_feedback.py`                                                         | **Auth bypass** — Approve/Reject/Retry buttons routed through `slash._runControl` (no owner check) while Skip was gated. Added `FeedbackView.interaction_check` owner-gate.                    |
-| 2   | High | `notifications/terminal_surface.py`, `platform_core/orchestration/run_phase_mixin.py:380` | **Pin leak** — terminal preview was never unpinned at teardown → Discord's 50-pin cap fills → all pinning fails cross-run. Added `TerminalSurface.unpin()` + teardown call.                    |
-| 3   | High | `notifications/cv2.py:165`                                                                | **Dead cockpit selects** — `cv2_effort_select`/`cv2_mode_select` had no handler → "interaction failed" on the live dashboard. Removed from the cockpit (re-add once wired to owner-gated ops). |
-| 4   | High | `notifications/discord_channels.py:176,249,333,350`                                       | **Unclamped `content`** → 400 on >2000 chars (embed was clamped, content wasn't). Now `truncate(content, DISCORD_MAX_CONTENT)` in all four senders.                                            |
-| 10  | Med  | `platform_core/orchestration/control_mixin.py:70`                                         | **Poll wedge** — `int(author_id)` outside the try → one non-numeric author id stalled in-run ingestion forever. Now fails closed.                                                              |
-| 11  | Med  | `notifications/bot/cogs/admin.py:48,59`                                                   | **`/cockpit` & `/hud` not owner-gated** — any user could render run state / spam the cockpit. Added `isAuthorized` check.                                                                      |
+## Fixed — pass 1 (interaction/surface top tier)
 
-## Open (not yet fixed)
+| #   | Sev  | File                                        | Fix                                                                                                                                       |
+| --- | ---- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | High | `views_feedback.py`                         | **Auth bypass** — Approve/Reject/Retry were ungated via `slash._runControl`. Added `FeedbackView.interaction_check` owner-gate.           |
+| 2   | High | `terminal_surface.py`, `run_phase_mixin.py` | **Pin leak** — terminal preview never unpinned → 50-pin cap. Added `TerminalSurface.unpin()` + teardown call.                             |
+| 3   | High | `cv2.py`                                    | **Dead cockpit selects** — `cv2_effort_select`/`cv2_mode_select` had no handler. Removed from the cockpit (see deferral note re: wiring). |
+| 4   | High | `discord_channels.py`                       | **Unclamped `content`** → 400. Now `truncate`d in all 4 senders.                                                                          |
+| 10  | Med  | `control_mixin.py`                          | **Poll wedge** — `int(author_id)` now fails closed.                                                                                       |
+| 11  | Med  | `bot/cogs/admin.py`                         | **`/cockpit` & `/hud`** now owner-gated.                                                                                                  |
 
-- **#5 High — 401 latch is permanent** (`discord_client.py:161`): any single (possibly transient) 401 disables Discord for the whole process, no recovery. Needs a policy: N-consecutive-401s before latching, or a cooldown + half-open probe (mirror the 429 breaker).
-- **#6 Med-High — per-bucket 429 arms the GLOBAL breaker** (`discord_client.py:119,144`): one noisy route stalls the control poll + all sends; `_RATE_LIMITED_UNTIL` is also lock-free across 4+ threads. Only arm the global breaker on a global 429 (`X-RateLimit-Global`).
-- **#7 Med — `dashboard_message_id` not persisted on 404-recreate** (`dashboard.py:275-283`): orphaned pin + stale id after a resilience restart.
-- **#8 Med — terminal `message_id` never persisted + `_recreated` one-shot wedges** (`terminal_surface.py:79,161`): orphaned pins across restarts; a second deletion goes permanently dark mid-run.
-- **#9 Med — `_clampEmbed` ignores `footer.text`/`author.name`; budget shrinker only trims fields** (`discord_client.py:187,214`): >6000-char embed ships → 400 despite "guaranteed sendable".
-- **#12 Med — edited `!`commands silently dropped** (`control_store.py:80`): `source_msg_id` dedup ignores an edited command (same id, new content); the user thinks they redirected the run.
-- **#13 Med — `!add` text unbounded + injectable** (`commands.py:340`): breaks the plan-render code fence and feeds untrusted text into the Ollama auto-approve gate (prompt injection). Bound length + sanitize.
-- **Follow-up to #3**: wire `cv2_effort_select`/`cv2_mode_select` to real `set_run_effort`/`set_mode` ops (owner-gated, persistent view) if the steering control is wanted.
-- **Low / PLAUSIBLE**: oversized CV2 component collapses dashboard to "…" (`discord_client.py:278`); oversized attachment 413 mapped `transient` → retried forever (`discord_client.py:298`); missing/non-numeric owner id → BLOCKED ping silently doesn't notify (`discord_client.py:92`); `finalize()`'s "frozen frame" isn't actually frozen (`terminal_surface.py:136`); button/modal callbacks have no `on_error` net (`bot/core.py:125`); `retry_after==0` bucket 429 → `sleep(0)` busy-retry burst (`discord_client.py:141`); `_subtaskAutocomplete` hard subscripts vs `.get()` elsewhere (`slash.py:84`); rapid pause/resume toggle last-writer race (`control_store.py:197`).
+## Fixed — pass 2 (REST + surfaces + control ingestion)
+
+| #   | Sev      | File                  | Fix                                                                                                                                                                                        |
+| --- | -------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 5   | High     | `discord_client.py`   | **401 latch** — now requires 2 consecutive 401s (reset on any 2xx); one transient 401 no longer blacks out the surface.                                                                    |
+| 6   | Med-High | `discord_client.py`   | **429 scope** — only a **global** 429 (`X-RateLimit-Global`/`global:true`) arms the process-wide breaker; a per-bucket 429 backs off only its own call. Also floors `retry_after` above 0. |
+| 7   | Med      | `dashboard.py`        | **`dashboard_message_id` now persisted** on the 404-recreate + fresh-create paths in `update()`.                                                                                           |
+| 8   | Med      | `terminal_surface.py` | **`_recreated` wedge** — re-armed on a healthy edit so a _second_ deletion can recover; **frozen final frame** now honored (`_final` flag).                                                |
+| 9   | Med      | `discord_client.py`   | **`_clampEmbed`** now clamps `footer.text`/`author.name`; the budget shrinker also trims description/footer/title so a field-less embed can't exceed 6000.                                 |
+| 12  | Med      | `control_store.py`    | **Edited `!`commands** — dedup key now folds a hash of the op, so an edited command (same id, new content) is a fresh op and isn't dropped.                                                |
+| 13  | Med      | `commands.py`         | **`!add`** text is bounded (200 chars) + defanged (backticks/mentions) before the plan render + Ollama gate.                                                                               |
+| —   | Low      | `discord_client.py`   | Oversized CV2 TextDisplay is **shrunk in place** instead of collapsing the cockpit to "…".                                                                                                 |
+| —   | Low      | `discord_channels.py` | A **413** (oversized image) now drops the image and posts text-only instead of retrying forever.                                                                                           |
+| —   | Low      | `discord_client.py`   | Missing/non-numeric owner id now **warns once** (blocked/critical pings won't notify).                                                                                                     |
+| —   | Low      | `discord_client.py`   | `retry_after==0` bucket 429 no longer busy-spins (floored at 0.25s).                                                                                                                       |
+| —   | Low      | `terminal_surface.py` | `finalize()`'s final frame is now actually frozen.                                                                                                                                         |
+| —   | Low      | `bot/core.py`         | Global **`View.on_error`** net so a component-callback exception no longer leaves a dead "thinking" spinner.                                                                               |
+| —   | Low      | `slash.py`            | `_subtaskAutocomplete` uses `.get()` — a malformed subtask row no longer `KeyError`s.                                                                                                      |
+
+## Deferred (deliberate, with reasons)
+
+- **`_RATE_LIMITED_UNTIL` lock**: left lock-free. It's now written only on a _global_ 429 (rare), and it's a monotonic deadline — the last-writer race is benign. A lock would add contention on the hot REST path for no correctness gain.
+- **`sendAs` (Cast) components unclamped**: skipped. `_clampComponents` is CV2-shaped and could mangle legacy action-row components on the Cast path; the risk outweighs the low-severity, lab-gated exposure. Callers should pre-clamp.
+- **#3 steering-select _wiring_** (effort/mode dropdowns): the **bug** ("interaction failed" on the live cockpit) is fixed by removal. Re-adding them wired to the existing `set_run_effort`/`set_mode` ops is an **enhancement** (new persistent Select view + registration), not a defect — left as a feature request.
+- **#8 cross-restart terminal `message_id` persistence**: the `_recreated` wedge and the teardown unpin cover the common cases; persisting the terminal id across a _resilience restart_ (to avoid a mid-run-restart orphan) needs state plumbing into `TerminalSurface` and is a narrow case.
+- **Rapid pause/resume last-writer race**: inherent to last-write-wins flags written by two different-cadence processes; mitigated by `_waitWhilePaused`'s deadline/night-mode escapes (can't wedge forever). Accepted.
 
 ## Note on the control-plane probe (not a bug)
 
-An earlier "pause is ignored" observation was a **test artifact**: `control.db` is derived at
-call time from `config.STATE_DIR.parent` (`control_store.py:99`), i.e. **projectRoot-local**.
-A run launched from a git worktree reads `<worktree>/state/control.db`; a `ControlBus` process
-started elsewhere writes a **different** DB. To drive a worktree run's control plane, set
-`control_store._DB_OVERRIDE` (or run from the worktree) so writes land in the run's DB. The
-pause/abort code paths (`control_mixin._waitWhilePaused`, the many `bus.isAbort()` checks) are
-sound; a definitive live reaction test needs **gated mode** (the run blocks at the plan gate) —
-fast sim runs finish their subtasks before a control flag is polled.
+`control.db` is derived at call time from `config.STATE_DIR.parent` (`control_store.py`),
+i.e. **projectRoot-local**. A run launched from a git worktree reads
+`<worktree>/state/control.db`; a `ControlBus` started elsewhere writes a **different** DB.
+To drive a worktree run's control plane set `control_store._DB_OVERRIDE` (or run from the
+worktree). The pause/abort code paths are sound; a definitive live-reaction test needs
+**gated mode** (the run blocks at the plan gate) — fast sim runs finish before a flag polls.

@@ -136,7 +136,7 @@ class TerminalSurface:
             nav = terminal_ipc.read_nav()
             self.page_idx = nav["page_idx"]
             self.mode = nav["mode"]
-            self.frozen = nav["frozen"]
+            self.frozen = True if getattr(self, "_final", False) else nav["frozen"]
             lanes = self._lanes()
             lane, lines, idx = self._active_lane(lanes)
             body = (render("—", [], {"label": "no live processes"}, page=0, page_count=0,
@@ -157,6 +157,7 @@ class TerminalSurface:
             if res == "ok":
                 self._last_body = body
                 self._throttle.note_success(now)
+                self._recreated = False    # message healthy again -> re-arm one-shot for a future 404
             elif res == "transient":
                 self._throttle.note_429(now, retry_after=1.0)   # back off on 429/5xx/timeout
             elif res == "not_found" and not self._recreated:
@@ -196,6 +197,7 @@ class TerminalSurface:
     def finalize(self) -> None:
         """Freeze + stop the loop at run end; clear the bridge files. Best-effort."""
         self.frozen = True
+        self._final = True                 # render_once keeps frozen=True now, not re-read from nav
         try:
             if self._stop is not None:
                 self._stop.set()

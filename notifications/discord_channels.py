@@ -53,6 +53,8 @@ def createComponentsV2(components: list, files: Optional[list] = None) -> Option
     if files:
         data, fdict = _multipartParts(payload, files)
         r = _dc._request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", data=data, files=fdict)
+        if r is not None and r.status_code == 413:   # image too big -> post the cockpit text-only
+            r = _dc._request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", json=payload)
     else:
         r = _dc._request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", json=payload)
     if r is not None and 200 <= r.status_code < 300:
@@ -76,6 +78,10 @@ def editComponentsV2Result(message_id: str, components: list, files: Optional[li
         data, fdict = _multipartParts(payload, files)
         r = _dc._request("PATCH", f"/channels/{config.DISCORD_CHANNEL_ID}/messages/{message_id}",
                          data=data, files=fdict)
+        if r is not None and r.status_code == 413:   # image too big -> drop it, keep the text update
+            payload["attachments"] = []
+            r = _dc._request("PATCH", f"/channels/{config.DISCORD_CHANNEL_ID}/messages/{message_id}",
+                             json=payload)
     else:
         payload["attachments"] = []
         r = _dc._request("PATCH", f"/channels/{config.DISCORD_CHANNEL_ID}/messages/{message_id}", json=payload)

@@ -6417,14 +6417,14 @@
           "kind": "function",
           "signature": "()",
           "summary": "Construct (but do not run) the NightclawBot",
-          "lineno": 188
+          "lineno": 204
         },
         {
           "name": "runBot",
           "kind": "function",
           "signature": "() -> None",
           "summary": "",
-          "lineno": 222
+          "lineno": 238
         }
       ],
       "depends_on": [
@@ -6803,7 +6803,7 @@
           "kind": "function",
           "signature": "(bus: ControlBus, state: TaskState, cmd: Command, *, source_msg_id: Optional[str]=None) -> str",
           "summary": "Perform the bus mutation and return human markdown text ('' for silent control ops).",
-          "lineno": 292
+          "lineno": 304
         }
       ],
       "depends_on": [
@@ -7039,126 +7039,126 @@
           "kind": "function",
           "signature": "(message_id: str, components: list, files: Optional[list]=None) -> str",
           "summary": "Edit a CV2 message in place",
-          "lineno": 66
+          "lineno": 68
         },
         {
           "name": "sendComponentsV2",
           "kind": "function",
           "signature": "(components: list, files: Optional[list]=None, milestone: bool=False) -> dict",
           "summary": "Post a one-off CV2 message (e.g",
-          "lineno": 91
+          "lineno": 97
         },
         {
           "name": "sendAs",
           "kind": "function",
           "signature": "(persona: dict, *, content: Optional[str]=None, embed: Optional[dict]=None, embeds: Optional[list]=None, components: Optional[list]=None, files: Optional[list]=None, thread_id: Optional[str]=None, components_v2: bool=False) -> bool",
           "summary": "Post a message AS ``persona`` (a dict with 'name'/'avatar_url') through the Cast webhoo…",
-          "lineno": 135
+          "lineno": 141
         },
         {
           "name": "createMessage",
           "kind": "function",
           "signature": "(embed: dict, content: Optional[str]=None, components: Optional[list]=None) -> Optional[str]",
           "summary": "",
-          "lineno": 173
+          "lineno": 179
         },
         {
           "name": "postContent",
           "kind": "function",
           "signature": "(content: str, components: Optional[list]=None) -> Optional[str]",
           "summary": "Post a content-only message (no embed) -- e.g",
-          "lineno": 189
+          "lineno": 195
         },
         {
           "name": "postFile",
           "kind": "function",
           "signature": "(filename: str, data: bytes, content_type: str, content: Optional[str]=None) -> Optional[str]",
           "summary": "Post a single attachment (e.g",
-          "lineno": 204
+          "lineno": 210
         },
         {
           "name": "editContent",
           "kind": "function",
           "signature": "(message_id: str, content: str) -> str",
           "summary": "PATCH a content-only message in place (HUD live-repaint)",
-          "lineno": 221
+          "lineno": 227
         },
         {
           "name": "editMessageResult",
           "kind": "function",
           "signature": "(message_id: str, embed: dict, content: Optional[str]=None, components: Optional[list]=None) -> str",
           "summary": "Edit a message, returning a status the caller can ACT on:",
-          "lineno": 236
+          "lineno": 242
         },
         {
           "name": "editMessage",
           "kind": "function",
           "signature": "(message_id: str, embed: dict, content: Optional[str]=None, components: Optional[list]=None) -> bool",
           "summary": "",
-          "lineno": 264
+          "lineno": 270
         },
         {
           "name": "pinMessage",
           "kind": "function",
           "signature": "(message_id: Optional[str]) -> bool",
           "summary": "",
-          "lineno": 269
+          "lineno": 275
         },
         {
           "name": "unpinMessage",
           "kind": "function",
           "signature": "(message_id: Optional[str]) -> bool",
           "summary": "Idempotent: 404 (already unpinned / message gone) counts as success.",
-          "lineno": 280
+          "lineno": 286
         },
         {
           "name": "fetchMessagesAfter",
           "kind": "function",
           "signature": "(after_id: Optional[str], limit: int=25) -> tuple[list[dict], Optional[str]]",
           "summary": "Control-poll path: retries=0 so a 429 returns immediately and never blocks the run loop.",
-          "lineno": 290
+          "lineno": 296
         },
         {
           "name": "baselineLatestId",
           "kind": "function",
           "signature": "() -> Optional[str]",
           "summary": "Newest message id (no messages returned)",
-          "lineno": 310
+          "lineno": 316
         },
         {
           "name": "sendEmbed",
           "kind": "function",
           "signature": "(embed: dict, content: Optional[str]=None, components: Optional[list]=None, milestone: bool=False) -> dict",
           "summary": "Post a new embed message",
-          "lineno": 324
+          "lineno": 330
         },
         {
           "name": "createPoll",
           "kind": "function",
           "signature": "(poll: dict, content: Optional[str]=None) -> Optional[str]",
           "summary": "Post a native Discord Poll (engagement.gatePollPayload)",
-          "lineno": 346
+          "lineno": 352
         },
         {
           "name": "endPoll",
           "kind": "function",
           "signature": "(message_id: str) -> bool",
           "summary": "Finalize a poll early (the gate resolved)",
-          "lineno": 361
+          "lineno": 367
         },
         {
           "name": "createScheduledEvent",
           "kind": "function",
           "signature": "(guild_id: int, body: dict) -> Optional[str]",
           "summary": "Create a guild Scheduled Event (engagement.scheduledEventPayload)",
-          "lineno": 369
+          "lineno": 375
         },
         {
           "name": "sendBlocked",
           "kind": "function",
           "signature": "(reason: str, question: Optional[str]=None) -> dict",
           "summary": "Severe: new message, owner ping only (allowed_mentions can't expand past owner), with",
-          "lineno": 386
+          "lineno": 392
         }
       ],
       "depends_on": [
@@ -7185,7 +7185,7 @@
           "kind": "function",
           "signature": "(text, n: int) -> str",
           "summary": "Clamp to n chars, marking a clip with a trailing ellipsis.",
-          "lineno": 171
+          "lineno": 196
         }
       ],
       "depends_on": [
@@ -8154,14 +8154,14 @@
           "kind": "function",
           "signature": "() -> Optional[TerminalSurface]",
           "summary": "",
-          "lineno": 225
+          "lineno": 227
         },
         {
           "name": "set_terminal_surface",
           "kind": "function",
           "signature": "(surface: Optional[TerminalSurface]) -> None",
           "summary": "",
-          "lineno": 229
+          "lineno": 231
         }
       ],
       "depends_on": [
@@ -13015,84 +13015,84 @@
           "kind": "function",
           "signature": "(task_id: str, key: str, value: Any) -> None",
           "summary": "",
-          "lineno": 197
+          "lineno": 198
         },
         {
           "name": "getFlag",
           "kind": "function",
           "signature": "(task_id: str, key: str, default: Any=None) -> Any",
           "summary": "",
-          "lineno": 203
+          "lineno": 204
         },
         {
           "name": "setDecision",
           "kind": "function",
           "signature": "(task_id: str, gate: str, verdict: str) -> None",
           "summary": "",
-          "lineno": 216
+          "lineno": 217
         },
         {
           "name": "getDecision",
           "kind": "function",
           "signature": "(task_id: str, gate: str) -> Optional[str]",
           "summary": "",
-          "lineno": 222
+          "lineno": 223
         },
         {
           "name": "clearDecision",
           "kind": "function",
           "signature": "(task_id: str, gate: str) -> None",
           "summary": "",
-          "lineno": 229
+          "lineno": 230
         },
         {
           "name": "pushOp",
           "kind": "function",
           "signature": "(task_id: str, op: dict, source_msg_id: Optional[str]=None) -> bool",
           "summary": "Queue one plan op",
-          "lineno": 235
+          "lineno": 236
         },
         {
           "name": "drainOps",
           "kind": "function",
           "signature": "(task_id: str) -> list[dict]",
           "summary": "Atomically remove and return all queued ops in push order (DELETE ..",
-          "lineno": 247
+          "lineno": 252
         },
         {
           "name": "meterSpend",
           "kind": "function",
           "signature": "(task_id: str, attempt_id: Optional[str], usd: float) -> None",
           "summary": "Append one committed spend",
-          "lineno": 265
+          "lineno": 270
         },
         {
           "name": "spentTotal",
           "kind": "function",
           "signature": "(task_id: str) -> float",
           "summary": "",
-          "lineno": 276
+          "lineno": 281
         },
         {
           "name": "snapshot",
           "kind": "function",
           "signature": "(task_id: str) -> dict",
           "summary": "One-connection read of everything ControlBus.load() surfaces (ops are PEEKED,",
-          "lineno": 284
+          "lineno": 289
         },
         {
           "name": "clearTask",
           "kind": "function",
           "signature": "(task_id: str) -> None",
           "summary": "Full transactional reset of one task's control state (including its ledger).",
-          "lineno": 309
+          "lineno": 314
         },
         {
           "name": "clearRunStart",
           "kind": "function",
           "signature": "(task_id: str) -> None",
           "summary": "Reset ONLY the run-execution cursor (queued ops, Discord poll cursor, pending gate)",
-          "lineno": 316
+          "lineno": 321
         }
       ],
       "depends_on": [

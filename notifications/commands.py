@@ -289,6 +289,18 @@ def _applyIntelCommand(bus: ControlBus, state: TaskState, cmd: Command,
     return None
 
 
+_MAX_ADD_LEN = 200
+
+
+def _sanitizeSubtaskText(text: str) -> str:
+    """Bound + defang untrusted !add text: collapse whitespace, cap length, strip backticks (so it
+    can't break out of the fenced code block in _planText) and neutralize @-mentions before it
+    reaches the plan render or the Ollama auto-approve gate."""
+    t = " ".join((text or "").split())
+    t = t.replace("`", "'").replace("@", "@​")
+    return t[:_MAX_ADD_LEN]
+
+
 def applyCommand(bus: ControlBus, state: TaskState, cmd: Command, *,
                  source_msg_id: Optional[str] = None) -> str:
     """Perform the bus mutation and return human markdown text ('' for silent control ops).
@@ -338,11 +350,12 @@ def applyCommand(bus: ControlBus, state: TaskState, cmd: Command, *,
         bus.pushOp({"op": "skip", "subtask_id": cmd.arg}, source_msg_id=source_msg_id)
         return f" Queued skip of `{cmd.arg}`."
     if n == "add":
-        if not cmd.arg:
+        if not cmd.arg.strip():
             return "usage: `!add <title>`"
-        bus.pushOp({"op": "add", "title": cmd.arg, "description": cmd.arg},
+        title = _sanitizeSubtaskText(cmd.arg)
+        bus.pushOp({"op": "add", "title": title, "description": title},
                    source_msg_id=source_msg_id)
-        return f" Queued new subtask: {cmd.arg}"
+        return f" Queued new subtask: {title}"
     if n == "retry":
         bus.pushOp({"op": "retry"}, source_msg_id=source_msg_id)
         return "Queued retry of the current subtask."

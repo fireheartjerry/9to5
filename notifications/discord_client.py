@@ -61,6 +61,8 @@ _API = "https://discord.com/api/v10"
 # =====================================================================
 _DISABLED = False   # latched ON only by a hard 401 (bad token); never by 403/404
 _TEST_GUARD_LOGGED = False   # once-per-process latch: _realDiscordBlocked() logs its refusal once
+_CONSEC_401 = 0   # consecutive bot-auth 401s; one transient 401 no longer blacks out the surface
+_MAX_CONSEC_401 = 2   # latch _DISABLED only after this many 401s in a row (reset on any 2xx)
 # Global 429 circuit breaker: a monotonic deadline. While now < this, EVERY REST call short-circuits
 # locally (returns None without touching the network). Discord rate-limits are global to the bot, so
 # without this any caller -- the 4s control poll, the dashboard PATCH, parallel workers -- keeps
@@ -68,6 +70,7 @@ _TEST_GUARD_LOGGED = False   # once-per-process latch: _realDiscordBlocked() log
 # chokepoint itself now enforces the backoff so no caller can hammer regardless of its loop cadence.
 _RATE_LIMITED_UNTIL = 0.0
 _RL_COOLDOWN_MAX = 60.0   # sanity cap so a malformed huge retry_after can't wedge Discord off for long
+_OWNER_WARNED = False   # warn once if the owner id is unresolvable (blocked/critical @-pings won't notify)
 
 
 def _authHeaders() -> dict:
@@ -91,7 +94,11 @@ def _requestHeaders(noauth: bool, files: Optional[dict]) -> dict:
 
 def _ownerMentions() -> dict:
     """allowed_mentions that can never expand past the configured owner."""
+    global _OWNER_WARNED
     oid = (config.DISCORD_HUMAN_USER_ID or "").strip()
+    if not oid.isdigit() and not _OWNER_WARNED:
+        _OWNER_WARNED = True
+        LOG.warning("DISCORD_HUMAN_USER_ID unset/non-numeric -> owner @-pings (BLOCKED/critical) won't notify")
     # Discord snowflakes must be JSON strings, not ints (a bare int can exceed JS safe-int range
     # and Discord rejects/mangles it); keep the numeric string as-is.
     return {"parse": [], "users": [oid] if oid.isdigit() else []}
@@ -109,7 +116,7 @@ def _request(method: str, path: str, *, json: Optional[dict] = None,
     (Pillow cockpit images, GIF replays, persona cards). When ``files`` is set the JSON
     Content-Type is dropped so requests can set the multipart boundary itself. Everything else
     -- the 429 breaker, the 401 latch, the timeout -- is identical so no upload can bypass them."""
-    global _DISABLED, _RATE_LIMITED_UNTIL
+    global _DISABLED, _RATE_LIMITED_UNTIL, _CONSEC_401
     if _DISABLED or not config.DISCORD_BOT_TOKEN or not config.DISCORD_CHANNEL_ID:
         return None
     if _realDiscordBlocked():
@@ -133,22 +140,17 @@ def _request(method: str, path: str, *, json: Optional[dict] = None,
             LOG.warning("Discord %s %s failed: %s", method, path, e)
             return None
         if r.status_code == 429:
-            try:
-                retry_after = float((r.json() or {}).get("retry_after",
-                                    r.headers.get("Retry-After", 1)))
-            except Exception:  # noqa: BLE001
-                retry_after = 1.0
-            retry_after = min(max(retry_after, 0.0), _RL_COOLDOWN_MAX)
-            # Arm the global breaker so the NEXT call (any path, any thread) short-circuits instead of
-            # re-hitting the rate-limited API -- this is what stops the 429 storm even on retries=0.
-            _RATE_LIMITED_UNTIL = time.monotonic() + retry_after
+            retry_after, is_global = _parse429(r)
+            # Only a GLOBAL 429 arms the process-wide breaker (which short-circuits EVERY route). A
+            # per-bucket 429 must not stall the control poll or unrelated routes -- back off this call only.
+            if is_global:
+                _RATE_LIMITED_UNTIL = time.monotonic() + retry_after
             if attempt < retries:
                 time.sleep(retry_after)
                 attempt += 1
                 continue
-            # poll path (retries=0): return now without blocking the run loop; the breaker above
-            # throttles every subsequent call until the window passes. Log once (not per-spin).
-            LOG.warning("Discord %s %s -> 429; global backoff %.1fs", method, path, retry_after)
+            LOG.warning("Discord %s %s -> 429 (%s); backoff %.1fs", method, path,
+                        "global" if is_global else "bucket", retry_after)
             return r
         if r.status_code == 401:
             # Only the bot-token auth path may latch the whole surface off. A noauth webhook
@@ -158,11 +160,34 @@ def _request(method: str, path: str, *, json: Optional[dict] = None,
             if noauth:
                 LOG.warning("Discord webhook auth failed (401) -> Cast send dropped, surface left alive")
                 return r
-            _DISABLED = True
-            LOG.error("Discord auth failed (401) -> disabling Discord for this process")
-        elif not (200 <= r.status_code < 300) and r.status_code != 404:
+            _CONSEC_401 += 1
+            if _CONSEC_401 >= _MAX_CONSEC_401:
+                _DISABLED = True
+                LOG.error("Discord auth failed (401) x%d -> disabling Discord for this process", _CONSEC_401)
+            else:
+                LOG.warning("Discord auth failed (401) -> possibly transient (%d/%d before disabling)",
+                            _CONSEC_401, _MAX_CONSEC_401)
+        elif 200 <= r.status_code < 300:
+            _CONSEC_401 = 0                 # any success clears the consecutive-401 latch counter
+        elif r.status_code != 404:
             LOG.warning("Discord %s %s -> %s: %s", method, path, r.status_code, (r.text or "")[:200])
         return r
+
+
+def _parse429(r) -> "tuple[float, bool]":
+    """(retry_after, is_global) for a 429. retry_after is floored ABOVE 0 so a bucket-reset
+    retry_after==0 can't busy-spin sleep(0)+continue, and capped at _RL_COOLDOWN_MAX."""
+    try:
+        body = r.json() or {}
+    except Exception:  # noqa: BLE001
+        body = {}
+    try:
+        retry_after = float(body.get("retry_after", r.headers.get("Retry-After", 1)))
+    except Exception:  # noqa: BLE001
+        retry_after = 1.0
+    retry_after = min(max(retry_after, 0.25), _RL_COOLDOWN_MAX)
+    is_global = bool(r.headers.get("X-RateLimit-Global")) or body.get("global") is True
+    return retry_after, is_global
 
 
 # =====================================================================
@@ -196,6 +221,12 @@ def _clampEmbed(embed: dict) -> dict:
         e["title"] = truncate(e["title"], config.DISCORD_MAX_EMBED_TITLE)
     if isinstance(e.get("description"), str):
         e["description"] = truncate(e["description"], config.DISCORD_MAX_EMBED_DESC)
+    footer = e.get("footer")               # Discord caps footer.text at 2048, author.name at 256;
+    if isinstance(footer, dict) and isinstance(footer.get("text"), str):   # unclamped they 400 the embed
+        e["footer"] = {**footer, "text": truncate(footer["text"], 2048)}
+    author = e.get("author")
+    if isinstance(author, dict) and isinstance(author.get("name"), str):
+        e["author"] = {**author, "name": truncate(author["name"], 256)}
     fields = e.get("fields")
     if isinstance(fields, list):
         clamped = []
@@ -207,7 +238,7 @@ def _clampEmbed(embed: dict) -> dict:
             nf["value"] = truncate(nf.get("value", ""), config.DISCORD_MAX_FIELD_VALUE) or "—"
             clamped.append(nf)
         e["fields"] = clamped
-        _shrinkEmbedToBudget(e)
+    _shrinkEmbedToBudget(e)                 # always enforce the 6000 total, even with zero fields
     return e
 
 
@@ -218,7 +249,7 @@ def _shrinkEmbedToBudget(e: dict) -> None:
     while _embedLen(e) > config.DISCORD_EMBED_TOTAL_MAX and guard < 200:
         guard += 1
         over = _embedLen(e) - config.DISCORD_EMBED_TOTAL_MAX
-        fields = e["fields"]
+        fields = e.get("fields") or []
         val = max(fields, key=lambda f: len(str(f.get("value", ""))), default=None)
         if val is not None and len(str(val.get("value", ""))) > 8:
             cur = len(str(val["value"]))
@@ -232,7 +263,19 @@ def _shrinkEmbedToBudget(e: dict) -> None:
         if fields:                       # values + names at floor: drop a trailing field
             fields.pop()
             continue
-        break                            # no fields left; title/description already clamped
+        # no fields left: shrink description, then footer, then title so title+desc+footer ALONE
+        # can never exceed the total (the old code broke here and shipped an over-budget embed -> 400).
+        if isinstance(e.get("description"), str) and len(e["description"]) > 1:
+            e["description"] = truncate(e["description"], max(1, len(e["description"]) - over - 1))
+            continue
+        foot = e.get("footer") or {}
+        if isinstance(foot.get("text"), str) and len(foot["text"]) > 1:
+            e["footer"] = {**foot, "text": truncate(foot["text"], max(1, len(foot["text"]) - over - 1))}
+            continue
+        if isinstance(e.get("title"), str) and len(e["title"]) > 1:
+            e["title"] = truncate(e["title"], max(1, len(e["title"]) - over - 1))
+            continue
+        break
 
 
 def _cv2TextLen(components) -> int:
@@ -275,6 +318,41 @@ def _cv2Count(components) -> int:
     return n
 
 
+def _largestCv2Text(comps: list):
+    """The TextDisplay (type 10) node with the longest content in a CV2 tree, or None."""
+    biggest = None
+
+    def walk(node):
+        nonlocal biggest
+        if isinstance(node, dict):
+            if node.get("type") == 10 and isinstance(node.get("content"), str):
+                if biggest is None or len(node["content"]) > len(str(biggest.get("content", ""))):
+                    biggest = node
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for it in node:
+                walk(it)
+
+    walk(comps)
+    return biggest
+
+
+def _shrinkCv2Text(comps: list) -> None:
+    """Truncate the largest TextDisplay content until the char budget is met -- popping tail
+    components can't rescue a tree whose one header TextDisplay alone exceeds the limit (which
+    otherwise collapsed the whole cockpit to a '…' placeholder)."""
+    guard = 0
+    while _cv2TextLen(comps) > config.DISCORD_CV2_MAX_CHARS and guard < 200:
+        guard += 1
+        biggest = _largestCv2Text(comps)
+        cur = len(str(biggest.get("content", ""))) if biggest else 0
+        if cur <= 8:
+            break
+        over = _cv2TextLen(comps) - config.DISCORD_CV2_MAX_CHARS
+        biggest["content"] = truncate(biggest["content"], max(8, cur - over - 1))
+
+
 def _clampComponents(components: list) -> list:
     """Best-effort guard so a runaway cockpit can never 400 the whole message: trim top-level
     components from the END (controls/events tail) until the tree is within Discord's
@@ -287,6 +365,7 @@ def _clampComponents(components: list) -> list:
             or _cv2TextLen(comps) > config.DISCORD_CV2_MAX_CHARS):
         guard += 1
         comps.pop()
+    _shrinkCv2Text(comps)   # a single oversized TextDisplay survives popping -> shrink it in place
     # A CV2 message with zero components is rejected by Discord (HTTP 400), so the whole update
     # would fail instead of degrading. If clamping emptied the tree (or it was empty to begin with),
     # fall back to a minimal valid container so the message still sends.

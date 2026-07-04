@@ -100,6 +100,8 @@ async def _setupPersistentViews(bot) -> None:  # pragma: no cover
     from notifications.views_feedback import FeedbackView
     from notifications.views_terminal import TerminalView
     from notifications.bot.ui.dynamic import SubtaskButton
+    import discord as _discord
+    _discord.ui.View.on_error = _onViewError   # global net for component-callback errors
     bot.add_view(views.ControlPanelView())   # persistent: matches cp_* anywhere
     bot.add_view(views.BlockedView())         # persistent: matches sc_*
     bot.add_view(FeedbackView())              # persistent: matches fb_* (Subsystem C feedback)
@@ -137,6 +139,20 @@ async def _onAppError(interaction, error) -> None:  # pragma: no cover  # noqa: 
             await interaction.response.send_message(msg, ephemeral=True)
     except Exception:  # noqa: BLE001
         pass
+
+
+async def _onViewError(view, interaction, error, item) -> None:  # noqa: ANN001
+    """Global net for component (button/select) callback errors: discord.py routes these to
+    View.on_error (NOT tree.error), so without a default an exception leaves the user on a dead
+    'thinking' spinner. Installed onto discord.ui.View at bot build."""
+    LOG.exception("component error on %s: %s", getattr(item, "custom_id", "?"), error)
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send("internal error (see logs)", ephemeral=True)
+        else:
+            await interaction.response.send_message("internal error (see logs)", ephemeral=True)
+    except Exception:  # noqa: BLE001
+        LOG.debug("component on_error follow-up failed", exc_info=True)
 
 
 async def _onMessage(bot, message) -> None:

@@ -33,11 +33,13 @@ class TestRequest(unittest.TestCase):
     def setUp(self):
         d._DISABLED = False
         d._RATE_LIMITED_UNTIL = 0.0
+        _dc_mod._CONSEC_401 = 0
 
     def tearDown(self):
         # These globals latch across calls; reset so state can't leak between tests (or to real use).
         d._DISABLED = False
         d._RATE_LIMITED_UNTIL = 0.0
+        _dc_mod._CONSEC_401 = 0
 
     def test_429_then_success_retries(self):
         calls = []
@@ -55,7 +57,10 @@ class TestRequest(unittest.TestCase):
         self.assertEqual(len(calls), 2)
 
     def test_401_latches_disabled(self):
+        # two consecutive 401s latch the surface (a single transient 401 must not -- see
+        # TestAuthLatchTwoStrike).
         with _cfg(), mock.patch.object(d._SESSION, "request", return_value=_Resp(401, text="bad")):
+            d._request("GET", "/x")
             d._request("GET", "/x")
         self.assertTrue(d._DISABLED)
         with _cfg(), mock.patch.object(d._SESSION, "request") as m:
@@ -75,10 +80,11 @@ class TestRequest(unittest.TestCase):
         s.assert_not_called()
 
     def test_429_arms_global_breaker_and_short_circuits(self):
-        """A 429 must arm the global cooldown so the NEXT call short-circuits WITHOUT touching the
-        network -- this is what stops the same-millisecond 429 storm in the logs."""
+        """A GLOBAL 429 must arm the global cooldown so the NEXT call short-circuits WITHOUT touching
+        the network -- this is what stops the same-millisecond 429 storm in the logs. (A per-bucket
+        429 deliberately does NOT arm it -- see TestRateLimitScope.)"""
         with _cfg(), mock.patch.object(d._SESSION, "request",
-                                       return_value=_Resp(429, {"retry_after": 5})) as m:
+                                       return_value=_Resp(429, {"retry_after": 5, "global": True})) as m:
             # First poll hits the API once, sees 429, arms the breaker.
             d._request("GET", "/x", retries=0)
             self.assertEqual(m.call_count, 1)
@@ -226,3 +232,61 @@ class TestContentClamp(unittest.TestCase):
         with _cfg(), mock.patch.object(d._SESSION, "request", side_effect=fake):
             d.sendEmbed({}, content="x" * (config.DISCORD_MAX_CONTENT + 500))
         self.assertLessEqual(len(captured["content"]), config.DISCORD_MAX_CONTENT)
+
+
+class TestAuthLatchTwoStrike(unittest.TestCase):
+    """Regression: a single (possibly transient) 401 must NOT permanently disable Discord; only
+    two consecutive 401s latch, and any 2xx resets the counter."""
+
+    def setUp(self):
+        d._DISABLED = False
+        d._RATE_LIMITED_UNTIL = 0.0
+        _dc_mod._CONSEC_401 = 0
+
+    def tearDown(self):
+        d._DISABLED = False
+        _dc_mod._CONSEC_401 = 0
+
+    def test_single_401_does_not_disable(self):
+        with _cfg(), mock.patch.object(d._SESSION, "request", return_value=_Resp(401, text="bad")):
+            d._request("GET", "/x")
+        self.assertFalse(d._DISABLED)
+
+    def test_two_consecutive_401s_disable(self):
+        with _cfg(), mock.patch.object(d._SESSION, "request", return_value=_Resp(401, text="bad")):
+            d._request("GET", "/x")
+            d._request("GET", "/x")
+        self.assertTrue(d._DISABLED)
+
+    def test_success_between_401s_resets(self):
+        with _cfg(), mock.patch.object(d._SESSION, "request", return_value=_Resp(401)):
+            d._request("GET", "/x")
+        with _cfg(), mock.patch.object(d._SESSION, "request", return_value=_Resp(200, {"id": "1"})):
+            d._request("GET", "/x")
+        with _cfg(), mock.patch.object(d._SESSION, "request", return_value=_Resp(401)):
+            d._request("GET", "/x")
+        self.assertFalse(d._DISABLED)
+
+
+class TestRateLimitScope(unittest.TestCase):
+    """Regression: a per-bucket 429 must not arm the process-wide breaker (which would stall the
+    control poll + every other route); only a global 429 does."""
+
+    def setUp(self):
+        d._DISABLED = False
+        d._RATE_LIMITED_UNTIL = 0.0
+
+    def tearDown(self):
+        d._RATE_LIMITED_UNTIL = 0.0
+
+    def test_bucket_429_does_not_arm_global_breaker(self):
+        with _cfg(), mock.patch.object(d._SESSION, "request",
+                                       return_value=_Resp(429, {"retry_after": 0.0})),                 mock.patch.object(d.time, "sleep"):
+            d._request("GET", "/x", retries=0)
+        self.assertEqual(d._RATE_LIMITED_UNTIL, 0.0)
+
+    def test_global_429_arms_breaker(self):
+        with _cfg(), mock.patch.object(d._SESSION, "request",
+                                       return_value=_Resp(429, {"retry_after": 2, "global": True})),                 mock.patch.object(d.time, "sleep"):
+            d._request("GET", "/x", retries=0)
+        self.assertGreater(d._RATE_LIMITED_UNTIL, 0.0)
