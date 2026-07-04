@@ -510,3 +510,159 @@ def test_emotion_nudge_maps_safe_intents_and_clamps():
     # bounded in {0, +1}
     for intent in ("escalate_effort", "raise_verification", "explore", None, "x"):
         assert emotionNudge(intent) in (0, 1)
+
+
+# --- attemptSignals (real retrieval/experience confidence signals) --------------
+
+
+def _make_signal_state(goal: str = "harden the auth token path") -> TaskState:
+    state = TaskState.create(goal, 1.0)
+    state.meta["domain"] = "tactics"
+    return state
+
+
+def test_attempt_signals_empty_when_hn_disabled(monkeypatch):
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", False)
+    state = _make_signal_state()
+    assert hnb.attemptSignals(state, {"title": "do the thing"}) == {}
+
+
+def test_attempt_signals_returns_real_numeric_keys(monkeypatch):
+    """With retrieval returning high-similarity successes and no nearby failures,
+    attemptSignals must surface real numeric similarity/p_true in [0, 1]."""
+    import memory.retrieval as retrieval
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    # Two similar past SUCCESSES, no similar failures -> high confidence.
+    monkeypatch.setattr(
+        retrieval,
+        "retrieve",
+        lambda goal, title="", **k: [{"score": 0.93}, {"score": 0.88}],
+    )
+    monkeypatch.setattr(retrieval, "retrieve_failures", lambda goal, title="", **k: [])
+
+    sig = hnb.attemptSignals(_make_signal_state(), {"title": "harden the auth token path"})
+
+    assert set(sig).issubset({"p_true", "similarity"})
+    assert sig  # non-empty: real data was present
+    assert 0.0 <= sig["similarity"] <= 1.0
+    assert abs(sig["similarity"] - 0.93) < 1e-9  # top score
+    assert 0.0 <= sig["p_true"] <= 1.0
+    assert sig["p_true"] == 1.0  # 2 successes, 0 failures nearby
+
+
+def test_attempt_signals_p_true_reflects_failure_mix(monkeypatch):
+    """p_true honestly drops when similar FAILURES sit alongside similar successes."""
+    import memory.retrieval as retrieval
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(
+        retrieval,
+        "retrieve",
+        lambda goal, title="", **k: [{"score": 0.9}, {"score": 0.8}, {"score": 0.75}],
+    )
+    monkeypatch.setattr(
+        retrieval,
+        "retrieve_failures",
+        lambda goal, title="", **k: [{"score": 0.7}],
+    )
+
+    sig = hnb.attemptSignals(_make_signal_state(), {"title": "harden the auth token path"})
+
+    # 3 successes / (3 successes + 1 failure) = 0.75
+    assert abs(sig["p_true"] - 0.75) < 1e-9
+
+
+def test_attempt_signals_empty_when_no_data(monkeypatch):
+    import memory.retrieval as retrieval
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(retrieval, "retrieve", lambda goal, title="", **k: [])
+    monkeypatch.setattr(retrieval, "retrieve_failures", lambda goal, title="", **k: [])
+
+    # No retrieval hits, no brain confidence -> honest empty (deliberate default).
+    assert hnb.attemptSignals(_make_signal_state(), {"title": "x"}) == {}
+
+
+def test_attempt_signals_uses_brain_confidence_when_present(monkeypatch):
+    """A numeric confidence carried on the subtask is used as p_true even with no retrieval."""
+    import memory.retrieval as retrieval
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(retrieval, "retrieve", lambda goal, title="", **k: [])
+    monkeypatch.setattr(retrieval, "retrieve_failures", lambda goal, title="", **k: [])
+
+    sig = hnb.attemptSignals(_make_signal_state(), {"title": "x", "confidence": 0.9})
+    assert sig.get("p_true") == 0.9
+
+
+def test_attempt_signals_never_raises(monkeypatch):
+    import memory.retrieval as retrieval
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+
+    def _boom(*a, **k):
+        raise RuntimeError("retrieval down")
+
+    monkeypatch.setattr(retrieval, "retrieve", _boom)
+    monkeypatch.setattr(retrieval, "retrieve_failures", _boom)
+    assert hnb.attemptSignals(_make_signal_state(), {"title": "x"}) == {}
+
+
+def test_attempt_signals_clamps_negative_cosine(monkeypatch):
+    """Cosine can be negative; similarity must clamp into [0, 1]."""
+    import memory.retrieval as retrieval
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(retrieval, "retrieve", lambda goal, title="", **k: [{"score": -0.4}])
+    monkeypatch.setattr(retrieval, "retrieve_failures", lambda goal, title="", **k: [])
+
+    sig = hnb.attemptSignals(_make_signal_state(), {"title": "x"})
+    assert sig["similarity"] == 0.0
+
+
+# --- end-to-end: real signals flow through the call site to lower effort --------
+
+
+def test_call_site_lowers_effort_with_real_high_confidence(monkeypatch):
+    """End-to-end: HN on + shortcut on + attemptSignals yielding high confidence
+    routes 'fast' through the REAL snap/route fusion and lowers effort one tier."""
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_INTUITION_SHORTCUT", True)
+    # Real fusion path: keep the theta reachable by a genuine high-confidence snap.
+    monkeypatch.setattr(config, "HN_THETA_HARD", 0.6)
+    monkeypatch.setattr(config, "HN_RECAL_TEMPERATURE", 1.0)
+    monkeypatch.setattr(hnb, "attemptSignals", lambda state, subtask: {"p_true": 1.0, "similarity": 1.0})
+    host = _attempt_host()
+    state = _AttemptState()
+    spec = {"effort_level": "high"}
+
+    host._hnBiasEffort(state, {"type": "tactics", "title": "t"}, spec)
+
+    assert spec["effort_level"] == "default"  # one tier lower via real routing
+
+
+def test_call_site_unchanged_with_low_confidence(monkeypatch):
+    """Absent/low confidence -> deliberate -> effort untouched (honest default)."""
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_INTUITION_SHORTCUT", True)
+    monkeypatch.setattr(hnb, "attemptSignals", lambda state, subtask: {})
+    host = _attempt_host()
+    state = _AttemptState()
+    spec = {"effort_level": "high"}
+
+    host._hnBiasEffort(state, {"type": "tactics", "title": "t"}, spec)
+
+    assert spec["effort_level"] == "high"  # unchanged

@@ -94,13 +94,18 @@ class OrchestratorExecuteAttemptMixin:
         confidence, only possible under HN_INTUITION_SHORTCUT), drop the effort ONE tier.
         Best-effort + gated + bounded: a no-op when HN is off, it can only ever lower
         effort by one step, never raises, and touches nothing but ``spec["effort_level"]``.
-        Domain/signals are sourced best-effort from what genuinely exists here (subtask
-        type / run domain; no fabricated confidence signals) -- with none, HN honestly
-        returns "deliberate" and this is a no-op."""
+        Domain is the subtask type / run domain; signals are assembled best-effort by
+        ``attemptSignals`` from data that genuinely exists (SIE retrieval similarity /
+        pass-rate, brain-authored confidence) -- never fabricated. With no real signal,
+        HN honestly returns "deliberate" and this is a no-op."""
         try:
-            from platform_core.orchestration.human_nature_bridge import biasEffort, preActRouting
+            from platform_core.orchestration.human_nature_bridge import (
+                attemptSignals,
+                biasEffort,
+                preActRouting,
+            )
             domain = str(subtask.get("type") or state.meta.get("domain") or "unknown")
-            routing = preActRouting(state, domain, {})
+            routing = preActRouting(state, domain, attemptSignals(state, subtask))
             effort = spec.get("effort_level") or "default"
             spec["effort_level"] = biasEffort(effort, routing)
         except Exception:  # noqa: BLE001 -- advisory bias must never break an attempt

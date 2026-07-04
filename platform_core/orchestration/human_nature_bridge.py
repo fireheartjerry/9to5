@@ -18,11 +18,12 @@ EXPORTS:
   opinionAdvisory(state: Any, dashboard: Any=None) -> 'list[dict]'  -- Advisory-only opinion coupling on the plan gate
   emotionNudge(behavior_intent: 'str | None') -> int  -- Pure helper: map a coupled behavior intent to a BOUNDED retry-budget delta in
   emotionAdvisory(state: Any, dashboard: Any=None) -> dict  -- Wire the Human-Nature emotion faculty as an ADVISORY behavior coupling
+  attemptSignals(state: Any, subtask: dict) -> dict  -- Assemble REAL momentary confidence signals for ``preActRouting`` from data that
   preActRouting(state: Any, domain: str, signals: 'dict | None'=None) -> str  -- Hook 2: best-effort thin wrapper over ``integration.route_pre_act``
   biasEffort(current_effort: str, routing: str) -> str  -- Pure ADVISORY bias: when *routing* == "fast", drop *current_effort* ONE tier on
   runPreambleHooks(state: Any) -> None  -- Hook 1: lazily initialise self_state at run start
   runTeardownHooks(orch: Any, state: Any) -> None  -- Hook 6 (A/B recording) always fires
-DEPENDS-ON: config, human_nature.ab_harness, human_nature.continuity, human_nature.emotions, human_nature.integration, human_nature.opinions, human_nature.self_state, memory.experience_adapters, memory.experience_solutions, platform_core.core.best_effort, platform_core.orchestration.time_utils
+DEPENDS-ON: config, human_nature.ab_harness, human_nature.continuity, human_nature.emotions, human_nature.integration, human_nature.opinions, human_nature.self_state, memory.experience_adapters, memory.experience_solutions, memory.retrieval, platform_core.core.best_effort, platform_core.orchestration.time_utils
 SIDE-EFFECTS: mutates state.meta when enabled; writes continuity letters + ab_runs.db rows
 RUN/TEST: python -m pytest tests/orchestration/test_human_nature_bridge.py
 """
@@ -202,6 +203,54 @@ def emotionAdvisory(state: Any, dashboard: Any = None) -> dict:
 # "medium" is a display alias of "default" and folds onto it before laddering.
 _EFFORT_LADDER: tuple[str, ...] = ("low", "default", "high", "xhigh", "ultracode")
 _EFFORT_ALIASES: dict[str, str] = {"medium": "default"}
+
+
+def _retrievalSignals(goal: str, title: str) -> dict:
+    """Best-effort {similarity, p_true} from the SIE retrieval ledger. ``similarity`` is
+    the top cosine score to a past SUCCESSFUL subtask (clamped to [0,1]); ``p_true`` is the
+    pass fraction among near neighbours (successes vs. similar failures). Empty when nothing
+    is retrieved -- no fabricated confidence. Never raises."""
+    from memory import retrieval
+    successes = list(retrieval.retrieve(goal, title) or [])
+    if not successes:
+        return {}
+    out: dict = {}
+    top = max((float(r.get("score") or 0.0) for r in successes), default=0.0)
+    out["similarity"] = max(0.0, min(1.0, top))
+    try:
+        failures = list(retrieval.retrieve_failures(goal, title) or [])
+    except Exception:  # noqa: BLE001 -- the failure lane is optional; successes still count
+        failures = []
+    n_ok, n_bad = len(successes), len(failures)
+    if n_ok + n_bad:
+        out["p_true"] = max(0.0, min(1.0, n_ok / (n_ok + n_bad)))
+    return out
+
+
+def attemptSignals(state: Any, subtask: dict) -> dict:
+    """Assemble REAL momentary confidence signals for ``preActRouting`` from data that
+    genuinely exists: the SIE retrieval ledger (``memory.retrieval``) and any numeric
+    ``confidence`` the brain already put on the subtask. Returns numeric keys intuition
+    fuses -- ``similarity`` (top retrieval cosine to a past success, clamped [0,1]) and
+    ``p_true`` (near-neighbour pass fraction, or the brain's confidence when retrieval is
+    cold). NEVER fabricates confidence: with no real source it returns {} so intuition
+    honestly stays on the "deliberate" default. Gated (no-op {} when HN off), best-effort
+    (any error -> {}), never raises."""
+    if not config.HUMAN_NATURE_ENABLED:
+        return {}
+    try:
+        goal = (_meta(state).get("goal_elaborated") or _meta(state).get("goal_raw") or "")
+        title = str(subtask.get("title") or "")
+        signals = _retrievalSignals(str(goal), title)
+        # Brain-authored confidence: only a source when retrieval didn't already give p_true.
+        if "p_true" not in signals:
+            conf = subtask.get("confidence")
+            if isinstance(conf, (int, float)) and not isinstance(conf, bool):
+                signals["p_true"] = max(0.0, min(1.0, float(conf)))
+        return signals
+    except Exception:  # noqa: BLE001 -- signal assembly must never break an attempt
+        LOG.debug("attemptSignals failed (ignored)", exc_info=True)
+        return {}
 
 
 def preActRouting(state: Any, domain: str, signals: "dict | None" = None) -> str:

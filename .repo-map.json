@@ -5712,6 +5712,7 @@
       ],
       "callers": [
         "learning.sie_steps",
+        "platform_core.orchestration.human_nature_bridge",
         "platform_core.orchestration.plan_mixin"
       ]
     },
@@ -11721,56 +11722,63 @@
           "kind": "function",
           "signature": "(state: Any, dashboard: Any=None) -> 'str | None'",
           "summary": "Hook 4: once per run, fire the ledger-grounded instinct (\"gut\") check and SURFACE the",
-          "lineno": 39
+          "lineno": 40
         },
         {
           "name": "opinionAdvisory",
           "kind": "function",
           "signature": "(state: Any, dashboard: Any=None) -> 'list[dict]'",
           "summary": "Advisory-only opinion coupling on the plan gate",
-          "lineno": 92
+          "lineno": 93
         },
         {
           "name": "emotionNudge",
           "kind": "function",
           "signature": "(behavior_intent: 'str | None') -> int",
           "summary": "Pure helper: map a coupled behavior intent to a BOUNDED retry-budget delta in",
-          "lineno": 161
+          "lineno": 162
         },
         {
           "name": "emotionAdvisory",
           "kind": "function",
           "signature": "(state: Any, dashboard: Any=None) -> dict",
           "summary": "Wire the Human-Nature emotion faculty as an ADVISORY behavior coupling",
-          "lineno": 170
+          "lineno": 171
+        },
+        {
+          "name": "attemptSignals",
+          "kind": "function",
+          "signature": "(state: Any, subtask: dict) -> dict",
+          "summary": "Assemble REAL momentary confidence signals for ``preActRouting`` from data that",
+          "lineno": 230
         },
         {
           "name": "preActRouting",
           "kind": "function",
           "signature": "(state: Any, domain: str, signals: 'dict | None'=None) -> str",
           "summary": "Hook 2: best-effort thin wrapper over ``integration.route_pre_act``",
-          "lineno": 207
+          "lineno": 256
         },
         {
           "name": "biasEffort",
           "kind": "function",
           "signature": "(current_effort: str, routing: str) -> str",
           "summary": "Pure ADVISORY bias: when *routing* == \"fast\", drop *current_effort* ONE tier on",
-          "lineno": 221
+          "lineno": 270
         },
         {
           "name": "runPreambleHooks",
           "kind": "function",
           "signature": "(state: Any) -> None",
           "summary": "Hook 1: lazily initialise self_state at run start",
-          "lineno": 236
+          "lineno": 285
         },
         {
           "name": "runTeardownHooks",
           "kind": "function",
           "signature": "(orch: Any, state: Any) -> None",
           "summary": "Hook 6 (A/B recording) always fires",
-          "lineno": 280
+          "lineno": 329
         }
       ],
       "depends_on": [
@@ -11783,6 +11791,7 @@
         "human_nature.self_state",
         "memory.experience_adapters",
         "memory.experience_solutions",
+        "memory.retrieval",
         "platform_core.core.best_effort",
         "platform_core.orchestration.time_utils"
       ],
