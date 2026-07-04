@@ -26,6 +26,7 @@ DEPENDS-ON: config, notifications.discord_client, notifications.icons
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_discord_embeds.py
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -38,6 +39,7 @@ from notifications.discord_client import truncate
 # Timestamp helper
 # =====================================================================
 
+
 def _nowIso() -> str:
     """Native embed timestamp (RFC3339, UTC)."""
     return datetime.now(timezone.utc).isoformat()
@@ -46,6 +48,7 @@ def _nowIso() -> str:
 # =====================================================================
 # UI kit
 # =====================================================================
+
 
 def humanPing() -> str:
     """`<@id>` mention for the human, ONLY used on severe events. '' if unset or night mode."""
@@ -70,11 +73,14 @@ def subtaskTracker(subtasks: list[dict], limit: int = 12) -> str:
     n_pending = len(subtasks) - n_done - n_running - n_failed
     countable = n_done + n_failed
     pass_rate = f"  ·  {round(100 * n_done / countable)}% pass" if countable > 0 else ""
-    from notifications import icons   # lazy: avoids an import cycle (icons -> discord_bot)
-    if icons.icon("done"):           # professional app-emoji icons when provisioned
-        body = (f"{icons.icon('done')} {n_done}  {icons.icon('active')} {n_running}  "
-                f"{icons.icon('pending')} {max(n_pending, 0)}  {icons.icon('fail')} {n_failed}")
-    else:                            # clean typographic fallback (no emoji)
+    from notifications import icons  # lazy: avoids an import cycle (icons -> discord_bot)
+
+    if icons.icon("done"):  # professional app-emoji icons when provisioned
+        body = (
+            f"{icons.icon('done')} {n_done}  {icons.icon('active')} {n_running}  "
+            f"{icons.icon('pending')} {max(n_pending, 0)}  {icons.icon('fail')} {n_failed}"
+        )
+    else:  # clean typographic fallback (no emoji)
         body = f"{n_done} done · {n_running} active · {max(n_pending, 0)} pending · {n_failed} failed"
     return body + pass_rate
 
@@ -106,21 +112,26 @@ def relTime(value=None) -> str:
 
 _APPROVED = {"approved", "approve", "pass", "ok"}
 _CHALLENGED = {"challenged", "rejected", "reject", "blocked", "fail"}
+_UNREVIEWED = {"unreviewed"}  # adversary could not produce a verdict -- honest, not a pass
 
 
 def formatVerdict(verdict: Optional[str]) -> str:
     v = (verdict or "").lower().strip()
     from notifications import icons
+
     if v in _APPROVED:
         return f"{icons.prefix('done')}APPROVED"
     if v in _CHALLENGED:
         return f"{icons.prefix('warn')}CHALLENGED"
+    if v in _UNREVIEWED:
+        return f"{icons.prefix('warn')}UNREVIEWED"
     return f"{icons.prefix('help')}UNKNOWN"
 
 
 # =====================================================================
 # Embed builders
 # =====================================================================
+
 
 def _goalSummary(goal: str, limit: int = 320) -> str:
     """First sentence(s) of the goal up to ~limit chars, so the embed leads with the gist
@@ -130,8 +141,8 @@ def _goalSummary(goal: str, limit: int = 320) -> str:
         return g or "—"
     cut = g[:limit]
     dot = cut.rfind(". ")
-    if dot >= limit * 0.5:            # prefer a clean sentence break if one is reasonably late
-        return cut[:dot + 1]
+    if dot >= limit * 0.5:  # prefer a clean sentence break if one is reasonably late
+        return cut[: dot + 1]
     return cut.rsplit(" ", 1)[0] + "…"
 
 
@@ -151,10 +162,7 @@ def planningStartEmbed(goal: str, subtasks) -> dict:
         lines.append(f"…and {len(items) - 12} more")
     plan_block = "\n".join(lines) if lines else "_authoring subtasks…_"
     plural = "s" if count != 1 else ""
-    description = (
-        f"**Goal**\n{_goalSummary(goal)}\n\n"
-        f"**Plan — {count} subtask{plural}**\n{plan_block}"
-    )
+    description = f"**Goal**\n{_goalSummary(goal)}\n\n**Plan — {count} subtask{plural}**\n{plan_block}"
     return {
         "title": "Plan Ready",
         "color": statusColor("planning"),
@@ -234,16 +242,21 @@ def blockedComponents() -> list:
 
     def _b(style, label, cid, concept):
         b = {"type": 2, "style": style, "label": label, "custom_id": cid}
-        em = icons.buttonEmoji(concept)    # near-white button icon
+        em = icons.buttonEmoji(concept)  # near-white button icon
         if em:
             b["emoji"] = em
         return b
 
-    return [{"type": 1, "components": [
-        _b(1, "Answer", "sc_answer", "info"),
-        _b(2, "Skip", "sc_skip", "skip"),
-        _b(4, "Abort", "sc_abort", "abort"),
-    ]}]
+    return [
+        {
+            "type": 1,
+            "components": [
+                _b(1, "Answer", "sc_answer", "info"),
+                _b(2, "Skip", "sc_skip", "skip"),
+                _b(4, "Abort", "sc_abort", "abort"),
+            ],
+        }
+    ]
 
 
 def completeEmbed(state, pr_link: str, elapsed: str) -> dict:
@@ -259,10 +272,7 @@ def completeEmbed(state, pr_link: str, elapsed: str) -> dict:
     pr = (pr_link or "").strip()
     pr_val = f"[Open PR]({pr})" if pr.lower().startswith("http") else (pr or "—")
 
-    desc = (
-        f"**{state.meta['goal_raw'][:280]}**\n"
-        f"{progressBar(done, total)}"
-    )
+    desc = f"**{state.meta['goal_raw'][:280]}**\n{progressBar(done, total)}"
     return {
         "title": "9TO5 — Run Complete",
         "color": statusColor(state.meta.get("status")),
@@ -344,17 +354,22 @@ def feedbackComponents() -> list:
 
     def _b(style, label, cid, concept):
         b = {"type": 2, "style": style, "label": label, "custom_id": cid}
-        em = icons.buttonEmoji(concept)    # near-white button icon
+        em = icons.buttonEmoji(concept)  # near-white button icon
         if em:
             b["emoji"] = em
         return b
 
-    return [{"type": 1, "components": [
-        _b(3, "Approve", "fb_approve", "done"),       # style 3 = green (success)
-        _b(4, "Reject", "fb_reject", "fail"),         # style 4 = red (danger)
-        _b(2, "Skip", "fb_skip", "skip"),             # style 2 = gray (secondary)
-        _b(1, "Retry", "fb_retry", "retry"),          # style 1 = blue (primary)
-    ]}]
+    return [
+        {
+            "type": 1,
+            "components": [
+                _b(3, "Approve", "fb_approve", "done"),  # style 3 = green (success)
+                _b(4, "Reject", "fb_reject", "fail"),  # style 4 = red (danger)
+                _b(2, "Skip", "fb_skip", "skip"),  # style 2 = gray (secondary)
+                _b(1, "Retry", "fb_retry", "retry"),  # style 1 = blue (primary)
+            ],
+        }
+    ]
 
 
 def abortedEmbed(reason: str, elapsed: str) -> dict:

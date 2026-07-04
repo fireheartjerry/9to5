@@ -21,6 +21,7 @@ DEPENDS-ON: agents.adversary_browser, agents.adversary_review, agents.browser_ex
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_adversary.py
 """
+
 from __future__ import annotations
 
 import time
@@ -30,20 +31,40 @@ import llm_io  # noqa: F401 -- re-exported for test mocking (tests patch adv.llm
 
 from agents.adversary_review import (  # noqa: F401
     LOG,
-    _APPROVED, _CHALLENGED, _CHALLENGE_WORDS,
-    ADVERSARY_MAX_OUTPUT_CHARS, CDP_MAX_RETRIES, CDP_RETRY_BACKOFF_BASE,
-    _CDP_TRANSIENT_SIGNALS, _SYSTEM, REVIEW_GUIDANCE, _APPROVE_WORDS,
-    systemFor, isCdpTransient, shouldTrigger,
-    _loadJsonLoose, _normalizeVerdict, _stubReview, _garbledChallenge,
-    _buildReviewUser, _richFields, _parseVerdict,
+    _APPROVED,
+    _CHALLENGED,
+    _CHALLENGE_WORDS,
+    ADVERSARY_MAX_OUTPUT_CHARS,
+    CDP_MAX_RETRIES,
+    CDP_RETRY_BACKOFF_BASE,
+    _CDP_TRANSIENT_SIGNALS,
+    _SYSTEM,
+    REVIEW_GUIDANCE,
+    _APPROVE_WORDS,
+    systemFor,
+    isCdpTransient,
+    shouldTrigger,
+    _loadJsonLoose,
+    _normalizeVerdict,
+    _stubReview,
+    _garbledChallenge,
+    _buildReviewUser,
+    _richFields,
+    _parseVerdict,
     review,
 )
 from agents.adversary_browser import _GEMINI_PREAMBLE  # noqa: F401
 
 
-def reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: str, *,
-                     browser_ask: Optional[Callable] = None, goal: str = "",
-                     review_type: str = "subtask") -> dict:
+def reviewViaBrowser(
+    subtask_title: str,
+    trigger_reason: str,
+    executor_output: str,
+    *,
+    browser_ask: Optional[Callable] = None,
+    goal: str = "",
+    review_type: str = "subtask",
+) -> dict:
     """Phase-2 critique: route the review to Gemini via the google-genai SDK.
 
     ``browser_ask`` is a ``(message) -> reply_text | None`` callable; it defaults to
@@ -59,6 +80,7 @@ def reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: s
     """
     if browser_ask is None:
         from agents import browser_executor
+
         browser_ask = browser_executor.askGemini
 
     user = _buildReviewUser(subtask_title, trigger_reason, executor_output, goal)
@@ -74,43 +96,61 @@ def reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: s
                 rv = _parseVerdict(reply, trigger_reason, surface="gemini", review_type=review_type)
             except Exception as pe:  # noqa: BLE001 -- responded but GARBLED -> fail closed (R10)
                 LOG.warning("Adversary (Gemini) verdict garbled (%s); failing closed as CHALLENGED", pe)
-                return _garbledChallenge(trigger_reason, pe, surface="gemini",
-                                         review_type=review_type)
+                return _garbledChallenge(trigger_reason, pe, surface="gemini", review_type=review_type)
             LOG.info(
                 "Adversary (Gemini) verdict for '%s' (%s) -> %s (%d concern(s))",
-                subtask_title, trigger_reason, rv["verdict"], len(rv["concerns"]),
+                subtask_title,
+                trigger_reason,
+                rv["verdict"],
+                len(rv["concerns"]),
             )
             return rv
         except Exception as e:  # noqa: BLE001
             last_exc = e
             if attempt < CDP_MAX_RETRIES and isCdpTransient(e):
-                wait = CDP_RETRY_BACKOFF_BASE * (2 ** attempt)
+                wait = CDP_RETRY_BACKOFF_BASE * (2**attempt)
                 LOG.warning(
                     "Adversary CDP transient error (attempt %d/%d, retry in %.1fs): %s",
-                    attempt + 1, CDP_MAX_RETRIES + 1, wait, e,
+                    attempt + 1,
+                    CDP_MAX_RETRIES + 1,
+                    wait,
+                    e,
                 )
                 time.sleep(wait)
                 continue
             # Non-transient or retries exhausted -- log and fall through.
             LOG.warning(
                 "Adversary Gemini critique failed after %d attempt(s) (%s); "
-                "conservative auto-approve",
-                attempt + 1, e,
+                "recording UNREVIEWED (not approved)",
+                attempt + 1,
+                e,
             )
             break
 
     return _stubReview(
         trigger_reason,
-        note=f"Adversary Gemini critique errored ({last_exc}); auto-approved conservatively.",
+        note=f"Adversary Gemini critique errored ({last_exc}); recorded UNREVIEWED (no critique ran).",
     )
 
 
 __all__ = [
-    "systemFor", "isCdpTransient", "shouldTrigger",
-    "reviewViaBrowser", "review",
-    "ADVERSARY_MAX_OUTPUT_CHARS", "CDP_MAX_RETRIES", "CDP_RETRY_BACKOFF_BASE",
-    "REVIEW_GUIDANCE", "_APPROVED", "_CHALLENGED",
+    "systemFor",
+    "isCdpTransient",
+    "shouldTrigger",
+    "reviewViaBrowser",
+    "review",
+    "ADVERSARY_MAX_OUTPUT_CHARS",
+    "CDP_MAX_RETRIES",
+    "CDP_RETRY_BACKOFF_BASE",
+    "REVIEW_GUIDANCE",
+    "_APPROVED",
+    "_CHALLENGED",
     # Private names accessed by tests:
-    "_loadJsonLoose", "_normalizeVerdict", "_stubReview", "_garbledChallenge",
-    "_buildReviewUser", "_richFields", "_parseVerdict",
+    "_loadJsonLoose",
+    "_normalizeVerdict",
+    "_stubReview",
+    "_garbledChallenge",
+    "_buildReviewUser",
+    "_richFields",
+    "_parseVerdict",
 ]

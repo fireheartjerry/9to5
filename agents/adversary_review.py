@@ -12,6 +12,7 @@ DEPENDS-ON: config, llm_io
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_adversary.py
 """
+
 from __future__ import annotations
 
 from typing import Callable, Optional
@@ -24,6 +25,7 @@ LOG = config.getLogger("adversary")
 # Vocabulary aligned with notifications.discord_bot._APPROVED / _CHALLENGED.
 _APPROVED = "approved"
 _CHALLENGED = "challenged"
+_UNREVIEWED = "unreviewed"  # no brain could produce a verdict -- honest, never a silent pass
 _CHALLENGE_WORDS = {"challenged", "rejected", "reject", "blocked", "fail", "concern"}
 
 # Cap how much executor output we hand the brain; the rest is noise for review.
@@ -35,8 +37,20 @@ CDP_RETRY_BACKOFF_BASE: float = 1.0
 
 # Error substrings that identify transient network/API failures worth retrying.
 _CDP_TRANSIENT_SIGNALS: tuple[str, ...] = (
-    "timeout", "timed out", "net::", "connection", "socket", "reset", "disconnect",
-    "econnrefused", "unreachable", "unavailable", "503", "502", "500", "deadline",
+    "timeout",
+    "timed out",
+    "net::",
+    "connection",
+    "socket",
+    "reset",
+    "disconnect",
+    "econnrefused",
+    "unreachable",
+    "unavailable",
+    "503",
+    "502",
+    "500",
+    "deadline",
 )
 
 _SYSTEM = (
@@ -56,23 +70,28 @@ _SYSTEM = (
     'work; otherwise "approved" with empty concerns/must_fix and severity "none". Set "severity" '
     'to "high" only for work that is broken, unsafe, or clearly fails the task -- this is the bar '
     'that holds a PR. "must_fix" items feed directly into the executor\'s next attempt, so make '
-    'each one precise and verifiable.'
+    "each one precise and verifiable."
 )
 
 # Per-review-type guidance appended to _SYSTEM. Verdict schema lives ONLY in _SYSTEM.
 REVIEW_GUIDANCE: dict[str, str] = {
     "subtask": "You are reviewing one subtask's executor output.",
-    "plan": ("You are reviewing a PROPOSED PLAN (an ordered subtask list) BEFORE any execution. "
-             "Judge completeness, ordering, missing steps, and scope. 'must_fix' = plan changes."),
-    "architecture": ("You are reviewing an ARCHITECTURE/DESIGN document before planning. Judge "
-                     "soundness, risk, and feasibility. 'must_fix' = design changes."),
-    "pre_pr_diff": ("You are reviewing the FINAL git diff of the whole change before a PR is "
-                    "opened. Judge correctness, safety, scope, and leftover debt. A 'high' "
-                    "severity holds the PR."),
+    "plan": (
+        "You are reviewing a PROPOSED PLAN (an ordered subtask list) BEFORE any execution. "
+        "Judge completeness, ordering, missing steps, and scope. 'must_fix' = plan changes."
+    ),
+    "architecture": (
+        "You are reviewing an ARCHITECTURE/DESIGN document before planning. Judge "
+        "soundness, risk, and feasibility. 'must_fix' = design changes."
+    ),
+    "pre_pr_diff": (
+        "You are reviewing the FINAL git diff of the whole change before a PR is "
+        "opened. Judge correctness, safety, scope, and leftover debt. A 'high' "
+        "severity holds the PR."
+    ),
 }
 
-_APPROVE_WORDS = {"approved", "approve", "pass", "passed", "ok", "okay", "accept", "accepted",
-                  "lgtm"}
+_APPROVE_WORDS = {"approved", "approve", "pass", "passed", "ok", "okay", "accept", "accepted", "lgtm"}
 
 
 def systemFor(review_type: str = "subtask") -> str:
@@ -87,8 +106,9 @@ def isCdpTransient(exc: BaseException) -> bool:
     return any(s in msg for s in _CDP_TRANSIENT_SIGNALS)
 
 
-def shouldTrigger(executor_output: str, subtask_position: int,
-                  attempt_count: int = 1, pre_pr: bool = False) -> tuple[bool, str]:
+def shouldTrigger(
+    executor_output: str, subtask_position: int, attempt_count: int = 1, pre_pr: bool = False
+) -> tuple[bool, str]:
     """Return ``(triggered, reason)``."""
     text = (executor_output or "").lower()
     for phrase in config.ADVERSARY_TRIGGER_PHRASES:
@@ -139,14 +159,20 @@ def _normalizeVerdict(raw: object) -> Optional[str]:
 
 
 def _stubReview(trigger_reason: str, *, note: Optional[str] = None) -> dict:
-    """Conservative fallback for a brain that is UNAVAILABLE (not wired / transport error /
-    empty reply): approve, but mark it as un-reviewed so it is never mistaken for a real pass."""
+    """Fallback for a brain that is UNAVAILABLE (not wired / transport error / empty reply):
+    the verdict is the honest ``unreviewed`` -- NEVER a silent ``approved`` that reads as a real
+    pass. It does not hold the run (``is_blocking`` only holds a ``challenged``), so a dead LLM
+    surfaces the gap without stalling all work; a garbled-but-present reply still fails closed
+    via ``_garbledChallenge``."""
     return {
-        "verdict": _APPROVED,
+        "verdict": _UNREVIEWED,
         "trigger_reason": trigger_reason,
         "concerns": [],
-        "notes": note or ("Adversary brain unavailable; auto-approved without a real critique. "
-                          "Phase 2 -> Gemini via the google-genai SDK."),
+        "notes": note
+        or (
+            "Adversary brain unavailable; recorded UNREVIEWED (not approved) -- no real critique ran. "
+            "Phase 2 -> Gemini via the google-genai SDK."
+        ),
         "stub": True,
         "severity": "none",
         "must_fix": [],
@@ -155,8 +181,9 @@ def _stubReview(trigger_reason: str, *, note: Optional[str] = None) -> dict:
     }
 
 
-def _garbledChallenge(trigger_reason: str, err: object, *, surface: str,
-                      review_type: str = "subtask") -> dict:
+def _garbledChallenge(
+    trigger_reason: str, err: object, *, surface: str, review_type: str = "subtask"
+) -> dict:
     """Fail-closed fallback for GARBLED output (R10): the brain DID respond but its verdict is
     unparseable/off-contract -- treat it as CHALLENGED, never a silent clean approve (a real
     'challenged' expressed off-contract must not neuter the PR-hold/remediation)."""
@@ -175,8 +202,7 @@ def _garbledChallenge(trigger_reason: str, err: object, *, surface: str,
     }
 
 
-def _buildReviewUser(subtask_title: str, trigger_reason: str, executor_output: str,
-                     goal: str) -> str:
+def _buildReviewUser(subtask_title: str, trigger_reason: str, executor_output: str, goal: str) -> str:
     """The user-turn prompt handed to whichever brain reviews -- single source so paths can't drift."""
     return (
         f"Subtask under review: {subtask_title}\n"
@@ -205,8 +231,9 @@ def _richFields(data: dict, verdict: str) -> dict:
     }
 
 
-def _parseVerdict(raw_content: object, trigger_reason: str, *, surface: str,
-                  review_type: str = "subtask") -> dict:
+def _parseVerdict(
+    raw_content: object, trigger_reason: str, *, surface: str, review_type: str = "subtask"
+) -> dict:
     """Turn a brain's raw JSON reply into the verdict contract. Raises on junk so the
     caller can degrade to a conservative stub."""
     data = _loadJsonLoose(raw_content)
@@ -229,9 +256,15 @@ def _parseVerdict(raw_content: object, trigger_reason: str, *, surface: str,
     }
 
 
-def review(subtask_title: str, trigger_reason: str, executor_output: str, *,
-           ollama_chat: Optional[Callable] = None, goal: str = "",
-           review_type: str = "subtask") -> dict:
+def review(
+    subtask_title: str,
+    trigger_reason: str,
+    executor_output: str,
+    *,
+    ollama_chat: Optional[Callable] = None,
+    goal: str = "",
+    review_type: str = "subtask",
+) -> dict:
     """Critique the executor output and return a verdict dict.
 
     ``ollama_chat`` is the orchestrator's resilient Ollama caller
@@ -242,27 +275,32 @@ def review(subtask_title: str, trigger_reason: str, executor_output: str, *,
     labeled approve-stub, but GARBLED output fails closed as CHALLENGED.
     """
     if ollama_chat is None:
-        LOG.info("Adversary (no brain) for '%s' (%s) -> approved [stub]",
-                 subtask_title, trigger_reason)
+        LOG.info("Adversary (no brain) for '%s' (%s) -> approved [stub]", subtask_title, trigger_reason)
         return _stubReview(trigger_reason)
 
     user = _buildReviewUser(subtask_title, trigger_reason, executor_output, goal)
     try:
-        resp = llm_io.callChat(ollama_chat, systemFor(review_type), user,
-                               act="adversary_review", want_json=True)
+        resp = llm_io.callChat(
+            ollama_chat, systemFor(review_type), user, act="adversary_review", want_json=True
+        )
         content = llm_io.responseText(resp).strip()
         if not content:
             raise ConnectionError("no/empty adversary completion")
     except Exception as e:  # noqa: BLE001 -- brain UNAVAILABLE -> labeled conservative stub
-        LOG.warning("Adversary brain critique failed (%s); conservative auto-approve", e,
-                    exc_info=True)
-        return _stubReview(trigger_reason,
-                           note=f"Adversary critique errored ({e}); auto-approved conservatively.")
+        LOG.warning("Adversary brain critique failed (%s); conservative auto-approve", e, exc_info=True)
+        return _stubReview(
+            trigger_reason, note=f"Adversary critique errored ({e}); auto-approved conservatively."
+        )
     try:
         rv = _parseVerdict(content, trigger_reason, surface="ollama", review_type=review_type)
     except Exception as e:  # noqa: BLE001 -- brain RESPONDED but garbled -> fail closed (R10)
         LOG.warning("Adversary verdict garbled (%s); failing closed as CHALLENGED", e)
         return _garbledChallenge(trigger_reason, e, surface="ollama", review_type=review_type)
-    LOG.info("Adversary verdict for '%s' (%s) -> %s (%d concern(s))",
-             subtask_title, trigger_reason, rv["verdict"], len(rv["concerns"]))
+    LOG.info(
+        "Adversary verdict for '%s' (%s) -> %s (%d concern(s))",
+        subtask_title,
+        trigger_reason,
+        rv["verdict"],
+        len(rv["concerns"]),
+    )
     return rv

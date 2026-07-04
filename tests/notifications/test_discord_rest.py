@@ -1,4 +1,5 @@
 """Unit tests for the discord_bot REST chokepoint + embed clamping (no real network)."""
+
 import contextlib
 import unittest
 from unittest import mock
@@ -24,8 +25,10 @@ def _cfg():
     # This module deliberately exercises the real _request() transport path (mocked Session,
     # not the network) -- opt out of the pytest-auto-detected _realDiscordBlocked guard so it
     # doesn't short-circuit before ever reaching the mocked Session.request.
-    with mock.patch.multiple(config, DISCORD_BOT_TOKEN="t", DISCORD_CHANNEL_ID=123), \
-            mock.patch.object(_dc_mod, "_realDiscordBlocked", return_value=False):
+    with (
+        mock.patch.multiple(config, DISCORD_BOT_TOKEN="t", DISCORD_CHANNEL_ID=123),
+        mock.patch.object(_dc_mod, "_realDiscordBlocked", return_value=False),
+    ):
         yield
 
 
@@ -50,8 +53,11 @@ class TestRequest(unittest.TestCase):
 
         # NB: the code calls _SESSION.request (a requests.Session), NOT requests.request -- mocking the
         # module function would silently hit the real network. Patch the Session.
-        with _cfg(), mock.patch.object(d._SESSION, "request", side_effect=fake), \
-                mock.patch.object(d.time, "sleep"):
+        with (
+            _cfg(),
+            mock.patch.object(d._SESSION, "request", side_effect=fake),
+            mock.patch.object(d.time, "sleep"),
+        ):
             r = d._request("POST", "/x")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(len(calls), 2)
@@ -73,8 +79,11 @@ class TestRequest(unittest.TestCase):
         self.assertFalse(d._DISABLED)
 
     def test_control_poll_no_retry(self):
-        with _cfg(), mock.patch.object(d._SESSION, "request", return_value=_Resp(429, {"retry_after": 99})) as m, \
-                mock.patch.object(d.time, "sleep") as s:
+        with (
+            _cfg(),
+            mock.patch.object(d._SESSION, "request", return_value=_Resp(429, {"retry_after": 99})) as m,
+            mock.patch.object(d.time, "sleep") as s,
+        ):
             d._request("GET", "/x", retries=0)
         self.assertEqual(m.call_count, 1)
         s.assert_not_called()
@@ -83,8 +92,12 @@ class TestRequest(unittest.TestCase):
         """A GLOBAL 429 must arm the global cooldown so the NEXT call short-circuits WITHOUT touching
         the network -- this is what stops the same-millisecond 429 storm in the logs. (A per-bucket
         429 deliberately does NOT arm it -- see TestRateLimitScope.)"""
-        with _cfg(), mock.patch.object(d._SESSION, "request",
-                                       return_value=_Resp(429, {"retry_after": 5, "global": True})) as m:
+        with (
+            _cfg(),
+            mock.patch.object(
+                d._SESSION, "request", return_value=_Resp(429, {"retry_after": 5, "global": True})
+            ) as m,
+        ):
             # First poll hits the API once, sees 429, arms the breaker.
             d._request("GET", "/x", retries=0)
             self.assertEqual(m.call_count, 1)
@@ -97,7 +110,7 @@ class TestRequest(unittest.TestCase):
     def test_breaker_window_expires(self):
         """Once the cooldown deadline passes, calls resume hitting the API."""
         with _cfg(), mock.patch.object(d._SESSION, "request", return_value=_Resp(200, {"id": "1"})) as m:
-            d._RATE_LIMITED_UNTIL = d.time.monotonic() - 1.0   # already expired
+            d._RATE_LIMITED_UNTIL = d.time.monotonic() - 1.0  # already expired
             r = d._request("GET", "/x")
             self.assertEqual(r.status_code, 200)
             self.assertEqual(m.call_count, 1)
@@ -134,10 +147,14 @@ class TestUnpinAndVerdict(unittest.TestCase):
         self.assertFalse(d.unpinMessage(None))
 
     def test_formatVerdict_unknown(self):
-        self.assertEqual(d.formatVerdict("approved"), "APPROVED")     # icon prefix '' unprovisioned
+        self.assertEqual(d.formatVerdict("approved"), "APPROVED")  # icon prefix '' unprovisioned
         self.assertEqual(d.formatVerdict("rejected"), "CHALLENGED")
         self.assertIn("UNKNOWN", d.formatVerdict(""))
         self.assertIn("UNKNOWN", d.formatVerdict("pending"))
+        # 'unreviewed' (adversary could not review) surfaces DISTINCTLY -- not a false APPROVED,
+        # not the ambiguous UNKNOWN.
+        self.assertIn("UNREVIEWED", d.formatVerdict("unreviewed"))
+        self.assertNotIn("APPROVED", d.formatVerdict("unreviewed"))
 
 
 class TestFetch(unittest.TestCase):
@@ -160,6 +177,7 @@ class TestBlockedGuardLogging(unittest.TestCase):
     def test_guard_logs_once_when_blocking(self):
         import contextlib
         import logging
+
         _dc_mod._DISABLED = False
         _dc_mod._RATE_LIMITED_UNTIL = 0.0
         records = []
@@ -179,8 +197,7 @@ class TestBlockedGuardLogging(unittest.TestCase):
                 self.assertIsNone(_dc_mod._request("POST", "/x", json={}, retries=0))
         finally:
             _dc_mod.LOG.removeHandler(cap)
-        warnings = [r for r in records
-                    if r.levelno == logging.WARNING and "test runner" in r.getMessage()]
+        warnings = [r for r in records if r.levelno == logging.WARNING and "test runner" in r.getMessage()]
         self.assertEqual(len(warnings), 1, "guard must log its refusal exactly once per process")
 
 
@@ -206,10 +223,12 @@ class TestGuardNoFalsePositiveInProd(unittest.TestCase):
             "print('PROD_OK')",
         ]
         code = chr(10).join(lines)
-        env = {k: v for k, v in os.environ.items()
-               if k not in ("PYTEST_CURRENT_TEST", "NINE_TO_FIVE_TEST_MODE")}
-        r = subprocess.run([sys.executable, "-c", code], cwd=str(root),
-                           capture_output=True, text=True, env=env, timeout=120)
+        env = {
+            k: v for k, v in os.environ.items() if k not in ("PYTEST_CURRENT_TEST", "NINE_TO_FIVE_TEST_MODE")
+        }
+        r = subprocess.run(
+            [sys.executable, "-c", code], cwd=str(root), capture_output=True, text=True, env=env, timeout=120
+        )
         self.assertEqual(r.returncode, 0, f"stdout={r.stdout!r} stderr={r.stderr[-800:]!r}")
         self.assertIn("PROD_OK", r.stdout)
 
@@ -280,13 +299,21 @@ class TestRateLimitScope(unittest.TestCase):
         d._RATE_LIMITED_UNTIL = 0.0
 
     def test_bucket_429_does_not_arm_global_breaker(self):
-        with _cfg(), mock.patch.object(d._SESSION, "request",
-                                       return_value=_Resp(429, {"retry_after": 0.0})),                 mock.patch.object(d.time, "sleep"):
+        with (
+            _cfg(),
+            mock.patch.object(d._SESSION, "request", return_value=_Resp(429, {"retry_after": 0.0})),
+            mock.patch.object(d.time, "sleep"),
+        ):
             d._request("GET", "/x", retries=0)
         self.assertEqual(d._RATE_LIMITED_UNTIL, 0.0)
 
     def test_global_429_arms_breaker(self):
-        with _cfg(), mock.patch.object(d._SESSION, "request",
-                                       return_value=_Resp(429, {"retry_after": 2, "global": True})),                 mock.patch.object(d.time, "sleep"):
+        with (
+            _cfg(),
+            mock.patch.object(
+                d._SESSION, "request", return_value=_Resp(429, {"retry_after": 2, "global": True})
+            ),
+            mock.patch.object(d.time, "sleep"),
+        ):
             d._request("GET", "/x", retries=0)
         self.assertGreater(d._RATE_LIMITED_UNTIL, 0.0)
