@@ -11496,6 +11496,7 @@
         "platform_core.core.surfaces",
         "platform_core.execution.wiring",
         "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.human_nature_bridge",
         "platform_core.orchestration.step_resume",
         "platform_core.orchestration.step_sink",
         "platform_core.runtime",
@@ -11718,28 +11719,42 @@
           "kind": "function",
           "signature": "(state: Any, dashboard: Any=None) -> 'str | None'",
           "summary": "Hook 4: once per run, fire the ledger-grounded instinct (\"gut\") check and SURFACE the",
-          "lineno": 35
+          "lineno": 37
         },
         {
           "name": "opinionAdvisory",
           "kind": "function",
           "signature": "(state: Any, dashboard: Any=None) -> 'list[dict]'",
           "summary": "Advisory-only opinion coupling on the plan gate",
-          "lineno": 88
+          "lineno": 90
+        },
+        {
+          "name": "preActRouting",
+          "kind": "function",
+          "signature": "(state: Any, domain: str, signals: 'dict | None'=None) -> str",
+          "summary": "Hook 2: best-effort thin wrapper over ``integration.route_pre_act``",
+          "lineno": 132
+        },
+        {
+          "name": "biasEffort",
+          "kind": "function",
+          "signature": "(current_effort: str, routing: str) -> str",
+          "summary": "Pure ADVISORY bias: when *routing* == \"fast\", drop *current_effort* ONE tier on",
+          "lineno": 146
         },
         {
           "name": "runPreambleHooks",
           "kind": "function",
           "signature": "(state: Any) -> None",
           "summary": "Hook 1: lazily initialise self_state at run start",
-          "lineno": 123
+          "lineno": 161
         },
         {
           "name": "runTeardownHooks",
           "kind": "function",
           "signature": "(orch: Any, state: Any) -> None",
           "summary": "Hook 6 (A/B recording) always fires",
-          "lineno": 167
+          "lineno": 205
         }
       ],
       "depends_on": [
@@ -11762,6 +11777,7 @@
         "tests/orchestration/test_human_nature_bridge.py"
       ],
       "callers": [
+        "platform_core.orchestration.execute_attempt_mixin",
         "platform_core.orchestration.run_phase_mixin"
       ]
     },

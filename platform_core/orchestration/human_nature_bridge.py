@@ -16,6 +16,8 @@ is False (the default) -- byte-identical run behavior.
 EXPORTS:
   midRunInstinct(state: Any, dashboard: Any=None) -> 'str | None'  -- Hook 4: once per run, fire the ledger-grounded instinct ("gut") check and SURFACE the
   opinionAdvisory(state: Any, dashboard: Any=None) -> 'list[dict]'  -- Advisory-only opinion coupling on the plan gate
+  preActRouting(state: Any, domain: str, signals: 'dict | None'=None) -> str  -- Hook 2: best-effort thin wrapper over ``integration.route_pre_act``
+  biasEffort(current_effort: str, routing: str) -> str  -- Pure ADVISORY bias: when *routing* == "fast", drop *current_effort* ONE tier on
   runPreambleHooks(state: Any) -> None  -- Hook 1: lazily initialise self_state at run start
   runTeardownHooks(orch: Any, state: Any) -> None  -- Hook 6 (A/B recording) always fires
 DEPENDS-ON: config, human_nature.ab_harness, human_nature.continuity, human_nature.integration, human_nature.opinions, human_nature.self_state, memory.experience_adapters, memory.experience_solutions, platform_core.core.best_effort, platform_core.orchestration.time_utils
@@ -118,6 +120,42 @@ def opinionAdvisory(state: Any, dashboard: Any = None) -> "list[dict]":
         LOG.debug("opinionAdvisory failed (ignored)", exc_info=True)
         return []
     return surfaced
+
+
+# --- Hook 2: intuition dual-process routing -> advisory effort bias --------------
+# Ordered effort ladder (lowest -> highest); mirrors config.MODEL_BY_EFFORT routing.
+# "medium" is a display alias of "default" and folds onto it before laddering.
+_EFFORT_LADDER: tuple[str, ...] = ("low", "default", "high", "xhigh", "ultracode")
+_EFFORT_ALIASES: dict[str, str] = {"medium": "default"}
+
+
+def preActRouting(state: Any, domain: str, signals: "dict | None" = None) -> str:
+    """Hook 2: best-effort thin wrapper over ``integration.route_pre_act``. Returns
+    "fast" or "deliberate". No-op ("deliberate") when HUMAN_NATURE_ENABLED is off
+    (route_pre_act itself gates), and "deliberate" on ANY error. Never raises."""
+    if not config.HUMAN_NATURE_ENABLED:
+        return "deliberate"
+    try:
+        from human_nature import integration
+        return integration.route_pre_act(state, str(domain), dict(signals or {}))
+    except Exception:  # noqa: BLE001
+        LOG.debug("preActRouting failed (ignored)", exc_info=True)
+        return "deliberate"
+
+
+def biasEffort(current_effort: str, routing: str) -> str:
+    """Pure ADVISORY bias: when *routing* == "fast", drop *current_effort* ONE tier on
+    the effort ladder (clamped at the lowest tier); otherwise return it unchanged. It
+    can ONLY lower effort, never raise it, and an off-ladder effort is passed through
+    untouched. No side effects, never raises."""
+    if routing != "fast":
+        return current_effort
+    key = _EFFORT_ALIASES.get(current_effort, current_effort)
+    try:
+        idx = _EFFORT_LADDER.index(key)
+    except ValueError:
+        return current_effort  # unknown tier: safe passthrough
+    return _EFFORT_LADDER[max(0, idx - 1)]
 
 
 def runPreambleHooks(state: Any) -> None:

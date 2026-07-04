@@ -10,7 +10,12 @@ from __future__ import annotations
 
 import config
 from human_nature.ab_harness import compare
-from platform_core.orchestration.human_nature_bridge import runPreambleHooks, runTeardownHooks
+from platform_core.orchestration.human_nature_bridge import (
+    biasEffort,
+    preActRouting,
+    runPreambleHooks,
+    runTeardownHooks,
+)
 from state.task import TaskState
 
 
@@ -220,3 +225,150 @@ def test_opinion_advisory_is_advisory_only_never_mutates_plan(monkeypatch):
     # no abort/reject/hold flag was set anywhere in meta
     for key in ("abort", "reject", "hold", "plan_rejected"):
         assert key not in state.meta
+
+
+# --- preActRouting + biasEffort (intuition dual-process → advisory effort bias) ---
+
+
+def test_bias_effort_fast_lowers_one_tier_from_mid():
+    assert biasEffort("high", "fast") == "default"
+    assert biasEffort("xhigh", "fast") == "high"
+    assert biasEffort("ultracode", "fast") == "xhigh"
+    assert biasEffort("default", "fast") == "low"
+
+
+def test_bias_effort_fast_at_lowest_tier_stays_clamped():
+    assert biasEffort("low", "fast") == "low"
+
+
+def test_bias_effort_deliberate_returns_unchanged():
+    for eff in ("low", "default", "high", "xhigh", "ultracode"):
+        assert biasEffort(eff, "deliberate") == eff
+
+
+def test_bias_effort_medium_alias_lowers_to_low():
+    # "medium" is a display alias of "default"; it must resolve on the ladder, not vanish.
+    assert biasEffort("medium", "fast") == "low"
+
+
+def test_bias_effort_unknown_effort_unchanged():
+    # An effort string not on the ladder is never mutated -- safe passthrough.
+    assert biasEffort("weird", "fast") == "weird"
+
+
+def test_pre_act_routing_deliberate_when_disabled(monkeypatch):
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", False)
+    assert preActRouting({"meta": {}}, "tactics", {}) == "deliberate"
+
+
+def test_pre_act_routing_returns_route_when_enabled(monkeypatch):
+    from human_nature import integration
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(integration, "route_pre_act", lambda *a, **k: "fast")
+    assert hnb.preActRouting({"meta": {}}, "tactics", {}) == "fast"
+
+
+def test_pre_act_routing_never_raises(monkeypatch):
+    from human_nature import integration
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+
+    def _boom(*a, **k):
+        raise RuntimeError("intuition down")
+
+    monkeypatch.setattr(integration, "route_pre_act", _boom)
+    assert hnb.preActRouting({"meta": {}}, "tactics", {}) == "deliberate"
+
+
+def test_pre_act_routing_signals_default_none(monkeypatch):
+    from human_nature import integration
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    seen = {}
+
+    def _capture(state, domain, signals, **k):
+        seen["signals"] = signals
+        return "deliberate"
+
+    monkeypatch.setattr(integration, "route_pre_act", _capture)
+    hnb.preActRouting({"meta": {}}, "tactics")
+    assert seen["signals"] == {}  # None → {} best-effort default
+
+
+# --- call-site integration: _hnBiasEffort in the executor attempt path ----------
+
+
+class _AttemptState:
+    """Minimal TaskState stand-in for _hnBiasEffort (reads .meta only)."""
+
+    def __init__(self, domain: str = "tactics") -> None:
+        self.meta = {"domain": domain}
+
+
+def _attempt_host():
+    from platform_core.orchestration.execute_attempt_mixin import (
+        OrchestratorExecuteAttemptMixin,
+    )
+
+    return OrchestratorExecuteAttemptMixin()
+
+
+def test_call_site_lowers_effort_when_routing_fast(monkeypatch):
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(hnb, "preActRouting", lambda *a, **k: "fast")
+    host = _attempt_host()
+    state = _AttemptState()
+    subtask = {"type": "tactics"}
+    spec = {"effort_level": "high"}
+
+    host._hnBiasEffort(state, subtask, spec)
+
+    assert spec["effort_level"] == "default"  # one tier lower
+
+
+def test_call_site_leaves_effort_unchanged_when_deliberate(monkeypatch):
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(hnb, "preActRouting", lambda *a, **k: "deliberate")
+    host = _attempt_host()
+    state = _AttemptState()
+    subtask = {"type": "tactics"}
+    spec = {"effort_level": "high", "prompt": "keep me"}
+
+    host._hnBiasEffort(state, subtask, spec)
+
+    assert spec["effort_level"] == "high"  # untouched
+    assert spec["prompt"] == "keep me"  # nothing else touched
+    assert set(spec) == {"effort_level", "prompt"}  # no keys added/removed
+
+
+def test_call_site_noop_when_hn_disabled(monkeypatch):
+    # Flags off -> preActRouting returns "deliberate" -> effort unchanged.
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", False)
+    host = _attempt_host()
+    state = _AttemptState()
+    spec = {"effort_level": "xhigh"}
+
+    host._hnBiasEffort(state, {"type": "tactics"}, spec)
+
+    assert spec["effort_level"] == "xhigh"
+
+
+def test_call_site_never_raises(monkeypatch):
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    def _boom(*a, **k):
+        raise RuntimeError("routing down")
+
+    monkeypatch.setattr(hnb, "preActRouting", _boom)
+    host = _attempt_host()
+    spec = {"effort_level": "high"}
+
+    host._hnBiasEffort(_AttemptState(), {"type": "tactics"}, spec)  # must not raise
+
+    assert spec["effort_level"] == "high"  # unchanged on error
