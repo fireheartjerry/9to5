@@ -49,7 +49,7 @@
           "kind": "function",
           "signature": "(subtask_title: str, trigger_reason: str, executor_output: str, *, browser_ask: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict",
           "summary": "Phase-2 critique: route the review to Gemini via the google-genai SDK.",
-          "lineno": 44
+          "lineno": 59
         }
       ],
       "depends_on": [
@@ -96,28 +96,28 @@
           "kind": "function",
           "signature": "(review_type: str='subtask') -> str",
           "summary": "The system prompt for a given touchpoint: the one schema + a type-specific lead-in.",
-          "lineno": 78
+          "lineno": 97
         },
         {
           "name": "isCdpTransient",
           "kind": "function",
           "signature": "(exc: BaseException) -> bool",
           "summary": "True when ``exc`` looks like a transient CDP/network hiccup worth retrying.",
-          "lineno": 84
+          "lineno": 103
         },
         {
           "name": "shouldTrigger",
           "kind": "function",
           "signature": "(executor_output: str, subtask_position: int, attempt_count: int=1, pre_pr: bool=False) -> tuple[bool, str]",
           "summary": "Return ``(triggered, reason)``.",
-          "lineno": 90
+          "lineno": 109
         },
         {
           "name": "review",
           "kind": "function",
           "signature": "(subtask_title: str, trigger_reason: str, executor_output: str, *, ollama_chat: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict",
           "summary": "Critique the executor output and return a verdict dict.",
-          "lineno": 232
+          "lineno": 259
         }
       ],
       "depends_on": [
@@ -7222,140 +7222,140 @@
           "kind": "function",
           "signature": "() -> str",
           "summary": "`<@id>` mention for the human, ONLY used on severe events",
-          "lineno": 50
+          "lineno": 53
         },
         {
           "name": "progressBar",
           "kind": "function",
           "signature": "(done: int, total: int, width: int=16) -> str",
           "summary": "",
-          "lineno": 57
+          "lineno": 60
         },
         {
           "name": "subtaskTracker",
           "kind": "function",
           "signature": "(subtasks: list[dict], limit: int=12) -> str",
           "summary": "",
-          "lineno": 66
+          "lineno": 69
         },
         {
           "name": "effortBar",
           "kind": "function",
           "signature": "(effort: Optional[str]) -> str",
           "summary": "",
-          "lineno": 82
+          "lineno": 88
         },
         {
           "name": "statusColor",
           "kind": "function",
           "signature": "(status: Optional[str]) -> int",
           "summary": "",
-          "lineno": 89
+          "lineno": 95
         },
         {
           "name": "relTime",
           "kind": "function",
           "signature": "(value=None) -> str",
           "summary": "Discord native relative timestamp: <t:UNIX:R>.",
-          "lineno": 93
+          "lineno": 99
         },
         {
           "name": "formatVerdict",
           "kind": "function",
           "signature": "(verdict: Optional[str]) -> str",
           "summary": "",
-          "lineno": 111
+          "lineno": 118
         },
         {
           "name": "planningStartEmbed",
           "kind": "function",
           "signature": "(goal: str, subtasks) -> dict",
           "summary": "Structured plan embed",
-          "lineno": 138
+          "lineno": 149
         },
         {
           "name": "architectDoneEmbed",
           "kind": "function",
           "signature": "(doc_path: str) -> dict",
           "summary": "",
-          "lineno": 170
+          "lineno": 178
         },
         {
           "name": "adversaryTriggeredEmbed",
           "kind": "function",
           "signature": "(subtask_title: str, reason: str, verdict: Optional[str]=None) -> dict",
           "summary": "",
-          "lineno": 179
+          "lineno": 187
         },
         {
           "name": "noticeEmbed",
           "kind": "function",
           "signature": "(reason: str, title: str='9TO5 — Notice') -> dict",
           "summary": "An AUTONOMOUS, informational event the system already handled itself (a fallback was ta…",
-          "lineno": 203
+          "lineno": 211
         },
         {
           "name": "blockedEmbed",
           "kind": "function",
           "signature": "(reason: str, question: Optional[str]=None) -> dict",
           "summary": "",
-          "lineno": 216
+          "lineno": 224
         },
         {
           "name": "blockedComponents",
           "kind": "function",
           "signature": "() -> list",
           "summary": "Action row with Answer / Skip / Abort buttons (handled by the gateway bot).",
-          "lineno": 230
+          "lineno": 238
         },
         {
           "name": "completeEmbed",
           "kind": "function",
           "signature": "(state, pr_link: str, elapsed: str) -> dict",
           "summary": "",
-          "lineno": 249
+          "lineno": 262
         },
         {
           "name": "gateNeededEmbed",
           "kind": "function",
           "signature": "(gate: str) -> dict",
           "summary": "",
-          "lineno": 284
+          "lineno": 294
         },
         {
           "name": "subtaskFailedEmbed",
           "kind": "function",
           "signature": "(subtask_id: str, title: str, verify_result: Optional[dict], attempts: int) -> dict",
           "summary": "",
-          "lineno": 294
+          "lineno": 304
         },
         {
           "name": "feedbackEmbed",
           "kind": "function",
           "signature": "(subtask_id: str, goal: str, status: str) -> dict",
           "summary": "Feedback prompt embed (Subsystem C) — post after subtask completion to invite human fee…",
-          "lineno": 316
+          "lineno": 326
         },
         {
           "name": "feedbackComponents",
           "kind": "function",
           "signature": "() -> list",
           "summary": "Action row with Approve / Reject / Skip / Retry buttons (Subsystem C feedback).",
-          "lineno": 340
+          "lineno": 350
         },
         {
           "name": "abortedEmbed",
           "kind": "function",
           "signature": "(reason: str, elapsed: str) -> dict",
           "summary": "",
-          "lineno": 360
+          "lineno": 375
         },
         {
           "name": "selfRefEmbed",
           "kind": "function",
           "signature": "(branch: str, protected: tuple) -> dict",
           "summary": "",
-          "lineno": 372
+          "lineno": 387
         }
       ],
       "depends_on": [
@@ -8810,103 +8810,97 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 78
+          "lineno": 82
         },
         {
           "name": "parseHours",
           "kind": "function",
           "signature": "(raw) -> float",
           "summary": "Tolerant parse ('2', '2h', '1.5')",
-          "lineno": 93
+          "lineno": 97
         },
         {
           "name": "validate",
           "kind": "function",
           "signature": "(req: WorkRequest) -> list[str]",
           "summary": "",
-          "lineno": 110
-        },
-        {
-          "name": "externalReadiness",
-          "kind": "function",
-          "signature": "(req: WorkRequest) -> list[str]",
-          "summary": "Warn about external-project setup gaps that degrade PR output, without blocking launch.",
-          "lineno": 136
+          "lineno": 114
         },
         {
           "name": "buildArgv",
           "kind": "function",
           "signature": "(req: WorkRequest) -> list[str]",
           "summary": "",
-          "lineno": 169
+          "lineno": 154
         },
         {
           "name": "prepareExternalRepo",
           "kind": "function",
           "signature": "(req: WorkRequest) -> None",
           "summary": "Clone repo_url into a managed workspace and mutate req.work_dir for this launch.",
-          "lineno": 199
+          "lineno": 189
         },
         {
           "name": "activeRun",
           "kind": "function",
           "signature": "() -> Optional[TaskState]",
           "summary": "The latest task iff it's still active",
-          "lineno": 209
+          "lineno": 200
         },
         {
           "name": "waitForLaunch",
           "kind": "function",
           "signature": "(launch_id: str, *, timeout_s: float=10.0, poll_s: float=0.5) -> Optional[str]",
           "summary": "Launch handshake: poll state/launch/<launch_id>.json (written by main.py --launch-id)",
-          "lineno": 250
+          "lineno": 242
         },
         {
           "name": "spawn",
           "kind": "function",
           "signature": "(req: WorkRequest) -> int",
           "summary": "",
-          "lineno": 290
+          "lineno": 286
         },
         {
           "name": "buildResumeArgv",
           "kind": "function",
           "signature": "(task_id: str, retry_failed: bool=False) -> list[str]",
           "summary": "",
-          "lineno": 294
+          "lineno": 290
         },
         {
           "name": "taskExists",
           "kind": "function",
           "signature": "(task_id: str) -> bool",
           "summary": "False for a non-UUID task_id, not just a missing file",
-          "lineno": 301
+          "lineno": 297
         },
         {
           "name": "spawnResume",
           "kind": "function",
           "signature": "(task_id: str, retry_failed: bool=False) -> int",
           "summary": "",
-          "lineno": 314
+          "lineno": 311
         },
         {
           "name": "launchOrError",
           "kind": "function",
           "signature": "(req: WorkRequest) -> str",
           "summary": "Validate -> lock -> block-if-active -> spawn -> handshake-confirm",
-          "lineno": 356
+          "lineno": 360
         },
         {
           "name": "resumeOrError",
           "kind": "function",
           "signature": "(task_id: str, retry_failed: bool=False) -> str",
           "summary": "Resume an existing task by id (block if a run is active)",
-          "lineno": 397
+          "lineno": 404
         }
       ],
       "depends_on": [
         "config",
         "notifications.commands",
+        "notifications.work_launcher_readiness",
         "platform_core.core",
         "platform_core.ops.external_project",
         "platform_core.orchestration",
@@ -9174,14 +9168,14 @@
           "kind": "function",
           "signature": "() -> PathsCfg",
           "summary": "Compute every path from env (after loadEnvOnce) + the repo-root bootstrap.",
-          "lineno": 109
+          "lineno": 114
         },
         {
           "name": "ensureDirs",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Create every directory 9TO5 needs (idempotent)",
-          "lineno": 157
+          "lineno": 162
         }
       ],
       "depends_on": [
@@ -9809,28 +9803,28 @@
           "kind": "function",
           "signature": "(cmd, *, cwd=None, timeout: Optional[float]=DEFAULT_TIMEOUT_SECONDS, extra_env: Optional[dict]=None, check: bool=False) -> subprocess.CompletedProcess",
           "summary": "Run ``cmd`` with the safety rails every external tool call needs: stdin=DEVNULL",
-          "lineno": 31
+          "lineno": 32
         },
         {
           "name": "runGit",
           "kind": "function",
           "signature": "(*args: str, cwd, timeout: Optional[float]=DEFAULT_TIMEOUT_SECONDS, check: bool=False) -> subprocess.CompletedProcess",
           "summary": "``git <args>`` in ``cwd`` with GIT_TERMINAL_PROMPT=0 so git can NEVER hang a run",
-          "lineno": 52
+          "lineno": 65
         },
         {
           "name": "gitPreflight",
           "kind": "function",
           "signature": "(work_dir, *, require_origin: bool=False, timeout: Optional[float]=DEFAULT_TIMEOUT_SECONDS) -> 'tuple[bool, str]'",
           "summary": "(ok, reason) preflight: ``work_dir`` is inside a git work tree, and (optionally)",
-          "lineno": 60
+          "lineno": 75
         },
         {
           "name": "gateCommands",
           "kind": "function",
           "signature": "(tier: str) -> 'list[list[str]]'",
           "summary": "Fresh mutable copies of a GATE_COMMANDS tier so callers can't mutate the table.",
-          "lineno": 93
+          "lineno": 118
         }
       ],
       "depends_on": [],
@@ -11411,28 +11405,28 @@
           "kind": "function",
           "signature": "(orch, state, subtask: dict, result: dict, exec_cwd: str, verify_spec, attempt_started: float, sid: str, combined: str, dashboard, resume_session) -> tuple",
           "summary": "Run verify, repair if brittle, apply the self-ref + evidence-gate downgrades, record.",
-          "lineno": 114
+          "lineno": 145
         },
         {
           "name": "gitDiffFacts",
           "kind": "function",
           "signature": "(work_dir: str) -> dict",
           "summary": "Best-effort, re-derivable git facts for the receipt: head sha, working-tree diff text, …",
-          "lineno": 151
+          "lineno": 194
         },
         {
           "name": "runEvidenceGate",
           "kind": "function",
           "signature": "(orch, state, subtask: dict, result: dict, exec_cwd: str, vresult: dict, sid: str) -> 'tuple[dict, bool]'",
           "summary": "For a code-change subtask that PASSED the deterministic gate: run the independent verif…",
-          "lineno": 191
+          "lineno": 241
         },
         {
           "name": "persistReceipt",
           "kind": "function",
           "signature": "(orch, state, sid: str, receipt: dict) -> None",
           "summary": "Write the Evidence Receipt as a per-subtask Obsidian note (durable audit artifact).",
-          "lineno": 260
+          "lineno": 332
         }
       ],
       "depends_on": [
@@ -11723,63 +11717,63 @@
           "kind": "function",
           "signature": "(state: Any, dashboard: Any=None) -> 'str | None'",
           "summary": "Hook 4: once per run, fire the ledger-grounded instinct (\"gut\") check and SURFACE the",
-          "lineno": 40
+          "lineno": 41
         },
         {
           "name": "opinionAdvisory",
           "kind": "function",
           "signature": "(state: Any, dashboard: Any=None) -> 'list[dict]'",
           "summary": "Advisory-only opinion coupling on the plan gate",
-          "lineno": 102
+          "lineno": 104
         },
         {
           "name": "emotionNudge",
           "kind": "function",
           "signature": "(behavior_intent: 'str | None') -> int",
           "summary": "Pure helper: map a coupled behavior intent to a BOUNDED retry-budget delta in",
-          "lineno": 171
+          "lineno": 173
         },
         {
           "name": "emotionAdvisory",
           "kind": "function",
           "signature": "(state: Any, dashboard: Any=None) -> dict",
           "summary": "Wire the Human-Nature emotion faculty as an ADVISORY behavior coupling",
-          "lineno": 180
+          "lineno": 182
         },
         {
           "name": "attemptSignals",
           "kind": "function",
           "signature": "(state: Any, subtask: dict) -> dict",
           "summary": "Assemble REAL momentary confidence signals for ``preActRouting`` from data that",
-          "lineno": 239
+          "lineno": 243
         },
         {
           "name": "preActRouting",
           "kind": "function",
           "signature": "(state: Any, domain: str, signals: 'dict | None'=None) -> str",
           "summary": "Hook 2: best-effort thin wrapper over ``integration.route_pre_act``",
-          "lineno": 265
+          "lineno": 271
         },
         {
           "name": "biasEffort",
           "kind": "function",
           "signature": "(current_effort: str, routing: str) -> str",
           "summary": "Pure ADVISORY bias: when *routing* == \"fast\", drop *current_effort* ONE tier on",
-          "lineno": 279
+          "lineno": 286
         },
         {
           "name": "runPreambleHooks",
           "kind": "function",
           "signature": "(state: Any) -> None",
           "summary": "Hook 1: lazily initialise self_state at run start",
-          "lineno": 294
+          "lineno": 301
         },
         {
           "name": "runTeardownHooks",
           "kind": "function",
           "signature": "(orch: Any, state: Any) -> None",
           "summary": "Hook 6 (A/B recording) always fires",
-          "lineno": 338
+          "lineno": 351
         }
       ],
       "depends_on": [
@@ -12132,7 +12126,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles adversary review routing, Gemini session lifecycle, git helpers, and the PR gat…",
-          "lineno": 26
+          "lineno": 27
         }
       ],
       "depends_on": [
@@ -12472,9 +12466,9 @@
         {
           "name": "run_self_ref_quality_gate",
           "kind": "function",
-          "signature": "(work_dir: str) -> 'tuple[bool, str]'",
+          "signature": "(work_dir: str, changed_files: Optional[list[str]]=None) -> 'tuple[bool, str]'",
           "summary": "Run cheap Windows repo gates after a self-ref subtask passes its own verify.",
-          "lineno": 19
+          "lineno": 22
         }
       ],
       "depends_on": [
@@ -12718,21 +12712,21 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 54
+          "lineno": 55
         },
         {
           "name": "diff_fingerprint",
           "kind": "function",
           "signature": "(work_dir: str) -> str",
           "summary": "Stable hash for the tracked code state relative to HEAD.",
-          "lineno": 97
+          "lineno": 107
         },
         {
           "name": "run_validation_suite",
           "kind": "function",
-          "signature": "(suite_id: str, work_dir: str, *, cache: bool=True) -> ValidationResult",
+          "signature": "(suite_id: str, work_dir: str, *, cache: bool=True, changed_files: Optional[list[str]]=None) -> ValidationResult",
           "summary": "Run a named validation suite through the DAG cache.",
-          "lineno": 275
+          "lineno": 363
         }
       ],
       "depends_on": [
@@ -12910,56 +12904,56 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 32
+          "lineno": 33
         },
         {
           "name": "ActionDescriptor",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 42
+          "lineno": 43
         },
         {
           "name": "AuthDecision",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 50
+          "lineno": 51
         },
         {
           "name": "scanDestructive",
           "kind": "function",
           "signature": "(text: str) -> list[str]",
           "summary": "Destructive command tokens found at command position (pure)",
-          "lineno": 83
+          "lineno": 94
         },
         {
           "name": "bashReadsSecret",
           "kind": "function",
           "signature": "(cmd: str) -> bool",
           "summary": "True when a Bash command READS a secret-family file (.env / .env.*, not .envrc) to",
-          "lineno": 124
+          "lineno": 168
         },
         {
           "name": "isWritingBash",
           "kind": "function",
           "signature": "(cmd: str) -> bool",
           "summary": "Public writing-Bash marker: redirects, sed -i/-delete, git write verbs, file write",
-          "lineno": 131
+          "lineno": 175
         },
         {
           "name": "classifyActionRisk",
           "kind": "function",
           "signature": "(action: ActionDescriptor) -> RiskTier",
           "summary": "Pure taxonomy: tag an action by risk tier",
-          "lineno": 138
+          "lineno": 182
         },
         {
           "name": "decideAuthorization",
           "kind": "function",
           "signature": "(action: ActionDescriptor, *, allowance_usd: float, already_spent_usd: float, autonomous: bool) -> AuthDecision",
           "summary": "Eliza three-way routing (pure): read/dry_run -> auto",
-          "lineno": 176
+          "lineno": 223
         }
       ],
       "depends_on": [],
