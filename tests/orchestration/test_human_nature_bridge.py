@@ -372,3 +372,141 @@ def test_call_site_never_raises(monkeypatch):
     host._hnBiasEffort(_AttemptState(), {"type": "tactics"}, spec)  # must not raise
 
     assert spec["effort_level"] == "high"  # unchanged on error
+
+
+# --- emotionAdvisory (affect -> emotion label -> behavior coupling) --------------
+
+
+def _make_emotion_state(affect: "dict | None" = None) -> TaskState:
+    state = TaskState.create("ship the feature", 1.0)
+    ss = {"competence": {}, "affect": affect} if affect is not None else {"competence": {}}
+    state.meta["self_state"] = ss
+    return state
+
+
+def test_emotion_advisory_off_is_noop_when_hn_disabled(monkeypatch):
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", False)
+    monkeypatch.setattr(config, "HN_EMOTIONS_BEHAVIOR", True)
+    state = _make_emotion_state({"valence": -0.9, "arousal": 0.9, "control": 0.0})
+    assert hnb.emotionAdvisory(state, None) == {}
+    assert "hn_behavior" not in state.meta
+
+
+def test_emotion_advisory_off_is_noop_when_behavior_disabled(monkeypatch):
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_EMOTIONS_BEHAVIOR", False)
+    state = _make_emotion_state({"valence": -0.9, "arousal": 0.9, "control": 0.0})
+    assert hnb.emotionAdvisory(state, None) == {}
+    assert "hn_behavior" not in state.meta
+
+
+def test_emotion_advisory_couples_and_records(monkeypatch):
+    from human_nature import emotions
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_EMOTIONS_BEHAVIOR", True)
+    seen = {}
+
+    def _spy_couple(label, meta, **kw):
+        seen["label"] = label
+        seen["meta"] = meta
+        return {"behavior": "escalate_effort", "comms": "frustration (functional)"}
+
+    monkeypatch.setattr(emotions, "couple", _spy_couple)
+    events = []
+
+    class _Dash:
+        def event(self, msg):
+            events.append(msg)
+
+    # low valence + high arousal -> frustration
+    state = _make_emotion_state({"valence": -0.8, "arousal": 0.8, "control": 0.0})
+    coupling = hnb.emotionAdvisory(state, _Dash())
+
+    assert seen["label"] == "frustration"
+    assert coupling["behavior"] == "escalate_effort"
+    assert state.meta["hn_behavior"][-1] == {"emotion": "frustration", "behavior": "escalate_effort"}
+    assert any("emotion" in e for e in events), events
+
+
+def test_emotion_advisory_neutral_when_no_affect(monkeypatch):
+    from human_nature import emotions
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_EMOTIONS_BEHAVIOR", True)
+    seen = {}
+    monkeypatch.setattr(
+        emotions,
+        "couple",
+        lambda label, meta, **kw: seen.setdefault("label", label) or {"behavior": None, "comms": ""},
+    )
+
+    # self_state present but affect absent -> do not invent affect -> neutral
+    state = _make_emotion_state(None)
+    hnb.emotionAdvisory(state, None)
+    assert seen["label"] == "neutral"
+
+
+def test_emotion_advisory_never_raises(monkeypatch):
+    from human_nature import emotions
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_EMOTIONS_BEHAVIOR", True)
+
+    def _boom(*a, **k):
+        raise RuntimeError("emotions down")
+
+    monkeypatch.setattr(emotions, "couple", _boom)
+    state = _make_emotion_state({"valence": -0.8, "arousal": 0.8, "control": 0.0})
+    assert hnb.emotionAdvisory(state, None) == {}
+    assert "hn_behavior" not in state.meta
+
+
+def test_emotion_advisory_never_raises_on_bad_affect(monkeypatch):
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_EMOTIONS_BEHAVIOR", True)
+    state = _make_emotion_state()
+    # affect is a garbage type -> derive must swallow and default to neutral, never raise
+    state.meta["self_state"]["affect"] = "not-a-dict"
+    result = hnb.emotionAdvisory(state, None)
+    assert isinstance(result, dict)  # did not raise
+
+
+# --- affect -> label rule + bounded nudge helper (pure) -------------------------
+
+
+def test_affect_to_label_rule():
+    from platform_core.orchestration.human_nature_bridge import _affectToLabel
+
+    assert _affectToLabel(None) == "neutral"
+    assert _affectToLabel({}) == "neutral"
+    assert _affectToLabel({"valence": 0.0, "arousal": 0.0, "control": 0.0}) == "neutral"
+    assert _affectToLabel({"valence": 0.7, "arousal": 0.1, "control": 0.0}) == "satisfaction"
+    assert _affectToLabel({"valence": -0.7, "arousal": 0.7, "control": 0.0}) == "frustration"
+    assert _affectToLabel({"valence": -0.7, "arousal": 0.0, "control": 0.0}) == "anxiety"
+    assert _affectToLabel({"valence": 0.0, "arousal": -0.7, "control": 0.0}) == "boredom"
+
+
+def test_emotion_nudge_maps_safe_intents_and_clamps():
+    from platform_core.orchestration.human_nature_bridge import emotionNudge
+
+    # ONLY clearly-safe bounded intents map to +1; everything else is 0.
+    assert emotionNudge("escalate_effort") == 1
+    assert emotionNudge("raise_verification") == 1
+    # abstract/unbounded intents -> record-only, no run effect
+    assert emotionNudge("explore") == 0
+    assert emotionNudge("propose_refactor") == 0
+    assert emotionNudge(None) == 0
+    assert emotionNudge("something_unknown") == 0
+    # bounded in {0, +1}
+    for intent in ("escalate_effort", "raise_verification", "explore", None, "x"):
+        assert emotionNudge(intent) in (0, 1)
