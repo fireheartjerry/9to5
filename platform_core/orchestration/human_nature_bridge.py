@@ -2,10 +2,10 @@
 
 Confined to run start/end (lowest-risk, zero per-attempt overhead): ensure_self_state at
 preamble; appraisal + consolidation + continuity + A/B recording at teardown. This covers
-checklist hooks 1, 3, 5, 6 from docs/human-nature/integration-wiring.md. Hook 2 (pre-act
-routing in execute_attempt_mixin.py's hot per-attempt path) and hook 4 (mid-run instinct
-checkpoint) are deliberately NOT wired here -- both require touching size-constrained,
-high-risk hot-path files; see the wiring doc's "Deferred" section for the follow-up plan.
+checklist hooks 1, 3, 5, 6 from docs/human-nature/integration-wiring.md. Hook 4 (mid-run
+instinct -> advisory dashboard flag), an opinion advisory on the plan gate, and hook 2
+(pre-act routing -> advisory executor-effort bias) are ALSO wired now -- all ADVISORY,
+best-effort, and gated: they surface/bias but never block, reject, or alter control flow.
 
 The A/B recording call (hook 6) is the one exception to the enabled-gate: BOTH arms need
 rows before ``ab_harness.compare()`` means anything, so it always fires with ``arm`` set
@@ -150,7 +150,7 @@ def biasEffort(current_effort: str, routing: str) -> str:
     untouched. No side effects, never raises."""
     if routing != "fast":
         return current_effort
-    key = _EFFORT_ALIASES.get(current_effort, current_effort)
+    key = _EFFORT_ALIASES.get(str(current_effort).lower(), str(current_effort).lower())
     try:
         idx = _EFFORT_LADDER.index(key)
     except ValueError:
