@@ -51,6 +51,45 @@ def test_diff_change_invalidates_validation_cache(tmp_path, monkeypatch):
     assert calls > first_state_calls
 
 
+def test_changed_files_scope_affected_tests_resolve(tmp_path, monkeypatch):
+    """When changed_files is provided, the affected_tests_resolve node must pass those files as
+    explicit args to affected_tests.py instead of falling back to the cumulative git diff."""
+    monkeypatch.setattr(config, "VALIDATION_CACHE_DB_PATH", tmp_path / "validation.db", raising=False)
+    monkeypatch.setattr(vc, "_state_key", lambda _wd: ("wd", "head", "root", "diff"))
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **_kwargs):  # noqa: ANN001
+        calls.append(cmd)
+        return _cp(stdout="")
+
+    monkeypatch.setattr(vc.subprocess, "run", fake_run)
+    assert vc.run_validation_suite(
+        "self_ref_incremental", str(tmp_path), changed_files=["a/b.py", "c/d.py"]
+    ).ok
+
+    resolve_cmds = [cmd for cmd in calls if cmd[1:2] == ["tools\\affected_tests.py"]]
+    assert resolve_cmds, "affected_tests_resolve node should have run"
+    assert resolve_cmds[0][2:] == ["a/b.py", "c/d.py"], resolve_cmds[0]
+
+
+def test_changed_files_none_preserves_no_arg_resolve(tmp_path, monkeypatch):
+    """No changed_files → affected_tests_resolve keeps today's behavior (no explicit file args)."""
+    monkeypatch.setattr(config, "VALIDATION_CACHE_DB_PATH", tmp_path / "validation.db", raising=False)
+    monkeypatch.setattr(vc, "_state_key", lambda _wd: ("wd", "head", "root", "diff"))
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **_kwargs):  # noqa: ANN001
+        calls.append(cmd)
+        return _cp(stdout="")
+
+    monkeypatch.setattr(vc.subprocess, "run", fake_run)
+    assert vc.run_validation_suite("self_ref_incremental", str(tmp_path)).ok
+
+    resolve_cmds = [cmd for cmd in calls if cmd[1:2] == ["tools\\affected_tests.py"]]
+    assert resolve_cmds, "affected_tests_resolve node should have run"
+    assert resolve_cmds[0][2:] == [], resolve_cmds[0]
+
+
 def test_failed_node_preserves_detail(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "VALIDATION_CACHE_DB_PATH", tmp_path / "validation.db", raising=False)
     monkeypatch.setattr(vc, "_state_key", lambda _wd: ("wd", "head", "root", "diff"))

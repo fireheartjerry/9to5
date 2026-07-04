@@ -28,12 +28,13 @@ LOG = config.getLogger("orchestrator")
 class OrchestratorExecuteDelegatesMixin:
     """Thin delegates to self_ref_gate/evidence_gate/adversary_loop/dual_ledger_replan, plus lazy per-run caches."""
 
-    def _selfRefQualityGate(self, work_dir: str) -> "tuple[bool, str]":
+    def _selfRefQualityGate(self, work_dir: str, changed_files=None) -> "tuple[bool, str]":
         """Run cheap Windows repo gates after a self-ref subtask passes its own verify.
+        ``changed_files`` scopes affected-test resolution to the subtask's own diff.
         Delegates to ``self_ref_gate`` (extracted for modularity)."""
         from platform_core.orchestration.self_ref_gate import run_self_ref_quality_gate
 
-        return run_self_ref_quality_gate(work_dir)
+        return run_self_ref_quality_gate(work_dir, changed_files=changed_files)
 
     # ===================================================================
     # Adversary teeth -- bounded remediation LOOP

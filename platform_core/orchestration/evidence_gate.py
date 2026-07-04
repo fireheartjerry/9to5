@@ -18,6 +18,7 @@ DEPENDS-ON: agents.completion_envelope, agents.evidence_receipt, agents.independ
 SIDE-EFFECTS: spawns a read-only Claude subprocess; writes an Obsidian note; mutates state notifications
 RUN/TEST: python -m pytest tests/execution/test_evidence_gate.py
 """
+
 from __future__ import annotations
 
 import json
@@ -30,8 +31,9 @@ from agents.completion_envelope import summarizeEnvelope
 LOG = config.getLogger("orchestrator")
 
 
-def _effectiveVerify(orch, subtask: dict, exec_cwd: str, verify_spec,
-                     attempt_started: float, declared: list, sid: str):
+def _effectiveVerify(
+    orch, subtask: dict, exec_cwd: str, verify_spec, attempt_started: float, declared: list, sid: str
+):
     """FX-1: synthesize a behavioral verify when none was authored (declared diff-grounding
     targets survive the synthesis -- they are part of the acceptance contract, R10).
 
@@ -49,16 +51,28 @@ def _effectiveVerify(orch, subtask: dict, exec_cwd: str, verify_spec,
     return synth
 
 
-def _repairBrittleVerify(orch, subtask: dict, exec_cwd: str, verify_spec,
-                         attempt_started: float, declared: list, result: dict,
-                         cancel, sid: str, vresult: dict, passed: bool) -> "tuple[dict, bool]":
+def _repairBrittleVerify(
+    orch,
+    subtask: dict,
+    exec_cwd: str,
+    verify_spec,
+    attempt_started: float,
+    declared: list,
+    result: dict,
+    cancel,
+    sid: str,
+    vresult: dict,
+    passed: bool,
+) -> "tuple[dict, bool]":
     """VERIFY REPAIR: rescue brittle single-fact verifies; strict compound verifies are never
     rescued. Returns the (possibly repaired) (vresult, passed)."""
     if passed or verifier.isStrictVerify(verify_spec):
         return vresult, passed
     repaired = verifier.sanitizeVerify(orch._repairVerify(subtask, exec_cwd, attempt_started))
-    same = bool(repaired) and (repaired.get("cmd"), repaired.get("expect")) == \
-        ((verify_spec or {}).get("cmd"), (verify_spec or {}).get("expect"))
+    same = bool(repaired) and (repaired.get("cmd"), repaired.get("expect")) == (
+        (verify_spec or {}).get("cmd"),
+        (verify_spec or {}).get("expect"),
+    )
     if repaired and not same:
         if declared:
             repaired.setdefault("targets", declared)
@@ -70,25 +84,43 @@ def _repairBrittleVerify(orch, subtask: dict, exec_cwd: str, verify_spec,
 
 
 def _selfRefGateDowngrade(orch, state, sid: str, vresult: dict, passed: bool) -> "tuple[dict, bool]":
-    """After a verify PASS on a self-improvement run, apply the cheap repo quality gates."""
+    """After a verify PASS on a self-improvement run, apply the cheap repo quality gates.
+
+    The gate is SCOPED to the subtask's OWN changed files (``receipt.diff_files``) so an unrelated
+    red test elsewhere in the repo -- or the cumulative diff of prior subtasks on a self-ref branch
+    -- cannot doom this subtask (that repo-wide-doom made every self-improvement subtask unwinnable).
+    If we cannot attribute a code change to this subtask (no receipt, or no .py files changed) we
+    fail-open and DO NOT downgrade the passing verify, matching the gate's existing on-error policy."""
     if not (passed and state.meta.get("is_self_referential")):
         return vresult, passed
-    gate_ok, gate_detail = orch._selfRefQualityGate(str(config.PROJECT_ROOT))
+    receipt = getattr(vresult, "receipt", None)
+    changed_files = [
+        f
+        for f in ((receipt.diff_files if receipt is not None else ()) or ())
+        if isinstance(f, str) and f.endswith(".py")
+    ]
+    if not changed_files:
+        # No subtask-scoped change to gate on -> fail-open rather than reintroduce repo-wide doom.
+        return vresult, passed
+    gate_ok, gate_detail = orch._selfRefQualityGate(str(config.PROJECT_ROOT), changed_files=changed_files)
     if gate_ok:
         return vresult, passed
     vresult = dict(vresult)
-    vresult.update({
-        "passed": False,
-        "returncode": 1,
-        "stderr": gate_detail,
-        "quality_gate": "self_ref",
-    })
+    vresult.update(
+        {
+            "passed": False,
+            "returncode": 1,
+            "stderr": gate_detail,
+            "quality_gate": "self_ref",
+        }
+    )
     LOG.warning("%s: self-ref quality gate failed after verify pass", sid)
     return vresult, False
 
 
-def _failureFeedback(orch, state, subtask: dict, combined: str, dashboard,
-                     vresult: dict, resume_session) -> tuple:
+def _failureFeedback(
+    orch, state, subtask: dict, combined: str, dashboard, vresult: dict, resume_session
+) -> tuple:
     """Build the retry feedback for a FAILED verify. Returns (failure_feedback, resume_session)."""
     failure_feedback = (
         f"cmd: {vresult.get('cmd')}\nexpect: {vresult.get('expect')}\n"
@@ -104,31 +136,40 @@ def _failureFeedback(orch, state, subtask: dict, combined: str, dashboard,
     answer = orch._resolveClarifications(state, subtask, combined, dashboard)
     if answer:
         failure_feedback += (
-            "\n\n[ORCHESTRATOR ANSWERS YOUR QUESTIONS -- proceed now, do NOT ask again]\n"
-            + answer
+            "\n\n[ORCHESTRATOR ANSWERS YOUR QUESTIONS -- proceed now, do NOT ask again]\n" + answer
         )
-        resume_session = None   # approach is changing -> start the next attempt fresh
+        resume_session = None  # approach is changing -> start the next attempt fresh
     return failure_feedback, resume_session
 
 
-def runAttemptVerify(orch, state, subtask: dict, result: dict, exec_cwd: str,
-                     verify_spec, attempt_started: float, sid: str, combined: str,
-                     dashboard, resume_session) -> tuple:
+def runAttemptVerify(
+    orch,
+    state,
+    subtask: dict,
+    result: dict,
+    exec_cwd: str,
+    verify_spec,
+    attempt_started: float,
+    sid: str,
+    combined: str,
+    dashboard,
+    resume_session,
+) -> tuple:
     """Run verify, repair if brittle, apply the self-ref + evidence-gate downgrades, record.
     Returns (vresult, passed, resume_session, failure_feedback). Extracted from execute_mixin so the
     mixin stays under the size threshold; takes the Orchestrator as ``orch``."""
-    declared = [t for t in ((verify_spec or {}).get("targets") or []) if t] \
-        if isinstance(verify_spec, dict) else []
-    cancel = (lambda: orch._deadlinePassed(state))
-    effective_verify = _effectiveVerify(orch, subtask, exec_cwd, verify_spec,
-                                        attempt_started, declared, sid)
+    declared = (
+        [t for t in ((verify_spec or {}).get("targets") or []) if t] if isinstance(verify_spec, dict) else []
+    )
+    cancel = lambda: orch._deadlinePassed(state)  # noqa: E731
+    effective_verify = _effectiveVerify(orch, subtask, exec_cwd, verify_spec, attempt_started, declared, sid)
     vresult = verifier.runVerification(effective_verify, exec_cwd, result, cancel_check=cancel)
     passed = bool(vresult["passed"])
     if not (effective_verify or {}).get("cmd"):
-        vresult["unverified"] = True   # exit-zero fallback only; no behavioral assertion ran
-    vresult, passed = _repairBrittleVerify(orch, subtask, exec_cwd, verify_spec,
-                                           attempt_started, declared, result, cancel,
-                                           sid, vresult, passed)
+        vresult["unverified"] = True  # exit-zero fallback only; no behavioral assertion ran
+    vresult, passed = _repairBrittleVerify(
+        orch, subtask, exec_cwd, verify_spec, attempt_started, declared, result, cancel, sid, vresult, passed
+    )
     vresult, passed = _selfRefGateDowngrade(orch, state, sid, vresult, passed)
     # Epic 2 (steal #3): execution-grounded downgrade. Runs ONLY when the deterministic gate
     # already passed; can never upgrade a fail. MODE-DEPENDENT NOT_VERIFIED handled inside.
@@ -139,39 +180,48 @@ def runAttemptVerify(orch, state, subtask: dict, result: dict, exec_cwd: str,
         vresult, passed = runEvidenceGate(orch, state, subtask, result, exec_cwd, vresult, sid)
     with orch._state_lock:
         state.recordVerify(sid, vresult)
-    dashboard.update(state, "verifying",
-                     f"{sid} verify {'PASS' if passed else 'FAIL'} ({vresult.get('cmd') or 'exit'})")
+    dashboard.update(
+        state, "verifying", f"{sid} verify {'PASS' if passed else 'FAIL'} ({vresult.get('cmd') or 'exit'})"
+    )
     failure_feedback = None
     if not passed:
-        failure_feedback, resume_session = _failureFeedback(orch, state, subtask, combined,
-                                                            dashboard, vresult, resume_session)
+        failure_feedback, resume_session = _failureFeedback(
+            orch, state, subtask, combined, dashboard, vresult, resume_session
+        )
     return vresult, passed, resume_session, failure_feedback
 
 
 def gitDiffFacts(work_dir: str) -> dict:
     """Best-effort, re-derivable git facts for the receipt: head sha, working-tree diff text, and the
     count of changed files. Returns {} on any error (gate then treats it as no code change)."""
+
     def _git(*args) -> str:
         try:
-            out = subprocess.run(["git", "-C", work_dir, *args], capture_output=True,
-                                 text=True, timeout=config.GIT_TIMEOUT_SECONDS)
+            out = subprocess.run(
+                ["git", "-C", work_dir, *args],
+                capture_output=True,
+                text=True,
+                timeout=config.GIT_TIMEOUT_SECONDS,
+            )
             return (out.stdout or "").strip()
         except Exception:  # noqa: BLE001
             return ""
+
     head = _git("rev-parse", "HEAD")
     if not head:
         return {}
     diff_text = _git("diff", "--stat")
     porcelain = _git("status", "--porcelain")
     files_changed = len([ln for ln in porcelain.splitlines() if ln.strip()])
-    return {"base_sha": head, "head_sha": head, "diff_text": diff_text,
-            "files_changed": files_changed}
+    return {"base_sha": head, "head_sha": head, "diff_text": diff_text, "files_changed": files_changed}
 
 
 def _applyDowngrade(orch, state, sid: str, vresult: dict, verdict, headline: str) -> "tuple[dict, bool]":
     """Mode-dependent NOT_VERIFIED downgrade (LOCKED). Returns (vresult, passed)."""
-    gap = (f"Evidence Receipt NOT_VERIFIED (unmet={verdict.unmet} "
-           f"failed_cmds={verdict.failed_commands} inconclusive={verdict.inconclusive})")
+    gap = (
+        f"Evidence Receipt NOT_VERIFIED (unmet={verdict.unmet} "
+        f"failed_cmds={verdict.failed_commands} inconclusive={verdict.inconclusive})"
+    )
     vresult = dict(vresult)
     vresult["evidence_headline"] = headline
     if state.meta.get("is_self_referential"):
@@ -188,8 +238,9 @@ def _applyDowngrade(orch, state, sid: str, vresult: dict, verdict, headline: str
     return vresult, True
 
 
-def runEvidenceGate(orch, state, subtask: dict, result: dict, exec_cwd: str,
-                    vresult: dict, sid: str) -> "tuple[dict, bool]":
+def runEvidenceGate(
+    orch, state, subtask: dict, result: dict, exec_cwd: str, vresult: dict, sid: str
+) -> "tuple[dict, bool]":
     """For a code-change subtask that PASSED the deterministic gate: run the independent verifier,
     build an Evidence Receipt, and DOWNGRADE on a NOT_VERIFIED headline. Can only downgrade a pass,
     never upgrade a fail. Best-effort: any error leaves the deterministic status untouched."""
@@ -203,16 +254,20 @@ def runEvidenceGate(orch, state, subtask: dict, result: dict, exec_cwd: str,
             has_code_change = True
         tree_shared = orch._remediationUnsafe(exec_cwd)
         if not independent_verifier.shouldRunIndependentVerify(
-                enabled=config.INDEPENDENT_VERIFY_ENABLED,
-                has_code_change=has_code_change, tree_shared=tree_shared):
+            enabled=config.INDEPENDENT_VERIFY_ENABLED,
+            has_code_change=has_code_change,
+            tree_shared=tree_shared,
+        ):
             return vresult, True
         goal = state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "")
         criteria = f"{subtask.get('title', '')}\n{subtask.get('description', '')}"
         try:
             from platform_core.orchestration import work_profile as _wp
+
             pol = _wp.policy_from_state(state)
-            criteria += "\n\n" + _wp.guidance_block(state.meta.get("work_profile"),
-                                                    context="independent-verifier")
+            criteria += "\n\n" + _wp.guidance_block(
+                state.meta.get("work_profile"), context="independent-verifier"
+            )
             if pol.verify_requirements.get("affected_tests"):
                 criteria += "\nEvidence policy: prefer affected tests and explicit acceptance proof.\n"
             if pol.verify_requirements.get("regression_checks"):
@@ -220,33 +275,50 @@ def runEvidenceGate(orch, state, subtask: dict, result: dict, exec_cwd: str,
         except Exception:  # noqa: BLE001
             pass
         parse = independent_verifier.runIndependentVerification(
-            orch._run_claude, goal=goal, acceptance_criteria=criteria,
-            diff_summary=git_info.get("diff_text", ""), work_dir=exec_cwd,
-            task_state=state, subtask=subtask,
-            cancel_check=lambda: orch._deadlinePassed(state))
+            orch._run_claude,
+            goal=goal,
+            acceptance_criteria=criteria,
+            diff_summary=git_info.get("diff_text", ""),
+            work_dir=exec_cwd,
+            task_state=state,
+            subtask=subtask,
+            cancel_check=lambda: orch._deadlinePassed(state),
+        )
         verdict = independent_verifier.verdictFromEnvelope(parse.envelope)
         indep_checks = list((parse.envelope.test_results if parse.envelope else []) or [])
         criteria_reported = len(parse.envelope.acceptance_criteria_status) if parse.envelope else 0
         det_check = {"command": vresult.get("cmd"), "exit_code": vresult.get("returncode")}
         receipt_note = evidence_receipt.buildReceipt(
-            goal=goal, git_info=git_info, det_check=det_check, indep_checks=indep_checks,
+            goal=goal,
+            git_info=git_info,
+            det_check=det_check,
+            indep_checks=indep_checks,
             criteria_reported=criteria_reported,
-            assessments={"criteria": (parse.envelope.acceptance_criteria_status
-                                      if parse.envelope else []),
-                         "verifier_summary": summarizeEnvelope(parse.envelope),
-                         "verdict_passed": verdict.passed,
-                         "inconclusive": verdict.inconclusive})
+            assessments={
+                "criteria": (parse.envelope.acceptance_criteria_status if parse.envelope else []),
+                "verifier_summary": summarizeEnvelope(parse.envelope),
+                "verdict_passed": verdict.passed,
+                "inconclusive": verdict.inconclusive,
+            },
+        )
         headline = receipt_note["headline"]
         if config.EVIDENCE_RECEIPT_ENABLED:
             orch._persistReceipt(state, sid, receipt_note)
         # Evidence outcomes are ANNOTATIONS on the one typed Receipt -- never verdict overrides.
         if receipt is not None:
             from agents import verification as _verification
+
             _verification.annotate(receipt, "evidence_headline", headline)
-            _verification.annotate(receipt, "independent_verdict",
-                                   {"passed": verdict.passed, "unmet": verdict.unmet,
-                                    "failed_commands": verdict.failed_commands,
-                                    "inconclusive": verdict.inconclusive})
+            _verification.annotate(
+                receipt,
+                "independent_verdict",
+                {
+                    "passed": verdict.passed,
+                    "unmet": verdict.unmet,
+                    "failed_commands": verdict.failed_commands,
+                    "inconclusive": verdict.inconclusive,
+                },
+            )
         if headline == evidence_receipt.NOT_VERIFIED:
             return _applyDowngrade(orch, state, sid, vresult, verdict, headline)
         vresult = dict(vresult)
@@ -260,6 +332,7 @@ def runEvidenceGate(orch, state, subtask: dict, result: dict, exec_cwd: str,
 def persistReceipt(orch, state, sid: str, receipt: dict) -> None:
     """Write the Evidence Receipt as a per-subtask Obsidian note (durable audit artifact)."""
     from platform_core.core.best_effort import best_effort
+
     with best_effort("obsidian.write", log=LOG):
         rel = f"{state.vaultTaskDir()}/subtasks/{sid}-receipt.md"
         body = "# Evidence Receipt " + sid + "\n\n```json\n" + json.dumps(receipt, indent=2) + "\n```\n"
