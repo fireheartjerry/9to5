@@ -36,6 +36,16 @@ class FeedbackView(discord.ui.View):
         super().__init__(timeout=None)
         _applyButtonIcons(self)
 
+    async def interaction_check(self, interaction) -> bool:  # noqa: ANN001
+        """Owner-gate EVERY button on this persistent view. Approve/Reject/Retry route through
+        slash._runControl, which is NOT owner-checked, so without this any channel member could
+        drive run control (the Skip button already gates via _skipCurrent -- that asymmetry was the
+        bug)."""
+        if slash._ownerOk(interaction):
+            return True
+        await interaction.response.send_message("Not authorized to control runs.", ephemeral=True)
+        return False
+
     @discord.ui.button(label="Approve", style=discord.ButtonStyle.success, custom_id="fb_approve")
     async def approve(self, interaction, button):  # noqa: ANN001
         """Approve the subtask completion."""

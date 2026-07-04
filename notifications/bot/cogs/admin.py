@@ -46,6 +46,8 @@ class AdminCog(dpy_commands.Cog):
 
     @app_commands.command(name="cockpit", description="Post a fresh Components-V2 cockpit for the run")
     async def cockpit(self, interaction: discord.Interaction) -> None:
+        if not spine.isAuthorized(interaction.user.id):
+            return await interaction.response.send_message("Not authorized.", ephemeral=True)
         state = spine.resolveTargetTask()
         if state is None:
             return await interaction.response.send_message(spine.NO_TASK, ephemeral=True)
@@ -57,6 +59,8 @@ class AdminCog(dpy_commands.Cog):
 
     @app_commands.command(name="hud", description="Post the ANSI mission-console HUD (T8)")
     async def hud(self, interaction: discord.Interaction) -> None:
+        if not spine.isAuthorized(interaction.user.id):
+            return await interaction.response.send_message("Not authorized.", ephemeral=True)
         state = spine.resolveTargetTask()
         if state is None:
             return await interaction.response.send_message(spine.NO_TASK, ephemeral=True)

@@ -142,3 +142,27 @@ class TestPaginator(unittest.TestCase):
         interaction.user.id = 5
         result = _run(p.interaction_check(interaction))
         self.assertTrue(result)
+
+
+class TestFeedbackViewOwnerGate(unittest.TestCase):
+    """Regression: FeedbackView Approve/Reject/Retry route through slash._runControl (no owner
+    check), so interaction_check must reject non-owners -- else any channel member drives control."""
+
+    def test_interaction_check_blocks_non_owner(self):
+        from notifications.views_feedback import FeedbackView
+        import notifications.slash as slash
+        v = FeedbackView()
+        interaction = mock.AsyncMock()
+        with mock.patch.object(slash, "_ownerOk", return_value=False):
+            result = _run(v.interaction_check(interaction))
+        self.assertFalse(result)
+        interaction.response.send_message.assert_awaited()
+
+    def test_interaction_check_allows_owner(self):
+        from notifications.views_feedback import FeedbackView
+        import notifications.slash as slash
+        v = FeedbackView()
+        interaction = mock.AsyncMock()
+        with mock.patch.object(slash, "_ownerOk", return_value=True):
+            result = _run(v.interaction_check(interaction))
+        self.assertTrue(result)

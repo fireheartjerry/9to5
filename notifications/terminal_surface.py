@@ -18,6 +18,7 @@ RUN/TEST: python -m pytest tests/notifications/test_terminal_surface.py
 """
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 from typing import Optional
@@ -205,6 +206,16 @@ class TerminalSurface:
             terminal_ipc.clear()
         except Exception:  # noqa: BLE001
             pass
+
+    def unpin(self) -> None:
+        """Remove the pinned terminal message (symmetric with DiscordDashboard.unpin) so terminal
+        pins don't pile up to Discord's 50-pin cap across runs. message_id is read under the lock
+        because a racing 404-recreate may have swapped it."""
+        with self._send_lock:
+            mid = self.message_id
+        if mid:
+            with contextlib.suppress(Exception):
+                discord.unpinMessage(mid)
 
 
 _SURFACE: Optional[TerminalSurface] = None

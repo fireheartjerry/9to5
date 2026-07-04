@@ -206,3 +206,23 @@ class TestGuardNoFalsePositiveInProd(unittest.TestCase):
                            capture_output=True, text=True, env=env, timeout=120)
         self.assertEqual(r.returncode, 0, f"stdout={r.stdout!r} stderr={r.stderr[-800:]!r}")
         self.assertIn("PROD_OK", r.stdout)
+
+
+class TestContentClamp(unittest.TestCase):
+    """Regression: sendEmbed/createMessage/createPoll/editMessageResult must clamp `content` to
+    DISCORD_MAX_CONTENT (the embed was clamped but the sibling content field was not -> 400)."""
+
+    def setUp(self):
+        d._DISABLED = False
+        d._RATE_LIMITED_UNTIL = 0.0
+
+    def test_sendEmbed_clamps_long_content(self):
+        captured = {}
+
+        def fake(method, url, **kw):
+            captured["content"] = (kw.get("json") or {}).get("content", "")
+            return _Resp(200, {"id": "1"})
+
+        with _cfg(), mock.patch.object(d._SESSION, "request", side_effect=fake):
+            d.sendEmbed({}, content="x" * (config.DISCORD_MAX_CONTENT + 500))
+        self.assertLessEqual(len(captured["content"]), config.DISCORD_MAX_CONTENT)

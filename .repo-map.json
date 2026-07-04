@@ -6027,7 +6027,7 @@
           "kind": "function",
           "signature": "(bot: dpy_commands.Bot) -> None",
           "summary": "",
-          "lineno": 70
+          "lineno": 74
         }
       ],
       "depends_on": [
@@ -8133,35 +8133,35 @@
           "kind": "function",
           "signature": "(idx: int, count: int) -> int",
           "summary": "Bound a page index to a valid lane slot",
-          "lineno": 36
+          "lineno": 37
         },
         {
           "name": "EditThrottle",
           "kind": "class",
           "signature": "",
           "summary": "Governs how often the surface may edit its message",
-          "lineno": 43
+          "lineno": 44
         },
         {
           "name": "TerminalSurface",
           "kind": "class",
           "signature": "",
           "summary": "Owns one pinned Live Terminal message per run + the adaptive edit loop.",
-          "lineno": 68
+          "lineno": 69
         },
         {
           "name": "get_terminal_surface",
           "kind": "function",
           "signature": "() -> Optional[TerminalSurface]",
           "summary": "",
-          "lineno": 214
+          "lineno": 225
         },
         {
           "name": "set_terminal_surface",
           "kind": "function",
           "signature": "(surface: Optional[TerminalSurface]) -> None",
           "summary": "",
-          "lineno": 218
+          "lineno": 229
         }
       ],
       "depends_on": [

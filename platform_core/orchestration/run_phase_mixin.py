@@ -378,6 +378,7 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
             _t = get_terminal_surface()
             if _t is not None:
                 _t.finalize()
+                _t.unpin()
             set_terminal_surface(None)
         _webdash_mod.stopWebDashboard()
         self._cleanupScaffolding(work_dir)   # never leave 9to5 scratch dirs in the user's project

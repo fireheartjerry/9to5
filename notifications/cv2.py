@@ -162,7 +162,9 @@ def buildCockpit(state, phase: str, *, events: Optional[list] = None,
     # Control buttons live INSIDE the container (reuses the cp_* custom_ids the
     # persistent ControlPanelView already routes).
     children.append(separator())
-    children.extend(_steeringRows())
+    # Steering selects (effort/mode) intentionally NOT added: cv2_effort_select /
+    # cv2_mode_select had no registered interaction handler, so clicking them errored
+    # "interaction failed" on the live cockpit. Re-add once wired to real ops (owner-gated).
     for row in branding.controlPanelRow():
         children.append(row)
 

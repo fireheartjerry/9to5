@@ -173,7 +173,7 @@ def sendAs(persona: dict, *, content: Optional[str] = None, embed: Optional[dict
 def createMessage(embed: dict, content: Optional[str] = None, components: Optional[list] = None) -> Optional[str]:
     payload: dict = {"embeds": [_clampEmbed(embed)]}
     if content:
-        payload["content"] = content
+        payload["content"] = truncate(content, config.DISCORD_MAX_CONTENT)
         payload["allowed_mentions"] = _ownerMentions()
     if components is not None:
         payload["components"] = components
@@ -206,7 +206,7 @@ def postFile(filename: str, data: bytes, content_type: str,
     """Post a single attachment (e.g. the end-of-run replay GIF) via the shared multipart path."""
     payload: dict = {}
     if content:
-        payload["content"] = content[:config.DISCORD_MAX_CONTENT]
+        payload["content"] = truncate(content, config.DISCORD_MAX_CONTENT)[:config.DISCORD_MAX_CONTENT]
         payload["allowed_mentions"] = _ownerMentions()
     body, fdict = _multipartParts(payload, [(filename, data, content_type)])
     r = _dc._request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", data=body, files=fdict)
@@ -246,7 +246,7 @@ def editMessageResult(message_id: str, embed: dict, content: Optional[str] = Non
         return "not_found"
     payload: dict = {"embeds": [_clampEmbed(embed)]}
     if content is not None:
-        payload["content"] = content
+        payload["content"] = truncate(content, config.DISCORD_MAX_CONTENT)
         if content:
             payload["allowed_mentions"] = _ownerMentions()
     if components is not None:
@@ -330,7 +330,7 @@ def sendEmbed(embed: dict, content: Optional[str] = None, components: Optional[l
         return {"ok": True, "status": None, "suppressed": True}
     payload: dict = {"embeds": [_clampEmbed(embed)]}
     if content:
-        payload["content"] = content
+        payload["content"] = truncate(content, config.DISCORD_MAX_CONTENT)
         payload["allowed_mentions"] = _ownerMentions()
     if components:
         payload["components"] = components
@@ -347,7 +347,7 @@ def createPoll(poll: dict, content: Optional[str] = None) -> Optional[str]:
     """Post a native Discord Poll (engagement.gatePollPayload). Returns the message id."""
     payload: dict = {"poll": poll}
     if content:
-        payload["content"] = content
+        payload["content"] = truncate(content, config.DISCORD_MAX_CONTENT)
         payload["allowed_mentions"] = _ownerMentions()
     r = _dc._request("POST", f"/channels/{config.DISCORD_CHANNEL_ID}/messages", json=payload)
     if r is not None and 200 <= r.status_code < 300:
