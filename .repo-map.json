@@ -2625,7 +2625,9 @@
       "test": [
         "tests/human_nature/test_opinions.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge"
+      ]
     },
     "human_nature.psyche_commands": {
       "path": "human_nature/psyche_commands.py",
@@ -2797,7 +2799,8 @@
       "callers": [
         "human_nature.consolidation",
         "human_nature.integration",
-        "human_nature.self_model"
+        "human_nature.self_model",
+        "platform_core.orchestration.human_nature_bridge"
       ]
     },
     "human_nature.user_model": {
@@ -11715,21 +11718,28 @@
           "kind": "function",
           "signature": "(state: Any, dashboard: Any=None) -> 'str | None'",
           "summary": "Hook 4: once per run, fire the ledger-grounded instinct (\"gut\") check and SURFACE the",
-          "lineno": 34
+          "lineno": 35
+        },
+        {
+          "name": "opinionAdvisory",
+          "kind": "function",
+          "signature": "(state: Any, dashboard: Any=None) -> 'list[dict]'",
+          "summary": "Advisory-only opinion coupling on the plan gate",
+          "lineno": 88
         },
         {
           "name": "runPreambleHooks",
           "kind": "function",
           "signature": "(state: Any) -> None",
           "summary": "Hook 1: lazily initialise self_state at run start",
-          "lineno": 57
+          "lineno": 123
         },
         {
           "name": "runTeardownHooks",
           "kind": "function",
           "signature": "(orch: Any, state: Any) -> None",
           "summary": "Hook 6 (A/B recording) always fires",
-          "lineno": 101
+          "lineno": 167
         }
       ],
       "depends_on": [
@@ -11737,6 +11747,8 @@
         "human_nature.ab_harness",
         "human_nature.continuity",
         "human_nature.integration",
+        "human_nature.opinions",
+        "human_nature.self_state",
         "memory.experience_adapters",
         "memory.experience_solutions",
         "platform_core.core.best_effort",

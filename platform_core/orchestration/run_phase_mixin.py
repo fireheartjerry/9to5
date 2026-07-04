@@ -152,8 +152,9 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         self.writeIndex(state)
         dashboard.update(state, "planning", f"planned {len(state.subtasks)} subtasks")
         self._planReview(state, elaborated, dashboard)
-        from platform_core.orchestration.human_nature_bridge import midRunInstinct
+        from platform_core.orchestration.human_nature_bridge import midRunInstinct, opinionAdvisory
         midRunInstinct(state, dashboard)          # hook 4: surface HN's mid-run instinct (best-effort)
+        opinionAdvisory(state, dashboard)         # advisory-only opinion coupling (gated, never blocks)
         self._checkControl(state, bus, dashboard, gate="plan")
         return architect_doc
 

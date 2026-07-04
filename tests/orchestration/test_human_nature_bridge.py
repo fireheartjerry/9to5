@@ -5,6 +5,7 @@ is a strict no-op and runTeardownHooks only ever records the "off" arm to the A/
 (both arms need rows for ab_harness.compare() to mean anything) -- self_state must stay
 untouched. Only with the flag True do the human_nature.integration hooks fire.
 """
+
 from __future__ import annotations
 
 import config
@@ -15,10 +16,14 @@ from state.task import TaskState
 
 def _make_state() -> TaskState:
     state = TaskState.create("test goal", 1.0)
-    state.subtasks.append({
-        "subtask_id": "st-001", "title": "do the thing", "status": "done",
-        "verify_result": {"passed": True},
-    })
+    state.subtasks.append(
+        {
+            "subtask_id": "st-001",
+            "title": "do the thing",
+            "status": "done",
+            "verify_result": {"passed": True},
+        }
+    )
     return state
 
 
@@ -46,7 +51,7 @@ def test_teardown_records_off_arm_when_disabled(monkeypatch):
     monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", False)
     state = _make_state()
     runTeardownHooks(_FakeOrch(), state)
-    assert state.meta["self_state"] is None   # no appraisal/consolidation ran
+    assert state.meta["self_state"] is None  # no appraisal/consolidation ran
     result = compare()
     assert result["n_off"] == 1
     assert result["n_on"] == 0
@@ -55,7 +60,7 @@ def test_teardown_records_off_arm_when_disabled(monkeypatch):
 def test_teardown_records_on_arm_and_appraises_when_enabled(monkeypatch):
     monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
     state = _make_state()
-    runPreambleHooks(state)   # seed self_state first (mirrors real preamble->teardown order)
+    runPreambleHooks(state)  # seed self_state first (mirrors real preamble->teardown order)
     runTeardownHooks(_FakeOrch(), state)
     assert state.meta["self_state"] is not None
     result = compare()
@@ -69,12 +74,13 @@ def test_teardown_never_raises_on_malformed_subtasks(monkeypatch):
     state = TaskState.create("test goal", 1.0)
     state.subtasks.append({"subtask_id": "st-001", "status": "failed"})
     runPreambleHooks(state)
-    runTeardownHooks(_FakeOrch(), state)   # must not raise
+    runTeardownHooks(_FakeOrch(), state)  # must not raise
 
 
 def test_mid_run_instinct_off_is_noop(monkeypatch):
     import config
     from platform_core.orchestration import human_nature_bridge as hnb
+
     monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", False)
     assert hnb.midRunInstinct({"meta": {}}, None) is None
 
@@ -85,6 +91,7 @@ def test_mid_run_instinct_surfaces_flag(monkeypatch):
     import memory.experience_adapters as _adp
     import memory.experience_solutions as _sol
     from platform_core.orchestration import human_nature_bridge as hnb
+
     monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
     monkeypatch.setattr(_sol, "fetch_reflections", lambda *a, **k: [])
     monkeypatch.setattr(_adp, "fetch_failure_modes", lambda *a, **k: [])
@@ -106,6 +113,7 @@ def test_mid_run_instinct_never_raises(monkeypatch):
     import memory.experience_adapters as _adp
     import memory.experience_solutions as _sol
     from platform_core.orchestration import human_nature_bridge as hnb
+
     monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
     monkeypatch.setattr(_sol, "fetch_reflections", lambda *a, **k: [])
     monkeypatch.setattr(_adp, "fetch_failure_modes", lambda *a, **k: [])
@@ -115,3 +123,100 @@ def test_mid_run_instinct_never_raises(monkeypatch):
 
     monkeypatch.setattr(integration, "maybe_run_instinct", _boom)
     assert hnb.midRunInstinct({"meta": {}}, None) is None
+
+
+# --- opinionAdvisory (advisory-only coupling on the plan gate) -----------------
+
+
+def _make_opinion_state() -> TaskState:
+    state = TaskState.create("build the auth flow", 1.0)
+    state.meta["domain"] = "tactics"
+    state.subtasks.append(
+        {
+            "subtask_id": "st-001",
+            "title": "harden the auth token path",
+            "type": "tactics",
+            "status": "pending",
+        }
+    )
+    return state
+
+
+def test_opinion_advisory_off_is_noop_when_hn_disabled(monkeypatch):
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", False)
+    monkeypatch.setattr(config, "HN_OPINIONS_BEHAVIOR", True)
+    state = _make_opinion_state()
+    assert hnb.opinionAdvisory(state, None) == []
+    assert "hn_opinions" not in state.meta
+
+
+def test_opinion_advisory_off_is_noop_when_behavior_disabled(monkeypatch):
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_OPINIONS_BEHAVIOR", False)
+    state = _make_opinion_state()
+    assert hnb.opinionAdvisory(state, None) == []
+    assert "hn_opinions" not in state.meta
+
+
+def test_opinion_advisory_surfaces_hard_tier(monkeypatch):
+    from human_nature import opinions
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_OPINIONS_BEHAVIOR", True)
+    monkeypatch.setattr(hnb, "_convictionFor", lambda *a, **k: 0.99)
+    monkeypatch.setattr(opinions, "tier", lambda *a, **k: "hard")
+    events = []
+
+    class _Dash:
+        def event(self, msg):
+            events.append(msg)
+
+    state = _make_opinion_state()
+    advisories = hnb.opinionAdvisory(state, _Dash())
+    assert advisories, "expected a surfaced hard-tier advisory"
+    assert advisories[0]["tier"] == "hard"
+    assert state.meta["hn_opinions"] == advisories
+    assert any("opinion" in e for e in events), events
+
+
+def test_opinion_advisory_never_raises(monkeypatch):
+    from human_nature import opinions
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_OPINIONS_BEHAVIOR", True)
+
+    def _boom(*a, **k):
+        raise RuntimeError("ledger down")
+
+    monkeypatch.setattr(opinions, "tier", _boom)
+    state = _make_opinion_state()
+    assert hnb.opinionAdvisory(state, None) == []
+
+
+def test_opinion_advisory_is_advisory_only_never_mutates_plan(monkeypatch):
+    """INVARIANT: even a hard opinion only appends to hn_opinions -- it must never
+    reject/hold the plan, skip subtasks, or touch subtask statuses/flow."""
+    from human_nature import opinions
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_OPINIONS_BEHAVIOR", True)
+    monkeypatch.setattr(hnb, "_convictionFor", lambda *a, **k: 0.99)
+    monkeypatch.setattr(opinions, "tier", lambda *a, **k: "hard")
+    state = _make_opinion_state()
+    before_statuses = [s["status"] for s in state.subtasks]
+    before_count = len(state.subtasks)
+
+    hnb.opinionAdvisory(state, None)
+
+    assert [s["status"] for s in state.subtasks] == before_statuses
+    assert len(state.subtasks) == before_count
+    # no abort/reject/hold flag was set anywhere in meta
+    for key in ("abort", "reject", "hold", "plan_rejected"):
+        assert key not in state.meta
