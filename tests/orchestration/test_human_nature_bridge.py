@@ -70,3 +70,48 @@ def test_teardown_never_raises_on_malformed_subtasks(monkeypatch):
     state.subtasks.append({"subtask_id": "st-001", "status": "failed"})
     runPreambleHooks(state)
     runTeardownHooks(_FakeOrch(), state)   # must not raise
+
+
+def test_mid_run_instinct_off_is_noop(monkeypatch):
+    import config
+    from platform_core.orchestration import human_nature_bridge as hnb
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", False)
+    assert hnb.midRunInstinct({"meta": {}}, None) is None
+
+
+def test_mid_run_instinct_surfaces_flag(monkeypatch):
+    import config
+    from human_nature import integration
+    import memory.experience_adapters as _adp
+    import memory.experience_solutions as _sol
+    from platform_core.orchestration import human_nature_bridge as hnb
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(_sol, "fetch_reflections", lambda *a, **k: [])
+    monkeypatch.setattr(_adp, "fetch_failure_modes", lambda *a, **k: [])
+    monkeypatch.setattr(integration, "maybe_run_instinct", lambda *a, **k: "watch the auth edge case")
+    events = []
+
+    class _Dash:
+        def event(self, msg):
+            events.append(msg)
+
+    flag = hnb.midRunInstinct({"meta": {}}, _Dash())
+    assert flag == "watch the auth edge case"
+    assert any("instinct" in e and "auth" in e for e in events), events
+
+
+def test_mid_run_instinct_never_raises(monkeypatch):
+    import config
+    from human_nature import integration
+    import memory.experience_adapters as _adp
+    import memory.experience_solutions as _sol
+    from platform_core.orchestration import human_nature_bridge as hnb
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(_sol, "fetch_reflections", lambda *a, **k: [])
+    monkeypatch.setattr(_adp, "fetch_failure_modes", lambda *a, **k: [])
+
+    def _boom(*a, **k):
+        raise RuntimeError("ledger down")
+
+    monkeypatch.setattr(integration, "maybe_run_instinct", _boom)
+    assert hnb.midRunInstinct({"meta": {}}, None) is None

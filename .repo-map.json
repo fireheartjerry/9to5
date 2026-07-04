@@ -4908,7 +4908,8 @@
         "tests/execution/test_eval_runner.py"
       ],
       "callers": [
-        "memory.experience"
+        "memory.experience",
+        "platform_core.orchestration.human_nature_bridge"
       ]
     },
     "memory.experience_content": {
@@ -11710,18 +11711,25 @@
       "purpose": "Human-Nature layer bridge -- wires human_nature.integration into run-loop boundary hooks.",
       "exports": [
         {
+          "name": "midRunInstinct",
+          "kind": "function",
+          "signature": "(state: Any, dashboard: Any=None) -> 'str | None'",
+          "summary": "Hook 4: once per run, fire the ledger-grounded instinct (\"gut\") check and SURFACE the",
+          "lineno": 34
+        },
+        {
           "name": "runPreambleHooks",
           "kind": "function",
           "signature": "(state: Any) -> None",
           "summary": "Hook 1: lazily initialise self_state at run start",
-          "lineno": 33
+          "lineno": 57
         },
         {
           "name": "runTeardownHooks",
           "kind": "function",
           "signature": "(orch: Any, state: Any) -> None",
           "summary": "Hook 6 (A/B recording) always fires",
-          "lineno": 77
+          "lineno": 101
         }
       ],
       "depends_on": [
@@ -11729,6 +11737,7 @@
         "human_nature.ab_harness",
         "human_nature.continuity",
         "human_nature.integration",
+        "memory.experience_adapters",
         "memory.experience_solutions",
         "platform_core.core.best_effort",
         "platform_core.orchestration.time_utils"
