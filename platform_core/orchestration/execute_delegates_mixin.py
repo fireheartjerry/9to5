@@ -8,7 +8,7 @@ EXPORTS:
   OrchestratorExecuteDelegatesMixin  -- Thin delegates to self_ref_gate/evidence_gate/adversary_loop/dual_ledger_replan, plus l…
 DEPENDS-ON: config, notifications.dashboard, platform_core.orchestration, platform_core.orchestration.self_ref_gate, platform_core.runtime.control, platform_core.runtime.cost_budget, platform_core.runtime.trajectory, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_evidence_gate.py tests/orchestration/test_execute_quality_gate.py tests/orchestration/test_trajectory.py
 """
 
 from __future__ import annotations
