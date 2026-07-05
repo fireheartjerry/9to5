@@ -353,3 +353,36 @@ class TestDeferLive(unittest.TestCase):
              mock.patch.object(cfg, "SOCIETY_ENABLED", False):
             out = elaborator.elaborate("do a thing", chat=injected)
         self.assertIn("ESCALATED SPEC", out)
+
+
+class TestOutMeta(unittest.TestCase):
+    def test_out_meta_records_single_shot_stance(self):
+        def injected(system, user, *, act, want_json=False):
+            return {"message": {"content": "SPEC"}} if act == "elaborate" else {"message": {"content": ""}}
+        cfg = __import__("config")
+        meta = {}
+        with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+             mock.patch.object(cfg, "ELABORATOR_BESTOFN_ENABLED", False), \
+             mock.patch.object(cfg, "SOCIETY_ENABLED", False):
+            elaborator.elaborate("do a thing", chat=injected, out_meta=meta)
+        self.assertEqual(meta.get("stance"), "single-shot")
+
+    def test_out_meta_records_bestofn_stance(self):
+        import os, tempfile
+        specs = iter(["edit agents/planning/elaborator/core.py", "edit nope/fake.py"])
+        def injected(system, user, *, act, want_json=False):
+            if act == "elaborate":
+                return {"message": {"content": next(specs)}}
+            return {"message": {"content": ""}}
+        cfg = __import__("config")
+        meta = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "agents", "planning", "elaborator"))
+            open(os.path.join(tmp, "agents", "planning", "elaborator", "core.py"), "w").close()
+            with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+                 mock.patch.object(cfg, "ELABORATOR_BESTOFN_ENABLED", True), \
+                 mock.patch.object(cfg, "ELABORATOR_CANDIDATES_MAX", 2), \
+                 mock.patch.object(cfg, "SOCIETY_ENABLED", False), \
+                 mock.patch("agents.planning.elaborator.core.isVagueGoal", return_value=True):
+                elaborator.elaborate("improve everything", work_dir=tmp, chat=injected, out_meta=meta)
+        self.assertIn(meta.get("stance"), ("minimal-scope", "thorough"))  # a real stance id

@@ -93,13 +93,14 @@ ELABORATOR_SYSTEM_5W3H = (
 )
 
 
-def _bestOfN(goal_raw: str, work_dir, user: str, system: str, chat) -> str:
-    """§7 A'/A/B: generate N stance-varied candidates, select the most grounded."""
+def _bestOfN(goal_raw: str, work_dir, user: str, system: str, chat) -> "tuple[str, str]":
+    """§7 A'/A/B: generate N stance-varied candidates, select the most grounded.
+    Returns ``(spec, stance)`` so the caller can record which stance won."""
     n = candidates.budgetFor(goal_raw, is_vague=isVagueGoal(goal_raw),
                              precedent_hits=0, max_n=int(config.ELABORATOR_CANDIDATES_MAX))
     if n <= 1:
         resp = _chat(system, user, act="elaborate", chat=chat)
-        return llm_io.responseText(resp).strip()
+        return llm_io.responseText(resp).strip(), "single-shot"
 
     def gen_fn(goal, wd, stance):
         stance_system = f"{system} Adopt a {stance} stance toward scope and risk."
@@ -108,7 +109,7 @@ def _bestOfN(goal_raw: str, work_dir, user: str, system: str, chat) -> str:
 
     cands = [c for c in candidates.generate(goal_raw, work_dir, n=n, gen_fn=gen_fn) if c["spec"]]
     if not cands:
-        return ""
+        return "", "single-shot"
     predicted: dict = {}
     if config.ELABORATOR_LOOKAHEAD_ENABLED:
         for c in cands:
@@ -123,16 +124,20 @@ def _bestOfN(goal_raw: str, work_dir, user: str, system: str, chat) -> str:
 
     best = candidates.selectBest(cands, weight_fn=_weight,
                                  use_optimizer=bool(config.PORTFOLIO_OPTIMIZER_ENABLED))
-    return best["spec"] if best else cands[0]["spec"]
+    return (best["spec"], best["id"]) if best else (cands[0]["spec"], cands[0]["id"])
 
 
-def elaborate(goal_raw: str, work_dir: str | None = None, chat=None) -> str:
+def elaborate(goal_raw: str, work_dir: str | None = None, chat=None, out_meta=None) -> str:
     """Return the elaborated specification for ``goal_raw`` (never raises -- degrades to a
     minimal spec built from the raw goal if the brain is unavailable). ``work_dir`` grounds
     the spec in the REAL repository structure so file paths are not hallucinated. ``chat`` is
     an optional injected ``(system, user, *, act=..., want_json=...) -> resp`` callable (e.g.
     the orchestrator's ``_ollamaChat`` or a test double) used instead of the blessed
-    ``llm_io.chat``, so a dry-run / test can drive elaboration offline."""
+    ``llm_io.chat``, so a dry-run / test can drive elaboration offline. ``out_meta`` is an
+    optional dict the caller may pass to receive the winning stance (Stage D fitness): when
+    provided, ``out_meta["stance"]`` is set to the selected candidate's stance id (or
+    ``"single-shot"``). Defaulting it to ``None`` keeps the frozen public contract and
+    flag-off behaviour byte-identical."""
     LOG.info("Elaborating raw goal via %s", config.OLLAMA_MODEL)
     user = f"Raw goal:\n{goal_raw}\n\nProduce the elaborated specification."
     ctx = repoContext(work_dir)
@@ -150,10 +155,11 @@ def elaborate(goal_raw: str, work_dir: str | None = None, chat=None) -> str:
             user += "\n\n" + pb + "\n"
     system = ELABORATOR_SYSTEM_5W3H if config.ELABORATOR_EXCELLENCE_ENABLED else ELABORATOR_SYSTEM
     if config.ELABORATOR_EXCELLENCE_ENABLED and config.ELABORATOR_BESTOFN_ENABLED:
-        out = _bestOfN(goal_raw, work_dir, user, system, chat)
+        out, _stance = _bestOfN(goal_raw, work_dir, user, system, chat)
     else:
         resp = _chat(system, user, act="elaborate", chat=chat)
         out = llm_io.responseText(resp).strip()
+        _stance = "single-shot"
     if not out:
         LOG.warning("elaboration unavailable after retries; using raw goal as spec")
         return _fallbackSpec(goal_raw)
@@ -172,6 +178,8 @@ def elaborate(goal_raw: str, work_dir: str | None = None, chat=None) -> str:
                                          precedent_hits=0)
         out = defer.maybeDefer(out, goal_raw, unc,
                                escalate_fn=lambda g: escalate.escalateToModel(g, chat=chat))
+    if out_meta is not None:
+        out_meta["stance"] = _stance
     return out
 
 
