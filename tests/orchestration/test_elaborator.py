@@ -152,3 +152,48 @@ class TestExcellenceGating(unittest.TestCase):
             u = elaborator.extractUniverse("g", "spec", ".", chat=injected)
         self.assertIn("nope/missing.py", u["unverified_paths"])
         self.assertNotIn("nope/missing.py", u["allowed_paths"])
+
+
+class TestFiveW3H(unittest.TestCase):
+    def _capture_system(self, flag_value):
+        seen = {}
+
+        def injected(system, user, *, act, want_json=False):
+            if act == "elaborate":  # ignore the flag-on self_review pass; we want the elaborate prompt
+                seen["system"] = system
+            return {"message": {"content": "spec"}}
+
+        with mock.patch.object(__import__("config"), "ELABORATOR_EXCELLENCE_ENABLED", flag_value):
+            elaborator.elaborate("build a thing", chat=injected)
+        return seen["system"]
+
+    def test_flag_off_uses_original_system_prompt(self):
+        from agents.planning.elaborator import core
+        self.assertEqual(self._capture_system(False), core.ELABORATOR_SYSTEM)
+
+    def test_flag_on_prompt_has_5w3h_dimensional_walk(self):
+        system = self._capture_system(True)
+        for dim in ("Why", "Who", "Where", "How"):
+            self.assertIn(dim, system)
+        # still instructs the same five output sections
+        self.assertIn("Objective", system)
+        self.assertIn("Deliverables", system)
+
+
+class TestVagueGoalWiring(unittest.TestCase):
+    def test_flag_on_vague_goal_injects_state_of_repo(self):
+        import os, tempfile
+        seen = {}
+
+        def injected(system, user, *, act, want_json=False):
+            if act == "elaborate":  # ignore the flag-on self_review pass; we want the elaborate prompt
+                seen["user"] = user
+            return {"message": {"content": "spec"}}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, ".repo-map.json"), "w", encoding="utf-8") as fh:
+                fh.write('{"modules": [{"path": "agents/planning/elaborator/core.py"}]}')
+            with mock.patch.object(__import__("config"), "ELABORATOR_EXCELLENCE_ENABLED", True):
+                elaborator.elaborate("improve everything", work_dir=tmp, chat=injected)
+        self.assertIn("STATE OF THE REPO", seen["user"])
+        self.assertIn("agents/planning/elaborator/core.py", seen["user"])

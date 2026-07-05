@@ -63,6 +63,17 @@ ELABORATOR_SYSTEM = (
     "language, framework, or layout the snapshot does not actually show."
 )
 
+ELABORATOR_SYSTEM_5W3H = (
+    ELABORATOR_SYSTEM
+    + " STRUCTURED ELABORATION: before writing the sections, reason briefly through these "
+    "dimensions to turn even a terse goal into a complete spec -- Why (the motivation / "
+    "problem being solved), Who (which code areas and owners this touches), Where (the real "
+    "repo areas and modules from the snapshot), How (the intended approach), What (the "
+    "concrete deliverables). Use these dimensions to fill gaps the raw goal left implicit, "
+    "then produce the five sections as specified above. Keep the final output to those five "
+    "sections; the dimensional reasoning informs them but need not appear as separate headers."
+)
+
 
 def elaborate(goal_raw: str, work_dir: str | None = None, chat=None) -> str:
     """Return the elaborated specification for ``goal_raw`` (never raises -- degrades to a
@@ -82,7 +93,8 @@ def elaborate(goal_raw: str, work_dir: str | None = None, chat=None) -> str:
         if bundle:
             user += ("\n\nSTATE OF THE REPO (name real files from here for a broad goal):\n"
                      f"{bundle}\n")
-    resp = _chat(ELABORATOR_SYSTEM, user, act="elaborate", chat=chat)
+    system = ELABORATOR_SYSTEM_5W3H if config.ELABORATOR_EXCELLENCE_ENABLED else ELABORATOR_SYSTEM
+    resp = _chat(system, user, act="elaborate", chat=chat)
     out = llm_io.responseText(resp).strip()
     if not out:
         LOG.warning("elaboration unavailable after retries; using raw goal as spec")
