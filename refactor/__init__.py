@@ -13,7 +13,8 @@ EXPORTS:
   ImpactReport -- frozen prediction summary
   predictImpact(model, edits) -> ImpactReport
   RefactorResult -- frozen apply outcome
-  RefactorTransaction -- add/preview/apply with snapshot rollback
+  RefactorTransaction -- add/preview/apply with snapshot rollback + crash journal
+  recoverJournal(journal_dir) -> RefactorResult -- restore a crashed apply
 DEPENDS-ON: refactor.change_impact, refactor.cycle_detect, refactor.refactor_edits,
   refactor.refactor_transaction, refactor.symbol_usages
 SIDE-EFFECTS: none
@@ -31,7 +32,7 @@ from refactor.refactor_edits import (
     WriteFile,
     validateEdit,
 )
-from refactor.refactor_transaction import RefactorResult, RefactorTransaction
+from refactor.refactor_transaction import RefactorResult, RefactorTransaction, recoverJournal
 from refactor.symbol_usages import Usage, findUsages
 
 __all__ = [
@@ -42,6 +43,7 @@ __all__ = [
     "FORBIDDEN_SEGMENTS",
     "ImpactReport",
     "predictImpact",
+    "recoverJournal",
     "RefactorResult",
     "RefactorTransaction",
     "RenameFile",

@@ -13,7 +13,7 @@ def test_impact_detects_orphans_and_cycle(fixture_project):
     assert not rep.ok and any(u.file == "tests/test_core.py" for u in rep.orphaned_usages)
     edits2 = [WriteFile("pkg/util2.py", "from pkg.core import coreFunc\n")]
     rep2 = predictImpact(model, edits2)
-    assert rep2.ok and "tests/test_core.py" in rep2.affected_tests or rep2.affected_tests == ()
+    assert rep2.ok and ("tests/test_core.py" in rep2.affected_tests or rep2.affected_tests == ())
 
 
 def test_impact_predicts_new_cycle(fixture_project):

@@ -11,6 +11,8 @@ EXPORTS:
   DeleteFile(path) -- remove one file
   RenameFile(path, new_path) -- move one file
   FORBIDDEN_SEGMENTS -- path components no edit may ever touch
+  EDIT_TYPES -- tuple of the four edit classes (isinstance checks)
+  Edit -- union type alias over the four edit primitives
   editPaths(edit) -> tuple[str, ...] -- every path an edit touches
   validateEdit(root, edit) -> str | None  -- None = ok, else rejection reason
 DEPENDS-ON: (stdlib only)
@@ -58,6 +60,8 @@ class RenameFile:
 
 
 EDIT_TYPES = (WriteFile, ReplaceInFile, DeleteFile, RenameFile)
+
+Edit = WriteFile | ReplaceInFile | DeleteFile | RenameFile  # type alias over all primitives
 
 
 def editPaths(edit) -> tuple[str, ...]:

@@ -28,7 +28,7 @@ from introspect.python_import_graph import analyzePython
 
 from refactor.cycle_detect import buildImportGraph, wouldCreateCycle
 from refactor.refactor_edits import DeleteFile, RenameFile, ReplaceInFile, WriteFile
-from refactor.symbol_usages import Usage, findUsages
+from refactor.symbol_usages import Usage, findUsagesMulti
 
 
 @dataclass(frozen=True)
@@ -134,10 +134,11 @@ def _orphanedUsages(
         )
         for symbol in set(old_info.exports) - new_exports:
             removed_by_symbol.setdefault(symbol, set()).add(rel)
+    usage_map = findUsagesMulti(root, set(removed_by_symbol))   # single walk for all symbols
     orphans: dict[Usage, None] = {}
     for symbol in sorted(removed_by_symbol):
         sources = removed_by_symbol[symbol]
-        for usage in findUsages(root, symbol):
+        for usage in usage_map[symbol]:
             if _isOrphan(usage, symbol, sources, contents):
                 orphans[usage] = None
     return sorted(orphans, key=lambda u: (u.file, u.line, u.kind))

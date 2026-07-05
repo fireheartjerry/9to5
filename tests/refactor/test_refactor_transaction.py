@@ -1,6 +1,8 @@
 """Tests for refactor.refactor_transaction: all-or-nothing apply with rollback."""
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 
@@ -25,7 +27,7 @@ def test_apply_success_and_gate_cmd(fixture_project):
 
     tx = RefactorTransaction(fixture_project)
     tx.add(WriteFile("pkg/extra.py", "VALUE = 1\n"))
-    res = tx.apply(gate_cmd='python -c "import sys; sys.exit(0)"')   # shlex-split, no shell
+    res = tx.apply(gate_cmd=[sys.executable, "-c", "import sys; sys.exit(0)"])  # argv list, no shell
     assert res.applied and "pkg/extra.py" in res.files_touched
     assert (fixture_project / "pkg/extra.py").read_text(encoding="utf-8") == "VALUE = 1\n"
 
@@ -35,7 +37,7 @@ def test_gate_cmd_failure_rolls_back(fixture_project):
 
     tx = RefactorTransaction(fixture_project)
     tx.add(WriteFile("pkg/extra.py", "VALUE = 1\n"))
-    res = tx.apply(gate_cmd='python -c "import sys; sys.exit(3)"')
+    res = tx.apply(gate_cmd=[sys.executable, "-c", "import sys; sys.exit(3)"])
     assert not res.applied
     assert not (fixture_project / "pkg/extra.py").exists()
 

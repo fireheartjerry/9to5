@@ -8,6 +8,7 @@ records each reference to ``symbol`` with its file, line, and reference kind.
 EXPORTS:
   Usage -- frozen (file, line, kind) record; kind in {"name","attr","import"}
   findUsages(root, symbol) -> list[Usage]  -- sorted (file, line, kind), python files only
+  findUsagesMulti(root, symbols) -> dict[str, list[Usage]]  -- one walk/parse for a symbol SET
 DEPENDS-ON: introspect.project_scanner
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/refactor/test_symbol_usages.py
@@ -36,33 +37,52 @@ def findUsages(root: str | Path, symbol: str) -> list[Usage]:
 
     ``ast.Name`` => "name", ``ast.Attribute`` (matching ``.attr``) => "attr",
     ``ast.ImportFrom`` imported names => "import". Unreadable or syntactically
-    invalid files are skipped, never a crash.
+    invalid files are skipped, never a crash. Thin wrapper over
+    ``findUsagesMulti`` (locked public API, unchanged behavior).
+    """
+    return findUsagesMulti(root, {symbol})[symbol]
+
+
+def findUsagesMulti(root: str | Path, symbols: set[str]) -> dict[str, list[Usage]]:
+    """Per-symbol usage lists for a whole symbol SET in one walk.
+
+    Each .py file under ``root`` is read and parsed exactly once no matter how
+    many symbols are requested (vs one full walk per symbol). Every requested
+    symbol is present in the result, mapped to a (file, line, kind)-sorted
+    list ([] when unused). Same skip semantics as ``findUsages``.
     """
     root_path = Path(root).resolve()
-    usages: list[Usage] = []
+    results: dict[str, list[Usage]] = {symbol: [] for symbol in symbols}
+    if not symbols:
+        return results
     for rel in _pyFiles(root_path):
         tree = _parseOrNone(root_path / rel)
         if tree is None:
             continue
-        usages.extend(_usagesInTree(tree, rel, symbol))
-    usages.sort(key=lambda u: (u.file, u.line, u.kind))
-    return usages
+        for symbol, usage in _usagesInTree(tree, rel, symbols):
+            results[symbol].append(usage)
+    for hits in results.values():
+        hits.sort(key=lambda u: (u.file, u.line, u.kind))
+    return results
 
 
-def _usagesInTree(tree: ast.Module, rel: str, symbol: str) -> list[Usage]:
-    """All Usage records for ``symbol`` in one parsed module."""
-    hits: list[Usage] = []
+def _usagesInTree(tree: ast.Module, rel: str, symbols: set[str]) -> list[tuple[str, Usage]]:
+    """(symbol, Usage) pairs for every requested symbol in one parsed module."""
+    hits: list[tuple[str, Usage]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             hits.extend(
-                Usage(file=rel, line=getattr(alias, "lineno", node.lineno), kind="import")
+                (
+                    alias.name,
+                    Usage(file=rel, line=getattr(alias, "lineno", node.lineno), kind="import"),
+                )
                 for alias in node.names
-                if alias.name == symbol
+                if alias.name in symbols
             )
-        elif isinstance(node, ast.Name) and node.id == symbol:
-            hits.append(Usage(file=rel, line=node.lineno, kind="name"))
-        elif isinstance(node, ast.Attribute) and node.attr == symbol:
-            hits.append(Usage(file=rel, line=node.lineno, kind="attr"))
+        elif isinstance(node, ast.Name) and node.id in symbols:
+            hits.append((node.id, Usage(file=rel, line=node.lineno, kind="name")))
+        elif isinstance(node, ast.Attribute) and node.attr in symbols:
+            hits.append((node.attr, Usage(file=rel, line=node.lineno, kind="attr")))
     return hits
 
 

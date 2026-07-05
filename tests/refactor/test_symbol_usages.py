@@ -36,3 +36,14 @@ def test_find_usages_unknown_symbol_empty(fixture_project):
     from refactor.symbol_usages import findUsages
 
     assert findUsages(fixture_project, "definitelyNotAName") == []
+
+
+def test_find_usages_multi_matches_per_symbol_calls(fixture_project):
+    from refactor.symbol_usages import findUsages, findUsagesMulti
+
+    symbols = {"coreFunc", "helper", "definitelyNotAName"}
+    multi = findUsagesMulti(fixture_project, symbols)
+    assert set(multi) == symbols
+    for symbol in symbols:
+        assert multi[symbol] == findUsages(fixture_project, symbol)
+    assert multi["definitelyNotAName"] == []
