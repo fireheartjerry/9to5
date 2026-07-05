@@ -197,3 +197,53 @@ class TestVagueGoalWiring(unittest.TestCase):
                 elaborator.elaborate("improve everything", work_dir=tmp, chat=injected)
         self.assertIn("STATE OF THE REPO", seen["user"])
         self.assertIn("agents/planning/elaborator/core.py", seen["user"])
+
+
+class TestPhase2Wiring(unittest.TestCase):
+    def test_precedent_injected_when_flag_on(self):
+        seen = {}
+
+        def injected(system, user, *, act, want_json=False):
+            if act == "elaborate":
+                seen["user"] = user
+            return {"message": {"content": "SPEC"}}
+
+        cfg = __import__("config")
+        with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+             mock.patch.object(cfg, "ELABORATOR_PRECEDENT_ENABLED", True), \
+             mock.patch("agents.planning.elaborator.precedent.precedentBlock",
+                        return_value="PRECEDENT (how similar goals resolved before):\n- past success: X"):
+            elaborator.elaborate("do a thing", chat=injected)
+        self.assertIn("PRECEDENT", seen["user"])
+
+    def test_precedent_absent_when_subflag_off(self):
+        seen = {}
+
+        def injected(system, user, *, act, want_json=False):
+            if act == "elaborate":
+                seen["user"] = user
+            return {"message": {"content": "SPEC"}}
+
+        cfg = __import__("config")
+        with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+             mock.patch.object(cfg, "ELABORATOR_PRECEDENT_ENABLED", False):
+            elaborator.elaborate("do a thing", chat=injected)
+        self.assertNotIn("PRECEDENT", seen["user"])
+
+    def test_judge_note_appended_when_challenged(self):
+        scripted = iter([
+            {"message": {"content": "SPEC BODY"}},                       # elaborate
+            {"message": {"content": "Inferred: scope — because vague"}},  # self_review
+        ])
+
+        def injected(system, user, *, act, want_json=False):
+            return next(scripted)
+
+        cfg = __import__("config")
+        with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+             mock.patch.object(cfg, "SOCIETY_ENABLED", True), \
+             mock.patch("agents.planning.elaborator.judge.judgeElaboration",
+                        return_value={"verdict": "challenged", "concerns": ["path X not real"]}):
+            out = elaborator.elaborate("improve everything", chat=injected)
+        self.assertIn("Review Note", out)
+        self.assertIn("path X not real", out)

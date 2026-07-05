@@ -23,7 +23,7 @@ import config
 import knowledge
 import llm_io
 
-from . import path_verify, schema, self_review
+from . import judge, path_verify, precedent, schema, self_review
 from .grounding import isVagueGoal, repoContext, vagueGoalBundle
 
 LOG = config.getLogger("elaborator")
@@ -93,6 +93,10 @@ def elaborate(goal_raw: str, work_dir: str | None = None, chat=None) -> str:
         if bundle:
             user += ("\n\nSTATE OF THE REPO (name real files from here for a broad goal):\n"
                      f"{bundle}\n")
+    if config.ELABORATOR_EXCELLENCE_ENABLED and config.ELABORATOR_PRECEDENT_ENABLED:
+        pb = precedent.precedentBlock(goal_raw)
+        if pb:
+            user += "\n\n" + pb + "\n"
     system = ELABORATOR_SYSTEM_5W3H if config.ELABORATOR_EXCELLENCE_ENABLED else ELABORATOR_SYSTEM
     resp = _chat(system, user, act="elaborate", chat=chat)
     out = llm_io.responseText(resp).strip()
@@ -103,6 +107,11 @@ def elaborate(goal_raw: str, work_dir: str | None = None, chat=None) -> str:
         inferred = self_review.reviewAssumptions(out, goal_raw, chat=chat)
         if inferred:
             out = f"{out}\n\n# Inferred Assumptions\n{inferred}\n"
+    if config.ELABORATOR_EXCELLENCE_ENABLED and config.SOCIETY_ENABLED:
+        verdict = judge.judgeElaboration(out, goal_raw, chat=chat)
+        if verdict.get("verdict") == "challenged" and verdict.get("concerns"):
+            note = "; ".join(str(c) for c in verdict["concerns"])
+            out = f"{out}\n\n# Review Note\n{note}\n"
     return out
 
 
