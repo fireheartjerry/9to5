@@ -19,11 +19,13 @@ RUN/TEST: python -m pytest tests/orchestration/test_orch_core_bugs.py tests/slow
 """
 from __future__ import annotations
 
+import re
+
 import config
 import knowledge
 import llm_io
 
-from . import judge, path_verify, precedent, schema, self_review
+from . import candidates, judge, path_verify, precedent, schema, self_review
 from .grounding import isVagueGoal, repoContext, vagueGoalBundle
 
 LOG = config.getLogger("elaborator")
@@ -47,6 +49,22 @@ def _fallbackSpec(goal_raw: str) -> str:
             "# Acceptance Criteria\n- The goal is satisfied and verified.\n\n"
             "# Constraints\n- Keep changes surgical and on-scope.\n\n"
             "# Assumptions\n- (elaboration brain was unavailable; using the raw goal)\n")
+
+
+_PATH_RE = re.compile(r"[A-Za-z0-9_./-]+\.(?:py|js|ts|md|json|txt|ya?ml)")
+
+
+def _groundedness(spec: str, work_dir) -> float:
+    """Fraction of file-path-like tokens in the spec that actually exist under work_dir.
+    Deterministic, no LLM. 0.0 when no paths mentioned or no work_dir."""
+    if not work_dir or not spec:
+        return 0.0
+    paths = _PATH_RE.findall(spec)
+    if not paths:
+        return 0.0
+    split = path_verify.splitVerified(paths, work_dir)
+    return len(split["allowed_paths"]) / len(paths)
+
 
 ELABORATOR_SYSTEM = (
     "You are the Elaborator for 9TO5, an autonomous engineering orchestrator. "
@@ -75,6 +93,30 @@ ELABORATOR_SYSTEM_5W3H = (
 )
 
 
+def _bestOfN(goal_raw: str, work_dir, user: str, system: str, chat) -> str:
+    """§7 A'/A/B: generate N stance-varied candidates, select the most grounded."""
+    n = candidates.budgetFor(goal_raw, is_vague=isVagueGoal(goal_raw),
+                             precedent_hits=0, max_n=int(config.ELABORATOR_CANDIDATES_MAX))
+    if n <= 1:
+        resp = _chat(system, user, act="elaborate", chat=chat)
+        return llm_io.responseText(resp).strip()
+
+    def gen_fn(goal, wd, stance):
+        stance_system = f"{system} Adopt a {stance} stance toward scope and risk."
+        r = _chat(stance_system, user, act="elaborate", chat=chat)
+        return llm_io.responseText(r).strip()
+
+    cands = [c for c in candidates.generate(goal_raw, work_dir, n=n, gen_fn=gen_fn) if c["spec"]]
+    if not cands:
+        return ""
+    best = candidates.selectBest(
+        cands,
+        weight_fn=lambda c: candidates.meritWeight(c, groundedness=_groundedness(c["spec"], work_dir)),
+        use_optimizer=bool(config.PORTFOLIO_OPTIMIZER_ENABLED),
+    )
+    return best["spec"] if best else cands[0]["spec"]
+
+
 def elaborate(goal_raw: str, work_dir: str | None = None, chat=None) -> str:
     """Return the elaborated specification for ``goal_raw`` (never raises -- degrades to a
     minimal spec built from the raw goal if the brain is unavailable). ``work_dir`` grounds
@@ -98,8 +140,11 @@ def elaborate(goal_raw: str, work_dir: str | None = None, chat=None) -> str:
         if pb:
             user += "\n\n" + pb + "\n"
     system = ELABORATOR_SYSTEM_5W3H if config.ELABORATOR_EXCELLENCE_ENABLED else ELABORATOR_SYSTEM
-    resp = _chat(system, user, act="elaborate", chat=chat)
-    out = llm_io.responseText(resp).strip()
+    if config.ELABORATOR_EXCELLENCE_ENABLED and config.ELABORATOR_BESTOFN_ENABLED:
+        out = _bestOfN(goal_raw, work_dir, user, system, chat)
+    else:
+        resp = _chat(system, user, act="elaborate", chat=chat)
+        out = llm_io.responseText(resp).strip()
     if not out:
         LOG.warning("elaboration unavailable after retries; using raw goal as spec")
         return _fallbackSpec(goal_raw)

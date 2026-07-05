@@ -247,3 +247,47 @@ class TestPhase2Wiring(unittest.TestCase):
             out = elaborator.elaborate("improve everything", chat=injected)
         self.assertIn("Review Note", out)
         self.assertIn("path X not real", out)
+
+
+class TestBestOfN(unittest.TestCase):
+    def test_bestofn_off_single_shot_unchanged(self):
+        calls = {"n": 0}
+
+        def injected(system, user, *, act, want_json=False):
+            if act == "elaborate":
+                calls["n"] += 1
+                return {"message": {"content": "SPEC"}}
+            return {"message": {"content": ""}}  # self_review yields nothing to append
+
+        cfg = __import__("config")
+        # SOCIETY_ENABLED off so no advisory judge note is appended; this isolates the
+        # best-of-N-off path (a single elaborate call whose output passes through unchanged).
+        with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+             mock.patch.object(cfg, "ELABORATOR_BESTOFN_ENABLED", False), \
+             mock.patch.object(cfg, "SOCIETY_ENABLED", False):
+            out = elaborator.elaborate("improve everything", chat=injected)
+        self.assertEqual(out, "SPEC")
+        self.assertEqual(calls["n"], 1)  # exactly one elaborate call, no candidate fan-out
+
+    def test_bestofn_on_generates_multiple_and_selects_grounded(self):
+        import os, tempfile
+        # stance 0 spec names a REAL file; stance 1 names a FAKE path. Grounded one must win.
+        specs = iter(["use agents/planning/elaborator/core.py here",
+                      "edit does/not/exist/nope.py here",
+                      "third fallback spec"])
+
+        def injected(system, user, *, act, want_json=False):
+            if act == "elaborate":
+                return {"message": {"content": next(specs)}}
+            return {"message": {"content": ""}}  # self_review etc.
+
+        cfg = __import__("config")
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "agents", "planning", "elaborator"))
+            open(os.path.join(tmp, "agents", "planning", "elaborator", "core.py"), "w").close()
+            with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+                 mock.patch.object(cfg, "ELABORATOR_BESTOFN_ENABLED", True), \
+                 mock.patch.object(cfg, "ELABORATOR_CANDIDATES_MAX", 2), \
+                 mock.patch("agents.planning.elaborator.core.isVagueGoal", return_value=True):
+                out = elaborator.elaborate("improve everything", work_dir=tmp, chat=injected)
+        self.assertIn("agents/planning/elaborator/core.py", out)  # grounded candidate won
