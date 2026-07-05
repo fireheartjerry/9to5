@@ -26,12 +26,14 @@ DEPENDS-ON: config, memory.experience, notifications.event_bus, notifications.he
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_webdash_control.py tests/notifications/test_bloomberg_webdash.py tests/notifications/test_webdash_page_split.py
 """
+
 from __future__ import annotations
 
 import json
 import queue
 import threading
 import time
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
@@ -46,6 +48,22 @@ from platform_core.runtime.control import GATES, ControlBus
 from state.task import TaskState
 
 LOG = config.getLogger("webdash")
+
+
+class _QuietThreadingHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer that does not dump a traceback for benign client disconnects.
+
+    A client drop during the pre-dispatch ``raw_requestline`` read raises
+    ConnectionAbortedError/ConnectionResetError inside ``handle_one_request`` BEFORE any
+    do_GET/do_POST runs, so the handler's own guards can't catch it; the default
+    ``BaseServer.handle_error`` then prints the full traceback to stderr, polluting run logs.
+    Swallow only connection errors; delegate everything else so real handler bugs still surface."""
+
+    def handle_error(self, request, client_address) -> None:  # noqa: ANN001
+        if isinstance(sys.exc_info()[1], ConnectionError):
+            return  # benign client disconnect -- the request is already dead
+        super().handle_error(request, client_address)
+
 
 _SSE_STOP = threading.Event()
 _CONTROL_TOKEN = ""  # per-run control token; printed to local console/log ONLY, never served in HTML
@@ -66,6 +84,7 @@ def _wisdom_trail(goal: str) -> list:
     with best_effort("webdash.wisdom_trail", log=LOG):
         from memory import experience
         import heapq
+
         rows = experience.fetch_reflections()
         tokens = {w for w in (goal or "").lower().split() if len(w) > 3}
         heap = []
@@ -91,6 +110,7 @@ def _intelligence_curve() -> list:
     """Domain-by-domain confidence (best-effort; [] when the ledger has nothing usable)."""
     with best_effort("webdash.intelligence_curve", log=LOG):
         from memory import experience
+
         rows = experience.fetch_subtasks(limit=300) if hasattr(experience, "fetch_subtasks") else []
         buckets: dict[str, list] = {}
         for r in rows:
@@ -99,8 +119,9 @@ def _intelligence_curve() -> list:
             if not domain:
                 continue
             buckets.setdefault(domain, []).append(1 if r.get("verify_passed") else 0)
-        out = [{"domain": d[:12], "pct": round(100 * sum(v) / len(v))}
-               for d, v in buckets.items() if len(v) >= 2]
+        out = [
+            {"domain": d[:12], "pct": round(100 * sum(v) / len(v))} for d, v in buckets.items() if len(v) >= 2
+        ]
         out.sort(key=lambda x: x["pct"], reverse=True)
         return out[:6]
     return []
@@ -111,8 +132,10 @@ def _discovery_block(meta: dict) -> Optional[dict]:
     if not dr:
         return None
     findings = dr.get("findings")
-    return {"findings": len(findings) if isinstance(findings, list) else (findings or 0),
-            "theme": dr.get("theme_suggestion") or "—"}
+    return {
+        "findings": len(findings) if isinstance(findings, list) else (findings or 0),
+        "theme": dr.get("theme_suggestion") or "—",
+    }
 
 
 def _derive_model(state: TaskState) -> str:
@@ -126,6 +149,7 @@ def _derive_model(state: TaskState) -> str:
 def _comparative(task_id: str) -> Optional[dict]:
     with best_effort("webdash.comparative", log=LOG):
         from memory import experience
+
         c = experience.compare_run(task_id)
         return {k: c.get(k) for k in ("pace", "innovation", "adversary", "replans")}
     return None
@@ -133,6 +157,7 @@ def _comparative(task_id: str) -> Optional[dict]:
 
 def _timing(meta: dict) -> "tuple[float, float]":
     from datetime import datetime
+
     with best_effort("webdash.timing", log=LOG):
         started = datetime.fromisoformat(meta["started_at"])
         deadline = datetime.fromisoformat(meta["deadline_at"])
@@ -227,7 +252,7 @@ def _applyControl(task_id: str, action: str, arg: Optional[str]) -> dict:
         bus.clearPause()
     elif action in ("approve", "reject"):
         gate = arg or bus.getPendingGate()
-        if gate not in GATES:   # ignore a missing/unknown gate, never write a stray decision key
+        if gate not in GATES:  # ignore a missing/unknown gate, never write a stray decision key
             return {"ok": False, "error": "no valid pending gate"}
         bus.decide(gate, action)
         return {"ok": True, "gate": gate}
@@ -245,6 +270,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
     ``token`` is the control token (console/log only); it is never embedded in served HTML.
     """
+
     task_id: str = ""
     token: str = ""
 
@@ -281,8 +307,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                     self.wfile.flush()
                     continue
                 self._sse_write(item)
-        except (BrokenPipeError, ConnectionError, ConnectionResetError,
-                ConnectionAbortedError, OSError):
+        except (BrokenPipeError, ConnectionError, ConnectionResetError, ConnectionAbortedError, OSError):
             pass
         finally:
             bus.unsubscribe_sse(q)
@@ -324,8 +349,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             # View-only render: the control token is NEVER embedded in the served page
             # (it would leak over the public tunnel). Placeholder is blanked; control
             # POSTs require the token printed to the local console/log at startup.
-            self._send(200, _PAGE.replace("__WEBDASH_TOKEN__", "").encode("utf-8"),
-                       "text/html; charset=utf-8")
+            self._send(
+                200, _PAGE.replace("__WEBDASH_TOKEN__", "").encode("utf-8"), "text/html; charset=utf-8"
+            )
 
     def do_POST(self):  # noqa: N802
         # Drain the request body FIRST, before any response path. Responding (especially with
@@ -337,7 +363,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length") or 0)
         except (TypeError, ValueError):
             length = 0
-        length = max(0, min(length, 64_000))   # cap the read; control payloads are tiny
+        length = max(0, min(length, 64_000))  # cap the read; control payloads are tiny
         raw_body = self.rfile.read(length) if length else b""
 
         if not self.path.startswith("/api/control"):
@@ -382,11 +408,12 @@ def startWebDashboard(task_id: str, port: Optional[int] = None) -> Optional[str]
     _SSE_STOP.clear()
     port = port or config.WEB_DASHBOARD_PORT
     import secrets
+
     global _CONTROL_TOKEN
-    _CONTROL_TOKEN = secrets.token_urlsafe(16)   # per-run control token; console/log only, never in HTML
+    _CONTROL_TOKEN = secrets.token_urlsafe(16)  # per-run control token; console/log only, never in HTML
     token = _CONTROL_TOKEN
     try:
-        server = ThreadingHTTPServer(("127.0.0.1", port), _makeHandler(task_id, token))
+        server = _QuietThreadingHTTPServer(("127.0.0.1", port), _makeHandler(task_id, token))
     except OSError as e:
         LOG.warning("web dashboard could not bind :%s (%s)", port, e)
         return None
@@ -408,7 +435,7 @@ def startWebDashboard(task_id: str, port: Optional[int] = None) -> Optional[str]
 def stopWebDashboard() -> None:
     """Shut down the running dashboard server (frees the port). Safe to call repeatedly."""
     global _SERVER, _CONTROL_TOKEN
-    _SSE_STOP.set()   # release any blocked SSE reader threads
+    _SSE_STOP.set()  # release any blocked SSE reader threads
     _CONTROL_TOKEN = ""
     if _SERVER is not None:
         with best_effort("webdash.shutdown", log=LOG):
