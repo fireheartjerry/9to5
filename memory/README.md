@@ -1,16 +1,11 @@
-# `memory/` — durable context, not run state
+# `memory/` -- durable experience and retrieval substrate
 
-Persistent human-readable context + the structured experience ledger. Index: `memory/AGENTS.md`.
+Most implementation modules live in subpackages:
 
-## What lives here
-- **`obsidian.py`** — notes via the Local REST API (`https://127.0.0.1:27124`, `verify=False`),
-  with an automatic **disk-write fallback** under `vault/9to5/`. See `docs/MEMORY.md`.
-- **`experience.py`** — the SQLite experience ledger (`state/experience.db`): runs/subtasks/
-  eval rows, embeddings, gold examples. Best-effort — never raises into a run.
+- `ledger/`: experience schema, DDL, run/subtask/PR records, adapters, policies, and indexes.
+- `retrievals/`: retrieval core, ranking, and prompt rendering.
+- `novelty/`: novelty index and store.
+- `stores/`: Obsidian and user preference stores.
 
-## Must NOT
-- Become canonical **run** state — that is `state/task.py`. Memory is durable context/lessons.
-- Lose the Obsidian disk-fallback: writes must survive a closed/locked vault (401) or REST outage.
-
-## Tests
-`tests/test_obsidian*.py`, `tests/test_experience_ledger.py`, `tests/test_memory_subtask_manager.py`, …
+Top-level modules such as `memory.experience_ddl`, `memory.retrieval_rank`, and
+`memory.obsidian` remain compatibility aliases.
