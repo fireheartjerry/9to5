@@ -70,3 +70,57 @@ def repoContext(work_dir: str | None) -> str:
         block = block[:7000] + "\n...(truncated)"
     _REPO_CTX_CACHE[key] = (mtime, block)
     return block
+
+
+import json
+
+_GENERIC_VERBS = ("improve", "fix", "clean up", "cleanup", "optimize", "refactor",
+                  "enhance", "polish", "make better", "tidy")
+_PATH_HINT = ("/", ".py", ".js", ".ts", "::")
+
+
+def isVagueGoal(goal: str) -> bool:
+    """A goal is vague if it is short, uses a generic verb, and names no path/module."""
+    g = goal.strip().lower()
+    if any(h in g for h in _PATH_HINT):
+        return False
+    if len(g.split()) > 8:
+        return False
+    return any(v in g for v in _GENERIC_VERBS)
+
+
+def _repoMapModules(work_dir: str, limit: int = 15) -> list[str]:
+    try:
+        with open(os.path.join(work_dir, ".repo-map.json"), encoding="utf-8") as fh:
+            data = json.load(fh)
+        mods = [m.get("path", "") for m in data.get("modules", []) if m.get("path")]
+        return mods[:limit]
+    except Exception:  # noqa: BLE001  -- best-effort
+        return []
+
+
+def _sizeViolations(limit: int = 10) -> list[str]:
+    try:
+        from tools import size_audit
+        files, _functions = size_audit.collect()
+        return [f.get("path", "") for f in files
+                if f.get("bucket") == "must_split"][:limit]
+    except Exception:  # noqa: BLE001  -- best-effort; tools may be unavailable in some checkouts
+        return []
+
+
+def vagueGoalBundle(work_dir: str | None) -> str:
+    """A compact state-of-repo bundle (real module names + size violations) so a vague
+    goal can be grounded in actual files. Summary counts + top-N names, never raw dumps."""
+    if not work_dir:
+        return ""
+    parts: list[str] = []
+    violations = _sizeViolations()
+    if violations:
+        parts.append("Files over the size budget (candidates for 'clean up'/'refactor'):\n"
+                     + "\n".join(f"- {p}" for p in violations))
+    mods = _repoMapModules(work_dir)
+    if mods:
+        parts.append("Real modules in this repo (name Deliverables from these, not placeholders):\n"
+                     + "\n".join(f"- {p}" for p in mods))
+    return "\n\n".join(parts).strip()
