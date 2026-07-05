@@ -137,6 +137,7 @@ MANUAL_TEST_MAP: dict[str, list[str]] = {
         "tests/slow/test_e2e_operator.py",
     ],
     "platform_core.orchestration.dual_ledger_replan": ["tests/orchestration/test_stall_replan_trigger.py"],
+    "platform_core.orchestration.plan_context": ["tests/orchestration/test_plan_project_context.py"],
     "platform_core.orchestration.self_ref_gate": [
         "tests/execution/test_github_pr_gate.py",
         "tests/orchestration/test_execute_quality_gate.py",

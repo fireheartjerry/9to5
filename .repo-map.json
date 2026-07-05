@@ -1957,6 +1957,7 @@
         "platform_core.orchestration.judge_panel",
         "platform_core.orchestration.llm_mixin",
         "platform_core.orchestration.parallel_safety",
+        "platform_core.orchestration.plan_context",
         "platform_core.orchestration.plan_mixin",
         "platform_core.orchestration.plan_prompts",
         "platform_core.orchestration.plan_shape_check",
@@ -3042,7 +3043,9 @@
         "none"
       ],
       "test": [],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.plan_context"
+      ]
     },
     "introspect.__main__": {
       "path": "introspect/__main__.py",
@@ -12461,6 +12464,30 @@
       ],
       "test": [
         "tests/control/test_parallel_safety.py"
+      ],
+      "callers": []
+    },
+    "platform_core.orchestration.plan_context": {
+      "path": "platform_core/orchestration/plan_context.py",
+      "purpose": "Plan-time project-context injection (any-project capabilities, spec §3.4).",
+      "exports": [
+        {
+          "name": "projectContextBlock",
+          "kind": "function",
+          "signature": "(work_dir: str) -> str",
+          "summary": "Budgeted introspection digest of work_dir for the plan prompt",
+          "lineno": 18
+        }
+      ],
+      "depends_on": [
+        "config",
+        "introspect"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/orchestration/test_plan_project_context.py"
       ],
       "callers": []
     },
