@@ -55,6 +55,8 @@ class EpicFlags:
     ELABORATOR_LOOKAHEAD_ENABLED: bool = _F(default_factory=lambda: _envBool("ELABORATOR_LOOKAHEAD_ENABLED", False))
     ELABORATOR_DEFER_ENABLED: bool = _F(default_factory=lambda: _envBool("ELABORATOR_DEFER_ENABLED", False))
     ELABORATOR_CANDIDATES_MAX: int = _F(default_factory=lambda: _envInt("ELABORATOR_CANDIDATES_MAX", 5))
+    # §7.5 escalation model: empty => deferral escalation is inert (keep local spec).
+    ELABORATOR_DEFER_MODEL: str = _F(default_factory=lambda: os.environ.get("ELABORATOR_DEFER_MODEL", ""))
     # --- Epic 6: solution-space forking (ships dark; conservative opt-in) ---
     SOLUTION_FORK_ENABLED: bool = _F(default_factory=lambda: _envBool("SOLUTION_FORK_ENABLED", _fullStack()))
     SOLUTION_FORK_N: int = _F(default_factory=lambda: _envInt("SOLUTION_FORK_N", 2))

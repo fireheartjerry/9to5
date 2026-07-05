@@ -158,3 +158,8 @@ def test_phase234_elaborator_flags_ship_dark(monkeypatch):
     assert flags.ELABORATOR_LOOKAHEAD_ENABLED is False
     assert flags.ELABORATOR_DEFER_ENABLED is False
     assert flags.ELABORATOR_CANDIDATES_MAX == 5
+
+
+def test_elaborator_defer_model_inert_by_default(monkeypatch):
+    monkeypatch.delenv("ELABORATOR_DEFER_MODEL", raising=False)
+    assert EpicFlags().ELABORATOR_DEFER_MODEL == ""
