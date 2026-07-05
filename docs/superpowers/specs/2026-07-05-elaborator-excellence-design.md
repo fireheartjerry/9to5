@@ -61,6 +61,31 @@ The design is grounded in current (2026) practice on the two behaviors that matt
 - **Reflexion survey** (arxiv 2401.01313): uncalibrated *repeated* self-critique reinforces
   errors rather than fixing them. → self-review is capped at exactly **one** pass.
 
+### Frontier grounding (Part II — §3d, §3b correction, §7 A′/B′, §7.5)
+
+A second research pass surfaced four techniques beyond the mainstream 2026 patterns above,
+and one **correction** to §3b:
+
+- **Calibration correction** ([Zylos: LLM calibration in production], arxiv 2604.07036
+  "ReDAct"): RLHF *systematically degrades* calibration, and verbalized confidence
+  (high/medium/low self-report) is **unreliable** for deciding when to escalate. → §3b's
+  confidence signal is replaced with a calibrated one: **I-CALM reward-framed abstention**
+  (arxiv 2604.07036 — "+2 grounded / −2 wrong / 0 if flagged") plus a conformal risk band,
+  not free-form self-rating.
+- **Case-based reasoning for LLM agents** (arxiv 2504.06943): retrieve-reuse-revise-retain
+  over precedent exemplars beats abstract lessons for reducing hallucination on structured
+  tasks. → new §3d, using the existing `memory/retrievals/core.py` embedding index.
+- **Compute-optimal test-time scaling** (arxiv 2506.12928, "Scaling Test-time Compute for
+  LLM Agents"): best-of-N gains are power-law in *prompt difficulty*; allocate samples
+  adaptively rather than a fixed N. → §7 Stage A′.
+- **World models / propose-simulate-score** (arxiv 2606.30639 "Self-Evolving World Models
+  for LLM Agent Planning"): imagine each candidate's immediate consequence before
+  committing; limit look-ahead to 1–3 steps and re-sync to real state to bound drift. → §7
+  Stage B′.
+- **Uncertainty-aware deferral** (arxiv 2604.07036 "ReDAct"): a small model abstains and
+  defers to a larger one when unsure — cost-aware cascading. → §7.5, mapped onto 9to5's
+  existing Ollama-orchestrator → Claude-executor split.
+
 ---
 
 ## 2. Module layout
@@ -78,7 +103,10 @@ agents/planning/elaborator/
   schema.py         # pydantic models ElaboratedSpec / Universe; Layer-1 validation + coercion
   self_review.py    # ONE calibrated verbalized-assumption pass (ambiguity → inferred assumptions)
   path_verify.py    # deterministic generate-then-verify: allowed_paths vs real repo tree
-  candidates.py     # (excellence tier) best-of-N generate + portfolio select + debate resolve
+  precedent.py      # (§3d) case-based-reasoning grounding via memory/retrievals/core.py
+  candidates.py     # (excellence tier) adaptive best-of-N generate + portfolio select + debate
+  predict.py        # (§7 B′) world-model lookahead: propose-simulate-score predicted run outcome
+  uncertainty.py    # (§3b/§7.5) calibrated risk band + Ollama→Claude deferral decision
 ```
 
 - `agents/elaborator.py` (top-level facade) and the current
@@ -113,17 +141,57 @@ scaffolding that produces richer, more grounded final sections.
 ### 3b. Verbalized-assumption self-review (the "predict what they wanted" mechanism)
 
 One additional Ollama call, narrowly scoped: *"Find every point where you guessed rather
-than grounded. For each, emit `Inferred: {guess} — because {reason} [confidence: high|medium
-|low]`."* This directly implements the design decision that the elaborator **predicts what
-the human wanted** rather than blocking to ask (the adaptive-mediator pattern, arxiv
-2602.07338): ambiguity is resolved *and logged*, never bounced back to a person. The
-`— because {reason}` is what makes each inference auditable (arxiv 2604.03058); a human
-skimming the spec's Assumptions section can still catch a bad guess.
+than grounded. For each, emit `Inferred: {guess} — because {reason}`."* This directly
+implements the design decision that the elaborator **predicts what the human wanted** rather
+than blocking to ask (the adaptive-mediator pattern, arxiv 2602.07338): ambiguity is
+resolved *and logged*, never bounced back to a person. The `— because {reason}` is what
+makes each inference auditable (arxiv 2604.03058); a human skimming the spec's Assumptions
+section can still catch a bad guess.
 
 **Capped at exactly one pass — no loop.** Per the reflexion survey (arxiv 2401.01313),
 uncalibrated repeated self-critique reinforces early hallucinations rather than correcting
-them. The confidence tag feeds Section 4 (Layer-2 fires only when a medium/low assumption
-exists) and Section 7 (Stage C debate).
+them.
+
+**Confidence is calibrated, not self-reported (correction from the frontier pass).** The
+naive `[confidence: high|medium|low]` self-tag is deliberately **not** used: RLHF degrades
+calibration and verbalized confidence is unreliable for escalation decisions (Zylos; ReDAct,
+arxiv 2604.07036). Instead, `uncertainty.py` derives a per-assumption **risk band** from
+signals that don't depend on the model's self-report:
+
+- The **I-CALM reward frame** (arxiv 2604.07036): the self-review prompt is framed with an
+  explicit payoff — "+2 for a grounded claim, −2 for a wrong one, 0 for one you flag as
+  unsure" — which shifts the model toward rational epistemic humility (flagging) without any
+  model modification.
+- A **conformal risk band**: bucket each inferred assumption by objective proxies —
+  did §5 path-verify confirm its referenced paths? does §3d precedent retrieval corroborate
+  it? — into `low` / `elevated` risk, a distribution-free signal rather than a felt one.
+
+This calibrated band (not a self-rating) feeds Section 4 (Layer-2 fires only when an
+`elevated`-risk assumption exists), Section 7 Stage C (debate the contested axis), and §7.5
+(defer to the larger model when too many assumptions land `elevated`).
+
+### 3d. Case-based-reasoning grounding (precedent exemplars)
+
+`precedent.py` upgrades grounding from abstract lessons to full **case-based reasoning**
+(retrieve-reuse-revise-retain, arxiv 2504.06943), reusing the embedding index that already
+exists — **zero new infra**:
+
+- `retrieve(goal, title="", *, k=...)` (`memory/retrievals/core.py:254`) → top-k *similar
+  past goals* whose runs **passed** (`top_k_similar(..., only_passed=True)`,
+  `core.py:231`). Their `(goal → elaborated spec → outcome)` become **precedent exemplars**
+  injected as few-shot context: "here's how a similar goal was successfully specced before."
+- `retrieve_failures(goal, title, *, k=...)` (`core.py:263`) → similar past goals that
+  **failed**, injected as anti-patterns ("a similar goal failed when specced this way").
+- `lessons_block(goal, title, *, db_path=...)` (`core.py:419`) → the already-formatted
+  lessons text, folded into the §3c vague-goal bundle.
+
+Precedent retrieval is the strongest form of the "predict what they wanted" mechanism: the
+best evidence for what *this* user means by a terse goal is how *their own* similar past
+goals resolved. Retrieval is embedding-cheap and gated: if the index is empty (cold start)
+or returns nothing above threshold, `precedent.py` returns "" and grounding degrades to
+§3c. The **retain** half of the CBR cycle is Section 7 Stage D — a completed run's
+`(goal → spec → outcome)` is already embedded into the index by the existing
+`embed_and_store()` (`core.py:163`), so precedent compounds automatically.
 
 ### 3c. Vague-goal grounding bundle
 
@@ -161,10 +229,18 @@ correctly typed; `hard_boundaries` always includes the existing baseline
 (`config.UNIVERSE_DEFAULT_HARD_BOUNDARIES` — `.git`, `.env`, venv, task state; current
 lines 180–182 preserved). Catches the large majority of malformed output cheaply.
 
-**Layer 2 — only on Layer-1 failure.** One retry of the chat call with the validation error
-folded into the prompt ("your last output was missing X; fix it"). If the retry *also* fails
-validation → fall back to `_fallbackSpec()` (never raises — the current contract is
-preserved exactly).
+**Layer 2 — two triggers, both conditional (not every run).**
+- *Schema-repair (on Layer-1 failure):* one retry of the chat call with the validation error
+  folded into the prompt ("your last output was missing X; fix it"). If the retry *also*
+  fails validation → fall back to `_fallbackSpec()` (never raises — the current contract is
+  preserved exactly).
+- *Semantic judge (on `elevated`-risk):* when §3b's calibrated band flags an
+  `elevated`-risk assumption, run one probabilistic quality pass — reusing the existing
+  adversary review dispatch, `review(...)` / `systemFor(review_type=...)`
+  (`agents/review/adversary_review.py:259` / `:97`) with a new `review_type="elaboration"`
+  case, rather than a parallel judge module. Its verdict is advisory: it can demote a
+  candidate in Stage B, never hard-block. Gated by `SOCIETY_ENABLED` (same adversary
+  subsystem); off → skip, rely on Layer-1 + path-verify only.
 
 **Observability (log, do not enforce):** record whether each elaboration passed Layer-1
 first try, needed a retry, or hit fallback — a cheap `schema_validity_rate` signal for
@@ -197,10 +273,16 @@ pattern (CodeAnt / agentic-architecture-playbook), applied to paths instead of c
   subprocess calls, consistent with current test style):
   - `schema.py`: valid input passes Layer-1; a missing field triggers retry-then-fallback.
   - `path_verify.py`: a real path passes; a fake path lands in `unverified_paths`.
-  - `self_review.py`: seam-injected mock chat verifies **exactly one** pass, no loop; a
-    low-confidence assumption is tagged.
+  - `self_review.py`: seam-injected mock chat verifies **exactly one** pass, no loop; an
+    inferred assumption gets an `elevated` risk band when path-verify fails to corroborate it.
   - `grounding.py` vague-goal bundle: temp-repo fixture with a `size_audit` violation + a
     lesson file → bundle picks them up and names them.
+  - `precedent.py`: seeded embedding index → `retrieve()` returns a passing exemplar and
+    `retrieve_failures()` an anti-pattern; empty index → returns "" (cold-start degrade).
+  - `uncertainty.py`: conformal band buckets a corroborated assumption `low` and an
+    unverifiable one `elevated`; deferral fires only past the `elevated`-count threshold.
+  - `predict.py`: seam-injected mock chat returns a predicted-outcome dict; a spec naming
+    a real hot-churn file scores higher predicted-success than one naming an unverified path.
 - Excellence-tier tests (Section 7) run flag-on; a flag-off test asserts byte-identical
   output to today's `elaborate()` for a fixed goal + mock chat.
 - Tests use `str(config.PROJECT_ROOT)`, never a hardcoded `C:\9to5` (per project memory
@@ -208,15 +290,30 @@ pattern (CodeAnt / agentic-architecture-playbook), applied to paths instead of c
 
 ---
 
-## 7. The Elevated Elaborator — generate → select → resolve → evolve
+## 7. The Elevated Elaborator — size → generate → predict → select → resolve → evolve
 
-The excellence tier turns single-shot elaboration into a 4-stage pipeline. Each stage
-**reuses real existing machinery** (signatures verified against the codebase, cited below),
-and each does only what that machinery is actually good at.
+The excellence tier turns single-shot elaboration into a staged pipeline: size the search
+(A′), generate diverse candidates (A), predict each one's run outcome (B′), select the
+strongest (B), resolve the one contested axis (C), and learn from the result (D) — with an
+uncertainty escape hatch to a larger model (§7.5). Each stage **reuses real existing
+machinery** (signatures verified against the codebase, cited below) except the one net-new
+predictor (B′), and each does only what that machinery is actually good at.
+
+### Stage A′ — Compute-optimal candidate budget
+
+Best-of-N is **not** a fixed N. Test-time-compute gains are power-law in *prompt difficulty*
+(arxiv 2506.12928), so `candidates.py` sizes the candidate budget to goal difficulty using a
+cheap heuristic already available from grounding — a precise goal naming a real module gets
+`N=1` (no search needed); a two-word vague goal ("improve everything") with must_split
+violations and thin precedent gets `N=up to 5`. Difficulty signals: goal length / generic
+verb (§3c detector), whether §3d precedent retrieval found close matches (close precedent →
+lower N), and the §5 groundedness of a quick first draft. Bounded `[1, N_max]`,
+`N_max` configurable (default 5). This spends tokens only where ambiguity actually warrants
+the search, and `N=1` collapses cleanly to §3 single-shot.
 
 ### Stage A — Generate (best-of-N + diversity)
 
-Produce **N candidate elaborations** (default N=3, configurable) from deliberately different
+Produce the **N candidate elaborations** (N from Stage A′) from deliberately different
 stances — `minimal-scope`, `thorough`, `risk-averse` — each still going through the §3
 grounded 5W3H prompt. Use the MAP-Elites archive as a **diversity filter** so the candidates
 are genuinely different points in spec-space, not rewordings of one guess:
@@ -227,18 +324,45 @@ are genuinely different points in spec-space, not rewordings of one guess:
   Off → skip diversity filtering, keep the N raw candidates.
 
 Cost note: N-generate is the real token cost (N× the elaboration call). Elaboration happens
-**once per run**, so this is cheap relative to the whole run. N is configurable; N=1
-collapses to §3 behavior.
+**once per run**, so this is cheap relative to the whole run.
+
+### Stage B′ — World-model lookahead (propose-simulate-score)
+
+Before scoring candidates statically, `predict.py` runs a **shallow, brain-simulated
+lookahead** on each — the propose-simulate-score pattern from world-model planning (arxiv
+2606.30639). For each candidate spec, one Ollama call imagines the *immediate* consequence
+of the executor running it: which real files would change, and the single most-likely
+failure mode. It returns a predicted-outcome dict `{likely_files, likely_failure,
+predicted_success: float}`. This is the one genuinely **net-new** module (no existing
+harness — the glob for `platform_core/simulation/` found nothing), so it is scoped tightly
+to bound world-model drift (the documented failure mode of deep rollouts):
+
+- **1 step only** — imagine the first executor action's consequence, never a multi-step
+  rollout.
+- **Grounded** — the prediction is fed the §3 repo snapshot + §5 verified paths, so it
+  imagines against real state, not a hallucinated repo.
+- **Advisory, never authoritative** — `predicted_success` is only a *term* in the Stage B
+  `weight_fn`, never a hard gate; a wrong prediction can at worst mis-rank, not block.
+- Gated by its own `ELABORATOR_LOOKAHEAD_ENABLED` sub-flag (default OFF even when the
+  master flag is on, given it is the highest-risk / newest component). Off → Stage B scores
+  on static groundedness alone.
+
+The payoff: Stage B's selector stops being static. The `weight_fn` becomes
+**predicted-success (B′) + groundedness (§5) + precedent-match (§3d) − elevated-risk-count
+(§3b)** — a forward-looking selector that prefers the spec most likely to *actually run
+clean*, not just the one that looks most complete on paper.
 
 ### Stage B — Select (portfolio optimizer — the clean reuse)
 
 - `portfolio_optimizer.optimize(candidates, *, deps=(), conflicts=(), weight_fn=None, safe_only=False) -> PortfolioSelection`
   — `platform_core/orchestration/portfolio_optimizer.py:175`. Domain-agnostic; solves
   max-weight closure exactly.
-- We pass a **custom `weight_fn`** scoring *elaboration merit*: groundedness (fraction of
-  named paths that verified real, per §5), 5W3H completeness, minus a penalty per
-  low-confidence inferred assumption (§3b). `conflicts=` edges encode mutually-exclusive
-  scopings. Returns `selected_candidate_ids` / `demoted_candidate_ids` / `objective_value`.
+- We pass a **custom `weight_fn`** scoring *elaboration merit*, the forward-looking blend
+  from Stage B′: `predicted_success` (B′) + groundedness (fraction of named paths that
+  verified real, per §5) + precedent-match (§3d cosine to passing exemplars) + 5W3H
+  completeness, minus a penalty per `elevated`-risk inferred assumption (§3b). `conflicts=`
+  edges encode mutually-exclusive scopings. Returns `selected_candidate_ids` /
+  `demoted_candidate_ids` / `objective_value`.
 - The default `candidate_weight()` biases toward invention novelty/reversibility — **we
   override `weight_fn` entirely** for elaboration merit. The optimizer itself doesn't care
   that its candidates are specs, not patches — a natural fit.
@@ -281,15 +405,44 @@ ledger. The existing post-run maintenance pass learns from it:
   and halted by `SIE_KILL_SWITCH` (`llm.py:243`, default False). Off → §3–6 behavior with no
   learning; the fitness signal is simply not written.
 
+## 7.5 Uncertainty-aware deferral (Ollama → Claude escalation)
+
+The whole tier so far runs on the local Ollama brain. But some goals are genuinely too
+ambiguous for the small model to elaborate well — and the research is explicit that the
+right move is **deferral, not more local self-critique**: a small model should abstain and
+escalate to a larger one when calibrated uncertainty is high (ReDAct, arxiv 2604.07036),
+which maps precisely onto 9to5's existing **Ollama-orchestrator → Claude-executor** split.
+
+`uncertainty.py` computes a run-level uncertainty from signals that don't rely on the
+model's self-report: the count of `elevated`-risk assumptions (§3b conformal band), the
+Stage B `objective_value` spread (candidates all scoring low = no good option found), and
+§3d precedent coverage (no similar past goal = genuinely novel, higher uncertainty). When
+that crosses a threshold, the elaboration of *that one goal* is **deferred to Claude** (the
+already-available executor model) for a single high-capability pass, instead of accepting a
+weak local spec.
+
+- Cost-aware by construction: escalation is the expensive path, taken only when the cheap
+  local path is calibrated-unlikely to be good — the explicit ReDAct cost/benefit trade.
+- Gated by `ELABORATOR_DEFER_ENABLED` (default OFF). Off → never escalates; the best local
+  candidate is used as-is (today's behavior, plus the rest of the tier).
+- Honest limit: this reuses the executor's Claude seam for a *planning* call, which is a new
+  call-site for that model. If the seam isn't available (e.g. offline / dry-run), deferral
+  degrades to "keep the best local candidate" rather than failing the run.
+
 ### Graceful degradation matrix
 
 | Sub-flag off | Effect |
 |---|---|
+| `ELABORATOR_LOOKAHEAD_ENABLED` (B′) | No world-model prediction; Stage B scores on static groundedness only |
 | `QD_ARCHIVE_ENABLED` | Stage A keeps N raw candidates, no diversity filter |
 | `PORTFOLIO_OPTIMIZER_ENABLED` | Stage B → simple highest-groundedness sort |
 | `SOCIETY_ENABLED` | Stage C skipped; use Stage B top pick |
 | `SIE_FORCE_WEEKLY` / `SIE_KILL_SWITCH` | Stage D writes no fitness signal; no learning |
+| `ELABORATOR_DEFER_ENABLED` (§7.5) | No Claude escalation; best local candidate used as-is |
 | **`ELABORATOR_EXCELLENCE_ENABLED`** (master) | **Entire tier off → §2–6 path only; if all excellence code is skipped, output is byte-identical to today** |
+
+Empty precedent index (§3d cold start) and an empty embedding store are also degradations,
+not errors: precedent returns "", CBR contributes nothing, and the tier runs on §3c grounding.
 
 Nothing in this tier is force-wired into the core run loop; every stage degrades to the
 tier below it.
@@ -300,17 +453,27 @@ tier below it.
 
 1. Land §2–6 (module split, 5W3H prompt, self-review, schema, path-verify, restored tests)
    behind `ELABORATOR_EXCELLENCE_ENABLED=OFF`. Verify byte-identical flag-off output.
-2. Burn-in §2–6 with the flag on in a dev/sim run; confirm `schema_validity_rate` logging
-   and `unverified_paths` behave.
-3. Land §7 Stages A–D, each behind its existing sub-flag; verify the degradation matrix.
-4. Flip `ELABORATOR_EXCELLENCE_ENABLED` default to ON only after burn-in shows no regression
-   vs. the current elaborator on a fixed goal battery.
+2. Land §3d precedent + §3b calibrated risk band (both reuse existing infra) — still gated
+   under the master flag. Burn-in with the flag on in a dev/sim run; confirm
+   `schema_validity_rate` logging, `unverified_paths`, and precedent cold-start degrade.
+3. Land §7 Stages A′/A/B/C/D, each behind its existing sub-flag; verify the degradation matrix.
+4. Land the two highest-risk / newest pieces **last and default-OFF even under the master
+   flag**: §7 Stage B′ world-model lookahead (`ELABORATOR_LOOKAHEAD_ENABLED`) and §7.5
+   Claude deferral (`ELABORATOR_DEFER_ENABLED`). These are the only net-new call-sites; gate
+   them separately so the rest of the tier can go on without them.
+5. Flip `ELABORATOR_EXCELLENCE_ENABLED` default to ON only after burn-in shows no regression
+   vs. the current elaborator on a fixed goal battery. Keep B′ and deferral opt-in until
+   their own burn-in data justifies default-ON.
 
 ## 9. Non-goals (YAGNI)
 
-- No vector-embedding retrieval for grounding (the size-audit + churn + lessons + repo-map
-  bundle is enough and deterministic).
 - No multi-round debate across all candidates (Stage C resolves one axis only).
-- No new persistent store — Stage D rides the existing experience ledger.
-- No change to model/effort routing (per `.claude/rules/orchestration.md`).
+- No deep (>1 step) world-model rollout — Stage B′ is single-step and advisory only, to
+  bound the drift the research warns deep simulation causes.
+- No new persistent store — Stage D and §3d precedent both ride the existing experience
+  ledger / embedding index; nothing new is created.
+- No repeated self-critique loop (§3b is exactly one pass, per the reflexion survey).
+- No change to model/effort routing for the main loop (per `.claude/rules/orchestration.md`);
+  §7.5 deferral is an elaboration-only escalation behind its own default-OFF flag, not a
+  routing change.
 - No change to the frozen public API of `elaborate()` / `extractUniverse()`.
