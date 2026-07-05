@@ -13,75 +13,19 @@ dry-runs drive elaboration offline. The old raw ``resp.get('message')`` extracti
 EXPORTS:
   elaborate(goal_raw: str, work_dir: str | None=None, chat=None) -> str  -- Return the elaborated specification for ``goal_raw`` (never raises
   extractUniverse(goal_raw: str, goal_elaborated: str, work_dir: str, chat=None) -> dict  -- Extract the operating universe (scope boundary) from the goal (with safe defaults).
-DEPENDS-ON: config, knowledge, llm_io
+DEPENDS-ON: config, knowledge, llm_io, agents.planning.elaborator.grounding
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_elaborator.py
 """
 from __future__ import annotations
 
-import os
-import subprocess
-
 import config
 import knowledge
 import llm_io
 
+from .grounding import repoContext
+
 LOG = config.getLogger("elaborator")
-# (mtime, context) keyed by work_dir. AGENTS.md's mtime is the staleness signal: a self-
-# referential run that regenerates AGENTS.md mid-process must not keep injecting the FIRST
-# task's now-stale snapshot into every later elaboration in the same process (BUG-018).
-_REPO_CTX_CACHE: dict[str, tuple[float, str]] = {}
-
-
-def _agentsMdMtime(work_dir: str) -> float:
-    try:
-        return os.path.getmtime(os.path.join(work_dir, "AGENTS.md"))
-    except OSError:
-        return 0.0
-
-
-def _repoContext(work_dir: str | None) -> str:
-    """Compact, REAL repository grounding for the brain so it stops inventing
-    placeholder paths (e.g. /path/to/app, src/features/, com/example/*.java).
-
-    Combines the auto-generated package/directory map (AGENTS.md) with recent git
-    history -- which surfaces real, currently-existing file paths and directly
-    satisfies goals that say "check the git history". Never raises: returns "" when
-    grounding is unavailable, so the run degrades to the old (ungrounded) behaviour
-    instead of crashing the very first brain touch. Cached per work_dir; invalidated
-    when AGENTS.md's mtime changes."""
-    if not work_dir:
-        return ""
-    key = str(work_dir)
-    mtime = _agentsMdMtime(key)
-    cached = _REPO_CTX_CACHE.get(key)
-    if cached is not None and cached[0] == mtime:
-        return cached[1]
-    parts: list[str] = []
-    try:
-        with open(os.path.join(key, "AGENTS.md"), encoding="utf-8") as fh:
-            agents_md = fh.read().strip()
-        if agents_md:
-            parts.append("Package & directory map (AGENTS.md):\n" + agents_md)
-    except Exception:  # noqa: BLE001  -- grounding is best-effort
-        pass
-    try:
-        # encoding-safe: git output can contain bytes that are not valid cp1252 on Windows.
-        proc = subprocess.run(
-            ["git", "-C", key, "log", "--oneline", "-10", "--name-only"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=10,
-        )
-        hist = (proc.stdout or "").strip()
-        if proc.returncode == 0 and hist:
-            parts.append("Recent git history (real, currently-existing file paths):\n" + hist)
-    except Exception:  # noqa: BLE001  -- git may be absent or the dir may not be a repo
-        pass
-    block = "\n\n".join(parts).strip()
-    if len(block) > 7000:  # keep well inside num_ctx alongside the capabilities block
-        block = block[:7000] + "\n...(truncated)"
-    _REPO_CTX_CACHE[key] = (mtime, block)
-    return block
 
 
 def _chat(system: str, user: str, *, act: str, want_json: bool = False, chat=None):
@@ -128,7 +72,7 @@ def elaborate(goal_raw: str, work_dir: str | None = None, chat=None) -> str:
     ``llm_io.chat``, so a dry-run / test can drive elaboration offline."""
     LOG.info("Elaborating raw goal via %s", config.OLLAMA_MODEL)
     user = f"Raw goal:\n{goal_raw}\n\nProduce the elaborated specification."
-    ctx = _repoContext(work_dir)
+    ctx = repoContext(work_dir)
     if ctx:
         user = ("ACTUAL REPOSITORY SNAPSHOT (ground EVERY file path in this real structure):\n"
                 f"{ctx}\n\n---\n\n" + user)
@@ -162,7 +106,7 @@ def extractUniverse(goal_raw: str, goal_elaborated: str, work_dir: str, chat=Non
     """Extract the operating universe (scope boundary) from the goal (with safe defaults)."""
     user = (f"Goal:\n{goal_raw}\n\nElaborated spec:\n{goal_elaborated[:2000]}\n\n"
             f"Working directory: {work_dir}\n")
-    ctx = _repoContext(work_dir)
+    ctx = repoContext(work_dir)
     if ctx:
         user += ("\nACTUAL REPOSITORY SNAPSHOT (base allowed_paths on these REAL paths):\n"
                  f"{ctx}\n")

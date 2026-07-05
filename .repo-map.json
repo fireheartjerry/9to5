@@ -1405,38 +1405,6 @@
       ],
       "callers": []
     },
-    "agents.planning.elaborator": {
-      "path": "agents/planning/elaborator.py",
-      "purpose": "Elaborator (Step 0.5) -- Ollama expands the raw goal into a buildable spec.",
-      "exports": [
-        {
-          "name": "elaborate",
-          "kind": "function",
-          "signature": "(goal_raw: str, work_dir: str | None=None, chat=None) -> str",
-          "summary": "Return the elaborated specification for ``goal_raw`` (never raises",
-          "lineno": 122
-        },
-        {
-          "name": "extractUniverse",
-          "kind": "function",
-          "signature": "(goal_raw: str, goal_elaborated: str, work_dir: str, chat=None) -> dict",
-          "summary": "Extract the operating universe (scope boundary) from the goal (with safe defaults).",
-          "lineno": 161
-        }
-      ],
-      "depends_on": [
-        "config",
-        "knowledge",
-        "llm_io"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/orchestration/test_elaborator.py"
-      ],
-      "callers": []
-    },
     "agents.planning.evidence_receipt": {
       "path": "agents/planning/evidence_receipt.py",
       "purpose": "Evidence Receipt -- facts vs assessments, with a headline derived ONLY from facts.",
@@ -2552,7 +2520,6 @@
         "agents.hook_handlers.core",
         "agents.hook_handlers.selfmod",
         "agents.planning.clarifier",
-        "agents.planning.elaborator",
         "agents.planning.playbook",
         "agents.planning.replanner",
         "agents.planning.second_brain",
@@ -4110,7 +4077,6 @@
         "tests/evolution/test_knowledge.py"
       ],
       "callers": [
-        "agents.planning.elaborator",
         "agents.planning.replanner",
         "agents.review.architect",
         "platform_core.core.surfaces",
@@ -6298,7 +6264,6 @@
         "agents.discovery.lenses",
         "agents.discovery.synthesis",
         "agents.planning.clarifier",
-        "agents.planning.elaborator",
         "agents.planning.replanner",
         "agents.review.adversary",
         "agents.review.adversary_review",
