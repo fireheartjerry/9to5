@@ -48,6 +48,8 @@ class EpicFlags:
     SOCIETY_ROLE_MODELS: dict[str, str] = _F(default_factory=lambda: {
         r: os.getenv(f"SOCIETY_MODEL_{r.upper()}", d) for r, d in
         (("researcher", "low"), ("coder", "high"), ("tester", "default"), ("reviewer", "high"), ("planner", "default"))})
+    # --- Elaborator excellence tier (spec 2026-07-05); ships DARK, byte-identical flag-off ---
+    ELABORATOR_EXCELLENCE_ENABLED: bool = _F(default_factory=lambda: _envBool("ELABORATOR_EXCELLENCE_ENABLED", False))
     # --- Epic 6: solution-space forking (ships dark; conservative opt-in) ---
     SOLUTION_FORK_ENABLED: bool = _F(default_factory=lambda: _envBool("SOLUTION_FORK_ENABLED", _fullStack()))
     SOLUTION_FORK_N: int = _F(default_factory=lambda: _envInt("SOLUTION_FORK_N", 2))
