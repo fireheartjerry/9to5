@@ -10536,14 +10536,14 @@
           "kind": "function",
           "signature": "(prior_doc: str, fetched: dict, local: dict, psk: dict, *, refreshed_at: str, sources: list[str], recs: Optional[dict]=None) -> str",
           "summary": "Fold prior self-analysis + live docs + local capability surface +",
-          "lineno": 151
+          "lineno": 195
         },
         {
           "name": "diffHeadings",
           "kind": "function",
           "signature": "(prior_doc: str, new_doc: str) -> dict",
           "summary": "Naive 'what changed' delta on top-level headings (for the refresh log).",
-          "lineno": 165
+          "lineno": 209
         }
       ],
       "depends_on": [

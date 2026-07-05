@@ -20,6 +20,8 @@ from platform_core.knowledge_base.scraper import _SCRAPE_PROVENANCE_HEADER
 LOG = config.getLogger("knowledge.builder")
 
 _AUTHORED_HEADER = "# Part A — Maximalist Self-Analysis (authored reference)"
+_PART_D_EXCERPT_CHARS = 900
+_PART_D_MAX_PAGES = 40
 
 
 def _topHeadings(markdown: str) -> list[str]:
@@ -59,6 +61,50 @@ def _extractPart(prior_doc: str, letter: str) -> str:
     nxt = re.search(r"\n-{3,}\s*\n+# Part [A-Z]\b|\n# Part [A-Z]\b", rest[1:])
     body = rest[: nxt.start() + 1] if nxt else rest
     return body.strip()
+
+
+def _compactText(text: str, *, max_chars: int) -> str:
+    """Collapse generated reference prose to a short excerpt.
+
+    The full Claude docs are not the scarce thing here; model context and repo
+    readability are. The prompt-facing summary is separately capped in
+    compress.py, so this on-disk artifact should stay small and browsable.
+    """
+    cleaned = re.sub(r"\s+", " ", (text or "")).strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return cleaned[:max_chars].rsplit(" ", 1)[0].rstrip() + " ..."
+
+
+def _renderPartD(pages: dict, *, preserved: bool = False) -> list[str]:
+    """Render live-doc pages as a compact index, never as full mirrored docs."""
+    note = "Preserved from prior refresh." if preserved else "Scraped this refresh."
+    lines = [
+        "# Part D — Latest Live Documentation (compact index)",
+        "",
+        f"{note} Full docs are intentionally not mirrored here; the injected "
+        "CLAUDE CODE CAPABILITIES summary is capped separately.",
+    ]
+    for url, text in list(pages.items())[:_PART_D_MAX_PAGES]:
+        lines.extend(["", f"## {url}", "", _compactText(str(text), max_chars=_PART_D_EXCERPT_CHARS)])
+    if len(pages) > _PART_D_MAX_PAGES:
+        lines.extend(["", f"- ({len(pages) - _PART_D_MAX_PAGES} additional pages omitted)"])
+    return lines
+
+
+def _compactPartD(prior_d: str) -> str:
+    """Rewrite an older large Part D into the current compact representation."""
+    if not prior_d:
+        return ""
+    pages: dict[str, str] = {}
+    matches = list(re.finditer(r"^## (https?://\S+)\s*$", prior_d, flags=re.M))
+    for i, match in enumerate(matches[:_PART_D_MAX_PAGES]):
+        start = match.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(prior_d)
+        pages[match.group(1)] = prior_d[start:end].strip()
+    if not pages:
+        return prior_d.strip()
+    return "\n".join(_renderPartD(pages, preserved=True)).strip()
 
 
 def _buildDocHeader(refreshed_at: str, sources: list[str], fetched: dict,
@@ -136,11 +182,9 @@ def _buildPartCDE(psk: dict, fetched: dict, prior_doc: str, recs: dict) -> list[
     prior_d = _extractPart(prior_doc, "D")
     prior_d_pages = prior_d.count("\n## http") if prior_d else 0
     if pages and (len(pages) >= 5 or len(pages) >= prior_d_pages or not prior_d):
-        lines.extend(["---", "", "# Part D — Latest Live Documentation (scraped this refresh)", ""])
-        for url, text in pages.items():
-            lines.extend([f"## {url}", "", text[:14_000].strip(), ""])
+        lines.extend(["---", "", *_renderPartD(pages), ""])
     elif prior_d:
-        lines.extend(["---", "", prior_d, ""])
+        lines.extend(["---", "", _compactPartD(prior_d), ""])
         LOG.info("Part D preserved from prior doc (%d fresh pages vs %d prior)", len(pages), prior_d_pages)
     if recs.get("found") and recs.get("text", "").strip():
         lines.extend(["---", "", "# Part E — Expert Recommendations (how 9to5 should wield Claude Code)",
