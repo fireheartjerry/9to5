@@ -7,6 +7,7 @@ Covers:
 - adversary._loadJsonLoose: fence, prose, dict pass-through
 - adversary.systemFor: review-type guidance injection
 """
+
 import pathlib
 import sys
 import unittest
@@ -24,8 +25,8 @@ from agents import adversary
 # llm_io helpers
 # ---------------------------------------------------------------------------
 
-class TestFirstBalancedObject(unittest.TestCase):
 
+class TestFirstBalancedObject(unittest.TestCase):
     def test_simple_object(self):
         self.assertEqual(llm_io._firstBalancedObject('{"a": 1}'), '{"a": 1}')
 
@@ -49,15 +50,15 @@ class TestFirstBalancedObject(unittest.TestCase):
         self.assertIsNone(llm_io._firstBalancedObject('{"unclosed": 1'))
 
     def test_escaped_quote_inside_string(self):
-        s = '{"k": "a\\"}"}'     # value is: a"}  -- the first } is escaped inside string
+        s = '{"k": "a\\"}"}'  # value is: a"}  -- the first } is escaped inside string
         result = llm_io._firstBalancedObject(s)
         self.assertIsNotNone(result)
         import json
+
         self.assertEqual(json.loads(result), {"k": 'a"}'})
 
 
 class TestResponseJson(unittest.TestCase):
-
     def _resp(self, text):
         return {"message": {"content": text}}
 
@@ -94,8 +95,8 @@ class TestResponseJson(unittest.TestCase):
 # adversary helpers
 # ---------------------------------------------------------------------------
 
-class TestShouldTrigger(unittest.TestCase):
 
+class TestShouldTrigger(unittest.TestCase):
     def test_uncertainty_phrase(self):
         triggered, reason = adversary.shouldTrigger("I'm not sure about this", 0)
         self.assertTrue(triggered)
@@ -103,8 +104,8 @@ class TestShouldTrigger(unittest.TestCase):
 
     def test_max_attempts(self):
         import config
-        triggered, reason = adversary.shouldTrigger("ok", 0,
-                                                    attempt_count=config.MAX_SUBTASK_ATTEMPTS)
+
+        triggered, reason = adversary.shouldTrigger("ok", 0, attempt_count=config.MAX_SUBTASK_ATTEMPTS)
         self.assertTrue(triggered)
         self.assertIn("attempts", reason)
 
@@ -115,6 +116,7 @@ class TestShouldTrigger(unittest.TestCase):
 
     def test_heartbeat(self):
         import config
+
         n = config.ADVERSARY_HEARTBEAT_EVERY
         triggered, reason = adversary.shouldTrigger("ok", n)
         self.assertTrue(triggered)
@@ -126,38 +128,38 @@ class TestShouldTrigger(unittest.TestCase):
 
 
 class TestReviewStub(unittest.TestCase):
-
-    def test_no_brain_returns_approved_stub(self):
+    def test_no_brain_returns_unreviewed_stub(self):
         rv = adversary.review("do thing", "test", "output here", ollama_chat=None)
-        self.assertEqual(rv["verdict"], "approved")
+        self.assertEqual(rv["verdict"], "unreviewed")  # honest: no brain -> not a real pass
         self.assertTrue(rv.get("stub"))
         self.assertIsNone(rv.get("confidence"))
 
-    def test_brain_error_returns_approved_stub(self):
+    def test_brain_error_returns_unreviewed_stub(self):
         def bad_chat(system, user, **kw):
             raise RuntimeError("brain exploded")
+
         rv = adversary.review("do thing", "test", "output", ollama_chat=bad_chat)
-        self.assertEqual(rv["verdict"], "approved")
+        self.assertEqual(rv["verdict"], "unreviewed")
         self.assertTrue(rv.get("stub"))
 
     def test_brain_returns_junk_fails_closed_as_challenged(self):
         # R10: garbled output -> CHALLENGED (labeled), never a silent clean approve.
         def junk_chat(system, user, **kw):
             return {"message": {"content": "not json"}}
+
         rv = adversary.review("do thing", "test", "output", ollama_chat=junk_chat)
         self.assertEqual(rv["verdict"], "challenged")
         self.assertTrue(rv.get("stub"))
 
 
 class TestLoadJsonLoose(unittest.TestCase):
-
     def test_plain_json_string(self):
-        self.assertEqual(adversary._loadJsonLoose('{"verdict": "approved"}'),
-                         {"verdict": "approved"})
+        self.assertEqual(adversary._loadJsonLoose('{"verdict": "approved"}'), {"verdict": "approved"})
 
     def test_fenced_json(self):
-        self.assertEqual(adversary._loadJsonLoose('```json\n{"verdict": "challenged"}\n```'),
-                         {"verdict": "challenged"})
+        self.assertEqual(
+            adversary._loadJsonLoose('```json\n{"verdict": "challenged"}\n```'), {"verdict": "challenged"}
+        )
 
     def test_prose_wrapped(self):
         result = adversary._loadJsonLoose('Here is my response: {"verdict": "approved"} end')
@@ -178,7 +180,6 @@ class TestLoadJsonLoose(unittest.TestCase):
 
 
 class TestSystemFor(unittest.TestCase):
-
     def test_subtask_default(self):
         s = adversary.systemFor("subtask")
         self.assertIn("subtask", s.lower())
