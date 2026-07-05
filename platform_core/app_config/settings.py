@@ -83,12 +83,8 @@ class EpicFlags:
     SOCIETY_TOKEN_BUDGET_USD: float = _F(default_factory=lambda: _envFloat("SOCIETY_TOKEN_BUDGET_USD", 5.0))
     # role -> effort_level key (resolved through MODEL_BY_EFFORT; narrows, never bypasses).
     SOCIETY_ROLE_MODELS: dict[str, str] = _F(default_factory=lambda: {
-        "researcher": os.getenv("SOCIETY_MODEL_RESEARCHER", "low"),
-        "coder":      os.getenv("SOCIETY_MODEL_CODER", "high"),
-        "tester":     os.getenv("SOCIETY_MODEL_TESTER", "default"),
-        "reviewer":   os.getenv("SOCIETY_MODEL_REVIEWER", "high"),
-        "planner":    os.getenv("SOCIETY_MODEL_PLANNER", "default"),
-    })
+        r: os.getenv(f"SOCIETY_MODEL_{r.upper()}", d) for r, d in
+        (("researcher", "low"), ("coder", "high"), ("tester", "default"), ("reviewer", "high"), ("planner", "default"))})
     # --- Epic 6: solution-space forking (ships dark; conservative opt-in) ---
     SOLUTION_FORK_ENABLED: bool = _F(default_factory=lambda: _envBool("SOLUTION_FORK_ENABLED", _fullStack()))
     SOLUTION_FORK_N: int = _F(default_factory=lambda: _envInt("SOLUTION_FORK_N", 2))
@@ -101,6 +97,11 @@ class EpicFlags:
     W_RUBRIC: float = _F(default_factory=lambda: _envFloat("SOLUTION_FORK_W_RUBRIC", 0.3))
     W_RISK: float = _F(default_factory=lambda: _envFloat("SOLUTION_FORK_W_RISK", 0.15))
     W_COST: float = _F(default_factory=lambda: _envFloat("SOLUTION_FORK_W_COST", 0.05))
+    # --- Any-project capabilities (spec 2026-07-04): introspection ON (cheap+deterministic); explore ships dark like E6 ---
+    PROJECT_INTROSPECTION_ENABLED: bool = _F(default_factory=lambda: _envBool("PROJECT_INTROSPECTION_ENABLED", True))
+    PROJECT_INTROSPECTION_MAX_FILES: int = _F(default_factory=lambda: _envInt("PROJECT_INTROSPECTION_MAX_FILES", 4000))
+    EXPLORE_APPROACHES_ENABLED: bool = _F(default_factory=lambda: _envBool("EXPLORE_APPROACHES_ENABLED", False))
+    EXPLORE_APPROACHES_N: int = _F(default_factory=lambda: _envInt("EXPLORE_APPROACHES_N", 3))
     # --- Epic 8: Cloud Execution Fabric (OFF => LocalEnvironment => byte-for-byte today) ---
     EXECUTION_FABRIC_ENABLED: bool = _F(default_factory=lambda: _envBool("EXECUTION_FABRIC_ENABLED", _fullStack()))
     EXECUTION_BACKEND: str = _F(default_factory=lambda: os.getenv("EXECUTION_BACKEND", "worktree" if _fullStack() else "local"))

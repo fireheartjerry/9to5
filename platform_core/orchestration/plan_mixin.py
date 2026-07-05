@@ -14,7 +14,6 @@ RUN/TEST: python -m pytest tests/orchestration/test_run_loop_replan_mixin.py
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
 
 import config
 import platform_core.core.surfaces as surfaces
@@ -33,9 +32,6 @@ from platform_core.orchestration import dual_ledger_planner as _dlp
 from platform_core.orchestration import plan_shape_check as _shape
 from platform_core.orchestration import work_profile as _work_profile
 from state.task import TaskState
-
-if TYPE_CHECKING:
-    pass
 
 LOG = config.getLogger("orchestrator")
 
@@ -60,6 +56,19 @@ class OrchestratorPlanMixin:
     def _asText(v) -> str:
         return _asText(v)
 
+    def _projectContextBlock(self, work_dir: str) -> str:
+        """Budgeted introspection digest of work_dir for the plan prompt (spec §3.4). Fail-open:
+        flag off, missing package, or ANY scan error => "" -- never blocks or degrades planning."""
+        try:
+            if not config.PROJECT_INTROSPECTION_ENABLED:
+                return ""
+            import introspect  # lazy: leaf package, paid only when the flag is on
+            model = introspect.project_extract.extractProject(
+                work_dir, max_files=config.PROJECT_INTROSPECTION_MAX_FILES)
+            return introspect.project_extract.contextForPrompt(model, budget_chars=3000)
+        except Exception:  # noqa: BLE001 -- fail-open: introspection never blocks planning
+            return ""
+
     def authorSubtaskPlan(self, goal_elaborated: str, architect_doc: str) -> list[dict]:
         prof = getattr(self, "_active_work_profile", None)
         profile_block = _work_profile.guidance_block(prof, context="planner")
@@ -69,9 +78,12 @@ class OrchestratorPlanMixin:
             subs = _dlp.tryAuthorPlan(self._ollamaChat, goal_elaborated, architect_doc, work_profile=prof)
             if subs:
                 return subs
+        project_ctx = self._projectContextBlock(getattr(self, "_work_dir", None) or str(config.PROJECT_ROOT))
+        ctx_block = f"\nPROJECT CONTEXT:\n{project_ctx}\n" if project_ctx else ""
         user = (
             f"Specification:\n{goal_elaborated}\n\n{profile_block}\n"
-            f"Architecture:\n{architect_doc[:4000]}\n\nReturn the plan JSON."
+            f"Architecture:\n{architect_doc[:4000]}\n"
+            f"{ctx_block}\nReturn the plan JSON."
         )
         user = retrieval.lessons_block(goal_elaborated) + user  # SIE Layer 1 (best-effort, no-op if empty)
         resp = self._ollamaChat(_prompts.PLANNER_SYSTEM, user, act="plan", want_json=True)
@@ -100,15 +112,8 @@ class OrchestratorPlanMixin:
             pass
         reqs = verifier.extractRequirements(goal_elaborated)
         if len(reqs) < 2:
-            return [
-                {
-                    "title": "Implement the goal",
-                    "description": goal_elaborated,
-                    "layer": 3,
-                    "verify": None,
-                    "effort_level": "high",
-                }
-            ]
+            return [{"title": "Implement the goal", "description": goal_elaborated,
+                     "layer": 3, "verify": None, "effort_level": "high"}]
         target_rel = verifier.primaryTargetFile(goal_elaborated)
         target_abs = str((config.PROJECT_ROOT / target_rel).resolve()) if target_rel else None
         subs: list[dict] = []
@@ -117,15 +122,8 @@ class OrchestratorPlanMixin:
             # survives plan materialization); the diff-grounded receipt stage FAILS the subtask
             # if the declared file never changed.
             v = {"targets": [target_abs]} if target_abs else None
-            subs.append(
-                {
-                    "title": f"Deliverable {i}: {req[:60]}",
-                    "description": req,
-                    "layer": 3,
-                    "verify": v,
-                    "effort_level": "high",
-                }
-            )
+            subs.append({"title": f"Deliverable {i}: {req[:60]}", "description": req,
+                         "layer": 3, "verify": v, "effort_level": "high"})
         LOG.info("fallback plan: decomposed goal into %d per-requirement subtasks", len(subs))
         return subs
 
