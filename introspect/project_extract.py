@@ -23,6 +23,7 @@ RUN/TEST: python -m pytest tests/introspect/test_project_extract.py
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -157,12 +158,10 @@ def _readCache(cache_path: Path, cache_key: str) -> ProjectModel | None:
 
 def _writeCache(cache_path: Path, cache_key: str, model: ProjectModel) -> None:
     """Best-effort cache write; failure never breaks extraction."""
-    try:
+    with contextlib.suppress(Exception):
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"key": cache_key, "model": json.loads(model.toJson())}
         cache_path.write_text(json.dumps(payload, indent=1), encoding="utf-8")
-    except Exception:  # noqa: BLE001
-        pass
 
 
 def contextForPrompt(model: ProjectModel, *, budget_chars: int = 4000) -> str:
