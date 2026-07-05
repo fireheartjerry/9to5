@@ -9689,102 +9689,90 @@
       "purpose": "Typed config registry: buildSettings() layers coded defaults < .env < sie_overrides.json.",
       "exports": [
         {
-          "name": "EpicFlags",
-          "kind": "class",
-          "signature": "",
-          "summary": "Epic 1/2/5/6/8 feature flags (formerly llm_epic_flags.py).",
-          "lineno": 61
-        },
-        {
-          "name": "PromptsCfg",
-          "kind": "class",
-          "signature": "",
-          "summary": "The big authored prompt/brief strings (env-overridable where they always were).",
-          "lineno": 175
-        },
-        {
           "name": "Settings",
           "kind": "class",
           "signature": "",
           "summary": "The whole typed registry: one frozen composite per process (swap-on-override).",
-          "lineno": 189
+          "lineno": 61
         },
         {
           "name": "buildSettings",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "Fresh registry: coded defaults < .env (loadEnvOnce) < sie_overrides.json.",
-          "lineno": 236
+          "lineno": 108
         },
         {
           "name": "settings",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "The process-wide registry singleton (lazy, thread-safe).",
-          "lineno": 250
+          "lineno": 122
         },
         {
           "name": "allNames",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Every legacy ALL_CAPS constant name the registry serves (for the facade __all__/__dir__…",
-          "lineno": 275
+          "lineno": 147
         },
         {
           "name": "lookup",
           "kind": "function",
           "signature": "(name: str) -> Any",
           "summary": "Constant by legacy name",
-          "lineno": 280
+          "lineno": 152
         },
         {
           "name": "lookupDomain",
           "kind": "function",
           "signature": "(domains: tuple[str, ...], name: str) -> Any",
           "summary": "lookup() restricted to the given domains (PEP 562 seam for the domain modules).",
-          "lineno": 290
+          "lineno": 162
         },
         {
           "name": "RunFlags",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 310
+          "lineno": 182
         },
         {
           "name": "runFlags",
           "kind": "function",
           "signature": "() -> RunFlags",
           "summary": "The run-scoped flag singleton, seeded from the registry's coded/env defaults.",
-          "lineno": 320
+          "lineno": 192
         },
         {
           "name": "reload",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "Rebuild the registry from the current env + overrides file and reseed run flags.",
-          "lineno": 334
+          "lineno": 206
         },
         {
           "name": "setOverride",
           "kind": "function",
           "signature": "(knob: str, value: Any) -> tuple[bool, bool]",
           "summary": "Live-apply + persist a whitelisted, bounds-checked SIE knob.",
-          "lineno": 348
+          "lineno": 220
         },
         {
           "name": "getLogger",
           "kind": "function",
           "signature": "(name: str='9to5') -> logging.Logger",
           "summary": "Return a child of the configured ``9to5`` logger.",
-          "lineno": 446
+          "lineno": 318
         }
       ],
       "depends_on": [
         "platform_core.app_config._env",
         "platform_core.app_config.discord",
+        "platform_core.app_config.epic_flags",
         "platform_core.app_config.llm",
         "platform_core.app_config.paths",
+        "platform_core.app_config.prompts",
         "platform_core.core"
       ],
       "side_effects": [
@@ -12102,9 +12090,9 @@
         {
           "name": "forkPlan",
           "kind": "function",
-          "signature": "(subtask: dict, *, n: int, angles: tuple=DIVERSITY_ANGLES, work_profile=None) -> ForkPlan",
+          "signature": "(subtask: dict, *, n: int, angles: tuple=DIVERSITY_ANGLES, work_profile=None, work_dir: str | None=None) -> ForkPlan",
           "summary": "Build N diversity seeds spanning effort x angle",
-          "lineno": 107
+          "lineno": 108
         }
       ],
       "depends_on": [

@@ -135,3 +135,31 @@ class TestExploreSeededAngles:
         self._patch_explore(monkeypatch, cands, scores)
         plan = fp.forkPlan(dict(self.ST), n=3)
         assert [s.angle_hint for s in plan.branch_seeds] == list(fp.DIVERSITY_ANGLES)
+
+    def test_work_dir_param_scopes_exploration_root(self, monkeypatch, tmp_path):
+        """forkPlan(work_dir=...) must explore that dir, not config.PROJECT_ROOT."""
+        import config
+        import explore
+        import introspect
+        seen_roots = []
+        monkeypatch.setattr(config, "EXPLORE_APPROACHES_ENABLED", True, raising=False)
+        monkeypatch.setattr(introspect, "extractProject",
+                            lambda root, **kw: seen_roots.append(root) or object())
+        monkeypatch.setattr(explore, "generateApproaches", lambda goal, model, **kw: [])
+        monkeypatch.setattr(explore, "scoreApproaches", lambda cands, model: [])
+        fp.forkPlan(dict(self.ST), n=1, work_dir=str(tmp_path))
+        assert seen_roots == [str(tmp_path)]
+
+    def test_no_work_dir_falls_back_to_project_root(self, monkeypatch):
+        """Omitting work_dir preserves today's behavior: explore config.PROJECT_ROOT."""
+        import config
+        import explore
+        import introspect
+        seen_roots = []
+        monkeypatch.setattr(config, "EXPLORE_APPROACHES_ENABLED", True, raising=False)
+        monkeypatch.setattr(introspect, "extractProject",
+                            lambda root, **kw: seen_roots.append(root) or object())
+        monkeypatch.setattr(explore, "generateApproaches", lambda goal, model, **kw: [])
+        monkeypatch.setattr(explore, "scoreApproaches", lambda cands, model: [])
+        fp.forkPlan(dict(self.ST), n=1)
+        assert seen_roots == [config.PROJECT_ROOT]
