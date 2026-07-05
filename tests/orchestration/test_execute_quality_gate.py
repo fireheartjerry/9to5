@@ -6,6 +6,7 @@ import unittest
 import threading
 from unittest import mock
 
+import config
 from agents.verification import Receipt, VResult, Verdict
 from platform_core.orchestration.execute_mixin import OrchestratorExecuteMixin
 from platform_core.orchestration.validation_cache import ValidationResult
@@ -116,7 +117,7 @@ class TestRunAttemptVerifyQualityGate(unittest.TestCase):
         self.assertIn("affected tests failed", feedback)
         state.recordVerify.assert_called_once()
         # The gate must be scoped to the subtask's OWN changed files, not the cumulative repo diff.
-        gate.assert_called_once_with("C:\\9to5", changed_files=["pkg/mod.py"])
+        gate.assert_called_once_with(str(config.PROJECT_ROOT), changed_files=["pkg/mod.py"])
 
     def test_passing_subtask_not_downgraded_when_no_diff_files(self):
         """If the Receipt records no changed files, we cannot scope the gate to this subtask's
