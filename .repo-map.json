@@ -1914,6 +1914,7 @@
         "notifications.webdash",
         "notifications.webdash_page",
         "notifications.work_launcher",
+        "notifications.work_launcher_readiness",
         "orchestrator",
         "platform_core.cli.main_cli",
         "platform_core.core.epoch",
@@ -8365,7 +8366,7 @@
           "kind": "function",
           "signature": "() -> list",
           "summary": "Providers in priority order (cloudflared first, localtunnel last).",
-          "lineno": 272
+          "lineno": 276
         }
       ],
       "depends_on": [
@@ -8702,14 +8703,14 @@
           "kind": "function",
           "signature": "(task_id: str, port: Optional[int]=None) -> Optional[str]",
           "summary": "Start the dashboard in a daemon thread",
-          "lineno": 376
+          "lineno": 402
         },
         {
           "name": "stopWebDashboard",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Shut down the running dashboard server (frees the port)",
-          "lineno": 408
+          "lineno": 435
         }
       ],
       "depends_on": [
@@ -8921,6 +8922,31 @@
         "notifications.bot.cogs.plan_cog",
         "notifications.bot.cogs.runs_cog",
         "notifications.views_run"
+      ]
+    },
+    "notifications.work_launcher_readiness": {
+      "path": "notifications/work_launcher_readiness.py",
+      "purpose": "External-project readiness preflight for the /work launcher (split from work_launcher.py).",
+      "exports": [
+        {
+          "name": "externalReadiness",
+          "kind": "function",
+          "signature": "(req) -> list[str]",
+          "summary": "Warn about external-project setup gaps that degrade PR output, without blocking launch.",
+          "lineno": 28
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "spawns git subprocesses (read-only) in the target work_dir"
+      ],
+      "test": [
+        "tests/execution/test_work_launcher.py"
+      ],
+      "callers": [
+        "notifications.work_launcher"
       ]
     },
     "orchestrator": {
@@ -11536,7 +11562,11 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/execution/test_evidence_gate.py",
+        "tests/orchestration/test_execute_quality_gate.py",
+        "tests/orchestration/test_trajectory.py"
+      ],
       "callers": [
         "platform_core.orchestration.execute_mixin"
       ]
@@ -12265,7 +12295,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles run lifecycle phases: resume, fresh run, preamble, phase 4, teardown.",
-          "lineno": 35
+          "lineno": 36
         }
       ],
       "depends_on": [
@@ -14152,42 +14182,42 @@
           "kind": "function",
           "signature": "(task_id: str) -> 'TaskState'",
           "summary": "Load task JSON from the state store",
-          "lineno": 150
+          "lineno": 155
         },
         {
           "name": "loadSafe",
           "kind": "function",
           "signature": "(task_id: str) -> 'Optional[TaskState]'",
           "summary": "Like ``load`` but returns None for a missing/corrupt file instead of raising.",
-          "lineno": 160
+          "lineno": 165
         },
         {
           "name": "iterStored",
           "kind": "function",
           "signature": "()",
           "summary": "Yield ``(path, data)`` for every readable, task-shaped JSON in the store.",
-          "lineno": 174
+          "lineno": 179
         },
         {
           "name": "loadLatest",
           "kind": "function",
           "signature": "() -> 'Optional[TaskState]'",
           "summary": "Prefer the most-recently-STARTED active (non-terminal) task.",
-          "lineno": 201
+          "lineno": 206
         },
         {
           "name": "listRecent",
           "kind": "function",
           "signature": "(n: int=10) -> list[dict[str, Any]]",
           "summary": "Lightweight summaries of recent tasks, newest first",
-          "lineno": 225
+          "lineno": 230
         },
         {
           "name": "reapDeadRun",
           "kind": "function",
           "signature": "(task_id: str, *, reason: str='orchestrator process dead (no heartbeat, pid gone)') -> bool",
           "summary": "Finalize a PROVABLY-DEAD, still-non-terminal run as ``aborted``.",
-          "lineno": 249
+          "lineno": 254
         }
       ],
       "depends_on": [
