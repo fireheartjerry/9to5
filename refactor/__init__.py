@@ -7,19 +7,47 @@ EXPORTS:
   wouldCreateCycle(graph, added_edges, removed_edges=()) -> list[list[str]]
   Usage -- (file, line, kind) symbol reference record
   findUsages(root, symbol) -> list[Usage]
-DEPENDS-ON: refactor.cycle_detect, refactor.symbol_usages
+  WriteFile / ReplaceInFile / DeleteFile / RenameFile -- frozen edit primitives
+  FORBIDDEN_SEGMENTS -- path components no edit may touch
+  validateEdit(root, edit) -> str | None
+  ImpactReport -- frozen prediction summary
+  predictImpact(model, edits) -> ImpactReport
+  RefactorResult -- frozen apply outcome
+  RefactorTransaction -- add/preview/apply with snapshot rollback
+DEPENDS-ON: refactor.change_impact, refactor.cycle_detect, refactor.refactor_edits,
+  refactor.refactor_transaction, refactor.symbol_usages
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/refactor/
 """
 from __future__ import annotations
 
+from refactor.change_impact import ImpactReport, predictImpact
 from refactor.cycle_detect import buildImportGraph, findCycles, wouldCreateCycle
+from refactor.refactor_edits import (
+    FORBIDDEN_SEGMENTS,
+    DeleteFile,
+    RenameFile,
+    ReplaceInFile,
+    WriteFile,
+    validateEdit,
+)
+from refactor.refactor_transaction import RefactorResult, RefactorTransaction
 from refactor.symbol_usages import Usage, findUsages
 
 __all__ = [
     "buildImportGraph",
+    "DeleteFile",
     "findCycles",
     "findUsages",
+    "FORBIDDEN_SEGMENTS",
+    "ImpactReport",
+    "predictImpact",
+    "RefactorResult",
+    "RefactorTransaction",
+    "RenameFile",
+    "ReplaceInFile",
     "Usage",
+    "validateEdit",
     "wouldCreateCycle",
+    "WriteFile",
 ]
