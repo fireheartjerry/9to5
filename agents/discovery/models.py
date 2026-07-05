@@ -26,6 +26,14 @@ class Finding:
     source_lens: str
     rank: Optional[int] = None
     composes_with: List[int] = field(default_factory=list)
+    # --- Inventor Mega-Build: feature-invention fields (optional; empty on legacy findings) ---
+    candidate_kind: str = ""                 # finer taxonomy: new_capability|architecture_unlock|...
+    design_sketch: str = ""                  # how it would be built (concrete)
+    verification_plan: str = ""              # how we'd prove it works
+    target_subsystems: List[str] = field(default_factory=list)
+    risk: str = "medium"                     # low | medium | high
+    confidence: float = 0.6                  # 0..1 self-estimate (weak prior)
+    measured_novelty: float = 0.0            # 0..1 filled by the novelty index (dominant signal)
 
     def to_dict(self) -> dict:
         return {
@@ -39,6 +47,13 @@ class Finding:
             "affected_files": self.affected_files,
             "source_lens": self.source_lens,
             "composes_with": self.composes_with,
+            "candidate_kind": self.candidate_kind,
+            "design_sketch": self.design_sketch,
+            "verification_plan": self.verification_plan,
+            "target_subsystems": self.target_subsystems,
+            "risk": self.risk,
+            "confidence": self.confidence,
+            "measured_novelty": round(self.measured_novelty, 4),
         }
 
 

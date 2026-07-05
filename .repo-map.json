@@ -429,6 +429,7 @@
       "test": [],
       "callers": [
         "agents.discovery",
+        "agents.discovery.lenses",
         "platform_core.orchestration.run_phase_mixin"
       ]
     },
@@ -464,12 +465,13 @@
         {
           "name": "run_lens_panel",
           "kind": "function",
-          "signature": "(digest: dict, chat=None) -> List[Finding]",
+          "signature": "(digest: dict, chat=None, *, transformative: bool=False) -> List[Finding]",
           "summary": "Run all lenses in parallel",
-          "lineno": 233
+          "lineno": 305
         }
       ],
       "depends_on": [
+        "agents.discovery",
         "agents.discovery.models",
         "config",
         "llm_io"
@@ -478,6 +480,7 @@
         "unannotated"
       ],
       "test": [
+        "tests/orchestration/test_discovery_feature_lenses.py",
         "tests/orchestration/test_discovery_lenses.py"
       ],
       "callers": []
@@ -498,7 +501,7 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 46
+          "lineno": 61
         }
       ],
       "depends_on": [],
@@ -523,13 +526,14 @@
           "kind": "function",
           "signature": "(findings: List[Finding], chat=None) -> DiscoveryReport",
           "summary": "Rank and filter findings into a DiscoveryReport",
-          "lineno": 98
+          "lineno": 154
         }
       ],
       "depends_on": [
         "agents.discovery.models",
         "config",
-        "llm_io"
+        "llm_io",
+        "memory.novelty_index"
       ],
       "side_effects": [
         "unannotated"
@@ -1780,7 +1784,8 @@
         "tests/orchestration/test_society_config.py",
         "tests/platform/test_config_bootstrap.py",
         "tests/platform/test_config_logging_lock.py",
-        "tests/platform/test_epic_flags_config.py"
+        "tests/platform/test_epic_flags_config.py",
+        "tests/platform/test_inventor_flags_config.py"
       ],
       "callers": [
         "agents.adversary_review",
@@ -4640,6 +4645,7 @@
       ],
       "test": [
         "tests/evolution/test_reflection_trust.py",
+        "tests/notifications/test_reflection_innovations.py",
         "tests/notifications/test_reflection_post.py"
       ],
       "callers": [
@@ -5437,63 +5443,84 @@
           "kind": "function",
           "signature": "(*, scope: str, text: str, poignancy: float, support_count: int=1, win_rate: float=0.0, depth: int=0, provenance: Optional[dict]=None, db_path: Optional[Path]=None) -> Optional[int]",
           "summary": "Insert a cited insight (deduped by scope+text)",
-          "lineno": 30
+          "lineno": 33
         },
         {
           "name": "fetch_insights",
           "kind": "function",
           "signature": "(scope: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "",
-          "lineno": 55
+          "lineno": 58
         },
         {
           "name": "register_candidate",
           "kind": "function",
           "signature": "(*, kind: str, target: str, body: str, parent_champion_id: Optional[int]=None, provenance: Optional[dict]=None, state: str='proposed', db_path: Optional[Path]=None) -> Optional[int]",
           "summary": "Register a capability candidate (deduped by kind+target+body hash).",
-          "lineno": 65
+          "lineno": 68
+        },
+        {
+          "name": "register_invention",
+          "kind": "function",
+          "signature": "(*, target: str, body: str, measured_novelty: float=0.0, risk: str='medium', confidence: float=0.6, subsystem: str='', design_sketch: str='', verify_plan: str='', provenance: Optional[dict]=None, state: str='proposed', db_path: Optional[Path]=None) -> Optional[int]",
+          "summary": "Register a feature-invention candidate (kind='feature') with novelty + routing metadata.",
+          "lineno": 95
         },
         {
           "name": "fetch_candidates",
           "kind": "function",
           "signature": "(kind: Optional[str]=None, target: Optional[str]=None, state: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "",
-          "lineno": 92
+          "lineno": 127
         },
         {
           "name": "get_candidate",
           "kind": "function",
           "signature": "(candidate_id: int, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]",
           "summary": "",
-          "lineno": 107
+          "lineno": 142
         },
         {
           "name": "set_candidate_state",
           "kind": "function",
           "signature": "(candidate_id: int, state: str, db_path: Optional[Path]=None) -> bool",
           "summary": "",
-          "lineno": 114
+          "lineno": 149
         },
         {
           "name": "candidate_champion",
           "kind": "function",
           "signature": "(kind: str, target: str, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]",
           "summary": "",
-          "lineno": 127
+          "lineno": 162
         },
         {
           "name": "promote_candidate",
           "kind": "function",
           "signature": "(candidate_id: int, db_path: Optional[Path]=None) -> bool",
           "summary": "Flip a candidate to champion",
-          "lineno": 136
+          "lineno": 171
+        },
+        {
+          "name": "record_innovation",
+          "kind": "function",
+          "signature": "(*, run_id: str, title: str, claim: str='', status: str='shipped', measured_novelty: float=0.0, qd_cell: str='', innovation_mechanism: str='', why: Optional[dict]=None, how: Optional[dict]=None, risk: Optional[dict]=None, evidence: Optional[list]=None, db_path: Optional[Path]=None) -> Optional[int]",
+          "summary": "Persist one fact-backed innovation entry (deduped by run_id+title+status).",
+          "lineno": 195
+        },
+        {
+          "name": "fetch_innovations",
+          "kind": "function",
+          "signature": "(run_id: Optional[str]=None, status: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
+          "summary": "",
+          "lineno": 221
         },
         {
           "name": "candidate_field_stats",
           "kind": "function",
           "signature": "(candidate_id: int, db_path: Optional[Path]=None) -> dict[str, int]",
           "summary": "The {n, first_pass} counters the promotion proportion test consumes.",
-          "lineno": 160
+          "lineno": 235
         }
       ],
       "depends_on": [
@@ -5811,25 +5838,26 @@
           "kind": "function",
           "signature": "() -> dict[str, dict]",
           "summary": "Swallowed-failure counts for every 'ledger.*' best_effort surface this process:",
-          "lineno": 28
+          "lineno": 29
         },
         {
           "name": "close_pool",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Close every pooled connection across all threads (shutdown / test teardown).",
-          "lineno": 399
+          "lineno": 163
         },
         {
           "name": "init",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> None",
           "summary": "Create the database + schema if absent (idempotent).",
-          "lineno": 420
+          "lineno": 184
         }
       ],
       "depends_on": [
         "config",
+        "memory.experience_ddl",
         "platform_core.core.best_effort"
       ],
       "side_effects": [
@@ -8355,21 +8383,29 @@
         {
           "name": "write_reflection",
           "kind": "function",
-          "signature": "(state: Any, *, chat: Callable[..., Any], comparative: Optional[dict]=None, obs: Any=None) -> Optional[str]",
+          "signature": "(state: Any, *, chat: Callable[..., Any], comparative: Optional[dict]=None, obs: Any=None, innovative_changes: Optional[list]=None) -> Optional[str]",
           "summary": "Generate the reflection paragraph, persist it to disk + Obsidian, and return it.",
-          "lineno": 51
+          "lineno": 58
         },
         {
           "name": "post_reflection",
           "kind": "function",
           "signature": "(state: Any, text: str, comparative: Optional[dict]=None) -> None",
           "summary": "Post the reflection to Discord as ``CODENAME — text`` with a comparative footer",
-          "lineno": 91
+          "lineno": 99
+        },
+        {
+          "name": "post_innovations",
+          "kind": "function",
+          "signature": "(state: Any, entries: list) -> None",
+          "summary": "Post a dedicated 'Innovative Changes' Discord embed (fact-backed entries)",
+          "lineno": 113
         }
       ],
       "depends_on": [
         "config",
-        "notifications.discord_bot"
+        "notifications.discord_bot",
+        "platform_core.orchestration"
       ],
       "side_effects": [
         "unannotated"
@@ -9536,6 +9572,7 @@
       "callers": [
         "config",
         "platform_core.app_config.discord",
+        "platform_core.app_config.epic_flags",
         "platform_core.app_config.llm",
         "platform_core.app_config.paths",
         "platform_core.app_config.settings"
@@ -9572,6 +9609,32 @@
         "tests/notifications/test_discord_embeds.py",
         "tests/notifications/test_discord_rest.py",
         "tests/notifications/test_discord_surfaces.py"
+      ],
+      "callers": [
+        "platform_core.app_config.settings"
+      ]
+    },
+    "platform_core.app_config.epic_flags": {
+      "path": "platform_core/app_config/epic_flags.py",
+      "purpose": "Epic 1/2/5/6/8 + Human-Nature feature flags: the frozen ``EpicFlags`` domain.",
+      "exports": [
+        {
+          "name": "EpicFlags",
+          "kind": "class",
+          "signature": "",
+          "summary": "Epic 1/2/5/6/8 feature flags (formerly llm_epic_flags.py).",
+          "lineno": 24
+        }
+      ],
+      "depends_on": [
+        "platform_core.app_config._env"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/platform/test_epic_flags_config.py",
+        "tests/slow/test_epic_flags_combined.py"
       ],
       "callers": [
         "platform_core.app_config.settings"
@@ -9684,6 +9747,29 @@
         "society.society_batch"
       ]
     },
+    "platform_core.app_config.prompts": {
+      "path": "platform_core/app_config/prompts.py",
+      "purpose": "The big authored prompt/brief strings: the frozen ``PromptsCfg`` domain.",
+      "exports": [
+        {
+          "name": "PromptsCfg",
+          "kind": "class",
+          "signature": "",
+          "summary": "The big authored prompt/brief strings (env-overridable where they always were).",
+          "lineno": 68
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/evolution/test_prompts.py"
+      ],
+      "callers": [
+        "platform_core.app_config.settings"
+      ]
+    },
     "platform_core.app_config.settings": {
       "path": "platform_core/app_config/settings.py",
       "purpose": "Typed config registry: buildSettings() layers coded defaults < .env < sie_overrides.json.",
@@ -9693,83 +9779,84 @@
           "kind": "class",
           "signature": "",
           "summary": "The whole typed registry: one frozen composite per process (swap-on-override).",
-          "lineno": 61
+          "lineno": 62
         },
         {
           "name": "buildSettings",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "Fresh registry: coded defaults < .env (loadEnvOnce) < sie_overrides.json.",
-          "lineno": 108
+          "lineno": 111
         },
         {
           "name": "settings",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "The process-wide registry singleton (lazy, thread-safe).",
-          "lineno": 122
+          "lineno": 126
         },
         {
           "name": "allNames",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Every legacy ALL_CAPS constant name the registry serves (for the facade __all__/__dir__…",
-          "lineno": 147
+          "lineno": 151
         },
         {
           "name": "lookup",
           "kind": "function",
           "signature": "(name: str) -> Any",
           "summary": "Constant by legacy name",
-          "lineno": 152
+          "lineno": 156
         },
         {
           "name": "lookupDomain",
           "kind": "function",
           "signature": "(domains: tuple[str, ...], name: str) -> Any",
           "summary": "lookup() restricted to the given domains (PEP 562 seam for the domain modules).",
-          "lineno": 162
+          "lineno": 166
         },
         {
           "name": "RunFlags",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 182
+          "lineno": 186
         },
         {
           "name": "runFlags",
           "kind": "function",
           "signature": "() -> RunFlags",
           "summary": "The run-scoped flag singleton, seeded from the registry's coded/env defaults.",
-          "lineno": 192
+          "lineno": 196
         },
         {
           "name": "reload",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "Rebuild the registry from the current env + overrides file and reseed run flags.",
-          "lineno": 206
+          "lineno": 210
         },
         {
           "name": "setOverride",
           "kind": "function",
           "signature": "(knob: str, value: Any) -> tuple[bool, bool]",
           "summary": "Live-apply + persist a whitelisted, bounds-checked SIE knob.",
-          "lineno": 220
+          "lineno": 224
         },
         {
           "name": "getLogger",
           "kind": "function",
           "signature": "(name: str='9to5') -> logging.Logger",
           "summary": "Return a child of the configured ``9to5`` logger.",
-          "lineno": 318
+          "lineno": 322
         }
       ],
       "depends_on": [
         "platform_core.app_config._env",
         "platform_core.app_config.discord",
         "platform_core.app_config.epic_flags",
+        "platform_core.app_config.inventor_flags",
         "platform_core.app_config.llm",
         "platform_core.app_config.paths",
         "platform_core.app_config.prompts",
@@ -11479,6 +11566,7 @@
         "agents.replanner",
         "main",
         "notifications.bot.cogs.runs_cog",
+        "notifications.reflection_post",
         "notifications.views_run",
         "notifications.work_launcher",
         "platform_core.core.surfaces",
@@ -11500,6 +11588,7 @@
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_loop_replan_mixin",
         "platform_core.orchestration.run_phase_mixin",
+        "platform_core.orchestration.run_phase_outcome",
         "platform_core.orchestration.solution_space",
         "society.roles",
         "society.society_batch"
@@ -12857,21 +12946,21 @@
           "kind": "function",
           "signature": "(orch) -> None",
           "summary": "Spec B: post a short '!growth' learning summary to Discord at teardown (best-effort).",
-          "lineno": 134
+          "lineno": 153
         },
         {
           "name": "maybeInstinct",
           "kind": "function",
           "signature": "(orch, state, bus) -> None",
           "summary": "Throttled trigger for the periodic instinct call",
-          "lineno": 143
+          "lineno": 162
         },
         {
           "name": "runInstinct",
           "kind": "function",
           "signature": "(orch, state) -> None",
           "summary": "",
-          "lineno": 162
+          "lineno": 181
         }
       ],
       "depends_on": [
@@ -12884,6 +12973,7 @@
         "notifications.reflection_post",
         "notifications.run_arc",
         "platform_core.core.best_effort",
+        "platform_core.orchestration",
         "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.time_utils"
       ],
@@ -13041,6 +13131,8 @@
       "depends_on": [
         "config",
         "platform_core.orchestration",
+        "platform_core.orchestration.invention_types",
+        "platform_core.orchestration.qd_archive",
         "state.task"
       ],
       "side_effects": [

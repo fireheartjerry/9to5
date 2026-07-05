@@ -5,11 +5,14 @@ EXPORTS:
   record_insight(*, scope: str, text: str, poignancy: float, support_count: int=1, win_rate: float=0.0, depth: int=0, provenance: Optional[dict]=None, db_path: Optional[Path]=None) -> Optional[int]  -- Insert a cited insight (deduped by scope+text)
   fetch_insights(scope: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]
   register_candidate(*, kind: str, target: str, body: str, parent_champion_id: Optional[int]=None, provenance: Optional[dict]=None, state: str='proposed', db_path: Optional[Path]=None) -> Optional[int]  -- Register a capability candidate (deduped by kind+target+body hash).
+  register_invention(*, target: str, body: str, measured_novelty: float=0.0, risk: str='medium', confidence: float=0.6, subsystem: str='', design_sketch: str='', verify_plan: str='', provenance: Optional[dict]=None, state: str='proposed', db_path: Optional[Path]=None) -> Optional[int]  -- Register a feature-invention candidate (kind='feature') with novelty + routing metadata.
   fetch_candidates(kind: Optional[str]=None, target: Optional[str]=None, state: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]
   get_candidate(candidate_id: int, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]
   set_candidate_state(candidate_id: int, state: str, db_path: Optional[Path]=None) -> bool
   candidate_champion(kind: str, target: str, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]
   promote_candidate(candidate_id: int, db_path: Optional[Path]=None) -> bool  -- Flip a candidate to champion
+  record_innovation(*, run_id: str, title: str, claim: str='', status: str='shipped', measured_novelty: float=0.0, qd_cell: str='', innovation_mechanism: str='', why: Optional[dict]=None, how: Optional[dict]=None, risk: Optional[dict]=None, evidence: Optional[list]=None, db_path: Optional[Path]=None) -> Optional[int]  -- Persist one fact-backed innovation entry (deduped by run_id+title+status).
+  fetch_innovations(run_id: Optional[str]=None, status: Optional[str]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]
   candidate_field_stats(candidate_id: int, db_path: Optional[Path]=None) -> dict[str, int]  -- The {n, first_pass} counters the promotion proportion test consumes.
 DEPENDS-ON: config, memory.experience_schema
 SIDE-EFFECTS: unannotated
@@ -89,6 +92,38 @@ def register_candidate(*, kind: str, target: str, body: str,
         return None
 
 
+def register_invention(*, target: str, body: str, measured_novelty: float = 0.0,
+                       risk: str = "medium", confidence: float = 0.6, subsystem: str = "",
+                       design_sketch: str = "", verify_plan: str = "",
+                       provenance: Optional[dict] = None, state: str = "proposed",
+                       db_path: Optional[Path] = None) -> Optional[int]:
+    """Register a feature-invention candidate (kind='feature') with novelty + routing metadata.
+
+    Deduped by (kind='feature', target, body hash) like register_candidate. The novelty
+    columns are queryable by the QD archive / dashboard / SIE report."""
+    h = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            row = conn.execute(
+                "SELECT id FROM evolution_candidates WHERE kind='feature' AND target=? AND body_hash=?",
+                (target, h)).fetchone()
+            if row:
+                return int(row["id"])
+            now = _nowIso()
+            cur = conn.execute(
+                """INSERT INTO evolution_candidates
+                   (kind, target, body, body_hash, state, n, first_pass, provenance_json,
+                    created_at, updated_at, measured_novelty, risk, confidence, subsystem,
+                    design_sketch, verify_plan)
+                   VALUES ('feature', ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (target, body, h, state, _j(provenance), now, now, float(measured_novelty),
+                 str(risk), float(confidence), str(subsystem), str(design_sketch), str(verify_plan)))
+            return int(cur.lastrowid)
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("register_invention failed (ignored): %s", e)
+        return None
+
+
 def fetch_candidates(kind: Optional[str] = None, target: Optional[str] = None,
                      state: Optional[str] = None,
                      db_path: Optional[Path] = None) -> list[dict[str, Any]]:
@@ -155,6 +190,46 @@ def promote_candidate(candidate_id: int, db_path: Optional[Path] = None) -> bool
     except Exception as e:  # noqa: BLE001
         LOG.warning("promote_candidate failed (ignored): %s", e)
         return False
+
+
+def record_innovation(*, run_id: str, title: str, claim: str = "", status: str = "shipped",
+                      measured_novelty: float = 0.0, qd_cell: str = "",
+                      innovation_mechanism: str = "", why: Optional[dict] = None,
+                      how: Optional[dict] = None, risk: Optional[dict] = None,
+                      evidence: Optional[list] = None,
+                      db_path: Optional[Path] = None) -> Optional[int]:
+    """Persist one fact-backed innovation entry (deduped by run_id+title+status)."""
+    try:
+        with _WRITE_LOCK, _connect(db_path) as conn:
+            now = _nowIso()
+            cur = conn.execute(
+                """INSERT INTO run_innovations
+                   (run_id, title, claim, status, measured_novelty, qd_cell,
+                    innovation_mechanism, why_json, how_json, risk_json, evidence_json, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(run_id, title, status) DO UPDATE SET
+                     claim=excluded.claim, measured_novelty=excluded.measured_novelty,
+                     evidence_json=excluded.evidence_json""",
+                (run_id, title, claim, status, float(measured_novelty), qd_cell,
+                 innovation_mechanism, _j(why), _j(how), _j(risk), _j(evidence), now))
+            return int(cur.lastrowid)
+    except Exception as e:  # noqa: BLE001
+        LOG.warning("record_innovation failed (ignored): %s", e)
+        return None
+
+
+def fetch_innovations(run_id: Optional[str] = None, status: Optional[str] = None,
+                      db_path: Optional[Path] = None) -> list[dict[str, Any]]:
+    clauses, params = [], []
+    for col, val in (("run_id", run_id), ("status", status)):
+        if val is not None:
+            clauses.append(f"{col}=?")
+            params.append(val)
+    sql = "SELECT * FROM run_innovations"
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    with _connect(db_path) as conn:
+        return [dict(r) for r in conn.execute(sql + " ORDER BY id", params)]
 
 
 def candidate_field_stats(candidate_id: int,

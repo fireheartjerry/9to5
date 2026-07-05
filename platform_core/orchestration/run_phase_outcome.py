@@ -15,7 +15,7 @@ EXPORTS:
   postGrowth(orch) -> None  -- Spec B: post a short '!growth' learning summary to Discord at teardown (best-effort).
   maybeInstinct(orch, state, bus) -> None  -- Throttled trigger for the periodic instinct call
   runInstinct(orch, state) -> None
-DEPENDS-ON: config, learning.wisdom, memory.experience, memory.user_prefs, notifications.discord_bot, notifications.instinct, notifications.reflection_post, notifications.run_arc, platform_core.core.best_effort, platform_core.orchestration.pr_feedback, platform_core.orchestration.time_utils
+DEPENDS-ON: config, learning.wisdom, memory.experience, memory.user_prefs, notifications.discord_bot, notifications.instinct, notifications.reflection_post, notifications.run_arc, platform_core.core.best_effort, platform_core.orchestration, platform_core.orchestration.pr_feedback, platform_core.orchestration.time_utils
 SIDE-EFFECTS: posts Discord embeds; spawns the instinct thread; mutates run state status/notifications
 RUN/TEST: python -m pytest tests/control/test_run_phase_outcome.py
 """
@@ -123,12 +123,31 @@ def finalizeSurfaces(orch, state, status: str, done: int, total: int, elapsed: s
             orch._emitMoment("system",
                              "⚡ MOMENT — A perfect run. Zero replans, zero adversary triggers.")
         comparative = experience.compare_run(state.task_id)
+        innovations = _compileInnovations(state)
         text = reflection_post.write_reflection(state, chat=orch._ollamaChat,
-                                                comparative=comparative, obs=orch.obs)
+                                                comparative=comparative, obs=orch.obs,
+                                                innovative_changes=innovations)
         if text:
             reflection_post.post_reflection(state, text, comparative=comparative)
+        reflection_post.post_innovations(state, innovations)
         orch._narrate(f"{(state.meta.get('codename') or 'Run')} closed — {status}, "
                       f"{done}/{total} in {elapsed}.", force=True)
+
+
+def _compileInnovations(state) -> list:
+    """Inventor mode: compile + persist the run's fact-backed innovations. Flag-off => []
+    so a normal run's surfaces are byte-identical. Best-effort; never breaks teardown."""
+    import config
+    if not getattr(config, "INVENTOR_MODE_ENABLED", False):
+        return []
+    entries: list = []
+    with best_effort("surfaces.innovations", log=LOG):
+        from platform_core.orchestration import innovation_report
+        entries = innovation_report.compileInnovativeChanges(state)
+        if entries:
+            innovation_report.persist(state, entries)
+            state.meta["innovative_changes"] = [e.to_dict() for e in entries]
+    return entries
 
 
 def postGrowth(orch) -> None:  # noqa: ARG001 -- orch kept for symmetry with siblings

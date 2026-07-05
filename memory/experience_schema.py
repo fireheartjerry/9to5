@@ -5,7 +5,7 @@ EXPORTS:
   ledger_health() -> dict[str, dict]  -- Swallowed-failure counts for every 'ledger.*' best_effort surface this process:
   close_pool() -> None  -- Close every pooled connection across all threads (shutdown / test teardown).
   init(db_path: Optional[Path]=None) -> None  -- Create the database + schema if absent (idempotent).
-DEPENDS-ON: config, platform_core.core.best_effort
+DEPENDS-ON: config, memory.experience_ddl, platform_core.core.best_effort
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_experience_schema.py
 """
@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Iterator, Optional
 
 import config
+from memory import experience_ddl as _ddl
 from platform_core.core.best_effort import best_effort, degradationSummary, recordDegradation
 
 LOG = config.getLogger("sie.experience")
@@ -34,236 +35,10 @@ def ledger_health() -> dict[str, dict]:
 # Serialize writes within this process; WAL guards cross-process readers.
 _WRITE_LOCK = threading.Lock()
 
-# CREATE-IF-NOT-EXISTS statements run on every connection, so adding a table in a later
-# phase is just appending a statement here -- no migration machinery needed.
-_SCHEMA: tuple[str, ...] = (
-    """CREATE TABLE IF NOT EXISTS runs (
-        run_id          TEXT PRIMARY KEY,
-        task_id         TEXT,
-        goal_raw        TEXT,
-        goal_elaborated TEXT,
-        goal_embedding  BLOB,
-        universe_json   TEXT,
-        control_mode    TEXT,
-        status          TEXT,
-        fitness_json    TEXT,
-        prompt_set_id   TEXT,
-        adapter_id      TEXT,
-        started_at      TEXT,
-        ended_at        TEXT
-    )""",
-    """CREATE TABLE IF NOT EXISTS subtasks (
-        id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_id                  TEXT,
-        st_id                   TEXT,
-        position                INTEGER,
-        title                   TEXT,
-        signature_tags          TEXT,
-        effort                  TEXT,
-        model                   TEXT,
-        skills_json             TEXT,
-        subagents_json          TEXT,
-        invocation_spec_json    TEXT,
-        cost_usd                REAL,
-        num_turns               INTEGER,
-        session_id              TEXT,
-        verify_cmd              TEXT,
-        verify_expect           TEXT,
-        verify_passed           INTEGER,
-        attempt_count           INTEGER,
-        adversary_verdict       TEXT,
-        adversary_concerns_json TEXT,
-        replan_delta_json       TEXT,
-        status                  TEXT,
-        predicted_success       REAL,
-        embedding               BLOB,
-        started_at              TEXT,
-        ended_at                TEXT,
-        UNIQUE(run_id, st_id)
-    )""",
-    """CREATE TABLE IF NOT EXISTS eval_runs (
-        id             INTEGER PRIMARY KEY AUTOINCREMENT,
-        suite_version  TEXT,
-        prompt_set_id  TEXT,
-        adapter_id     TEXT,
-        ran_at         TEXT,
-        score_json     TEXT,
-        passed_gate    INTEGER
-    )""",
-    """CREATE TABLE IF NOT EXISTS lessons (
-        id             INTEGER PRIMARY KEY AUTOINCREMENT,
-        scope          TEXT,
-        signature_tags TEXT,
-        text           TEXT,
-        support_count  INTEGER,
-        win_rate       REAL,
-        last_seen_at   TEXT,
-        embedding      BLOB,
-        UNIQUE(scope, signature_tags, text)
-    )""",
-    """CREATE TABLE IF NOT EXISTS policy_arms (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        context_key   TEXT,
-        action_json   TEXT,
-        pulls         INTEGER,
-        reward_sum    REAL,
-        reward_sq_sum REAL,
-        UNIQUE(context_key, action_json)
-    )""",
-    """CREATE TABLE IF NOT EXISTS prompt_variants (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        role        TEXT,
-        version     INTEGER,
-        parent_id   INTEGER,
-        body_hash   TEXT,
-        body        TEXT,
-        file_path   TEXT,
-        created_at  TEXT,
-        state       TEXT,
-        UNIQUE(role, body_hash)
-    )""",
-    """CREATE TABLE IF NOT EXISTS adapters (
-        id               INTEGER PRIMARY KEY AUTOINCREMENT,
-        base_model       TEXT,
-        tag              TEXT,
-        role             TEXT DEFAULT 'all',
-        lora_path        TEXT,
-        modelfile_path   TEXT,
-        n_train_examples INTEGER,
-        trained_at       TEXT,
-        eval_run_id      INTEGER,
-        state            TEXT,
-        UNIQUE(tag)
-    )""",
-    """CREATE TABLE IF NOT EXISTS human_feedback (
-        id         INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_id     TEXT,
-        subtask_id TEXT,
-        kind       TEXT,
-        target     TEXT,
-        before_json TEXT,
-        after_json  TEXT,
-        at         TEXT
-    )""",
-    """CREATE TABLE IF NOT EXISTS failure_modes (
-        id             INTEGER PRIMARY KEY AUTOINCREMENT,
-        signature_tags TEXT,
-        root_cause     TEXT,
-        taxonomy_class TEXT,
-        occurrences    INTEGER,
-        mitigation     TEXT,
-        first_seen     TEXT,
-        last_seen      TEXT,
-        UNIQUE(signature_tags, taxonomy_class)
-    )""",
-    """CREATE TABLE IF NOT EXISTS solution_cache (
-        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-        signature          TEXT,
-        spec_json          TEXT,
-        last_verify_passed INTEGER,
-        reuse_count        INTEGER,
-        last_used_at       TEXT,
-        UNIQUE(signature)
-    )""",
-    """CREATE TABLE IF NOT EXISTS kg_nodes (
-        id        INTEGER PRIMARY KEY AUTOINCREMENT,
-        kind      TEXT,
-        key       TEXT,
-        summary   TEXT,
-        UNIQUE(kind, key)
-    )""",
-    """CREATE TABLE IF NOT EXISTS reflections (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_id        TEXT,
-        subtask_id    TEXT,
-        role          TEXT,
-        teacher       TEXT,
-        approach      TEXT,
-        reusable_recipe TEXT,
-        spec_feedback TEXT,
-        verify_critique TEXT,
-        confidence    REAL,
-        trusted       INTEGER,
-        at            TEXT,
-        UNIQUE(run_id, subtask_id, teacher)
-    )""",
-    """CREATE TABLE IF NOT EXISTS pr_outcomes (
-        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_id               TEXT,
-        subtask_id           TEXT,
-        pr_url               TEXT,
-        ci_status            TEXT,
-        ci_summary           TEXT,
-        review_state         TEXT,
-        review_feedback_json TEXT,
-        promote_safe         INTEGER,
-        provenance_json      TEXT,
-        recorded_at          TEXT,
-        UNIQUE(run_id, pr_url)
-    )""",
-    """CREATE TABLE IF NOT EXISTS step_journal (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_id      TEXT,
-        subtask_id  TEXT,
-        attempt     INTEGER,
-        step_idx    INTEGER,
-        kind        TEXT,
-        tool        TEXT,
-        summary     TEXT,
-        input_json  TEXT,
-        plan_sig    TEXT,
-        session_id  TEXT,
-        ts          TEXT,
-        UNIQUE(run_id, subtask_id, attempt, step_idx)
-    )""",
-    """CREATE TABLE IF NOT EXISTS exp_content (
-        run_id           TEXT,
-        st_id            TEXT,
-        solution_content TEXT,
-        post_mortem      TEXT,
-        importance       REAL,
-        model_id         TEXT,
-        created_at       TEXT,
-        UNIQUE(run_id, st_id)
-    )""",
-    """CREATE TABLE IF NOT EXISTS insights (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        scope           TEXT,
-        text            TEXT,
-        poignancy       REAL,
-        support_count   INTEGER,
-        win_rate        REAL,
-        depth           INTEGER DEFAULT 0,
-        provenance_json TEXT,
-        embedding       BLOB,
-        created_at      TEXT,
-        last_seen_at    TEXT,
-        UNIQUE(scope, text)
-    )""",
-    """CREATE TABLE IF NOT EXISTS evolution_candidates (
-        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-        kind               TEXT,
-        target             TEXT,
-        body               TEXT,
-        body_hash          TEXT,
-        parent_champion_id INTEGER,
-        state              TEXT,
-        n                  INTEGER DEFAULT 0,
-        first_pass         INTEGER DEFAULT 0,
-        provenance_json    TEXT,
-        created_at         TEXT,
-        updated_at         TEXT,
-        UNIQUE(kind, target, body_hash)
-    )""",
-    "CREATE INDEX IF NOT EXISTS idx_subtasks_run ON subtasks(run_id)",
-    "CREATE INDEX IF NOT EXISTS idx_subtasks_passed ON subtasks(verify_passed)",
-    "CREATE INDEX IF NOT EXISTS idx_arms_ctx ON policy_arms(context_key)",
-    "CREATE INDEX IF NOT EXISTS idx_journal_attempt ON step_journal(run_id, subtask_id, attempt)",
-    # Partial index for the retrieval pool query (embedded, verify-passing subtasks).
-    "CREATE INDEX IF NOT EXISTS idx_subtasks_embedded ON subtasks(verify_passed) "
-    "WHERE embedding IS NOT NULL",
-    "CREATE INDEX IF NOT EXISTS idx_candidates_target ON evolution_candidates(kind, target, state)",
-)
+# DDL lives in experience_ddl.py (extracted at the 450-line ceiling). Aliased to the
+# historical private names so the rest of this module + tests are untouched.
+_SCHEMA = _ddl.SCHEMA
+_MIGRATIONS = _ddl.MIGRATIONS
 
 
 def _ensureColumns(conn: sqlite3.Connection, table: str, cols: dict[str, str]) -> None:
@@ -273,17 +48,6 @@ def _ensureColumns(conn: sqlite3.Connection, table: str, cols: dict[str, str]) -
     for name, decl in cols.items():
         if name not in have:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
-
-
-# Columns added after the initial table DDL (table -> {col: decl}). Applied every
-# schema-ensure so an old db file is upgraded in place. Phases 2/4 extend this.
-_MIGRATIONS: dict[str, dict[str, str]] = {
-    "subtasks": {"adversary_stub": "INTEGER", "provenance": "TEXT",
-                 "importance": "REAL", "poignancy": "REAL"},
-    "prompt_variants": {"provenance": "TEXT"},
-    "reflections": {"provenance": "TEXT", "poignancy": "REAL"},
-    "solution_cache": {"provenance": "TEXT"},
-}
 
 
 def _applySchema(conn: sqlite3.Connection) -> None:
