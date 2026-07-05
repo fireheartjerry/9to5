@@ -23,6 +23,7 @@ from platform_core.app_config.settings import EpicFlags
 # ---------------------------------------------------------------------------
 
 def test_epic1_flag_defaults(monkeypatch):
+    monkeypatch.setenv("FULL_STACK", "0")   # master off -> assert the conservative ship-dark fallback
     for k in ("TRAJECTORY_ENABLED", "STEP_JOURNAL_ENABLED", "STEP_RESUME_ENABLED",
               "WORKTREE_ISOLATION_ENABLED", "COST_BUDGET_ENABLED", "COST_BUDGET_CEILING_USD"):
         monkeypatch.delenv(k, raising=False)
@@ -56,6 +57,7 @@ def _cleanFlags(monkeypatch) -> EpicFlags:
 
 
 def test_dual_ledger_default_off(monkeypatch):
+    monkeypatch.setenv("FULL_STACK", "0")   # master off -> assert the conservative ship-dark fallback
     assert _cleanFlags(monkeypatch).DUAL_LEDGER_PLANNER_ENABLED is False
 
 
@@ -86,6 +88,7 @@ def test_epic2_knobs_exposed_via_facade():
 # ---------------------------------------------------------------------------
 
 def test_fork_ships_dark_with_locked_defaults(monkeypatch):
+    monkeypatch.setenv("FULL_STACK", "0")   # master off -> assert the conservative ship-dark fallback
     for k in ("SOLUTION_FORK_ENABLED", "SOLUTION_FORK_N", "SOLUTION_FORK_MAX_CONCURRENCY",
               "SOLUTION_FORK_COST_CEILING_USD", "SOLUTION_FORK_GRAFT_ENABLED"):
         monkeypatch.delenv(k, raising=False)
@@ -109,6 +112,7 @@ def test_judge_weights_present_and_normalized_to_one():
 # ---------------------------------------------------------------------------
 
 def test_human_nature_flags_default_off(monkeypatch):
+    monkeypatch.setenv("FULL_STACK", "0")   # master off -> assert the conservative ship-dark fallback
     for k in ("HUMAN_NATURE_ENABLED", "HN_OPINIONS_BEHAVIOR",
               "HN_EMOTIONS_BEHAVIOR", "HN_INTUITION_SHORTCUT"):
         monkeypatch.delenv(k, raising=False)

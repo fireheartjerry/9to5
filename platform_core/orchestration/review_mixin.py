@@ -7,6 +7,7 @@ DEPENDS-ON: agents.adversary, agents.browser_executor, agents.second_brain, conf
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_control_review_mixin.py
 """
+
 from __future__ import annotations
 
 import threading
@@ -29,25 +30,42 @@ class OrchestratorReviewMixin:
     # ===================================================================
     # Dual-brain second opinion -- dispatcher, cost guard, session lifecycle
     # ===================================================================
-    def _adversaryReview(self, subtask_title: str, trigger_reason: str, executor_output: str, *,
-                         ollama_chat=None, goal: str = "", review_type: str = "subtask",
-                         worth=None) -> dict:
+    def _adversaryReview(
+        self,
+        subtask_title: str,
+        trigger_reason: str,
+        executor_output: str,
+        *,
+        ollama_chat=None,
+        goal: str = "",
+        review_type: str = "subtask",
+        worth=None,
+    ) -> dict:
         """Default reviewer: route through second_brain (Gemini -> Ollama -> stub), apply the cost
         guard, disable a dead Gemini session for the rest of the run, and record trust telemetry.
         Signature matches the legacy ``adversary.review`` so every existing call site is unchanged."""
         if worth is None:
             worth = self._worthGptReview(executor_output) if review_type == "subtask" else True
         rv = second_brain.consult(
-            review_type, title=subtask_title, trigger_reason=trigger_reason,
-            content=executor_output, goal=goal,
+            review_type,
+            title=subtask_title,
+            trigger_reason=trigger_reason,
+            content=executor_output,
+            goal=goal,
             ollama_chat=ollama_chat or self._ollamaChat,
-            browser_ask=self._gemini_ask, session_ok=self._gemini_session_ok, worth=worth)
+            browser_ask=self._gemini_ask,
+            session_ok=self._gemini_session_ok,
+            worth=worth,
+        )
         if rv.get("session_dead") and self._gemini_session_ok:
             self._gemini_session_ok = False
             try:
-                discord.sendEmbed(discord.noticeEmbed(
-                    "Gemini second brain unreachable (auth / safety block / rate-limit) — "
-                    "using the Ollama brain for the rest of this run."))
+                discord.sendEmbed(
+                    discord.noticeEmbed(
+                        "Gemini second brain unreachable (auth / safety block / rate-limit) — "
+                        "using the Ollama brain for the rest of this run."
+                    )
+                )
             except Exception:  # noqa: BLE001
                 pass
         elif self._gemini_session_ok and worth and rv.get("tier") != "gpt":
@@ -57,15 +75,20 @@ class OrchestratorReviewMixin:
             self._gpt_soft_fails = getattr(self, "_gpt_soft_fails", 0) + 1
             if self._gpt_soft_fails >= 3:
                 self._gemini_session_ok = False
-                LOG.warning("Gemini second brain soft-failed %d consecutive reviews; disabling for run",
-                            self._gpt_soft_fails)
+                LOG.warning(
+                    "Gemini second brain soft-failed %d consecutive reviews; disabling for run",
+                    self._gpt_soft_fails,
+                )
                 try:
-                    discord.sendEmbed(discord.noticeEmbed(
-                        "Gemini second brain repeatedly unusable — Ollama for the rest of this run."))
+                    discord.sendEmbed(
+                        discord.noticeEmbed(
+                            "Gemini second brain repeatedly unusable — Ollama for the rest of this run."
+                        )
+                    )
                 except Exception:  # noqa: BLE001
                     pass
         elif rv.get("tier") == "gpt":
-            self._gpt_soft_fails = 0   # a real Gemini verdict resets the soft-fail streak
+            self._gpt_soft_fails = 0  # a real Gemini verdict resets the soft-fail streak
         try:
             adversary_trust.record(review_type, rv, tier=rv.get("tier"))
         except Exception:  # noqa: BLE001 -- telemetry never affects the run
@@ -79,24 +102,28 @@ class OrchestratorReviewMixin:
             return
         try:
             from agents import browser_executor
+
             # The Gemini transport is stateless thread-safe HTTPS, so it can be consulted directly
             # from the parallel pool workers later -- no dedicated session thread is needed.
             if not browser_executor.probe():
-                discord.sendEmbed(discord.noticeEmbed(
-                    "Gemini second brain unavailable (health probe failed) — Ollama for this run."))
+                discord.sendEmbed(
+                    discord.noticeEmbed(
+                        "Gemini second brain unavailable (health probe failed) — Ollama for this run."
+                    )
+                )
                 return
             self._gemini_session = browser_executor
             browser_executor.startConversation(self._goalText(state), state.task_id)
             self._gemini_ask = lambda message: browser_executor.sessionAsk(message, expect_json=True)
             self._gemini_session_ok = True
             LOG.info("Gemini second brain online for task %s", state.task_id)
-            discord.sendEmbed(discord.noticeEmbed(
-                f"🧠 Gemini second brain online ({config.GEMINI_MODEL})."))
+            discord.sendEmbed(discord.noticeEmbed(f"🧠 Gemini second brain online ({config.GEMINI_MODEL})."))
         except Exception as e:  # noqa: BLE001 -- never block a run on the second brain
             LOG.warning("could not start Gemini session (%s); Ollama only", e)
             self._gemini_session_ok = False
             try:
                 from agents import browser_executor as _be
+
                 _be.closeSession()
             except Exception:  # noqa: BLE001
                 pass
@@ -122,6 +149,7 @@ class OrchestratorReviewMixin:
         on, each worker has its own tree, so remediation is peer-safe and runs (the old blanket
         parallelism>1 skip is gone). A sequential run has no peers and is always safe."""
         from platform_core.runtime import worktree
+
         if getattr(self, "_parallelism", 1) <= 1:
             return False
         # EPIC 5 co-design: when SOCIETY_ENABLED, each society WorkerAgent (society/worker.py)
@@ -152,21 +180,30 @@ class OrchestratorReviewMixin:
                 review_type, content = "pre_pr_diff", diff
             else:
                 review_type = "pre_pr_diff"
-                content = "\n".join(
-                    f"- {s['subtask_id']} [{s['status']}] {s['title']}"
-                    + (" (verify PASS)" if (s.get('verify_result') or {}).get('passed') else "")
-                    for s in state.subtasks if s["status"] != "removed") or "(no subtasks)"
+                content = (
+                    "\n".join(
+                        f"- {s['subtask_id']} [{s['status']}] {s['title']}"
+                        + (" (verify PASS)" if (s.get("verify_result") or {}).get("passed") else "")
+                        for s in state.subtasks
+                        if s["status"] != "removed"
+                    )
+                    or "(no subtasks)"
+                )
             rv = self._consult(state, review_type, "Pre-PR safety review", reason, content)
             with self._state_lock:
                 state.addAdversaryReview("pre_pr", reason, rv["verdict"], None, stub=rv.get("stub", False))
             discord.sendEmbed(discord.adversaryTriggeredEmbed("Pre-PR review", reason, rv.get("verdict")))
-            cast.speak("adversary", f"⚔️ Pre-PR review → **{discord.formatVerdict(rv.get('verdict'))}**. "
-                       f"Trigger: {reason}")
-            cast.duel("Pre-PR review", rv.get("verdict"))   # VS-card on a CHALLENGE (T8)
+            cast.speak(
+                "adversary",
+                f"⚔️ Pre-PR review → **{discord.formatVerdict(rv.get('verdict'))}**. Trigger: {reason}",
+            )
+            cast.duel("Pre-PR review", rv.get("verdict"))  # VS-card on a CHALLENGE (T8)
             return rv
         except Exception as e:  # noqa: BLE001 -- never block a run on the reviewer itself
-            LOG.warning("pre-PR adversary review failed (%s); approving", e)
-            return {"verdict": "approved", "concerns": [], "stub": True}
+            # Honest label: the review could NOT complete -> 'unreviewed', not a silent 'approved'.
+            # is_blocking() holds only a 'challenged', so this surfaces the gap without stalling.
+            LOG.warning("pre-PR adversary review failed (%s); recording UNREVIEWED (not approved)", e)
+            return {"verdict": "unreviewed", "concerns": [], "stub": True}
 
     def _runIsDegraded(self, state: TaskState) -> bool:
         return orchestrator_github._runIsDegraded(state)
@@ -182,6 +219,7 @@ class OrchestratorReviewMixin:
         blocking = second_brain.is_blocking(review)
         try:
             from platform_core.orchestration import work_profile as _wp
+
             pol = _wp.policy_from_state(state)
             if review.get("tier") == "gpt" and review.get("verdict") == "challenged":
                 order = {"none": 0, "low": 1, "medium": 2, "high": 3}
@@ -213,8 +251,11 @@ class OrchestratorReviewMixin:
             pr_url = result["url"]
             run_id = state.task_id
             subtask_id = next(
-                (s["subtask_id"] for s in reversed(state.subtasks)
-                 if s["status"] not in ("removed", "skipped")),
+                (
+                    s["subtask_id"]
+                    for s in reversed(state.subtasks)
+                    if s["status"] not in ("removed", "skipped")
+                ),
                 None,
             )
             t = threading.Thread(

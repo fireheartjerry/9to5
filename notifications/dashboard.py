@@ -277,10 +277,12 @@ class DiscordDashboard:
                     self.message_id = _create()
                     if self.message_id:
                         discord.pinMessage(self.message_id)
+                        state.setDashboardMessageId(self.message_id)   # else a restart edits the dead id
             else:
                 self.message_id = _create()
                 if self.message_id:
                     discord.pinMessage(self.message_id)
+                    state.setDashboardMessageId(self.message_id)
 
     def unpin(self) -> None:
         """Remove the pinned dashboard when the run ends (idempotent; never raises)."""

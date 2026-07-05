@@ -22,6 +22,7 @@ DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none (pure)
 RUN/TEST: python -m pytest tests/execution/test_action_risk.py
 """
+
 from __future__ import annotations
 
 import re
@@ -35,7 +36,7 @@ class RiskTier(str, Enum):
     MUTATING = "mutating"
     PAID = "paid"
     DESTRUCTIVE = "destructive"
-    UNKNOWN = "unknown"          # fail-closed sentinel -- never silently proceeds
+    UNKNOWN = "unknown"  # fail-closed sentinel -- never silently proceeds
 
 
 @dataclass(frozen=True)
@@ -43,7 +44,7 @@ class ActionDescriptor:
     tool_name: str = ""
     command: str = ""
     file_path: str = ""
-    estimated_cost_usd: "float | None" = None   # decision-only HINT; None => unknown cost
+    estimated_cost_usd: "float | None" = None  # decision-only HINT; None => unknown cost
 
 
 @dataclass(frozen=True)
@@ -59,8 +60,18 @@ class AuthDecision:
 # DESTRUCTIVE_COMMAND_RE below, never by substring -- agents/hooks_destructive.py imports both
 # so the hook block decision and the classifier never disagree.
 DESTRUCTIVE_PATTERNS: tuple[str, ...] = (
-    "rm -rf", "rm -fr", "rmdir /s", "del /f", "del /s", "format ",
-    "DROP TABLE", "git push --force", "git push -f", "mkfs", ":(){", ">/dev/sda",
+    "rm -rf",
+    "rm -fr",
+    "rmdir /s",
+    "del /f",
+    "del /s",
+    "format ",
+    "DROP TABLE",
+    "git push --force",
+    "git push -f",
+    "mkfs",
+    ":(){",
+    ">/dev/sda",
 )
 
 # ONE anchored taxonomy (absorbed from executor_env's headless pre-scan). A destructive
@@ -84,8 +95,8 @@ def scanDestructive(text: str) -> list[str]:
     """Destructive command tokens found at command position (pure). ONE source consumed by
     BOTH enforcement layers: the PreToolUse hook block decision and executor_env's headless
     pre-scan (dual enforcement is kept deliberately -- headless --print may not run hooks)."""
-    return [(m.group(1) or m.group(2) or "").strip()
-            for m in DESTRUCTIVE_COMMAND_RE.finditer(text or "")]
+    return [(m.group(1) or m.group(2) or "").strip() for m in DESTRUCTIVE_COMMAND_RE.finditer(text or "")]
+
 
 # Tools the executor surfaces. ClaudeRun is the synthetic per-attempt "paid" action.
 _READ_TOOLS: frozenset[str] = frozenset({"Read", "Glob", "Grep", "NotebookRead", "Ls", "LS"})
@@ -94,17 +105,46 @@ _FILE_WRITE_TOOLS: frozenset[str] = frozenset({"Edit", "Write", "MultiEdit"})
 
 # The secret family as a complete path TOKEN: .env / .env.local / .env.production (NOT .envrc).
 _SECRET_TOKEN_RE = re.compile(r"(?:^|[\s\"'=/\\])\.env(?:\.[a-z0-9_]+)?(?=$|[\s\"'&|;)<>]|$)")
+
+# --- Strip non-command TEXT (heredoc bodies + quoted strings) before the secret-target scan.
+# A .env that appears only inside a quoted string, a heredoc body, or a commit message is a
+# textual MENTION, not a read/write of the secret file -- flagging it DESTRUCTIVE is the same
+# substring false-positive class the anchored DESTRUCTIVE_COMMAND_RE already eliminated for
+# rm/format. Blanking (space-fill, positions preserved) keeps command-position anchoring intact.
+# Heredocs are stripped FIRST because their delimiter may itself be quoted (<<'EOF'); single
+# quotes before double, mirroring shell literal-quote precedence.
+_HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1.*?^\s*\2\b", re.DOTALL | re.MULTILINE)
+_SQUOTE_RE = re.compile(r"'[^']*'")
+_DQUOTE_RE = re.compile(r'"[^"]*"')
+
+
+def _blank(m: "re.Match") -> str:
+    return " " * (m.end() - m.start())
+
+
+def _stripNonCommandText(cmd: str) -> str:
+    """Blank out heredoc bodies and single/double-quoted string contents so the secret scan
+    sees only command STRUCTURE, not embedded data. Pure; never raises on malformed quoting
+    (an unbalanced quote simply doesn't match and is left intact)."""
+    if not cmd:
+        return ""
+    s = _HEREDOC_RE.sub(_blank, cmd)
+    s = _SQUOTE_RE.sub(_blank, s)
+    s = _DQUOTE_RE.sub(_blank, s)
+    return s
+
+
 # Dry-run / read-only inspection markers.
 _DRY_RUN_RE = re.compile(r"--dry-run\b|--check\b|--no-\w|\bgit\s+(status|diff|log)\b")
 # Writing Bash markers (pattern SOURCE for hooks_selfmod._parseBashGuardInput, kept pure here).
-_WRITE_CMD_RE = re.compile(
-    r"\b(mv|cp|rm|tee|dd|truncate|del|erase|unlink|shred|ren|rename|move|copy)\b")
+_WRITE_CMD_RE = re.compile(r"\b(mv|cp|rm|tee|dd|truncate|del|erase|unlink|shred|ren|rename|move|copy)\b")
 _INTERP_WRITE_RE = re.compile(r"\b(python3?|py|perl|node|ruby|pwsh|powershell)\b\s*-[ce]\b")
 _GIT_WRITE_RE = re.compile(r"git\s+(checkout|reset|restore|rm|mv)\b")
 # Bash read commands that print file contents (absorbed from hooks_selfmod).
 _READ_CMD_RE = re.compile(
     r"\b(cat|tac|type|more|less|head|tail|strings|od|xxd|nl|bat|gc|get-content"
-    r"|grep|egrep|fgrep|rg|awk|sed)\b")
+    r"|grep|egrep|fgrep|rg|awk|sed)\b"
+)
 
 
 def _matchesDestructive(cmd: str) -> bool:
@@ -116,15 +156,19 @@ def _hitsSecret(text: str) -> bool:
 
 
 def _isWritingBash(cmd: str, cmd_low: str) -> bool:
-    redirect = (">" in cmd or ">>" in cmd or "sed -i" in cmd_low or "-delete" in cmd_low)
-    return bool(redirect or _GIT_WRITE_RE.search(cmd_low)
-                or _WRITE_CMD_RE.search(cmd_low) or _INTERP_WRITE_RE.search(cmd_low))
+    redirect = ">" in cmd or ">>" in cmd or "sed -i" in cmd_low or "-delete" in cmd_low
+    return bool(
+        redirect
+        or _GIT_WRITE_RE.search(cmd_low)
+        or _WRITE_CMD_RE.search(cmd_low)
+        or _INTERP_WRITE_RE.search(cmd_low)
+    )
 
 
 def bashReadsSecret(cmd: str) -> bool:
     """True when a Bash command READS a secret-family file (.env / .env.*, not .envrc) to
     stdout. Shared source for hooks_selfmod's exfiltration guard (pure, stdlib-only)."""
-    low = (cmd or "").lower()
+    low = _stripNonCommandText(cmd or "").lower()
     return bool(low and _READ_CMD_RE.search(low) and _SECRET_TOKEN_RE.search(low))
 
 
@@ -145,7 +189,10 @@ def classifyActionRisk(action: ActionDescriptor) -> RiskTier:
     # 1. DESTRUCTIVE first -- hard patterns at command position, or a secret-family target.
     if cmd and _matchesDestructive(cmd):
         return RiskTier.DESTRUCTIVE
-    if _hitsSecret(path) or _hitsSecret(cmd):
+    # Secret-family TARGET: a Write to .env (path), or a Bash command that reads/writes .env
+    # as a real argument. Strip quoted/heredoc TEXT first so a mere mention (commit message,
+    # test-file body, grep pattern) does not false-positive as a secret op.
+    if _hitsSecret(path) or _hitsSecret(_stripNonCommandText(cmd)):
         return RiskTier.DESTRUCTIVE
     # 2. PAID tools (the Claude subprocess call; future MCP buy/deploy).
     if tool in _PAID_TOOLS:
@@ -173,8 +220,9 @@ def classifyActionRisk(action: ActionDescriptor) -> RiskTier:
     return RiskTier.UNKNOWN
 
 
-def decideAuthorization(action: ActionDescriptor, *, allowance_usd: float,
-                        already_spent_usd: float, autonomous: bool) -> AuthDecision:
+def decideAuthorization(
+    action: ActionDescriptor, *, allowance_usd: float, already_spent_usd: float, autonomous: bool
+) -> AuthDecision:
     """Eliza three-way routing (pure): read/dry_run -> auto; destructive/unknown -> ALWAYS
     escalate (no cap can buy past it); mutating/paid -> auto only while spent+cost <= allowance,
     else escalate. ``autonomous`` never relaxes routing (the fallback policy lives in the caller);
@@ -184,8 +232,7 @@ def decideAuthorization(action: ActionDescriptor, *, allowance_usd: float,
     if tier in (RiskTier.READ, RiskTier.DRY_RUN):
         return AuthDecision(True, False, tier, "non-mutating", None)
     if tier in (RiskTier.DESTRUCTIVE, RiskTier.UNKNOWN):
-        base = ("destructive-requires-human" if tier is RiskTier.DESTRUCTIVE
-                else "unknown-requires-human")
+        base = "destructive-requires-human" if tier is RiskTier.DESTRUCTIVE else "unknown-requires-human"
         return AuthDecision(False, True, tier, base + suffix, None)
     # MUTATING or PAID -> bounded autonomy meter.
     cost = action.estimated_cost_usd

@@ -70,10 +70,20 @@ def _repairBrittleVerify(orch, subtask: dict, exec_cwd: str, verify_spec,
 
 
 def _selfRefGateDowngrade(orch, state, sid: str, vresult: dict, passed: bool) -> "tuple[dict, bool]":
-    """After a verify PASS on a self-improvement run, apply the cheap repo quality gates."""
+    """After a verify PASS on a self-improvement run, apply the cheap repo quality gates.
+
+    SCOPED to the subtask's OWN changed files (``receipt.diff_files``) so an unrelated red test
+    elsewhere -- or the cumulative diff of prior subtasks on a self-ref branch -- cannot doom
+    this subtask (that repo-wide-doom made every self-improvement subtask unwinnable). No
+    attributable code change (no receipt / no .py files) -> fail-open, do NOT downgrade."""
     if not (passed and state.meta.get("is_self_referential")):
         return vresult, passed
-    gate_ok, gate_detail = orch._selfRefQualityGate(str(config.PROJECT_ROOT))
+    receipt = getattr(vresult, "receipt", None)
+    changed_files = [f for f in ((receipt.diff_files if receipt is not None else ()) or ())
+                     if isinstance(f, str) and f.endswith(".py")]
+    if not changed_files:
+        return vresult, passed          # no subtask-scoped change -> fail-open (no repo-wide doom)
+    gate_ok, gate_detail = orch._selfRefQualityGate(str(config.PROJECT_ROOT), changed_files=changed_files)
     if gate_ok:
         return vresult, passed
     vresult = dict(vresult)

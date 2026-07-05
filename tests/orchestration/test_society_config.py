@@ -8,6 +8,7 @@ from platform_core.app_config.settings import EpicFlags
 
 
 def test_society_disabled_by_default(monkeypatch):
+    monkeypatch.setenv("FULL_STACK", "0")   # master off -> assert the conservative ship-dark fallback
     monkeypatch.delenv("SOCIETY_ENABLED", raising=False)
     assert EpicFlags().SOCIETY_ENABLED is False
     assert isinstance(config.SOCIETY_ENABLED, bool)   # facade exposure

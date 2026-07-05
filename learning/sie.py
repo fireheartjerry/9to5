@@ -150,7 +150,7 @@ def run_maintenance(
     if config.SIE_KILL_SWITCH:
         return {"skipped": "kill_switch"}
     state = _read_state()
-    if not force and not _due(state, throttle_seconds):
+    if not force and not config.SIE_FORCE_WEEKLY and not _due(state, throttle_seconds):
         return {"skipped": "not_due", "last_full_at": state.get("last_full_at")}
 
     lock = _acquire_lock()
@@ -175,7 +175,7 @@ def run_maintenance(
         steps = list(_maintenance_steps(db_path))
         # The weekly tier (prompt/policy promotion) rides on the same pass but only when
         # its slower window is due -- so promotion is automatic yet never premature.
-        weekly_due = force or _weekly_due(state)
+        weekly_due = force or config.SIE_FORCE_WEEKLY or _weekly_due(state)
         if weekly_due:
             steps += list(_weekly_steps(db_path))
         # Each step is independent + best-effort: one failing never blocks the others.

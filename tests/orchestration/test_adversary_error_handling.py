@@ -4,6 +4,7 @@ Exercises: empty/garbled browser replies, CDP transient retries with backoff,
 non-transient errors (skip retries), Ollama errors, logging emission, and
 _parseVerdict validation. All tests are stdlib-only with no network I/O.
 """
+
 import json
 import logging
 import sys
@@ -40,16 +41,18 @@ class TestIsCdpTransient(unittest.TestCase):
 class TestReviewViaBrowserEmptyReply(unittest.TestCase):
     def test_empty_reply_returns_stub(self):
         result = adversary.reviewViaBrowser(
-            "test subtask", "heartbeat",
+            "test subtask",
+            "heartbeat",
             "some output",
             browser_ask=lambda _: None,
         )
-        self.assertEqual(result["verdict"], "approved")
+        self.assertEqual(result["verdict"], "unreviewed")  # empty reply -> unavailable -> unreviewed
         self.assertTrue(result.get("stub"))
 
     def test_empty_string_reply_returns_stub(self):
         result = adversary.reviewViaBrowser(
-            "test subtask", "heartbeat",
+            "test subtask",
+            "heartbeat",
             "some output",
             browser_ask=lambda _: "",
         )
@@ -63,7 +66,8 @@ class TestReviewViaBrowserValidReply(unittest.TestCase):
 
     def test_approved_verdict(self):
         result = adversary.reviewViaBrowser(
-            "my subtask", "uncertainty phrase",
+            "my subtask",
+            "uncertainty phrase",
             "output",
             browser_ask=self._make_browser_ask("approved"),
         )
@@ -73,7 +77,8 @@ class TestReviewViaBrowserValidReply(unittest.TestCase):
 
     def test_challenged_verdict(self):
         result = adversary.reviewViaBrowser(
-            "my subtask", "heartbeat",
+            "my subtask",
+            "heartbeat",
             "output",
             browser_ask=self._make_browser_ask("challenged", ["missed a TODO"]),
         )
@@ -82,7 +87,9 @@ class TestReviewViaBrowserValidReply(unittest.TestCase):
 
     def test_garbled_verdict_word_normalizes(self):
         result = adversary.reviewViaBrowser(
-            "s", "r", "o",
+            "s",
+            "r",
+            "o",
             browser_ask=self._make_browser_ask("rejected"),
         )
         self.assertEqual(result["verdict"], "challenged")
@@ -98,7 +105,10 @@ class TestReviewViaBrowserNonTransientError(unittest.TestCase):
             raise ValueError("invalid JSON — not transient")
 
         result = adversary.reviewViaBrowser(
-            "s", "r", "o", browser_ask=bad_ask,
+            "s",
+            "r",
+            "o",
+            browser_ask=bad_ask,
         )
         # Non-transient: should only call once (no retries).
         self.assertEqual(call_count, 1)
@@ -113,7 +123,10 @@ class TestReviewViaBrowserNonTransientError(unittest.TestCase):
             return "this is not json at all"
 
         result = adversary.reviewViaBrowser(
-            "s", "r", "o", browser_ask=bad_json,
+            "s",
+            "r",
+            "o",
+            browser_ask=bad_json,
         )
         self.assertEqual(call_count, 1)
         self.assertTrue(result.get("stub"))
@@ -131,7 +144,10 @@ class TestReviewViaBrowserTransientRetry(unittest.TestCase):
         with patch.object(adversary, "time", wraps=time) as mock_time:
             mock_time.sleep = MagicMock()
             result = adversary.reviewViaBrowser(
-                "s", "r", "o", browser_ask=flaky,
+                "s",
+                "r",
+                "o",
+                browser_ask=flaky,
             )
 
         # CDP_MAX_RETRIES=2 means 3 total attempts (0,1,2).
@@ -154,7 +170,10 @@ class TestReviewViaBrowserTransientRetry(unittest.TestCase):
         with patch.object(adversary, "time", wraps=time) as mock_time:
             mock_time.sleep = MagicMock()
             result = adversary.reviewViaBrowser(
-                "s", "r", "o", browser_ask=recover_on_second,
+                "s",
+                "r",
+                "o",
+                browser_ask=recover_on_second,
             )
 
         self.assertEqual(result["verdict"], "approved")
@@ -166,15 +185,17 @@ class TestReviewViaBrowserLogging(unittest.TestCase):
     def test_warning_logged_on_empty_reply(self):
         with self.assertLogs("9to5.adversary", level=logging.WARNING) as cm:
             adversary.reviewViaBrowser("s", "r", "o", browser_ask=lambda _: None)
-        self.assertTrue(any("auto-approve" in m for m in cm.output))
+        self.assertTrue(any("unreviewed" in m.lower() for m in cm.output))
 
     def test_warning_logged_on_exception(self):
         with self.assertLogs("9to5.adversary", level=logging.WARNING) as cm:
             adversary.reviewViaBrowser(
-                "s", "r", "o",
+                "s",
+                "r",
+                "o",
                 browser_ask=lambda _: (_ for _ in ()).throw(RuntimeError("oops")),
             )
-        self.assertTrue(any("auto-approve" in m for m in cm.output))
+        self.assertTrue(any("unreviewed" in m.lower() for m in cm.output))
 
     def test_info_logged_on_success(self):
         payload = json.dumps({"verdict": "approved", "concerns": [], "notes": "good"})
@@ -187,7 +208,7 @@ class TestReviewOllamaErrors(unittest.TestCase):
     def test_no_brain_returns_stub(self):
         result = adversary.review("s", "r", "output")
         self.assertTrue(result.get("stub"))
-        self.assertEqual(result["verdict"], "approved")
+        self.assertEqual(result["verdict"], "unreviewed")  # no brain -> honest unreviewed
 
     def test_brain_raises_returns_stub(self):
         def bad_chat(_sys, _usr, **_kw):
@@ -204,7 +225,9 @@ class TestReviewOllamaErrors(unittest.TestCase):
         content = json.dumps({"verdict": "approved", "concerns": [], "notes": "clean"})
         mock_resp = {"message": {"content": content}}
         result = adversary.review(
-            "subtask", "heartbeat", "output",
+            "subtask",
+            "heartbeat",
+            "output",
             ollama_chat=lambda *a, **k: mock_resp,
         )
         self.assertEqual(result["verdict"], "approved")
@@ -214,7 +237,9 @@ class TestReviewOllamaErrors(unittest.TestCase):
         content = json.dumps({"verdict": "challenged", "concerns": ["missed test"], "notes": "bad"})
         mock_resp = {"message": {"content": content}}
         result = adversary.review(
-            "subtask", "heartbeat", "output",
+            "subtask",
+            "heartbeat",
+            "output",
             ollama_chat=lambda *a, **k: mock_resp,
         )
         self.assertEqual(result["verdict"], "challenged")
@@ -265,7 +290,7 @@ class TestShouldTrigger(unittest.TestCase):
 class TestStubReview(unittest.TestCase):
     def test_stub_fields(self):
         rv = adversary._stubReview("heartbeat")
-        self.assertEqual(rv["verdict"], "approved")
+        self.assertEqual(rv["verdict"], "unreviewed")
         self.assertTrue(rv["stub"])
         self.assertIsInstance(rv["concerns"], list)
         self.assertEqual(rv["trigger_reason"], "heartbeat")

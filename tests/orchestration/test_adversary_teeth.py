@@ -1,4 +1,5 @@
 """Unit tests for the adversary 'teeth': the pre-PR review + PR-hold gate decision."""
+
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,15 +27,16 @@ class TestPrGate(unittest.TestCase):
         # HOLD flag on + blocking challenge -> the PR is actually held;
         # night mode is the only sanctioned ship-anyway escape (tested in test_horizon_fill).
         create, reason = self.orch._prGate(
-            {"verdict": "challenged", "concerns": ["secret leak", "no rollback"]}, True, self.state)
-        self.assertFalse(create)   # a blocking challenge HOLDS the PR (day mode, non-degraded)
+            {"verdict": "challenged", "concerns": ["secret leak", "no rollback"]}, True, self.state
+        )
+        self.assertFalse(create)  # a blocking challenge HOLDS the PR (day mode, non-degraded)
         self.assertIn("HOLD", reason)
         self.assertIn("secret leak", reason)
 
     def test_challenged_respects_disable_flag(self):
         with mock.patch.object(config, "ADVERSARY_PR_HOLD_ENABLED", False):
             create, _ = self.orch._prGate({"verdict": "challenged", "concerns": ["x"]}, True, self.state)
-        self.assertTrue(create)   # hold disabled -> PR proceeds
+        self.assertTrue(create)  # hold disabled -> PR proceeds
 
 
 class TestPrePrAdversary(unittest.TestCase):
@@ -55,19 +57,30 @@ class TestPrePrAdversary(unittest.TestCase):
         self.dir.rmdir()
 
     def _orch(self, review):
-        return Orchestrator(brain=mock.Mock(), obs=self.obs,
-                            run_claude=lambda *a, **k: {"ok": True, "stdout": "", "is_error": False},
-                            replan=lambda *a, **k: {"action": "keep"}, review=review)
+        return Orchestrator(
+            brain=mock.Mock(),
+            obs=self.obs,
+            run_claude=lambda *a, **k: {"ok": True, "stdout": "", "is_error": False},
+            replan=lambda *a, **k: {"action": "keep"},
+            review=review,
+        )
 
     def test_returns_verdict_and_records_review(self):
-        review = mock.Mock(return_value={"verdict": "challenged", "concerns": ["leak"],
-                                         "notes": "", "stub": False})
+        review = mock.Mock(
+            return_value={"verdict": "challenged", "concerns": ["leak"], "notes": "", "stub": False}
+        )
         rv = self._orch(review)._prePrAdversary(self.state)
         self.assertEqual(rv["verdict"], "challenged")
         self.assertTrue(any(r["subtask_id"] == "pre_pr" for r in self.state.data["adversary_reviews"]))
 
-    def test_review_error_approves_conservatively(self):
+    def test_review_error_records_unreviewed_and_does_not_block(self):
+        from agents import second_brain
+
         def boom(*a, **k):
             raise RuntimeError("brain down")
+
         rv = self._orch(boom)._prePrAdversary(self.state)
-        self.assertEqual(rv["verdict"], "approved")   # never blocks a run on a reviewer error
+        # Honest: a reviewer ERROR records 'unreviewed' (not a false 'approved'); it still never
+        # hard-blocks the run (is_blocking holds only a 'challenged').
+        self.assertEqual(rv["verdict"], "unreviewed")
+        self.assertFalse(second_brain.is_blocking(rv))

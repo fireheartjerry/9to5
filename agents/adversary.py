@@ -94,14 +94,14 @@ def reviewViaBrowser(subtask_title: str, trigger_reason: str, executor_output: s
             # Non-transient or retries exhausted -- log and fall through.
             LOG.warning(
                 "Adversary Gemini critique failed after %d attempt(s) (%s); "
-                "conservative auto-approve",
+                "recording UNREVIEWED (not approved)",
                 attempt + 1, e,
             )
             break
 
     return _stubReview(
         trigger_reason,
-        note=f"Adversary Gemini critique errored ({last_exc}); auto-approved conservatively.",
+        note=f"Adversary Gemini critique errored ({last_exc}); recorded UNREVIEWED (no critique ran).",
     )
 
 

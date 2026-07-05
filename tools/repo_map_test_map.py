@@ -91,6 +91,14 @@ MANUAL_TEST_MAP: dict[str, list[str]] = {
         "tests/control/test_audit_correctness.py",
         "tests/orchestration/test_orchestrator_poll.py",
     ],
+    # execute_delegates_mixin owns the verify/gate/trajectory delegates the execute loop calls
+    # (_runEvidenceGate, _runAttemptVerify, _selfRefQualityGate, _trajectoryRecorder, ...). No
+    # test_<name>.py matches its name, so map it to the tests that exercise those real methods.
+    "platform_core.orchestration.execute_delegates_mixin": [
+        "tests/execution/test_evidence_gate.py",
+        "tests/orchestration/test_execute_quality_gate.py",
+        "tests/orchestration/test_trajectory.py",
+    ],
     "platform_core.orchestration.run_loop": [
         "tests/execution/test_dry_run.py",
         "tests/orchestration/test_execcwd_fabric.py",

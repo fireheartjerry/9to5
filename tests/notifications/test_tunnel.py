@@ -21,6 +21,19 @@ def test_bore_parse_url():
     assert p.parse_url("nothing") is None
 
 
+def test_localtunnel_start_resolves_full_npx_path(monkeypatch):
+    """REGRESSION: bare 'npx' is npx.CMD on Windows and Popen(['npx',...]) raises WinError 2,
+    so localtunnel failed to launch on every attempt. start() must spawn the shutil.which-
+    resolved full path (which Popen can launch), not the bare 'npx' string."""
+    monkeypatch.setattr(tp.shutil, "which", lambda name: "C:\\node\\npx.CMD" if name == "npx" else None)
+    captured = {}
+    monkeypatch.setattr(tp, "_spawn", lambda cmd: captured.update(cmd=cmd))
+    tp.LocaltunnelProvider().start(8787)
+    assert captured["cmd"][0] == "C:\\node\\npx.CMD"  # resolved path, NOT bare "npx"
+    assert captured["cmd"][0] != "npx"
+    assert "localtunnel" in captured["cmd"]
+
+
 def test_localtunnel_parse_url():
     p = tp.LocaltunnelProvider()
     assert p.parse_url("your url is: https://tasty-cat-12.loca.lt") == "https://tasty-cat-12.loca.lt"

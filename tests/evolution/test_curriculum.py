@@ -239,8 +239,9 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
         """Security regression: CURRICULUM_AUTO_QUEUE_ENABLED defaults to False, so even the
         full run_maintenance -> curriculum_and_report path must NOT spawn any run when >=5
         feedback records exist, unless the flag is explicitly opted into."""
-        self.assertFalse(config.CURRICULUM_AUTO_QUEUE_ENABLED)
-        with mock.patch.object(work_launcher, "spawn", return_value=12345) as mock_spawn:
+        # FULL_STACK flips CURRICULUM_AUTO_QUEUE_ENABLED on by default; pin it OFF here to assert the
+        # ship-dark guardrail still holds (no spawn, "disabled") when the flag is not opted into.
+        with mock.patch.object(work_launcher, "spawn", return_value=12345) as mock_spawn,                 mock.patch.object(config, "CURRICULUM_AUTO_QUEUE_ENABLED", False):
             self._seed_curriculum_context()
             self._seed_feedback(5)
             out = sie.run_maintenance(force=True, db_path=self.db)

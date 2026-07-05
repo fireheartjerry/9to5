@@ -294,8 +294,8 @@ def test_dual_consumer_abort_idempotent():
 
 # --------------------------------------------------------------------------- REST 429 -> 401 safety
 def test_simulated_429_then_401_no_op_no_crash(monkeypatch):
-    """Drive the REAL chokepoint: a 429 arms the global breaker (next call no-ops without touching
-    the network); a 401 latches the whole surface off. Neither raises."""
+    """Drive the REAL chokepoint: a per-bucket 429 backs off then retries, and two consecutive 401s
+    latch the surface off so a later send short-circuits to None. Neither raises."""
     br.resetTransport()
     monkeypatch.setattr(config, "DISCORD_BOT_TOKEN", "fake-token")
     monkeypatch.setattr(config, "DISCORD_CHANNEL_ID", 42)
@@ -303,6 +303,9 @@ def test_simulated_429_then_401_no_op_no_crash(monkeypatch):
     # network) -- opt out of the pytest-auto-detected _realDiscordBlocked guard, same as
     # tests/test_discord_rest.py's _cfg().
     monkeypatch.setattr(_dc, "_realDiscordBlocked", lambda: False)
+    monkeypatch.setattr(_dc, "_DISABLED", False, raising=False)
+    monkeypatch.setattr(_dc, "_CONSEC_401", 0, raising=False)
+    monkeypatch.setattr(_dc.time, "sleep", lambda *a, **k: None)   # skip the real backoff sleep
 
     calls = {"n": 0}
 
@@ -321,15 +324,14 @@ def test_simulated_429_then_401_no_op_no_crash(monkeypatch):
 
     monkeypatch.setattr(_dc._SESSION, "request", _fake_request)
     h = br.BotReplay()
-    # 1st send -> 429 arms the breaker; with retries=default the chokepoint sleeps(0) then retries
-    # into the 401 on the same call, latching the surface off. Either way: no exception.
-    first = h.attemptSend("hello")          # returns a Response (429/401), never raises
-    assert first is not None
-    net_after_first = calls["n"]
-    # Surface now latched (401) -> every subsequent send short-circuits to None with NO network hit.
-    second = h.attemptSend("again")
-    assert second is None
-    assert calls["n"] == net_after_first, "a latched/broken surface still hit the network"
+    # 1st send: per-bucket 429 backs off then retries into a 401 (1st strike -- not yet latched).
+    assert h.attemptSend("hello") is not None          # returns a Response, never raises
+    # 2nd send: another 401 -> 2nd strike -> the surface latches off.
+    assert h.attemptSend("again") is not None
+    net_after_latch = calls["n"]
+    # 3rd send: latched -> short-circuits to None with NO further network hit.
+    assert h.attemptSend("third") is None
+    assert calls["n"] == net_after_latch, "a latched surface still hit the network"
     br.resetTransport()
 
 

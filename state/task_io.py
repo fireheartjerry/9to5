@@ -144,6 +144,11 @@ def _loadDataWithBakFallback(p: Path, task_id: str) -> dict:
             raise primary_err from None
     if not isinstance(data, dict):
         raise ValueError(f"task JSON for {task_id!r} is not a dict: {type(data).__name__}")
+    if not _taskShaped(data):
+        # A dict-but-non-task JSON (no task_id / no dict meta) would build a TaskState whose
+        # .task_id/.meta accessors raise a bare KeyError in unguarded consumers (webdash
+        # _snapshot). Reject it here -- the single load choke-point -- like a non-dict.
+        raise ValueError(f"task JSON for {task_id!r} lacks task_id/meta shape")
     return data
 
 

@@ -38,9 +38,10 @@ import os
 import sys
 import threading
 from dataclasses import dataclass, field, fields, replace
+from pathlib import Path
 from typing import Any, Optional
 
-from platform_core.app_config._env import _envBool, _envFloat, _envInt, loadEnvOnce
+from platform_core.app_config._env import _envBool, _envFloat, _envInt, _fullStack, loadEnvOnce
 from platform_core.app_config.discord import DiscordCfg, buildDiscordCfg
 from platform_core.app_config.llm import (
     ClaudeCliCfg,
@@ -62,13 +63,13 @@ class EpicFlags:
 
     # --- Epic 1: durable execution -- additive observability ON, behavior-changers DARK ---
     TRAJECTORY_ENABLED: bool = _F(default_factory=lambda: _envBool("TRAJECTORY_ENABLED", True))
-    COST_BUDGET_ENABLED: bool = _F(default_factory=lambda: _envBool("COST_BUDGET_ENABLED", False))
+    COST_BUDGET_ENABLED: bool = _F(default_factory=lambda: _envBool("COST_BUDGET_ENABLED", _fullStack()))
     COST_BUDGET_CEILING_USD: float = _F(default_factory=lambda: _envFloat("COST_BUDGET_CEILING_USD", 0.0))  # 0 = none
     STEP_JOURNAL_ENABLED: bool = _F(default_factory=lambda: _envBool("STEP_JOURNAL_ENABLED", True))
-    STEP_RESUME_ENABLED: bool = _F(default_factory=lambda: _envBool("STEP_RESUME_ENABLED", False))
-    WORKTREE_ISOLATION_ENABLED: bool = _F(default_factory=lambda: _envBool("WORKTREE_ISOLATION_ENABLED", False))
+    STEP_RESUME_ENABLED: bool = _F(default_factory=lambda: _envBool("STEP_RESUME_ENABLED", _fullStack()))
+    WORKTREE_ISOLATION_ENABLED: bool = _F(default_factory=lambda: _envBool("WORKTREE_ISOLATION_ENABLED", _fullStack()))
     # --- Epic 2: trustworthy 7B loop (dual-ledger DARK; verifier/receipt additive-ON) ---
-    DUAL_LEDGER_PLANNER_ENABLED: bool = _F(default_factory=lambda: _envBool("DUAL_LEDGER_PLANNER_ENABLED", False))
+    DUAL_LEDGER_PLANNER_ENABLED: bool = _F(default_factory=lambda: _envBool("DUAL_LEDGER_PLANNER_ENABLED", _fullStack()))
     INDEPENDENT_VERIFY_ENABLED: bool = _F(default_factory=lambda: _envBool("INDEPENDENT_VERIFY_ENABLED", True))
     EVIDENCE_RECEIPT_ENABLED: bool = _F(default_factory=lambda: _envBool("EVIDENCE_RECEIPT_ENABLED", True))
     # JSON self-correction re-prompts with exact field errors before giving up.
@@ -76,7 +77,7 @@ class EpicFlags:
     # Root-cause replan fires at/above this many consecutive stalls.
     STALL_THRESHOLD: int = _F(default_factory=lambda: _envInt("STALL_THRESHOLD", 2))
     # --- Epic 5: Agent Society / Workforce (OFF by default) ---
-    SOCIETY_ENABLED: bool = _F(default_factory=lambda: _envBool("SOCIETY_ENABLED", False))
+    SOCIETY_ENABLED: bool = _F(default_factory=lambda: _envBool("SOCIETY_ENABLED", _fullStack()))
     SOCIETY_MAX_WORKERS: int = _F(default_factory=lambda: _envInt("SOCIETY_MAX_WORKERS", 3))  # <= run parallelism
     SOCIETY_DEBATE_MAX_ROUNDS: int = _F(default_factory=lambda: _envInt("SOCIETY_DEBATE_MAX_ROUNDS", 3))
     SOCIETY_TOKEN_BUDGET_USD: float = _F(default_factory=lambda: _envFloat("SOCIETY_TOKEN_BUDGET_USD", 5.0))
@@ -89,30 +90,30 @@ class EpicFlags:
         "planner":    os.getenv("SOCIETY_MODEL_PLANNER", "default"),
     })
     # --- Epic 6: solution-space forking (ships dark; conservative opt-in) ---
-    SOLUTION_FORK_ENABLED: bool = _F(default_factory=lambda: _envBool("SOLUTION_FORK_ENABLED", False))
+    SOLUTION_FORK_ENABLED: bool = _F(default_factory=lambda: _envBool("SOLUTION_FORK_ENABLED", _fullStack()))
     SOLUTION_FORK_N: int = _F(default_factory=lambda: _envInt("SOLUTION_FORK_N", 2))
     SOLUTION_FORK_MAX_CONCURRENCY: int = _F(default_factory=lambda: _envInt("SOLUTION_FORK_MAX_CONCURRENCY", 2))
     SOLUTION_FORK_COST_CEILING_USD: float = _F(default_factory=lambda: _envFloat("SOLUTION_FORK_COST_CEILING_USD", 5.0))
     SOLUTION_FORK_BRANCH_COST_ESTIMATE_USD: float = _F(default_factory=lambda: _envFloat("SOLUTION_FORK_BRANCH_COST_ESTIMATE_USD", 1.0))
-    SOLUTION_FORK_GRAFT_ENABLED: bool = _F(default_factory=lambda: _envBool("SOLUTION_FORK_GRAFT_ENABLED", False))
+    SOLUTION_FORK_GRAFT_ENABLED: bool = _F(default_factory=lambda: _envBool("SOLUTION_FORK_GRAFT_ENABLED", _fullStack()))
     # Judge composite weights (sum to 1.0; facts outweigh rubric opinion).
     W_FACT: float = _F(default_factory=lambda: _envFloat("SOLUTION_FORK_W_FACT", 0.5))
     W_RUBRIC: float = _F(default_factory=lambda: _envFloat("SOLUTION_FORK_W_RUBRIC", 0.3))
     W_RISK: float = _F(default_factory=lambda: _envFloat("SOLUTION_FORK_W_RISK", 0.15))
     W_COST: float = _F(default_factory=lambda: _envFloat("SOLUTION_FORK_W_COST", 0.05))
     # --- Epic 8: Cloud Execution Fabric (OFF => LocalEnvironment => byte-for-byte today) ---
-    EXECUTION_FABRIC_ENABLED: bool = _F(default_factory=lambda: _envBool("EXECUTION_FABRIC_ENABLED", False))
-    EXECUTION_BACKEND: str = _F(default_factory=lambda: os.getenv("EXECUTION_BACKEND", "local"))
+    EXECUTION_FABRIC_ENABLED: bool = _F(default_factory=lambda: _envBool("EXECUTION_FABRIC_ENABLED", _fullStack()))
+    EXECUTION_BACKEND: str = _F(default_factory=lambda: os.getenv("EXECUTION_BACKEND", "worktree" if _fullStack() else "local"))
     EXECUTION_BACKEND_BY_RISK: dict[str, str] = _F(default_factory=dict)  # populated when Epic 4 lands
     DOCKER_EXECUTOR_IMAGE: str = _F(default_factory=lambda: os.getenv("DOCKER_EXECUTOR_IMAGE", "9to5-executor:latest"))
     EXECUTION_REMOTE_KIND: str = _F(default_factory=lambda: os.getenv("EXECUTION_REMOTE_KIND", "ssh"))
     EXECUTION_REMOTE_HOST: str = _F(default_factory=lambda: os.getenv("EXECUTION_REMOTE_HOST", ""))
     EXECUTION_PROVISION_TIMEOUT_SECONDS: int = _F(default_factory=lambda: _envInt("EXECUTION_PROVISION_TIMEOUT_SECONDS", 120))
     # --- Human-Nature layer (behaviour-coupling OFF until an in-house A/B proves it) ---
-    HUMAN_NATURE_ENABLED: bool = _F(default_factory=lambda: _envBool("HUMAN_NATURE_ENABLED", False))
-    HN_OPINIONS_BEHAVIOR: bool = _F(default_factory=lambda: _envBool("HN_OPINIONS_BEHAVIOR", False))
-    HN_EMOTIONS_BEHAVIOR: bool = _F(default_factory=lambda: _envBool("HN_EMOTIONS_BEHAVIOR", False))
-    HN_INTUITION_SHORTCUT: bool = _F(default_factory=lambda: _envBool("HN_INTUITION_SHORTCUT", False))
+    HUMAN_NATURE_ENABLED: bool = _F(default_factory=lambda: _envBool("HUMAN_NATURE_ENABLED", _fullStack()))
+    HN_OPINIONS_BEHAVIOR: bool = _F(default_factory=lambda: _envBool("HN_OPINIONS_BEHAVIOR", _fullStack()))
+    HN_EMOTIONS_BEHAVIOR: bool = _F(default_factory=lambda: _envBool("HN_EMOTIONS_BEHAVIOR", _fullStack()))
+    HN_INTUITION_SHORTCUT: bool = _F(default_factory=lambda: _envBool("HN_INTUITION_SHORTCUT", _fullStack()))
     # Opinion veto thresholds (Q1/Q3): soft-vote vs hard-veto conviction floors.
     HN_THETA_SOFT: float = _F(default_factory=lambda: _envFloat("HN_THETA_SOFT", 0.60))
     HN_THETA_HARD: float = _F(default_factory=lambda: _envFloat("HN_THETA_HARD", 0.85))
@@ -423,7 +424,9 @@ def _configureLoggingLocked() -> None:
             except OSError:
                 pass
 
-    log_dir = settings().paths.LOG_PATH
+    # NINE_TO_FIVE_LOG_DIR redirects the log FileHandler (read live so conftest's sandbox works; prod uses LOG_PATH).
+    _override = os.getenv("NINE_TO_FIVE_LOG_DIR", "").strip()
+    log_dir = Path(_override) if _override else settings().paths.LOG_PATH
     log_dir.mkdir(parents=True, exist_ok=True)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     base = logging.getLogger("9to5")

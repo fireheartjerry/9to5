@@ -99,6 +99,13 @@ def projectRoot() -> Path:
 
 # --- never-crash env readers (import-time safe: bad values warn + fall back) ---
 
+def _fullStack() -> bool:
+    """Master switch (FULL_STACK env, default ON): the default SOURCE for every 'dark' epic flag +
+    Human-Nature. An individual X_ENABLED env var still overrides it. FULL_STACK=0 reverts to the
+    conservative ship-dark defaults."""
+    return _envBool("FULL_STACK", True)
+
+
 def _envBool(key: str, default: bool = False) -> bool:
     raw = os.getenv(key)
     if raw is None:

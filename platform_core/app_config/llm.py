@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 
 from platform_core.app_config._env import (  # noqa: F401 -- _env* re-exported for callers
     _envBool,
+    _fullStack,
     _envFloat,
     _envInt,
     _envTuple,
@@ -234,6 +235,9 @@ class SieCfg:
     PROMPT_PROMOTE_Z: float = _F(default_factory=lambda: _envFloat("PROMPT_PROMOTE_Z", 1.64))
     # --- SIE maintenance / kill switch / training ---
     SIE_AUTO_MAINTENANCE: bool = _F(default_factory=lambda: _envBool("SIE_AUTO_MAINTENANCE", True))
+    # FULL_STACK forces the weekly self-evolution tier (evolve/self-play/curriculum) every run
+    # instead of only in its weekly window; the per-day + idle spawn caps still apply (runaway guard).
+    SIE_FORCE_WEEKLY: bool = _F(default_factory=lambda: _envBool("SIE_FORCE_WEEKLY", _fullStack()))
     SIE_MAINTENANCE_JOIN_SECONDS: float = _F(default_factory=lambda: _envFloat("SIE_MAINTENANCE_JOIN_SECONDS", 180))
     # Global kill switch: revert to the frozen base model + freeze all promotions.
     SIE_KILL_SWITCH: bool = _F(default_factory=lambda: _envBool("SIE_KILL_SWITCH", False))
@@ -247,7 +251,7 @@ class SieCfg:
     # Epic 7: summed poignancy of new rows that triggers insight consolidation.
     INSIGHT_TRIGGER_BUDGET: float = _F(default_factory=lambda: _envFloat("INSIGHT_TRIGGER_BUDGET", 3.0))
     # --- Epic 7 evolution (all default OFF / dormant; paths live in PathsCfg) ---
-    EVOLUTION_ENABLED: bool = _F(default_factory=lambda: _envBool("EVOLUTION_ENABLED", False))
+    EVOLUTION_ENABLED: bool = _F(default_factory=lambda: _envBool("EVOLUTION_ENABLED", _fullStack()))
     EVOLUTION_CONSOLIDATE: bool = _F(default_factory=lambda: _envBool("EVOLUTION_CONSOLIDATE", False))
     EVOLUTION_ESCALATE: bool = _F(default_factory=lambda: _envBool("EVOLUTION_ESCALATE", False))
     EVOLUTION_CANARY_FRACTION: float = _F(default_factory=lambda: _envFloat("EVOLUTION_CANARY_FRACTION", 0.1))
@@ -284,7 +288,7 @@ class SieCfg:
     SIE_BOOTSTRAP: bool = _F(default_factory=lambda: _envBool("SIE_BOOTSTRAP", True))
     # Curriculum auto-queue bypasses the human approval gate -- default OFF, opt-in only.
     CURRICULUM_AUTO_QUEUE_ENABLED: bool = _F(
-        default_factory=lambda: _envBool("CURRICULUM_AUTO_QUEUE_ENABLED", False))
+        default_factory=lambda: _envBool("CURRICULUM_AUTO_QUEUE_ENABLED", _fullStack()))
     CURRICULUM_AUTO_QUEUE_MAX_PER_DAY: int = _F(
         default_factory=lambda: _envInt("CURRICULUM_AUTO_QUEUE_MAX_PER_DAY", 3))
     # --- run supervision (auto-resume crashed runs; slow deterministic backoff per CB-13) ---
@@ -325,7 +329,7 @@ class SieCfg:
     # Plans AUTO-APPROVE through Ollama; in gated mode the plan gate waits this long for an
     # optional human !abort/!reject/!skip/!add, then the brain approves.
     PLAN_GATE_AUTO_APPROVE_SECONDS: float = _F(default_factory=lambda: _envFloat("PLAN_GATE_AUTO_APPROVE_SECONDS", 8))
-    DEFAULT_PARALLELISM: int = 1          # >1 runs independent ready subtasks concurrently
+    DEFAULT_PARALLELISM: int = _F(default_factory=lambda: 2 if _fullStack() else 1)  # >1 runs independent ready subtasks concurrently
     # --- Intelligence & Control (Spec B): predictive flags + Nightclaw instinct ---
     PREDICTIVE_FLAGS_ENABLED: bool = _F(default_factory=lambda: _envBool("PREDICTIVE_FLAGS_ENABLED", True))
     PREDICTIVE_FLAG_OLLAMA: bool = _F(default_factory=lambda: _envBool("PREDICTIVE_FLAG_OLLAMA", False))

@@ -7,6 +7,7 @@ Covers:
 - state.task.TaskState.load() with non-dict JSON content
 - webdash do_POST with null/non-string action in payload
 """
+
 from __future__ import annotations
 
 import json
@@ -22,20 +23,20 @@ import config
 # health module
 # ---------------------------------------------------------------------------
 
+
 class TestOllamaHealthRobustness(unittest.TestCase):
     """_ollama() must not crash on unexpected HTTP response shapes."""
 
     def _make_response(self, status, body):
         r = mock.Mock()
         r.status_code = status
-        r.raise_for_status = mock.Mock(
-            side_effect=(None if status < 400 else Exception(f"HTTP {status}"))
-        )
+        r.raise_for_status = mock.Mock(side_effect=(None if status < 400 else Exception(f"HTTP {status}")))
         r.json = mock.Mock(return_value=body)
         return r
 
     def test_non_dict_response_returns_fail(self):
         import platform_core.ops.health as health
+
         r = self._make_response(200, ["unexpected", "list"])
         with mock.patch("platform_core.ops.health.requests.get", return_value=r):
             ok, detail, _ = health._ollama()
@@ -44,6 +45,7 @@ class TestOllamaHealthRobustness(unittest.TestCase):
 
     def test_non_200_triggers_raise_for_status(self):
         import platform_core.ops.health as health
+
         r = mock.Mock()
         r.raise_for_status = mock.Mock(side_effect=Exception("503"))
         with mock.patch("platform_core.ops.health.requests.get", return_value=r):
@@ -52,10 +54,13 @@ class TestOllamaHealthRobustness(unittest.TestCase):
 
     def test_valid_response_with_model_returns_ok(self):
         import platform_core.ops.health as health
+
         models_list = [{"name": config.OLLAMA_MODEL}]
         r = self._make_response(200, {"models": models_list})
-        with mock.patch("platform_core.ops.health.requests.get", return_value=r), \
-             mock.patch("platform_core.ops.health.requests.get", return_value=r):
+        with (
+            mock.patch("platform_core.ops.health.requests.get", return_value=r),
+            mock.patch("platform_core.ops.health.requests.get", return_value=r),
+        ):
             # patch both the tags and ps calls
             ok, detail, _ = health._ollama()
         # should at least not crash; may fail if OLLAMA_MODEL not in list for other reasons
@@ -63,6 +68,7 @@ class TestOllamaHealthRobustness(unittest.TestCase):
 
     def test_model_missing_from_list(self):
         import platform_core.ops.health as health
+
         r = self._make_response(200, {"models": [{"name": "other-model"}]})
         ps_r = self._make_response(200, {"models": []})
         calls = [r, ps_r]
@@ -73,6 +79,7 @@ class TestOllamaHealthRobustness(unittest.TestCase):
 
     def test_ps_non_dict_does_not_crash(self):
         import platform_core.ops.health as health
+
         tags_r = self._make_response(200, {"models": [{"name": config.OLLAMA_MODEL}]})
         ps_r = mock.Mock()
         ps_r.json = mock.Mock(return_value=["not", "a", "dict"])
@@ -87,32 +94,41 @@ class TestDiscordHealthRobustness(unittest.TestCase):
 
     def test_non_json_200_response_returns_ok_with_unknown_username(self):
         import platform_core.ops.health as health
+
         r = mock.Mock()
         r.status_code = 200
         r.json = mock.Mock(side_effect=ValueError("not json"))
-        with mock.patch.object(config, "DISCORD_BOT_TOKEN", "fake-token"), \
-             mock.patch("platform_core.ops.health.requests.get", return_value=r):
+        with (
+            mock.patch.object(config, "DISCORD_BOT_TOKEN", "fake-token"),
+            mock.patch("platform_core.ops.health.requests.get", return_value=r),
+        ):
             ok, detail, _ = health._discord()
         self.assertTrue(ok)
         self.assertIn("unknown", detail)
 
     def test_200_with_valid_json_returns_username(self):
         import platform_core.ops.health as health
+
         r = mock.Mock()
         r.status_code = 200
         r.json = mock.Mock(return_value={"username": "mybot"})
-        with mock.patch.object(config, "DISCORD_BOT_TOKEN", "fake-token"), \
-             mock.patch("platform_core.ops.health.requests.get", return_value=r):
+        with (
+            mock.patch.object(config, "DISCORD_BOT_TOKEN", "fake-token"),
+            mock.patch("platform_core.ops.health.requests.get", return_value=r),
+        ):
             ok, detail, _ = health._discord()
         self.assertTrue(ok)
         self.assertIn("mybot", detail)
 
     def test_401_returns_fail(self):
         import platform_core.ops.health as health
+
         r = mock.Mock()
         r.status_code = 401
-        with mock.patch.object(config, "DISCORD_BOT_TOKEN", "bad-token"), \
-             mock.patch("platform_core.ops.health.requests.get", return_value=r):
+        with (
+            mock.patch.object(config, "DISCORD_BOT_TOKEN", "bad-token"),
+            mock.patch("platform_core.ops.health.requests.get", return_value=r),
+        ):
             ok, detail, _ = health._discord()
         self.assertFalse(ok)
         self.assertIn("401", detail)
@@ -122,19 +138,22 @@ class TestDiscordHealthRobustness(unittest.TestCase):
 # control module
 # ---------------------------------------------------------------------------
 
+
 class TestControlBusRobustness(unittest.TestCase):
     """Garbage rows in the SQLite control store must degrade to safe defaults, never crash
     a poll loop (the old JSON-file bus had a whole corrupt-rebuild ladder for this)."""
 
     def _bus(self, task_id: str = "t-robustness"):
         from platform_core.runtime.control import ControlBus
+
         return ControlBus(task_id)
 
     def test_garbage_flag_value_reads_as_default(self):
         """A non-JSON value smuggled into the flags table reads as the default, not a crash."""
         from platform_core.runtime import control_store
+
         bus = self._bus("t-badflag")
-        bus.requestPause()   # ensure db/schema exist
+        bus.requestPause()  # ensure db/schema exist
         conn = control_store._connect()
         try:
             conn.execute("INSERT OR REPLACE INTO flags VALUES ('t-badflag','abort','{oops','x')")
@@ -146,12 +165,15 @@ class TestControlBusRobustness(unittest.TestCase):
     def test_garbage_op_row_is_skipped(self):
         """An unparseable ops row is dropped by drain/load, and good ops still flow."""
         from platform_core.runtime import control_store
+
         bus = self._bus("t-badop")
         bus.pushOp({"op": "retry"})
         conn = control_store._connect()
         try:
-            conn.execute("INSERT INTO ops(task_id, op_json, source_msg_id, created_at) "
-                         "VALUES ('t-badop', 'not json at all', NULL, 'x')")
+            conn.execute(
+                "INSERT INTO ops(task_id, op_json, source_msg_id, created_at) "
+                "VALUES ('t-badop', 'not json at all', NULL, 'x')"
+            )
         finally:
             conn.close()
         self.assertEqual(bus.load()["plan_ops"], [{"op": "retry"}])
@@ -159,6 +181,7 @@ class TestControlBusRobustness(unittest.TestCase):
 
     def test_fresh_bus_loads_blank(self):
         from platform_core.runtime.control import _blank
+
         data = self._bus("t-fresh").load()
         blank = _blank()
         self.assertEqual(data["abort"], blank["abort"])
@@ -176,6 +199,7 @@ class TestControlBusRobustness(unittest.TestCase):
 # state/task module
 # ---------------------------------------------------------------------------
 
+
 class TestTaskStateLoadValidation(unittest.TestCase):
     """TaskState.load() must raise ValueError for non-dict JSON, not cascade."""
 
@@ -192,6 +216,7 @@ class TestTaskStateLoadValidation(unittest.TestCase):
 
     def test_json_array_raises_value_error(self):
         from state.task import TaskState
+
         tid = "66666666-6666-4666-8666-666666666666"
         path = self.tmpdir / f"{tid}.json"
         path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
@@ -201,15 +226,30 @@ class TestTaskStateLoadValidation(unittest.TestCase):
 
     def test_json_string_raises_value_error(self):
         from state.task import TaskState
+
         tid = "77777777-7777-4777-8777-777777777777"
         path = self.tmpdir / f"{tid}.json"
         path.write_text(json.dumps("just a string"), encoding="utf-8")
         with self.assertRaises(ValueError):
             TaskState.load(tid)
 
+    def test_dict_without_task_shape_raises_value_error(self):
+        """A dict-but-non-task JSON (no task_id / no dict meta) must be rejected like a non-dict,
+        so load() raises and loadSafe() returns None -- an unguarded consumer (webdash _snapshot)
+        never gets a TaskState whose .meta/.task_id raise a bare KeyError -> /api/state 500."""
+        from state.task import TaskState
+        from state import task_io
+
+        tid = "88888888-8888-4888-8888-888888888888"
+        (self.tmpdir / f"{tid}.json").write_text(json.dumps({"plan": {"subtasks": []}}), encoding="utf-8")
+        with self.assertRaises(ValueError):
+            TaskState.load(tid)
+        self.assertIsNone(task_io.loadSafe(tid))
+
     def test_load_safe_returns_none_on_corrupt(self):
         """loadSafe() must still swallow the ValueError and return None."""
         from state.task import TaskState
+
         tid = "88888888-8888-4888-8888-888888888888"
         path = self.tmpdir / f"{tid}.json"
         path.write_text(json.dumps([]), encoding="utf-8")
@@ -218,11 +258,13 @@ class TestTaskStateLoadValidation(unittest.TestCase):
     def test_load_rejects_non_uuid_task_id(self):
         """BUG-003: a non-UUID task_id must be rejected before any path is constructed."""
         from state.task import TaskState
+
         with self.assertRaises(ValueError):
             TaskState.load("bad-task")
 
     def test_valid_dict_loads_fine(self):
         from state.task import TaskState
+
         ts = TaskState.create("test goal", 1.0)
         ts.save()
         loaded = TaskState.load(ts.task_id)
@@ -232,6 +274,7 @@ class TestTaskStateLoadValidation(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # webdash do_POST action normalization
 # ---------------------------------------------------------------------------
+
 
 class TestWebdashPostActionNormalization(unittest.TestCase):
     """do_POST must not crash when action/arg are null or non-string in payload."""
@@ -256,6 +299,7 @@ class TestWebdashPostActionNormalization(unittest.TestCase):
         if arg is not None and not isinstance(arg, str):
             arg = str(arg)
         from notifications.webdash import _applyControl
+
         return _applyControl(task_id, action, arg)
 
     def test_null_action_returns_error_not_crash(self):
@@ -274,6 +318,7 @@ class TestWebdashPostActionNormalization(unittest.TestCase):
         result = self._post("t-web", {"action": "skip", "arg": 123})
         self.assertTrue(result["ok"])
         from platform_core.runtime.control import ControlBus
+
         ops = ControlBus("t-web").drainOps()
         self.assertEqual(ops[0]["subtask_id"], "123")
 
@@ -281,4 +326,5 @@ class TestWebdashPostActionNormalization(unittest.TestCase):
         result = self._post("t-web", {"action": "abort", "arg": None})
         self.assertTrue(result["ok"])
         from platform_core.runtime.control import ControlBus
+
         self.assertTrue(ControlBus("t-web").isAbort())

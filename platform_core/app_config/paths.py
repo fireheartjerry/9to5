@@ -81,6 +81,11 @@ class PathsCfg:
     # --- literal defaults ---
     AUDIT_MAX_BYTES: int = 1_000_000  # rotate audit.jsonl past ~1 MB
     PERF_TELEMETRY_MAX_BYTES: int = 2_000_000  # rotate perf.jsonl past ~2 MB
+    # retention.sweepHookLogs/sweepGuardAlerts trim these tail-only (highest-frequency appends,
+    # no rotation at the write site). Absent before, so the whole sweep crashed on the missing
+    # attr and both files grew unbounded.
+    HOOKS_LOG_MAX_BYTES: int = 5_000_000  # trim hooks.log past ~5 MB
+    GUARD_ALERTS_MAX_BYTES: int = 2_000_000  # trim guard_alerts.jsonl past ~2 MB
     TASKS_DIR_REL: str = "tasks"
     SESSIONS_DIR_REL: str = "sessions"
     # The blackboard/compaction dirs accumulate one file per run and were never pruned;

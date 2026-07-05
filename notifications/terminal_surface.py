@@ -18,6 +18,7 @@ RUN/TEST: python -m pytest tests/notifications/test_terminal_surface.py
 """
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 from typing import Optional
@@ -135,7 +136,7 @@ class TerminalSurface:
             nav = terminal_ipc.read_nav()
             self.page_idx = nav["page_idx"]
             self.mode = nav["mode"]
-            self.frozen = nav["frozen"]
+            self.frozen = True if getattr(self, "_final", False) else nav["frozen"]
             lanes = self._lanes()
             lane, lines, idx = self._active_lane(lanes)
             body = (render("—", [], {"label": "no live processes"}, page=0, page_count=0,
@@ -156,6 +157,7 @@ class TerminalSurface:
             if res == "ok":
                 self._last_body = body
                 self._throttle.note_success(now)
+                self._recreated = False    # message healthy again -> re-arm one-shot for a future 404
             elif res == "transient":
                 self._throttle.note_429(now, retry_after=1.0)   # back off on 429/5xx/timeout
             elif res == "not_found" and not self._recreated:
@@ -195,6 +197,7 @@ class TerminalSurface:
     def finalize(self) -> None:
         """Freeze + stop the loop at run end; clear the bridge files. Best-effort."""
         self.frozen = True
+        self._final = True                 # render_once keeps frozen=True now, not re-read from nav
         try:
             if self._stop is not None:
                 self._stop.set()
@@ -205,6 +208,16 @@ class TerminalSurface:
             terminal_ipc.clear()
         except Exception:  # noqa: BLE001
             pass
+
+    def unpin(self) -> None:
+        """Remove the pinned terminal message (symmetric with DiscordDashboard.unpin) so terminal
+        pins don't pile up to Discord's 50-pin cap across runs. message_id is read under the lock
+        because a racing 404-recreate may have swapped it."""
+        with self._send_lock:
+            mid = self.message_id
+        if mid:
+            with contextlib.suppress(Exception):
+                discord.unpinMessage(mid)
 
 
 _SURFACE: Optional[TerminalSurface] = None

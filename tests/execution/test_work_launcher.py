@@ -6,6 +6,7 @@ orchestrator run must never be classed 'stale' (which mis-aborts it and lets a s
 run double-spawn on the same repo). Liveness is heartbeat.isRunAlive -- heartbeat fresh
 OR recorded pid alive; the old mtime heuristic is gone. Stale cleanup goes through the
 bus + task_io.reapDeadRun, never a direct task-JSON write from the bot process."""
+
 import os
 import subprocess
 import tempfile
@@ -20,7 +21,7 @@ from notifications import work_launcher as wl
 from platform_core.core import fsio
 from state.task import TaskState
 
-DEAD_PID = 999999999   # implausible -> definitely dead
+DEAD_PID = 999999999  # implausible -> definitely dead
 
 
 class TestParseHours(unittest.TestCase):
@@ -75,7 +76,7 @@ class TestValidate(unittest.TestCase):
 class TestBuildArgv(unittest.TestCase):
     def test_core(self):
         argv = wl.buildArgv(wl.WorkRequest(goal="do x", hours=2.0, mode="gated", parallel=2))
-        self.assertEqual(argv[0], str(config.VENV_PYTHON))
+        self.assertEqual(argv[0], wl._pythonExe())  # venv python when present, else sys.executable
         self.assertEqual(argv[1], str(config.PROJECT_ROOT / "main.py"))
         self.assertIn("--auto-approve", argv)
         self.assertIn("--goal", argv)
@@ -85,6 +86,21 @@ class TestBuildArgv(unittest.TestCase):
     def test_no_pr_only_when_set(self):
         self.assertNotIn("--no-pr", wl.buildArgv(wl.WorkRequest(goal="x")))
         self.assertIn("--no-pr", wl.buildArgv(wl.WorkRequest(goal="x", no_pr=True)))
+
+    def test_interpreter_falls_back_to_sys_executable_when_venv_missing(self):
+        """REGRESSION: in a git worktree / checkout with no ``venv/`` the venv python
+        (``config.VENV_PYTHON`` = ``<root>/venv/Scripts/python.exe``) does not exist, and
+        ``subprocess.Popen(argv)`` raised WinError 2. buildArgv must fall back to the running
+        interpreter (``sys.executable``), which is always present and dep-complete."""
+        import sys
+
+        missing = Path(config.PROJECT_ROOT) / "no-such-venv" / "python.exe"
+        self.assertFalse(missing.exists())
+        with mock.patch.object(config, "VENV_PYTHON", missing):
+            argv = wl.buildArgv(wl.WorkRequest(goal="x"))
+            self.assertEqual(argv[0], sys.executable)
+            resume = wl.buildResumeArgv("11111111-1111-1111-1111-111111111111")
+            self.assertEqual(resume[0], sys.executable)
 
     def test_night_mode_forces_pr_feedback(self):
         argv = wl.buildArgv(wl.WorkRequest(goal="x", no_pr=True, night_mode=True))
@@ -115,7 +131,7 @@ class TestActiveRun(unittest.TestCase):
     def test_returns_when_active(self):
         st = TaskState.create("g", 1.0)
         st.meta["status"] = "executing"
-        st.meta["run_pid"] = os.getpid()   # liveness: this process vouches for the run
+        st.meta["run_pid"] = os.getpid()  # liveness: this process vouches for the run
         st.save()
         with mock.patch.object(wl.commands, "resolveTargetTask", return_value=st):
             self.assertIs(wl.activeRun(), st)
@@ -125,9 +141,11 @@ class TestSpawn(unittest.TestCase):
     def test_spawn_uses_argv(self):
         fake = mock.Mock(pid=4321)
         # opt out of the test-mode spawn guard: this test asserts the real Popen path.
-        with mock.patch.object(wl, "_spawnBlocked", return_value=False), \
-                mock.patch.object(subprocess, "Popen", return_value=fake) as p, \
-                mock.patch("builtins.open", mock.mock_open()):
+        with (
+            mock.patch.object(wl, "_spawnBlocked", return_value=False),
+            mock.patch.object(subprocess, "Popen", return_value=fake) as p,
+            mock.patch("builtins.open", mock.mock_open()),
+        ):
             pid = wl.spawn(wl.WorkRequest(goal="do x"))
         self.assertEqual(pid, 4321)
         args, kwargs = p.call_args
@@ -136,8 +154,10 @@ class TestSpawn(unittest.TestCase):
 
     def test_spawn_suppressed_in_test_mode(self):
         # the guard must hard-block a real launch and never call Popen during tests
-        with mock.patch.object(wl, "_spawnBlocked", return_value=True), \
-                mock.patch.object(subprocess, "Popen") as p:
+        with (
+            mock.patch.object(wl, "_spawnBlocked", return_value=True),
+            mock.patch.object(subprocess, "Popen") as p,
+        ):
             pid = wl.spawn(wl.WorkRequest(goal="do x"))
         self.assertEqual(pid, wl._SPAWN_BLOCKED_PID)
         p.assert_not_called()
@@ -152,7 +172,7 @@ class TestSpawn(unittest.TestCase):
 class TestResume(unittest.TestCase):
     def test_build_resume_argv(self):
         argv = wl.buildResumeArgv("abc-123")
-        self.assertEqual(argv[0], str(config.VENV_PYTHON))
+        self.assertEqual(argv[0], wl._pythonExe())  # venv python when present, else sys.executable
         self.assertEqual(argv[1], str(config.PROJECT_ROOT / "main.py"))
         self.assertIn("--resume", argv)
         self.assertIn("abc-123", argv)
@@ -177,9 +197,11 @@ class TestResume(unittest.TestCase):
     def test_spawn_resume_uses_argv(self):
         fake = mock.Mock(pid=99)
         # opt out of the test-mode spawn guard: this test asserts the real Popen path.
-        with mock.patch.object(wl, "_spawnBlocked", return_value=False), \
-                mock.patch.object(subprocess, "Popen", return_value=fake) as p, \
-                mock.patch("builtins.open", mock.mock_open()):
+        with (
+            mock.patch.object(wl, "_spawnBlocked", return_value=False),
+            mock.patch.object(subprocess, "Popen", return_value=fake) as p,
+            mock.patch("builtins.open", mock.mock_open()),
+        ):
             pid = wl.spawnResume("abc-123")
         self.assertEqual(pid, 99)
         self.assertEqual(p.call_args.args[0], wl.buildResumeArgv("abc-123"))
@@ -196,9 +218,11 @@ class TestLaunchGlue(unittest.TestCase):
             self.assertIn("already active", wl.launchOrError(wl.WorkRequest(goal="x")))
 
     def test_launch_confirms_via_handshake(self):
-        with mock.patch.object(wl, "activeRun", return_value=None), \
-                mock.patch.object(wl, "spawn", return_value=123), \
-                mock.patch.object(wl, "waitForLaunch", return_value="abcdef12") as wfl:
+        with (
+            mock.patch.object(wl, "activeRun", return_value=None),
+            mock.patch.object(wl, "spawn", return_value=123),
+            mock.patch.object(wl, "waitForLaunch", return_value="abcdef12") as wfl,
+        ):
             out = wl.launchOrError(wl.WorkRequest(goal="x"))
         self.assertIn("Launched", out)
         self.assertIn("abcdef12", out)
@@ -206,38 +230,45 @@ class TestLaunchGlue(unittest.TestCase):
         self.assertTrue(wfl.call_args.args[0])
 
     def test_launch_summary_includes_profile(self):
-        with mock.patch.object(wl, "activeRun", return_value=None), \
-                mock.patch.object(wl, "spawn", return_value=123), \
-                mock.patch.object(wl, "waitForLaunch", return_value="abcdef12"):
+        with (
+            mock.patch.object(wl, "activeRun", return_value=None),
+            mock.patch.object(wl, "spawn", return_value=123),
+            mock.patch.object(wl, "waitForLaunch", return_value="abcdef12"),
+        ):
             out = wl.launchOrError(wl.WorkRequest(goal="x", work_profile="auditor"))
         self.assertIn("Profile:", out)
         self.assertIn("auditor", out)
 
     def test_handshake_reads_launch_file(self):
         import json
+
         config.LAUNCH_DIR.mkdir(parents=True, exist_ok=True)
-        (config.LAUNCH_DIR / "tok1.json").write_text(json.dumps({"task_id": "t-42"}),
-                                                     encoding="utf-8")
+        (config.LAUNCH_DIR / "tok1.json").write_text(json.dumps({"task_id": "t-42"}), encoding="utf-8")
         self.assertEqual(wl.waitForLaunch("tok1", timeout_s=0.2, poll_s=0.01), "t-42")
         self.assertIsNone(wl.waitForLaunch("missing", timeout_s=0.05, poll_s=0.01))
 
     def test_double_launch_spawns_exactly_once(self):
         import threading
+
         spawned = []
 
         def slow_spawn(req):
             spawned.append(req)
             import time as _t
-            _t.sleep(0.2)          # hold the launch window open so the second call collides
+
+            _t.sleep(0.2)  # hold the launch window open so the second call collides
             return 123
 
         results = []
-        with mock.patch.object(wl, "activeRun", return_value=None), \
-                mock.patch.object(wl, "spawn", side_effect=slow_spawn), \
-                mock.patch.object(wl, "waitForLaunch", return_value="abcdef12"):
-            ts = [threading.Thread(
-                target=lambda: results.append(wl.launchOrError(wl.WorkRequest(goal="x"))))
-                for _ in range(2)]
+        with (
+            mock.patch.object(wl, "activeRun", return_value=None),
+            mock.patch.object(wl, "spawn", side_effect=slow_spawn),
+            mock.patch.object(wl, "waitForLaunch", return_value="abcdef12"),
+        ):
+            ts = [
+                threading.Thread(target=lambda: results.append(wl.launchOrError(wl.WorkRequest(goal="x"))))
+                for _ in range(2)
+            ]
             for t in ts:
                 t.start()
             for t in ts:
@@ -253,14 +284,18 @@ class TestLaunchGlue(unittest.TestCase):
     def test_resume_blocks_when_active(self):
         st = TaskState.create("g", 1.0)
         st.meta["status"] = "executing"
-        with mock.patch.object(wl, "taskExists", return_value=True), \
-                mock.patch.object(wl, "activeRun", return_value=st):
+        with (
+            mock.patch.object(wl, "taskExists", return_value=True),
+            mock.patch.object(wl, "activeRun", return_value=st),
+        ):
             self.assertIn("already active", wl.resumeOrError("abc"))
 
     def test_resume_spawns(self):
-        with mock.patch.object(wl, "taskExists", return_value=True), \
-                mock.patch.object(wl, "activeRun", return_value=None), \
-                mock.patch.object(wl, "spawnResume", return_value=5):
+        with (
+            mock.patch.object(wl, "taskExists", return_value=True),
+            mock.patch.object(wl, "activeRun", return_value=None),
+            mock.patch.object(wl, "spawnResume", return_value=5),
+        ):
             self.assertIn("Resuming", wl.resumeOrError("abc"))
 
 
@@ -268,6 +303,7 @@ class TestLaunchGlue(unittest.TestCase):
 # Working-directory selection: persistence in task meta, resume remembering it,
 # surfacing in status/run embeds, and launcher validation.
 # ---------------------------------------------------------------------------
+
 
 class TestWorkDirState(unittest.TestCase):
     def setUp(self):
@@ -340,10 +376,12 @@ class TestWorkDirLauncherValidation(unittest.TestCase):
             self.assertTrue(any("no `origin` remote" in w for w in warnings))
 
     def test_launch_reply_includes_external_readiness_warnings(self):
-        with tempfile.TemporaryDirectory() as d, \
-                mock.patch.object(wl, "activeRun", return_value=None), \
-                mock.patch.object(wl, "spawn", return_value=123), \
-                mock.patch.object(wl, "waitForLaunch", return_value="abcdef12"):
+        with (
+            tempfile.TemporaryDirectory() as d,
+            mock.patch.object(wl, "activeRun", return_value=None),
+            mock.patch.object(wl, "spawn", return_value=123),
+            mock.patch.object(wl, "waitForLaunch", return_value="abcdef12"),
+        ):
             out = wl.launchOrError(wl.WorkRequest(goal="x", work_dir=d))
         self.assertIn("Launched run", out)
         self.assertIn("not a git repo", out)
@@ -352,6 +390,7 @@ class TestWorkDirLauncherValidation(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Liveness: a LIVE orchestrator run must never be classed 'stale'.
 # ---------------------------------------------------------------------------
+
 
 def _task(status="executing"):
     st = TaskState.create("goal", 1.0)
@@ -368,9 +407,9 @@ def _age(st, seconds=100000):
 class TestStaleLiveness(unittest.TestCase):
     def test_live_pid_not_stale_even_with_ancient_mtime(self):
         st = _task()
-        st.meta["run_pid"] = os.getpid()   # this process is alive
+        st.meta["run_pid"] = os.getpid()  # this process is alive
         st.save()
-        _age(st)                            # file untouched for ~27h
+        _age(st)  # file untouched for ~27h
         self.assertFalse(wl._isStale(st), "a live run was misread as stale")
 
     def test_created_status_live_pid_not_stale(self):
@@ -380,8 +419,9 @@ class TestStaleLiveness(unittest.TestCase):
         st.meta["run_pid"] = os.getpid()
         st.save()
         _age(st, seconds=1000)
-        self.assertFalse(wl._isStale(st),
-                         "a live still-elaborating run was misread as stale (double-spawn risk)")
+        self.assertFalse(
+            wl._isStale(st), "a live still-elaborating run was misread as stale (double-spawn risk)"
+        )
 
     def test_fresh_heartbeat_not_stale_despite_dead_pid_and_old_mtime(self):
         # The heartbeat is authoritative when fresh: an old task-file mtime means nothing.
@@ -389,10 +429,10 @@ class TestStaleLiveness(unittest.TestCase):
         st.meta["run_pid"] = DEAD_PID
         st.save()
         _age(st)
-        fsio.atomicWriteJson(config.HEARTBEAT_DIR / f"{st.task_id}.json",
-                             {"pid": DEAD_PID, "seq": 3, "ts": time.time()})
-        self.assertFalse(wl._isStale(st),
-                         "a heartbeat-fresh run was misread as stale")
+        fsio.atomicWriteJson(
+            config.HEARTBEAT_DIR / f"{st.task_id}.json", {"pid": DEAD_PID, "seq": 3, "ts": time.time()}
+        )
+        self.assertFalse(wl._isStale(st), "a heartbeat-fresh run was misread as stale")
 
     def test_dead_pid_is_stale(self):
         st = _task()
@@ -404,8 +444,7 @@ class TestStaleLiveness(unittest.TestCase):
         st = _task()
         st.meta.pop("run_pid", None)
         st.save()
-        self.assertTrue(wl._isStale(st),
-                        "a task with no liveness evidence at all should be stale")
+        self.assertTrue(wl._isStale(st), "a task with no liveness evidence at all should be stale")
 
 
 class TestStaleReap(unittest.TestCase):
@@ -415,17 +454,24 @@ class TestStaleReap(unittest.TestCase):
         st = _task()
         st.meta["run_pid"] = DEAD_PID
         st.save()
-        with mock.patch.object(wl.commands, "resolveTargetTask", return_value=st), \
-                mock.patch.object(TaskState, "setStatus",
-                                  side_effect=AssertionError("bot wrote task JSON directly")):
+        with (
+            mock.patch.object(wl.commands, "resolveTargetTask", return_value=st),
+            mock.patch.object(
+                TaskState, "setStatus", side_effect=AssertionError("bot wrote task JSON directly")
+            ),
+        ):
             self.assertIsNone(wl.activeRun())
         from platform_core.runtime.control import ControlBus
+
         bus = ControlBus(st.task_id)
         self.assertTrue(bus.isAbort(), "stale cleanup did not request abort on the bus")
         ops = bus.drainOps()
         self.assertTrue(any(o.get("op") == "mark_stale" for o in ops), f"no breadcrumb op: {ops}")
-        self.assertEqual(TaskState.load(st.task_id).meta["status"], "aborted",
-                         "dead run was not finalized through reapDeadRun")
+        self.assertEqual(
+            TaskState.load(st.task_id).meta["status"],
+            "aborted",
+            "dead run was not finalized through reapDeadRun",
+        )
 
     def test_live_run_never_reaped(self):
         st = _task()

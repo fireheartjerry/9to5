@@ -7,11 +7,12 @@ self-ref gate and the later pre-PR gate can share already-proven work.
 EXPORTS:
   ValidationResult
   diff_fingerprint(work_dir: str) -> str  -- Stable hash for the tracked code state relative to HEAD.
-  run_validation_suite(suite_id: str, work_dir: str, *, cache: bool=True) -> ValidationResult  -- Run a named validation suite through the DAG cache.
+  run_validation_suite(suite_id: str, work_dir: str, *, cache: bool=True, changed_files: Optional[list[str]]=None) -> ValidationResult  -- Run a named validation suite through the DAG cache.
 DEPENDS-ON: config, platform_core.core, platform_core.runtime
 SIDE-EFFECTS: writes state/validation_cache.db derived cache
 RUN/TEST: python -m pytest tests/test_validation_cache.py
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -64,12 +65,15 @@ class ValidationResult:
 class _Node:
     node_id: str
     deps: tuple[str, ...]
-    build: Callable[[dict[str, ValidationResult]], Optional[list[str]]]
+    # build(results, changed_files) -> command; changed_files scopes affected-test resolution to a
+    # specific file set (self-ref subtask's own diff) instead of the cumulative git-diff fallback.
+    build: Callable[[dict[str, ValidationResult], Optional[list[str]]], Optional[list[str]]]
 
 
 def _cache_path() -> Path:
-    return Path(getattr(config, "VALIDATION_CACHE_DB_PATH",
-                        config.PROJECT_ROOT / "state" / "validation_cache.db"))
+    return Path(
+        getattr(config, "VALIDATION_CACHE_DB_PATH", config.PROJECT_ROOT / "state" / "validation_cache.db")
+    )
 
 
 def _connect() -> sqlite3.Connection:
@@ -83,8 +87,14 @@ def _connect() -> sqlite3.Connection:
 
 def _run_git(work_dir: str, *args: str) -> str:
     try:
-        cp = subprocess.run(["git", *args], cwd=work_dir, capture_output=True, text=True,
-                            stdin=subprocess.DEVNULL, timeout=config.GIT_TIMEOUT_SECONDS)
+        cp = subprocess.run(
+            ["git", *args],
+            cwd=work_dir,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=config.GIT_TIMEOUT_SECONDS,
+        )
         return cp.stdout.strip() if cp.returncode == 0 else ""
     except Exception:  # noqa: BLE001
         return ""
@@ -100,8 +110,14 @@ def diff_fingerprint(work_dir: str) -> str:
     h.update(_head_sha(work_dir).encode("utf-8", errors="replace"))
     for args in (("diff", "--name-status", "HEAD"), ("diff", "--binary", "HEAD", "--", ".")):
         try:
-            cp = subprocess.run(["git", *args], cwd=work_dir, capture_output=True, text=True,
-                                stdin=subprocess.DEVNULL, timeout=config.GIT_TIMEOUT_SECONDS)
+            cp = subprocess.run(
+                ["git", *args],
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=config.GIT_TIMEOUT_SECONDS,
+            )
             h.update((cp.stdout or "").encode("utf-8", errors="replace"))
             h.update((cp.stderr or "").encode("utf-8", errors="replace"))
         except Exception as e:  # noqa: BLE001
@@ -125,12 +141,12 @@ def _command_version(node_id: str, cmd: Optional[list[str]]) -> str:
 
 
 def _state_key(work_dir: str) -> tuple[str, str, str, str]:
-    return (str(Path(work_dir).resolve()), _head_sha(work_dir), _repo_root_hash(),
-            diff_fingerprint(work_dir))
+    return (str(Path(work_dir).resolve()), _head_sha(work_dir), _repo_root_hash(), diff_fingerprint(work_dir))
 
 
-def _cache_key(suite_id: str, node_id: str, state_key: tuple[str, str, str, str],
-               cmd: Optional[list[str]]) -> tuple:
+def _cache_key(
+    suite_id: str, node_id: str, state_key: tuple[str, str, str, str], cmd: Optional[list[str]]
+) -> tuple:
     return ("_shared", node_id, *state_key, _command_version(node_id, cmd))
 
 
@@ -153,9 +169,13 @@ def _load_cached(key: tuple) -> Optional[ValidationResult]:
         ok = bool(row["ok"])
         if age > (ttl if ok else fail_ttl):
             return None
-        return ValidationResult(ok=ok, detail=row["detail"] or "", cached=True,
-                                commands=json.loads(row["commands_json"] or "[]"),
-                                stdout=row["stdout"] or "")
+        return ValidationResult(
+            ok=ok,
+            detail=row["detail"] or "",
+            cached=True,
+            commands=json.loads(row["commands_json"] or "[]"),
+            stdout=row["stdout"] or "",
+        )
     except Exception:  # noqa: BLE001
         return None
 
@@ -170,8 +190,15 @@ def _store_cached(key: tuple, result: ValidationResult) -> None:
                    (suite_id, node_id, work_dir, head_sha, repo_root_hash, diff_hash,
                     command_version, ok, detail, stdout, commands_json, elapsed_s, recorded_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (*key, 1 if result.ok else 0, result.detail, result.stdout,
-                 json.dumps(result.commands), float(result.elapsed_s), time.time()),
+                (
+                    *key,
+                    1 if result.ok else 0,
+                    result.detail,
+                    result.stdout,
+                    json.dumps(result.commands),
+                    float(result.elapsed_s),
+                    time.time(),
+                ),
             )
     except Exception:  # noqa: BLE001
         return
@@ -184,42 +211,90 @@ def _run_command(cmd: list[str], work_dir: str) -> ValidationResult:
     # killed mid-flight (which would flip every pre-PR / self-ref gate to a spurious failure).
     node_timeout = int(getattr(config, "VALIDATION_NODE_TIMEOUT_SECONDS", 1800))
     try:
-        proc = subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True,
-                              stdin=subprocess.DEVNULL, timeout=node_timeout)
+        proc = subprocess.run(
+            cmd, cwd=work_dir, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=node_timeout
+        )
         elapsed = time.perf_counter() - t0
         tail = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
-        perf.record("validation_node", elapsed, command=" ".join(cmd),
-                    ok=proc.returncode == 0, cached=False)
-        return ValidationResult(ok=proc.returncode == 0, detail=tail[-1200:],
-                                elapsed_s=elapsed, commands=[cmd], stdout=proc.stdout or "")
+        perf.record("validation_node", elapsed, command=" ".join(cmd), ok=proc.returncode == 0, cached=False)
+        return ValidationResult(
+            ok=proc.returncode == 0,
+            detail=tail[-1200:],
+            elapsed_s=elapsed,
+            commands=[cmd],
+            stdout=proc.stdout or "",
+        )
     except subprocess.TimeoutExpired:
-        return ValidationResult(False, f"{' '.join(cmd)} timed out after {node_timeout}s",
-                                elapsed_s=time.perf_counter() - t0, commands=[cmd])
+        return ValidationResult(
+            False,
+            f"{' '.join(cmd)} timed out after {node_timeout}s",
+            elapsed_s=time.perf_counter() - t0,
+            commands=[cmd],
+        )
     except Exception as e:  # noqa: BLE001
-        return ValidationResult(False, f"{' '.join(cmd)} errored: {e}",
-                                elapsed_s=time.perf_counter() - t0, commands=[cmd])
+        return ValidationResult(
+            False, f"{' '.join(cmd)} errored: {e}", elapsed_s=time.perf_counter() - t0, commands=[cmd]
+        )
 
 
-def _affected_pytest_cmd(results: dict[str, ValidationResult]) -> Optional[list[str]]:
-    targets = [t for t in (results.get("affected_tests_resolve") or ValidationResult(True)).stdout.split()
-               if t.strip()]
+def _affected_pytest_cmd(
+    results: dict[str, ValidationResult], _changed: Optional[list[str]] = None
+) -> Optional[list[str]]:
+    targets = [
+        t
+        for t in (results.get("affected_tests_resolve") or ValidationResult(True)).stdout.split()
+        if t.strip()
+    ]
     if not targets:
         return None
     return [sys.executable, "-m", "pytest", *targets, "-q"]
 
 
+def _affected_resolve_cmd(
+    _results: dict[str, ValidationResult], changed_files: Optional[list[str]] = None
+) -> Optional[list[str]]:
+    """Resolve affected tests. When ``changed_files`` is given (a self-ref subtask's own diff),
+    pass them as explicit args so resolution is SCOPED to that change; otherwise fall back to
+    affected_tests.py's no-arg cumulative-git-diff behavior (preserved for pre-PR / other callers)."""
+    base = [sys.executable, "tools\\affected_tests.py"]
+    return base + list(changed_files) if changed_files else base
+
+
+def _repo_map_generate_cmd(
+    _results: dict[str, ValidationResult], _changed: Optional[list[str]] = None
+) -> Optional[list[str]]:
+    return [sys.executable, "tools\\repo_map.py"]
+
+
+def _repo_map_check_cmd(
+    _results: dict[str, ValidationResult], _changed: Optional[list[str]] = None
+) -> Optional[list[str]]:
+    return [sys.executable, "tools\\repo_map.py", "--check"]
+
+
+def _workflow_validate_cmd(
+    _results: dict[str, ValidationResult], _changed: Optional[list[str]] = None
+) -> Optional[list[str]]:
+    return [sys.executable, "validate_workflows.py"]
+
+
+def _fast_lane_cmd(
+    _results: dict[str, ValidationResult], _changed: Optional[list[str]] = None
+) -> Optional[list[str]]:
+    return [sys.executable, "-m", "pytest", "-m", "not slow", "-n", "auto", "--dist", "loadscope", "-q"]
+
+
 _NODES: dict[str, _Node] = {
-    "repo_map_generate": _Node("repo_map_generate", (), lambda _r: [sys.executable, "tools\\repo_map.py"]),
-    "repo_map_check": _Node("repo_map_check", ("repo_map_generate",),
-                            lambda _r: [sys.executable, "tools\\repo_map.py", "--check"]),
-    "workflow_validate": _Node("workflow_validate", ("repo_map_check",),
-                               lambda _r: [sys.executable, "validate_workflows.py"]),
-    "affected_tests_resolve": _Node("affected_tests_resolve", ("workflow_validate",),
-                                    lambda _r: [sys.executable, "tools\\affected_tests.py"]),
+    "repo_map_generate": _Node("repo_map_generate", (), _repo_map_generate_cmd),
+    "repo_map_check": _Node("repo_map_check", ("repo_map_generate",), _repo_map_check_cmd),
+    "workflow_validate": _Node("workflow_validate", ("repo_map_check",), _workflow_validate_cmd),
+    "affected_tests_resolve": _Node(
+        "affected_tests_resolve",
+        ("workflow_validate",),
+        _affected_resolve_cmd,
+    ),
     "affected_tests_run": _Node("affected_tests_run", ("affected_tests_resolve",), _affected_pytest_cmd),
-    "fast_lane_run": _Node("fast_lane_run", ("workflow_validate",),
-                           lambda _r: [sys.executable, "-m", "pytest", "-m", "not slow",
-                                       "-n", "auto", "--dist", "loadscope", "-q"]),
+    "fast_lane_run": _Node("fast_lane_run", ("workflow_validate",), _fast_lane_cmd),
 }
 
 _SUITES: dict[str, tuple[str, ...]] = {
@@ -228,8 +303,15 @@ _SUITES: dict[str, tuple[str, ...]] = {
 }
 
 
-def _run_node(suite_id: str, node_id: str, work_dir: str, state_key: tuple[str, str, str, str],
-              results: dict[str, ValidationResult], use_cache: bool) -> ValidationResult:
+def _run_node(
+    suite_id: str,
+    node_id: str,
+    work_dir: str,
+    state_key: tuple[str, str, str, str],
+    results: dict[str, ValidationResult],
+    use_cache: bool,
+    changed_files: Optional[list[str]] = None,
+) -> ValidationResult:
     if node_id in results:
         return results[node_id]
     node = _NODES[node_id]
@@ -237,21 +319,27 @@ def _run_node(suite_id: str, node_id: str, work_dir: str, state_key: tuple[str, 
     elapsed = 0.0
     cached = True
     for dep in node.deps:
-        dep_result = _run_node(suite_id, dep, work_dir, state_key, results, use_cache)
+        dep_result = _run_node(suite_id, dep, work_dir, state_key, results, use_cache, changed_files)
         commands.extend(dep_result.commands)
         elapsed += dep_result.elapsed_s
         cached = cached and dep_result.cached
         if not dep_result.ok:
-            result = ValidationResult(False, dep_result.detail, cached=cached,
-                                      elapsed_s=elapsed, commands=commands,
-                                      stdout=dep_result.stdout)
+            result = ValidationResult(
+                False,
+                dep_result.detail,
+                cached=cached,
+                elapsed_s=elapsed,
+                commands=commands,
+                stdout=dep_result.stdout,
+            )
             results[node_id] = result
             return result
 
-    cmd = node.build(results)
+    cmd = node.build(results, changed_files)
     if cmd is None:
-        result = ValidationResult(True, "no affected tests", cached=True,
-                                  elapsed_s=elapsed, commands=commands)
+        result = ValidationResult(
+            True, "no affected tests", cached=True, elapsed_s=elapsed, commands=commands
+        )
         results[node_id] = result
         return result
 
@@ -272,8 +360,13 @@ def _run_node(suite_id: str, node_id: str, work_dir: str, state_key: tuple[str, 
     return ran
 
 
-def run_validation_suite(suite_id: str, work_dir: str, *, cache: bool = True) -> ValidationResult:
-    """Run a named validation suite through the DAG cache."""
+def run_validation_suite(
+    suite_id: str, work_dir: str, *, cache: bool = True, changed_files: Optional[list[str]] = None
+) -> ValidationResult:
+    """Run a named validation suite through the DAG cache.
+
+    ``changed_files`` scopes the affected-tests resolve node to a specific file set (a self-ref
+    subtask's own diff) instead of the cumulative-git-diff fallback; None preserves today's behavior."""
     if suite_id not in _SUITES:
         return ValidationResult(False, f"unknown validation suite: {suite_id}")
     t0 = time.perf_counter()
@@ -281,11 +374,12 @@ def run_validation_suite(suite_id: str, work_dir: str, *, cache: bool = True) ->
     state_key = _state_key(work_dir)
     final = ValidationResult(True)
     for target in _SUITES[suite_id]:
-        final = _run_node(suite_id, target, work_dir, state_key, results, cache)
+        final = _run_node(suite_id, target, work_dir, state_key, results, cache, changed_files)
         if not final.ok:
             break
     final.elapsed_s = time.perf_counter() - t0 if final.cached else final.elapsed_s
     final.cached = all(r.cached for r in results.values()) if results else False
-    perf.record("validation_suite", time.perf_counter() - t0, suite_id=suite_id,
-                ok=final.ok, cached=final.cached)
+    perf.record(
+        "validation_suite", time.perf_counter() - t0, suite_id=suite_id, ok=final.ok, cached=final.cached
+    )
     return final

@@ -8,6 +8,7 @@ from platform_core.execution.backends.local import LocalEnvironment
 
 
 def test_execution_config_defaults_to_today(monkeypatch):
+    monkeypatch.setenv("FULL_STACK", "0")   # master off -> assert the conservative ship-dark fallback
     # R12: assert the CODED defaults (env scrubbed) -- a production install .env may
     # legitimately enable the fabric; the router behavior tests below cover both states.
     for k in ("EXECUTION_FABRIC_ENABLED", "EXECUTION_BACKEND", "EXECUTION_REMOTE_KIND",

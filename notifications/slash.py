@@ -83,9 +83,9 @@ async def _subtaskAutocomplete(interaction, current: str):  # noqa: ANN001
     out = []
     for s in state.subtasks:
         # only PENDING subtasks can be skipped between steps; don't offer the rest
-        if s["status"] == "pending" and current.lower() in s["subtask_id"].lower():
-            out.append(app_commands.Choice(name=f"{s['subtask_id']} — {s['title'][:60]}",
-                                           value=s["subtask_id"]))
+        if s.get("status") == "pending" and current.lower() in s.get("subtask_id", "").lower():
+            out.append(app_commands.Choice(name=f"{s.get('subtask_id')} — {s.get('title', '')[:60]}",
+                                           value=s.get("subtask_id")))
     return out[:25]
 
 

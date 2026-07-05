@@ -7,7 +7,6 @@ EXPORTS:
   WorkRequest
   parseHours(raw) -> float  -- Tolerant parse ('2', '2h', '1.5')
   validate(req: WorkRequest) -> list[str]
-  externalReadiness(req: WorkRequest) -> list[str]  -- Warn about external-project setup gaps that degrade PR output, without blocking launch.
   buildArgv(req: WorkRequest) -> list[str]
   prepareExternalRepo(req: WorkRequest) -> None  -- Clone repo_url into a managed workspace and mutate req.work_dir for this launch.
   activeRun() -> Optional[TaskState]  -- The latest task iff it's still active
@@ -18,15 +17,15 @@ EXPORTS:
   spawnResume(task_id: str, retry_failed: bool=False) -> int
   launchOrError(req: WorkRequest) -> str  -- Validate -> lock -> block-if-active -> spawn -> handshake-confirm
   resumeOrError(task_id: str, retry_failed: bool=False) -> str  -- Resume an existing task by id (block if a run is active)
-DEPENDS-ON: config, notifications.commands, platform_core.core, platform_core.ops.external_project, platform_core.orchestration, platform_core.runtime.control, platform_core.runtime.heartbeat, state.task, state.task_io
+DEPENDS-ON: config, notifications.commands, notifications.work_launcher_readiness, platform_core.core, platform_core.ops.external_project, platform_core.orchestration, platform_core.runtime.control, platform_core.runtime.heartbeat, state.task, state.task_io
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_work_launcher.py
 """
+
 from __future__ import annotations
 
 import math
 import os
-import shutil
 import subprocess
 import sys
 import threading
@@ -39,6 +38,10 @@ from typing import Optional
 
 import config
 from notifications import commands
+
+# externalReadiness lives in a sub-module (size budget); re-exported so `work_launcher.externalReadiness`
+# and `from notifications.work_launcher import externalReadiness` keep working unchanged.
+from notifications.work_launcher_readiness import externalReadiness  # noqa: F401
 from platform_core.core import fsio
 from platform_core.orchestration import work_profile
 from state.task import TaskState
@@ -51,7 +54,7 @@ LOG = config.getLogger("work_launcher")
 # survives the test, edits the repo, and -- because the child runs its own post-run SIE
 # maintenance in-window -- recursively spawns MORE runs. The guard makes _spawnArgv a
 # no-op returning a sentinel pid whenever a test runner is active or NINE_TO_FIVE_TEST_MODE
-# is set. Production never imports unittest/pytest and never sets the var, so real runs are
+# is set. Production never imports pytest and never sets the var, so real runs are
 # unaffected. Set NINE_TO_FIVE_TEST_MODE=0 to force the real path (the spawn argv tests do).
 _SPAWN_BLOCKED_PID: int = -1
 
@@ -60,12 +63,13 @@ def _spawnBlocked() -> bool:
     """True when a real detached run must NOT be launched (unit/CI context)."""
     env = os.getenv("NINE_TO_FIVE_TEST_MODE", "").strip().lower()
     if env in {"0", "false", "no", "off"}:
-        return False                       # explicit opt-out: tests that assert the real Popen path
+        return False  # explicit opt-out: tests that assert the real Popen path
     if env in {"1", "true", "yes", "on"}:
         return True
-    # env unset -> auto-detect a live test runner so a forgotten guard never spawns a real run.
-    # Safe: no production module imports unittest/pytest (only test modules do).
-    return "unittest" in sys.modules or "pytest" in sys.modules
+    # env unset -> block only under a REAL test runner. NOT "unittest" in sys.modules (numpy.testing
+    # / torch import it at load, so real runs carry it -- see discord_client). Detect pytest instead.
+    return os.getenv("PYTEST_CURRENT_TEST") is not None or "pytest" in sys.modules
+
 
 HOURS_MIN: float = 0.1
 HOURS_MAX: float = 24.0
@@ -86,8 +90,8 @@ class WorkRequest:
     no_pr: bool = False
     night_mode: bool = False
     work_profile: Optional[str] = None
-    launch_id: Optional[str] = None   # handshake token (set by launchOrError)
-    sim: bool = False   # token-light: --sim-run (simulation doubles over live surfaces, zero API)
+    launch_id: Optional[str] = None  # handshake token (set by launchOrError)
+    sim: bool = False  # token-light: --sim-run (simulation doubles over live surfaces, zero API)
 
 
 def parseHours(raw) -> float:
@@ -133,47 +137,33 @@ def validate(req: WorkRequest) -> list[str]:
     return errs
 
 
-def externalReadiness(req: WorkRequest) -> list[str]:
-    """Warn about external-project setup gaps that degrade PR output, without blocking launch."""
-    if not req.work_dir:
-        return []
-    work = Path(req.work_dir).resolve()
-    if work == config.PROJECT_ROOT.resolve():
-        return []
-    if not shutil.which("git"):
-        return ["External project: git is not installed, so PR output will be skipped."]
-    warnings: list[str] = []
-    env = os.environ.copy()
-    env["GIT_TERMINAL_PROMPT"] = "0"
+def _pythonExe() -> str:
+    """Interpreter to spawn child ``main.py`` runs with: the venv python when it exists
+    (absolute, dep-complete), else the currently-running interpreter (``sys.executable``).
 
-    def git(*args: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["git", *args], cwd=str(work), capture_output=True, text=True,
-                              stdin=subprocess.DEVNULL, env=env, timeout=config.GIT_TIMEOUT_SECONDS)
-
-    try:
-        inside = git("rev-parse", "--is-inside-work-tree")
-        if inside.returncode != 0 or "true" not in (inside.stdout or "").lower():
-            return ["External project: not a git repo, so the run can edit files but cannot open a PR."]
-        remote = git("remote", "get-url", "origin")
-        if remote.returncode != 0 or not (remote.stdout or "").strip():
-            warnings.append("External project: no `origin` remote, so PR push/create will be skipped.")
-    except subprocess.TimeoutExpired:
-        warnings.append("External project: git preflight timed out; PR output may be skipped.")
-    except Exception as e:  # noqa: BLE001
-        warnings.append(f"External project: git preflight failed ({e}); PR output may be skipped.")
-    if not shutil.which("gh"):
-        warnings.append("External project: `gh` is not on PATH, so GitHub PR creation will be skipped.")
-    return warnings
+    ``config.VENV_PYTHON`` is ``<PROJECT_ROOT>/venv/Scripts/python.exe``; in a git worktree
+    or a checkout without a ``venv/`` that path does not exist, and ``subprocess.Popen``
+    raised WinError 2 (executable not found). ``sys.executable`` is always present and
+    carries this process's deps, so it is the correct fallback. Mirrors the existing
+    ``executor_env._hookInterpreter`` pattern."""
+    # os.path.exists returns False (never raises) on a broken/malformed path, so no swallow needed.
+    venv = str(config.VENV_PYTHON)
+    return venv if os.path.exists(venv) else sys.executable
 
 
 def buildArgv(req: WorkRequest) -> list[str]:
     argv = [
-        str(config.VENV_PYTHON), str(config.PROJECT_ROOT / "main.py"),
-        "--goal", req.goal,
-        "--hours", str(req.hours),
+        _pythonExe(),
+        str(config.PROJECT_ROOT / "main.py"),
+        "--goal",
+        req.goal,
+        "--hours",
+        str(req.hours),
         "--auto-approve",
-        "--mode", req.mode,
-        "--parallel", str(req.parallel),
+        "--mode",
+        req.mode,
+        "--parallel",
+        str(req.parallel),
     ]
     # Nightclaw's unattended/night runs should still create a review surface at the end.
     # Keep the raw no_pr escape hatch for CLI/local callers, but never let night mode hide feedback.
@@ -201,6 +191,7 @@ def prepareExternalRepo(req: WorkRequest) -> None:
     if not req.repo_url:
         return
     from platform_core.ops.external_project import cloneRepo
+
     req.work_dir = str(cloneRepo(req.repo_url, req.repo_ref))
     req.repo_url = None
     req.repo_ref = None
@@ -227,6 +218,7 @@ def _isStale(state: Optional[TaskState]) -> bool:
     if state is None:
         return False
     from platform_core.runtime.heartbeat import isRunAlive
+
     return not isRunAlive(state.task_id)
 
 
@@ -237,18 +229,17 @@ def _reapStale(state: TaskState) -> None:
     try:
         from platform_core.runtime.control import ControlBus
         from state import task_io
+
         bus = ControlBus(state.task_id)
         bus.requestAbort()
         bus.pushOp({"op": "mark_stale", "reason": "launcher: no heartbeat and pid dead"})
         reaped = task_io.reapDeadRun(state.task_id)
-        LOG.warning("stale task %s: abort requested on bus, reaped=%s",
-                    state.task_id[:8], reaped)
+        LOG.warning("stale task %s: abort requested on bus, reaped=%s", state.task_id[:8], reaped)
     except Exception:  # noqa: BLE001 -- cleanup is best-effort; the next poll retries
         LOG.warning("stale-task reap failed (ignored)", exc_info=True)
 
 
-def waitForLaunch(launch_id: str, *, timeout_s: float = 10.0,
-                  poll_s: float = 0.5) -> Optional[str]:
+def waitForLaunch(launch_id: str, *, timeout_s: float = 10.0, poll_s: float = 0.5) -> Optional[str]:
     """Launch handshake: poll state/launch/<launch_id>.json (written by main.py --launch-id)
     for the spawned run's task_id. Replaces newest-state-file polling, which could confirm
     the WRONG task when two writers raced."""
@@ -268,8 +259,9 @@ def _spawnArgv(argv: list[str], tag: str) -> int:
     In a test context this is a hard no-op (returns ``_SPAWN_BLOCKED_PID``) so a unit test
     can never start a real ``main.py`` run -- see ``_spawnBlocked``."""
     if _spawnBlocked():
-        LOG.warning("spawn '%s' suppressed (test mode) -- not launching a real run: %s",
-                    tag, " ".join(argv[:3]))
+        LOG.warning(
+            "spawn '%s' suppressed (test mode) -- not launching a real run: %s", tag, " ".join(argv[:3])
+        )
         return _SPAWN_BLOCKED_PID
     config.LOG_PATH.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
@@ -278,11 +270,15 @@ def _spawnArgv(argv: list[str], tag: str) -> int:
     if os.name == "nt":
         creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     proc = subprocess.Popen(
-        argv, cwd=str(config.PROJECT_ROOT),
-        stdin=subprocess.DEVNULL, stdout=logfile, stderr=subprocess.STDOUT,
-        close_fds=True, creationflags=creationflags,
+        argv,
+        cwd=str(config.PROJECT_ROOT),
+        stdin=subprocess.DEVNULL,
+        stdout=logfile,
+        stderr=subprocess.STDOUT,
+        close_fds=True,
+        creationflags=creationflags,
     )
-    logfile.close()   # child keeps its own duplicated handle; release the parent's copy
+    logfile.close()  # child keeps its own duplicated handle; release the parent's copy
     LOG.info("Spawned %s pid=%s", tag, proc.pid)
     return proc.pid
 
@@ -292,7 +288,7 @@ def spawn(req: WorkRequest) -> int:
 
 
 def buildResumeArgv(task_id: str, retry_failed: bool = False) -> list[str]:
-    argv = [str(config.VENV_PYTHON), str(config.PROJECT_ROOT / "main.py"), "--resume", task_id]
+    argv = [_pythonExe(), str(config.PROJECT_ROOT / "main.py"), "--resume", task_id]
     if retry_failed:
         argv.append("--retry-failed")
     return argv
@@ -304,6 +300,7 @@ def taskExists(task_id: str) -> bool:
     STATE_DIR (e.g. memory/user_prefs.py's real store), a path-traversal existence oracle
     reachable via the unauthenticated Discord /run and !resume commands."""
     from state.task_io import validateTaskId
+
     try:
         validateTaskId(task_id)
     except ValueError:
@@ -328,6 +325,7 @@ def _launchLockPath() -> Path:
 def _lockOwnerAlive(pid: int) -> bool:
     try:
         import psutil
+
         return psutil.pid_exists(pid)
     except Exception:  # noqa: BLE001 -- unknowable -> assume alive (never steal a live lock)
         return True
@@ -337,8 +335,14 @@ def _doLaunch(req: WorkRequest) -> "tuple[Optional[int], Optional[str], Optional
     """Inside-the-lock launch body: returns (pid, task_id, error_message)."""
     active = activeRun()
     if active is not None:
-        return None, None, (f"⛔ A run is already active (`{active.task_id[:8]}` · "
-                            f"`{active.meta.get('status')}`). Abort it first.")
+        return (
+            None,
+            None,
+            (
+                f"⛔ A run is already active (`{active.task_id[:8]}` · "
+                f"`{active.meta.get('status')}`). Abort it first."
+            ),
+        )
     try:
         prepareExternalRepo(req)
     except Exception as e:  # noqa: BLE001
@@ -363,8 +367,7 @@ def launchOrError(req: WorkRequest) -> str:
     if not _LAUNCH_LOCK.acquire(blocking=False):
         return "⛔ Another launch is already in progress."
     try:
-        if not fsio.tryAcquireLock(_launchLockPath(), stale_after=120.0,
-                                   owner_alive=_lockOwnerAlive):
+        if not fsio.tryAcquireLock(_launchLockPath(), stale_after=120.0, owner_alive=_lockOwnerAlive):
             return "⛔ Another launch is already in progress (cross-process lock held)."
         try:
             pid, task_id, err = _doLaunch(req)
@@ -376,11 +379,15 @@ def launchOrError(req: WorkRequest) -> str:
         return err
     web = f"http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/"
     if task_id:
-        msg = (f"✅ Launched run `{task_id[:8]}` (pid {pid}) · mode `{req.mode}` · "
-               f"{req.hours}h · parallel {req.parallel}\n{web}")
+        msg = (
+            f"✅ Launched run `{task_id[:8]}` (pid {pid}) · mode `{req.mode}` · "
+            f"{req.hours}h · parallel {req.parallel}\n{web}"
+        )
     else:
-        msg = (f"✅ Launch started (pid {pid}) · mode `{req.mode}` · {req.hours}h. "
-               f"If no dashboard appears shortly, check `logs\\work-*.log`.\n{web}")
+        msg = (
+            f"✅ Launch started (pid {pid}) · mode `{req.mode}` · {req.hours}h. "
+            f"If no dashboard appears shortly, check `logs\\work-*.log`.\n{web}"
+        )
     warnings = externalReadiness(req)
     if warnings:
         msg += "\n\n" + "\n".join(f"⚠️ {w}" for w in warnings)
@@ -404,8 +411,7 @@ def resumeOrError(task_id: str, retry_failed: bool = False) -> str:
     if not _LAUNCH_LOCK.acquire(blocking=False):
         return "⛔ Another launch is already in progress."
     try:
-        if not fsio.tryAcquireLock(_launchLockPath(), stale_after=120.0,
-                                   owner_alive=_lockOwnerAlive):
+        if not fsio.tryAcquireLock(_launchLockPath(), stale_after=120.0, owner_alive=_lockOwnerAlive):
             return "⛔ Another launch is already in progress (cross-process lock held)."
         try:
             active = activeRun()

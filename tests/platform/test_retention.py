@@ -130,6 +130,32 @@ def test_sweep_guard_alerts_truncates_past_cap(tmp_path):
     assert alerts.stat().st_size <= 100 + 60
 
 
+def test_retention_byte_caps_are_defined_in_real_config():
+    """REGRESSION: sweepHookLogs/sweepGuardAlerts read config.HOOKS_LOG_MAX_BYTES /
+    config.GUARD_ALERTS_MAX_BYTES with NO fallback. They were never defined in config, so the
+    live retention sweep crashed ("module 'config' has no attribute 'HOOKS_LOG_MAX_BYTES'",
+    swallowed as "retention sweep failed (ignored)") and hooks.log / guard_alerts.jsonl grew
+    unbounded. The sweep test below masked it with raising=False injection; this exercises the
+    REAL config."""
+    for name in ("HOOKS_LOG_MAX_BYTES", "GUARD_ALERTS_MAX_BYTES"):
+        assert hasattr(config, name), f"config.{name} is not defined"
+        val = getattr(config, name)
+        assert isinstance(val, int) and val > 0, f"config.{name} = {val!r}"
+
+
+def test_sweep_hook_and_guard_logs_use_real_config_defaults(tmp_path, monkeypatch):
+    """The sweeps must run against the REAL config default (attr NOT injected) without raising
+    AttributeError -- the exact production failure mode."""
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    (log_dir / "hooks.log").write_text("x" * 200, encoding="utf-8")
+    (log_dir / "guard_alerts.jsonl").write_text("y" * 200, encoding="utf-8")
+    monkeypatch.setattr(config, "LOG_PATH", log_dir, raising=False)
+    # Deliberately do NOT inject HOOKS_LOG_MAX_BYTES / GUARD_ALERTS_MAX_BYTES.
+    assert retention.sweepHookLogs() >= 0
+    assert retention.sweepGuardAlerts() >= 0
+
+
 def test_sweep_all_includes_hook_log_trim(tmp_path, monkeypatch):
     log_dir = tmp_path / "logs"
     log_dir.mkdir()

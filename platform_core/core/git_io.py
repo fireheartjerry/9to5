@@ -16,6 +16,7 @@ DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: spawns subprocesses (git, gh, python gate commands)
 RUN/TEST: python -m pytest tests/platform/test_git_io.py
 """
+
 from __future__ import annotations
 
 import os
@@ -28,8 +29,14 @@ from typing import Optional
 DEFAULT_TIMEOUT_SECONDS: int = 120
 
 
-def runTool(cmd, *, cwd=None, timeout: Optional[float] = DEFAULT_TIMEOUT_SECONDS,
-            extra_env: Optional[dict] = None, check: bool = False) -> subprocess.CompletedProcess:
+def runTool(
+    cmd,
+    *,
+    cwd=None,
+    timeout: Optional[float] = DEFAULT_TIMEOUT_SECONDS,
+    extra_env: Optional[dict] = None,
+    check: bool = False,
+) -> subprocess.CompletedProcess:
     """Run ``cmd`` with the safety rails every external tool call needs: stdin=DEVNULL
     (never blocks on input), capture_output+text, and a hard ``timeout``. Raises
     TimeoutExpired/CalledProcessError per stdlib semantics -- callers own their policy."""
@@ -43,22 +50,31 @@ def runTool(cmd, *, cwd=None, timeout: Optional[float] = DEFAULT_TIMEOUT_SECONDS
         check=check,
         capture_output=True,
         text=True,
+        # Pin UTF-8 decoding: without it text mode uses the OS default (cp1252 on Windows),
+        # and a git/gh diff byte undefined in cp1252 (e.g. 0x8f/0x9d in UTF-8 code) crashes
+        # the subprocess reader thread and SILENTLY drops the output (rc=0, stdout=None).
+        # errors="replace" keeps the capture intact. Mirrors agents/verification.py.
+        encoding="utf-8",
+        errors="replace",
         stdin=subprocess.DEVNULL,
         env=env,
         timeout=timeout,
     )
 
 
-def runGit(*args: str, cwd, timeout: Optional[float] = DEFAULT_TIMEOUT_SECONDS,
-           check: bool = False) -> subprocess.CompletedProcess:
+def runGit(
+    *args: str, cwd, timeout: Optional[float] = DEFAULT_TIMEOUT_SECONDS, check: bool = False
+) -> subprocess.CompletedProcess:
     """``git <args>`` in ``cwd`` with GIT_TERMINAL_PROMPT=0 so git can NEVER hang a run
     waiting on a credential prompt."""
-    return runTool(["git", *args], cwd=cwd, timeout=timeout, check=check,
-                   extra_env={"GIT_TERMINAL_PROMPT": "0"})
+    return runTool(
+        ["git", *args], cwd=cwd, timeout=timeout, check=check, extra_env={"GIT_TERMINAL_PROMPT": "0"}
+    )
 
 
-def gitPreflight(work_dir, *, require_origin: bool = False,
-                 timeout: Optional[float] = DEFAULT_TIMEOUT_SECONDS) -> "tuple[bool, str]":
+def gitPreflight(
+    work_dir, *, require_origin: bool = False, timeout: Optional[float] = DEFAULT_TIMEOUT_SECONDS
+) -> "tuple[bool, str]":
     """(ok, reason) preflight: ``work_dir`` is inside a git work tree, and (optionally)
     an ``origin`` remote is configured. Reasons are stable strings callers surface
     verbatim. Propagates subprocess exceptions (e.g. TimeoutExpired) to the caller."""
@@ -81,12 +97,21 @@ _REPO_CHECKS: "tuple[tuple[str, ...], ...]" = (
     (sys.executable, "validate_workflows.py"),
 )
 _FAST_SUITE: "tuple[str, ...]" = (
-    sys.executable, "-m", "pytest", "-m", "not slow", "-n", "auto", "--dist", "loadscope", "-q",
+    sys.executable,
+    "-m",
+    "pytest",
+    "-m",
+    "not slow",
+    "-n",
+    "auto",
+    "--dist",
+    "loadscope",
+    "-q",
 )
 
 GATE_COMMANDS: "dict[str, tuple[tuple[str, ...], ...]]" = {
-    "repo_checks": _REPO_CHECKS,                 # self_ref post-verify tier (cheap)
-    "pre_pr": _REPO_CHECKS + (_FAST_SUITE,),     # pre-PR tier (repo gates + fast suite)
+    "repo_checks": _REPO_CHECKS,  # self_ref post-verify tier (cheap)
+    "pre_pr": _REPO_CHECKS + (_FAST_SUITE,),  # pre-PR tier (repo gates + fast suite)
 }
 
 

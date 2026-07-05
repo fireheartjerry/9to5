@@ -245,7 +245,11 @@ class LocaltunnelProvider(TunnelProvider):
         return self.available()
 
     def start(self, port: int) -> "subprocess.Popen":
-        return _spawn(["npx", "localtunnel", "--port", str(port)])
+        # Bare "npx" is npx.CMD on Windows; Popen(["npx", ...]) without a shell raises
+        # WinError 2 on every launch (perpetual demote/requalify churn). available() already
+        # resolved it via shutil.which -- spawn the full path, which Popen CAN launch.
+        npx = shutil.which("npx") or "npx"
+        return _spawn([npx, "localtunnel", "--port", str(port)])
 
     def parse_url(self, line: str) -> Optional[str]:
         m = _LT_RE.search(line or "")

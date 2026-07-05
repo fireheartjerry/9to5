@@ -152,6 +152,11 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         self.writeIndex(state)
         dashboard.update(state, "planning", f"planned {len(state.subtasks)} subtasks")
         self._planReview(state, elaborated, dashboard)
+        from platform_core.orchestration.human_nature_bridge import (
+            emotionAdvisory, midRunInstinct, opinionAdvisory)
+        midRunInstinct(state, dashboard)          # hook 4: surface HN's mid-run instinct (best-effort)
+        opinionAdvisory(state, dashboard)         # advisory-only opinion coupling (gated, never blocks)
+        emotionAdvisory(state, dashboard)         # emotion coupling: record+surface only, no run effect
         self._checkControl(state, bus, dashboard, gate="plan")
         return architect_doc
 
@@ -160,6 +165,15 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         INDEX-form depends_on -> materialize the real DAG (resolve indices to st-ids); the legacy
         off-path keeps the plain addSubtask loop."""
         capped = plan[:config.MAX_SUBTASKS]
+        dropped = len(plan) - len(capped)
+        if dropped > 0:
+            # The over-cap slice used to drop deliverables SILENTLY here (unlike the replan
+            # path, which logs its skip). Surface it: log + a run notification, cap unchanged.
+            LOG.warning("plan commit: dropped %d deliverable(s) beyond MAX_SUBTASKS (%d)",
+                        dropped, config.MAX_SUBTASKS)
+            state.addNotification(
+                "plan_truncated",
+                f"{dropped} deliverable(s) dropped -- plan exceeds MAX_SUBTASKS ({config.MAX_SUBTASKS})")
         if config.DUAL_LEDGER_PLANNER_ENABLED and any(
                 any(isinstance(d, int) for d in (s.get("depends_on") or [])) for s in capped):
             from platform_core.orchestration import dual_ledger_planner as _dlp
@@ -378,6 +392,7 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
             _t = get_terminal_surface()
             if _t is not None:
                 _t.finalize()
+                _t.unpin()
             set_terminal_surface(None)
         _webdash_mod.stopWebDashboard()
         self._cleanupScaffolding(work_dir)   # never leave 9to5 scratch dirs in the user's project

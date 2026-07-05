@@ -95,8 +95,9 @@ class TestSieMaintenance(unittest.TestCase):
         self.assertEqual(out["steps"]["evaluate"]["status"], "empty_suite")
 
     def test_throttled_second_call_skips(self):
-        sie.run_maintenance(force=True, db_path=self.db)
-        out = sie.run_maintenance(force=False, db_path=self.db)  # within window
+        with mock.patch.object(config, "SIE_FORCE_WEEKLY", False):
+            sie.run_maintenance(force=True, db_path=self.db)
+            out = sie.run_maintenance(force=False, db_path=self.db)  # within window
         self.assertEqual(out["skipped"], "not_due")
 
     def test_kill_switch_skips(self):
@@ -182,11 +183,14 @@ class TestCurriculumAutoQueueGuardrails(unittest.TestCase):
         return [{"family": f"fam{i}", "goal": f"practice fam{i}", "reason": "weak"} for i in range(n)]
 
     def test_disabled_by_default(self):
-        self.assertFalse(
-            config.CURRICULUM_AUTO_QUEUE_ENABLED,
-            "CURRICULUM_AUTO_QUEUE_ENABLED must default to False -- it bypasses "
-            "the human approval gate and must be opt-in only",
-        )
+        # FULL_STACK defaults this on; under conservative master-off mode it must ship dark
+        # (it bypasses the human approval gate, so opt-in only).
+        from platform_core.app_config.llm import SieCfg
+        fld = SieCfg.__dataclass_fields__["CURRICULUM_AUTO_QUEUE_ENABLED"]
+        with mock.patch.dict(os.environ, {"FULL_STACK": "0"}, clear=False):
+            os.environ.pop("CURRICULUM_AUTO_QUEUE_ENABLED", None)
+            self.assertFalse(fld.default_factory(),
+                             "must ship dark under FULL_STACK=0 (bypasses the human gate)")
 
     def test_noop_when_flag_unset(self):
         # Even with a strong trigger (>=5 new feedback + goals available), the auto-queue must

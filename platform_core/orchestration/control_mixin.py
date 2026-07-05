@@ -67,9 +67,11 @@ class OrchestratorControlMixin(OrchestratorControlReviewMixin):
             all_ok = True
             for m in msgs:
                 author_id = m.get("author_id") or None
-                cmd = commands.decide(
-                    int(author_id) if author_id else None, m.get("author_is_bot", False), m.get("content", "")
-                )
+                try:
+                    uid = int(author_id) if author_id else None
+                except (TypeError, ValueError):
+                    uid = None      # odd/non-numeric author id -> fail closed, never wedge the poll
+                cmd = commands.decide(uid, m.get("author_is_bot", False), m.get("content", ""))
                 try:
                     if cmd:
                         if commands.COMMAND_REGISTRY.get(cmd.name, {}).get("mutating"):
