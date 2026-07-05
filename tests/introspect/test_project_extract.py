@@ -32,6 +32,42 @@ def test_extract_cache_hit(fixture_project, tmp_path, monkeypatch):
     assert cache_dir.is_dir() and list(cache_dir.glob("*.json"))
 
 
+def test_cache_invalidated_by_content_edit(fixture_project, tmp_path, monkeypatch):
+    """Editing a file (HEAD unchanged) must invalidate the cache -- the dirty-tree path."""
+    import os
+    import config
+    from introspect import project_extract
+
+    monkeypatch.setattr(config, "STATE_DIR", tmp_path / "state" / "tasks", raising=False)
+    # Simulate a real git repo whose HEAD does not move across uncommitted edits.
+    monkeypatch.setattr(project_extract, "_gitHead", lambda _root: "deadbeefcafe")
+    m1 = project_extract.extractProject(fixture_project)
+    util = fixture_project / "pkg" / "util.py"
+    util.write_text('"""Edited util, no side effects."""\n\ndef helper():\n    return 2\n',
+                    encoding="utf-8")
+    # Bump mtime explicitly: coarse filesystem mtime resolution must not flake this.
+    stat = util.stat()
+    os.utime(util, ns=(stat.st_atime_ns, stat.st_mtime_ns + 2_000_000_000))
+    m2 = project_extract.extractProject(fixture_project)
+    util1 = next(m.side_effects for m in m1.modules if m.path == "pkg/util.py")
+    util2 = next(m.side_effects for m in m2.modules if m.path == "pkg/util.py")
+    assert "subprocess" in util1
+    assert "subprocess" not in util2       # stale cache would still report it
+
+
+def test_cache_key_includes_max_files(fixture_project, tmp_path, monkeypatch):
+    """A truncated extract must not be served for a later, larger max_files call."""
+    import config
+    from introspect import extractProject
+
+    monkeypatch.setattr(config, "STATE_DIR", tmp_path / "state" / "tasks", raising=False)
+    m1 = extractProject(fixture_project, max_files=1)
+    assert m1.truncated is True and len(m1.modules) == 1
+    m2 = extractProject(fixture_project, max_files=100)
+    assert m2.truncated is False
+    assert len(m2.modules) > 1             # stale cache would return the 1-module model
+
+
 def test_context_for_prompt_budget(fixture_project):
     from introspect import extractProject, contextForPrompt
 

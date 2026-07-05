@@ -24,6 +24,19 @@ def test_non_facade_module_excluded(fixture_project):
     assert "pkg/core.py" not in bounds.facades       # defines a function -> not a facade
 
 
+def test_future_only_module_is_not_facade(fixture_project):
+    from introspect.project_boundaries import detectBoundaries
+
+    (fixture_project / "pkg" / "future_only.py").write_text(
+        '"""Docstring plus a future import only -- NOT a re-export facade."""\n'
+        "from __future__ import annotations\n",
+        encoding="utf-8",
+    )
+    bounds = detectBoundaries(fixture_project, _scan(fixture_project))
+    assert "pkg/future_only.py" not in bounds.facades
+    assert "pkg/__init__.py" in bounds.facades       # real facade still detected
+
+
 def test_entrypoints_detected(fixture_project):
     from introspect.project_boundaries import detectBoundaries
 

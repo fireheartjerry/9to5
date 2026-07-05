@@ -45,6 +45,12 @@ EXCLUDE_DIRS = frozenset({
     ".eggs",
     ".idea",
     ".vscode",
+    "vendor",
+    ".next",
+    ".nuxt",
+    "coverage",
+    "site-packages",
+    ".cache",
 })
 
 # Extensions with a dedicated analyzer tier.

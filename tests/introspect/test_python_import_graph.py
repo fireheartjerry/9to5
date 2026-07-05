@@ -52,6 +52,30 @@ def test_stdlib_imports_not_first_party(fixture_project):
     assert util.imports == ()
 
 
+def test_open_tagged_only_for_write_modes(fixture_project):
+    from introspect.python_import_graph import analyzePython
+
+    cases = {
+        "pkg/fx_read.py": 'open("x")\n',                          # default mode: read
+        "pkg/fx_read2.py": 'open("x", "r")\n',
+        "pkg/fx_read3.py": 'open("x", "rb")\n',
+        "pkg/fx_write.py": 'open("x", "w")\n',
+        "pkg/fx_append.py": 'open("x", "a")\n',
+        "pkg/fx_excl.py": 'open("x", "xb")\n',
+        "pkg/fx_plus.py": 'open("x", "r+")\n',
+        "pkg/fx_kw.py": 'open("x", mode="w")\n',
+        "pkg/fx_dyn.py": 'open("x", some_mode)\n',                # dynamic: not provable
+    }
+    for rel, src in cases.items():
+        (fixture_project / rel).write_text(src, encoding="utf-8")
+    mods = analyzePython(fixture_project, list(cases))
+    for rel in ("pkg/fx_read.py", "pkg/fx_read2.py", "pkg/fx_read3.py", "pkg/fx_dyn.py"):
+        assert "file-write" not in mods[rel].side_effects, rel
+    for rel in ("pkg/fx_write.py", "pkg/fx_append.py", "pkg/fx_excl.py", "pkg/fx_plus.py",
+                "pkg/fx_kw.py"):
+        assert "file-write" in mods[rel].side_effects, rel
+
+
 def test_syntax_error_yields_skeleton(fixture_project):
     from introspect.python_import_graph import analyzePython
 

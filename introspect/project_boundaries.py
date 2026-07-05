@@ -77,13 +77,19 @@ def _facades(root_path: Path, modules: list[ModuleInfo]) -> tuple[str, ...]:
 
 
 def _isFacade(path: Path) -> bool:
-    """True when the module is a pure re-export surface (>=1 import, nothing else)."""
+    """True when the module is a pure re-export surface (>=1 import, nothing else).
+
+    ``from __future__ import ...`` is allowed but does NOT qualify as the
+    re-export import: a docstring + future-import-only file is not a facade.
+    """
     try:
         tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
     except (OSError, SyntaxError):
         return False
     has_import = False
     for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.module == "__future__":
+            continue                                   # tolerated, never qualifying
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             has_import = True
         elif isinstance(node, ast.Assign):

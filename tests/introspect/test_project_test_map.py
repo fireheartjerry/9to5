@@ -34,12 +34,21 @@ def test_glob_fallback(fixture_project):
 def test_js_conventions(fixture_project):
     from introspect.project_test_map import mapFileToTests
 
+    hits = mapFileToTests(fixture_project, "src/foo.js", ["src/foo.test.js"])
+    assert hits == ["src/foo.test.js"]
+
+
+def test_js_lookup_is_pure_no_filesystem_escape(fixture_project):
+    """JS branch must consult ONLY caller-supplied test_files, never the live tree."""
+    from introspect.project_test_map import mapFileToTests
+
     src = fixture_project / "src"
     src.mkdir()
     (src / "foo.js").write_text("export const a = 1;\n", encoding="utf-8")
     (src / "foo.test.js").write_text("test('a', () => {});\n", encoding="utf-8")
-    hits = mapFileToTests(fixture_project, "src/foo.js", ["src/foo.test.js"])
-    assert hits == ["src/foo.test.js"]
+    # Sibling test exists on disk but is NOT in test_files -> must not be returned.
+    assert mapFileToTests(fixture_project, "src/foo.js", []) == []
+    assert mapFileToTests(fixture_project, "src/foo.js", ["other/x.test.js"]) == []
 
 
 def test_overrides_checked_first(fixture_project):
