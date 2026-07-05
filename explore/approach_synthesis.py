@@ -5,7 +5,7 @@ EXPORTS:
   MITIGATION_MARKERS -- substrings marking a step as a risk mitigation
   SynthesisResult(winner, scores, adopted_mitigations, rationale)
   selectOrSynthesize(candidates, scores, *, brain=None) -> SynthesisResult
-DEPENDS-ON: explore.approach_gen, explore.approach_tradeoffs
+DEPENDS-ON: explore.approach_gen (ApproachCandidate, brainText), explore.approach_tradeoffs
 SIDE-EFFECTS: none (brain, when given, may only reword the rationale)
 RUN/TEST: python -m pytest tests/explore/test_approach_synthesis.py
 """
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from explore.approach_gen import ApproachCandidate, _brainText
+from explore.approach_gen import ApproachCandidate, brainText
 from explore.approach_tradeoffs import TradeoffScore
 
 MITIGATION_MARKERS = ("test", "rollback", "guard", "verify")
@@ -102,7 +102,7 @@ def _rationale(winner: ApproachCandidate, score: TradeoffScore) -> str:
 def _rewordRationale(brain, rationale: str) -> str:
     """Ask the brain for a reworded rationale; fall back to the original."""
     try:
-        text = _brainText(brain(_REWORD_SYSTEM, rationale)).strip()
+        text = brainText(brain(_REWORD_SYSTEM, rationale)).strip()
     except Exception:
         return rationale
     return text or rationale

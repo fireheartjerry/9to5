@@ -5,6 +5,7 @@ EXPORTS:
   APPROACH_ARCHETYPES -- the five locked approach archetypes
   ApproachCandidate(approach_id, title, summary, steps, files_touched_estimate, archetype)
   generateApproaches(goal, model, *, brain=None, n=3) -> list[ApproachCandidate]
+  brainText(raw) -> str  -- normalize Brain-protocol return shapes to text
 DEPENDS-ON: introspect.project_model (types only; stdlib otherwise)
 SIDE-EFFECTS: none (brain callable is caller-injected; None => deterministic fallback)
 RUN/TEST: python -m pytest tests/explore/test_approach_gen.py
@@ -91,11 +92,12 @@ def _projectTraits(model: ProjectModel) -> dict:
     """Extract the traits the templates specialize on (all deterministic)."""
     test_cmd = next((c.cmd for c in model.commands if c.kind == "test"), "")
     edges = set(model.import_edges)
-    has_cycle = any((dst, src) in edges for src, dst in edges if src != dst)
+    # only detects direct A<->B mutual imports, not longer cycles
+    has_mutual_import = any((dst, src) in edges for src, dst in edges if src != dst)
     return {
         "test_cmd": test_cmd,
         "facades": tuple(model.boundaries.facades),
-        "has_cycle": has_cycle,
+        "has_mutual_import": has_mutual_import,
         "entrypoints": tuple(model.boundaries.entrypoints),
     }
 
@@ -111,8 +113,10 @@ def _archetypeDraft(archetype: str, goal: str, traits: dict) -> dict:
         steps.append(
             f"Preserve re-exports in facade module {traits['facades'][0]}"
         )
-    if traits["has_cycle"]:
-        steps.append("Do not deepen the existing import cycle; guard against new ones")
+    if traits["has_mutual_import"]:
+        steps.append(
+            "Do not deepen the existing mutual import; guard against new cycles"
+        )
     summary = (
         f"{_ARCHETYPE_TITLES[archetype]} approach to: {goal}. "
         f"{_ARCHETYPE_SUMMARIES[archetype]}"
@@ -167,7 +171,7 @@ def _brainDrafts(goal: str, brain, n: int) -> list[dict]:
     user = f"Goal: {goal}\nPropose {n} distinct approaches as a JSON list."
     try:
         raw = brain(_GEN_SYSTEM, user, want_json=True)
-        items = json.loads(_brainText(raw))
+        items = json.loads(brainText(raw))
     except Exception:
         return []
     if not isinstance(items, list):
@@ -184,11 +188,13 @@ def _clampItem(item) -> dict | None:
     """Validate one brain-authored item; None means drop it."""
     if not isinstance(item, dict):
         return None
+    if not isinstance(item.get("steps"), (list, tuple)):
+        return None  # a bare string would coerce to a tuple of characters
     try:
         title = str(item["title"])
         summary = str(item["summary"])
         steps = tuple(str(s) for s in item["steps"])
-        files_estimate = max(0, int(item["files_touched_estimate"]))
+        files_estimate = max(1, int(item["files_touched_estimate"]))
     except (KeyError, TypeError, ValueError):
         return None
     if not title or not steps:
@@ -205,7 +211,7 @@ def _clampItem(item) -> dict | None:
     }
 
 
-def _brainText(raw) -> str:
+def brainText(raw) -> str:
     """Accept Brain-protocol return shapes: plain str or ollama chat dict."""
     if isinstance(raw, dict):
         return str(raw.get("message", {}).get("content", ""))

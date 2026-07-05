@@ -101,6 +101,29 @@ def test_generate_brain_missing_fields_dropped_and_topped_up(fixture_project):
     assert len({c.archetype for c in out}) == 3
 
 
+def test_generate_brain_string_steps_dropped_and_topped_up(fixture_project):
+    # steps as a bare string must NOT become a tuple of characters
+    brain = fake_brain(
+        as_json=[
+            {
+                "title": "string steps",
+                "summary": "S",
+                "steps": "do the thing",
+                "files_touched_estimate": 1,
+                "archetype": "new-module",
+            }
+        ]
+    )
+    m = extractProject(fixture_project, use_cache=False)
+    out = generateApproaches("goal", m, brain=brain, n=3)
+    assert len(out) == 3
+    assert all(c.title != "string steps" for c in out)  # invalid item dropped
+    # topped up purely from archetype templates
+    assert len({c.archetype for c in out}) == 3
+    for cand in out:
+        assert all(len(step) > 1 for step in cand.steps)
+
+
 def test_generate_brain_invalid_json_falls_back(fixture_project):
     brain = fake_brain(reply="not json at all {{{")
     m = extractProject(fixture_project, use_cache=False)
