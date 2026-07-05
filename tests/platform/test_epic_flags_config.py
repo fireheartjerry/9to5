@@ -144,3 +144,17 @@ def test_elaborator_excellence_ships_dark(monkeypatch):
 def test_elaborator_excellence_facade_exposed():
     # config.__getattr__ delegates to the live registry (PEP 562).
     assert hasattr(config, "ELABORATOR_EXCELLENCE_ENABLED")
+
+
+def test_phase234_elaborator_flags_ship_dark(monkeypatch):
+    monkeypatch.setenv("FULL_STACK", "0")
+    for k in ("ELABORATOR_PRECEDENT_ENABLED", "ELABORATOR_BESTOFN_ENABLED",
+              "ELABORATOR_LOOKAHEAD_ENABLED", "ELABORATOR_DEFER_ENABLED",
+              "ELABORATOR_CANDIDATES_MAX"):
+        monkeypatch.delenv(k, raising=False)
+    flags = EpicFlags()
+    assert flags.ELABORATOR_PRECEDENT_ENABLED is False
+    assert flags.ELABORATOR_BESTOFN_ENABLED is False
+    assert flags.ELABORATOR_LOOKAHEAD_ENABLED is False
+    assert flags.ELABORATOR_DEFER_ENABLED is False
+    assert flags.ELABORATOR_CANDIDATES_MAX == 5
