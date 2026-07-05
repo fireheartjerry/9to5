@@ -89,6 +89,11 @@ REVIEW_GUIDANCE: dict[str, str] = {
         "opened. Judge correctness, safety, scope, and leftover debt. A 'high' "
         "severity holds the PR."
     ),
+    "elaboration": (
+        "You are judging an ELABORATED SPEC (not code). Flag: ungrounded or invented file "
+        "paths, an objective that does not match the goal, missing acceptance criteria, and "
+        "over-broad scope. Approve if the spec is grounded and buildable."
+    ),
 }
 
 _APPROVE_WORDS = {"approved", "approve", "pass", "passed", "ok", "okay", "accept", "accepted", "lgtm"}
