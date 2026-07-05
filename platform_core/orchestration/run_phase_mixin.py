@@ -7,7 +7,6 @@ DEPENDS-ON: agents.architect, agents.discovery, agents.verifier, config, learnin
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/conftest.py tests/execution/test_resume_setup.py tests/orchestration/test_files_touched_propagation.py tests/orchestration/test_orchestration_surfaces.py tests/slow/test_discovery_integration.py tests/slow/test_e2e_operator.py
 """
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -42,15 +41,13 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
     # ===================================================================
     # runFull phase helpers (resume, fresh run, preamble, phase 4, teardown)
     # ===================================================================
-    def _resumeSetup(
-        self, state: TaskState, work_dir: str, bus: "ControlBus", dashboard: "DiscordDashboard"
-    ) -> str:
+    def _resumeSetup(self, state: TaskState, work_dir: str,
+                     bus: "ControlBus", dashboard: "DiscordDashboard") -> str:
         """Un-strand in-progress subtasks and rebuild the architect doc for a resumed run."""
         if getattr(config, "STEP_RESUME_ENABLED", False):
             try:
                 from platform_core.orchestration.step_resume import reconcileResume
-
-                reconcileResume(state)  # journal-aware: keep resumable on sig-match, else reset
+                reconcileResume(state)   # journal-aware: keep resumable on sig-match, else reset
             except Exception as e:  # noqa: BLE001 -- resume is best-effort; fall back to blind reset
                 LOG.warning("reconcileResume failed (%s); blind-resetting in_progress subtasks", e)
                 for s in state.subtasks:
@@ -66,56 +63,40 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         architect_doc = architect_doc or "(resumed; architect doc unavailable)"
         prior = "\n".join(
             f"- {s['subtask_id']} [{s['status']}] {s['title']}"
-            + (" (verify PASS)" if (s.get("verify_result") or {}).get("passed") else "")
-            for s in state.subtasks
-            if s["status"] in ("done", "failed", "removed")
-        )
+            + (" (verify PASS)" if (s.get('verify_result') or {}).get('passed') else "")
+            for s in state.subtasks if s['status'] in ('done', 'failed', 'removed'))
         architect_doc += f"\n\n## Prior progress (resumed task)\n{prior or '(none)'}"
         if state.meta.get("is_self_referential"):
             self._prepareSelfReferential(state, work_dir, bus, dashboard)
-        done_n = sum(1 for s in state.subtasks if s["status"] == "done")
+        done_n = sum(1 for s in state.subtasks if s['status'] == 'done')
         dashboard.update(state, "executing", f"resuming at {done_n}/{len(state.subtasks)} done")
         LOG.info("Resuming task %s (%d/%d done)", state.task_id, done_n, len(state.subtasks))
         return architect_doc
 
-    def _runDiscoveryPhase(
-        self, state: TaskState, work_dir: str, elaborated: str, dashboard: "DiscordDashboard"
-    ):
+    def _runDiscoveryPhase(self, state: TaskState, work_dir: str, elaborated: str,
+                           dashboard: "DiscordDashboard"):
         """Phase 0: proactive discovery. Persists the report + emits the opening arc beat.
         Returns the DiscoveryReport (or None). Best-effort -- never blocks the run."""
         report = None
         with best_effort("discovery.run", log=LOG):
             from agents import discovery as discovery_mod
-
             goal_raw = state.meta.get("goal_raw") or elaborated
             dashboard.update(state, "architecting", "running discovery engine")
             report = discovery_mod.run_discovery(work_dir, goal_raw)
         if report is not None:
             state.meta["discovery_report"] = report.to_dict()
-            LOG.info(
-                "Discovery complete: %d findings, theme=%r", len(report.findings), report.theme_suggestion
-            )
-            dashboard.update(
-                state,
-                "architecting",
-                f"discovery: {len(report.findings)} findings — {report.theme_suggestion}",
-            )
-            self._arcBeat(
-                state,
-                f"Chapter 1 — Discovery surfaced {len(report.findings)} findings. "
-                f"Theme: {report.theme_suggestion}.",
-            )
-            self._narrate(f"🔍 Discovery: {len(report.findings)} findings, theme: {report.theme_suggestion}.")
+            LOG.info("Discovery complete: %d findings, theme=%r",
+                     len(report.findings), report.theme_suggestion)
+            dashboard.update(state, "architecting",
+                             f"discovery: {len(report.findings)} findings — {report.theme_suggestion}")
+            self._arcBeat(state, f"Chapter 1 — Discovery surfaced {len(report.findings)} findings. "
+                          f"Theme: {report.theme_suggestion}.")
+            self._narrate(f"🔍 Discovery: {len(report.findings)} findings, "
+                          f"theme: {report.theme_suggestion}.")
         return report
 
-    def _freshRunPhase(
-        self,
-        state: TaskState,
-        work_dir: str,
-        bus: "ControlBus",
-        dashboard: "DiscordDashboard",
-        elaborated: str,
-    ) -> str:
+    def _freshRunPhase(self, state: TaskState, work_dir: str, bus: "ControlBus",
+                       dashboard: "DiscordDashboard", elaborated: str) -> str:
         """Run the architect (Phase 1) and planner (Phase 2) for a new (non-resume) run.
         Returns the architect_doc string used by all downstream phases."""
         state.setStatus("architecting")
@@ -129,46 +110,33 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         )
 
         def _runArchitect(effort: str):
-            res = self._run_claude(
-                {"prompt": arch_prompt, "effort_level": effort},
-                work_dir=self._execCwd(state, "architect", work_dir),
-                system_prompt=architect.ARCHITECT_SYSTEM_PROMPT,
-                task_state=state,
-                cancel_check=lambda: bus.isAbort() or self._deadlinePassed(state),
-            )
+            res = self._run_claude({"prompt": arch_prompt, "effort_level": effort},
+                                   work_dir=self._execCwd(state, "architect", work_dir),
+                                   system_prompt=architect.ARCHITECT_SYSTEM_PROMPT, task_state=state,
+                                   cancel_check=lambda: bus.isAbort() or self._deadlinePassed(state))
             return res if isinstance(res, dict) else {}
 
         arch_res = _runArchitect("default")
         architect_doc = _resultText(arch_res).strip()
         if arch_res.get("is_error") or len(architect_doc) < 200:
-            LOG.warning(
-                "architect output weak (is_error=%s, %d chars) -> retry at xhigh",
-                arch_res.get("is_error"),
-                len(architect_doc),
-            )
+            LOG.warning("architect output weak (is_error=%s, %d chars) -> retry at xhigh",
+                        arch_res.get("is_error"), len(architect_doc))
             dashboard.update(state, "architecting", "architect output weak -> retrying harder")
             architect_doc = _resultText(_runArchitect("xhigh")).strip() or architect_doc
         if len(architect_doc) < 200:
             with best_effort("discord.notice", log=LOG):
-                discord.sendEmbed(
-                    discord.noticeEmbed(
-                        f"Architect phase produced only {len(architect_doc)} chars — proceeding (planning may be degraded)"
-                    )
-                )
+                discord.sendEmbed(discord.noticeEmbed(
+                    f"Architect phase produced only {len(architect_doc)} chars — proceeding (planning may be degraded)"))
             architect_doc = architect_doc or "(architect produced no usable output)"
         with best_effort("obsidian.write", log=LOG):
             self.obs.writeNote(state.architectNoteRel(), architect_doc)
         state.setArchitectDoc(state.architectNoteRel())
         discord.sendEmbed(discord.architectDoneEmbed(state.architectNoteRel()))
-        cast.speak(
-            "architect",
-            f"📐 Architecture is ready — `{state.architectNoteRel()}`. Handing the design to the Planner.",
-            milestone=True,
-        )
+        cast.speak("architect", f"📐 Architecture is ready — `{state.architectNoteRel()}`. "
+                   f"Handing the design to the Planner.", milestone=True)
         state.addNotification("architect_done", state.architectNoteRel())
-        self._arcBeat(
-            state, f"Chapter 2 — Architect chose {n_findings} findings, shaped them into one narrative."
-        )
+        self._arcBeat(state, f"Chapter 2 — Architect chose {n_findings} findings, "
+                      "shaped them into one narrative.")
         dashboard.update(state, "architecting", f"architecture done ({len(architect_doc)} chars)")
         architect_doc = self._architectureReview(state, architect_doc, dashboard)
         # --- Phase 2: Planning ---
@@ -178,24 +146,17 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         plan = self._strengthenPlanVerifies(elaborated, plan)
         self._persistPlanSubtasks(state, plan)
         discord.sendEmbed(discord.planningStartEmbed(state.meta["goal_raw"], state.subtasks))
-        cast.speak(
-            "planner",
-            f"🗺️ Plan ready — {len(state.subtasks)} subtasks queued. Executor, you're up.",
-            milestone=True,
-        )
+        cast.speak("planner", f"🗺️ Plan ready — {len(state.subtasks)} subtasks queued. "
+                   f"Executor, you're up.", milestone=True)
         state.addNotification("planning_start", f"{len(state.subtasks)} subtasks")
         self.writeIndex(state)
         dashboard.update(state, "planning", f"planned {len(state.subtasks)} subtasks")
         self._planReview(state, elaborated, dashboard)
         from platform_core.orchestration.human_nature_bridge import (
-            emotionAdvisory,
-            midRunInstinct,
-            opinionAdvisory,
-        )
-
-        midRunInstinct(state, dashboard)  # hook 4: surface HN's mid-run instinct (best-effort)
-        opinionAdvisory(state, dashboard)  # advisory-only opinion coupling (gated, never blocks)
-        emotionAdvisory(state, dashboard)  # emotion coupling: record+surface only, no run effect
+            emotionAdvisory, midRunInstinct, opinionAdvisory)
+        midRunInstinct(state, dashboard)          # hook 4: surface HN's mid-run instinct (best-effort)
+        opinionAdvisory(state, dashboard)         # advisory-only opinion coupling (gated, never blocks)
+        emotionAdvisory(state, dashboard)         # emotion coupling: record+surface only, no run effect
         self._checkControl(state, bus, dashboard, gate="plan")
         return architect_doc
 
@@ -203,78 +164,58 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         """Persist the authored plan as real subtasks. Epic 2 (steal #2): dual-ledger subtasks carry
         INDEX-form depends_on -> materialize the real DAG (resolve indices to st-ids); the legacy
         off-path keeps the plain addSubtask loop."""
-        capped = plan[: config.MAX_SUBTASKS]
+        capped = plan[:config.MAX_SUBTASKS]
         dropped = len(plan) - len(capped)
         if dropped > 0:
-            # The over-cap slice used to drop deliverables SILENTLY here (unlike the replan path,
-            # which logs its skip). Surface it: log + a run notification, without changing the cap.
-            LOG.warning(
-                "plan commit: dropped %d deliverable(s) beyond MAX_SUBTASKS (%d)",
-                dropped,
-                config.MAX_SUBTASKS,
-            )
+            # The over-cap slice used to drop deliverables SILENTLY here (unlike the replan
+            # path, which logs its skip). Surface it: log + a run notification, cap unchanged.
+            LOG.warning("plan commit: dropped %d deliverable(s) beyond MAX_SUBTASKS (%d)",
+                        dropped, config.MAX_SUBTASKS)
             state.addNotification(
                 "plan_truncated",
-                f"{dropped} deliverable(s) dropped -- plan exceeds MAX_SUBTASKS ({config.MAX_SUBTASKS})",
-            )
+                f"{dropped} deliverable(s) dropped -- plan exceeds MAX_SUBTASKS ({config.MAX_SUBTASKS})")
         if config.DUAL_LEDGER_PLANNER_ENABLED and any(
-            any(isinstance(d, int) for d in (s.get("depends_on") or [])) for s in capped
-        ):
+                any(isinstance(d, int) for d in (s.get("depends_on") or [])) for s in capped):
             from platform_core.orchestration import dual_ledger_planner as _dlp
-
-            _dlp.materializeDag(
-                state, [{**s, "verify": verifier.sanitizeVerify(s.get("verify"))} for s in capped]
-            )
+            _dlp.materializeDag(state, [{**s, "verify": verifier.sanitizeVerify(s.get("verify"))}
+                                        for s in capped])
             return
         for s in capped:
-            state.addSubtask(
-                s.get("title", "untitled"),
-                s.get("description", ""),
-                layer=s.get("layer", 3),
-                verify=verifier.sanitizeVerify(s.get("verify")),
-                files_touched=s.get("files_touched"),
-            )
+            state.addSubtask(s.get("title", "untitled"), s.get("description", ""),
+                             layer=s.get("layer", 3), verify=verifier.sanitizeVerify(s.get("verify")),
+                             files_touched=s.get("files_touched"))
 
-    def _runPreamble(
-        self,
-        state: TaskState,
-        work_dir: str,
-        control_mode: "str | None",
-        resume: bool,
-        bus: "ControlBus",
-        dashboard: "DiscordDashboard",
-    ) -> "tuple[str, str]":
+    def _runPreamble(self, state: TaskState, work_dir: str, control_mode: "str | None",
+                     resume: bool, bus: "ControlBus",
+                     dashboard: "DiscordDashboard") -> "tuple[str, str]":
         """Finish run setup (knowledge refresh, bus config, icons, dashboard). Returns (web_url, elaborated)."""
-        resetDegradations()  # per-run degradation picture (the WARNING dedup stays per-process)
+        resetDegradations()   # per-run degradation picture (the WARNING dedup stays per-process)
         # ABSOLUTE FIRST: refresh the living Claude Code knowledge so every Ollama call
         # in this run reasons from the current feature set (idempotent per process).
-        with best_effort("knowledge.refresh", log=LOG):  # must never block a run
+        with best_effort("knowledge.refresh", log=LOG):   # must never block a run
             refreshClaudeKnowledge(self.obs)
         if control_mode:
             state.setControlMode(control_mode)
-        state.setWorkDir(work_dir)  # persist the target dir so resume + every surface remember it
-        _heartbeat.writeHeartbeat(state.task_id)  # liveness beacon from run start (never raises)
-        self._pre_pr_gate_skipped = False  # #41: reset per-run so a prior deadline-skip can't leak
+        state.setWorkDir(work_dir)   # persist the target dir so resume + every surface remember it
+        _heartbeat.writeHeartbeat(state.task_id)   # liveness beacon from run start (never raises)
+        self._pre_pr_gate_skipped = False   # #41: reset per-run so a prior deadline-skip can't leak
         if not resume:
             # clearForRunStart (NOT clear): the terminal-control thread + the always-running gateway
             # bot are live during the pre-run elaboration window, so a full clear() here wiped an
             # abort/pause the user issued while Ollama was still elaborating. Preserve that intent.
             bus.clearForRunStart()
-        if bus.getSeen() is None:  # seed so a stale '!abort' from a prior run is never replayed
+        if bus.getSeen() is None:   # seed so a stale '!abort' from a prior run is never replayed
             with best_effort("discord.baseline_seen", log=LOG):
                 bus.setSeen(discord.baselineLatestId())
-        with best_effort("discord.icons", log=LOG):  # provision the app-emoji icon set
+        with best_effort("discord.icons", log=LOG):   # provision the app-emoji icon set
             from notifications import icons
-
             icons.ensureIcons()
         import orchestrator as _orch_mod  # deferred: avoids circular at import time; tests patch here
-
         web_url = _orch_mod.startWebDashboard(state.task_id)
         with best_effort("terminal.surface_start", log=LOG):
             from notifications.terminal_surface import TerminalSurface, set_terminal_surface
             from notifications import terminal_ipc as _tipc
-
-            _tipc.clear()  # fresh bridge for this run
+            _tipc.clear()                      # fresh bridge for this run
             _surface = TerminalSurface()
             set_terminal_surface(_surface)
             _surface.start()
@@ -283,11 +224,10 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         # Gated on WEB_DASHBOARD: the tunnel exists only to expose the dashboard, and an ungated
         # start meant every sim/fuzz/e2e run spawned a REAL provider (cloudflared download + live
         # tunnel process) -- the dominant source of suite hangs and orphaned processes.
-        self._tunnel = None  # best_effort below: a failed start must never block a run
+        self._tunnel = None   # best_effort below: a failed start must never block a run
         if config.WEB_DASHBOARD:
             with best_effort("tunnel.start", log=LOG):
                 from notifications.tunnel import TunnelManager
-
                 tunnel = TunnelManager(state=state, state_lock=self._state_lock)
                 tunnel.on_url(dashboard.set_tunnel_url)
                 tunnel.start(config.WEB_DASHBOARD_PORT)
@@ -300,13 +240,12 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         self._openGeminiSession(state, dashboard)
         with best_effort("human_nature.preamble", log=LOG):
             from platform_core.orchestration.human_nature_bridge import runPreambleHooks
-
             runPreambleHooks(state)
         return web_url, elaborated
 
-    def _resolvePrePrGate(
-        self, state: TaskState, work_dir: str, auto_pr: bool, bus: "ControlBus", dashboard: "DiscordDashboard"
-    ) -> "tuple[bool, str, dict]":
+    def _resolvePrePrGate(self, state: TaskState, work_dir: str, auto_pr: bool,
+                          bus: "ControlBus",
+                          dashboard: "DiscordDashboard") -> "tuple[bool, str, dict]":
         """Run the pre-PR control gate and suite check; return (create_pr, skip_reason, pr)."""
         self._checkControl(state, bus, dashboard, gate="pre_pr")
         if self._pre_pr_gate_skipped:
@@ -322,12 +261,9 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
                 dashboard.update(state, "executing", "PR held by failing pre-PR gate")
                 state.addNotification("pr_feedback", f"test suite failing: {suite_detail[:160]}")
                 with best_effort("discord.notice", log=LOG):
-                    discord.sendEmbed(
-                        discord.noticeEmbed(
-                            "The Windows pre-PR gate is failing - holding the PR until Nightclaw fixes it.",
-                            title="9TO5 - PR held by red pre-PR gate",
-                        )
-                    )
+                    discord.sendEmbed(discord.noticeEmbed(
+                        "The Windows pre-PR gate is failing - holding the PR until Nightclaw fixes it.",
+                        title="9TO5 - PR held by red pre-PR gate"))
         if create_pr:
             pr: dict = self.createPullRequest(state, work_dir)
         else:
@@ -348,19 +284,12 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         embed = discord.completeEmbed(state, pr_link, elapsed)
         if degraded:
             embed.setdefault("fields", []).append(
-                {"name": "Degraded surfaces", "value": degraded[:1000], "inline": False}
-            )
+                {"name": "Degraded surfaces", "value": degraded[:1000], "inline": False})
         return embed, degraded
 
-    def _phase4PrComplete(
-        self,
-        state: TaskState,
-        work_dir: str,
-        auto_pr: bool,
-        bus: "ControlBus",
-        dashboard: "DiscordDashboard",
-        web_url: "str | None",
-    ) -> dict:
+    def _phase4PrComplete(self, state: TaskState, work_dir: str, auto_pr: bool,
+                          bus: "ControlBus", dashboard: "DiscordDashboard",
+                          web_url: "str | None") -> dict:
         """Phase 4: pre-PR gate, PR creation, PR capture, final status, completion notification, return result."""
         create_pr, skip_reason, pr = self._resolvePrePrGate(state, work_dir, auto_pr, bus, dashboard)
         if not create_pr and not pr:
@@ -372,17 +301,14 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         # otherwise all-done work stays "done" (the work completed; the PR is flagged for review).
         reason = str(pr.get("reason", ""))
         held_broken = bool(pr.get("skipped")) and any(
-            s in reason for s in ("test suite failing", "degraded run", "no tracked changes")
-        )
+            s in reason for s in ("test suite failing", "degraded run", "no tracked changes"))
         # FX-19: a planned subtask removed without completing is a dropped deliverable -> 'partial'.
         dropped_planned = (not state.meta.get("is_self_referential")) and any(
             isinstance(n, dict) and n.get("kind") == "replan_removed"
-            for n in (state.data.get("notifications", []) or [])
-        )
+            for n in (state.data.get("notifications", []) or []))
         all_done = total > 0 and done == total
         final_status = "done" if (all_done and not held_broken and not dropped_planned) else "partial"
         from notifications.lane_feed import laneTap
-
         laneTap("orchestrator", f"phase: {final_status}")
         state.setStatus(final_status)
         self.writeIndex(state)
@@ -392,16 +318,11 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
             pr["capture"] = pr_capture
         complete_embed, degraded = self._degradedCompleteEmbed(state, pr_link, _fmtElapsed(elapsed))
         discord.sendEmbed(complete_embed)
-        cast.speak(
-            "brain",
-            f"🧠 Run complete — **{final_status}**, {done}/{total} subtasks in "
-            f"{_fmtElapsed(elapsed)}. That's a wrap, team.",
-            milestone=True,
-        )
+        cast.speak("brain", f"🧠 Run complete — **{final_status}**, {done}/{total} subtasks in "
+                   f"{_fmtElapsed(elapsed)}. That's a wrap, team.", milestone=True)
         if config.VISUALS_ENABLED and not config.NIGHT_MODE:
             from notifications import visuals
-
-            gif = visuals.runReplayGif(state)  # end-of-run cinematic (T8)
+            gif = visuals.runReplayGif(state)        # end-of-run cinematic (T8)
             if gif:
                 discord.postFile("replay.gif", gif, "image/gif", content="🎬 Run replay")
         state.addNotification("complete", pr_link)
@@ -410,55 +331,35 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         # Trust telemetry rollup: surface GPT<->Ollama agreement + challenge stats for the run.
         with best_effort("adversary_trust.rollup", log=LOG):
             from learning import adversary_trust
-
             line = adversary_trust.dashboard_line(state.task_id)
             dashboard.event(f"🧠 second brain: {line}")
-            self.obs.writeNote(
-                state.taskNoteRel("adversary-trust")
-                if hasattr(state, "taskNoteRel")
-                else f"tasks/{state.task_id}/adversary-trust.md",
-                f"# Adversary trust — {state.task_id}\n\n{line}\n",
-            )
-        LOG.info(
-            "Run complete: status=%s subtasks=%d/%d elapsed=%s",
-            final_status,
-            done,
-            total,
-            _fmtElapsed(elapsed),
-        )
+            self.obs.writeNote(state.taskNoteRel("adversary-trust") if hasattr(state, "taskNoteRel")
+                               else f"tasks/{state.task_id}/adversary-trust.md",
+                               f"# Adversary trust — {state.task_id}\n\n{line}\n")
+        LOG.info("Run complete: status=%s subtasks=%d/%d elapsed=%s",
+                 final_status, done, total, _fmtElapsed(elapsed))
         return {
-            "task_id": state.task_id,
-            "status": final_status,
-            "elapsed_seconds": round(elapsed, 1),
+            "task_id": state.task_id, "status": final_status, "elapsed_seconds": round(elapsed, 1),
             "web_dashboard": web_url,
             "degraded_surfaces": degraded,
             "work_profile": state.meta.get("work_profile"),
             "run_intent_policy": state.meta.get("run_intent_policy"),
             "subtasks": [
-                {
-                    "subtask_id": s["subtask_id"],
-                    "title": s["title"],
-                    "status": s["status"],
-                    "effort": (s.get("session") or {}).get("effort"),
-                    "verified": (s.get("verify_result") or {}).get("passed")
-                    if s.get("verify_result")
-                    else None,
-                }
+                {"subtask_id": s["subtask_id"], "title": s["title"], "status": s["status"],
+                 "effort": (s.get("session") or {}).get("effort"),
+                 "verified": (s.get("verify_result") or {}).get("passed") if s.get("verify_result") else None}
                 for s in state.subtasks
             ],
-            "pr": pr,
-            "obsidian": state.data["obsidian"],
+            "pr": pr, "obsidian": state.data["obsidian"],
         }
 
-    def _handleRunAbort(
-        self, state: TaskState, e: BaseException, web_url: "str | None", dashboard: "DiscordDashboard"
-    ) -> dict:
+    def _handleRunAbort(self, state: TaskState, e: BaseException,
+                        web_url: "str | None", dashboard: "DiscordDashboard") -> dict:
         """Handle AbortRun/KeyboardInterrupt (delegates to run_phase_outcome)."""
         return _outcome.handleRunAbort(self, state, e, web_url, dashboard)
 
-    def _handleRunCrash(
-        self, state: TaskState, e: Exception, web_url: "str | None", dashboard: "DiscordDashboard"
-    ) -> dict:
+    def _handleRunCrash(self, state: TaskState, e: Exception,
+                        web_url: "str | None", dashboard: "DiscordDashboard") -> dict:
         """Handle unexpected crash (delegates to run_phase_outcome)."""
         return _outcome.handleRunCrash(self, state, e, web_url, dashboard)
 
@@ -475,47 +376,38 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
 
     def _instinctChat(self, system: str, user: str) -> str:
         from platform_core.orchestration.brain_io import _chatText
-
         return _chatText(self._ollamaChat(system, user, act="instinct"))
 
-    def _runTeardown(
-        self,
-        bus: "ControlBus",
-        dashboard: "DiscordDashboard",
-        work_dir: str,
-        state: "TaskState | None" = None,
-    ) -> None:
+    def _runTeardown(self, bus: "ControlBus", dashboard: "DiscordDashboard",
+                     work_dir: str, state: "TaskState | None" = None) -> None:
         """Close the run: clear pending gate, close Gemini session, unpin dashboard, SIE maintenance."""
         bus.setPendingGate(None)
-        _heartbeat.clearHeartbeat(bus.task_id)  # stop advertising liveness for this run
-        self._closeGeminiSession()  # tear down the Gemini second-brain session for this run
+        _heartbeat.clearHeartbeat(bus.task_id)   # stop advertising liveness for this run
+        self._closeGeminiSession()   # tear down the Gemini second-brain session for this run
         with best_effort("dashboard.unpin", log=LOG):
             dashboard.unpin()
         self._stopTunnel()
         with best_effort("terminal.surface_finalize", log=LOG):
             from notifications.terminal_surface import get_terminal_surface, set_terminal_surface
-
             _t = get_terminal_surface()
             if _t is not None:
                 _t.finalize()
                 _t.unpin()
             set_terminal_surface(None)
         _webdash_mod.stopWebDashboard()
-        self._cleanupScaffolding(work_dir)  # never leave 9to5 scratch dirs in the user's project
+        self._cleanupScaffolding(work_dir)   # never leave 9to5 scratch dirs in the user's project
         # Best-effort state retention sweep: prune old per-run blackboard/compaction artifacts and
         # archive terminal task JSON. Fail-open — never blocks or breaks teardown.
         if getattr(config, "RETENTION_ENABLED", False):
             try:
                 from platform_core.ops import retention
-
                 retention.sweepAll()
             except Exception:  # noqa: BLE001
                 LOG.debug("retention sweep at teardown failed (ignored)", exc_info=True)
         # Fire throttled SIE learning passes off-thread so they never slow teardown.
         if config.SIE_AUTO_MAINTENANCE:
-            with best_effort("sie.maintenance", log=LOG):  # learning never blocks teardown
+            with best_effort("sie.maintenance", log=LOG):   # learning never blocks teardown
                 from learning import sie
-
                 _mt = sie.run_maintenance_async(reason="post-run")
                 # Join with a bounded timeout so the pass DURABLY finishes (writes last_full_at)
                 # before the process exits; a bare daemon would be killed mid-write at shutdown,
@@ -526,7 +418,6 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         if state is not None:
             with best_effort("human_nature.teardown", log=LOG):
                 from platform_core.orchestration.human_nature_bridge import runTeardownHooks
-
                 runTeardownHooks(self, state)
         self._postGrowth()
 

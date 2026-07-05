@@ -1,0 +1,10 @@
+# Presence of this file tells the auto-format PostToolUse hook (~/.claude/hooks/auto-format.mjs)
+# to SKIP formatting any file under this tree.
+#
+# WHY: 9TO5 uses a hand-compact Python style enforced by size budgets (tools/size_audit.py:
+# files <=450 lines, functions <=70 -- "must_split" above that). It configures ruff for LINTING
+# (ruff.toml, line-length 110) but deliberately does NOT use `ruff format`. Running `ruff format`
+# re-wraps the compact code to ruff-canonical (magic-trailing-comma explosion, one-arg-per-line),
+# inflating files past the must_split thresholds and breaking the `fast` CI check.
+#
+# Do not delete unless the repo adopts `ruff format` ([tool.ruff.format]) as its source of truth.

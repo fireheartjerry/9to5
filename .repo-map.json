@@ -49,7 +49,7 @@
           "kind": "function",
           "signature": "(subtask_title: str, trigger_reason: str, executor_output: str, *, browser_ask: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict",
           "summary": "Phase-2 critique: route the review to Gemini via the google-genai SDK.",
-          "lineno": 59
+          "lineno": 44
         }
       ],
       "depends_on": [
@@ -11431,28 +11431,28 @@
           "kind": "function",
           "signature": "(orch, state, subtask: dict, result: dict, exec_cwd: str, verify_spec, attempt_started: float, sid: str, combined: str, dashboard, resume_session) -> tuple",
           "summary": "Run verify, repair if brittle, apply the self-ref + evidence-gate downgrades, record.",
-          "lineno": 145
+          "lineno": 124
         },
         {
           "name": "gitDiffFacts",
           "kind": "function",
           "signature": "(work_dir: str) -> dict",
           "summary": "Best-effort, re-derivable git facts for the receipt: head sha, working-tree diff text, …",
-          "lineno": 194
+          "lineno": 161
         },
         {
           "name": "runEvidenceGate",
           "kind": "function",
           "signature": "(orch, state, subtask: dict, result: dict, exec_cwd: str, vresult: dict, sid: str) -> 'tuple[dict, bool]'",
           "summary": "For a code-change subtask that PASSED the deterministic gate: run the independent verif…",
-          "lineno": 241
+          "lineno": 201
         },
         {
           "name": "persistReceipt",
           "kind": "function",
           "signature": "(orch, state, sid: str, receipt: dict) -> None",
           "summary": "Write the Evidence Receipt as a per-subtask Obsidian note (durable audit artifact).",
-          "lineno": 332
+          "lineno": 270
         }
       ],
       "depends_on": [
@@ -12295,7 +12295,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles run lifecycle phases: resume, fresh run, preamble, phase 4, teardown.",
-          "lineno": 36
+          "lineno": 35
         }
       ],
       "depends_on": [
