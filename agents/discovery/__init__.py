@@ -70,16 +70,14 @@ def run_discovery(work_dir: str, goal_raw: str, work_profile=None) -> Optional[D
     try:
         from agents.discovery import lenses as lenses_mod
         from agents.discovery import synthesis as synthesis_mod
-        LOG.info("Discovery: running lens panel")
-        findings = lenses_mod.run_lens_panel(compiled)
+        LOG.info("Discovery: running lens panel (transformative=%s)", transformative)
+        findings = lenses_mod.run_lens_panel(compiled, transformative=transformative)
         LOG.info("Discovery: synthesizing %d findings", len(findings))
         report = synthesis_mod.synthesize(findings)
         if transformative:
-            try:
-                report.innovation_ratio = max(float(getattr(report, "innovation_ratio", 0) or 0), 1.0)
-                report.theme_suggestion = f"transformative: {report.theme_suggestion}"
-            except Exception:  # noqa: BLE001
-                pass
+            # innovation_ratio is a derived read-only property; the real transformative effect
+            # is in generation (corpus + moonshot lens). Just tag the theme for the architect.
+            report.theme_suggestion = f"transformative: {report.theme_suggestion}"
         LOG.info("Discovery: complete — %d findings, theme=%r",
                  len(report.findings), report.theme_suggestion)
         return report

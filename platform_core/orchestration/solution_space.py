@@ -8,7 +8,7 @@ EXPORTS:
   cleanupForkStates(state: TaskState) -> int  -- Best-effort removal of throwaway branch state files for this run.
   runSubtaskAttempts(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec, env_ctx=None) -> tuple  -- Fork into parallel branches when the subtask is flagged + eligible
   runForked(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec) -> tuple  -- Fork N branches, judge, merge the winner, reclaim losers
-DEPENDS-ON: config, platform_core.orchestration, state.task
+DEPENDS-ON: config, platform_core.orchestration, platform_core.orchestration.invention_types, platform_core.orchestration.qd_archive, state.task
 SIDE-EFFECTS: writes/removes state/<task_id>__fork_<branch>.json (throwaway branch states)
 RUN/TEST: python -m pytest tests/orchestration/test_solution_space.py
 """
@@ -132,19 +132,11 @@ def runForked(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid
     plan = fork_policy.forkPlan(subtask, n=config.SOLUTION_FORK_N,
                                 work_profile=state.meta.get("work_profile"), work_dir=exec_cwd)
     try:
-        run_one = _makeRunOneBranch(orch, state, subtask, architect_doc, bus, dashboard,
-                                    sid, verify_spec, backend)
-        branches = branch_runner.runBranches(
-            plan, run_one_branch=run_one, max_concurrency=config.SOLUTION_FORK_MAX_CONCURRENCY)
-        eligible = judge_panel.factsGate(branches)
-        scores = judge_panel.scoreBranches(eligible, goal=_goalText(state),
-                                           work_profile=state.meta.get("work_profile"),
-                                           score_with_brain=None)   # SEAM: Epic 2 rubric scorer
-        winner_id = judge_panel.pickWinner(scores)
-        if winner_id is None:                                       # none eligible -> fallback
+        winner, branches = _bestAcrossGenerations(orch, state, subtask, architect_doc, exec_cwd,
+                                                  bus, dashboard, sid, verify_spec, backend, plan)
+        if winner is None:                                          # none eligible -> fallback
             return _forkFallback(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard,
                                  sid, verify_spec, backend, branches, None)
-        winner = next(b for b in branches if b.branch_id == winner_id)
         try:
             winner_merge.mergeWinner(winner, worktree=backend)
         except Exception:  # noqa: BLE001 -- merge conflict -> single-attempt fallback (spec §6)
@@ -156,6 +148,105 @@ def runForked(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid
         return (winner.spec, winner.result, winner.vresult, winner.combined, winner.passed, winner.attempt)
     finally:
         cleanupForkStates(state)
+
+
+def _competeBatch(orch, state, subtask, architect_doc, bus, dashboard, sid, verify_spec,
+                  backend, plan) -> tuple:
+    """Run one fork batch + judge it. Returns (winner|None, branches, top_score). Same calls +
+    order as today's inlined batch, so the flag-off path is byte-identical."""
+    run_one = _makeRunOneBranch(orch, state, subtask, architect_doc, bus, dashboard,
+                                sid, verify_spec, backend)
+    branches = branch_runner.runBranches(
+        plan, run_one_branch=run_one, max_concurrency=config.SOLUTION_FORK_MAX_CONCURRENCY)
+    eligible = judge_panel.factsGate(branches)
+    scores = judge_panel.scoreBranches(eligible, goal=_goalText(state),
+                                       work_profile=state.meta.get("work_profile"),
+                                       score_with_brain=None)       # SEAM: Epic 2 rubric scorer
+    winner_id = judge_panel.pickWinner(scores)
+    winner = next((b for b in branches if b.branch_id == winner_id), None) if winner_id else None
+    top = max((float(getattr(s, "total", 0.0)) for s in scores), default=float("-inf"))
+    return winner, branches, top
+
+
+def _generationsEnabled() -> bool:
+    """Generational forking is opt-in + dark: OFF => runForked is a single batch (today)."""
+    return (bool(getattr(config, "QD_GENERATIONS_ENABLED", False))
+            and int(getattr(config, "SOLUTION_FORK_GENERATIONS", 1)) > 1)
+
+
+def _bestAcrossGenerations(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid,
+                           verify_spec, backend, plan) -> tuple:
+    """Gen 0 = today's single batch. When generational is enabled, run extra generations seeded
+    from diverse elites, keep the best-scoring winner, reclaim the losers. Best-effort: any error
+    falls back to the gen-0 result, so it is never worse than a single fork batch."""
+    winner, branches, top = _competeBatch(orch, state, subtask, architect_doc, bus, dashboard,
+                                          sid, verify_spec, backend, plan)
+    if not _generationsEnabled():
+        return winner, branches
+    try:
+        best = (winner, branches, top)
+        gens = int(getattr(config, "SOLUTION_FORK_GENERATIONS", 1))
+        for gen in range(1, max(1, gens)):
+            angles = _genAngles(best[1], subtask)
+            gplan = fork_policy.forkPlan(subtask, n=config.SOLUTION_FORK_N, angles=angles,
+                                         work_profile=state.meta.get("work_profile"), work_dir=exec_cwd)
+            w, b, t = _competeBatch(orch, state, subtask, architect_doc, bus, dashboard,
+                                    sid, verify_spec, backend, gplan)
+            if w is not None and t > best[2]:
+                _reclaimBatch(best[1], best[0], backend)            # drop the superseded generation
+                best = (w, b, t)
+            else:
+                _reclaimBatch(b, w, backend)                        # drop this generation
+        return best[0], best[1]
+    except Exception as e:  # noqa: BLE001 -- generational is dark + best-effort
+        LOG.debug("generational fork fell back to gen-0 (ignored): %s", e)
+        return winner, branches
+
+
+def _genAngles(branches: list, subtask: dict) -> tuple:
+    """Seed the next generation's fork angles from the verified branches (diverse-elite seeding)."""
+    try:
+        from platform_core.orchestration import generational
+        from platform_core.orchestration.qd_archive import QDArchive
+        arch = QDArchive()
+        for b in branches:
+            el = _branchElite(b, subtask)
+            if el is not None:
+                arch.add(el)
+        base = list(fork_policy.DIVERSITY_ANGLES)
+        seeds = generational.next_generation_seeds(arch, base, n=config.SOLUTION_FORK_N)
+        return tuple(seeds) or fork_policy.DIVERSITY_ANGLES
+    except Exception:  # noqa: BLE001
+        return fork_policy.DIVERSITY_ANGLES
+
+
+def _branchElite(b, subtask):
+    """Convert a verified BranchResult into a QDElite for seeding the next generation."""
+    if not getattr(b, "passed", False):
+        return None
+    from platform_core.orchestration.invention_types import QDCell, QDElite
+    angle = getattr(getattr(b, "seed", None), "angle_hint", "") or getattr(b, "branch_id", "b")
+    diff_lines = int(getattr(b, "diff_lines", 0) or 0)
+    cost = float(getattr(b, "cost_usd", 0.0) or 0.0)
+    metrics = {"verification_score": 1.0, "impact_score": 0.5,
+               "maintainability_score": max(0.0, 1.0 - diff_lines / 500.0), "adoption_score": 0.5,
+               "cost_efficiency_score": max(0.0, 1.0 - cost / 5.0), "reversibility_score": 0.7,
+               "measured_novelty": 0.5, "risk_inverse": 0.6}
+    cell = QDCell(subsystem=str(angle)[:24] or "fork")
+    return QDElite(id=b.branch_id, candidate_id=b.branch_id, cell=cell, metrics=metrics,
+                   evidence_refs=[getattr(b, "headline", "VERIFIED")])
+
+
+def _reclaimBatch(branches: list, keep, backend) -> None:
+    """Reclaim (remove) every branch worktree in a superseded generation except ``keep``."""
+    keep_id = getattr(keep, "branch_id", None)
+    for b in branches or []:
+        if getattr(b, "branch_id", None) == keep_id or not getattr(b, "worktree_path", ""):
+            continue
+        try:
+            backend.removeWorktree(b.worktree_path)
+        except Exception as e:  # noqa: BLE001
+            LOG.debug("reclaim generation worktree failed (ignored): %s", e)
 
 
 def _forkFallback(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec,

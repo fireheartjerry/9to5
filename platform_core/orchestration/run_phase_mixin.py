@@ -93,7 +93,21 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
                           f"Theme: {report.theme_suggestion}.")
             self._narrate(f"🔍 Discovery: {len(report.findings)} findings, "
                           f"theme: {report.theme_suggestion}.")
+            self._bridgeInventions(state, report)
         return report
+
+    def _bridgeInventions(self, state: TaskState, report) -> None:
+        """Inventor mode: register qualifying findings as executable invention seeds in the
+        ledger (kind='feature') + record them to novelty history. Flag-off => no-op, so a
+        normal run is byte-identical. Best-effort; never blocks the run."""
+        import config
+        if not getattr(config, "INVENTOR_MODE_ENABLED", False):
+            return
+        with best_effort("discovery.bridge", log=LOG):
+            from agents.discovery import ledger_bridge
+            res = ledger_bridge.bridge_report(report, run_id=state.task_id)
+            state.meta["invention_routes"] = res.get("counts", {})
+            LOG.info("Invention bridge: %s", res.get("counts", {}))
 
     def _freshRunPhase(self, state: TaskState, work_dir: str, bus: "ControlBus",
                        dashboard: "DiscordDashboard", elaborated: str) -> str:
