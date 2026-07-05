@@ -32,6 +32,19 @@ def test_extract_cache_hit(fixture_project, tmp_path, monkeypatch):
     assert cache_dir.is_dir() and list(cache_dir.glob("*.json"))
 
 
+def test_cache_dir_inside_root_does_not_self_invalidate(fixture_project, monkeypatch):
+    """Cache dir under the scanned root must not perturb the mtime hash that keys it
+    (else self-extraction never cache-hits -- the 9to5 PROJECT_ROOT case)."""
+    from introspect import project_extract
+
+    cache_dir = fixture_project / "state" / "project_models"
+    monkeypatch.setattr(project_extract, "_cacheDir", lambda: cache_dir)
+    before = project_extract._mtimeHash(fixture_project)
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "abc.json").write_text("{}", encoding="utf-8")
+    assert project_extract._mtimeHash(fixture_project) == before
+
+
 def test_cache_invalidated_by_content_edit(fixture_project, tmp_path, monkeypatch):
     """Editing a file (HEAD unchanged) must invalidate the cache -- the dirty-tree path."""
     import os

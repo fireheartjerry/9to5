@@ -129,10 +129,16 @@ def _mtimeHash(root_path: Path) -> str:
     """Digest of (relpath, mtime_ns, size) of every non-excluded file.
 
     Always part of the cache key so dirty-worktree edits invalidate cached models.
+    The cache dir itself is skipped when it lives under root: otherwise writing the
+    cache would perturb the very hash that keys it (self-extraction never hits).
     """
+    cache_dir = _cacheDir()
+    skip_abs = str(cache_dir.resolve()) if cache_dir is not None else None
     entries: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root_path):
         dirnames[:] = sorted(d for d in dirnames if d not in EXCLUDE_DIRS)
+        if skip_abs is not None and str(Path(dirpath).resolve()) == skip_abs:
+            continue
         for name in filenames:
             full = Path(dirpath) / name
             try:
