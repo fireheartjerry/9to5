@@ -13,9 +13,9 @@ dry-runs drive elaboration offline. The old raw ``resp.get('message')`` extracti
 EXPORTS:
   elaborate(goal_raw: str, work_dir: str | None=None, chat=None) -> str  -- Return the elaborated specification for ``goal_raw`` (never raises
   extractUniverse(goal_raw: str, goal_elaborated: str, work_dir: str, chat=None) -> dict  -- Extract the operating universe (scope boundary) from the goal (with safe defaults).
-DEPENDS-ON: config, knowledge, llm_io, agents.planning.elaborator.grounding
+DEPENDS-ON: config, knowledge, llm_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/orchestration/test_elaborator.py
+RUN/TEST: python -m pytest tests/orchestration/test_orch_core_bugs.py tests/slow/test_simulation_core.py
 """
 from __future__ import annotations
 
@@ -23,7 +23,8 @@ import config
 import knowledge
 import llm_io
 
-from .grounding import repoContext
+from . import path_verify, schema, self_review
+from .grounding import isVagueGoal, repoContext, vagueGoalBundle
 
 LOG = config.getLogger("elaborator")
 
@@ -76,11 +77,20 @@ def elaborate(goal_raw: str, work_dir: str | None = None, chat=None) -> str:
     if ctx:
         user = ("ACTUAL REPOSITORY SNAPSHOT (ground EVERY file path in this real structure):\n"
                 f"{ctx}\n\n---\n\n" + user)
+    if config.ELABORATOR_EXCELLENCE_ENABLED and isVagueGoal(goal_raw):
+        bundle = vagueGoalBundle(work_dir)
+        if bundle:
+            user += ("\n\nSTATE OF THE REPO (name real files from here for a broad goal):\n"
+                     f"{bundle}\n")
     resp = _chat(ELABORATOR_SYSTEM, user, act="elaborate", chat=chat)
     out = llm_io.responseText(resp).strip()
     if not out:
         LOG.warning("elaboration unavailable after retries; using raw goal as spec")
         return _fallbackSpec(goal_raw)
+    if config.ELABORATOR_EXCELLENCE_ENABLED:
+        inferred = self_review.reviewAssumptions(out, goal_raw, chat=chat)
+        if inferred:
+            out = f"{out}\n\n# Inferred Assumptions\n{inferred}\n"
     return out
 
 
@@ -125,4 +135,11 @@ def extractUniverse(goal_raw: str, goal_elaborated: str, work_dir: str, chat=Non
         if d not in hb:
             hb.append(d)
     u["hard_boundaries"] = hb
+    if config.ELABORATOR_EXCELLENCE_ENABLED:
+        ok, errs = schema.validateUniverse(u)
+        if not ok:
+            LOG.info("universe schema_validity=fail: %s", "; ".join(errs))
+        split = path_verify.splitVerified(u["allowed_paths"], work_dir)
+        u["allowed_paths"] = split["allowed_paths"] or [work_dir]
+        u["unverified_paths"] = split["unverified_paths"]
     return u

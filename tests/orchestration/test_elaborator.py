@@ -119,3 +119,36 @@ class TestRepoGrounding(unittest.TestCase):
             elaborator.extractUniverse("g", "spec", tmp, chat=injected)
         self.assertIn("ACTUAL REPOSITORY SNAPSHOT", captured["user"])
         self.assertIn("agents/planning/elaborator/core.py", captured["user"])
+
+
+class TestExcellenceGating(unittest.TestCase):
+    def test_flag_off_is_byte_identical(self):
+        def injected(system, user, *, act, want_json=False):
+            return {"message": {"content": "SPEC"}}
+
+        with mock.patch.object(__import__("config"), "ELABORATOR_EXCELLENCE_ENABLED", False):
+            out = elaborator.elaborate("do a thing", chat=injected)
+        self.assertEqual(out, "SPEC")  # no appended assumptions, no extra passes
+
+    def test_flag_on_appends_inferred_assumptions(self):
+        scripted = iter([
+            {"message": {"content": "SPEC BODY"}},                 # elaborate
+            {"message": {"content": "Inferred: scope — because vague"}},  # self_review
+        ])
+
+        def injected(system, user, *, act, want_json=False):
+            return next(scripted)
+
+        with mock.patch.object(__import__("config"), "ELABORATOR_EXCELLENCE_ENABLED", True):
+            out = elaborator.elaborate("improve everything", chat=injected)
+        self.assertIn("SPEC BODY", out)
+        self.assertIn("Inferred: scope", out)
+
+    def test_flag_on_universe_adds_unverified_paths(self):
+        def injected(system, user, *, act, want_json=False):
+            return {"message": {"content": '{"allowed_paths":["nope/missing.py"]}'}}
+
+        with mock.patch.object(__import__("config"), "ELABORATOR_EXCELLENCE_ENABLED", True):
+            u = elaborator.extractUniverse("g", "spec", ".", chat=injected)
+        self.assertIn("nope/missing.py", u["unverified_paths"])
+        self.assertNotIn("nope/missing.py", u["allowed_paths"])

@@ -1405,6 +1405,163 @@
       ],
       "callers": []
     },
+    "agents.planning.elaborator": {
+      "path": "agents/planning/elaborator/__init__.py",
+      "purpose": "Elaborator (Step 0.5) -- thin re-export facade for the elaborator package.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "agents.planning.elaborator.core": {
+      "path": "agents/planning/elaborator/core.py",
+      "purpose": "Elaborator (Step 0.5) -- Ollama expands the raw goal into a buildable spec.",
+      "exports": [
+        {
+          "name": "elaborate",
+          "kind": "function",
+          "signature": "(goal_raw: str, work_dir: str | None=None, chat=None) -> str",
+          "summary": "Return the elaborated specification for ``goal_raw`` (never raises",
+          "lineno": 67
+        },
+        {
+          "name": "extractUniverse",
+          "kind": "function",
+          "signature": "(goal_raw: str, goal_elaborated: str, work_dir: str, chat=None) -> dict",
+          "summary": "Extract the operating universe (scope boundary) from the goal (with safe defaults).",
+          "lineno": 115
+        }
+      ],
+      "depends_on": [
+        "config",
+        "knowledge",
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/orchestration/test_orch_core_bugs.py",
+        "tests/slow/test_simulation_core.py"
+      ],
+      "callers": []
+    },
+    "agents.planning.elaborator.grounding": {
+      "path": "agents/planning/elaborator/grounding.py",
+      "purpose": "Repository grounding for the Elaborator -- REAL paths so the brain stops inventing.",
+      "exports": [
+        {
+          "name": "repoContext",
+          "kind": "function",
+          "signature": "(work_dir: str | None) -> str",
+          "summary": "Compact, REAL repository grounding for the brain so it stops inventing",
+          "lineno": 33
+        },
+        {
+          "name": "isVagueGoal",
+          "kind": "function",
+          "signature": "(goal: str) -> bool",
+          "summary": "A goal is vague if it is short, uses a generic verb, and names no path/module.",
+          "lineno": 84
+        },
+        {
+          "name": "vagueGoalBundle",
+          "kind": "function",
+          "signature": "(work_dir: str | None) -> str",
+          "summary": "A compact state-of-repo bundle (real module names + size violations) so a vague",
+          "lineno": 114
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/orchestration/test_elaborator_grounding.py"
+      ],
+      "callers": []
+    },
+    "agents.planning.elaborator.path_verify": {
+      "path": "agents/planning/elaborator/path_verify.py",
+      "purpose": "Generate-then-verify: split allowed_paths into existing vs unverified.",
+      "exports": [
+        {
+          "name": "splitVerified",
+          "kind": "function",
+          "signature": "(allowed_paths: list[str], work_dir: str) -> dict",
+          "summary": "Return {\"allowed_paths\": [existing], \"unverified_paths\": [missing]} preserving order.",
+          "lineno": 28
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (read-only filesystem)"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "agents.planning.elaborator.schema": {
+      "path": "agents/planning/elaborator/schema.py",
+      "purpose": "Elaborator output schema + Layer-1 deterministic validation.",
+      "exports": [
+        {
+          "name": "validateSpec",
+          "kind": "function",
+          "signature": "(data: dict) -> tuple[bool, list[str]]",
+          "summary": "Return (ok, errors)",
+          "lineno": 23
+        },
+        {
+          "name": "validateUniverse",
+          "kind": "function",
+          "signature": "(data: dict) -> tuple[bool, list[str]]",
+          "summary": "Return (ok, errors)",
+          "lineno": 41
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/evolution/test_experience_schema.py",
+        "tests/evolution/test_run_innovations_schema.py",
+        "tests/human_nature/test_attention_schema.py",
+        "tests/notifications/test_notification_schema.py",
+        "tests/orchestration/test_elaborator_schema.py"
+      ],
+      "callers": []
+    },
+    "agents.planning.elaborator.self_review": {
+      "path": "agents/planning/elaborator/self_review.py",
+      "purpose": "One calibrated self-review pass: surface guesses as auditable inferred assumptions.",
+      "exports": [
+        {
+          "name": "reviewAssumptions",
+          "kind": "function",
+          "signature": "(spec_body: str, goal_raw: str, chat=None) -> str",
+          "summary": "Return newline-joined 'Inferred: ..",
+          "lineno": 34
+        }
+      ],
+      "depends_on": [
+        "config",
+        "knowledge",
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "agents.planning.evidence_receipt": {
       "path": "agents/planning/evidence_receipt.py",
       "purpose": "Evidence Receipt -- facts vs assessments, with a headline derived ONLY from facts.",
@@ -2520,6 +2677,10 @@
         "agents.hook_handlers.core",
         "agents.hook_handlers.selfmod",
         "agents.planning.clarifier",
+        "agents.planning.elaborator.core",
+        "agents.planning.elaborator.grounding",
+        "agents.planning.elaborator.schema",
+        "agents.planning.elaborator.self_review",
         "agents.planning.playbook",
         "agents.planning.replanner",
         "agents.planning.second_brain",
@@ -4077,6 +4238,8 @@
         "tests/evolution/test_knowledge.py"
       ],
       "callers": [
+        "agents.planning.elaborator.core",
+        "agents.planning.elaborator.self_review",
         "agents.planning.replanner",
         "agents.review.architect",
         "platform_core.core.surfaces",
@@ -6264,6 +6427,8 @@
         "agents.discovery.lenses",
         "agents.discovery.synthesis",
         "agents.planning.clarifier",
+        "agents.planning.elaborator.core",
+        "agents.planning.elaborator.self_review",
         "agents.planning.replanner",
         "agents.review.adversary",
         "agents.review.adversary_review",
@@ -7353,7 +7518,8 @@
         "tests/evolution/test_experience_schema.py",
         "tests/evolution/test_run_innovations_schema.py",
         "tests/human_nature/test_attention_schema.py",
-        "tests/notifications/test_notification_schema.py"
+        "tests/notifications/test_notification_schema.py",
+        "tests/orchestration/test_elaborator_schema.py"
       ],
       "callers": []
     },
@@ -18919,14 +19085,14 @@
           "kind": "function",
           "signature": "() -> tuple[list[dict], list[dict]]",
           "summary": "",
-          "lineno": 75
+          "lineno": 80
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 118
+          "lineno": 123
         }
       ],
       "depends_on": [],
