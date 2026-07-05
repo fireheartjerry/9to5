@@ -78,3 +78,60 @@ def test_profile_shapes_fork_angles():
     plan = fp.forkPlan({"subtask_id": "st-001"}, n=3, work_profile="auditor")
     assert any("test-first" in s.angle_hint for s in plan.branch_seeds)
     assert any("conservative" in s.angle_hint for s in plan.branch_seeds)
+
+
+class TestExploreSeededAngles:
+    """EXPLORE_APPROACHES_ENABLED seeds angle hints from ranked explore summaries (fail-open)."""
+
+    ST = {"subtask_id": "st-001", "title": "Add a widget", "description": "spanning files"}
+
+    def _patch_explore(self, monkeypatch, candidates, scores):
+        import config
+        import explore
+        import introspect
+        monkeypatch.setattr(config, "EXPLORE_APPROACHES_ENABLED", True, raising=False)
+        monkeypatch.setattr(introspect, "extractProject", lambda root, **kw: object())
+        monkeypatch.setattr(explore, "generateApproaches", lambda goal, model, **kw: candidates)
+        monkeypatch.setattr(explore, "scoreApproaches", lambda cands, model: scores)
+
+    def test_flag_on_uses_ranked_summaries_in_order(self, monkeypatch):
+        from types import SimpleNamespace as NS
+        cands = [NS(approach_id=f"a{i}", summary=f"Summary {i}") for i in (1, 2, 3)]
+        scores = [NS(approach_id="a2"), NS(approach_id="a3"), NS(approach_id="a1")]
+        self._patch_explore(monkeypatch, cands, scores)
+        plan = fp.forkPlan(dict(self.ST), n=3)
+        hints = [s.angle_hint for s in plan.branch_seeds]
+        assert hints == ["Summary 2", "Summary 3", "Summary 1"]
+
+    def test_flag_off_byte_identical_to_existing_angles(self, monkeypatch):
+        import config
+        monkeypatch.setattr(config, "EXPLORE_APPROACHES_ENABLED", False, raising=False)
+        plan = fp.forkPlan(dict(self.ST), n=3)
+        expected = [
+            (f"b{i}", fp.EFFORT_CYCLE[i % len(fp.EFFORT_CYCLE)],
+             fp.DIVERSITY_ANGLES[i % len(fp.DIVERSITY_ANGLES)],
+             config.MODEL_BY_EFFORT[fp.EFFORT_CYCLE[i % len(fp.EFFORT_CYCLE)]])
+            for i in range(3)
+        ]
+        got = [(s.branch_id, s.effort_level, s.angle_hint, s.model) for s in plan.branch_seeds]
+        assert got == expected
+
+    def test_explore_raising_falls_back_to_bank(self, monkeypatch):
+        import config
+        import introspect
+        monkeypatch.setattr(config, "EXPLORE_APPROACHES_ENABLED", True, raising=False)
+
+        def _boom(root, **kw):
+            raise RuntimeError("scan failed")
+
+        monkeypatch.setattr(introspect, "extractProject", _boom)
+        plan = fp.forkPlan(dict(self.ST), n=3)
+        assert [s.angle_hint for s in plan.branch_seeds] == list(fp.DIVERSITY_ANGLES)
+
+    def test_explore_empty_summaries_falls_back_to_bank(self, monkeypatch):
+        from types import SimpleNamespace as NS
+        cands = [NS(approach_id="a1", summary="")]
+        scores = [NS(approach_id="a1")]
+        self._patch_explore(monkeypatch, cands, scores)
+        plan = fp.forkPlan(dict(self.ST), n=3)
+        assert [s.angle_hint for s in plan.branch_seeds] == list(fp.DIVERSITY_ANGLES)
