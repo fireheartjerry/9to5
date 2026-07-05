@@ -79,6 +79,26 @@ def test_flag_off_no_injection_and_no_scan(pin_flags, monkeypatch, tmp_path):
     assert spy.call_count == 0
 
 
+def test_dual_ledger_path_receives_project_context(pin_flags, monkeypatch, tmp_path):
+    """Default full-stack config routes planning through the dual-ledger planner; the
+    project context must reach it too (own param, own budget -- not lost to truncation)."""
+    pin_flags(PROJECT_INTROSPECTION_ENABLED=True, DUAL_LEDGER_PLANNER_ENABLED=True)
+    seen: dict = {}
+
+    def _fakeTryAuthorPlan(chat, goal, architect_doc, work_profile=None, project_ctx=""):
+        seen["project_ctx"] = project_ctx
+        return [{"title": "a", "description": "d"}]
+
+    monkeypatch.setattr("platform_core.orchestration.plan_mixin._dlp.tryAuthorPlan",
+                        _fakeTryAuthorPlan)
+    orch = _makeOrch()
+    orch._work_dir = str(_tinyProject(tmp_path))
+    _stubBrain(orch)
+    subs = orch.authorSubtaskPlan("build the thing", "arch doc")
+    assert subs and subs[0]["title"] == "a"
+    assert "PROJECT CONTEXT" in seen.get("project_ctx", "")
+
+
 def test_knobs_reachable_via_config_facade():
     assert isinstance(config.PROJECT_INTROSPECTION_ENABLED, bool)
     assert isinstance(config.PROJECT_INTROSPECTION_MAX_FILES, int)

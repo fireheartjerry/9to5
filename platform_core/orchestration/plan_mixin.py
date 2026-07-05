@@ -74,12 +74,15 @@ class OrchestratorPlanMixin:
         profile_block = _work_profile.guidance_block(prof, context="planner")
         # Epic 2 (steal #2): dual-ledger planner. Flag-gated; on failure it returns None and we fall
         # straight through to the legacy one-shot planner below (never worse than today).
-        if config.DUAL_LEDGER_PLANNER_ENABLED:
-            subs = _dlp.tryAuthorPlan(self._ollamaChat, goal_elaborated, architect_doc, work_profile=prof)
-            if subs:
-                return subs
         project_ctx = self._projectContextBlock(getattr(self, "_work_dir", None) or str(config.PROJECT_ROOT))
         ctx_block = f"\nPROJECT CONTEXT:\n{project_ctx}\n" if project_ctx else ""
+        if config.DUAL_LEDGER_PLANNER_ENABLED:
+            # Dual-ledger planner sees the same project context (own param, own budget -- appending to
+            # architect_doc would be lost to its [:2000] truncation).
+            subs = _dlp.tryAuthorPlan(self._ollamaChat, goal_elaborated, architect_doc,
+                                      work_profile=prof, project_ctx=ctx_block)
+            if subs:
+                return subs
         user = (
             f"Specification:\n{goal_elaborated}\n\n{profile_block}\n"
             f"Architecture:\n{architect_doc[:4000]}\n"
