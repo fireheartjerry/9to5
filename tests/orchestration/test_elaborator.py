@@ -3,6 +3,8 @@
 R5: the elaborator is a pure prompt builder over the ONE llm_io seam -- the memoized
 client, retry/backoff, and extraction live in llm_io. These tests drive the seam by
 patching ``llm_io.getClient`` (the blessed client factory)."""
+import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -83,3 +85,37 @@ class TestUniverse(unittest.TestCase):
         with mock.patch.object(llm_io, "getClient", return_value=_client(chat)):
             u = elaborator.extractUniverse("g", "spec", "/w")
         self.assertEqual(u["allowed_paths"], ["b.py"])
+
+
+class TestRepoGrounding(unittest.TestCase):
+    def _repo(self, tmp):
+        # A minimal real repo snapshot: AGENTS.md with a distinctive real path.
+        with open(os.path.join(tmp, "AGENTS.md"), "w", encoding="utf-8") as fh:
+            fh.write("Package & directory map\n- agents/planning/elaborator/core.py\n")
+        return tmp
+
+    def test_elaborate_grounds_prompt_in_real_repo(self):
+        captured = {}
+
+        def injected(system, user, *, act, want_json=False):
+            captured["user"] = user
+            return {"message": {"content": "spec"}}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._repo(tmp)
+            elaborator.elaborate("do a thing", work_dir=tmp, chat=injected)
+        self.assertIn("ACTUAL REPOSITORY SNAPSHOT", captured["user"])
+        self.assertIn("agents/planning/elaborator/core.py", captured["user"])
+
+    def test_extract_universe_grounds_prompt_in_real_repo(self):
+        captured = {}
+
+        def injected(system, user, *, act, want_json=False):
+            captured["user"] = user
+            return {"message": {"content": '{"allowed_paths":["agents/"]}'}}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._repo(tmp)
+            elaborator.extractUniverse("g", "spec", tmp, chat=injected)
+        self.assertIn("ACTUAL REPOSITORY SNAPSHOT", captured["user"])
+        self.assertIn("agents/planning/elaborator/core.py", captured["user"])
