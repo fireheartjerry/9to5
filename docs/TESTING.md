@@ -24,7 +24,8 @@ Canonical commands in THIS repo (there is no `scripts/check.py`): the fast inner
 loop is `python tools/dev.py check <file>` (lint + typecheck + affected tests +
 repo-map drift for one file). Tests live under domain subdirectories, not flat:
 `tests/evolution/`, `tests/execution/`, `tests/orchestration/`, `tests/control/`,
-`tests/notifications/`, `tests/workflows/`, `tests/platform/` hold the fast-lane
+`tests/notifications/`, `tests/workflows/`, `tests/platform/`, `tests/introspect/`,
+`tests/refactor/`, `tests/explore/` hold the fast-lane
 tests by domain, and `tests/slow/` holds heavyweight subprocess/e2e/integration/fuzz/
 simulation tests (see "Slow lane is directory-based" below). `tests/conftest.py`,
 `tests/factories.py`, and `tests/progress_reporter.py` stay at the `tests/` root.

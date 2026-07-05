@@ -5,8 +5,8 @@ EXPORTS:
   shouldFork(subtask: dict, *, enabled: bool, projected_cost: float, cost_ceiling: float, worktree_isolated: bool, goal_elaborated: str, is_self_referential: bool, work_profile=None) -> bool  -- CONSERVATIVE OPT-IN gate
   BranchSeed  -- One branch's diversity seed: effort (also picks the model) + an angle hint.
   ForkPlan
-  forkPlan(subtask: dict, *, n: int, angles: tuple=DIVERSITY_ANGLES, work_profile=None) -> ForkPlan  -- Build N diversity seeds spanning effort x angle; EXPLORE_APPROACHES_ENABLED seeds angles from ranked explore summaries (fail-open)
-DEPENDS-ON: config, platform_core.orchestration, platform_core.orchestration.subtask, explore (lazy), introspect (lazy)
+  forkPlan(subtask: dict, *, n: int, angles: tuple=DIVERSITY_ANGLES, work_profile=None) -> ForkPlan  -- Build N diversity seeds spanning effort x angle
+DEPENDS-ON: config, explore.generateApproaches, explore.scoreApproaches, introspect.extractProject, platform_core.orchestration, platform_core.orchestration.subtask
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_fork_policy.py
 """

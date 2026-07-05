@@ -9,7 +9,9 @@
     "check_workflow",
     "config",
     "conftest",
+    "explore",
     "human_nature",
+    "introspect",
     "knowledge",
     "learning",
     "llm_io",
@@ -19,6 +21,7 @@
     "notifications",
     "orchestrator",
     "platform_core",
+    "refactor",
     "selfmod",
     "society",
     "src",
@@ -1818,6 +1821,7 @@
         "human_nature.intuition",
         "human_nature.momentary",
         "human_nature.opinions",
+        "introspect.project_extract",
         "learning.adapter_promotion",
         "learning.adversary_trust",
         "learning.bootstrap",
@@ -1983,6 +1987,7 @@
         "platform_core.simulator.bot_replay",
         "platform_core.simulator.chaos",
         "platform_core.simulator.simulation",
+        "scripts.poc_any_project",
         "scripts.repo_health",
         "selfmod",
         "society.blackboard",
@@ -2013,6 +2018,164 @@
       ],
       "test": [],
       "callers": []
+    },
+    "explore": {
+      "path": "explore/__init__.py",
+      "purpose": "explore -- solution-space exploration over an introspected project (stdlib-only leaf).",
+      "exports": [
+        {
+          "name": "exploreSolutionSpace",
+          "kind": "function",
+          "signature": "(goal: str, root_or_model, *, brain=None, n: int=3) -> SynthesisResult",
+          "summary": "One-call facade: generate -> score -> synthesize for a model or a root path.",
+          "lineno": 50
+        }
+      ],
+      "depends_on": [
+        "explore.approach_gen",
+        "explore.approach_synthesis",
+        "explore.approach_tradeoffs",
+        "introspect.extractProject",
+        "introspect.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "explore.__main__": {
+      "path": "explore/__main__.py",
+      "purpose": "CLI: ``python -m explore \"<goal>\" <root>`` -- print ranked approaches + winner.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "Explore the solution space for <goal> against <root>, brain-free.",
+          "lineno": 19
+        }
+      ],
+      "depends_on": [
+        "explore.generateApproaches",
+        "explore.scoreApproaches",
+        "explore.selectOrSynthesize",
+        "introspect.project_extract"
+      ],
+      "side_effects": [
+        "prints to stdout"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "explore.approach_gen": {
+      "path": "explore/approach_gen.py",
+      "purpose": "Approach generation: archetype-templated (brainless) or brain-authored candidates.",
+      "exports": [
+        {
+          "name": "ApproachCandidate",
+          "kind": "class",
+          "signature": "",
+          "summary": "One candidate approach to a goal, comparable and JSON-friendly.",
+          "lineno": 52
+        },
+        {
+          "name": "generateApproaches",
+          "kind": "function",
+          "signature": "(goal: str, model: ProjectModel, *, brain=None, n: int=3) -> list[ApproachCandidate]",
+          "summary": "Generate up to ``n`` approach candidates for ``goal`` against ``model``.",
+          "lineno": 63
+        },
+        {
+          "name": "brainText",
+          "kind": "function",
+          "signature": "(raw) -> str",
+          "summary": "Accept Brain-protocol return shapes: plain str or ollama chat dict.",
+          "lineno": 213
+        }
+      ],
+      "depends_on": [
+        "introspect.project_model"
+      ],
+      "side_effects": [
+        "none (brain callable is caller-injected",
+        "None => deterministic fallback)"
+      ],
+      "test": [
+        "tests/explore/test_approach_gen.py"
+      ],
+      "callers": [
+        "explore",
+        "explore.approach_synthesis",
+        "explore.approach_tradeoffs"
+      ]
+    },
+    "explore.approach_synthesis": {
+      "path": "explore/approach_synthesis.py",
+      "purpose": "Winner selection + mechanical synthesis of runner-up mitigations.",
+      "exports": [
+        {
+          "name": "SynthesisResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "The selected approach plus lifted mitigations and a scored rationale.",
+          "lineno": 29
+        },
+        {
+          "name": "selectOrSynthesize",
+          "kind": "function",
+          "signature": "(candidates: list[ApproachCandidate], scores: list[TradeoffScore], *, brain=None) -> SynthesisResult",
+          "summary": "Pick the winner (total desc, fewer files, lowest id) and lift mitigations.",
+          "lineno": 38
+        }
+      ],
+      "depends_on": [
+        "explore.approach_gen",
+        "explore.approach_tradeoffs"
+      ],
+      "side_effects": [
+        "none (brain, when given, may only reword the rationale)"
+      ],
+      "test": [
+        "tests/explore/test_approach_synthesis.py"
+      ],
+      "callers": [
+        "explore"
+      ]
+    },
+    "explore.approach_tradeoffs": {
+      "path": "explore/approach_tradeoffs.py",
+      "purpose": "Trade-off scoring: deterministic risk/effort/testability/fit composite per candidate.",
+      "exports": [
+        {
+          "name": "TradeoffScore",
+          "kind": "class",
+          "signature": "",
+          "summary": "Component + composite scores for one candidate",
+          "lineno": 61
+        },
+        {
+          "name": "scoreApproaches",
+          "kind": "function",
+          "signature": "(candidates: list[ApproachCandidate], model: ProjectModel) -> list[TradeoffScore]",
+          "summary": "Score every candidate against the project model",
+          "lineno": 72
+        }
+      ],
+      "depends_on": [
+        "explore.approach_gen",
+        "introspect.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/explore/test_approach_tradeoffs.py"
+      ],
+      "callers": [
+        "explore",
+        "explore.approach_synthesis"
+      ]
     },
     "human_nature": {
       "path": "human_nature/__init__.py",
@@ -2866,6 +3029,289 @@
         "tests/human_nature/test_workspace.py"
       ],
       "callers": []
+    },
+    "introspect": {
+      "path": "introspect/__init__.py",
+      "purpose": "introspect -- typed runtime project model for ANY root directory (stdlib-only leaf).",
+      "exports": [],
+      "depends_on": [
+        "introspect.project_extract",
+        "introspect.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [],
+      "callers": [
+        "platform_core.orchestration.plan_mixin"
+      ]
+    },
+    "introspect.__main__": {
+      "path": "introspect/__main__.py",
+      "purpose": "CLI: ``python -m introspect <root> [--json]`` -- print a project digest or model JSON.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "Extract the model for <root> and print its digest (default) or JSON.",
+          "lineno": 17
+        }
+      ],
+      "depends_on": [
+        "introspect.project_extract"
+      ],
+      "side_effects": [
+        "prints to stdout",
+        "may read/write the project-model cache"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "introspect.generic_import_scan": {
+      "path": "introspect/generic_import_scan.py",
+      "purpose": "Regex import scan for JS/TS files: `import ... from '...'` and `require('...')`.",
+      "exports": [
+        {
+          "name": "analyzeGeneric",
+          "kind": "function",
+          "signature": "(root: str | Path, relpaths: list[str]) -> dict[str, ModuleInfo]",
+          "summary": "Analyze JS/TS relpaths under ``root``",
+          "lineno": 32
+        }
+      ],
+      "depends_on": [
+        "introspect.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/introspect/test_generic_import_scan.py"
+      ],
+      "callers": [
+        "introspect.project_extract"
+      ]
+    },
+    "introspect.project_boundaries": {
+      "path": "introspect/project_boundaries.py",
+      "purpose": "Ownership/interface map: packages, re-export facades, entrypoints, config surface.",
+      "exports": [
+        {
+          "name": "detectBoundaries",
+          "kind": "function",
+          "signature": "(root: str | Path, modules: list[ModuleInfo]) -> BoundaryMap",
+          "summary": "Boundary map for ``root`` given its scanned/analyzed modules.",
+          "lineno": 44
+        }
+      ],
+      "depends_on": [
+        "introspect.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/introspect/test_project_boundaries.py"
+      ],
+      "callers": [
+        "introspect.project_extract"
+      ]
+    },
+    "introspect.project_commands": {
+      "path": "introspect/project_commands.py",
+      "purpose": "Detect test/build/lint/typecheck commands from config files -- never guessed.",
+      "exports": [
+        {
+          "name": "detectCommands",
+          "kind": "function",
+          "signature": "(root: str | Path) -> list[DetectedCommand]",
+          "summary": "All commands provable from config files under ``root`` (root level only).",
+          "lineno": 42
+        }
+      ],
+      "depends_on": [
+        "introspect.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/introspect/test_project_commands.py"
+      ],
+      "callers": [
+        "introspect.project_extract"
+      ]
+    },
+    "introspect.project_extract": {
+      "path": "introspect/project_extract.py",
+      "purpose": "Facade: build a full ProjectModel for any root + render an LLM prompt digest.",
+      "exports": [
+        {
+          "name": "extractProject",
+          "kind": "function",
+          "signature": "(root: str | Path, *, max_files: int=4000, use_cache: bool=True) -> ProjectModel",
+          "summary": "Extract (or load from cache) the full typed model of ``root``.",
+          "lineno": 47
+        },
+        {
+          "name": "contextForPrompt",
+          "kind": "function",
+          "signature": "(model: ProjectModel, *, budget_chars: int=4000) -> str",
+          "summary": "LLM-ready sectioned digest of the model, hard-truncated at ``budget_chars``.",
+          "lineno": 170
+        }
+      ],
+      "depends_on": [
+        "config",
+        "introspect.generic_import_scan",
+        "introspect.project_boundaries",
+        "introspect.project_commands",
+        "introspect.project_model",
+        "introspect.project_scanner",
+        "introspect.python_import_graph"
+      ],
+      "side_effects": [
+        "reads/writes JSON cache files under state/project_models/ (when 9to5"
+      ],
+      "test": [
+        "tests/introspect/test_project_extract.py"
+      ],
+      "callers": [
+        "explore.__main__",
+        "introspect",
+        "introspect.__main__"
+      ]
+    },
+    "introspect.project_model": {
+      "path": "introspect/project_model.py",
+      "purpose": "Typed, JSON-round-trippable project model shared by every introspect analyzer.",
+      "exports": [
+        {
+          "name": "ModuleInfo",
+          "kind": "class",
+          "signature": "",
+          "summary": "One source file: POSIX relpath id + language + analysis results.",
+          "lineno": 31
+        },
+        {
+          "name": "DetectedCommand",
+          "kind": "class",
+          "signature": "",
+          "summary": "A test/build/lint/typecheck command with the config file that proved it.",
+          "lineno": 44
+        },
+        {
+          "name": "BoundaryMap",
+          "kind": "class",
+          "signature": "",
+          "summary": "Ownership/interface map: packages, re-export facades, entrypoints, config surface.",
+          "lineno": 53
+        },
+        {
+          "name": "ProjectModel",
+          "kind": "class",
+          "signature": "",
+          "summary": "Full typed model of one project root",
+          "lineno": 63
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/introspect/test_project_model.py"
+      ],
+      "callers": [
+        "explore",
+        "explore.approach_gen",
+        "explore.approach_tradeoffs",
+        "introspect",
+        "introspect.generic_import_scan",
+        "introspect.project_boundaries",
+        "introspect.project_commands",
+        "introspect.project_extract",
+        "introspect.project_scanner",
+        "introspect.python_import_graph",
+        "refactor.change_impact",
+        "refactor.cycle_detect"
+      ]
+    },
+    "introspect.project_scanner": {
+      "path": "introspect/project_scanner.py",
+      "purpose": "Deterministic file-tree scan: classify source files into ModuleInfo skeletons.",
+      "exports": [
+        {
+          "name": "scanProject",
+          "kind": "function",
+          "signature": "(root: str | Path, *, max_files: int=4000) -> list[ModuleInfo]",
+          "summary": "Scan ``root`` into sorted ModuleInfo skeletons, at most ``max_files`` entries.",
+          "lineno": 75
+        }
+      ],
+      "depends_on": [
+        "introspect.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/introspect/test_project_scanner.py"
+      ],
+      "callers": [
+        "introspect.project_extract",
+        "refactor.symbol_usages"
+      ]
+    },
+    "introspect.project_test_map": {
+      "path": "introspect/project_test_map.py",
+      "purpose": "Convention-based file->test mapping for any root (no manual map required).",
+      "exports": [
+        {
+          "name": "mapFileToTests",
+          "kind": "function",
+          "signature": "(root: str | Path, relpath: str, test_files: list[str], overrides: dict[str, list[str]] | None=None) -> list[str]",
+          "summary": "Tests covering ``relpath``: overrides -> exact -> prefix -> glob -> JS sibling -> [].",
+          "lineno": 29
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/introspect/test_project_test_map.py"
+      ],
+      "callers": [
+        "refactor.change_impact"
+      ]
+    },
+    "introspect.python_import_graph": {
+      "path": "introspect/python_import_graph.py",
+      "purpose": "AST analysis for Python modules: exports, first-party import edges, side effects.",
+      "exports": [
+        {
+          "name": "analyzePython",
+          "kind": "function",
+          "signature": "(root: str | Path, relpaths: list[str]) -> dict[str, ModuleInfo]",
+          "summary": "Analyze the given ``.py`` relpaths under ``root`` into full ModuleInfos.",
+          "lineno": 28
+        }
+      ],
+      "depends_on": [
+        "introspect.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/introspect/test_python_import_graph.py"
+      ],
+      "callers": [
+        "introspect.project_extract",
+        "refactor.change_impact"
+      ]
     },
     "knowledge": {
       "path": "knowledge.py",
@@ -9239,84 +9685,84 @@
           "kind": "class",
           "signature": "",
           "summary": "The big authored prompt/brief strings (env-overridable where they always were).",
-          "lineno": 174
+          "lineno": 175
         },
         {
           "name": "Settings",
           "kind": "class",
           "signature": "",
           "summary": "The whole typed registry: one frozen composite per process (swap-on-override).",
-          "lineno": 188
+          "lineno": 189
         },
         {
           "name": "buildSettings",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "Fresh registry: coded defaults < .env (loadEnvOnce) < sie_overrides.json.",
-          "lineno": 235
+          "lineno": 236
         },
         {
           "name": "settings",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "The process-wide registry singleton (lazy, thread-safe).",
-          "lineno": 249
+          "lineno": 250
         },
         {
           "name": "allNames",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Every legacy ALL_CAPS constant name the registry serves (for the facade __all__/__dir__…",
-          "lineno": 274
+          "lineno": 275
         },
         {
           "name": "lookup",
           "kind": "function",
           "signature": "(name: str) -> Any",
           "summary": "Constant by legacy name",
-          "lineno": 279
+          "lineno": 280
         },
         {
           "name": "lookupDomain",
           "kind": "function",
           "signature": "(domains: tuple[str, ...], name: str) -> Any",
           "summary": "lookup() restricted to the given domains (PEP 562 seam for the domain modules).",
-          "lineno": 289
+          "lineno": 290
         },
         {
           "name": "RunFlags",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 309
+          "lineno": 310
         },
         {
           "name": "runFlags",
           "kind": "function",
           "signature": "() -> RunFlags",
           "summary": "The run-scoped flag singleton, seeded from the registry's coded/env defaults.",
-          "lineno": 319
+          "lineno": 320
         },
         {
           "name": "reload",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "Rebuild the registry from the current env + overrides file and reseed run flags.",
-          "lineno": 333
+          "lineno": 334
         },
         {
           "name": "setOverride",
           "kind": "function",
           "signature": "(knob: str, value: Any) -> tuple[bool, bool]",
           "summary": "Live-apply + persist a whitelisted, bounds-checked SIE knob.",
-          "lineno": 347
+          "lineno": 348
         },
         {
           "name": "getLogger",
           "kind": "function",
           "signature": "(name: str='9to5') -> logging.Logger",
           "summary": "Return a child of the configured ``9to5`` logger.",
-          "lineno": 445
+          "lineno": 446
         }
       ],
       "depends_on": [
@@ -11326,51 +11772,51 @@
         {
           "name": "authorTaskLedger",
           "kind": "function",
-          "signature": "(ollama_chat: Callable, goal: str, architect_doc: str, work_profile=None) -> 'Optional[tl.TaskLedger]'",
+          "signature": "(ollama_chat: Callable, goal: str, architect_doc: str, work_profile=None, project_ctx: str='') -> 'Optional[tl.TaskLedger]'",
           "summary": "Two bounded calls (facts, then plan), each validated",
           "lineno": 38
         },
         {
           "name": "tryAuthorPlan",
           "kind": "function",
-          "signature": "(ollama_chat: Callable, goal: str, architect_doc: str, work_profile=None) -> Optional[list]",
+          "signature": "(ollama_chat: Callable, goal: str, architect_doc: str, work_profile=None, project_ctx: str='') -> Optional[list]",
           "summary": "Flag-on convenience: author a TaskLedger then derive its DAG -> index-form subtask dict…",
-          "lineno": 68
+          "lineno": 70
         },
         {
           "name": "deriveSubtaskDag",
           "kind": "function",
           "signature": "(ledger: 'tl.TaskLedger', goal: str) -> list",
           "summary": "Turn the bullet plan into subtask dicts with INDEX-based depends_on (metagpt dependent_…",
-          "lineno": 84
+          "lineno": 87
         },
         {
           "name": "materializeDag",
           "kind": "function",
           "signature": "(state, subs: list) -> list",
           "summary": "Create the subtasks in order via state.addSubtask, resolving each index dep to the real…",
-          "lineno": 106
+          "lineno": 109
         },
         {
           "name": "progressLedgerStep",
           "kind": "function",
           "signature": "(ollama_chat: Callable, goal: str, recent: str) -> Optional[dict]",
           "summary": "One tiny per-step Progress Ledger call (autogen ORCHESTRATOR_PROGRESS_LEDGER_PROMPT, mi…",
-          "lineno": 120
+          "lineno": 123
         },
         {
           "name": "updateStallCount",
           "kind": "function",
           "signature": "(progress: dict, current: int) -> int",
           "summary": "autogen n_stalls: +1 when in a loop OR no progress",
-          "lineno": 134
+          "lineno": 137
         },
         {
           "name": "rootCauseReplan",
           "kind": "function",
           "signature": "(ollama_chat: Callable, goal: str, ledger: 'tl.TaskLedger', failure_summary: str) -> 'Optional[tl.TaskLedger]'",
           "summary": "autogen TASK_LEDGER_FACTS_UPDATE then ..._PLAN_UPDATE: explain the root cause, rewrite …",
-          "lineno": 143
+          "lineno": 146
         }
       ],
       "depends_on": [
@@ -11643,11 +12089,14 @@
           "kind": "function",
           "signature": "(subtask: dict, *, n: int, angles: tuple=DIVERSITY_ANGLES, work_profile=None) -> ForkPlan",
           "summary": "Build N diversity seeds spanning effort x angle",
-          "lineno": 82
+          "lineno": 107
         }
       ],
       "depends_on": [
         "config",
+        "explore.generateApproaches",
+        "explore.scoreApproaches",
+        "introspect.extractProject",
         "platform_core.orchestration",
         "platform_core.orchestration.subtask"
       ],
@@ -12012,13 +12461,14 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles subtask plan authoring, invocation spec construction, and SIE authoring context.",
-          "lineno": 43
+          "lineno": 39
         }
       ],
       "depends_on": [
         "agents.completion_envelope",
         "agents.verifier",
         "config",
+        "introspect",
         "learning.knowledge_graph",
         "learning.policy",
         "learning.postmortem",
@@ -13689,6 +14139,314 @@
         "main"
       ]
     },
+    "refactor": {
+      "path": "refactor/__init__.py",
+      "purpose": "refactor -- cycle detection, impact prediction, atomic transactions (stdlib leaf).",
+      "exports": [],
+      "depends_on": [
+        "refactor.change_impact",
+        "refactor.cycle_detect",
+        "refactor.refactor_edits",
+        "refactor.refactor_transaction",
+        "refactor.symbol_usages"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "refactor.__main__": {
+      "path": "refactor/__main__.py",
+      "purpose": "CLI: ``python -m refactor check <root>`` -- import-cycle report, exit 1 on cycles.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "Report modules + import cycles for a root",
+          "lineno": 19
+        }
+      ],
+      "depends_on": [
+        "introspect.extractProject",
+        "refactor.cycle_detect"
+      ],
+      "side_effects": [
+        "prints to stdout"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "refactor.change_impact": {
+      "path": "refactor/change_impact.py",
+      "purpose": "Pure breaking-change prediction for a planned edit set -- no disk writes.",
+      "exports": [
+        {
+          "name": "ImpactReport",
+          "kind": "class",
+          "signature": "",
+          "summary": "Prediction of what a planned edit set breaks (pure, computed pre-apply).",
+          "lineno": 34
+        },
+        {
+          "name": "predictImpact",
+          "kind": "function",
+          "signature": "(model: ProjectModel, edits: list) -> ImpactReport",
+          "summary": "Predict orphaned usages, new import cycles, and affected tests for ``edits``.",
+          "lineno": 44
+        }
+      ],
+      "depends_on": [
+        "introspect.project_model",
+        "introspect.project_test_map",
+        "introspect.python_import_graph",
+        "refactor.cycle_detect",
+        "refactor.refactor_edits",
+        "refactor.symbol_usages"
+      ],
+      "side_effects": [
+        "creates and removes a scratch temp dir during analysis"
+      ],
+      "test": [
+        "tests/refactor/test_change_impact.py"
+      ],
+      "callers": [
+        "refactor",
+        "refactor.refactor_transaction"
+      ]
+    },
+    "refactor.cycle_detect": {
+      "path": "refactor/cycle_detect.py",
+      "purpose": "Import-cycle detection + pre-flight cycle prediction (iterative Tarjan SCC).",
+      "exports": [
+        {
+          "name": "buildImportGraph",
+          "kind": "function",
+          "signature": "(model: ProjectModel) -> dict[str, set[str]]",
+          "summary": "Adjacency dict over module relpaths from the model's load-time import edges.",
+          "lineno": 22
+        },
+        {
+          "name": "findCycles",
+          "kind": "function",
+          "signature": "(graph: dict[str, set[str]]) -> list[list[str]]",
+          "summary": "All import cycles in ``graph``: SCCs of size >1 plus self-loops.",
+          "lineno": 31
+        },
+        {
+          "name": "wouldCreateCycle",
+          "kind": "function",
+          "signature": "(graph: dict[str, set[str]], added_edges: list[tuple[str, str]], removed_edges: list[tuple[str, str]] | tuple[tuple[str, str], ...]=()) -> list[list[str]]",
+          "summary": "Cycles that would exist AFTER the edge changes but do not exist now.",
+          "lineno": 48
+        }
+      ],
+      "depends_on": [
+        "introspect.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/refactor/test_cycle_detect.py"
+      ],
+      "callers": [
+        "refactor",
+        "refactor.__main__",
+        "refactor.change_impact",
+        "refactor.refactor_transaction"
+      ]
+    },
+    "refactor.refactor_edits": {
+      "path": "refactor/refactor_edits.py",
+      "purpose": "Edit primitives (frozen dataclasses) + fail-closed path validation.",
+      "exports": [
+        {
+          "name": "WriteFile",
+          "kind": "class",
+          "signature": "",
+          "summary": "Create or overwrite ``path`` with ``content`` (UTF-8).",
+          "lineno": 28
+        },
+        {
+          "name": "ReplaceInFile",
+          "kind": "class",
+          "signature": "",
+          "summary": "Replace ``old`` with ``new`` in ``path``",
+          "lineno": 36
+        },
+        {
+          "name": "DeleteFile",
+          "kind": "class",
+          "signature": "",
+          "summary": "Delete ``path``.",
+          "lineno": 45
+        },
+        {
+          "name": "RenameFile",
+          "kind": "class",
+          "signature": "",
+          "summary": "Move ``path`` to ``new_path`` (content preserved byte-for-byte).",
+          "lineno": 52
+        },
+        {
+          "name": "editPaths",
+          "kind": "function",
+          "signature": "(edit) -> tuple[str, ...]",
+          "summary": "Every path the edit touches (both endpoints for RenameFile).",
+          "lineno": 64
+        },
+        {
+          "name": "validateEdit",
+          "kind": "function",
+          "signature": "(root: Path, edit) -> str | None",
+          "summary": "None when the edit is safe to consider, else a human-readable rejection.",
+          "lineno": 71
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/refactor/test_refactor_edits.py"
+      ],
+      "callers": [
+        "refactor",
+        "refactor.change_impact",
+        "refactor.refactor_transaction"
+      ]
+    },
+    "refactor.refactor_journal": {
+      "path": "refactor/refactor_journal.py",
+      "purpose": "Crash journal for RefactorTransaction: spill snapshots to disk pre-write.",
+      "exports": [
+        {
+          "name": "writeJournal",
+          "kind": "function",
+          "signature": "(root: Path, snapshots: dict[str, object]) -> Path",
+          "summary": "Spill ``snapshots`` to a new ``refactor-tx-*`` temp dir",
+          "lineno": 34
+        },
+        {
+          "name": "loadJournal",
+          "kind": "function",
+          "signature": "(journal_dir: str | Path) -> tuple[Path, dict[str, object]]",
+          "summary": "(root, snapshots) parsed back from a journal dir's manifest.",
+          "lineno": 51
+        },
+        {
+          "name": "restoreSnapshots",
+          "kind": "function",
+          "signature": "(root: Path, snapshots: dict[str, object]) -> list[str]",
+          "summary": "Restore every snapshot byte-for-byte (MISSING => unlink)",
+          "lineno": 61
+        },
+        {
+          "name": "deleteJournal",
+          "kind": "function",
+          "signature": "(journal_dir: Path) -> None",
+          "summary": "Best-effort removal of a journal dir (no error when already gone).",
+          "lineno": 78
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "creates/deletes a temp journal dir",
+        "restoreSnapshots writes/unlinks"
+      ],
+      "test": [
+        "tests/refactor/test_refactor_hardening.py"
+      ],
+      "callers": [
+        "refactor.refactor_transaction"
+      ]
+    },
+    "refactor.refactor_transaction": {
+      "path": "refactor/refactor_transaction.py",
+      "purpose": "Atomic multi-file refactor transaction: snapshot -> journal -> write -> gate -> rollback.",
+      "exports": [
+        {
+          "name": "RefactorResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "Outcome of one apply(): all-applied or nothing-applied, with the why.",
+          "lineno": 56
+        },
+        {
+          "name": "RefactorTransaction",
+          "kind": "class",
+          "signature": "",
+          "summary": "Collect edits against one root, preview their impact, apply atomically.",
+          "lineno": 65
+        },
+        {
+          "name": "recoverJournal",
+          "kind": "function",
+          "signature": "(journal_dir: str | Path) -> RefactorResult",
+          "summary": "Restore a crashed apply() from its on-disk journal",
+          "lineno": 311
+        }
+      ],
+      "depends_on": [
+        "introspect.extractProject",
+        "refactor.change_impact",
+        "refactor.cycle_detect",
+        "refactor.refactor_edits",
+        "refactor.refactor_journal"
+      ],
+      "side_effects": [
+        "writes/renames/deletes files under the transaction root during apply",
+        ""
+      ],
+      "test": [
+        "tests/refactor/test_refactor_transaction.py"
+      ],
+      "callers": [
+        "refactor"
+      ]
+    },
+    "refactor.symbol_usages": {
+      "path": "refactor/symbol_usages.py",
+      "purpose": "Cross-root symbol usage scan: every AST Name/Attribute/ImportFrom reference.",
+      "exports": [
+        {
+          "name": "Usage",
+          "kind": "class",
+          "signature": "",
+          "summary": "One reference to a symbol: POSIX relpath, 1-based line, reference kind.",
+          "lineno": 27
+        },
+        {
+          "name": "findUsages",
+          "kind": "function",
+          "signature": "(root: str | Path, symbol: str) -> list[Usage]",
+          "summary": "Every reference to ``symbol`` in .py files under ``root``, sorted.",
+          "lineno": 35
+        },
+        {
+          "name": "findUsagesMulti",
+          "kind": "function",
+          "signature": "(root: str | Path, symbols: set[str]) -> dict[str, list[Usage]]",
+          "summary": "Per-symbol usage lists for a whole symbol SET in one walk.",
+          "lineno": 46
+        }
+      ],
+      "depends_on": [
+        "introspect.project_scanner"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/refactor/test_symbol_usages.py"
+      ],
+      "callers": [
+        "refactor",
+        "refactor.change_impact"
+      ]
+    },
     "scripts.bug_triage": {
       "path": "scripts/bug_triage.py",
       "purpose": "Bug triage script for 9TO5 bug reports.",
@@ -13721,6 +14479,148 @@
         }
       ],
       "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "scripts.poc_any_project": {
+      "path": "scripts/poc_any_project.py",
+      "purpose": "poc_any_project -- runnable proof of the introspect/refactor/explore packages.",
+      "exports": [
+        {
+          "name": "PocError",
+          "kind": "class",
+          "signature": "",
+          "summary": "One PoC assertion failed",
+          "lineno": 86
+        },
+        {
+          "name": "require",
+          "kind": "function",
+          "signature": "(cond: bool, msg: str) -> None",
+          "summary": "Hard-fail the PoC with ``msg`` when ``cond`` is false.",
+          "lineno": 90
+        },
+        {
+          "name": "sha256File",
+          "kind": "function",
+          "signature": "(path: Path) -> str",
+          "summary": "Hex sha256 of one file's bytes.",
+          "lineno": 96
+        },
+        {
+          "name": "indent",
+          "kind": "function",
+          "signature": "(text: str) -> str",
+          "summary": "Indent every line by four spaces (digest excerpts).",
+          "lineno": 101
+        },
+        {
+          "name": "testCommand",
+          "kind": "function",
+          "signature": "(model) -> str",
+          "summary": "The model's detected test command, or '' when none was proven.",
+          "lineno": 106
+        },
+        {
+          "name": "forceRmtree",
+          "kind": "function",
+          "signature": "(path: Path) -> None",
+          "summary": "rmtree that survives git's read-only object files on Windows.",
+          "lineno": 111
+        },
+        {
+          "name": "printApproaches",
+          "kind": "function",
+          "signature": "(label: str, goal: str, result, titles: dict) -> None",
+          "summary": "Ranked score table + winner/mitigations/rationale for one explore run.",
+          "lineno": 124
+        },
+        {
+          "name": "partASelf",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Extract 9to5, assert pytest detection, cycles, explore, refactor demo.",
+          "lineno": 144
+        },
+        {
+          "name": "partACycles",
+          "kind": "function",
+          "signature": "(model) -> None",
+          "summary": "findCycles over the self model",
+          "lineno": 168
+        },
+        {
+          "name": "partARefactorDemo",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "RefactorTransaction rollback + apply on scratch copies",
+          "lineno": 181
+        },
+        {
+          "name": "pickUniqueLine",
+          "kind": "function",
+          "signature": "(text: str) -> str",
+          "summary": "First long line occurring exactly once (comment-appendable: no trailing \\).",
+          "lineno": 208
+        },
+        {
+          "name": "runFailingTx",
+          "kind": "function",
+          "signature": "(scratch: Path, copies: list[Path], edit) -> None",
+          "summary": "Valid ReplaceInFile + syntax-error WriteFile: compile gate must roll back.",
+          "lineno": 216
+        },
+        {
+          "name": "runSucceedingTx",
+          "kind": "function",
+          "signature": "(scratch: Path, target: Path, edit) -> None",
+          "summary": "Same ReplaceInFile + a valid WriteFile: previews clean and applies.",
+          "lineno": 232
+        },
+        {
+          "name": "partBExternal",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Clone (or fixture) an external project: extract, cycles, brain-free explore.",
+          "lineno": 252
+        },
+        {
+          "name": "cloneOrFixture",
+          "kind": "function",
+          "signature": "(ext_root: Path) -> tuple[Path, bool]",
+          "summary": "(project dir, offline?)",
+          "lineno": 280
+        },
+        {
+          "name": "writeFixture",
+          "kind": "function",
+          "signature": "(dest: Path) -> None",
+          "summary": "Minimal python package (pyproject + pytest config + a test) at ``dest``.",
+          "lineno": 304
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "Run parts A and B",
+          "lineno": 331
+        }
+      ],
+      "depends_on": [
+        "config",
+        "explore.exploreSolutionSpace",
+        "explore.generateApproaches",
+        "introspect.contextForPrompt",
+        "introspect.extractProject",
+        "refactor.RefactorTransaction",
+        "refactor.ReplaceInFile",
+        "refactor.WriteFile",
+        "refactor.buildImportGraph",
+        "refactor.findCycles"
+      ],
       "side_effects": [
         "unannotated"
       ],

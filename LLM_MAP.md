@@ -38,6 +38,9 @@ learning/       # SIE subsystem (~31 modules) — lessons, policy, curriculum, f
 memory/         # obsidian + experience DB + retrieval
 state/
 notifications/  # Discord/web dashboards, command bot, cogs
+introspect/     # typed ProjectModel for ANY project root (stdlib-only leaf)
+refactor/       # cycle detection, impact prediction, atomic refactor transactions (stdlib leaf)
+explore/        # solution-space exploration: approach gen -> trade-offs -> synthesis (stdlib leaf)
 platform_core/  # internal platform plumbing: core, runtime, orchestration, ops, config internals
 tools/          # AI-nav layer: repo_map.py, dev.py, affected_tests.py, codemod.py
 docs/
@@ -68,6 +71,7 @@ tests/
 | IO kernel / degradation | `platform_core/core/{fsio,jsonl_io,clock,git_io,best_effort}.py` | Atomic file IO, JSONL, time, git subprocess, best-effort degradation registry |
 | LLM seam | `llm_io.py` | The single blessed LLM call (`chat` + structured `act` tags), `parseJsonLoose` |
 | Resilience / self-mod | `platform_core/runtime/resilience.py`, `selfmod.py` | Crash recovery + self-modification baseline |
+| Any-project capabilities | `introspect/`, `refactor/`, `explore/` | Typed project model for any root, refactoring safety (impact + atomic transactions, `python -m refactor check`), solution-space exploration; wired via lazy fail-open imports in `platform_core/orchestration/{plan_mixin,fork_policy}.py` |
 | Dev / AI-nav tooling | `tools/repo_map.py`, `tools/dev.py`, `tools/affected_tests.py`, `tools/codemod.py` | `@AI-MAP` headers, `.repo-map.json`, `AGENTS.md`, fast check loop |
 | Config | `config.py`, `platform_core/app_config/`, `.env` | Runtime configuration |
 | Docs | `CLAUDE.md`, `LLM_MAP.md`, `docs/` | Operating and architectural context for future agents |
