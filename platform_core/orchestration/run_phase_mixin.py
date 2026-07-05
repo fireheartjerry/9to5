@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import config
 from agents import architect, verifier
+from agents.planning.elaborator import evolve as _elaborator_evolve
 from notifications import cast
 from notifications import discord_bot as discord
 import notifications.webdash as _webdash_mod
@@ -323,6 +324,11 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
             for n in (state.data.get("notifications", []) or []))
         all_done = total > 0 and done == total
         final_status = "done" if (all_done and not held_broken and not dropped_planned) else "partial"
+        if config.ELABORATOR_EXCELLENCE_ENABLED:   # Stage D fitness -- best-effort, must NEVER block completion
+            try:
+                _elaborator_evolve.recordElaborationOutcome(state.meta.get("goal_raw", ""), state.meta.get("elaboration_stance", "single-shot"), clean_run=(final_status == "done"))
+            except Exception:  # noqa: BLE001 -- best-effort Stage D learning; never affect run completion
+                pass
         from notifications.lane_feed import laneTap
         laneTap("orchestrator", f"phase: {final_status}")
         state.setStatus(final_status)
