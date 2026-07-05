@@ -25,7 +25,7 @@ import config
 import knowledge
 import llm_io
 
-from . import candidates, defer, judge, path_verify, precedent, predict, schema, self_review, uncertainty
+from . import candidates, defer, escalate, judge, path_verify, precedent, predict, schema, self_review, uncertainty
 from .grounding import isVagueGoal, repoContext, vagueGoalBundle
 
 LOG = config.getLogger("elaborator")
@@ -170,7 +170,8 @@ def elaborate(goal_raw: str, work_dir: str | None = None, chat=None) -> str:
         elevated = out.count("Inferred:")
         unc = uncertainty.runUncertainty(elevated_count=elevated, objective_spread=1.0,
                                          precedent_hits=0)
-        out = defer.maybeDefer(out, goal_raw, unc, escalate_fn=None)
+        out = defer.maybeDefer(out, goal_raw, unc,
+                               escalate_fn=lambda g: escalate.escalateToModel(g, chat=chat))
     return out
 
 

@@ -333,3 +333,23 @@ class TestLookaheadAndDefer(unittest.TestCase):
              mock.patch.object(cfg, "SOCIETY_ENABLED", False):
             out = elaborator.elaborate("do a thing", chat=injected)
         self.assertEqual(out, "SPEC")  # default escalate_fn keeps local -> unchanged
+
+
+class TestDeferLive(unittest.TestCase):
+    def test_defer_escalates_via_model_when_uncertain(self):
+        # elaborate returns a spec with 2+ "Inferred:" lines -> uncertainty defers -> escalate returns BIG
+        def injected(system, user, *, act, want_json=False):
+            if act == "elaborate":
+                return {"message": {"content": "SPEC\n"}}
+            if act == "self_review":
+                return {"message": {"content": "Inferred: a — b\nInferred: c — d"}}
+            if act == "elaborate_defer":
+                return {"message": {"content": "ESCALATED SPEC"}}
+            return {"message": {"content": ""}}
+        cfg = __import__("config")
+        with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+             mock.patch.object(cfg, "ELABORATOR_BESTOFN_ENABLED", False), \
+             mock.patch.object(cfg, "ELABORATOR_DEFER_ENABLED", True), \
+             mock.patch.object(cfg, "SOCIETY_ENABLED", False):
+            out = elaborator.elaborate("do a thing", chat=injected)
+        self.assertIn("ESCALATED SPEC", out)
