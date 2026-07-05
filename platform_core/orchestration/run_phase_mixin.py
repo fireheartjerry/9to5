@@ -197,6 +197,7 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         if control_mode:
             state.setControlMode(control_mode)
         state.setWorkDir(work_dir)   # persist the target dir so resume + every surface remember it
+        self._work_dir = work_dir    # available before planning: project-context injection reads it
         _heartbeat.writeHeartbeat(state.task_id)   # liveness beacon from run start (never raises)
         self._pre_pr_gate_skipped = False   # #41: reset per-run so a prior deadline-skip can't leak
         if not resume:

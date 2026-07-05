@@ -12,6 +12,11 @@ from __future__ import annotations
 
 # Modules whose covering test is not tests/test_<name>.py. dotted-module -> [test paths].
 MANUAL_TEST_MAP: dict[str, list[str]] = {
+    # Pin: the glob fallback (test_*synthesis*.py) would also match the unrelated
+    # tests/explore/test_approach_synthesis.py.
+    "agents.discovery.synthesis": ["tests/orchestration/test_discovery_synthesis.py"],
+    # No test_refactor_journal.py; the hardening suite exercises writeJournal/recoverJournal.
+    "refactor.refactor_journal": ["tests/refactor/test_refactor_hardening.py"],
     "agents.second_brain": ["tests/slow/test_phase2_second_brain.py"],
     "agents.architect": ["tests/slow/test_phase_3_architecture.py"],
     "agents.browser_executor": [
@@ -132,6 +137,7 @@ MANUAL_TEST_MAP: dict[str, list[str]] = {
         "tests/slow/test_e2e_operator.py",
     ],
     "platform_core.orchestration.dual_ledger_replan": ["tests/orchestration/test_stall_replan_trigger.py"],
+    "platform_core.orchestration.plan_context": ["tests/orchestration/test_plan_project_context.py"],
     "platform_core.orchestration.self_ref_gate": [
         "tests/execution/test_github_pr_gate.py",
         "tests/orchestration/test_execute_quality_gate.py",

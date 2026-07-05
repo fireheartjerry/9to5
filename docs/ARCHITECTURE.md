@@ -336,6 +336,39 @@ defaults to deps-only batching (`file_sets_fn=None`), workers default to the sha
 (advisory mode, serial), `BlackboardEntry.span_id` stays `None`, and `_remediationUnsafe`
 already encodes the worktree-isolation flip (peer-safe once each worker edits its own tree).
 
+## Any-project capabilities (introspect / refactor / explore)
+
+Three stdlib-only leaf packages give 9TO5 typed understanding of ANY project root, not just
+this repo. Dependency direction is one-way: `explore` → `introspect` ← `refactor` (both
+consumers import `introspect`; nothing imports back). Orchestration touches them only through
+lazy, fail-open imports — with the flags off, planning and fork behavior are byte-identical.
+
+- **`introspect/`** — `extractProject(root)` builds a frozen `ProjectModel` (languages,
+  modules, import edges, detected test/build/lint commands proved by config files, boundary
+  map) for any directory; `contextForPrompt(model, budget_chars=...)` renders a budgeted
+  digest. Wiring: `plan_mixin` injects that digest into the plan prompt when
+  `PROJECT_INTROSPECTION_ENABLED` (default ON) is set, capped by
+  `PROJECT_INTROSPECTION_MAX_FILES` (default 4000). Fail-open: introspection errors never
+  block planning.
+- **`refactor/`** — refactoring safety as a library: import-cycle detection
+  (`findCycles`/`wouldCreateCycle`), pre-apply impact prediction (`predictImpact` →
+  `ImpactReport` with orphaned usages, new cycles, affected tests), and
+  `RefactorTransaction` — atomic multi-file apply with byte snapshots + on-disk crash
+  journal (`recoverJournal`), py_compile gate, only-NEW-cycles gate, and an optional
+  shell-free gate command. CLI: `python -m refactor check <root>` (exit 1 on cycles).
+  Path guard: edits escaping the root or touching `FORBIDDEN_SEGMENTS` (`.git`, `.env`,
+  venvs, `node_modules`, `__pycache__`) are rejected with an explicit reason.
+  Recipe: `docs/edit_recipes/refactor_multi_file.md`.
+- **`explore/`** — solution-space exploration over an introspected project:
+  `generateApproaches` (archetype-grounded candidates, optional brain) →
+  `scoreApproaches` (fit/risk/effort/testability trade-offs) → `selectOrSynthesize`;
+  one-call facade `exploreSolutionSpace(goal, root_or_model)`. Wiring: when
+  `EXPLORE_APPROACHES_ENABLED` (default OFF) is set, `fork_policy` seeds Epic-6 fork
+  angles from ranked approach summaries (`EXPLORE_APPROACHES_N`, default 3); any failure
+  falls back to the static angle list.
+
+Proof-of-concept driver: `scripts/poc_any_project.py` (self-scan + external-repo scan).
+
 ## Platform kernel (2026-07 rewrite)
 
 - **IO kernel** — `platform_core/core/{fsio,jsonl_io,clock,git_io}.py` are the single

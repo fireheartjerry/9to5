@@ -14,6 +14,8 @@ state/launch/
 state/ipc/
 state/compaction/
 state/blackboard/
+# introspect ProjectModel disk cache (runtime, regenerable)
+state/project_models/
 # SIE Experience Ledger (runtime SQLite, accumulates per run)
 state/experience.db
 state/experience.db-wal

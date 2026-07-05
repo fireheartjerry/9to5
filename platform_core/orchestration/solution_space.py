@@ -130,7 +130,7 @@ def runForked(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid
     cost_budget.py lands (the shouldFork ceiling check in execute_mixin already gated the spawn)."""
     backend = fs.loadWorktreeBackend()
     plan = fork_policy.forkPlan(subtask, n=config.SOLUTION_FORK_N,
-                                work_profile=state.meta.get("work_profile"))
+                                work_profile=state.meta.get("work_profile"), work_dir=exec_cwd)
     try:
         run_one = _makeRunOneBranch(orch, state, subtask, architect_doc, bus, dashboard,
                                     sid, verify_spec, backend)

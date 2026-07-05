@@ -14,7 +14,6 @@ RUN/TEST: python -m pytest tests/orchestration/test_run_loop_replan_mixin.py
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
 
 import config
 import platform_core.core.surfaces as surfaces
@@ -30,12 +29,10 @@ from platform_core.orchestration.plan_prompts import ORCHESTRATOR_CONSTITUTION
 from platform_core.orchestration.run_loop import _asList, _asText, _confidenceNudge, _warmStartHint
 from platform_core.orchestration.subtask import _repairVerify, _singleDeliverable, _strengthenPlanVerifies
 from platform_core.orchestration import dual_ledger_planner as _dlp
+from platform_core.orchestration import plan_context as _plan_context
 from platform_core.orchestration import plan_shape_check as _shape
 from platform_core.orchestration import work_profile as _work_profile
 from state.task import TaskState
-
-if TYPE_CHECKING:
-    pass
 
 LOG = config.getLogger("orchestrator")
 
@@ -60,18 +57,28 @@ class OrchestratorPlanMixin:
     def _asText(v) -> str:
         return _asText(v)
 
+    def _projectContextBlock(self, work_dir: str) -> str:
+        """Budgeted, fail-open introspection digest for the plan prompt (plan_context.py)."""
+        return _plan_context.projectContextBlock(work_dir)
+
     def authorSubtaskPlan(self, goal_elaborated: str, architect_doc: str) -> list[dict]:
         prof = getattr(self, "_active_work_profile", None)
         profile_block = _work_profile.guidance_block(prof, context="planner")
         # Epic 2 (steal #2): dual-ledger planner. Flag-gated; on failure it returns None and we fall
         # straight through to the legacy one-shot planner below (never worse than today).
+        project_ctx = self._projectContextBlock(getattr(self, "_work_dir", None) or str(config.PROJECT_ROOT))
+        ctx_block = f"\nPROJECT CONTEXT:\n{project_ctx}\n" if project_ctx else ""
         if config.DUAL_LEDGER_PLANNER_ENABLED:
-            subs = _dlp.tryAuthorPlan(self._ollamaChat, goal_elaborated, architect_doc, work_profile=prof)
+            # Dual-ledger planner sees the same project context (own param, own budget -- appending to
+            # architect_doc would be lost to its [:2000] truncation).
+            subs = _dlp.tryAuthorPlan(self._ollamaChat, goal_elaborated, architect_doc,
+                                      work_profile=prof, project_ctx=ctx_block)
             if subs:
                 return subs
         user = (
             f"Specification:\n{goal_elaborated}\n\n{profile_block}\n"
-            f"Architecture:\n{architect_doc[:4000]}\n\nReturn the plan JSON."
+            f"Architecture:\n{architect_doc[:4000]}\n"
+            f"{ctx_block}\nReturn the plan JSON."
         )
         user = retrieval.lessons_block(goal_elaborated) + user  # SIE Layer 1 (best-effort, no-op if empty)
         resp = self._ollamaChat(_prompts.PLANNER_SYSTEM, user, act="plan", want_json=True)
@@ -100,15 +107,8 @@ class OrchestratorPlanMixin:
             pass
         reqs = verifier.extractRequirements(goal_elaborated)
         if len(reqs) < 2:
-            return [
-                {
-                    "title": "Implement the goal",
-                    "description": goal_elaborated,
-                    "layer": 3,
-                    "verify": None,
-                    "effort_level": "high",
-                }
-            ]
+            return [{"title": "Implement the goal", "description": goal_elaborated,
+                     "layer": 3, "verify": None, "effort_level": "high"}]
         target_rel = verifier.primaryTargetFile(goal_elaborated)
         target_abs = str((config.PROJECT_ROOT / target_rel).resolve()) if target_rel else None
         subs: list[dict] = []
@@ -117,15 +117,8 @@ class OrchestratorPlanMixin:
             # survives plan materialization); the diff-grounded receipt stage FAILS the subtask
             # if the declared file never changed.
             v = {"targets": [target_abs]} if target_abs else None
-            subs.append(
-                {
-                    "title": f"Deliverable {i}: {req[:60]}",
-                    "description": req,
-                    "layer": 3,
-                    "verify": v,
-                    "effort_level": "high",
-                }
-            )
+            subs.append({"title": f"Deliverable {i}: {req[:60]}", "description": req,
+                         "layer": 3, "verify": v, "effort_level": "high"})
         LOG.info("fallback plan: decomposed goal into %d per-requirement subtasks", len(subs))
         return subs
 

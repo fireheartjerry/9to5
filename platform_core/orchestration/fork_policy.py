@@ -5,8 +5,8 @@ EXPORTS:
   shouldFork(subtask: dict, *, enabled: bool, projected_cost: float, cost_ceiling: float, worktree_isolated: bool, goal_elaborated: str, is_self_referential: bool, work_profile=None) -> bool  -- CONSERVATIVE OPT-IN gate
   BranchSeed  -- One branch's diversity seed: effort (also picks the model) + an angle hint.
   ForkPlan
-  forkPlan(subtask: dict, *, n: int, angles: tuple=DIVERSITY_ANGLES, work_profile=None) -> ForkPlan  -- Build N diversity seeds spanning effort x angle
-DEPENDS-ON: config, platform_core.orchestration, platform_core.orchestration.subtask
+  forkPlan(subtask: dict, *, n: int, angles: tuple=DIVERSITY_ANGLES, work_profile=None, work_dir: str | None=None) -> ForkPlan  -- Build N diversity seeds spanning effort x angle
+DEPENDS-ON: config, explore.generateApproaches, explore.scoreApproaches, introspect.extractProject, platform_core.orchestration, platform_core.orchestration.subtask
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_fork_policy.py
 """
@@ -79,8 +79,34 @@ class ForkPlan:
     n: int = 0
 
 
+def _angleHintsFromExplore(goal_text: str, n: int, work_dir: str | None) -> list[str] | None:
+    """Ranked explore approach summaries as angle hints; None on any failure (fail-open).
+
+    Exploration root is ``work_dir`` when the caller supplies one (e.g. the
+    worktree a fork actually runs in), else falls back to config.PROJECT_ROOT
+    for callers that don't carry a work dir.
+    """
+    try:
+        if not getattr(config, "EXPLORE_APPROACHES_ENABLED", False):
+            return None
+        from explore import generateApproaches, scoreApproaches
+        from introspect import extractProject
+        model = extractProject(work_dir or config.PROJECT_ROOT,
+                               max_files=getattr(config, "PROJECT_INTROSPECTION_MAX_FILES", 4000))
+        # Generate a wider pool (EXPLORE_APPROACHES_N) so ranking has real choice, seed the top n.
+        pool = max(1, int(n), int(getattr(config, "EXPLORE_APPROACHES_N", 3)))
+        candidates = generateApproaches(goal_text, model, n=pool)
+        by_id = {c.approach_id: c for c in candidates}
+        hints = [by_id[s.approach_id].summary
+                 for s in scoreApproaches(candidates, model)
+                 if s.approach_id in by_id and by_id[s.approach_id].summary][:max(1, int(n))]
+        return hints or None
+    except Exception:  # noqa: BLE001  -- fail-open: existing angle logic untouched
+        return None
+
+
 def forkPlan(subtask: dict, *, n: int, angles: tuple = DIVERSITY_ANGLES,
-             work_profile=None) -> ForkPlan:
+             work_profile=None, work_dir: str | None = None) -> ForkPlan:
     """Build N diversity seeds spanning effort x angle. Distinct by construction."""
     n = max(1, int(n))
     seeds: list = []
@@ -101,6 +127,10 @@ def forkPlan(subtask: dict, *, n: int, angles: tuple = DIVERSITY_ANGLES,
             n = min(n, 2)
     except Exception:  # noqa: BLE001
         pass
+    goal_text = f"{subtask.get('title', '')} {subtask.get('description', '')}".strip()
+    explored = _angleHintsFromExplore(goal_text, n, work_dir)
+    if explored:
+        angles = tuple(explored)
     for i in range(n):
         effort = EFFORT_CYCLE[i % len(EFFORT_CYCLE)]
         angle = angles[i % len(angles)]

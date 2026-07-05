@@ -30,7 +30,7 @@ and reports results. Keep this file short so every session starts fast.
 
 - Root files are public facades or entrypoints: `main.py`, `config.py`, `orchestrator.py`, `knowledge.py`, `validate_workflows.py`.
 - Internal platform plumbing lives under `platform_core/`: orchestration, runtime/control, config internals, knowledge-base mechanics, ops, and simulation.
-- Product domains stay at root: `agents/`, `notifications/`, `memory/`, `learning/`, `workflows/`, `state/`, `tools/`, and `tests/`.
+- Product domains stay at root: `agents/`, `notifications/`, `memory/`, `learning/`, `workflows/`, `state/`, `tools/`, `tests/`, and the any-project leaf packages `introspect/`, `refactor/`, `explore/`.
 - Prefer editing the narrow implementation module, while preserving root facades and compatibility imports when callers already use them.
 
 ## Core Rules

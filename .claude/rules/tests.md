@@ -4,7 +4,8 @@
 - Use `python tools/dev.py fast` before handing off broad Python changes.
 - `tests/` is organized by domain, not flat: `tests/evolution/`, `tests/execution/`,
   `tests/orchestration/`, `tests/control/`, `tests/notifications/`, `tests/workflows/`,
-  `tests/platform/` hold fast-lane tests; `tests/conftest.py`, `tests/factories.py`, and
+  `tests/platform/`, `tests/introspect/`, `tests/refactor/`, `tests/explore/` hold
+  fast-lane tests; `tests/conftest.py`, `tests/factories.py`, and
   `tests/progress_reporter.py` stay at the `tests/` root.
 - Slow is directory-based: anything under `tests/slow/` is auto-marked `@pytest.mark.slow`.
   To make a test slow, put it in `tests/slow/` — there is no filename-substring mechanism.
