@@ -25,7 +25,7 @@ import config
 import knowledge
 import llm_io
 
-from . import candidates, judge, path_verify, precedent, schema, self_review
+from . import candidates, defer, judge, path_verify, precedent, predict, schema, self_review, uncertainty
 from .grounding import isVagueGoal, repoContext, vagueGoalBundle
 
 LOG = config.getLogger("elaborator")
@@ -109,11 +109,20 @@ def _bestOfN(goal_raw: str, work_dir, user: str, system: str, chat) -> str:
     cands = [c for c in candidates.generate(goal_raw, work_dir, n=n, gen_fn=gen_fn) if c["spec"]]
     if not cands:
         return ""
-    best = candidates.selectBest(
-        cands,
-        weight_fn=lambda c: candidates.meritWeight(c, groundedness=_groundedness(c["spec"], work_dir)),
-        use_optimizer=bool(config.PORTFOLIO_OPTIMIZER_ENABLED),
-    )
+    predicted: dict = {}
+    if config.ELABORATOR_LOOKAHEAD_ENABLED:
+        for c in cands:
+            predicted[c["id"]] = predict.predictOutcome(c["spec"], work_dir, chat=chat)["predicted_success"]
+
+    def _weight(c):
+        return candidates.meritWeight(
+            c,
+            groundedness=_groundedness(c["spec"], work_dir),
+            predicted=predicted.get(c["id"], 0.0),
+        )
+
+    best = candidates.selectBest(cands, weight_fn=_weight,
+                                 use_optimizer=bool(config.PORTFOLIO_OPTIMIZER_ENABLED))
     return best["spec"] if best else cands[0]["spec"]
 
 
@@ -157,6 +166,11 @@ def elaborate(goal_raw: str, work_dir: str | None = None, chat=None) -> str:
         if verdict.get("verdict") == "challenged" and verdict.get("concerns"):
             note = "; ".join(str(c) for c in verdict["concerns"])
             out = f"{out}\n\n# Review Note\n{note}\n"
+    if config.ELABORATOR_EXCELLENCE_ENABLED and config.ELABORATOR_DEFER_ENABLED:
+        elevated = out.count("Inferred:")
+        unc = uncertainty.runUncertainty(elevated_count=elevated, objective_spread=1.0,
+                                         precedent_hits=0)
+        out = defer.maybeDefer(out, goal_raw, unc, escalate_fn=None)
     return out
 
 

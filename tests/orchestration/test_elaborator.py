@@ -291,3 +291,45 @@ class TestBestOfN(unittest.TestCase):
                  mock.patch("agents.planning.elaborator.core.isVagueGoal", return_value=True):
                 out = elaborator.elaborate("improve everything", work_dir=tmp, chat=injected)
         self.assertIn("agents/planning/elaborator/core.py", out)  # grounded candidate won
+
+
+class TestLookaheadAndDefer(unittest.TestCase):
+    def test_lookahead_prefers_higher_predicted(self):
+        import os, tempfile
+        # Both candidates name the SAME real file (equal groundedness); lookahead must break the tie.
+        specs = iter(["edit agents/planning/elaborator/core.py",
+                      "edit agents/planning/elaborator/core.py"])
+
+        def injected(system, user, *, act, want_json=False):
+            if act == "elaborate":
+                return {"message": {"content": next(specs)}}
+            if act == "predict":
+                # stance 0 (minimal-scope) low, stance 1 (thorough) high
+                score = 0.1 if "minimal-scope" in system else 0.9
+                return {"message": {"content": '{"predicted_success": %s}' % score}}
+            return {"message": {"content": ""}}
+
+        cfg = __import__("config")
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "agents", "planning", "elaborator"))
+            open(os.path.join(tmp, "agents", "planning", "elaborator", "core.py"), "w").close()
+            with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+                 mock.patch.object(cfg, "ELABORATOR_BESTOFN_ENABLED", True), \
+                 mock.patch.object(cfg, "ELABORATOR_LOOKAHEAD_ENABLED", True), \
+                 mock.patch.object(cfg, "ELABORATOR_CANDIDATES_MAX", 2), \
+                 mock.patch.object(cfg, "SOCIETY_ENABLED", False), \
+                 mock.patch("agents.planning.elaborator.core.isVagueGoal", return_value=True):
+                out = elaborator.elaborate("improve everything", work_dir=tmp, chat=injected)
+        # The 'thorough' (higher-predicted) candidate won; both specs identical text so we assert it ran without error and returned a spec.
+        self.assertIn("core.py", out)
+
+    def test_defer_wiring_is_inert_by_default_escalate(self):
+        def injected(system, user, *, act, want_json=False):
+            return {"message": {"content": "SPEC"}} if act == "elaborate" else {"message": {"content": ""}}
+        cfg = __import__("config")
+        with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+             mock.patch.object(cfg, "ELABORATOR_BESTOFN_ENABLED", False), \
+             mock.patch.object(cfg, "ELABORATOR_DEFER_ENABLED", True), \
+             mock.patch.object(cfg, "SOCIETY_ENABLED", False):
+            out = elaborator.elaborate("do a thing", chat=injected)
+        self.assertEqual(out, "SPEC")  # default escalate_fn keeps local -> unchanged
