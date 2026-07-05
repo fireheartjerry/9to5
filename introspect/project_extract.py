@@ -38,7 +38,7 @@ from introspect.project_model import (
     LANG_TYPESCRIPT,
     ProjectModel,
 )
-from introspect.project_scanner import EXCLUDE_DIRS, scanProject
+from introspect.project_scanner import gitignoreExcludes, pruneDirnames, scanProject
 from introspect.python_import_graph import analyzePython
 
 TOP_FAN_IN_COUNT = 5
@@ -126,14 +126,19 @@ def _mtimeHash(root_path: Path) -> str:
     """Digest of (relpath, mtime_ns, size) of every non-excluded file.
 
     Always part of the cache key so dirty-worktree edits invalidate cached models.
-    The cache dir itself is skipped when it lives under root: otherwise writing the
-    cache would perturb the very hash that keys it (self-extraction never hits).
+    Prunes the same dirs the scanner prunes (EXCLUDE_DIRS + .gitignore simple
+    patterns) so runtime churn in ignored dirs never invalidates the key, and the
+    walk cost matches the scan cost. The cache dir itself is skipped when it lives
+    under root: otherwise writing the cache would perturb the very hash that keys it.
     """
     cache_dir = _cacheDir()
     skip_abs = str(cache_dir.resolve()) if cache_dir is not None else None
+    ig_names, ig_rels = gitignoreExcludes(root_path)
     entries: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root_path):
-        dirnames[:] = sorted(d for d in dirnames if d not in EXCLUDE_DIRS)
+        rel_dir = Path(dirpath).relative_to(root_path).as_posix()
+        rel_dir = "" if rel_dir == "." else rel_dir
+        dirnames[:] = pruneDirnames(rel_dir, dirnames, ig_names, ig_rels)
         if skip_abs is not None and str(Path(dirpath).resolve()) == skip_abs:
             continue
         for name in filenames:

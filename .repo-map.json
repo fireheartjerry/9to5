@@ -3042,9 +3042,7 @@
         "none"
       ],
       "test": [],
-      "callers": [
-        "platform_core.orchestration.plan_mixin"
-      ]
+      "callers": []
     },
     "introspect.__main__": {
       "path": "introspect/__main__.py",
@@ -3159,7 +3157,7 @@
           "kind": "function",
           "signature": "(model: ProjectModel, *, budget_chars: int=4000) -> str",
           "summary": "LLM-ready sectioned digest of the model, hard-truncated at ``budget_chars``.",
-          "lineno": 170
+          "lineno": 175
         }
       ],
       "depends_on": [
@@ -3243,11 +3241,25 @@
       "purpose": "Deterministic file-tree scan: classify source files into ModuleInfo skeletons.",
       "exports": [
         {
+          "name": "gitignoreExcludes",
+          "kind": "function",
+          "signature": "(root_path: Path) -> tuple[frozenset[str], frozenset[str]]",
+          "summary": "(dir names, dir relpaths) to prune, parsed from the root ``.gitignore``.",
+          "lineno": 77
+        },
+        {
+          "name": "pruneDirnames",
+          "kind": "function",
+          "signature": "(rel_dir: str, dirnames: list[str], ig_names: frozenset[str], ig_rels: frozenset[str]) -> list[str]",
+          "summary": "Sorted dirnames minus EXCLUDE_DIRS and gitignore-derived exclusions.",
+          "lineno": 101
+        },
+        {
           "name": "scanProject",
           "kind": "function",
           "signature": "(root: str | Path, *, max_files: int=4000) -> list[ModuleInfo]",
           "summary": "Scan ``root`` into sorted ModuleInfo skeletons, at most ``max_files`` entries.",
-          "lineno": 75
+          "lineno": 111
         }
       ],
       "depends_on": [
@@ -12461,14 +12473,13 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles subtask plan authoring, invocation spec construction, and SIE authoring context.",
-          "lineno": 39
+          "lineno": 40
         }
       ],
       "depends_on": [
         "agents.completion_envelope",
         "agents.verifier",
         "config",
-        "introspect",
         "learning.knowledge_graph",
         "learning.policy",
         "learning.postmortem",

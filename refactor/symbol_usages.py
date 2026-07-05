@@ -20,7 +20,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from introspect.project_scanner import EXCLUDE_DIRS
+from introspect.project_scanner import gitignoreExcludes, pruneDirnames
 
 
 @dataclass(frozen=True)
@@ -87,12 +87,16 @@ def _usagesInTree(tree: ast.Module, rel: str, symbols: set[str]) -> list[tuple[s
 
 
 def _pyFiles(root_path: Path) -> list[str]:
-    """Sorted POSIX relpaths of every .py file under root, excluding EXCLUDE_DIRS."""
+    """Sorted POSIX relpaths of every .py file under root, pruned like the scanner
+    (EXCLUDE_DIRS + the project's own .gitignore simple patterns)."""
+    ig_names, ig_rels = gitignoreExcludes(root_path)
     found: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root_path):
-        dirnames[:] = sorted(d for d in dirnames if d not in EXCLUDE_DIRS)
+        rel_dir = Path(dirpath).relative_to(root_path).as_posix()
+        rel_dir = "" if rel_dir == "." else rel_dir
+        dirnames[:] = pruneDirnames(rel_dir, dirnames, ig_names, ig_rels)
         found.extend(
-            (Path(dirpath) / name).relative_to(root_path).as_posix()
+            f"{rel_dir}/{name}" if rel_dir else name
             for name in filenames
             if name.endswith(".py")
         )

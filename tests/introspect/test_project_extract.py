@@ -32,6 +32,21 @@ def test_extract_cache_hit(fixture_project, tmp_path, monkeypatch):
     assert cache_dir.is_dir() and list(cache_dir.glob("*.json"))
 
 
+def test_mtime_hash_ignores_gitignored_dirs(fixture_project):
+    """Runtime churn inside gitignored dirs must not invalidate the cache key."""
+    from introspect import project_extract
+
+    (fixture_project / ".gitignore").write_text("bigvendor/\nstate/tasks/\n", encoding="utf-8")
+    before = project_extract._mtimeHash(fixture_project)
+    vend = fixture_project / "bigvendor"
+    vend.mkdir()
+    (vend / "huge.py").write_text("X = 1\n", encoding="utf-8")
+    nested = fixture_project / "state" / "tasks"
+    nested.mkdir(parents=True)
+    (nested / "run.json").write_text("{}", encoding="utf-8")
+    assert project_extract._mtimeHash(fixture_project) == before
+
+
 def test_cache_dir_inside_root_does_not_self_invalidate(fixture_project, monkeypatch):
     """Cache dir under the scanned root must not perturb the mtime hash that keys it
     (else self-extraction never cache-hits -- the 9to5 PROJECT_ROOT case)."""

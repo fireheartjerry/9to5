@@ -79,6 +79,29 @@ def test_flag_off_no_injection_and_no_scan(pin_flags, monkeypatch, tmp_path):
     assert spy.call_count == 0
 
 
+def test_plan_context_hard_time_budget(pin_flags, monkeypatch, tmp_path):
+    """A pathologically slow extraction must cost at most the budget, then fail open to ''."""
+    import threading
+    import platform_core.orchestration.plan_context as pc
+
+    pin_flags(PROJECT_INTROSPECTION_ENABLED=True, DUAL_LEDGER_PLANNER_ENABLED=False)
+    release = threading.Event()
+
+    def _slowExtract(*a, **k):
+        release.wait(5)  # blocks past the (shrunk) budget; conftest only caps time.sleep
+        raise RuntimeError("never reached in time")
+
+    monkeypatch.setattr("introspect.project_extract.extractProject", _slowExtract)
+    monkeypatch.setattr(pc, "PROJECT_CONTEXT_TIMEOUT_S", 0.2)
+    orch = _makeOrch()
+    orch._work_dir = str(tmp_path)
+    captured = _stubBrain(orch)
+    subs = orch.authorSubtaskPlan("build the thing", "arch doc")
+    release.set()  # let the stranded worker thread exit promptly
+    assert subs and subs[0]["title"] == "a"
+    assert captured and "PROJECT CONTEXT" not in captured[0]
+
+
 def test_dual_ledger_path_receives_project_context(pin_flags, monkeypatch, tmp_path):
     """Default full-stack config routes planning through the dual-ledger planner; the
     project context must reach it too (own param, own budget -- not lost to truncation)."""
