@@ -46,6 +46,7 @@ EXTENSIONS: tuple[str, ...] = (
     "notifications.bot.cogs.ops_cog",         # super-reaction approve + silence watchdog (Tier 5)
     "notifications.bot.cogs.log_cog",         # /brief /why /wisdom /growth /intent /prefer (+ ! bang) (Spec B)
     "notifications.bot.cogs.context_cog",     # 3 context-menu commands (Spec B)
+    "notifications.psyche_cog",               # read-only psyche interior surface (HN Phase 9)
 )
 
 

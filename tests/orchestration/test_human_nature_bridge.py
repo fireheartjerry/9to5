@@ -560,6 +560,7 @@ def test_emotion_advisory_couples_and_records(monkeypatch):
 
     monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
     monkeypatch.setattr(config, "HN_EMOTIONS_BEHAVIOR", True)
+    monkeypatch.setattr(config, "HN_MANIFOLD", False)  # exercise the legacy PAD label path
     seen = {}
 
     def _spy_couple(label, meta, **kw):

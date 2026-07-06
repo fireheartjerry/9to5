@@ -4422,7 +4422,8 @@
         "tests/human_nature/test_prototypes.py"
       ],
       "callers": [
-        "human_nature.psyche_runtime"
+        "human_nature.psyche_runtime",
+        "platform_core.orchestration.human_nature_bridge.affect"
       ]
     },
     "human_nature.psyche_commands": {
@@ -8370,6 +8371,7 @@
         "tests/explore/test_approach_gen.py",
         "tests/explore/test_approach_synthesis.py",
         "tests/explore/test_approach_tradeoffs.py",
+        "tests/human_nature/eval/test_habit_compression.py",
         "tests/human_nature/test_appraisal.py",
         "tests/human_nature/test_prototypes.py",
         "tests/introspect/test_project_boundaries.py",
@@ -9839,21 +9841,21 @@
           "kind": "function",
           "signature": "(content: str, source_msg_id: 'str | None'=None) -> str",
           "summary": "Parse + apply a '!' command against the latest task",
-          "lineno": 66
+          "lineno": 67
         },
         {
           "name": "buildBot",
           "kind": "function",
           "signature": "()",
           "summary": "Construct (but do not run) the NightclawBot",
-          "lineno": 204
+          "lineno": 205
         },
         {
           "name": "runBot",
           "kind": "function",
           "signature": "() -> None",
           "summary": "",
-          "lineno": 238
+          "lineno": 239
         }
       ],
       "depends_on": [
@@ -16168,26 +16170,29 @@
           "kind": "function",
           "signature": "(behavior_intent: 'str | None') -> int",
           "summary": "Pure helper: map a coupled behavior intent to a BOUNDED retry-budget delta in",
-          "lineno": 53
+          "lineno": 67
         },
         {
           "name": "emotionAdvisory",
           "kind": "function",
           "signature": "(state: Any, dashboard: Any=None) -> dict",
           "summary": "Wire the Human-Nature emotion faculty as an ADVISORY behavior coupling",
-          "lineno": 62
+          "lineno": 76
         }
       ],
       "depends_on": [
         "config",
         "human_nature.emotions",
+        "human_nature.prototypes",
         "platform_core.core.best_effort"
       ],
       "side_effects": [
         "mutates state.meta[\"hn_behavior\"] when enabled"
       ],
       "test": [
+        "tests/human_nature/eval/test_affect_to_action_monotonicity.py",
         "tests/human_nature/test_affect_manifold.py",
+        "tests/orchestration/test_bridge_affect_manifold.py",
         "tests/platform/test_ci_affected.py"
       ],
       "callers": []

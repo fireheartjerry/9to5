@@ -4,16 +4,16 @@
 EXPORTS:
   emotionNudge(behavior_intent: 'str | None') -> int  -- Pure helper: map a coupled behavior intent to a BOUNDED retry-budget delta in
   emotionAdvisory(state: Any, dashboard: Any=None) -> dict  -- Wire the Human-Nature emotion faculty as an ADVISORY behavior coupling
-DEPENDS-ON: config, human_nature.emotions, platform_core.core.best_effort
+DEPENDS-ON: config, human_nature.emotions, human_nature.prototypes, platform_core.core.best_effort
 SIDE-EFFECTS: mutates state.meta["hn_behavior"] when enabled
-RUN/TEST: python -m pytest tests/human_nature/test_affect_manifold.py tests/platform/test_ci_affected.py
+RUN/TEST: python -m pytest tests/human_nature/eval/test_affect_to_action_monotonicity.py tests/human_nature/test_affect_manifold.py tests/orchestration/test_bridge_affect_manifold.py tests/platform/test_ci_affected.py
 """
 from __future__ import annotations
 
 from typing import Any
 
 import config
-from platform_core.core.best_effort import best_effort
+from platform_core.core.best_effort import best_effort, recordDegradation
 
 from ._common import LOG, _meta
 
@@ -50,6 +50,20 @@ def _affectToLabel(affect: "dict | None") -> str:
     return "neutral"
 
 
+def _emotionLabel(self_state: dict) -> str:
+    """Continuous-manifold emotion label when config.HN_MANIFOLD is on (project the 9-axis
+    affect_manifold onto the nearest prototype), else the legacy PAD rule _affectToLabel(affect).
+    Best-effort: falls back to _affectToLabel on any error."""
+    if getattr(config, "HN_MANIFOLD", False):
+        try:
+            from human_nature import prototypes
+
+            return prototypes.dominant(self_state.get("affect_manifold") or {})
+        except Exception as exc:  # noqa: BLE001 -- garbage manifold must never raise
+            recordDegradation("human_nature_bridge.affect_manifold", exc, log=LOG)
+    return _affectToLabel(self_state.get("affect"))
+
+
 def emotionNudge(behavior_intent: "str | None") -> int:
     """Pure helper: map a coupled behavior intent to a BOUNDED retry-budget delta in
     {0, +1}. Only the clearly-safe subset (escalate_effort, raise_verification) maps
@@ -76,7 +90,7 @@ def emotionAdvisory(state: Any, dashboard: Any = None) -> dict:
 
         meta = _meta(state)
         self_state = meta.get("self_state") or {}
-        label = _affectToLabel(self_state.get("affect"))
+        label = _emotionLabel(self_state)
         coupling = emotions.couple(label, meta)
         intent = coupling.get("behavior")
         meta.setdefault("hn_behavior", []).append({"emotion": label, "behavior": intent})
