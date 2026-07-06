@@ -7,7 +7,7 @@ EXPORTS:
   init(db_path: Optional[Path]=None) -> None  -- Create the database + schema if absent (idempotent).
 DEPENDS-ON: config, memory.experience_ddl, platform_core.core.best_effort
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/evolution/test_experience_schema.py tests/evolution/test_run_innovations_schema.py tests/human_nature/test_attention_schema.py tests/notifications/test_notification_schema.py
+RUN/TEST: python -m pytest tests/evolution/test_experience_schema.py tests/evolution/test_run_innovations_schema.py tests/human_nature/test_attention_schema.py tests/notifications/test_notification_schema.py tests/orchestration/test_elaborator_schema.py
 """
 from __future__ import annotations
 

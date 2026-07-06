@@ -11,7 +11,7 @@ EXPORTS:
   propose_constitution(role: str, body: str, *, db_path: Optional[Path]=None) -> Optional[int]  -- Adapter: a constitution candidate is a prompts.py challenger (no new storage).
 DEPENDS-ON: agents.playbook, config, learning.prompts, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/evolution/test_evolution_candidate.py
+RUN/TEST: python -m pytest tests/evolution/test_evolution_candidate.py tests/orchestration/test_elaborator_candidates.py
 """
 from __future__ import annotations
 
