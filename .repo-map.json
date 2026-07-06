@@ -2531,7 +2531,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/execution/test_trace_replay.py"
+      ],
       "callers": []
     },
     "agents.trace_replay": {
