@@ -3058,6 +3058,7 @@
         "notifications.presentation.views_run",
         "notifications.presentation.visuals_cards",
         "notifications.presentation.visuals_components",
+        "notifications.psyche_cog",
         "notifications.runtime.reflection_post",
         "notifications.runtime.tunnel",
         "notifications.runtime.tunnel_providers",
@@ -3603,7 +3604,8 @@
         "tests/human_nature/test_character_vector.py"
       ],
       "callers": [
-        "human_nature.psyche_commands"
+        "human_nature.psyche_commands",
+        "notifications.psyche_cog"
       ]
     },
     "human_nature.charter": {
@@ -3649,7 +3651,8 @@
       ],
       "callers": [
         "human_nature.consolidation",
-        "human_nature.psyche_commands"
+        "human_nature.psyche_commands",
+        "notifications.psyche_cog"
       ]
     },
     "human_nature.conflict": {
@@ -4477,7 +4480,9 @@
       "test": [
         "tests/human_nature/test_psyche_commands.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.psyche_cog"
+      ]
     },
     "human_nature.psyche_runtime": {
       "path": "human_nature/psyche_runtime.py",
@@ -4801,7 +4806,8 @@
       "callers": [
         "human_nature.consolidation",
         "human_nature.integration",
-        "human_nature.self_model"
+        "human_nature.self_model",
+        "notifications.psyche_cog"
       ]
     },
     "human_nature.user_model": {
@@ -10188,6 +10194,7 @@
         "notifications.presentation.views_control",
         "notifications.presentation.views_run",
         "notifications.presentation.views_terminal",
+        "notifications.psyche_cog",
         "notifications.runtime.work_launcher",
         "notifications.slash",
         "notifications.surfaces.dashboard",
@@ -11700,6 +11707,84 @@
       ],
       "callers": []
     },
+    "notifications.psyche_cog": {
+      "path": "notifications/psyche_cog.py",
+      "purpose": "Psyche surface cog (Phase 9): read-only, propose-only interior readout.",
+      "exports": [
+        {
+          "name": "renderPsyche",
+          "kind": "function",
+          "signature": "(state: Any) -> str",
+          "summary": "Render the interior snapshot (mood/affect/competence/autonomy) via cmd_psyche.",
+          "lineno": 135
+        },
+        {
+          "name": "renderDial",
+          "kind": "function",
+          "signature": "(state: Any, arg: str) -> str",
+          "summary": "Show current dials (no arg), or PROPOSE a dial change (never persisted).",
+          "lineno": 143
+        },
+        {
+          "name": "renderCharter",
+          "kind": "function",
+          "signature": "(state: Any) -> str",
+          "summary": "Render the active charter tenets via cmd_charter.",
+          "lineno": 172
+        },
+        {
+          "name": "renderWhy",
+          "kind": "function",
+          "signature": "(state: Any) -> str",
+          "summary": "Render the functional affect trace plus the last authority-exercise receipts.",
+          "lineno": 179
+        },
+        {
+          "name": "renderWhatYouKnow",
+          "kind": "function",
+          "signature": "(state: Any) -> str",
+          "summary": "Render the inspectable user-model snapshot via cmd_whatyouknow.",
+          "lineno": 197
+        },
+        {
+          "name": "dispatchPsyche",
+          "kind": "function",
+          "signature": "(content: str, *, state: Any) -> Optional[str]",
+          "summary": "Route a psyche bang command to its render core",
+          "lineno": 213
+        },
+        {
+          "name": "PsycheCog",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 231
+        },
+        {
+          "name": "setup",
+          "kind": "function",
+          "signature": "(bot: dpy_commands.Bot) -> None",
+          "summary": "",
+          "lineno": 290
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.character_vector",
+        "human_nature.charter",
+        "human_nature.psyche_commands",
+        "human_nature.self_state",
+        "notifications.commands",
+        "notifications.slash"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/notifications/test_psyche_cog.py"
+      ],
+      "callers": []
+    },
     "notifications.reflection_post": {
       "path": "notifications/reflection_post.py",
       "purpose": "Compatibility alias for :mod:`notifications.runtime.reflection_post`.",
@@ -12213,7 +12298,8 @@
         "notifications.bot.cogs.log_cog",
         "notifications.bot.cogs.observe_cog",
         "notifications.bot.cogs.runs_cog",
-        "notifications.presentation.views_feedback"
+        "notifications.presentation.views_feedback",
+        "notifications.psyche_cog"
       ]
     },
     "notifications.subprocess_feed": {
