@@ -433,6 +433,58 @@
         "platform_core.orchestration.run_phase_mixin"
       ]
     },
+    "agents.discovery.corpus": {
+      "path": "agents/discovery/corpus.py",
+      "purpose": "Invention corpus: retrievable SOTA pattern cards injected into feature-seeking lenses.",
+      "exports": [
+        {
+          "name": "CorpusCard",
+          "kind": "class",
+          "signature": "",
+          "summary": "One parsed pattern card (name + full text + section map).",
+          "lineno": 41
+        },
+        {
+          "name": "load_cards",
+          "kind": "function",
+          "signature": "() -> list[CorpusCard]",
+          "summary": "Parse + cache every ``*.md`` card in invention_corpus/ (empty list on any failure).",
+          "lineno": 78
+        },
+        {
+          "name": "retrieve",
+          "kind": "function",
+          "signature": "(query: str, k: Optional[int]=None, *, embed_fn: Optional[Callable]=None) -> list[CorpusCard]",
+          "summary": "Top-k cards most relevant to ``query`` (semantic when embed_fn given, else keyword).",
+          "lineno": 128
+        },
+        {
+          "name": "corpus_block",
+          "kind": "function",
+          "signature": "(query: str, k: Optional[int]=None, *, embed_fn: Optional[Callable]=None) -> str",
+          "summary": "Render the top-k cards as a prompt-injectable 'prior art' block ('' when none).",
+          "lineno": 143
+        },
+        {
+          "name": "reset_cache",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Drop the parsed-card cache (tests).",
+          "lineno": 157
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.retrieval"
+      ],
+      "side_effects": [
+        "reads agents/discovery/invention_corpus/*.md"
+      ],
+      "test": [
+        "tests/orchestration/test_invention_corpus.py"
+      ],
+      "callers": []
+    },
     "agents.discovery.digest": {
       "path": "agents/discovery/digest.py",
       "purpose": "Phase 0: compile the shared codebase digest for all lens agents.",
@@ -455,6 +507,46 @@
       ],
       "test": [
         "tests/orchestration/test_discovery_digest.py"
+      ],
+      "callers": []
+    },
+    "agents.discovery.ledger_bridge": {
+      "path": "agents/discovery/ledger_bridge.py",
+      "purpose": "Finder-to-ledger bridge: turn DiscoveryReport findings into executable invention seeds.",
+      "exports": [
+        {
+          "name": "finding_to_candidate",
+          "kind": "function",
+          "signature": "(f: Any, run_id: str='') -> FindingCandidate",
+          "summary": "Adapt a discovery Finding (or dict) into a normalized FindingCandidate.",
+          "lineno": 33
+        },
+        {
+          "name": "route_candidate",
+          "kind": "function",
+          "signature": "(fc: FindingCandidate, *, novelty_floor: float, novelty_hi: float, conf_hi: float) -> str",
+          "summary": "Pure routing decision (no I/O)",
+          "lineno": 50
+        },
+        {
+          "name": "bridge_report",
+          "kind": "function",
+          "signature": "(report: Any, *, run_id: str='', db_path=None, embed_fn=None, store=None, record: bool=True) -> dict",
+          "summary": "Route + register every finding in a DiscoveryReport",
+          "lineno": 90
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience_evolution",
+        "memory.novelty_index",
+        "platform_core.orchestration.invention_types"
+      ],
+      "side_effects": [
+        "registers candidates in the evolution ledger + records findings to novelty history"
+      ],
+      "test": [
+        "tests/orchestration/test_ledger_bridge.py"
       ],
       "callers": []
     },
@@ -1793,7 +1885,9 @@
         "agents.browser_executor",
         "agents.clarifier",
         "agents.discovery",
+        "agents.discovery.corpus",
         "agents.discovery.digest",
+        "agents.discovery.ledger_bridge",
         "agents.discovery.lenses",
         "agents.discovery.synthesis",
         "agents.elaborator",
@@ -1873,6 +1967,8 @@
         "memory.experience_runs",
         "memory.experience_schema",
         "memory.experience_subtasks",
+        "memory.novelty_index",
+        "memory.novelty_store",
         "memory.obsidian",
         "memory.retrieval",
         "memory.retrieval_rank",
@@ -1945,20 +2041,27 @@
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.brain_json",
         "platform_core.orchestration.branch_runner",
+        "platform_core.orchestration.code_graph",
         "platform_core.orchestration.compaction",
+        "platform_core.orchestration.conflict_sim",
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.control_ops",
         "platform_core.orchestration.control_review_mixin",
         "platform_core.orchestration.dual_ledger_planner",
         "platform_core.orchestration.dual_ledger_replan",
+        "platform_core.orchestration.emitter_scheduler",
+        "platform_core.orchestration.evidence_extract",
         "platform_core.orchestration.evidence_gate",
         "platform_core.orchestration.evolution_hook",
         "platform_core.orchestration.execute_attempt_mixin",
         "platform_core.orchestration.execute_delegates_mixin",
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.fork_policy",
+        "platform_core.orchestration.generational",
         "platform_core.orchestration.github",
         "platform_core.orchestration.human_nature_bridge",
+        "platform_core.orchestration.innovation_report",
+        "platform_core.orchestration.invention_gate",
         "platform_core.orchestration.judge_panel",
         "platform_core.orchestration.llm_mixin",
         "platform_core.orchestration.parallel_safety",
@@ -1966,8 +2069,11 @@
         "platform_core.orchestration.plan_mixin",
         "platform_core.orchestration.plan_prompts",
         "platform_core.orchestration.plan_shape_check",
+        "platform_core.orchestration.portfolio_optimizer",
         "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.pr_feedback_ledger",
+        "platform_core.orchestration.qd_archive",
+        "platform_core.orchestration.qd_emitters",
         "platform_core.orchestration.review_mixin",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.run_loop_mixin",
@@ -5434,6 +5540,19 @@
         "memory.retrieval"
       ]
     },
+    "memory.experience_ddl": {
+      "path": "memory/experience_ddl.py",
+      "purpose": "Experience Ledger DDL: the ``SCHEMA`` statements + ``MIGRATIONS`` column map.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [],
+      "callers": [
+        "memory.experience_schema"
+      ]
+    },
     "memory.experience_evolution": {
       "path": "memory/experience_evolution.py",
       "purpose": "Evolution ledger CRUD -- insights + skill/playbook/constitution candidates.",
@@ -5534,7 +5653,9 @@
         "tests/evolution/test_experience_evolution.py"
       ],
       "callers": [
-        "memory.experience"
+        "agents.discovery.ledger_bridge",
+        "memory.experience",
+        "platform_core.orchestration.innovation_report"
       ]
     },
     "memory.experience_journal": {
@@ -6029,6 +6150,144 @@
         "platform_core.orchestration.plan_mixin"
       ]
     },
+    "memory.novelty_index": {
+      "path": "memory/novelty_index.py",
+      "purpose": "Novelty index: measure how NEW a candidate is vs the history of prior ideas.",
+      "exports": [
+        {
+          "name": "NoveltyResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "Measured-novelty verdict for one candidate text.",
+          "lineno": 43
+        },
+        {
+          "name": "signature_text",
+          "kind": "function",
+          "signature": "(obj: Any) -> str",
+          "summary": "Build the text we embed from a FindingCandidate / Finding / dict / str.",
+          "lineno": 59
+        },
+        {
+          "name": "nearest_history",
+          "kind": "function",
+          "signature": "(text: str, k: int=5, *, collection: str='findings', embed_fn: Optional[Callable]=None, store: Any=None) -> list[dict]",
+          "summary": "The k most-similar prior items to ``text`` in ``collection`` (empty on any miss).",
+          "lineno": 93
+        },
+        {
+          "name": "compose_novelty",
+          "kind": "function",
+          "signature": "(history_distance: float, **components: Optional[float]) -> float",
+          "summary": "Weight-renormalized composite over the supplied components (history always in).",
+          "lineno": 107
+        },
+        {
+          "name": "novelty_score",
+          "kind": "function",
+          "signature": "(text: str, *, collection: str='findings', embed_fn: Optional[Callable]=None, store: Any=None, **components: Optional[float]) -> NoveltyResult",
+          "summary": "Measure novelty of ``text`` vs history",
+          "lineno": 119
+        },
+        {
+          "name": "record_finding",
+          "kind": "function",
+          "signature": "(candidate: Any, *, run_id: str='', embed_fn: Optional[Callable]=None, store: Any=None) -> bool",
+          "summary": "Persist a finding into the ``findings`` history space (best-effort).",
+          "lineno": 161
+        },
+        {
+          "name": "record_approach",
+          "kind": "function",
+          "signature": "(candidate: Any, *, run_id: str='', embed_fn: Optional[Callable]=None, store: Any=None) -> bool",
+          "summary": "Persist an approach into the ``approaches`` history space (best-effort).",
+          "lineno": 167
+        },
+        {
+          "name": "appraisal_event",
+          "kind": "function",
+          "signature": "(text: str, *, outcome: str='', agency: float=0.5, collection: str='findings', embed_fn: Optional[Callable]=None, store: Any=None, **components: Optional[float]) -> dict[str, Any]",
+          "summary": "Build a human_nature appraisal event whose ``novelty`` is MEASURED from vector",
+          "lineno": 173
+        },
+        {
+          "name": "semantic_dedup",
+          "kind": "function",
+          "signature": "(items: list, *, threshold: Optional[float]=None, key_fn: Optional[Callable[[Any], str]]=None, embed_fn: Optional[Callable]=None) -> list",
+          "summary": "Greedy in-batch dedup: drop an item whose cosine to a kept item >= threshold.",
+          "lineno": 188
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.novelty_store",
+        "memory.retrieval"
+      ],
+      "side_effects": [
+        "record_* upsert into the novelty store"
+      ],
+      "test": [
+        "tests/evolution/test_novelty_index.py"
+      ],
+      "callers": [
+        "agents.discovery.ledger_bridge",
+        "agents.discovery.synthesis",
+        "platform_core.orchestration.qd_archive"
+      ]
+    },
+    "memory.novelty_store": {
+      "path": "memory/novelty_store.py",
+      "purpose": "Backing store for the novelty index: named vector collections, fail-open.",
+      "exports": [
+        {
+          "name": "MemoryNoveltyStore",
+          "kind": "class",
+          "signature": "",
+          "summary": "Process-local exact-cosine vector store (the always-available fallback).",
+          "lineno": 40
+        },
+        {
+          "name": "ChromaNoveltyStore",
+          "kind": "class",
+          "signature": "",
+          "summary": "Disk-persistent chromadb-backed novelty collections (cosine space).",
+          "lineno": 70
+        },
+        {
+          "name": "get_store",
+          "kind": "function",
+          "signature": "() -> object",
+          "summary": "Cached novelty-store singleton (chroma when available, else memory).",
+          "lineno": 145
+        },
+        {
+          "name": "set_store",
+          "kind": "function",
+          "signature": "(store: object) -> None",
+          "summary": "Install an explicit store (tests / custom backends).",
+          "lineno": 153
+        },
+        {
+          "name": "reset_store",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Drop the cached singleton (tests, or after a config change).",
+          "lineno": 159
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.retrieval"
+      ],
+      "side_effects": [
+        "ChromaNoveltyStore writes under config.ANN_INDEX_DIR/novelty"
+      ],
+      "test": [],
+      "callers": [
+        "memory.novelty_index",
+        "platform_core.orchestration.qd_archive"
+      ]
+    },
     "memory.obsidian": {
       "path": "memory/obsidian.py",
       "purpose": "Obsidian memory layer: REST-first, disk-fallback note writer/reader.",
@@ -6202,7 +6461,10 @@
         "tests/evolution/test_retrieval.py"
       ],
       "callers": [
+        "agents.discovery.corpus",
         "learning.sie_steps",
+        "memory.novelty_index",
+        "memory.novelty_store",
         "platform_core.orchestration.human_nature_bridge",
         "platform_core.orchestration.plan_mixin"
       ]
@@ -9573,6 +9835,7 @@
         "config",
         "platform_core.app_config.discord",
         "platform_core.app_config.epic_flags",
+        "platform_core.app_config.inventor_flags",
         "platform_core.app_config.llm",
         "platform_core.app_config.paths",
         "platform_core.app_config.settings"
@@ -9635,6 +9898,31 @@
       "test": [
         "tests/platform/test_epic_flags_config.py",
         "tests/slow/test_epic_flags_combined.py"
+      ],
+      "callers": [
+        "platform_core.app_config.settings"
+      ]
+    },
+    "platform_core.app_config.inventor_flags": {
+      "path": "platform_core/app_config/inventor_flags.py",
+      "purpose": "Inventor Mega-Build feature flags: the frozen ``InventorFlags`` domain.",
+      "exports": [
+        {
+          "name": "InventorFlags",
+          "kind": "class",
+          "signature": "",
+          "summary": "Inventor Mega-Build feature flags (Tracks A-D).",
+          "lineno": 34
+        }
+      ],
+      "depends_on": [
+        "platform_core.app_config._env"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/platform/test_inventor_flags_config.py"
       ],
       "callers": [
         "platform_core.app_config.settings"
@@ -11580,6 +11868,8 @@
         "platform_core.orchestration.execute_delegates_mixin",
         "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.fork_policy",
+        "platform_core.orchestration.generational",
+        "platform_core.orchestration.innovation_report",
         "platform_core.orchestration.judge_panel",
         "platform_core.orchestration.llm_mixin",
         "platform_core.orchestration.plan_mixin",
@@ -11722,6 +12012,65 @@
       ],
       "callers": []
     },
+    "platform_core.orchestration.code_graph": {
+      "path": "platform_core/orchestration/code_graph.py",
+      "purpose": "Code-graph blast-radius scoring: SCC condensation + dependency reachability.",
+      "exports": [
+        {
+          "name": "tarjan_scc",
+          "kind": "function",
+          "signature": "(graph: dict[str, Iterable[str]]) -> list[list[str]]",
+          "summary": "Strongly-connected components via ITERATIVE Tarjan (no recursion depth limit).",
+          "lineno": 43
+        },
+        {
+          "name": "component_index",
+          "kind": "function",
+          "signature": "(sccs: list[list[str]]) -> dict[str, int]",
+          "summary": "Map each node to its component id.",
+          "lineno": 90
+        },
+        {
+          "name": "reverse_condensation",
+          "kind": "function",
+          "signature": "(graph: dict[str, Iterable[str]], comp_of: dict[str, int]) -> dict[int, set[int]]",
+          "summary": "Condensed DAG in the DEPENDENT direction: edge cB->cA when A imports B (so a change",
+          "lineno": 95
+        },
+        {
+          "name": "blast_radius",
+          "kind": "function",
+          "signature": "(touched: Iterable[str], *, graph: dict[str, Iterable[str]], entrypoints: Iterable[str]=(), public_api: Iterable[str]=()) -> dict",
+          "summary": "Risk verdict for a change set",
+          "lineno": 126
+        },
+        {
+          "name": "build_import_graph",
+          "kind": "function",
+          "signature": "(root: Optional[str]=None) -> dict[str, list[str]]",
+          "summary": "Best-effort import graph (module -> imported modules) via introspect",
+          "lineno": 152
+        },
+        {
+          "name": "blast_radius_for",
+          "kind": "function",
+          "signature": "(touched: Iterable[str], *, root: Optional[str]=None) -> dict",
+          "summary": "Convenience: build the repo import graph then score ``touched`` (fail-open to medium).",
+          "lineno": 167
+        }
+      ],
+      "depends_on": [
+        "config",
+        "introspect.extractProject"
+      ],
+      "side_effects": [
+        "build_import_graph reads the project via introspect (best-effort)"
+      ],
+      "test": [
+        "tests/orchestration/test_code_graph.py"
+      ],
+      "callers": []
+    },
     "platform_core.orchestration.compaction": {
       "path": "platform_core/orchestration/compaction.py",
       "purpose": "Hierarchical context compaction for the fixed-window brain payload.",
@@ -11757,6 +12106,50 @@
       ],
       "test": [
         "tests/orchestration/test_compaction.py"
+      ],
+      "callers": []
+    },
+    "platform_core.orchestration.conflict_sim": {
+      "path": "platform_core/orchestration/conflict_sim.py",
+      "purpose": "Rollback-DSU conflict simulation: a cheap prefilter before real worktree execution.",
+      "exports": [
+        {
+          "name": "RollbackDSU",
+          "kind": "class",
+          "signature": "",
+          "summary": "Union-find with rollback: union by size, no path compression, undoable via an op stack.",
+          "lineno": 29
+        },
+        {
+          "name": "would_conflict",
+          "kind": "function",
+          "signature": "(a: Any, b: Any) -> bool",
+          "summary": "True iff two candidates touch at least one common file.",
+          "lineno": 91
+        },
+        {
+          "name": "conflict_groups",
+          "kind": "function",
+          "signature": "(candidates: list) -> list[list[str]]",
+          "summary": "Group candidate ids into components that would collide (share files transitively).",
+          "lineno": 96
+        },
+        {
+          "name": "bundle_conflict_free",
+          "kind": "function",
+          "signature": "(candidates: list) -> bool",
+          "summary": "True iff the whole bundle can run in parallel (every candidate is its own component).",
+          "lineno": 114
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/orchestration/test_conflict_sim.py"
       ],
       "callers": []
     },
@@ -11957,6 +12350,88 @@
       ],
       "test": [
         "tests/orchestration/test_stall_replan_trigger.py"
+      ],
+      "callers": []
+    },
+    "platform_core.orchestration.emitter_scheduler": {
+      "path": "platform_core/orchestration/emitter_scheduler.py",
+      "purpose": "Emitter budget allocation: UCB value estimate + min-cost/max-cost flow under hard caps.",
+      "exports": [
+        {
+          "name": "UCB",
+          "kind": "class",
+          "signature": "",
+          "summary": "Per-emitter UCB value tracker: unpulled emitters are optimistic",
+          "lineno": 35
+        },
+        {
+          "name": "MinCostFlow",
+          "kind": "class",
+          "signature": "",
+          "summary": "Successive-shortest-path (SPFA) min-cost flow",
+          "lineno": 56
+        },
+        {
+          "name": "allocate",
+          "kind": "function",
+          "signature": "(emitters: list[str], cells: list[dict], *, fork_budget: int, emitter_caps: Optional[dict]=None, cell_caps: Optional[dict]=None, reward_fn: Optional[Callable[[str, dict], float]]=None, ucb: Optional[UCB]=None) -> list[EmitterAllocation]",
+          "summary": "Allocate ``fork_budget`` forks across (emitter, cell) pairs to maximize expected QD gai…",
+          "lineno": 113
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.orchestration.invention_types"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/orchestration/test_emitter_scheduler.py"
+      ],
+      "callers": []
+    },
+    "platform_core.orchestration.evidence_extract": {
+      "path": "platform_core/orchestration/evidence_extract.py",
+      "purpose": "Deterministic evidence extraction (Aho-Corasick multi-pattern scan).",
+      "exports": [
+        {
+          "name": "AhoCorasick",
+          "kind": "class",
+          "signature": "",
+          "summary": "Compact multi-pattern automaton: add() patterns, then find() all matches in one pass.",
+          "lineno": 41
+        },
+        {
+          "name": "extract_evidence",
+          "kind": "function",
+          "signature": "(text: str, *, module_names: Iterable[str]=()) -> dict",
+          "summary": "Scan ``text`` for evidence tokens",
+          "lineno": 109
+        },
+        {
+          "name": "supports_claim",
+          "kind": "function",
+          "signature": "(evidence: dict) -> bool",
+          "summary": "True iff a re-derivable verify/test/receipt fact backs the claim.",
+          "lineno": 129
+        },
+        {
+          "name": "confidence_adjust",
+          "kind": "function",
+          "signature": "(base: float, evidence: dict) -> float",
+          "summary": "Lower confidence in the presence of TODO/FIXME/regression markers (capped).",
+          "lineno": 134
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/orchestration/test_evidence_extract.py"
       ],
       "callers": []
     },
@@ -12251,6 +12726,45 @@
       ],
       "callers": []
     },
+    "platform_core.orchestration.generational": {
+      "path": "platform_core/orchestration/generational.py",
+      "purpose": "Bounded generational loop for solution-space forking (MAP-Elites over generations).",
+      "exports": [
+        {
+          "name": "qd_plateaued",
+          "kind": "function",
+          "signature": "(history: list[float], patience: int) -> bool",
+          "summary": "True when the last ``patience`` generations produced no qd_score improvement.",
+          "lineno": 31
+        },
+        {
+          "name": "next_generation_seeds",
+          "kind": "function",
+          "signature": "(archive: QDArchive, base_angles: list, *, n: int=3) -> list[str]",
+          "summary": "Seed the next generation from diverse elites + a recombination graft (not greedy-top).",
+          "lineno": 40
+        },
+        {
+          "name": "run_generational",
+          "kind": "function",
+          "signature": "(*, generations: int, run_gen: Callable[[int, list], list], base_angles: list, cost_ceiling: float=0.0, wallclock_ceiling: float=0.0, patience: Optional[int]=None, now_fn: Optional[Callable[[], float]]=None, cost_fn: Optional[Callable[[], float]]=None, archive: Optional[QDArchive]=None) -> dict",
+          "summary": "Run up to ``generations`` batches, seeding each from the QD archive",
+          "lineno": 62
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.orchestration",
+        "platform_core.orchestration.qd_archive"
+      ],
+      "side_effects": [
+        "none (run_gen callback is caller-supplied)"
+      ],
+      "test": [
+        "tests/orchestration/test_generational.py"
+      ],
+      "callers": []
+    },
     "platform_core.orchestration.github": {
       "path": "platform_core/orchestration/github.py",
       "purpose": "Git and GitHub operations for the orchestrator (PR creation, repo helpers).",
@@ -12372,6 +12886,176 @@
       "callers": [
         "platform_core.orchestration.execute_attempt_mixin",
         "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "platform_core.orchestration.innovation_report": {
+      "path": "platform_core/orchestration/innovation_report.py",
+      "purpose": "Fact-grounded innovation report: compile shipped/proposed inventions with evidence.",
+      "exports": [
+        {
+          "name": "compileInnovativeChanges",
+          "kind": "function",
+          "signature": "(state: Any, *, db_path=None) -> list[InnovativeChangeReportEntry]",
+          "summary": "Fact-backed innovation entries for a finished run (shipped first, then proposed).",
+          "lineno": 126
+        },
+        {
+          "name": "persist",
+          "kind": "function",
+          "signature": "(state: Any, entries: list, *, db_path=None) -> int",
+          "summary": "Write entries to the run_innovations ledger (best-effort)",
+          "lineno": 135
+        },
+        {
+          "name": "render_markdown",
+          "kind": "function",
+          "signature": "(entries: list) -> str",
+          "summary": "Human-readable 'Innovative Changes' section ('' when there is nothing to report).",
+          "lineno": 152
+        },
+        {
+          "name": "render_discord_fields",
+          "kind": "function",
+          "signature": "(entries: list) -> list[tuple[str, str]]",
+          "summary": "(name, value) embed fields for the 'Innovative Changes' Discord post (<=5 items).",
+          "lineno": 173
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience_evolution",
+        "platform_core.orchestration",
+        "platform_core.orchestration.invention_types"
+      ],
+      "side_effects": [
+        "persist() writes the run_innovations ledger"
+      ],
+      "test": [
+        "tests/orchestration/test_innovation_report.py"
+      ],
+      "callers": []
+    },
+    "platform_core.orchestration.invention_gate": {
+      "path": "platform_core/orchestration/invention_gate.py",
+      "purpose": "Hybrid-by-confidence autonomy gate: the final decision to auto-run or propose an invention.",
+      "exports": [
+        {
+          "name": "is_self_referential",
+          "kind": "function",
+          "signature": "(candidate: Any) -> bool",
+          "summary": "True when the candidate is flagged self-referential OR targets a core-loop file.",
+          "lineno": 41
+        },
+        {
+          "name": "routeInvention",
+          "kind": "function",
+          "signature": "(candidate: Any, *, blast_bin: Optional[str]=None) -> dict",
+          "summary": "Decide auto_run vs proposal for one invention",
+          "lineno": 83
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.orchestration.invention_types"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/orchestration/test_invention_gate.py"
+      ],
+      "callers": []
+    },
+    "platform_core.orchestration.invention_types": {
+      "path": "platform_core/orchestration/invention_types.py",
+      "purpose": "Shared dataclasses for the Inventor pipeline (finders -> QD archive -> report).",
+      "exports": [
+        {
+          "name": "clamp01",
+          "kind": "function",
+          "signature": "(x: Any) -> float",
+          "summary": "Coerce anything to a [0,1] float",
+          "lineno": 56
+        },
+        {
+          "name": "norm_risk",
+          "kind": "function",
+          "signature": "(r: Any) -> str",
+          "summary": "Normalize an arbitrary risk value to one of RISK_LEVELS (default 'medium').",
+          "lineno": 65
+        },
+        {
+          "name": "norm_blast",
+          "kind": "function",
+          "signature": "(b: Any) -> str",
+          "summary": "Normalize a blast-radius value to one of BLAST_LEVELS (default 'medium').",
+          "lineno": 73
+        },
+        {
+          "name": "fitness_of",
+          "kind": "function",
+          "signature": "(metrics: dict[str, Any] | None) -> float",
+          "summary": "Weighted QD fitness composite in [0,1] from a metrics dict (missing keys -> 0).",
+          "lineno": 79
+        },
+        {
+          "name": "FindingCandidate",
+          "kind": "class",
+          "signature": "",
+          "summary": "One candidate invention emitted by the finders (Track A).",
+          "lineno": 92
+        },
+        {
+          "name": "QDCell",
+          "kind": "class",
+          "signature": "",
+          "summary": "Product-first quality-diversity cell coordinate (hashable + deterministic key).",
+          "lineno": 131
+        },
+        {
+          "name": "QDElite",
+          "kind": "class",
+          "signature": "",
+          "summary": "One archived elite implementation occupying a QD cell (Track B / D4).",
+          "lineno": 154
+        },
+        {
+          "name": "InnovativeChangeReportEntry",
+          "kind": "class",
+          "signature": "",
+          "summary": "One fact-backed innovation entry for the final report (Track C).",
+          "lineno": 180
+        },
+        {
+          "name": "EmitterAllocation",
+          "kind": "class",
+          "signature": "",
+          "summary": "One emitter's allocated generation budget for a target cell (Track B5/D2).",
+          "lineno": 200
+        },
+        {
+          "name": "PortfolioSelection",
+          "kind": "class",
+          "signature": "",
+          "summary": "Result of the max-closure candidate-portfolio optimizer (Track D1).",
+          "lineno": 223
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/orchestration/test_invention_types.py"
+      ],
+      "callers": [
+        "agents.discovery.ledger_bridge",
+        "platform_core.orchestration.emitter_scheduler",
+        "platform_core.orchestration.innovation_report",
+        "platform_core.orchestration.invention_gate",
+        "platform_core.orchestration.portfolio_optimizer",
+        "platform_core.orchestration.qd_archive",
+        "platform_core.orchestration.solution_space"
       ]
     },
     "platform_core.orchestration.judge_panel": {
@@ -12666,6 +13350,44 @@
       ],
       "callers": []
     },
+    "platform_core.orchestration.portfolio_optimizer": {
+      "path": "platform_core/orchestration/portfolio_optimizer.py",
+      "purpose": "Candidate-portfolio selection via maximum-weight closure (s-t min-cut / max-flow).",
+      "exports": [
+        {
+          "name": "max_closure",
+          "kind": "function",
+          "signature": "(weights: dict[Any, float], deps: Iterable[tuple]) -> tuple[set, float]",
+          "summary": "Optimal closed set (source side of min cut) + closure objective",
+          "lineno": 94
+        },
+        {
+          "name": "candidate_weight",
+          "kind": "function",
+          "signature": "(c: Any) -> float",
+          "summary": "Node weight = utility - cost/risk",
+          "lineno": 124
+        },
+        {
+          "name": "optimize",
+          "kind": "function",
+          "signature": "(candidates: list, *, deps: Iterable[tuple]=(), conflicts: Iterable[tuple]=(), weight_fn: Optional[Callable[[Any], float]]=None, safe_only: bool=False) -> PortfolioSelection",
+          "summary": "Select an optimal candidate bundle under dependencies + conflicts",
+          "lineno": 175
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.orchestration.invention_types"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/orchestration/test_portfolio_optimizer.py"
+      ],
+      "callers": []
+    },
     "platform_core.orchestration.pr_feedback": {
       "path": "platform_core/orchestration/pr_feedback.py",
       "purpose": "Poll GitHub for CI status + review state after PR creation; write results to experience ledger.",
@@ -12709,6 +13431,114 @@
       ],
       "test": [
         "tests/execution/test_pr_feedback.py"
+      ],
+      "callers": []
+    },
+    "platform_core.orchestration.qd_archive": {
+      "path": "platform_core/orchestration/qd_archive.py",
+      "purpose": "MAP-Elites quality-diversity archive: champion + capped Pareto frontier per cell.",
+      "exports": [
+        {
+          "name": "novelty_bin",
+          "kind": "function",
+          "signature": "(x: Any) -> str",
+          "summary": "Bin a 0..1 novelty score into low|medium|high (deterministic thirds).",
+          "lineno": 34
+        },
+        {
+          "name": "cell_for",
+          "kind": "function",
+          "signature": "(obj: Any) -> QDCell",
+          "summary": "Derive a QD cell from a candidate/elite (dict or object).",
+          "lineno": 40
+        },
+        {
+          "name": "dominates",
+          "kind": "function",
+          "signature": "(a: dict, b: dict) -> bool",
+          "summary": "True iff metrics ``a`` Pareto-dominates ``b`` (>= on all metrics, > on at least one).",
+          "lineno": 53
+        },
+        {
+          "name": "QDArchive",
+          "kind": "class",
+          "signature": "",
+          "summary": "MAP-Elites archive: one champion + a capped non-dominated Pareto frontier per cell.",
+          "lineno": 62
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.novelty_index",
+        "memory.novelty_store",
+        "platform_core.orchestration.invention_types"
+      ],
+      "side_effects": [
+        "persist_elite writes the novelty store 'qd' collection (best-effort)"
+      ],
+      "test": [
+        "tests/orchestration/test_qd_archive.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.generational",
+        "platform_core.orchestration.solution_space"
+      ]
+    },
+    "platform_core.orchestration.qd_emitters": {
+      "path": "platform_core/orchestration/qd_emitters.py",
+      "purpose": "Heterogeneous QD emitters: cheap Ollama, deep Claude, recombination, random.",
+      "exports": [
+        {
+          "name": "ollama_emitter",
+          "kind": "function",
+          "signature": "(cell_key: str, parents: Iterable[str]=(), *, brain: Optional[Callable]=None, generation: int=0) -> dict",
+          "summary": "Cheap, wide, divergent variant for a cell (Ollama's inductive bias).",
+          "lineno": 66
+        },
+        {
+          "name": "claude_emitter",
+          "kind": "function",
+          "signature": "(cell_key: str, parents: Iterable[str]=(), *, brain: Optional[Callable]=None, generation: int=0) -> dict",
+          "summary": "Deep implementation + verification-repair variant (Claude's inductive bias).",
+          "lineno": 74
+        },
+        {
+          "name": "random_emitter",
+          "kind": "function",
+          "signature": "(empty_cells: Iterable[str], *, generation: int=0) -> Optional[dict]",
+          "summary": "Emit an exploratory candidate targeting the first underexplored cell (deterministic).",
+          "lineno": 82
+        },
+        {
+          "name": "compatibility",
+          "kind": "function",
+          "signature": "(a: Any, b: Any) -> float",
+          "summary": "Recombination pairing score: complementary + disjoint-files + novelty - overlap conflic…",
+          "lineno": 90
+        },
+        {
+          "name": "match_parents",
+          "kind": "function",
+          "signature": "(parents: list) -> list[tuple]",
+          "summary": "Greedy maximum-weight matching over parent pairs (disjoint, highest compatibility first…",
+          "lineno": 102
+        },
+        {
+          "name": "recombination_emitter",
+          "kind": "function",
+          "signature": "(parents: list, *, generation: int=0) -> Optional[dict]",
+          "summary": "Graft the single best compatible parent pair into one candidate (None if < 2 parents).",
+          "lineno": 119
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "emitters may call the injected brain (best-effort)"
+      ],
+      "test": [
+        "tests/orchestration/test_qd_emitters.py"
       ],
       "callers": []
     },
@@ -15938,14 +16768,14 @@
           "kind": "function",
           "signature": "() -> tuple[list[dict], list[dict]]",
           "summary": "",
-          "lineno": 75
+          "lineno": 80
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 118
+          "lineno": 123
         }
       ],
       "depends_on": [],
