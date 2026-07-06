@@ -101,6 +101,22 @@ def test_size_audit_docstring_admits_scope():
     assert "tracked" in (size_audit.__doc__ or "").lower()
 
 
+# ==== size_audit imports as a module from repo root (BUG: bare `import repo_map`) ====
+def test_size_audit_importable_as_module_from_repo_root():
+    """`from tools import size_audit; size_audit.collect()` must work from repo root
+    (tools/ NOT on sys.path). A clean subprocess guarantees an unpolluted path -- the
+    in-process test above puts tools/ on sys.path, which masks the regression."""
+    code = "from tools import size_audit; assert size_audit.collect()[0], 'empty'; print('OK')"
+    cp = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    assert cp.returncode == 0, f"module import failed:\n{cp.stderr}"
+    assert "OK" in cp.stdout
+
+
 # ==== size-audit still gates; none of the P7 files are must_split ====
 def test_size_audit_p7_files_not_must_split():
     import json

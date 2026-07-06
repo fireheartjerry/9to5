@@ -18,8 +18,13 @@ from __future__ import annotations
 import ast
 import json
 import subprocess
+import sys
 from pathlib import Path
 
+# repo_map.py uses bare sibling imports (e.g. `from repo_map_render import ...`), so the tools
+# dir must be on sys.path. Running `python tools/size_audit.py` gets that for free, but importing
+# as a module (`from tools import size_audit`) from repo root does not -- make it work either way.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import repo_map
 
 REPO_ROOT = repo_map.REPO_ROOT
