@@ -314,8 +314,10 @@ def _elaborateGoal(args, work_dir: str):
             print("(continuing in degraded mode — run `python main.py --doctor` for details)\n")
     except Exception:  # noqa: BLE001
         pass
-    elaborated = elaborator.elaborate(goal, work_dir)
+    _elab_meta: dict = {}
+    elaborated = elaborator.elaborate(goal, work_dir, out_meta=_elab_meta)
     state.setElaboratedGoal(elaborated)
+    state.meta["elaboration_stance"] = _elab_meta.get("stance", "single-shot")
     print("\n===== ELABORATED GOAL =====\n" + elaborated + "\n===========================\n")
     universe = elaborator.extractUniverse(goal, elaborated, work_dir)
     state.setUniverse(universe)
