@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING
 
 import config
 from agents import architect, verifier
-from agents.planning.elaborator import evolve as _elaborator_evolve
 from notifications import cast
 from notifications import discord_bot as discord
 import notifications.webdash as _webdash_mod
@@ -312,23 +311,9 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
             pr = {"skipped": True, "reason": skip_reason}
         elapsed = _elapsedSince(state.meta["started_at"])
         done, total = state.progress()
-        # FX-9: status must reflect REALITY. A PR HELD because the work is BROKEN (red suite) or
-        # DEGRADED is NOT "done" -- report 'partial'. An advisory adversary-challenge hold on
-        # otherwise all-done work stays "done" (the work completed; the PR is flagged for review).
-        reason = str(pr.get("reason", ""))
-        held_broken = bool(pr.get("skipped")) and any(
-            s in reason for s in ("test suite failing", "degraded run", "no tracked changes"))
-        # FX-19: a planned subtask removed without completing is a dropped deliverable -> 'partial'.
-        dropped_planned = (not state.meta.get("is_self_referential")) and any(
-            isinstance(n, dict) and n.get("kind") == "replan_removed"
-            for n in (state.data.get("notifications", []) or []))
-        all_done = total > 0 and done == total
-        final_status = "done" if (all_done and not held_broken and not dropped_planned) else "partial"
-        if config.ELABORATOR_EXCELLENCE_ENABLED:   # Stage D fitness -- best-effort, must NEVER block completion
-            try:
-                _elaborator_evolve.recordElaborationOutcome(state.meta.get("goal_raw", ""), state.meta.get("elaboration_stance", "single-shot"), clean_run=(final_status == "done"))
-            except Exception:  # noqa: BLE001 -- best-effort Stage D learning; never affect run completion
-                pass
+        # Final status ('done'|'partial') + best-effort Stage D fitness recording; see
+        # run_phase_outcome.finalRunStatus for the FX-9/FX-19 reality-reporting rules.
+        final_status = _outcome.finalRunStatus(state, pr, done, total)
         from notifications.lane_feed import laneTap
         laneTap("orchestrator", f"phase: {final_status}")
         state.setStatus(final_status)

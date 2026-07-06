@@ -11,11 +11,12 @@ EXPORTS:
   handleRunAbort(orch, state, e: BaseException, web_url, dashboard) -> dict  -- Handle AbortRun/KeyboardInterrupt: persist aborted status and notify.
   handleRunCrash(orch, state, e: Exception, web_url, dashboard) -> dict  -- Handle unexpected crash: persist 'crashed' (non-terminal) status so recovery can resume.
   phase4PrCapture(orch, state, pr: dict) -> dict  -- Capture CI + review feedback for a created PR into the experience ledger.
+  finalRunStatus(state, pr: dict, done: int, total: int) -> str  -- Compute the run's final status ('done'|'partial') and record Stage D elaboration
   finalizeSurfaces(orch, state, status: str, done: int, total: int, elapsed: str) -> None  -- Run-end surfaces: arc final beat, perfect-run moment, self-reflection post.
   postGrowth(orch) -> None  -- Spec B: post a short '!growth' learning summary to Discord at teardown (best-effort).
   maybeInstinct(orch, state, bus) -> None  -- Throttled trigger for the periodic instinct call
   runInstinct(orch, state) -> None
-DEPENDS-ON: config, learning.wisdom, memory.experience, memory.user_prefs, notifications.discord_bot, notifications.instinct, notifications.reflection_post, notifications.run_arc, platform_core.core.best_effort, platform_core.orchestration, platform_core.orchestration.pr_feedback, platform_core.orchestration.time_utils
+DEPENDS-ON: agents.planning.elaborator, config, learning.wisdom, memory.experience, memory.user_prefs, notifications.discord_bot, notifications.instinct, notifications.reflection_post, notifications.run_arc, platform_core.core.best_effort, platform_core.orchestration, platform_core.orchestration.pr_feedback, platform_core.orchestration.time_utils
 SIDE-EFFECTS: posts Discord embeds; spawns the instinct thread; mutates run state status/notifications
 RUN/TEST: python -m pytest tests/control/test_run_phase_outcome.py
 """
@@ -107,6 +108,35 @@ def phase4PrCapture(orch, state, pr: dict) -> dict:
         )
         state.addNotification("pr_capture_block", capture_result.get("ci_summary", "")[:200])
     return capture_result
+
+
+def finalRunStatus(state, pr: dict, done: int, total: int) -> str:
+    """Compute the run's final status ('done'|'partial') and record Stage D elaboration
+    fitness (best-effort). Extracted from run_phase_mixin._phase4PrComplete for size.
+
+    FX-9: status must reflect REALITY. A PR HELD because the work is BROKEN (red suite) or
+    DEGRADED is NOT "done" -- report 'partial'. An advisory adversary-challenge hold on
+    otherwise all-done work stays "done" (the work completed; the PR is flagged for review).
+    FX-19: a planned subtask removed without completing is a dropped deliverable -> 'partial'.
+    """
+    reason = str(pr.get("reason", ""))
+    held_broken = bool(pr.get("skipped")) and any(
+        s in reason for s in ("test suite failing", "degraded run", "no tracked changes"))
+    dropped_planned = (not state.meta.get("is_self_referential")) and any(
+        isinstance(n, dict) and n.get("kind") == "replan_removed"
+        for n in (state.data.get("notifications", []) or []))
+    all_done = total > 0 and done == total
+    final_status = "done" if (all_done and not held_broken and not dropped_planned) else "partial"
+    if config.ELABORATOR_EXCELLENCE_ENABLED:   # Stage D fitness -- best-effort, must NEVER block completion
+        try:
+            from agents.planning.elaborator import evolve as _elaborator_evolve
+            _elaborator_evolve.recordElaborationOutcome(
+                state.meta.get("goal_raw", ""),
+                state.meta.get("elaboration_stance", "single-shot"),
+                clean_run=(final_status == "done"))
+        except Exception:  # noqa: BLE001 -- best-effort Stage D learning; never affect run completion
+            pass
+    return final_status
 
 
 def finalizeSurfaces(orch, state, status: str, done: int, total: int, elapsed: str) -> None:
