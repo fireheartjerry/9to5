@@ -29,6 +29,15 @@ from .authority_gate import resolveTier
 _GRANTING_TIERS = ("hold", "veto")
 
 
+def _sameRequest(rec: Any, reason: str, conviction: float) -> bool:
+    if not isinstance(rec, dict):
+        return False
+    try:
+        return rec.get("reason") == reason and float(rec.get("conviction", 0.0)) == float(conviction)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def requestDeepen(state: Any, reason: str = "", conviction: float = 0.0, dashboard: Any = None) -> int:
     """ADDITIVE-ONLY: if the psyche's earned authority for an additive
     'deepen_verification' action reaches the 'hold' tier, append a deepen request to
@@ -45,6 +54,8 @@ def requestDeepen(state: Any, reason: str = "", conviction: float = 0.0, dashboa
         tier = resolveTier("instinct", domain, conviction, {}, action="deepen_verification")
         deepens = meta.get("hn_verify_deepen", [])
         if tier not in _GRANTING_TIERS:
+            return len(deepens)
+        if any(_sameRequest(rec, reason, conviction) for rec in deepens):
             return len(deepens)
         max_deepen = int(getattr(config, "HN_MAX_VERIFY_DEEPEN", 2))
         if len(deepens) >= max_deepen:

@@ -11939,21 +11939,21 @@
           "kind": "function",
           "signature": "(state: Any, *, chat: Callable[..., Any], comparative: Optional[dict]=None, obs: Any=None, innovative_changes: Optional[list]=None) -> Optional[str]",
           "summary": "Generate the reflection paragraph, persist it to disk + Obsidian, and return it.",
-          "lineno": 58
+          "lineno": 59
         },
         {
           "name": "post_reflection",
           "kind": "function",
           "signature": "(state: Any, text: str, comparative: Optional[dict]=None) -> None",
           "summary": "Post the reflection to Discord as ``CODENAME — text`` with a comparative footer",
-          "lineno": 99
+          "lineno": 100
         },
         {
           "name": "post_innovations",
           "kind": "function",
           "signature": "(state: Any, entries: list) -> None",
           "summary": "Post a dedicated 'Innovative Changes' Discord embed (fact-backed entries)",
-          "lineno": 113
+          "lineno": 117
         }
       ],
       "depends_on": [
@@ -11985,42 +11985,42 @@
           "kind": "function",
           "signature": "(state: Any) -> str",
           "summary": "The arc as a readable story (one beat per line), newest last.",
-          "lineno": 42
+          "lineno": 45
         },
         {
           "name": "beat_discovery",
           "kind": "function",
           "signature": "(n: int, theme: str) -> str",
           "summary": "",
-          "lineno": 54
+          "lineno": 57
         },
         {
           "name": "beat_architect",
           "kind": "function",
           "signature": "(n: int) -> str",
           "summary": "",
-          "lineno": 58
+          "lineno": 61
         },
         {
           "name": "beat_first_verify",
           "kind": "function",
           "signature": "() -> str",
           "summary": "",
-          "lineno": 62
+          "lineno": 65
         },
         {
           "name": "beat_replan",
           "kind": "function",
           "signature": "(reason: str) -> str",
           "summary": "",
-          "lineno": 66
+          "lineno": 69
         },
         {
           "name": "beat_complete",
           "kind": "function",
           "signature": "(status: str, done: int, total: int, elapsed: str) -> str",
           "summary": "",
-          "lineno": 70
+          "lineno": 73
         }
       ],
       "depends_on": [],
@@ -16237,7 +16237,15 @@
     "platform_core.orchestration.human_nature_bridge._common": {
       "path": "platform_core/orchestration/human_nature_bridge/_common.py",
       "purpose": "Shared internals for the human_nature_bridge package (logger + state accessor).",
-      "exports": [],
+      "exports": [
+        {
+          "name": "appendUnique",
+          "kind": "function",
+          "signature": "(meta: dict, key: str, record: dict) -> dict",
+          "summary": "Append ``record`` to ``meta[key]`` once",
+          "lineno": 23
+        }
+      ],
       "depends_on": [
         "config"
       ],
@@ -16479,7 +16487,7 @@
           "kind": "function",
           "signature": "(state: Any, dashboard: Any=None) -> 'list[dict]'",
           "summary": "Earned-authority VOTE coupling on the plan gate",
-          "lineno": 121
+          "lineno": 122
         }
       ],
       "depends_on": [
@@ -16509,7 +16517,7 @@
           "kind": "function",
           "signature": "(state: Any, coordinator: Any=None, dashboard: Any=None) -> 'dict | None'",
           "summary": "If the psyche's faculties disagree strongly (high dissonance) and debate budget",
-          "lineno": 78
+          "lineno": 92
         }
       ],
       "depends_on": [
@@ -16544,7 +16552,7 @@
           "kind": "function",
           "signature": "(state: Any, reason: str='', conviction: float=0.0, dashboard: Any=None) -> int",
           "summary": "ADDITIVE-ONLY: if the psyche's earned authority for an additive",
-          "lineno": 32
+          "lineno": 41
         }
       ],
       "depends_on": [
@@ -17442,28 +17450,28 @@
           "kind": "function",
           "signature": "(orch, state, status: str, done: int, total: int, elapsed: str) -> None",
           "summary": "Run-end surfaces: arc final beat, perfect-run moment, self-reflection post.",
-          "lineno": 112
+          "lineno": 113
         },
         {
           "name": "postGrowth",
           "kind": "function",
           "signature": "(orch) -> None",
           "summary": "Spec B: post a short '!growth' learning summary to Discord at teardown (best-effort).",
-          "lineno": 153
+          "lineno": 154
         },
         {
           "name": "maybeInstinct",
           "kind": "function",
           "signature": "(orch, state, bus) -> None",
           "summary": "Throttled trigger for the periodic instinct call",
-          "lineno": 162
+          "lineno": 163
         },
         {
           "name": "runInstinct",
           "kind": "function",
           "signature": "(orch, state) -> None",
           "summary": "",
-          "lineno": 181
+          "lineno": 182
         }
       ],
       "depends_on": [
@@ -19767,14 +19775,14 @@
           "kind": "function",
           "signature": "() -> str",
           "summary": "Local-timezone ISO-8601 timestamp (second precision).",
-          "lineno": 26
+          "lineno": 27
         },
         {
           "name": "TaskState",
           "kind": "class",
           "signature": "",
           "summary": "Wraps the lean state dict and persists it to ``state/tasks/<id>.json``.",
-          "lineno": 40
+          "lineno": 41
         }
       ],
       "depends_on": [

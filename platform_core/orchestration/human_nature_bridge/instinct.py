@@ -22,7 +22,7 @@ from typing import Any
 import config
 from platform_core.core.best_effort import best_effort
 
-from ._common import LOG, _meta
+from ._common import LOG, _meta, appendUnique
 
 # Known dangerous motifs (event-type sequences). Small default registry; hot path may
 # extend it via state.meta["hn_scar_motifs"].
@@ -98,7 +98,7 @@ def instinctCheck(state: Any, dashboard: Any = None) -> "dict | None":
             action="deepen_verification",
         )
         record = {"signal": sig.to_dict(), "tier": tier}
-        meta.setdefault("hn_instinct", []).append(record)
+        record = appendUnique(meta, "hn_instinct", record)
         LOG.info("human-nature instinct: %s (%s)", best["motif_id"], tier)
         _surface(dashboard, best["motif_id"], tier)
         return record

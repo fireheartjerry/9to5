@@ -80,6 +80,25 @@ def test_opinion_vote_casts_vote_for_high_conviction_tactics(monkeypatch):
     assert any("vote" in e for e in events), events
 
 
+def test_opinion_vote_duplicate_vote_is_idempotent(monkeypatch):
+    import memory.conviction_ledger as ledger
+    from human_nature import operator_authority
+    from platform_core.orchestration.human_nature_bridge import planning
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_PLAN_AUTHORITY", True)
+    monkeypatch.setattr(planning, "_convictionFor", lambda *a, **k: 0.99)
+    monkeypatch.setattr(ledger, "track_record", _high_track_record)
+    monkeypatch.setattr(operator_authority, "safety_ceiling", lambda domain: "veto")
+    state = _make_state("tactics")
+
+    first = planning.opinionVote(state, None)
+    second = planning.opinionVote(state, None)
+
+    assert second == first
+    assert state.meta["hn_votes"] == first
+
+
 def test_opinion_vote_no_vote_for_low_conviction(monkeypatch):
     import memory.conviction_ledger as ledger
     from platform_core.orchestration.human_nature_bridge import planning

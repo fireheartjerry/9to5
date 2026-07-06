@@ -21,7 +21,7 @@ from typing import Any
 import config
 from platform_core.core.best_effort import best_effort
 
-from ._common import LOG, _meta
+from ._common import LOG, _meta, appendUnique
 
 _BASE_EXPLORATION_BUDGET = 10
 _BASE_QD_BREADTH = 4
@@ -94,7 +94,7 @@ def inventorCouple(state: Any, dashboard: Any = None) -> "dict | None":
             "risk_band": round(boldness, 4),
             "qd_breadth": max(1, round(_BASE_QD_BREADTH * (1.0 + boldness))),
         }
-        _meta(state).setdefault("hn_inventor", []).append(knobs)
+        appendUnique(_meta(state), "hn_inventor", knobs)
         LOG.info("human-nature inventor coupling: %s", knobs)
         if dashboard is not None:
             with best_effort("human_nature.inventor_surface", log=LOG):

@@ -9,6 +9,9 @@ cannot be imported.
 
 from __future__ import annotations
 
+import sys
+import types
+
 import config
 
 from platform_core.orchestration.human_nature_bridge import inventor as hn_inventor
@@ -86,3 +89,17 @@ def test_inventor_couple_never_raises_on_malformed_state(monkeypatch):
     """Best-effort: gated off by default, so even a malformed state is a clean no-op."""
     state = {"meta": {}}
     assert hn_inventor.inventorCouple(state) is None
+
+
+def test_inventor_couple_duplicate_knobs_are_idempotent(monkeypatch):
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_INVENTOR_COUPLING", True)
+    monkeypatch.setattr(config, "INVENTOR_MODE_ENABLED", True)
+    monkeypatch.setitem(sys.modules, "inventor", types.ModuleType("inventor"))
+    state = {"meta": {"self_state": {}}}
+
+    first = hn_inventor.inventorCouple(state)
+    second = hn_inventor.inventorCouple(state)
+
+    assert second == first
+    assert state["meta"]["hn_inventor"] == [first]

@@ -99,6 +99,21 @@ def test_request_deepen_capped_at_max(monkeypatch):
     assert len(state["meta"]["hn_verify_deepen"]) == 2
 
 
+def test_request_deepen_duplicate_request_is_idempotent(monkeypatch):
+    from platform_core.orchestration.human_nature_bridge import verification as v
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_VERIFY_DEEPEN", True)
+    _unlock_hold(monkeypatch)
+    state = _state("tactics")
+
+    first = v.requestDeepen(state, reason="same risk", conviction=0.99)
+    second = v.requestDeepen(state, reason="same risk", conviction=0.99)
+
+    assert (first, second) == (1, 1)
+    assert state["meta"]["hn_verify_deepen"] == [{"reason": "same risk", "conviction": 0.99}]
+
+
 def test_request_deepen_never_touches_verifier_verdict(monkeypatch):
     """INVARIANT: requestDeepen only ever reads/writes meta["hn_verify_deepen"] -- it
     must never read or mutate anything resembling a verifier verdict/status."""

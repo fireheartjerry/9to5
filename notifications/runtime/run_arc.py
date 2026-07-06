@@ -31,7 +31,10 @@ def append_beat(state: Any, text: str) -> None:
         arc = meta.get("arc")
         if not isinstance(arc, list):
             arc = meta["arc"] = []
-        arc.append({"text": str(text), "at": datetime.now().astimezone().strftime("%H:%M:%S")})
+        text_s = str(text)
+        if any(isinstance(b, dict) and b.get("text") == text_s for b in arc):
+            return
+        arc.append({"text": text_s, "at": datetime.now().astimezone().strftime("%H:%M:%S")})
         save = getattr(state, "save", None)
         if callable(save):
             save()

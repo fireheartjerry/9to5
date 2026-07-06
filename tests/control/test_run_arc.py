@@ -27,6 +27,15 @@ def test_append_tolerates_missing_arc_key():
     assert s.meta["arc"] and s.meta["arc"][0]["text"] == "Chapter 1 — beat"
 
 
+def test_append_beat_is_idempotent_by_text():
+    s = _S({"arc": []})
+    run_arc.append_beat(s, "Chapter 1 - same")
+    run_arc.append_beat(s, "Chapter 1 - same")
+
+    assert len(s.meta["arc"]) == 1
+    assert s.saved == 1
+
+
 def test_templates():
     assert run_arc.beat_discovery(8, "harden") == "Chapter 1 — Discovery surfaced 8 findings. Theme: harden."
     assert run_arc.beat_architect(3) == "Chapter 2 — Architect chose 3 findings, shaped them into one narrative."

@@ -16,7 +16,7 @@ from typing import Any
 import config
 from platform_core.core.best_effort import best_effort
 
-from ._common import LOG, _meta
+from ._common import LOG, _meta, appendUnique
 
 
 def midRunInstinct(state: Any, dashboard: Any = None) -> "str | None":
@@ -106,7 +106,8 @@ def opinionAdvisory(state: Any, dashboard: Any = None) -> "list[dict]":
             note = f"strong reservation on {domain} (conviction {conviction:.2f})"
             surfaced.append({"domain": domain, "tier": tier, "note": note})
         if surfaced:
-            _meta(state).setdefault("hn_opinions", []).extend(surfaced)
+            meta = _meta(state)
+            surfaced = [appendUnique(meta, "hn_opinions", adv) for adv in surfaced]
             LOG.info("human-nature opinion advisory: %s", surfaced)
             if dashboard is not None:
                 with best_effort("human_nature.opinion_surface", log=LOG):
@@ -146,7 +147,8 @@ def opinionVote(state: Any, dashboard: Any = None) -> "list[dict]":
             weight = conviction
             votes.append({"domain": domain, "tier": tier, "weight": weight, "flag": True})
         if votes:
-            _meta(state).setdefault("hn_votes", []).extend(votes)
+            meta = _meta(state)
+            votes = [appendUnique(meta, "hn_votes", vote) for vote in votes]
             LOG.info("human-nature opinion vote: %s", votes)
             if dashboard is not None:
                 with best_effort("human_nature.vote_surface", log=LOG):

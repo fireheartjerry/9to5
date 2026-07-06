@@ -46,7 +46,7 @@ def handleRunAbort(orch, state, e: BaseException, web_url, dashboard) -> dict:
         # a failed save must not turn the abort into a crash; the bus flag stops recovery
         state.setStatus("aborted", blocked_reason=reason)
         orch.writeIndex(state)
-        state.addNotification("aborted", reason)
+        getattr(state, "addNotificationOnce", state.addNotification)("aborted", reason)
     with best_effort("discord.abort_notify", log=LOG):
         discord.sendEmbed(discord.abortedEmbed(reason, _fmtElapsed(elapsed)))
         dashboard.update(state, "aborted", f"aborted: {reason}")
@@ -105,7 +105,8 @@ def phase4PrCapture(orch, state, pr: dict) -> dict:
             capture_result.get("ci_status"),
             capture_result.get("review_state"),
         )
-        state.addNotification("pr_capture_block", capture_result.get("ci_summary", "")[:200])
+        getattr(state, "addNotificationOnce", state.addNotification)(
+            "pr_capture_block", capture_result.get("ci_summary", "")[:200])
     return capture_result
 
 

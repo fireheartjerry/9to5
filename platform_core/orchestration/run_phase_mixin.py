@@ -188,7 +188,7 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
             # path, which logs its skip). Surface it: log + a run notification, cap unchanged.
             LOG.warning("plan commit: dropped %d deliverable(s) beyond MAX_SUBTASKS (%d)",
                         dropped, config.MAX_SUBTASKS)
-            state.addNotification(
+            getattr(state, "addNotificationOnce", state.addNotification)(
                 "plan_truncated",
                 f"{dropped} deliverable(s) dropped -- plan exceeds MAX_SUBTASKS ({config.MAX_SUBTASKS})")
         if config.DUAL_LEDGER_PLANNER_ENABLED and any(
@@ -277,7 +277,8 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
                 create_pr = False
                 skip_reason = f"pre-PR gate failed: {suite_detail[:200]}"
                 dashboard.update(state, "executing", "PR held by failing pre-PR gate")
-                state.addNotification("pr_feedback", f"test suite failing: {suite_detail[:160]}")
+                getattr(state, "addNotificationOnce", state.addNotification)(
+                    "pr_feedback", f"test suite failing: {suite_detail[:160]}")
                 with best_effort("discord.notice", log=LOG):
                     discord.sendEmbed(discord.noticeEmbed(
                         "The Windows pre-PR gate is failing - holding the PR until Nightclaw fixes it.",
@@ -348,7 +349,7 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
             gif = visuals.runReplayGif(state)        # end-of-run cinematic (T8)
             if gif:
                 discord.postFile("replay.gif", gif, "image/gif", content="🎬 Run replay")
-        state.addNotification("complete", pr_link)
+        getattr(state, "addNotificationOnce", state.addNotification)("complete", pr_link)
         self._finalizeSurfaces(state, final_status, done, total, _fmtElapsed(elapsed))
         dashboard.update(state, "complete", f"done {done}/{total} · {_fmtElapsed(elapsed)}")
         # Trust telemetry rollup: surface GPT<->Ollama agreement + challenge stats for the run.

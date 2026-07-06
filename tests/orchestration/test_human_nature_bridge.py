@@ -632,6 +632,39 @@ def test_emotion_advisory_never_raises_on_bad_affect(monkeypatch):
     assert isinstance(result, dict)  # did not raise
 
 
+def test_emotion_advisory_duplicate_record_is_idempotent(monkeypatch):
+    from human_nature import emotions
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_EMOTIONS_BEHAVIOR", True)
+    monkeypatch.setattr(emotions, "couple", lambda label, meta: {"behavior": "escalate_effort"})
+    state = _make_emotion_state({"valence": -0.8, "arousal": 0.8, "control": 0.0})
+
+    hnb.emotionAdvisory(state, None)
+    hnb.emotionAdvisory(state, None)
+
+    assert len(state.meta["hn_behavior"]) == 1
+    assert state.meta["hn_behavior"][0]["behavior"] == "escalate_effort"
+
+
+def test_opinion_advisory_duplicate_record_is_idempotent(monkeypatch):
+    from human_nature import opinions
+    from platform_core.orchestration import human_nature_bridge as hnb
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_OPINIONS_BEHAVIOR", True)
+    monkeypatch.setattr(hnb, "_convictionFor", lambda *a, **k: 0.99)
+    monkeypatch.setattr(opinions, "tier", lambda *a, **k: "hard")
+    state = _make_opinion_state()
+
+    first = hnb.opinionAdvisory(state, None)
+    second = hnb.opinionAdvisory(state, None)
+
+    assert second == first
+    assert state.meta["hn_opinions"] == first
+
+
 # --- affect -> label rule + bounded nudge helper (pure) -------------------------
 
 

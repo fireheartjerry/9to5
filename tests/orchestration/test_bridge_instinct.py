@@ -75,6 +75,21 @@ def test_instinct_check_matches_exact_full_motif(monkeypatch):
     assert result["signal"]["recommended_action"] == "deepen_verification"
 
 
+def test_instinct_check_duplicate_signal_is_idempotent(monkeypatch):
+    from platform_core.orchestration.human_nature_bridge import instinct as inst
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_INSTINCT", True)
+    monkeypatch.setattr(config, "HN_SCAR_MATCH_THRESHOLD", 0.5)
+    state = {"meta": {"hn_event_log": _log("PATCH_LARGE", "TESTS_SKIPPED", "CONFIDENCE_HIGH")}}
+
+    first = inst.instinctCheck(state, None)
+    second = inst.instinctCheck(state, None)
+
+    assert second == first
+    assert state["meta"]["hn_instinct"] == [first]
+
+
 def test_instinct_check_benign_log_returns_none(monkeypatch):
     from platform_core.orchestration.human_nature_bridge import instinct as inst
 

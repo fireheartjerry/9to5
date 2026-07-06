@@ -75,6 +75,20 @@ def _spawnOpposingMessages(subtask_id: str) -> list:
     ]
 
 
+def _sameDebateCheck(existing: Any, record: dict) -> bool:
+    if not isinstance(existing, dict):
+        return False
+    try:
+        same_signal = float(existing.get("dissonance", -1.0)) == float(record.get("dissonance", -2.0))
+        if same_signal and existing.get("fired"):
+            return True
+        return (
+            same_signal and existing.get("route") == record.get("route")
+        )
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def maybeDebate(state: Any, coordinator: Any = None, dashboard: Any = None) -> "dict | None":
     """If the psyche's faculties disagree strongly (high dissonance) and debate budget
     remains, trigger a heterogeneous society debate via ``coordinator.resolveContested``
@@ -114,7 +128,16 @@ def maybeDebate(state: Any, coordinator: Any = None, dashboard: Any = None) -> "
                         dashboard.event(f"society debate — dissonance {dissonance:.2f}")
 
         record = {"dissonance": dissonance, "route": route, "fired": fired}
-        meta.setdefault("hn_debate", []).append(record)
+        checks = meta.setdefault("hn_debate", [])
+        for idx, existing in enumerate(checks):
+            if _sameDebateCheck(existing, record):
+                if fired and not existing.get("fired"):
+                    checks[idx] = record
+                else:
+                    record = existing
+                break
+        else:
+            checks.append(record)
         LOG.info("human-nature society debate check: %s", record)
         return record
     except Exception:  # noqa: BLE001

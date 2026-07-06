@@ -15,7 +15,7 @@ from typing import Any
 import config
 from platform_core.core.best_effort import best_effort, recordDegradation
 
-from ._common import LOG, _meta
+from ._common import LOG, _meta, appendUnique
 
 # --- Emotion faculty: affect -> emotion label -> advisory behavior coupling ------
 # Behavior intents this repo maps to a SAFE, BOUNDED run effect (a +1 retry-budget
@@ -93,7 +93,7 @@ def emotionAdvisory(state: Any, dashboard: Any = None) -> dict:
         label = _emotionLabel(self_state)
         coupling = emotions.couple(label, meta)
         intent = coupling.get("behavior")
-        meta.setdefault("hn_behavior", []).append({"emotion": label, "behavior": intent})
+        appendUnique(meta, "hn_behavior", {"emotion": label, "behavior": intent})
         LOG.info("human-nature emotion advisory: %s -> %s", label, intent)
         if dashboard is not None:
             with best_effort("human_nature.emotion_surface", log=LOG):

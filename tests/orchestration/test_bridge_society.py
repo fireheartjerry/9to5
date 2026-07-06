@@ -122,9 +122,25 @@ def test_maybe_debate_rate_limited_after_budget_exhausted(monkeypatch):
     assert len(coordinator.calls) == 1
 
     second = society.maybeDebate(state, coordinator)
-    assert second["fired"] is False
+    assert second["fired"] is True
     assert len(coordinator.calls) == 1  # unchanged -- budget exhausted, no new debate
-    assert len(state["meta"]["hn_debate"]) == 2
+    assert len(state["meta"]["hn_debate"]) == 1
+
+
+def test_maybe_debate_identical_non_firing_check_is_idempotent(monkeypatch):
+    from platform_core.orchestration.human_nature_bridge import society
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_SOCIETY_TRIGGER", True)
+    state = _agreeing_state()
+    coordinator = _FakeCoordinator()
+
+    first = society.maybeDebate(state, coordinator)
+    second = society.maybeDebate(state, coordinator)
+
+    assert second == first
+    assert coordinator.calls == []
+    assert state["meta"]["hn_debate"] == [first]
 
 
 def test_maybe_debate_no_coordinator_is_noop_but_still_records(monkeypatch):
