@@ -19477,14 +19477,14 @@
           "kind": "function",
           "signature": "() -> tuple[list[dict], list[dict]]",
           "summary": "",
-          "lineno": 75
+          "lineno": 80
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 118
+          "lineno": 123
         }
       ],
       "depends_on": [],
