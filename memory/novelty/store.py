@@ -21,7 +21,7 @@ EXPORTS:
   reset_store() -> None  -- Drop the cached singleton (tests, or after a config change).
 DEPENDS-ON: config, memory.retrieval
 SIDE-EFFECTS: ChromaNoveltyStore writes under config.ANN_INDEX_DIR/novelty
-RUN/TEST: python -m pytest tests/control/test_control_store.py
+RUN/TEST: python -m pytest tests/control/test_control_store.py tests/human_nature/test_psyche_store.py
 """
 from __future__ import annotations
 

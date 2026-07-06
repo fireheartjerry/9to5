@@ -2905,6 +2905,7 @@
         "set_override writes state/sie_overrides.json"
       ],
       "test": [
+        "tests/human_nature/test_hn_config.py",
         "tests/notifications/test_notification_config.py",
         "tests/orchestration/test_society_config.py",
         "tests/platform/test_config_bootstrap.py",
@@ -2963,6 +2964,7 @@
         "human_nature.intuition",
         "human_nature.momentary",
         "human_nature.opinions",
+        "human_nature.psyche_store",
         "introspect.project_extract",
         "learning.evolution.adapter_promotion",
         "learning.evolution.bootstrap",
@@ -4005,6 +4007,57 @@
       ],
       "callers": []
     },
+    "human_nature.psyche_store": {
+      "path": "human_nature/psyche_store.py",
+      "purpose": "Psyche Store — durable cross-run persistence for mood/drives/personality/scars.",
+      "exports": [
+        {
+          "name": "PsycheStore",
+          "kind": "class",
+          "signature": "",
+          "summary": "Handle to the psyche SQLite database",
+          "lineno": 42
+        },
+        {
+          "name": "open_store",
+          "kind": "function",
+          "signature": "(db_path: Optional[str]=None) -> PsycheStore",
+          "summary": "",
+          "lineno": 61
+        },
+        {
+          "name": "load_psyche",
+          "kind": "function",
+          "signature": "(store: PsycheStore, project_key: str) -> dict[str, Any]",
+          "summary": "",
+          "lineno": 69
+        },
+        {
+          "name": "save_psyche",
+          "kind": "function",
+          "signature": "(store: PsycheStore, project_key: str, state: dict[str, Any]) -> None",
+          "summary": "",
+          "lineno": 79
+        },
+        {
+          "name": "close_store",
+          "kind": "function",
+          "signature": "(store: PsycheStore) -> None",
+          "summary": "No persistent connection is held",
+          "lineno": 91
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "creates/writes the psyche SQLite db at STATE_DIR/psyche.db (or db_path)"
+      ],
+      "test": [
+        "tests/human_nature/test_psyche_store.py"
+      ],
+      "callers": []
+    },
     "human_nature.psyche_surface": {
       "path": "human_nature/psyche_surface.py",
       "purpose": "Psyche surface — legible interior readouts for Discord and web (PRISM-gated).",
@@ -4032,6 +4085,41 @@
       ],
       "test": [
         "tests/human_nature/test_psyche_surface.py"
+      ],
+      "callers": []
+    },
+    "human_nature.run_events": {
+      "path": "human_nature/run_events.py",
+      "purpose": "Run event log — a discrete event stream over one 9to5 run.",
+      "exports": [
+        {
+          "name": "new_event_log",
+          "kind": "function",
+          "signature": "() -> list",
+          "summary": "",
+          "lineno": 43
+        },
+        {
+          "name": "record_event",
+          "kind": "function",
+          "signature": "(log: list, etype: str, **fields: Any) -> None",
+          "summary": "",
+          "lineno": 47
+        },
+        {
+          "name": "event_sequence",
+          "kind": "function",
+          "signature": "(log: list) -> list[str]",
+          "summary": "",
+          "lineno": 53
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "mutates the passed-in log list in place"
+      ],
+      "test": [
+        "tests/human_nature/test_run_events.py"
       ],
       "callers": []
     },
@@ -4088,28 +4176,35 @@
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "",
-          "lineno": 24
+          "lineno": 30
+        },
+        {
+          "name": "migrate",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any]) -> dict[str, Any]",
+          "summary": "",
+          "lineno": 47
         },
         {
           "name": "get_competence",
           "kind": "function",
           "signature": "(ss: dict[str, Any], domain: str) -> dict[str, Any]",
           "summary": "",
-          "lineno": 36
+          "lineno": 56
         },
         {
           "name": "observe_competence",
           "kind": "function",
           "signature": "(ss: dict[str, Any], domain: str, success: bool) -> None",
           "summary": "",
-          "lineno": 40
+          "lineno": 60
         },
         {
           "name": "set_affect",
           "kind": "function",
           "signature": "(ss: dict[str, Any], valence: float, arousal: float, control: float) -> None",
           "summary": "",
-          "lineno": 47
+          "lineno": 67
         }
       ],
       "depends_on": [],
@@ -7685,6 +7780,7 @@
         "tests/explore/test_approach_synthesis.py",
         "tests/explore/test_approach_tradeoffs.py",
         "tests/human_nature/test_appraisal.py",
+        "tests/human_nature/test_prototypes.py",
         "tests/introspect/test_project_boundaries.py",
         "tests/introspect/test_project_commands.py",
         "tests/introspect/test_project_extract.py",
@@ -8117,7 +8213,8 @@
         "ChromaNoveltyStore writes under config.ANN_INDEX_DIR/novelty"
       ],
       "test": [
-        "tests/control/test_control_store.py"
+        "tests/control/test_control_store.py",
+        "tests/human_nature/test_psyche_store.py"
       ],
       "callers": []
     },
