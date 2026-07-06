@@ -128,3 +128,38 @@ def test_human_nature_thresholds_and_paths_present():
     assert config.HN_RECAL_TEMPERATURE > 1.0
     assert str(config.CONVICTION_DB_PATH).endswith("conviction.db")
     assert str(config.AB_HARNESS_DB_PATH).endswith("ab_runs.db")
+
+
+# ---------------------------------------------------------------------------
+# Elaborator excellence tier: foundation config flags
+# ---------------------------------------------------------------------------
+
+def test_elaborator_excellence_ships_dark(monkeypatch):
+    monkeypatch.setenv("FULL_STACK", "0")
+    monkeypatch.delenv("ELABORATOR_EXCELLENCE_ENABLED", raising=False)
+    flags = EpicFlags()
+    assert flags.ELABORATOR_EXCELLENCE_ENABLED is False
+
+
+def test_elaborator_excellence_facade_exposed():
+    # config.__getattr__ delegates to the live registry (PEP 562).
+    assert hasattr(config, "ELABORATOR_EXCELLENCE_ENABLED")
+
+
+def test_phase234_elaborator_flags_ship_dark(monkeypatch):
+    monkeypatch.setenv("FULL_STACK", "0")
+    for k in ("ELABORATOR_PRECEDENT_ENABLED", "ELABORATOR_BESTOFN_ENABLED",
+              "ELABORATOR_LOOKAHEAD_ENABLED", "ELABORATOR_DEFER_ENABLED",
+              "ELABORATOR_CANDIDATES_MAX"):
+        monkeypatch.delenv(k, raising=False)
+    flags = EpicFlags()
+    assert flags.ELABORATOR_PRECEDENT_ENABLED is False
+    assert flags.ELABORATOR_BESTOFN_ENABLED is False
+    assert flags.ELABORATOR_LOOKAHEAD_ENABLED is False
+    assert flags.ELABORATOR_DEFER_ENABLED is False
+    assert flags.ELABORATOR_CANDIDATES_MAX == 5
+
+
+def test_elaborator_defer_model_inert_by_default(monkeypatch):
+    monkeypatch.delenv("ELABORATOR_DEFER_MODEL", raising=False)
+    assert EpicFlags().ELABORATOR_DEFER_MODEL == ""

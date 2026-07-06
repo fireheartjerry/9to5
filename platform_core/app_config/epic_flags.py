@@ -48,6 +48,15 @@ class EpicFlags:
     SOCIETY_ROLE_MODELS: dict[str, str] = _F(default_factory=lambda: {
         r: os.getenv(f"SOCIETY_MODEL_{r.upper()}", d) for r, d in
         (("researcher", "low"), ("coder", "high"), ("tester", "default"), ("reviewer", "high"), ("planner", "default"))})
+    # --- Elaborator excellence tier (spec 2026-07-05); ships DARK, byte-identical flag-off ---
+    ELABORATOR_EXCELLENCE_ENABLED: bool = _F(default_factory=lambda: _envBool("ELABORATOR_EXCELLENCE_ENABLED", False))
+    ELABORATOR_PRECEDENT_ENABLED: bool = _F(default_factory=lambda: _envBool("ELABORATOR_PRECEDENT_ENABLED", False))
+    ELABORATOR_BESTOFN_ENABLED: bool = _F(default_factory=lambda: _envBool("ELABORATOR_BESTOFN_ENABLED", False))
+    ELABORATOR_LOOKAHEAD_ENABLED: bool = _F(default_factory=lambda: _envBool("ELABORATOR_LOOKAHEAD_ENABLED", False))
+    ELABORATOR_DEFER_ENABLED: bool = _F(default_factory=lambda: _envBool("ELABORATOR_DEFER_ENABLED", False))
+    ELABORATOR_CANDIDATES_MAX: int = _F(default_factory=lambda: _envInt("ELABORATOR_CANDIDATES_MAX", 5))
+    # §7.5 escalation model: empty => deferral escalation is inert (keep local spec).
+    ELABORATOR_DEFER_MODEL: str = _F(default_factory=lambda: os.environ.get("ELABORATOR_DEFER_MODEL", ""))
     # --- Epic 6: solution-space forking (ships dark; conservative opt-in) ---
     SOLUTION_FORK_ENABLED: bool = _F(default_factory=lambda: _envBool("SOLUTION_FORK_ENABLED", _fullStack()))
     SOLUTION_FORK_N: int = _F(default_factory=lambda: _envInt("SOLUTION_FORK_N", 2))
