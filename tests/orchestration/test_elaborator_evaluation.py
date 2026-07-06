@@ -25,7 +25,3 @@ class TestExcellenceEval(unittest.TestCase):
         on_s = sum(r["on"]["prompt_signal"] for r in results)
         off_s = sum(r["off"]["prompt_signal"] for r in results)
         self.assertTrue(on_g > off_g or on_s > off_s, "excellence tier must measurably improve grounding or signal")
-
-
-if __name__ == "__main__":
-    unittest.main()

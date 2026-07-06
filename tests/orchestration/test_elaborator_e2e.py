@@ -109,7 +109,3 @@ class TestElaboratorE2E(unittest.TestCase):
         self.assertIn("Review Note", out)
         # 9. winning stance captured in out_meta.
         self.assertIn(meta.get("stance"), ("minimal-scope", "thorough", "risk-averse"))
-
-
-if __name__ == "__main__":
-    unittest.main()
