@@ -14,6 +14,7 @@ RUN/TEST: python -m pytest tests/control/test_task.py
 """
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -227,6 +228,9 @@ class TaskState:
         return [t for t in out if t]
 
     def addInstinctFlag(self, text: str) -> dict[str, Any]:
+        for rec in self.meta.get("instinct_flags", []) or []:
+            if isinstance(rec, dict) and rec.get("text") == text:
+                return rec
         rec = {"text": text, "at": nowIso()}
         self.meta.setdefault("instinct_flags", []).append(rec)
         self.save()
@@ -356,6 +360,17 @@ class TaskState:
 
     def addAdversaryReview(self, subtask_id: str, trigger_reason: str, verdict: str,
                            note_ref: Optional[str] = None, stub: bool = False) -> dict[str, Any]:
+        for existing in self.data.get("adversary_reviews", []) or []:
+            if not isinstance(existing, dict):
+                continue
+            if (
+                existing.get("subtask_id") == subtask_id
+                and existing.get("trigger_reason") == trigger_reason
+                and existing.get("verdict") == verdict
+                and existing.get("note_ref") == note_ref
+                and bool(existing.get("stub")) == bool(stub)
+            ):
+                return existing
         rec = {"subtask_id": subtask_id, "trigger_reason": trigger_reason,
                "verdict": verdict, "note_ref": note_ref, "stub": bool(stub), "at": nowIso()}
         self.data["adversary_reviews"].append(rec)
@@ -369,6 +384,17 @@ class TaskState:
         self.data["notifications"].append(rec)
         self.save()
         return rec
+
+    def addNotificationOnce(self, kind: str, detail: str, **extra: Any) -> dict[str, Any]:
+        key = _notificationKey(kind, detail, extra)
+        for rec in self.data.get("notifications", []) or []:
+            if not isinstance(rec, dict):
+                continue
+            rec_extra = {k: v for k, v in rec.items()
+                         if k not in ("at", "kind", "detail", "entry_id", "seq", "schema_version")}
+            if _notificationKey(rec.get("kind", ""), rec.get("detail", ""), rec_extra) == key:
+                return rec
+        return self.addNotification(kind, detail, **extra)
 
     def addHandoff(self, ho_id: str, summary: str, note_ref: str) -> dict[str, Any]:
         rec = {"handoff_id": ho_id, "summary": summary, "note_ref": note_ref, "at": nowIso()}
@@ -414,3 +440,11 @@ class TaskState:
         """Subtasks whose depends_on includes ``subtask_id`` (used by the dual-ledger cascade reset
         when a stall replan removes/replaces a subtask)."""
         return [s for s in self.subtasks if subtask_id in (s.get("depends_on") or [])]
+
+
+def _notificationKey(kind: Any, detail: Any, extra: dict[str, Any]) -> str:
+    try:
+        return json.dumps({"kind": str(kind), "detail": str(detail), "extra": extra},
+                          sort_keys=True, separators=(",", ":"), default=str)
+    except Exception:  # noqa: BLE001
+        return repr((kind, detail, extra))

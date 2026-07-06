@@ -8,9 +8,13 @@ class _Stub:
         self.task_id = task_id
         self.meta = meta or {"codename": "IRON_PHOENIX", "goal_raw": "do the thing"}
         self.data = {"obsidian": {"vault_task_dir": f"tasks/{task_id}"}}
+        self.saved = 0
 
     def vaultTaskDir(self):
         return self.data["obsidian"]["vault_task_dir"]
+
+    def save(self):
+        self.saved += 1
 
 
 def _chat_str(system, user, **kw):
@@ -65,3 +69,25 @@ def test_post_reflection_never_raises():
     # DISCORD blanked by conftest -> no network; must simply not raise.
     reflection_post.post_reflection(_Stub("task-z"), "some text",
                                     comparative={"pace": "1.2x faster"})
+
+
+def test_post_reflection_is_idempotent(monkeypatch):
+    state = _Stub("task-once")
+    sent = []
+
+    class _Discord:
+        @staticmethod
+        def noticeEmbed(body, title=""):
+            return {"body": body, "title": title}
+
+        @staticmethod
+        def sendEmbed(embed):
+            sent.append(embed)
+
+    monkeypatch.setattr("notifications.discord_bot", _Discord)
+
+    reflection_post.post_reflection(state, "same text")
+    reflection_post.post_reflection(state, "same text")
+
+    assert len(sent) == 1
+    assert state.saved == 1

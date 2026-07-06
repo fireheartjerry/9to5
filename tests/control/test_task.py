@@ -169,3 +169,36 @@ def test_create_has_parked_layer_meta_fields():
     for key in ("self_state", "autonomy", "charter_version"):
         assert key in meta
         assert meta[key] is None
+
+
+def test_add_notification_once_dedupes_exact_semantic_event():
+    ts = TaskState.create("dedupe notifications", 1.0)
+
+    first = ts.addNotificationOnce("complete", "pr skipped", reason="same")
+    second = ts.addNotificationOnce("complete", "pr skipped", reason="same")
+    third = ts.addNotificationOnce("complete", "pr skipped", reason="different")
+
+    assert second == first
+    assert third != first
+    assert len(ts.data["notifications"]) == 2
+
+
+def test_instinct_flags_are_idempotent_by_text():
+    ts = TaskState.create("dedupe instinct", 1.0)
+
+    first = ts.addInstinctFlag("watch the retry loop")
+    second = ts.addInstinctFlag("watch the retry loop")
+
+    assert second == first
+    assert ts.meta["instinct_flags"] == [first]
+
+
+def test_adversary_review_exact_duplicate_is_idempotent():
+    ts = TaskState.create("dedupe reviews", 1.0)
+    sub = ts.addSubtask("a", "d")
+
+    first = ts.addAdversaryReview(sub["subtask_id"], "same trigger", "challenged", "n.md")
+    second = ts.addAdversaryReview(sub["subtask_id"], "same trigger", "challenged", "n.md")
+
+    assert second == first
+    assert ts.data["adversary_reviews"] == [first]

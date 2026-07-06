@@ -110,6 +110,7 @@ def forkPlan(subtask: dict, *, n: int, angles: tuple = DIVERSITY_ANGLES,
     """Build N diversity seeds spanning effort x angle. Distinct by construction."""
     n = max(1, int(n))
     seeds: list = []
+    profile_shaped = False
     try:
         from platform_core.orchestration import work_profile as _wp
         pol = _wp.policy(_wp.resolve(work_profile))
@@ -117,18 +118,20 @@ def forkPlan(subtask: dict, *, n: int, angles: tuple = DIVERSITY_ANGLES,
             angles = DIVERSITY_ANGLES + (
                 "Approach D: bold redesign -- maximize long-term upside while preserving acceptance.",
             )
+            profile_shaped = True
         if pol.fork_strategy.get("conservative_forks"):
             angles = (
                 "Approach A: conservative patch -- smallest safe change with regression awareness.",
                 "Approach B: test-first patch -- prove the bug, then fix it.",
                 "Approach C: safety review -- reduce risk before broadening the change.",
             )
+            profile_shaped = True
         if pol.fork_strategy.get("rare_forks"):
             n = min(n, 2)
     except Exception:  # noqa: BLE001
         pass
     goal_text = f"{subtask.get('title', '')} {subtask.get('description', '')}".strip()
-    explored = _angleHintsFromExplore(goal_text, n, work_dir)
+    explored = None if profile_shaped else _angleHintsFromExplore(goal_text, n, work_dir)
     if explored:
         angles = tuple(explored)
     for i in range(n):

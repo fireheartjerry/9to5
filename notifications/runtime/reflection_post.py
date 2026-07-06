@@ -16,6 +16,7 @@ RUN/TEST: python -m pytest tests/notifications/test_reflection_post.py
 """
 from __future__ import annotations
 
+import hashlib
 from typing import Any, Callable, Optional
 
 import config
@@ -105,7 +106,10 @@ def post_reflection(state: Any, text: str, comparative: Optional[dict] = None) -
         footer = _comparative_footer(comparative)
         if footer:
             body += "\n\n" + footer
+        if _already_posted(state, "reflection", body):
+            return
         discord.sendEmbed(discord.noticeEmbed(body, title="Self-reflection"))
+        _mark_posted(state, "reflection", body)
     except Exception as e:  # noqa: BLE001 -- posting is best-effort
         LOG.warning("reflection post failed: %s", e)
 
@@ -128,7 +132,11 @@ def post_innovations(state: Any, entries: list) -> None:
                 embed.add_field(name=name, value=value, inline=False)
             except Exception:  # noqa: BLE001 -- embed shape varies; body already carries the gist
                 break
+        marker = repr([(name, value) for name, value in fields])
+        if _already_posted(state, "innovations", marker):
+            return
         discord.sendEmbed(embed)
+        _mark_posted(state, "innovations", marker)
     except Exception as e:  # noqa: BLE001 -- posting is best-effort
         LOG.warning("innovations post failed: %s", e)
 
@@ -139,3 +147,27 @@ def _comparative_footer(comparative: Optional[dict]) -> str:
     parts = [f"{k}: {comparative[k]}" for k in ("pace", "innovation", "adversary", "replans")
              if isinstance(comparative.get(k), str)]
     return ("THIS RUN vs AVG\n" + "\n".join(parts)) if parts else ""
+
+
+def _post_key(kind: str, body: str) -> str:
+    return f"{kind}:{hashlib.sha1(body.encode('utf-8', errors='replace')).hexdigest()[:16]}"
+
+
+def _already_posted(state: Any, kind: str, body: str) -> bool:
+    meta = getattr(state, "meta", None)
+    if not isinstance(meta, dict):
+        return False
+    return _post_key(kind, body) in set(meta.get("posted_surfaces") or [])
+
+
+def _mark_posted(state: Any, kind: str, body: str) -> None:
+    meta = getattr(state, "meta", None)
+    if not isinstance(meta, dict):
+        return
+    posted = meta.setdefault("posted_surfaces", [])
+    key = _post_key(kind, body)
+    if key not in posted:
+        posted.append(key)
+        save = getattr(state, "save", None)
+        if callable(save):
+            save()
