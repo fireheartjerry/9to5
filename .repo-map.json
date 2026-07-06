@@ -872,7 +872,12 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/orchestration/test_orchestrator_with_registry.py",
+        "tests/workflows/test_code_review.py",
+        "tests/workflows/test_staging_validation.py",
+        "tests/workflows/test_workflow_registry.py"
+      ],
       "callers": []
     },
     "agents.executor": {
@@ -1083,7 +1088,9 @@
       "side_effects": [
         "appends logs/guard_alerts.jsonl when a guard blocks"
       ],
-      "test": [],
+      "test": [
+        "tests/control/test_hooks.py"
+      ],
       "callers": []
     },
     "agents.hook_handlers.obsidian": {
@@ -1264,7 +1271,8 @@
         "agents.evidence_receipt",
         "agents.playbook",
         "agents.replanner",
-        "agents.second_brain"
+        "agents.second_brain",
+        "tools.elaborator_eval"
       ]
     },
     "agents.planning.clarifier": {
@@ -1414,6 +1422,54 @@
         "unannotated"
       ],
       "test": [],
+      "callers": [
+        "platform_core.orchestration.run_phase_mixin",
+        "tools.elaborator_eval"
+      ]
+    },
+    "agents.planning.elaborator.candidates": {
+      "path": "agents/planning/elaborator/candidates.py",
+      "purpose": "Elaboration candidate pipeline (§7 A'/A/B): adaptive best-of-N + portfolio selection.",
+      "exports": [
+        {
+          "name": "budgetFor",
+          "kind": "function",
+          "signature": "(goal: str, *, is_vague: bool, precedent_hits: int, max_n: int) -> int",
+          "summary": "§7 A': precise goal -> 1",
+          "lineno": 26
+        },
+        {
+          "name": "generate",
+          "kind": "function",
+          "signature": "(goal: str, work_dir, *, n: int, gen_fn) -> list[dict]",
+          "summary": "Call gen_fn(goal, work_dir, stance) for the first n stances.",
+          "lineno": 34
+        },
+        {
+          "name": "meritWeight",
+          "kind": "function",
+          "signature": "(candidate: dict, *, groundedness: float=0.0, precedent: float=0.0, predicted: float=0.0, elevated: int=0) -> float",
+          "summary": "§7 B weight: predicted_success + groundedness + precedent - 0.5*elevated.",
+          "lineno": 42
+        },
+        {
+          "name": "selectBest",
+          "kind": "function",
+          "signature": "(candidates: list[dict], *, weight_fn, use_optimizer: bool=False) -> 'dict | None'",
+          "summary": "§7 B: return the winning candidate by weight_fn",
+          "lineno": 48
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.orchestration"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/orchestration/test_elaborator_candidates.py"
+      ],
       "callers": []
     },
     "agents.planning.elaborator.core": {
@@ -1423,16 +1479,16 @@
         {
           "name": "elaborate",
           "kind": "function",
-          "signature": "(goal_raw: str, work_dir: str | None=None, chat=None) -> str",
+          "signature": "(goal_raw: str, work_dir: str | None=None, chat=None, out_meta=None) -> str",
           "summary": "Return the elaborated specification for ``goal_raw`` (never raises",
-          "lineno": 67
+          "lineno": 130
         },
         {
           "name": "extractUniverse",
           "kind": "function",
           "signature": "(goal_raw: str, goal_elaborated: str, work_dir: str, chat=None) -> dict",
           "summary": "Extract the operating universe (scope boundary) from the goal (with safe defaults).",
-          "lineno": 115
+          "lineno": 204
         }
       ],
       "depends_on": [
@@ -1447,6 +1503,82 @@
         "tests/orchestration/test_orch_core_bugs.py",
         "tests/slow/test_simulation_core.py"
       ],
+      "callers": [
+        "tools.elaborator_eval"
+      ]
+    },
+    "agents.planning.elaborator.defer": {
+      "path": "agents/planning/elaborator/defer.py",
+      "purpose": "Uncertainty-aware deferral (§7.5): escalate a too-uncertain elaboration to a larger model.",
+      "exports": [
+        {
+          "name": "maybeDefer",
+          "kind": "function",
+          "signature": "(local_spec: str, goal: str, uncertainty: dict, *, escalate_fn=None) -> str",
+          "summary": "When deferral is enabled AND uncertainty says defer, try escalate_fn(goal)",
+          "lineno": 28
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/orchestration/test_elaborator_defer.py"
+      ],
+      "callers": []
+    },
+    "agents.planning.elaborator.escalate": {
+      "path": "agents/planning/elaborator/escalate.py",
+      "purpose": "§7.5 escalation transport: re-elaborate a goal with a MORE CAPABLE model.",
+      "exports": [
+        {
+          "name": "escalateToModel",
+          "kind": "function",
+          "signature": "(goal: str, *, chat=None) -> str",
+          "summary": "Re-elaborate `goal` with the configured escalation model",
+          "lineno": 23
+        }
+      ],
+      "depends_on": [
+        "config",
+        "knowledge",
+        "llm_io"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/orchestration/test_elaborator_escalate.py"
+      ],
+      "callers": []
+    },
+    "agents.planning.elaborator.evolve": {
+      "path": "agents/planning/elaborator/evolve.py",
+      "purpose": "Stage D (§7 D): record elaboration fitness so SIE promotion can later learn which stance",
+      "exports": [
+        {
+          "name": "recordElaborationOutcome",
+          "kind": "function",
+          "signature": "(goal: str, stance: str, *, clean_run: bool, store_fn=None) -> bool",
+          "summary": "Best-effort record of (goal, winning stance, clean_run)",
+          "lineno": 30
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.retrievals"
+      ],
+      "side_effects": [
+        "writes to experience ledger (best-effort) via store_fn"
+      ],
+      "test": [
+        "tests/evolution/test_evolution_evolver.py",
+        "tests/evolution/test_evolver_prompts.py",
+        "tests/orchestration/test_elaborator_evolve.py"
+      ],
       "callers": []
     },
     "agents.planning.elaborator.grounding": {
@@ -1458,21 +1590,21 @@
           "kind": "function",
           "signature": "(work_dir: str | None) -> str",
           "summary": "Compact, REAL repository grounding for the brain so it stops inventing",
-          "lineno": 33
+          "lineno": 34
         },
         {
           "name": "isVagueGoal",
           "kind": "function",
           "signature": "(goal: str) -> bool",
           "summary": "A goal is vague if it is short, uses a generic verb, and names no path/module.",
-          "lineno": 84
+          "lineno": 83
         },
         {
           "name": "vagueGoalBundle",
           "kind": "function",
           "signature": "(work_dir: str | None) -> str",
           "summary": "A compact state-of-repo bundle (real module names + size violations) so a vague",
-          "lineno": 114
+          "lineno": 113
         }
       ],
       "depends_on": [
@@ -1483,6 +1615,31 @@
       ],
       "test": [
         "tests/orchestration/test_elaborator_grounding.py"
+      ],
+      "callers": []
+    },
+    "agents.planning.elaborator.judge": {
+      "path": "agents/planning/elaborator/judge.py",
+      "purpose": "Layer-2 semantic judge (§4): advisory quality review of an elaborated spec.",
+      "exports": [
+        {
+          "name": "judgeElaboration",
+          "kind": "function",
+          "signature": "(spec_body: str, goal: str, *, chat=None) -> dict",
+          "summary": "Advisory semantic judge of an elaborated spec",
+          "lineno": 21
+        }
+      ],
+      "depends_on": [
+        "agents.review",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/orchestration/test_elaborator_judge.py",
+        "tests/orchestration/test_judge_panel.py"
       ],
       "callers": []
     },
@@ -1502,7 +1659,60 @@
       "side_effects": [
         "none (read-only filesystem)"
       ],
-      "test": [],
+      "test": [
+        "tests/orchestration/test_elaborator_grounding.py"
+      ],
+      "callers": []
+    },
+    "agents.planning.elaborator.precedent": {
+      "path": "agents/planning/elaborator/precedent.py",
+      "purpose": "Case-based-reasoning grounding (§3d): inject similar past (goal->outcome) exemplars.",
+      "exports": [
+        {
+          "name": "precedentBlock",
+          "kind": "function",
+          "signature": "(goal: str, *, k: int=3, retrieve_fn=None, fail_fn=None) -> str",
+          "summary": "Top-k similar past successes + failures as a compact prompt block, or \"\" when nothing",
+          "lineno": 31
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.retrievals",
+        "platform_core.core.best_effort"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/orchestration/test_elaborator_precedent.py"
+      ],
+      "callers": []
+    },
+    "agents.planning.elaborator.predict": {
+      "path": "agents/planning/elaborator/predict.py",
+      "purpose": "World-model lookahead (§7 B'): predict the executor's immediate consequence of a spec.",
+      "exports": [
+        {
+          "name": "predictOutcome",
+          "kind": "function",
+          "signature": "(spec_body: str, work_dir, *, chat=None) -> dict",
+          "summary": "One-step lookahead",
+          "lineno": 43
+        }
+      ],
+      "depends_on": [
+        "config",
+        "knowledge",
+        "llm_io",
+        "platform_core.core.best_effort"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/orchestration/test_elaborator_predict.py"
+      ],
       "callers": []
     },
     "agents.planning.elaborator.schema": {
@@ -1559,7 +1769,37 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/orchestration/test_elaborator_selfreview.py"
+      ],
+      "callers": []
+    },
+    "agents.planning.elaborator.uncertainty": {
+      "path": "agents/planning/elaborator/uncertainty.py",
+      "purpose": "Calibrated, distribution-free uncertainty for elaboration (§3b/§7.5).",
+      "exports": [
+        {
+          "name": "riskBand",
+          "kind": "function",
+          "signature": "(*, path_verified: bool, precedent_support: bool) -> str",
+          "summary": "'low' only when paths verified AND precedent corroborates",
+          "lineno": 18
+        },
+        {
+          "name": "runUncertainty",
+          "kind": "function",
+          "signature": "(*, elevated_count: int, objective_spread: float, precedent_hits: int, threshold: int=2) -> dict",
+          "summary": "Aggregate run-level uncertainty -> {'defer': bool, 'score': int, 'reasons': [str]}.",
+          "lineno": 23
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/orchestration/test_elaborator_uncertainty.py"
+      ],
       "callers": []
     },
     "agents.planning.evidence_receipt": {
@@ -1642,7 +1882,10 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_living_knowledge.py",
+        "tests/orchestration/test_module_globals.py"
+      ],
       "callers": []
     },
     "agents.planning.second_brain": {
@@ -1729,6 +1972,7 @@
         "agents.adversary_review",
         "agents.architect",
         "agents.independent_verifier",
+        "agents.planning.elaborator.judge",
         "agents.verification",
         "agents.verification_diff",
         "agents.verifier",
@@ -1784,28 +2028,28 @@
           "kind": "function",
           "signature": "(review_type: str='subtask') -> str",
           "summary": "The system prompt for a given touchpoint: the one schema + a type-specific lead-in.",
-          "lineno": 97
+          "lineno": 102
         },
         {
           "name": "isCdpTransient",
           "kind": "function",
           "signature": "(exc: BaseException) -> bool",
           "summary": "True when ``exc`` looks like a transient CDP/network hiccup worth retrying.",
-          "lineno": 103
+          "lineno": 108
         },
         {
           "name": "shouldTrigger",
           "kind": "function",
           "signature": "(executor_output: str, subtask_position: int, attempt_count: int=1, pre_pr: bool=False) -> tuple[bool, str]",
           "summary": "Return ``(triggered, reason)``.",
-          "lineno": 109
+          "lineno": 114
         },
         {
           "name": "review",
           "kind": "function",
           "signature": "(subtask_title: str, trigger_reason: str, executor_output: str, *, ollama_chat: Optional[Callable]=None, goal: str='', review_type: str='subtask') -> dict",
           "summary": "Critique the executor output and return a verdict dict.",
-          "lineno": 259
+          "lineno": 264
         }
       ],
       "depends_on": [
@@ -2232,7 +2476,10 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/execution/test_trace_replay.py",
+        "tests/execution/test_trace_replay_subagent.py"
+      ],
       "callers": []
     },
     "agents.trace.replay_events": {
@@ -2246,7 +2493,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/execution/test_trace_replay.py"
+      ],
       "callers": []
     },
     "agents.trace.replay_output": {
@@ -2267,7 +2516,9 @@
       "side_effects": [
         "stdout writes"
       ],
-      "test": [],
+      "test": [
+        "tests/execution/test_trace_replay.py"
+      ],
       "callers": []
     },
     "agents.trace.replay_selftest": {
@@ -2677,8 +2928,15 @@
         "agents.hook_handlers.core",
         "agents.hook_handlers.selfmod",
         "agents.planning.clarifier",
+        "agents.planning.elaborator.candidates",
         "agents.planning.elaborator.core",
+        "agents.planning.elaborator.defer",
+        "agents.planning.elaborator.escalate",
+        "agents.planning.elaborator.evolve",
         "agents.planning.elaborator.grounding",
+        "agents.planning.elaborator.judge",
+        "agents.planning.elaborator.precedent",
+        "agents.planning.elaborator.predict",
         "agents.planning.elaborator.schema",
         "agents.planning.elaborator.self_review",
         "agents.planning.playbook",
@@ -2892,7 +3150,8 @@
         "society.society_batch",
         "society.worker",
         "state.task_io",
-        "state.task_schema"
+        "state.task_schema",
+        "tools.elaborator_eval"
       ]
     },
     "conftest": {
@@ -4239,6 +4498,8 @@
       ],
       "callers": [
         "agents.planning.elaborator.core",
+        "agents.planning.elaborator.escalate",
+        "agents.planning.elaborator.predict",
         "agents.planning.elaborator.self_review",
         "agents.planning.replanner",
         "agents.review.architect",
@@ -4493,7 +4754,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/execution/test_eval_runner.py"
+      ],
       "callers": []
     },
     "learning.evolution.bootstrap": {
@@ -4563,7 +4826,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/evolution/test_evolution_candidate.py"
+        "tests/evolution/test_evolution_candidate.py",
+        "tests/orchestration/test_elaborator_candidates.py"
       ],
       "callers": [
         "learning.evolution.validate"
@@ -4661,7 +4925,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_nextwave_batch1.py"
+      ],
       "callers": []
     },
     "learning.evolution.curator": {
@@ -4837,7 +5103,10 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_nextwave_batch2.py",
+        "tests/slow/test_full_autonomy.py"
+      ],
       "callers": []
     },
     "learning.evolution.policy": {
@@ -5023,7 +5292,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_curriculum.py"
+      ],
       "callers": []
     },
     "learning.evolution.safety": {
@@ -5109,7 +5380,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/slow/test_full_autonomy.py"
+      ],
       "callers": []
     },
     "learning.evolution.sie": {
@@ -5168,7 +5441,10 @@
       "side_effects": [
         "may spawn a detached orchestrator run via notifications.work_launcher.spawn"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_curriculum.py",
+        "tests/evolution/test_sie.py"
+      ],
       "callers": []
     },
     "learning.evolution.sie_steps": {
@@ -5191,7 +5467,9 @@
       "side_effects": [
         "writes failure-mode + lesson rows to the experience ledger"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_sie.py"
+      ],
       "callers": []
     },
     "learning.evolution.solution_cache": {
@@ -5259,7 +5537,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_nextwave_batch2.py"
+      ],
       "callers": []
     },
     "learning.evolution.validate": {
@@ -5383,7 +5663,10 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_nextwave_batch1.py",
+        "tests/notifications/test_feedback_view.py"
+      ],
       "callers": []
     },
     "learning.feedback.insight": {
@@ -5498,7 +5781,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_nextwave_batch2.py"
+      ],
       "callers": []
     },
     "learning.feedback.preferences": {
@@ -5844,7 +6129,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_finetune.py"
+      ],
       "callers": []
     },
     "learning.model.eval_harness": {
@@ -6283,7 +6570,10 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_curriculum.py",
+        "tests/evolution/test_sie.py"
+      ],
       "callers": [
         "learning.evolution.sie"
       ]
@@ -6428,6 +6718,8 @@
         "agents.discovery.synthesis",
         "agents.planning.clarifier",
         "agents.planning.elaborator.core",
+        "agents.planning.elaborator.escalate",
+        "agents.planning.elaborator.predict",
         "agents.planning.elaborator.self_review",
         "agents.planning.replanner",
         "agents.review.adversary",
@@ -6454,7 +6746,7 @@
           "kind": "function",
           "signature": "() -> int",
           "summary": "",
-          "lineno": 388
+          "lineno": 390
         }
       ],
       "depends_on": [
@@ -6670,7 +6962,10 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_experience_ledger.py",
+        "tests/evolution/test_experience_schema.py"
+      ],
       "callers": [
         "memory.ledger.schema"
       ]
@@ -6927,7 +7222,12 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_curriculum.py",
+        "tests/evolution/test_finetune.py",
+        "tests/evolution/test_nextwave_batch1.py",
+        "tests/execution/test_eval_runner.py"
+      ],
       "callers": []
     },
     "memory.ledger.content": {
@@ -7007,7 +7307,10 @@
       "side_effects": [
         "none"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_experience_ledger.py",
+        "tests/evolution/test_experience_schema.py"
+      ],
       "callers": []
     },
     "memory.ledger.evolution": {
@@ -7387,6 +7690,8 @@
         "tests/introspect/test_project_scanner.py",
         "tests/introspect/test_project_test_map.py",
         "tests/notifications/test_subprocess_feed.py",
+        "tests/orchestration/test_elaborator_precedent.py",
+        "tests/orchestration/test_elaborator_predict.py",
         "tests/orchestration/test_files_touched_propagation.py",
         "tests/orchestration/test_plan_project_context.py",
         "tests/orchestration/test_work_profile.py",
@@ -7576,7 +7881,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_solution_cache_provenance.py"
+      ],
       "callers": []
     },
     "memory.ledger.subtasks": {
@@ -7635,7 +7942,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_insight.py"
+      ],
       "callers": []
     },
     "memory.memory_sanitizer": {
@@ -7839,7 +8148,10 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_novelty_index.py",
+        "tests/orchestration/test_inventor_e2e.py"
+      ],
       "callers": [
         "memory.novelty.index",
         "platform_core.orchestration.qd_archive"
@@ -7934,6 +8246,8 @@
       ],
       "test": [],
       "callers": [
+        "agents.planning.elaborator.evolve",
+        "agents.planning.elaborator.precedent",
         "memory.retrieval",
         "memory.retrieval_rank",
         "memory.retrieval_render"
@@ -11584,7 +11898,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/notifications/test_webdash_page_split.py"
+      ],
       "callers": []
     },
     "notifications.surfaces.webdash_page": {
@@ -11613,7 +11929,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/notifications/test_webdash_page_split.py"
+      ],
       "callers": []
     },
     "notifications.surfaces.webdash_styles": {
@@ -11624,7 +11942,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/notifications/test_webdash_page_split.py"
+      ],
       "callers": []
     },
     "notifications.terminal_ipc": {
@@ -12614,6 +12934,8 @@
       ],
       "callers": [
         "agents.hook_handlers.obsidian",
+        "agents.planning.elaborator.precedent",
+        "agents.planning.elaborator.predict",
         "memory.ledger.content",
         "memory.ledger.journal",
         "memory.ledger.runs",
@@ -14167,6 +14489,7 @@
       "test": [],
       "callers": [
         "agents.discovery",
+        "agents.planning.elaborator.candidates",
         "agents.planning.replanner",
         "agents.review.architect",
         "main",
@@ -16007,12 +16330,13 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles run lifecycle phases: resume, fresh run, preamble, phase 4, teardown.",
-          "lineno": 35
+          "lineno": 36
         }
       ],
       "depends_on": [
         "agents.architect",
         "agents.discovery",
+        "agents.planning.elaborator",
         "agents.verifier",
         "config",
         "learning.adversary_trust",
@@ -18895,6 +19219,74 @@
       ],
       "callers": []
     },
+    "tools.elaborator_eval": {
+      "path": "tools/elaborator_eval.py",
+      "purpose": "Deterministic evaluation harness for the elaborator excellence tier.",
+      "exports": [
+        {
+          "name": "scoreSpec",
+          "kind": "function",
+          "signature": "(spec: str, work_dir: str) -> dict",
+          "summary": "Deterministic quality signals for a produced spec.",
+          "lineno": 67
+        },
+        {
+          "name": "promptSignal",
+          "kind": "function",
+          "signature": "(user_prompt: str) -> int",
+          "summary": "How many real-context grounding markers reached the model (0-3).",
+          "lineno": 80
+        },
+        {
+          "name": "scriptedChat",
+          "kind": "function",
+          "signature": "(work_dir: str)",
+          "summary": "Return ``(chat, holder)``",
+          "lineno": 87
+        },
+        {
+          "name": "runOne",
+          "kind": "function",
+          "signature": "(goal: str, is_vague: bool, work_dir: str) -> dict",
+          "summary": "Elaborate ``goal`` twice (flags OFF vs excellence-ON) against the same repo.",
+          "lineno": 159
+        },
+        {
+          "name": "runBattery",
+          "kind": "function",
+          "signature": "() -> list[dict]",
+          "summary": "Run the whole battery, each item in a fresh temp repo.",
+          "lineno": 176
+        },
+        {
+          "name": "report",
+          "kind": "function",
+          "signature": "(results: list[dict]) -> str",
+          "summary": "Readable per-goal + aggregate table with the on-vs-off delta.",
+          "lineno": 190
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "",
+          "lineno": 215
+        }
+      ],
+      "depends_on": [
+        "agents.planning",
+        "agents.planning.elaborator",
+        "agents.planning.elaborator.core",
+        "config"
+      ],
+      "side_effects": [
+        "creates a throwaway temp repo per battery item (auto-cleaned)"
+      ],
+      "test": [
+        "tests/orchestration/test_elaborator.py"
+      ],
+      "callers": []
+    },
     "tools.iteration_bench": {
       "path": "tools/iteration_bench.py",
       "purpose": "Benchmark harness for validated Claude/agent iteration speed.",
@@ -19085,14 +19477,14 @@
           "kind": "function",
           "signature": "() -> tuple[list[dict], list[dict]]",
           "summary": "",
-          "lineno": 80
+          "lineno": 75
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 123
+          "lineno": 118
         }
       ],
       "depends_on": [],

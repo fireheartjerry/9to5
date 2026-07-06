@@ -16,7 +16,7 @@ EXPORTS:
   run(*, launch_fn: Optional[LaunchFn]=None, is_busy: Optional[Callable[[], bool]]=None, db_path: Optional[Path]=None, now: Optional[datetime]=None) -> dict[str, Any]  -- Maybe launch one self-play run
 DEPENDS-ON: config, learning.curriculum, platform_core.core
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/slow/test_full_autonomy.py
 """
 from __future__ import annotations
 

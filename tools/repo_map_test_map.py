@@ -151,4 +151,82 @@ MANUAL_TEST_MAP: dict[str, list[str]] = {
     "tools.dev_reports": ["tests/evolution/test_selfmod_runner.py", "tests/platform/test_dev_commands.py"],
     "tools.iteration_bench": ["tests/platform/test_dev_commands.py"],
     "tools.size_audit": ["tests/platform/test_dev_commands.py"],
+    # ── Package-split new dotted paths ────────────────────────────────────────
+    # The elaborator/mega-build work relocated these implementations into sub-
+    # packages, leaving the old flat modules as thin compat aliases (which are
+    # still mapped above). find_tests() name/glob resolution can't reach the new
+    # paths, so pin each to the SAME tests that cover its alias -- the alias
+    # re-exports the new module, so those tests genuinely exercise it.
+    "agents.execution.workflow_resolver": [
+        "tests/orchestration/test_orchestrator_with_registry.py",
+        "tests/workflows/test_code_review.py",
+        "tests/workflows/test_staging_validation.py",
+        "tests/workflows/test_workflow_registry.py",
+    ],
+    "agents.planning.replanner": [
+        "tests/evolution/test_living_knowledge.py",
+        "tests/orchestration/test_module_globals.py",
+    ],
+    "agents.planning.elaborator.path_verify": ["tests/orchestration/test_elaborator_grounding.py"],
+    "agents.planning.elaborator.self_review": ["tests/orchestration/test_elaborator_selfreview.py"],
+    # block_destructive handler; tests/control/test_hooks.py runs it end-to-end.
+    "agents.hook_handlers.destructive": ["tests/control/test_hooks.py"],
+    # trace-replay CLI split into cli/events/output; test_trace_replay loads the
+    # CLI (which imports events+output) and calls _replayEvents directly.
+    "agents.trace.replay_cli": [
+        "tests/execution/test_trace_replay.py",
+        "tests/execution/test_trace_replay_subagent.py",
+    ],
+    "agents.trace.replay_events": ["tests/execution/test_trace_replay.py"],
+    "agents.trace.replay_output": ["tests/execution/test_trace_replay.py"],
+    "learning.evolution.adapter_promotion": ["tests/execution/test_eval_runner.py"],
+    "learning.evolution.confidence": ["tests/evolution/test_nextwave_batch1.py"],
+    "learning.evolution.meta_opt": [
+        "tests/evolution/test_nextwave_batch2.py",
+        "tests/slow/test_full_autonomy.py",
+    ],
+    "learning.evolution.release": ["tests/evolution/test_curriculum.py"],
+    "learning.evolution.selfplay": ["tests/slow/test_full_autonomy.py"],
+    "learning.evolution.sie_steps": ["tests/evolution/test_sie.py"],
+    "learning.evolution.toolsmith": ["tests/evolution/test_nextwave_batch2.py"],
+    # _curriculum_and_report step extracted from sie.py; both tests exercise it
+    # through learning.sie.
+    "learning.evolution.sie_curriculum": [
+        "tests/evolution/test_sie.py",
+        "tests/evolution/test_curriculum.py",
+    ],
+    "learning.sie_curriculum": [
+        "tests/evolution/test_sie.py",
+        "tests/evolution/test_curriculum.py",
+    ],
+    "learning.feedback.human_feedback": [
+        "tests/evolution/test_nextwave_batch1.py",
+        "tests/notifications/test_feedback_view.py",
+    ],
+    "learning.feedback.postmortem": ["tests/evolution/test_nextwave_batch2.py"],
+    "learning.model.distill": ["tests/evolution/test_finetune.py"],
+    "memory.ledger.subtasks": ["tests/evolution/test_insight.py"],
+    "memory.ledger.adapters": [
+        "tests/evolution/test_nextwave_batch1.py",
+        "tests/evolution/test_finetune.py",
+        "tests/execution/test_eval_runner.py",
+        "tests/evolution/test_curriculum.py",
+    ],
+    "memory.ledger.solutions": ["tests/evolution/test_solution_cache_provenance.py"],
+    # experience-ledger DDL; schema/migration suite builds and asserts the tables.
+    "memory.ledger.ddl": [
+        "tests/evolution/test_experience_schema.py",
+        "tests/evolution/test_experience_ledger.py",
+    ],
+    "memory.experience_ddl": [
+        "tests/evolution/test_experience_schema.py",
+        "tests/evolution/test_experience_ledger.py",
+    ],
+    "memory.novelty_store": [
+        "tests/evolution/test_novelty_index.py",
+        "tests/orchestration/test_inventor_e2e.py",
+    ],
+    "notifications.surfaces.webdash_markup": ["tests/notifications/test_webdash_page_split.py"],
+    "notifications.surfaces.webdash_script": ["tests/notifications/test_webdash_page_split.py"],
+    "notifications.surfaces.webdash_styles": ["tests/notifications/test_webdash_page_split.py"],
 }
