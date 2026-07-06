@@ -1,6 +1,12 @@
 # 9to5 — never commit secrets or runtime data
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 venv/
+.venv/
+env/
 logs/
 vault/
 state/tasks/
@@ -42,17 +48,47 @@ state/terminal_nav.json
 state/terminal_mirror.json
 # Leftover ChatGPT Chromium profile from the pre-Gemini browser layer (runtime data; safe to delete)
 state/chatgpt_profile/
-# Scratch dumps
+# Python/tooling caches and local test output
 layer_dump.txt
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.mypy_cache/
 .pytest_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 .testbrain/
 test-run/
 test-run2/
 test-run3/
 .sc-ctx/
 CLAUDE.md.bak
+
+# Python packaging/build output
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Node/editor/OS local noise
+node_modules/
+.turbo/
+.next/
+.cache/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
 # stray dir created when run on non-Windows (config paths default to C:\supercritical);
 # the backslash is escaped so the literal directory name matches on Linux
 C:\\supercritical/
