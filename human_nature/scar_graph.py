@@ -9,12 +9,12 @@ query functions are pure. All algorithms are stdlib-only (heapq, iteration).
 EXPORTS:
   new_graph() -> dict
   add_node(g: dict, node_id: str, node_type: str, **attrs: Any) -> None
-  link(g: dict, src: str, dst: str, relation: str, weight: float = 1.0) -> None
-  recovery_path(g: dict, failure_node: str, recovery_relations=(...)) -> list[str]
-  toxic_patterns(g: dict, k: int = 5) -> list[str]
-  loops(g: dict) -> list[list[str]]
-  decay(g: dict, disconfirmed_ids, rate: float) -> None
-DEPENDS-ON: heapq (stdlib only)
+  link(g: dict, src: str, dst: str, relation: str, weight: float=1.0) -> None
+  recovery_path(g: dict, failure_node: str, recovery_relations: tuple[str, ...]=('recovered_by', 'resolved_by')) -> list[str]  -- Dijkstra shortest path (edge cost = 1/weight) from failure_node to the
+  toxic_patterns(g: dict, k: int=5) -> list[str]  -- Top-k FailureMotif node ids by PageRank (power iteration).
+  loops(g: dict) -> list[list[str]]  -- Strongly-connected components with >1 node (Tarjan SCC).
+  decay(g: dict, disconfirmed_ids: Iterable[str], rate: float) -> None  -- Multiply node and incident-edge weights of disconfirmed ids by (1-rate).
+DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: mutates the passed-in graph dict in place (add_node/link/decay)
 RUN/TEST: python -m pytest tests/human_nature/test_scar_graph.py
 """

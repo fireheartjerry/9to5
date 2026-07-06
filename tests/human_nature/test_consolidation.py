@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from human_nature.self_state import get_competence, new_self_state
-from human_nature.consolidation import run_cycle
+from human_nature.consolidation import run_cycle, propose_updates
 
 
 # ---------------------------------------------------------------------------
@@ -188,3 +188,87 @@ def test_return_keys_complete():
     ss = new_self_state()
     result = run_cycle(ss, [], [], chat=None)
     assert set(result.keys()) >= {"competence_updated", "counterfactual", "proposals", "practice"}
+
+
+# ---------------------------------------------------------------------------
+# propose_updates — pure, propose-not-apply psyche updates from run evidence
+# ---------------------------------------------------------------------------
+
+def test_propose_updates_empty_evidence_returns_empty():
+    assert propose_updates({}) == []
+
+
+def test_propose_updates_overconfidence_raises_caution():
+    proposals = propose_updates({"repeated_overconfidence": True})
+    assert len(proposals) == 1
+    p = proposals[0]
+    assert p["kind"] == "personality"
+    assert p["target"] == "caution"
+    assert p["status"] == "proposed"
+    assert p["value"] > 0  # raising caution, not lowering it
+    assert "rationale" in p and p["rationale"]
+
+
+def test_propose_updates_low_curiosity_satisfaction_raises_drive_setpoint():
+    proposals = propose_updates({"low_curiosity_satisfaction": True})
+    assert len(proposals) == 1
+    p = proposals[0]
+    assert p["kind"] == "drive_setpoint"
+    assert p["target"] == "curiosity"
+    assert p["status"] == "proposed"
+    assert p["value"] > 0
+
+
+def test_propose_updates_disconfirmed_scars_yields_one_per_scar():
+    proposals = propose_updates({"disconfirmed_scars": ["m1", "m2"]})
+    assert len(proposals) == 2
+    scar_kinds = [p["kind"] for p in proposals]
+    scar_targets = [p["target"] for p in proposals]
+    assert scar_kinds == ["scar_decay", "scar_decay"]
+    assert scar_targets == ["m1", "m2"]
+    for p in proposals:
+        assert p["status"] == "proposed"
+
+
+def test_propose_updates_empty_scars_list_yields_nothing():
+    assert propose_updates({"disconfirmed_scars": []}) == []
+
+
+def test_propose_updates_values_bounded():
+    proposals = propose_updates({
+        "repeated_overconfidence": True,
+        "low_curiosity_satisfaction": True,
+        "disconfirmed_scars": ["m1"],
+    })
+    for p in proposals:
+        assert -1.0 <= p["value"] <= 1.0
+
+
+def test_propose_updates_combines_all_signals():
+    evidence = {
+        "repeated_overconfidence": True,
+        "low_curiosity_satisfaction": True,
+        "disconfirmed_scars": ["m1", "m2"],
+    }
+    proposals = propose_updates(evidence)
+    assert len(proposals) == 4
+    assert all(p["status"] == "proposed" for p in proposals)
+
+
+def test_propose_updates_never_applies_anything():
+    """Pure function: calling it never mutates the evidence dict or any state."""
+    evidence = {"repeated_overconfidence": True, "disconfirmed_scars": ["m1"]}
+    snapshot = dict(evidence)
+    propose_updates(evidence)
+    assert evidence == snapshot
+
+
+def test_propose_updates_idempotent():
+    evidence = {
+        "repeated_overconfidence": True,
+        "low_curiosity_satisfaction": True,
+        "disconfirmed_scars": ["m1", "m2"],
+    }
+    first = propose_updates(evidence)
+    second = propose_updates(evidence)
+    assert first == second

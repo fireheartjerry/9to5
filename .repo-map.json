@@ -2956,6 +2956,7 @@
         "agents.trace.replay_cli",
         "agents.trace.replay_events",
         "human_nature.ab_harness",
+        "human_nature.authority",
         "human_nature.consolidation",
         "human_nature.continuity",
         "human_nature.emotions",
@@ -2963,6 +2964,7 @@
         "human_nature.integration",
         "human_nature.intuition",
         "human_nature.momentary",
+        "human_nature.operator_authority",
         "human_nature.opinions",
         "human_nature.psyche_store",
         "introspect.project_extract",
@@ -3104,7 +3106,6 @@
         "platform_core.orchestration.fork_policy",
         "platform_core.orchestration.generational",
         "platform_core.orchestration.github",
-        "platform_core.orchestration.human_nature_bridge",
         "platform_core.orchestration.innovation_report",
         "platform_core.orchestration.invention_gate",
         "platform_core.orchestration.judge_panel",
@@ -3374,9 +3375,42 @@
       "test": [
         "tests/human_nature/test_ab_harness.py"
       ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge"
-      ]
+      "callers": []
+    },
+    "human_nature.affect_manifold": {
+      "path": "human_nature/affect_manifold.py",
+      "purpose": "Affect manifold — the continuous 9-axis affect substrate (state-space model).",
+      "exports": [
+        {
+          "name": "new_manifold",
+          "kind": "function",
+          "signature": "() -> dict[str, float]",
+          "summary": "Return a fresh manifold with every axis at 0.0 (neutral).",
+          "lineno": 38
+        },
+        {
+          "name": "update",
+          "kind": "function",
+          "signature": "(a: dict, appraisal: dict, mood: dict, drive_pressure: dict, scars: dict, personality_baseline: dict, inertia: dict | None=None) -> dict",
+          "summary": "Advance the affect manifold one step (pure",
+          "lineno": 61
+        },
+        {
+          "name": "decay",
+          "kind": "function",
+          "signature": "(a: dict, rate: float, baseline: dict | None=None) -> dict",
+          "summary": "Pull every axis a fraction `rate` toward baseline (default 0.0)",
+          "lineno": 100
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_affect_manifold.py"
+      ],
+      "callers": []
     },
     "human_nature.appraisal": {
       "path": "human_nature/appraisal.py",
@@ -3427,6 +3461,50 @@
       ],
       "test": [
         "tests/human_nature/test_attention_schema.py"
+      ],
+      "callers": []
+    },
+    "human_nature.authority": {
+      "path": "human_nature/authority.py",
+      "purpose": "Earned control-authority ladder (5-tier extension of F6 autonomy).",
+      "exports": [
+        {
+          "name": "band",
+          "kind": "function",
+          "signature": "(conviction: float) -> str",
+          "summary": "Raw authority tier for *conviction* from the HN_THETA_* thresholds.",
+          "lineno": 49
+        },
+        {
+          "name": "earned_ceiling",
+          "kind": "function",
+          "signature": "(track: dict[str, Any]) -> str",
+          "summary": "5-tier earned authority ceiling from a ``track_record``-shaped dict.",
+          "lineno": 67
+        },
+        {
+          "name": "cap",
+          "kind": "function",
+          "signature": "(tier: str, ceil: str) -> str",
+          "summary": "Return ``min(tier, ceil)`` on the ``TIERS`` ordering.",
+          "lineno": 92
+        },
+        {
+          "name": "resolve",
+          "kind": "function",
+          "signature": "(conviction: float, track: dict[str, Any], domain_ceiling: str, operator_ceiling: str, safety_ceiling: str, verifier_ceiling: str) -> str",
+          "summary": "Effective control authority = ``min`` over every cap, then a hard clamp.",
+          "lineno": 102
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_authority.py"
       ],
       "callers": []
     },
@@ -3556,6 +3634,34 @@
         "human_nature.psyche_commands"
       ]
     },
+    "human_nature.conflict": {
+      "path": "human_nature/conflict.py",
+      "purpose": "Conflict — internal DISSONANCE scoring and resolution routing.",
+      "exports": [
+        {
+          "name": "dissonance",
+          "kind": "function",
+          "signature": "(opinion: float, intuition: float, instinct: float, self_model_calibration: float) -> float",
+          "summary": "",
+          "lineno": 27
+        },
+        {
+          "name": "route",
+          "kind": "function",
+          "signature": "(dissonance_level: float, budget: dict) -> str",
+          "summary": "",
+          "lineno": 39
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure functions)"
+      ],
+      "test": [
+        "tests/human_nature/test_conflict.py"
+      ],
+      "callers": []
+    },
     "human_nature.consolidation": {
       "path": "human_nature/consolidation.py",
       "purpose": "Consolidation cycle — the \"sleep\" phase between runs (propose, never apply).",
@@ -3565,7 +3671,14 @@
           "kind": "function",
           "signature": "(self_state: dict[str, Any], scored_judgments: list[dict[str, Any]], reflections: list[str], *, chat: Optional[Callable]=None) -> dict[str, Any]",
           "summary": "Run the consolidation cycle (the 'sleep' phase).",
-          "lineno": 155
+          "lineno": 161
+        },
+        {
+          "name": "propose_updates",
+          "kind": "function",
+          "signature": "(evidence: dict[str, Any]) -> list[dict[str, Any]]",
+          "summary": "From run evidence, produce PROPOSED (never applied) psyche updates.",
+          "lineno": 213
         }
       ],
       "depends_on": [
@@ -3613,9 +3726,7 @@
       "test": [
         "tests/human_nature/test_continuity.py"
       ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge"
-      ]
+      "callers": []
     },
     "human_nature.conviction": {
       "path": "human_nature/conviction.py",
@@ -3652,8 +3763,7 @@
       ],
       "callers": [
         "human_nature.intuition",
-        "human_nature.momentary",
-        "platform_core.orchestration.human_nature_bridge"
+        "human_nature.momentary"
       ]
     },
     "human_nature.drift": {
@@ -3681,6 +3791,48 @@
       ],
       "test": [
         "tests/human_nature/test_drift.py"
+      ],
+      "callers": []
+    },
+    "human_nature.drives": {
+      "path": "human_nature/drives.py",
+      "purpose": "Drives — the 8-drive homeostatic core of the human-nature layer.",
+      "exports": [
+        {
+          "name": "new_drives",
+          "kind": "function",
+          "signature": "() -> dict[str, dict[str, float]]",
+          "summary": "",
+          "lineno": 32
+        },
+        {
+          "name": "update",
+          "kind": "function",
+          "signature": "(d: dict[str, Any], outcome_features: dict[str, Any]) -> dict[str, Any]",
+          "summary": "Pure: returns a new drives dict shifted by outcome_features.",
+          "lineno": 50
+        },
+        {
+          "name": "pressure",
+          "kind": "function",
+          "signature": "(d: dict[str, Any]) -> dict[str, float]",
+          "summary": "",
+          "lineno": 87
+        },
+        {
+          "name": "derived",
+          "kind": "function",
+          "signature": "(d: dict[str, Any], standards: dict[str, Any], attribution: dict[str, Any], memory: dict[str, Any]) -> dict[str, float]",
+          "summary": "",
+          "lineno": 94
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_drives.py"
       ],
       "callers": []
     },
@@ -3719,9 +3871,7 @@
       "test": [
         "tests/human_nature/test_emotions.py"
       ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge"
-      ]
+      "callers": []
     },
     "human_nature.gating": {
       "path": "human_nature/gating.py",
@@ -3774,6 +3924,83 @@
       "callers": [
         "human_nature.integration"
       ]
+    },
+    "human_nature.instinct_signal": {
+      "path": "human_nature/instinct_signal.py",
+      "purpose": "InstinctSignal — structured output of the streaming instinct engine.",
+      "exports": [
+        {
+          "name": "InstinctSignal",
+          "kind": "class",
+          "signature": "",
+          "summary": "One streaming-instinct-engine match, with confidence/severity and a recommendation.",
+          "lineno": 33
+        },
+        {
+          "name": "from_dict",
+          "kind": "function",
+          "signature": "(d: dict) -> 'InstinctSignal'",
+          "summary": "Reconstruct an InstinctSignal from its to_dict() output.",
+          "lineno": 69
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_instinct_signal.py"
+      ],
+      "callers": []
+    },
+    "human_nature.instinct_stream": {
+      "path": "human_nature/instinct_stream.py",
+      "purpose": "Instinct stream matcher — cheap multi-pattern failure-motif detection.",
+      "exports": [
+        {
+          "name": "build_matcher",
+          "kind": "function",
+          "signature": "(motifs: list[tuple[str, list[str]]]) -> dict",
+          "summary": "Build an Aho-Corasick automaton over the event-type alphabet.",
+          "lineno": 26
+        },
+        {
+          "name": "scan",
+          "kind": "function",
+          "signature": "(matcher: dict, seq: list[str]) -> list[dict]",
+          "summary": "Run the automaton",
+          "lineno": 65
+        },
+        {
+          "name": "match_prefix",
+          "kind": "function",
+          "signature": "(seq: list[str], motif: list[str]) -> float",
+          "summary": "Fraction of `motif` matched as a prefix aligned at seq's tail, in [0, 1].",
+          "lineno": 87
+        },
+        {
+          "name": "scan_prefixes",
+          "kind": "function",
+          "signature": "(matcher_motifs: list[tuple[str, list[str]]], seq: list[str], threshold: float) -> list[dict]",
+          "summary": "Report motifs whose tail prefix-score(seq) is in [threshold, 1.0).",
+          "lineno": 104
+        },
+        {
+          "name": "near_duplicate",
+          "kind": "function",
+          "signature": "(seq_a: list[str], seq_b: list[str]) -> float",
+          "summary": "LCS ratio similarity in [0, 1]: 2*LCS/(len_a+len_b)",
+          "lineno": 116
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure functions)"
+      ],
+      "test": [
+        "tests/human_nature/test_instinct_stream.py"
+      ],
+      "callers": []
     },
     "human_nature.integration": {
       "path": "human_nature/integration.py",
@@ -3838,9 +4065,7 @@
         "tests/slow/test_discovery_integration.py",
         "tests/slow/test_integration_loop.py"
       ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge"
-      ]
+      "callers": []
     },
     "human_nature.intuition": {
       "path": "human_nature/intuition.py",
@@ -3914,6 +4139,78 @@
       ],
       "callers": []
     },
+    "human_nature.motif_mining": {
+      "path": "human_nature/motif_mining.py",
+      "purpose": "Offline miner for recurring failure motifs and anomaly scoring.",
+      "exports": [
+        {
+          "name": "mine_frequent",
+          "kind": "function",
+          "signature": "(sequences: list[list[str]], min_support: int, min_len: int=2, max_len: int=5) -> list[dict]",
+          "summary": "Mine frequent contiguous subsequences across sequences.",
+          "lineno": 29
+        },
+        {
+          "name": "anomaly_score",
+          "kind": "function",
+          "signature": "(seq: list[str], success_seqs: list[list[str]]) -> float",
+          "summary": "Return [0, 1]: 1 - max LCS-ratio of seq against any success sequence.",
+          "lineno": 68
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure functions)"
+      ],
+      "test": [
+        "tests/human_nature/test_motif_mining.py"
+      ],
+      "callers": []
+    },
+    "human_nature.operator_authority": {
+      "path": "human_nature/operator_authority.py",
+      "purpose": "Operator / safety / verifier-invariance authority caps feeding authority.resolve.",
+      "exports": [
+        {
+          "name": "domain_ceiling",
+          "kind": "function",
+          "signature": "(domain: str) -> str",
+          "summary": "Return the structural authority ceiling for an opinion *domain*.",
+          "lineno": 74
+        },
+        {
+          "name": "operator_ceiling",
+          "kind": "function",
+          "signature": "(faculty: str, domain: str, charter: dict | None=None) -> str",
+          "summary": "Return the constitutional ceiling the operator grants (faculty, domain).",
+          "lineno": 82
+        },
+        {
+          "name": "safety_ceiling",
+          "kind": "function",
+          "signature": "(domain: str) -> str",
+          "summary": "Return the hard safety ceiling for *domain*.",
+          "lineno": 104
+        },
+        {
+          "name": "verifier_invariance_ceiling",
+          "kind": "function",
+          "signature": "(action: str) -> str",
+          "summary": "Return the ceiling that keeps the verifier verdict untouchable.",
+          "lineno": 117
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_operator_authority.py"
+      ],
+      "callers": []
+    },
     "human_nature.opinions": {
       "path": "human_nature/opinions.py",
       "purpose": "Opinions faculty — tiered, domain-gated, conviction-gated opinion engine.",
@@ -3950,9 +4247,92 @@
       "test": [
         "tests/human_nature/test_opinions.py"
       ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge"
-      ]
+      "callers": []
+    },
+    "human_nature.personality": {
+      "path": "human_nature/personality.py",
+      "purpose": "PERSONALITY — versioned trait vector wrapping character_vector, and its setpoints.",
+      "exports": [
+        {
+          "name": "new_personality",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Return a fresh personality vector with all traits at the neutral midpoint.",
+          "lineno": 57
+        },
+        {
+          "name": "drive_setpoints",
+          "kind": "function",
+          "signature": "(p: dict[str, Any]) -> dict[str, float]",
+          "summary": "Derive the 8 drive setpoints from ``p``'s traits",
+          "lineno": 70
+        },
+        {
+          "name": "mood_setpoint",
+          "kind": "function",
+          "signature": "(p: dict[str, Any]) -> dict[str, float]",
+          "summary": "Derive a baseline {valence, arousal} mood setpoint from ``p``'s traits.",
+          "lineno": 91
+        },
+        {
+          "name": "risk_band",
+          "kind": "function",
+          "signature": "(p: dict[str, Any]) -> float",
+          "summary": "Derive a [0,1] risk-tolerance band: rises with (1-caution) and openness,",
+          "lineno": 104
+        },
+        {
+          "name": "propose_trait",
+          "kind": "function",
+          "signature": "(p: dict[str, Any], trait: str, value: float) -> dict[str, Any]",
+          "summary": "System action — return a proposal dict",
+          "lineno": 115
+        },
+        {
+          "name": "ratify",
+          "kind": "function",
+          "signature": "(p: dict[str, Any], proposal: dict[str, Any]) -> dict[str, Any]",
+          "summary": "Apply a proposal (clamped) + bump version",
+          "lineno": 130
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure",
+        "does not mutate inputs)"
+      ],
+      "test": [
+        "tests/human_nature/test_personality.py"
+      ],
+      "callers": []
+    },
+    "human_nature.prototypes": {
+      "path": "human_nature/prototypes.py",
+      "purpose": "Prototype projection — continuous affect manifold → discrete emotion labels.",
+      "exports": [
+        {
+          "name": "mixture",
+          "kind": "function",
+          "signature": "(a: dict) -> dict[str, float]",
+          "summary": "RBF activation per prototype, normalized so the values sum to 1.0.",
+          "lineno": 79
+        },
+        {
+          "name": "dominant",
+          "kind": "function",
+          "signature": "(a: dict, prev: str | None=None, theta_on: float=0.5, theta_off: float=0.35) -> str",
+          "summary": "Dominant emotion label for manifold ``a`` with flicker-resistant hysteresis.",
+          "lineno": 96
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_prototypes.py"
+      ],
+      "callers": []
     },
     "human_nature.psyche_commands": {
       "path": "human_nature/psyche_commands.py",
@@ -4123,6 +4503,69 @@
       ],
       "callers": []
     },
+    "human_nature.scar_graph": {
+      "path": "human_nature/scar_graph.py",
+      "purpose": "Scar-Tissue Failure Graph — pure directed weighted graph ops over a dict.",
+      "exports": [
+        {
+          "name": "new_graph",
+          "kind": "function",
+          "signature": "() -> dict",
+          "summary": "",
+          "lineno": 38
+        },
+        {
+          "name": "add_node",
+          "kind": "function",
+          "signature": "(g: dict, node_id: str, node_type: str, **attrs: Any) -> None",
+          "summary": "",
+          "lineno": 42
+        },
+        {
+          "name": "link",
+          "kind": "function",
+          "signature": "(g: dict, src: str, dst: str, relation: str, weight: float=1.0) -> None",
+          "summary": "",
+          "lineno": 46
+        },
+        {
+          "name": "recovery_path",
+          "kind": "function",
+          "signature": "(g: dict, failure_node: str, recovery_relations: tuple[str, ...]=('recovered_by', 'resolved_by')) -> list[str]",
+          "summary": "Dijkstra shortest path (edge cost = 1/weight) from failure_node to the",
+          "lineno": 63
+        },
+        {
+          "name": "toxic_patterns",
+          "kind": "function",
+          "signature": "(g: dict, k: int=5) -> list[str]",
+          "summary": "Top-k FailureMotif node ids by PageRank (power iteration).",
+          "lineno": 112
+        },
+        {
+          "name": "loops",
+          "kind": "function",
+          "signature": "(g: dict) -> list[list[str]]",
+          "summary": "Strongly-connected components with >1 node (Tarjan SCC).",
+          "lineno": 152
+        },
+        {
+          "name": "decay",
+          "kind": "function",
+          "signature": "(g: dict, disconfirmed_ids: Iterable[str], rate: float) -> None",
+          "summary": "Multiply node and incident-edge weights of disconfirmed ids by (1-rate).",
+          "lineno": 195
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "mutates the passed-in graph dict in place (add_node/link/decay)"
+      ],
+      "test": [
+        "tests/human_nature/test_scar_graph.py"
+      ],
+      "callers": []
+    },
     "human_nature.self_model": {
       "path": "human_nature/self_model.py",
       "purpose": "Self-model — metacognitive supervisor (F11 / F3 + honest phenomenology).",
@@ -4268,7 +4711,14 @@
           "kind": "class",
           "signature": "",
           "summary": "Global Workspace: specialists compete, winner is broadcast.",
-          "lineno": 20
+          "lineno": 21
+        },
+        {
+          "name": "salience",
+          "kind": "function",
+          "signature": "(item: dict, weights: dict | None=None) -> float",
+          "summary": "Weighted sum over the 10 named salience terms",
+          "lineno": 82
         }
       ],
       "depends_on": [],
@@ -6924,8 +7374,7 @@
         "tests/evolution/test_conviction_ledger.py"
       ],
       "callers": [
-        "human_nature.instinct",
-        "platform_core.orchestration.human_nature_bridge"
+        "human_nature.instinct"
       ]
     },
     "memory.exp_index": {
@@ -7027,8 +7476,7 @@
         "tests/execution/test_eval_runner.py"
       ],
       "callers": [
-        "memory.ledger.core",
-        "platform_core.orchestration.human_nature_bridge"
+        "memory.ledger.core"
       ]
     },
     "memory.experience_content": {
@@ -7198,8 +7646,7 @@
         "tests/evolution/test_solution_cache_provenance.py"
       ],
       "callers": [
-        "memory.ledger.core",
-        "platform_core.orchestration.human_nature_bridge"
+        "memory.ledger.core"
       ]
     },
     "memory.experience_subtasks": {
@@ -8297,7 +8744,6 @@
         "learning.evolution.sie_steps",
         "memory.novelty.index",
         "memory.novelty.store",
-        "platform_core.orchestration.human_nature_bridge",
         "platform_core.orchestration.plan_mixin"
       ]
     },
@@ -13048,7 +13494,6 @@
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.evidence_gate",
         "platform_core.orchestration.execute_mixin",
-        "platform_core.orchestration.human_nature_bridge",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.run_phase_outcome",
         "platform_core.runtime.resilience",
@@ -15532,101 +15977,6 @@
         "platform_core.orchestration.review_mixin"
       ]
     },
-    "platform_core.orchestration.human_nature_bridge": {
-      "path": "platform_core/orchestration/human_nature_bridge.py",
-      "purpose": "Human-Nature layer bridge -- wires human_nature.integration into run-loop boundary hooks.",
-      "exports": [
-        {
-          "name": "midRunInstinct",
-          "kind": "function",
-          "signature": "(state: Any, dashboard: Any=None) -> 'str | None'",
-          "summary": "Hook 4: once per run, fire the ledger-grounded instinct (\"gut\") check and SURFACE the",
-          "lineno": 41
-        },
-        {
-          "name": "opinionAdvisory",
-          "kind": "function",
-          "signature": "(state: Any, dashboard: Any=None) -> 'list[dict]'",
-          "summary": "Advisory-only opinion coupling on the plan gate",
-          "lineno": 104
-        },
-        {
-          "name": "emotionNudge",
-          "kind": "function",
-          "signature": "(behavior_intent: 'str | None') -> int",
-          "summary": "Pure helper: map a coupled behavior intent to a BOUNDED retry-budget delta in",
-          "lineno": 173
-        },
-        {
-          "name": "emotionAdvisory",
-          "kind": "function",
-          "signature": "(state: Any, dashboard: Any=None) -> dict",
-          "summary": "Wire the Human-Nature emotion faculty as an ADVISORY behavior coupling",
-          "lineno": 182
-        },
-        {
-          "name": "attemptSignals",
-          "kind": "function",
-          "signature": "(state: Any, subtask: dict) -> dict",
-          "summary": "Assemble REAL momentary confidence signals for ``preActRouting`` from data that",
-          "lineno": 243
-        },
-        {
-          "name": "preActRouting",
-          "kind": "function",
-          "signature": "(state: Any, domain: str, signals: 'dict | None'=None) -> str",
-          "summary": "Hook 2: best-effort thin wrapper over ``integration.route_pre_act``",
-          "lineno": 271
-        },
-        {
-          "name": "biasEffort",
-          "kind": "function",
-          "signature": "(current_effort: str, routing: str) -> str",
-          "summary": "Pure ADVISORY bias: when *routing* == \"fast\", drop *current_effort* ONE tier on",
-          "lineno": 286
-        },
-        {
-          "name": "runPreambleHooks",
-          "kind": "function",
-          "signature": "(state: Any) -> None",
-          "summary": "Hook 1: lazily initialise self_state at run start",
-          "lineno": 301
-        },
-        {
-          "name": "runTeardownHooks",
-          "kind": "function",
-          "signature": "(orch: Any, state: Any) -> None",
-          "summary": "Hook 6 (A/B recording) always fires",
-          "lineno": 351
-        }
-      ],
-      "depends_on": [
-        "config",
-        "human_nature.ab_harness",
-        "human_nature.continuity",
-        "human_nature.conviction",
-        "human_nature.emotions",
-        "human_nature.integration",
-        "human_nature.opinions",
-        "memory.conviction_ledger",
-        "memory.experience_adapters",
-        "memory.experience_solutions",
-        "memory.retrieval",
-        "platform_core.core.best_effort",
-        "platform_core.orchestration.time_utils"
-      ],
-      "side_effects": [
-        "mutates state.meta when enabled",
-        "writes continuity letters + ab_runs.db rows"
-      ],
-      "test": [
-        "tests/orchestration/test_human_nature_bridge.py"
-      ],
-      "callers": [
-        "platform_core.orchestration.execute_attempt_mixin",
-        "platform_core.orchestration.run_phase_mixin"
-      ]
-    },
     "platform_core.orchestration.innovation_report": {
       "path": "platform_core/orchestration/innovation_report.py",
       "purpose": "Fact-grounded innovation report: compile shipped/proposed inventions with evidence.",
@@ -16866,7 +17216,6 @@
         "tests/orchestration/test_time_utils.py"
       ],
       "callers": [
-        "platform_core.orchestration.human_nature_bridge",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.run_phase_outcome"
       ]

@@ -148,3 +148,60 @@ def test_three_way_tie_first_registered_wins():
     ws.register("c", lambda s: {"content": "C", "salience": 0.5})
     result = ws.tick({})
     assert result["winner"] == "a"
+
+
+# ---------------------------------------------------------------------------
+# salience() — 10-term weighted scoring function
+# ---------------------------------------------------------------------------
+
+def test_salience_single_term_matches_default_weight():
+    from human_nature.workspace import salience, SALIENCE_WEIGHTS
+
+    assert salience({"conviction": 1.0}) == SALIENCE_WEIGHTS["conviction"]
+
+
+def test_salience_higher_scar_tissue_yields_higher_score():
+    from human_nature.workspace import salience
+
+    low = salience({"scar_tissue": 0.1})
+    high = salience({"scar_tissue": 0.9})
+    assert high > low
+
+
+def test_salience_higher_expected_loss_yields_higher_score():
+    from human_nature.workspace import salience
+
+    low = salience({"expected_loss": 0.1})
+    high = salience({"expected_loss": 0.9})
+    assert high > low
+
+
+def test_salience_operator_priority_contributes_within_its_weight():
+    from human_nature.workspace import salience, SALIENCE_WEIGHTS
+
+    score = salience({"operator_priority": 1.0})
+    assert score == SALIENCE_WEIGHTS["operator_priority"]
+
+
+def test_salience_weights_override_changes_result():
+    from human_nature.workspace import salience
+
+    item = {"novelty": 1.0}
+    default_score = salience(item)
+    overridden_score = salience(item, weights={"novelty": 5.0})
+    assert overridden_score != default_score
+    assert overridden_score == 5.0
+
+
+def test_salience_missing_terms_default_to_zero():
+    from human_nature.workspace import salience
+
+    assert salience({}) == 0.0
+
+
+def test_salience_sums_across_multiple_terms():
+    from human_nature.workspace import salience, SALIENCE_WEIGHTS
+
+    item = {"conviction": 1.0, "risk": 1.0}
+    expected = SALIENCE_WEIGHTS["conviction"] + SALIENCE_WEIGHTS["risk"]
+    assert salience(item) == expected
