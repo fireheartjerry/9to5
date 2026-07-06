@@ -19,7 +19,3 @@ class TestJudgeElaboration(unittest.TestCase):
             raise RuntimeError("brain down")
         out = judge.judgeElaboration("spec", "goal", chat=boom)
         self.assertEqual(out.get("verdict"), "unreviewed")
-
-
-if __name__ == "__main__":
-    unittest.main()

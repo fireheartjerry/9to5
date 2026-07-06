@@ -12,7 +12,7 @@ EXPORTS:
   blockDestructive(data)  -- PreToolUse: block destructive Bash commands by exiting 2.
 DEPENDS-ON: platform_core.runtime.action_risk
 SIDE-EFFECTS: appends logs/guard_alerts.jsonl when a guard blocks
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/control/test_hooks.py tests/control/test_hooks_action_risk_parity.py
 """
 from __future__ import annotations
 

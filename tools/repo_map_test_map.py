@@ -151,4 +151,96 @@ MANUAL_TEST_MAP: dict[str, list[str]] = {
     "tools.dev_reports": ["tests/evolution/test_selfmod_runner.py", "tests/platform/test_dev_commands.py"],
     "tools.iteration_bench": ["tests/platform/test_dev_commands.py"],
     "tools.size_audit": ["tests/platform/test_dev_commands.py"],
+    # --- Implementation modules whose covering test does not match test_<name>.py and which are
+    # NOT a plain facade re-export (those are handled by _FACADE_IMPL below). Verified by reading
+    # each test to confirm it imports and drives the module. ---
+    "agents.hook_handlers.destructive": [
+        "tests/control/test_hooks.py",
+        "tests/control/test_hooks_action_risk_parity.py",
+    ],
+    "agents.planning.elaborator.path_verify": [
+        "tests/orchestration/test_elaborator.py",
+        "tests/orchestration/test_elaborator_e2e.py",
+        "tests/orchestration/test_elaborator_grounding.py",
+    ],
+    "agents.planning.elaborator.self_review": [
+        "tests/orchestration/test_elaborator.py",
+        "tests/orchestration/test_elaborator_e2e.py",
+        "tests/orchestration/test_elaborator_selfreview.py",
+    ],
+    "agents.trace.replay_cli": [
+        "tests/execution/test_trace_replay.py",
+        "tests/execution/test_trace_replay_json_utils.py",
+        "tests/execution/test_trace_replay_parallel_render.py",
+        "tests/execution/test_trace_replay_subagent.py",
+    ],
+    "agents.trace.replay_events": [
+        "tests/execution/test_trace_replay.py",
+        "tests/execution/test_trace_replay_json_utils.py",
+        "tests/execution/test_trace_replay_parallel_render.py",
+    ],
+    "agents.trace.replay_output": [
+        "tests/execution/test_trace_replay.py",
+        "tests/execution/test_trace_replay_json_utils.py",
+        "tests/execution/test_trace_replay_parallel_render.py",
+    ],
+    "agents.trace.replay_selftest": ["tests/execution/test_trace_replay.py"],
+    # sie_curriculum: learning.sie_curriculum is a re-export facade of learning.evolution.sie_curriculum;
+    # both are driven through learning.evolution.sie.run_maintenance() in these tests.
+    "learning.evolution.sie_curriculum": [
+        "tests/evolution/test_curriculum.py",
+        "tests/evolution/test_sie.py",
+    ],
+    "learning.sie_curriculum": [
+        "tests/evolution/test_curriculum.py",
+        "tests/evolution/test_sie.py",
+    ],
+    # memory.experience_ddl is a re-export facade of memory.ledger.ddl (pure SCHEMA/MIGRATIONS data);
+    # both are applied during ledger schema init in these tests.
+    "memory.experience_ddl": [
+        "tests/evolution/test_experience_ledger.py",
+        "tests/evolution/test_experience_schema.py",
+    ],
+    "memory.ledger.ddl": [
+        "tests/evolution/test_experience_ledger.py",
+        "tests/evolution/test_experience_schema.py",
+    ],
+    "memory.novelty_store": [
+        "tests/evolution/test_novelty_index.py",
+        "tests/orchestration/test_inventor_e2e.py",
+    ],
+    "memory.ledger.adapters": [
+        "tests/evolution/test_curriculum.py",
+        "tests/evolution/test_finetune.py",
+        "tests/evolution/test_nextwave_batch1.py",
+        "tests/execution/test_eval_runner.py",
+    ],
+    "memory.ledger.solutions": ["tests/evolution/test_solution_cache_provenance.py"],
+    "memory.ledger.subtasks": ["tests/evolution/test_insight.py"],
 }
+
+# Facade -> implementation. During the modularity splits the original flat module became a thin
+# re-export facade (``from pkg.sub import impl as _impl``) and the real code moved into a
+# sub-package. The facade keeps its own mapping above; the implementation module needs the SAME
+# covering tests, because every test that imports the facade executes the re-exported impl. Keys
+# are listed literally (not renamed) so both the facade and the impl module resolve, and so a grep
+# for either dotted path finds it.
+_FACADE_IMPL: dict[str, str] = {
+    "agents.workflow_resolver": "agents.execution.workflow_resolver",
+    "agents.replanner": "agents.planning.replanner",
+    "learning.adapter_promotion": "learning.evolution.adapter_promotion",
+    "learning.confidence": "learning.evolution.confidence",
+    "learning.distill": "learning.model.distill",
+    "learning.human_feedback": "learning.feedback.human_feedback",
+    "learning.meta_opt": "learning.evolution.meta_opt",
+    "learning.postmortem": "learning.feedback.postmortem",
+    "learning.release": "learning.evolution.release",
+    "learning.selfplay": "learning.evolution.selfplay",
+    "learning.toolsmith": "learning.evolution.toolsmith",
+    "learning.sie_steps": "learning.evolution.sie_steps",
+    "notifications.webdash_markup": "notifications.surfaces.webdash_markup",
+    "notifications.webdash_script": "notifications.surfaces.webdash_script",
+    "notifications.webdash_styles": "notifications.surfaces.webdash_styles",
+}
+for _facade, _impl in _FACADE_IMPL.items():
+    MANUAL_TEST_MAP.setdefault(_impl, list(MANUAL_TEST_MAP[_facade]))

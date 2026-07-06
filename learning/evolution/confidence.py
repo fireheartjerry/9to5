@@ -12,7 +12,7 @@ EXPORTS:
   prior_success(title: str, *, min_support: int=3, db_path: Optional[Path]=None) -> Optional[float]  -- PRE-run confidence: this task family's historical first-pass rate (or None when
 DEPENDS-ON: config, learning.lessons, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_nextwave_batch1.py
 """
 from __future__ import annotations
 

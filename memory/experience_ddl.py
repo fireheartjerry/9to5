@@ -5,7 +5,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: memory.ledger
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_experience_ledger.py tests/evolution/test_experience_schema.py
 """
 
 import sys as _sys

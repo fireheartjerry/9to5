@@ -11,7 +11,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: config, learning.eval_harness, learning.eval_runner, learning.insight, learning.knowledge_graph, learning.lessons, learning.policy, learning.postmortem, learning.solution_cache, memory.experience, memory.retrieval
 SIDE-EFFECTS: writes failure-mode + lesson rows to the experience ledger
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_sie.py
 """
 from __future__ import annotations
 
