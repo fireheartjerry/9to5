@@ -4,8 +4,9 @@
 EXPORTS:
   midRunInstinct(state: Any, dashboard: Any=None) -> 'str | None'  -- Hook 4: once per run, fire the ledger-grounded instinct ("gut") check and SURFACE it
   opinionAdvisory(state: Any, dashboard: Any=None) -> 'list[dict]'  -- Advisory-only opinion coupling on the plan gate
-DEPENDS-ON: config, human_nature.conviction, human_nature.integration, human_nature.opinions, memory.conviction_ledger, memory.experience_adapters, memory.experience_solutions, platform_core.core.best_effort
-SIDE-EFFECTS: mutates state.meta["hn_opinions"] when enabled
+  opinionVote(state: Any, dashboard: Any=None) -> 'list[dict]'  -- Earned-authority VOTE coupling on the plan gate (flag-only, never removes)
+DEPENDS-ON: config, human_nature.authority, human_nature.conviction, human_nature.integration, human_nature.opinions, human_nature.operator_authority, memory.conviction_ledger, memory.experience_adapters, memory.experience_solutions, platform_core.core.best_effort
+SIDE-EFFECTS: mutates state.meta["hn_opinions"] / state.meta["hn_votes"] when enabled
 RUN/TEST: python -m pytest tests/orchestration/test_human_nature_bridge.py
 """
 from __future__ import annotations
@@ -115,3 +116,43 @@ def opinionAdvisory(state: Any, dashboard: Any = None) -> "list[dict]":
         LOG.debug("opinionAdvisory failed (ignored)", exc_info=True)
         return []
     return surfaced
+
+
+def opinionVote(state: Any, dashboard: Any = None) -> "list[dict]":
+    """Earned-authority VOTE coupling on the plan gate. For each planned subtask, resolve
+    the psyche's earned authority tier for its domain via the shared 5-cap resolver
+    (``authority_gate.resolveTier``); when the tier reaches "vote" or higher (vote/hold/
+    veto), cast a weighted advisory VOTE -- append {"domain","tier","weight","flag":True}
+    to ``state.meta["hn_votes"]`` and surface a dashboard receipt. It only FLAGS/down-ranks
+    a subtask; it NEVER removes, skips, or reorders one, and NEVER alters control flow.
+    Best-effort + gated: [] (no-op) unless BOTH HUMAN_NATURE_ENABLED and HN_PLAN_AUTHORITY
+    are True. Never raises. Returns the list of cast votes (empty when disabled, nothing
+    reached "vote", or an error occurred)."""
+    if not (config.HUMAN_NATURE_ENABLED and config.HN_PLAN_AUTHORITY):
+        return []
+    votes: list[dict] = []
+    try:
+        from memory.conviction_ledger import track_record
+
+        from .authority_gate import resolveTier
+
+        for subtask in _subtasks(state):
+            domain = _subtaskDomain(state, subtask)
+            conviction = _convictionFor(state, domain)
+            track = track_record(_OPINION_JUDGMENT_TYPE, str(domain)) or {}
+            tier = resolveTier("opinion", domain, conviction, track, action="advise")
+            if tier not in ("vote", "hold", "veto"):
+                continue
+            weight = conviction
+            votes.append({"domain": domain, "tier": tier, "weight": weight, "flag": True})
+        if votes:
+            _meta(state).setdefault("hn_votes", []).extend(votes)
+            LOG.info("human-nature opinion vote: %s", votes)
+            if dashboard is not None:
+                with best_effort("human_nature.vote_surface", log=LOG):
+                    for v in votes:
+                        dashboard.event(f"vote -- {v['tier']} on {v['domain']} (weight {v['weight']:.2f})")
+    except Exception:  # noqa: BLE001
+        LOG.debug("opinionVote failed (ignored)", exc_info=True)
+        return []
+    return votes

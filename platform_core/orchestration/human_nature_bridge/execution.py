@@ -5,6 +5,7 @@ EXPORTS:
   attemptSignals(state: Any, subtask: dict) -> dict  -- Assemble REAL momentary confidence signals for preActRouting
   preActRouting(state: Any, domain: str, signals: 'dict | None'=None) -> str  -- Hook 2: thin wrapper over integration.route_pre_act
   biasEffort(current_effort: str, routing: str) -> str  -- Pure ADVISORY bias: drop effort one tier on "fast"
+  biasEffortTiered(current_effort: str, routing: str, tier: str) -> str  -- Soft-tier bidirectional effort bias, gated on HN_EXEC_AUTHORITY
 DEPENDS-ON: config, human_nature.integration, memory.retrieval
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/orchestration/test_human_nature_bridge.py
@@ -22,6 +23,10 @@ from ._common import LOG, _meta
 # "medium" is a display alias of "default" and folds onto it before laddering.
 _EFFORT_LADDER: tuple[str, ...] = ("low", "default", "high", "xhigh", "ultracode")
 _EFFORT_ALIASES: dict[str, str] = {"medium": "default"}
+# Earned-authority tiers that clear the "soft" floor required to move effort UP as well
+# as down (see authority_gate.resolveTier / docs/superpowers/specs/2026-07-06-human-
+# nature-psyche-v2-design.md §4.1). "cosmetic" (and anything unrecognised) is surface-only.
+_AUTHORIZED_TIERS: frozenset[str] = frozenset({"soft", "vote", "hold", "veto"})
 
 
 def _retrievalSignals(goal: str, title: str) -> dict:
@@ -103,3 +108,27 @@ def biasEffort(current_effort: str, routing: str) -> str:
     except ValueError:
         return current_effort  # unknown tier: safe passthrough
     return _EFFORT_LADDER[max(0, idx - 1)]
+
+
+def biasEffortTiered(current_effort: str, routing: str, tier: str) -> str:
+    """Soft-tier BIDIRECTIONAL effort bias, gated on ``config.HN_EXEC_AUTHORITY``. When the
+    earned authority *tier* is at least "soft" (soft/vote/hold/veto), this may move
+    *current_effort* ONE tier on ``_EFFORT_LADDER`` in EITHER direction: ``routing ==
+    "fast"`` lowers by one (identical to ``biasEffort``), ``routing == "deliberate"``
+    RAISES by one. Clamped at the ladder ends. Below "soft" tier ("cosmetic" or unknown),
+    or when ``HN_EXEC_AUTHORITY`` is off, returns *current_effort* UNCHANGED. Off-ladder
+    effort passes through untouched. Pure, no side effects, never raises."""
+    if not getattr(config, "HN_EXEC_AUTHORITY", False):
+        return current_effort
+    if str(tier).lower() not in _AUTHORIZED_TIERS:
+        return current_effort
+    key = _EFFORT_ALIASES.get(str(current_effort).lower(), str(current_effort).lower())
+    try:
+        idx = _EFFORT_LADDER.index(key)
+    except ValueError:
+        return current_effort  # unknown tier: safe passthrough
+    if routing == "fast":
+        return _EFFORT_LADDER[max(0, idx - 1)]
+    if routing == "deliberate":
+        return _EFFORT_LADDER[min(len(_EFFORT_LADDER) - 1, idx + 1)]
+    return current_effort
