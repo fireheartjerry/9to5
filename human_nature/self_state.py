@@ -10,6 +10,7 @@ EXPORTS:
   get_competence(ss: dict[str, Any], domain: str) -> dict[str, Any]
   observe_competence(ss: dict[str, Any], domain: str, success: bool) -> None
   set_affect(ss: dict[str, Any], valence: float, arousal: float, control: float) -> None
+  migrate(ss: dict[str, Any]) -> dict[str, Any]
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: mutates the passed-in dict in place
 RUN/TEST: python -m pytest tests/human_nature/test_self_state.py
@@ -18,7 +19,12 @@ from __future__ import annotations
 
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+_AFFECT_MANIFOLD_AXES = (
+    "valence", "arousal", "dominance", "certainty", "novelty",
+    "agency", "tension", "social_exposure", "cognitive_load",
+)
 
 
 def new_self_state() -> dict[str, Any]:
@@ -30,7 +36,21 @@ def new_self_state() -> dict[str, Any]:
         "convictions": [],     # crystallized stable stances
         "open_stances": [],    # live opinions this run
         "dissonance": 0.0,
+        "affect_manifold": {axis: 0.0 for axis in _AFFECT_MANIFOLD_AXES},
+        "drives": {},           # filled by a later phase
+        "personality_ref": None,
+        "mood": {"valence": 0.0, "arousal": 0.0},
+        "scars_ref": None,
     }
+
+
+def migrate(ss: dict[str, Any]) -> dict[str, Any]:
+    if ss.get("schema", 1) < 2:
+        defaults = new_self_state()
+        for key in ("affect_manifold", "drives", "personality_ref", "mood", "scars_ref"):
+            ss.setdefault(key, defaults[key])
+        ss["schema"] = 2
+    return ss
 
 
 def get_competence(ss: dict[str, Any], domain: str) -> dict[str, Any]:
