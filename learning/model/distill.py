@@ -15,7 +15,7 @@ EXPORTS:
   build(*, db_path: Optional[Path]=None, out_path: Optional[Path]=None, suite: Optional[list[dict[str, Any]]]=None) -> dict[str, Any]  -- Build, clean, and (optionally) write the gold SFT dataset
 DEPENDS-ON: config, learning.dataset, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_finetune.py
 """
 from __future__ import annotations
 

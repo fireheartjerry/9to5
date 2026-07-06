@@ -5,7 +5,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: learning.evolution
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_sie.py
 """
 
 import sys as _sys

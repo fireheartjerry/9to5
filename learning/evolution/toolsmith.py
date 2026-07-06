@@ -12,7 +12,7 @@ EXPORTS:
   prune_candidates(*, min_support: int=3, max_rate: float=0.3, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Skills with enough support but a poor pass rate
 DEPENDS-ON: config, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_nextwave_batch2.py
 """
 from __future__ import annotations
 

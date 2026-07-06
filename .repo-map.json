@@ -872,7 +872,12 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/orchestration/test_orchestrator_with_registry.py",
+        "tests/workflows/test_code_review.py",
+        "tests/workflows/test_staging_validation.py",
+        "tests/workflows/test_workflow_registry.py"
+      ],
       "callers": []
     },
     "agents.executor": {
@@ -1083,7 +1088,10 @@
       "side_effects": [
         "appends logs/guard_alerts.jsonl when a guard blocks"
       ],
-      "test": [],
+      "test": [
+        "tests/control/test_hooks.py",
+        "tests/control/test_hooks_action_risk_parity.py"
+      ],
       "callers": []
     },
     "agents.hook_handlers.obsidian": {
@@ -1652,7 +1660,9 @@
       "side_effects": [
         "none (read-only filesystem)"
       ],
-      "test": [],
+      "test": [
+        "tests/orchestration/test_elaborator_grounding.py"
+      ],
       "callers": []
     },
     "agents.planning.elaborator.precedent": {
@@ -1760,7 +1770,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/orchestration/test_elaborator_selfreview.py"
+      ],
       "callers": []
     },
     "agents.planning.elaborator.uncertainty": {
@@ -1871,7 +1883,10 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_living_knowledge.py",
+        "tests/orchestration/test_module_globals.py"
+      ],
       "callers": []
     },
     "agents.planning.second_brain": {
@@ -2462,7 +2477,12 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/execution/test_trace_replay.py",
+        "tests/execution/test_trace_replay_json_utils.py",
+        "tests/execution/test_trace_replay_parallel_render.py",
+        "tests/execution/test_trace_replay_subagent.py"
+      ],
       "callers": []
     },
     "agents.trace.replay_events": {
@@ -2476,7 +2496,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/execution/test_trace_replay.py"
+      ],
       "callers": []
     },
     "agents.trace.replay_output": {
@@ -2497,7 +2519,9 @@
       "side_effects": [
         "stdout writes"
       ],
-      "test": [],
+      "test": [
+        "tests/execution/test_trace_replay.py"
+      ],
       "callers": []
     },
     "agents.trace.replay_selftest": {
@@ -2510,7 +2534,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/execution/test_trace_replay.py"
+      ],
       "callers": []
     },
     "agents.trace_replay": {
@@ -4733,7 +4759,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/execution/test_eval_runner.py"
+      ],
       "callers": []
     },
     "learning.evolution.bootstrap": {
@@ -4902,7 +4930,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_nextwave_batch1.py"
+      ],
       "callers": []
     },
     "learning.evolution.curator": {
@@ -5078,7 +5108,10 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_nextwave_batch2.py",
+        "tests/slow/test_full_autonomy.py"
+      ],
       "callers": []
     },
     "learning.evolution.policy": {
@@ -5264,7 +5297,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_curriculum.py"
+      ],
       "callers": []
     },
     "learning.evolution.safety": {
@@ -5350,7 +5385,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/slow/test_full_autonomy.py"
+      ],
       "callers": []
     },
     "learning.evolution.sie": {
@@ -5409,7 +5446,9 @@
       "side_effects": [
         "may spawn a detached orchestrator run via notifications.work_launcher.spawn"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_sie.py"
+      ],
       "callers": []
     },
     "learning.evolution.sie_steps": {
@@ -5432,7 +5471,9 @@
       "side_effects": [
         "writes failure-mode + lesson rows to the experience ledger"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_sie.py"
+      ],
       "callers": []
     },
     "learning.evolution.solution_cache": {
@@ -5500,7 +5541,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_nextwave_batch2.py"
+      ],
       "callers": []
     },
     "learning.evolution.validate": {
@@ -5624,7 +5667,10 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_nextwave_batch1.py",
+        "tests/notifications/test_feedback_view.py"
+      ],
       "callers": []
     },
     "learning.feedback.insight": {
@@ -5739,7 +5785,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_nextwave_batch2.py"
+      ],
       "callers": []
     },
     "learning.feedback.preferences": {
@@ -6085,7 +6133,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_finetune.py"
+      ],
       "callers": []
     },
     "learning.model.eval_harness": {
@@ -6524,7 +6574,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_sie.py"
+      ],
       "callers": [
         "learning.evolution.sie"
       ]
@@ -6913,7 +6965,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_experience_schema.py"
+      ],
       "callers": [
         "memory.ledger.schema"
       ]
@@ -7170,7 +7224,12 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_curriculum.py",
+        "tests/evolution/test_finetune.py",
+        "tests/evolution/test_nextwave_batch1.py",
+        "tests/execution/test_eval_runner.py"
+      ],
       "callers": []
     },
     "memory.ledger.content": {
@@ -7250,7 +7309,9 @@
       "side_effects": [
         "none"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_experience_schema.py"
+      ],
       "callers": []
     },
     "memory.ledger.evolution": {
@@ -7821,7 +7882,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_solution_cache_provenance.py"
+      ],
       "callers": []
     },
     "memory.ledger.subtasks": {
@@ -7880,7 +7943,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_insight.py"
+      ],
       "callers": []
     },
     "memory.memory_sanitizer": {
@@ -8084,7 +8149,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/evolution/test_novelty_index.py"
+      ],
       "callers": [
         "memory.novelty.index",
         "platform_core.orchestration.qd_archive"
@@ -11831,7 +11898,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/notifications/test_webdash_page_split.py"
+      ],
       "callers": []
     },
     "notifications.surfaces.webdash_page": {
@@ -11860,7 +11929,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/notifications/test_webdash_page_split.py"
+      ],
       "callers": []
     },
     "notifications.surfaces.webdash_styles": {
@@ -11871,7 +11942,9 @@
       "side_effects": [
         "unannotated"
       ],
-      "test": [],
+      "test": [
+        "tests/notifications/test_webdash_page_split.py"
+      ],
       "callers": []
     },
     "notifications.terminal_ipc": {

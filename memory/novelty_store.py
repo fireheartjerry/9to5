@@ -5,7 +5,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: memory.novelty
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_novelty_index.py
 """
 
 import sys as _sys

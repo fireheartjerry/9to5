@@ -8,7 +8,7 @@ EXPORTS:
   setColor(enabled: bool) -> None  -- Set the module-level color flag (call from main() before replay).
 DEPENDS-ON: agents.trace_replay_events
 SIDE-EFFECTS: stdout writes
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/execution/test_trace_replay.py
 """
 from __future__ import annotations
 

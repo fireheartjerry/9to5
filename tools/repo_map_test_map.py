@@ -34,7 +34,68 @@ MANUAL_TEST_MAP: dict[str, list[str]] = {
         "tests/workflows/test_workflow_registry.py",
     ],
     "agents.verification": ["tests/execution/test_verifier_runner.py"],
+    # --- restructure impls behind agents/* compat facades ---------------------
+    # agents/workflow_resolver.py is now a `_sys.modules[__name__] = _impl` alias for
+    # agents/execution/workflow_resolver.py, so the facade's registry tests import
+    # (from agents.workflow_resolver import resolveWorkflowDefinition) run the impl.
+    "agents.execution.workflow_resolver": [
+        "tests/orchestration/test_orchestrator_with_registry.py",
+        "tests/workflows/test_code_review.py",
+        "tests/workflows/test_staging_validation.py",
+        "tests/workflows/test_workflow_registry.py",
+    ],
+    # agents/hooks_destructive.py aliases agents/hook_handlers/destructive.py; the parity
+    # suite does `from agents.hooks_destructive import blockDestructive, DESTRUCTIVE_PATTERNS`.
+    "agents.hook_handlers.destructive": [
+        "tests/control/test_hooks.py",
+        "tests/control/test_hooks_action_risk_parity.py",
+    ],
+    # elaborator split-outs, imported directly by their dedicated tests.
+    "agents.planning.elaborator.path_verify": ["tests/orchestration/test_elaborator_grounding.py"],
+    "agents.planning.elaborator.self_review": ["tests/orchestration/test_elaborator_selfreview.py"],
+    # agents/replanner.py aliases agents/planning/replanner.py; both mapped tests
+    # `import agents.replanner` and call replanner.replan(...).
+    "agents.planning.replanner": [
+        "tests/evolution/test_living_knowledge.py",
+        "tests/orchestration/test_module_globals.py",
+    ],
+    # agents/trace_replay_cli.py aliases agents/trace/replay_cli.py; the trace tests load
+    # trace_replay_cli.py via importlib, and replay_cli imports replay_events/replay_output at
+    # module load, then _selfTest() (test_self_test_passes) imports+runs replay_selftest.
+    "agents.trace.replay_cli": [
+        "tests/execution/test_trace_replay.py",
+        "tests/execution/test_trace_replay_json_utils.py",
+        "tests/execution/test_trace_replay_parallel_render.py",
+        "tests/execution/test_trace_replay_subagent.py",
+    ],
+    "agents.trace.replay_events": ["tests/execution/test_trace_replay.py"],
+    "agents.trace.replay_output": ["tests/execution/test_trace_replay.py"],
+    "agents.trace.replay_selftest": ["tests/execution/test_trace_replay.py"],
     "learning.adapter_promotion": ["tests/execution/test_eval_runner.py"],
+    # --- restructure impls behind learning/* compat facades -------------------
+    # learning/<name>.py aliases learning/{evolution,feedback,model}/<name>.py; the mapped
+    # tests `from learning import <name>` and call its public functions.
+    "learning.evolution.adapter_promotion": ["tests/execution/test_eval_runner.py"],
+    "learning.evolution.confidence": ["tests/evolution/test_nextwave_batch1.py"],
+    "learning.evolution.meta_opt": [
+        "tests/evolution/test_nextwave_batch2.py",
+        "tests/slow/test_full_autonomy.py",
+    ],
+    "learning.evolution.release": ["tests/evolution/test_curriculum.py"],
+    "learning.evolution.selfplay": ["tests/slow/test_full_autonomy.py"],
+    # sie.py imports sie_steps at load and _curriculum_and_report() (exercised by
+    # test_sie) defers-imports sie_curriculum.
+    "learning.evolution.sie_curriculum": ["tests/evolution/test_sie.py"],
+    "learning.evolution.sie_steps": ["tests/evolution/test_sie.py"],
+    "learning.evolution.toolsmith": ["tests/evolution/test_nextwave_batch2.py"],
+    "learning.feedback.human_feedback": [
+        "tests/evolution/test_nextwave_batch1.py",
+        "tests/notifications/test_feedback_view.py",
+    ],
+    "learning.feedback.postmortem": ["tests/evolution/test_nextwave_batch2.py"],
+    "learning.model.distill": ["tests/evolution/test_finetune.py"],
+    # learning/sie_curriculum.py compat facade -> learning/evolution/sie_curriculum.py.
+    "learning.sie_curriculum": ["tests/evolution/test_sie.py"],
     "learning.confidence": ["tests/evolution/test_nextwave_batch1.py"],
     "learning.distill": ["tests/evolution/test_finetune.py"],
     "learning.human_feedback": [
@@ -62,6 +123,26 @@ MANUAL_TEST_MAP: dict[str, list[str]] = {
     ],
     "memory.experience_runs": ["tests/evolution/test_experience_ledger.py"],
     "memory.experience_solutions": ["tests/evolution/test_solution_cache_provenance.py"],
+    # --- restructure impls behind memory/* compat facades ---------------------
+    # memory/experience_ddl.py aliases memory/ledger/ddl.py; experience_schema (-> ledger.schema)
+    # imports experience_ddl and builds tables from _ddl.SCHEMA/_ddl.MIGRATIONS, which the
+    # schema/migration test verifies directly.
+    "memory.experience_ddl": ["tests/evolution/test_experience_schema.py"],
+    "memory.ledger.ddl": ["tests/evolution/test_experience_schema.py"],
+    # memory/experience_{subtasks,adapters,solutions}.py alias memory/ledger/*; the mapped
+    # tests reach the impl through experience.record_subtask(...) etc. (re-exported by
+    # ledger.core from the experience_* facades).
+    "memory.ledger.subtasks": ["tests/evolution/test_insight.py"],
+    "memory.ledger.adapters": [
+        "tests/evolution/test_nextwave_batch1.py",
+        "tests/evolution/test_finetune.py",
+        "tests/execution/test_eval_runner.py",
+        "tests/evolution/test_curriculum.py",
+    ],
+    "memory.ledger.solutions": ["tests/evolution/test_solution_cache_provenance.py"],
+    # memory/novelty_store.py aliases memory/novelty/store.py; the test does
+    # `from memory.novelty_store import MemoryNoveltyStore`.
+    "memory.novelty_store": ["tests/evolution/test_novelty_index.py"],
     "learning.sie_steps": ["tests/evolution/test_sie.py"],
     "notifications.discord_bot": [
         "tests/notifications/test_discord_rest.py",
@@ -79,6 +160,12 @@ MANUAL_TEST_MAP: dict[str, list[str]] = {
     "notifications.webdash_markup": ["tests/notifications/test_webdash_page_split.py"],
     "notifications.webdash_script": ["tests/notifications/test_webdash_page_split.py"],
     "notifications.webdash_styles": ["tests/notifications/test_webdash_page_split.py"],
+    # notifications/webdash_{markup,script,styles}.py alias notifications/surfaces/webdash_*;
+    # the page-split test imports webdash_page, which at load does
+    # PAGE = MARKUP.format(styles=STYLES, script=_SCRIPT) using all three surfaces modules.
+    "notifications.surfaces.webdash_markup": ["tests/notifications/test_webdash_page_split.py"],
+    "notifications.surfaces.webdash_script": ["tests/notifications/test_webdash_page_split.py"],
+    "notifications.surfaces.webdash_styles": ["tests/notifications/test_webdash_page_split.py"],
     "platform_core.app_config.paths": [
         "tests/platform/test_config_bootstrap.py",
         "tests/orchestration/test_society_coordinator.py",

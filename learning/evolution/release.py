@@ -15,7 +15,7 @@ EXPORTS:
   write_report(path: Optional[Path]=None, *, db_path: Optional[Path]=None) -> Optional[Path]  -- Write the attribution report (best-effort)
 DEPENDS-ON: config, learning.compute, learning.prompts, memory.experience
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/evolution/test_curriculum.py
 """
 from __future__ import annotations
 

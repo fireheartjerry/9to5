@@ -9,7 +9,7 @@ EXPORTS:
   splitVerified(allowed_paths: list[str], work_dir: str) -> dict  -- Return {"allowed_paths": [existing], "unverified_paths": [missing]} preserving order.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: none (read-only filesystem)
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_elaborator_grounding.py
 """
 from __future__ import annotations
 

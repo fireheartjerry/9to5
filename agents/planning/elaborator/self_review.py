@@ -10,7 +10,7 @@ EXPORTS:
   reviewAssumptions(spec_body: str, goal_raw: str, chat=None) -> str  -- Return newline-joined 'Inferred: ..
 DEPENDS-ON: config, knowledge, llm_io
 SIDE-EFFECTS: unannotated
-RUN/TEST: (no mapped test)
+RUN/TEST: python -m pytest tests/orchestration/test_elaborator_selfreview.py
 """
 from __future__ import annotations
 
