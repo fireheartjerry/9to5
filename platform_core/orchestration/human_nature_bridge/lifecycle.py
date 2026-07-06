@@ -4,9 +4,9 @@
 EXPORTS:
   runPreambleHooks(state: Any) -> None  -- Hook 1: lazily initialise self_state at run start
   runTeardownHooks(orch: Any, state: Any) -> None  -- Hook 6 (A/B recording) always fires
-DEPENDS-ON: config, human_nature.ab_harness, human_nature.continuity, human_nature.integration, memory.experience_solutions, platform_core.core.best_effort, platform_core.orchestration.time_utils
+DEPENDS-ON: config, human_nature.ab_harness, human_nature.continuity, human_nature.integration, human_nature.psyche_runtime, human_nature.psyche_store, memory.experience_solutions, platform_core.core.best_effort, platform_core.orchestration.time_utils
 SIDE-EFFECTS: writes continuity letters + ab_runs.db rows; mutates state.meta when enabled
-RUN/TEST: python -m pytest tests/orchestration/test_human_nature_bridge.py
+RUN/TEST: python -m pytest tests/platform/test_lifecycle.py
 """
 from __future__ import annotations
 
@@ -18,6 +18,38 @@ from platform_core.core.best_effort import best_effort
 from ._common import LOG, _meta
 
 
+def _projectKey() -> str:
+    """Stable per-project key for the cross-run psyche store."""
+    root = getattr(config, "PROJECT_ROOT", None)
+    try:
+        import os
+
+        return os.path.basename(str(root).rstrip("/\\")) or "project"
+    except Exception:  # noqa: BLE001
+        return "project"
+
+
+def _loadPersistedPsyche(state: Any) -> None:
+    """Load persisted mood/drives/personality/scars into meta['self_state'] (best-effort)."""
+    if not config.HN_MOOD_PERSIST:
+        return
+    from human_nature import psyche_store, psyche_runtime
+
+    store = psyche_store.open_store()
+    try:
+        saved = psyche_store.load_psyche(store, _projectKey())
+    finally:
+        psyche_store.close_store(store)
+    meta = _meta(state)
+    ss = meta.get("self_state") or {}
+    for key in ("mood", "drives", "personality_ref", "affect_manifold", "scars_ref"):
+        if saved.get(key) is not None:
+            ss[key] = saved[key]
+    psyche_runtime.ensure_psyche(ss)
+    meta["self_state"] = ss
+    meta.setdefault("hn_event_log", [])
+
+
 def runPreambleHooks(state: Any) -> None:
     """Hook 1: lazily initialise self_state at run start. No-op when disabled."""
     if not config.HUMAN_NATURE_ENABLED:
@@ -26,6 +58,8 @@ def runPreambleHooks(state: Any) -> None:
         from human_nature import integration
 
         integration.ensure_self_state(state)
+    with best_effort("human_nature.persist_load", log=LOG):
+        _loadPersistedPsyche(state)
 
 
 def _scoredJudgments(state: Any) -> list:
@@ -102,3 +136,30 @@ def runTeardownHooks(orch: Any, state: Any) -> None:
                 "affect": self_state.get("affect"),
             },
         )
+    with best_effort("human_nature.persist_save", log=LOG):
+        _integrateAndPersist(state)
+
+
+def _integrateAndPersist(state: Any) -> None:
+    """Teardown: fold run outcomes into mood/drives, then checkpoint the psyche (best-effort)."""
+    if not config.HN_MOOD_PERSIST:
+        return
+    from human_nature import psyche_runtime, psyche_store
+
+    meta = _meta(state)
+    ss = meta.get("self_state") or {}
+    metrics = _abMetrics(state)
+    test_pass = float(metrics.get("test_pass", 0.0))
+    run_valence = max(-1.0, min(1.0, test_pass * 2.0 - 1.0))
+    features = {"verified_success": test_pass >= 0.5, "progress": test_pass}
+    psyche_runtime.integrate_outcome(ss, run_valence, 0.0, features)
+    meta["self_state"] = ss
+    store = psyche_store.open_store()
+    try:
+        psyche_store.save_psyche(
+            store,
+            _projectKey(),
+            {k: ss.get(k) for k in ("mood", "drives", "personality_ref", "affect_manifold", "scars_ref")},
+        )
+    finally:
+        psyche_store.close_store(store)

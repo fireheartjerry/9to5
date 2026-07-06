@@ -2213,7 +2213,8 @@
         "reads git status"
       ],
       "test": [
-        "tests/execution/test_verification_diff.py"
+        "tests/execution/test_verification_diff.py",
+        "tests/orchestration/test_bridge_verification.py"
       ],
       "callers": []
     },
@@ -2964,8 +2965,10 @@
         "human_nature.integration",
         "human_nature.intuition",
         "human_nature.momentary",
+        "human_nature.mood",
         "human_nature.operator_authority",
         "human_nature.opinions",
+        "human_nature.psyche_runtime",
         "human_nature.psyche_store",
         "introspect.project_extract",
         "learning.evolution.adapter_promotion",
@@ -3106,6 +3109,15 @@
         "platform_core.orchestration.fork_policy",
         "platform_core.orchestration.generational",
         "platform_core.orchestration.github",
+        "platform_core.orchestration.human_nature_bridge._common",
+        "platform_core.orchestration.human_nature_bridge.affect",
+        "platform_core.orchestration.human_nature_bridge.execution",
+        "platform_core.orchestration.human_nature_bridge.instinct",
+        "platform_core.orchestration.human_nature_bridge.inventor",
+        "platform_core.orchestration.human_nature_bridge.lifecycle",
+        "platform_core.orchestration.human_nature_bridge.planning",
+        "platform_core.orchestration.human_nature_bridge.society",
+        "platform_core.orchestration.human_nature_bridge.verification",
         "platform_core.orchestration.innovation_report",
         "platform_core.orchestration.invention_gate",
         "platform_core.orchestration.judge_panel",
@@ -3375,7 +3387,9 @@
       "test": [
         "tests/human_nature/test_ab_harness.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge.lifecycle"
+      ]
     },
     "human_nature.affect_manifold": {
       "path": "human_nature/affect_manifold.py",
@@ -3410,7 +3424,9 @@
       "test": [
         "tests/human_nature/test_affect_manifold.py"
       ],
-      "callers": []
+      "callers": [
+        "human_nature.psyche_runtime"
+      ]
     },
     "human_nature.appraisal": {
       "path": "human_nature/appraisal.py",
@@ -3506,7 +3522,9 @@
       "test": [
         "tests/human_nature/test_authority.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge.authority_gate"
+      ]
     },
     "human_nature.autonomy": {
       "path": "human_nature/autonomy.py",
@@ -3660,7 +3678,9 @@
       "test": [
         "tests/human_nature/test_conflict.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge.society"
+      ]
     },
     "human_nature.consolidation": {
       "path": "human_nature/consolidation.py",
@@ -3726,7 +3746,9 @@
       "test": [
         "tests/human_nature/test_continuity.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge.lifecycle"
+      ]
     },
     "human_nature.conviction": {
       "path": "human_nature/conviction.py",
@@ -3763,7 +3785,8 @@
       ],
       "callers": [
         "human_nature.intuition",
-        "human_nature.momentary"
+        "human_nature.momentary",
+        "platform_core.orchestration.human_nature_bridge.planning"
       ]
     },
     "human_nature.drift": {
@@ -3834,7 +3857,10 @@
       "test": [
         "tests/human_nature/test_drives.py"
       ],
-      "callers": []
+      "callers": [
+        "human_nature.psyche_runtime",
+        "platform_core.orchestration.human_nature_bridge.inventor"
+      ]
     },
     "human_nature.emotions": {
       "path": "human_nature/emotions.py",
@@ -3871,7 +3897,9 @@
       "test": [
         "tests/human_nature/test_emotions.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge.affect"
+      ]
     },
     "human_nature.gating": {
       "path": "human_nature/gating.py",
@@ -3951,7 +3979,9 @@
       "test": [
         "tests/human_nature/test_instinct_signal.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge.instinct"
+      ]
     },
     "human_nature.instinct_stream": {
       "path": "human_nature/instinct_stream.py",
@@ -4000,7 +4030,9 @@
       "test": [
         "tests/human_nature/test_instinct_stream.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge.instinct"
+      ]
     },
     "human_nature.integration": {
       "path": "human_nature/integration.py",
@@ -4065,7 +4097,11 @@
         "tests/slow/test_discovery_integration.py",
         "tests/slow/test_integration_loop.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge.execution",
+        "platform_core.orchestration.human_nature_bridge.lifecycle",
+        "platform_core.orchestration.human_nature_bridge.planning"
+      ]
     },
     "human_nature.intuition": {
       "path": "human_nature/intuition.py",
@@ -4139,6 +4175,52 @@
       ],
       "callers": []
     },
+    "human_nature.mood": {
+      "path": "human_nature/mood.py",
+      "purpose": "Mood — the slow, persistent affective homeostat (long-horizon, cross-run).",
+      "exports": [
+        {
+          "name": "new_mood",
+          "kind": "function",
+          "signature": "() -> dict[str, float]",
+          "summary": "",
+          "lineno": 31
+        },
+        {
+          "name": "blend_outcome",
+          "kind": "function",
+          "signature": "(mood: dict[str, Any], run_valence: float, run_arousal: float, weight: float=0.3) -> dict[str, float]",
+          "summary": "Exponential moving average of `mood` toward this run's outcome signal.",
+          "lineno": 35
+        },
+        {
+          "name": "decay",
+          "kind": "function",
+          "signature": "(mood: dict[str, Any], setpoint: dict[str, Any], rate: float) -> dict[str, float]",
+          "summary": "Move `mood` toward `setpoint` by `rate` (0=no change, 1=snap to setpoint).",
+          "lineno": 53
+        },
+        {
+          "name": "congruent_bias",
+          "kind": "function",
+          "signature": "(valence: float, mood: dict[str, Any], strength: float=0.5) -> float",
+          "summary": "Apply mood-congruent bias to an ambiguous input valence.",
+          "lineno": 72
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_mood.py"
+      ],
+      "callers": [
+        "human_nature.psyche_runtime"
+      ]
+    },
     "human_nature.motif_mining": {
       "path": "human_nature/motif_mining.py",
       "purpose": "Offline miner for recurring failure motifs and anomaly scoring.",
@@ -4209,7 +4291,9 @@
       "test": [
         "tests/human_nature/test_operator_authority.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge.authority_gate"
+      ]
     },
     "human_nature.opinions": {
       "path": "human_nature/opinions.py",
@@ -4247,7 +4331,9 @@
       "test": [
         "tests/human_nature/test_opinions.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge.planning"
+      ]
     },
     "human_nature.personality": {
       "path": "human_nature/personality.py",
@@ -4304,7 +4390,10 @@
       "test": [
         "tests/human_nature/test_personality.py"
       ],
-      "callers": []
+      "callers": [
+        "human_nature.psyche_runtime",
+        "platform_core.orchestration.human_nature_bridge.inventor"
+      ]
     },
     "human_nature.prototypes": {
       "path": "human_nature/prototypes.py",
@@ -4332,7 +4421,9 @@
       "test": [
         "tests/human_nature/test_prototypes.py"
       ],
-      "callers": []
+      "callers": [
+        "human_nature.psyche_runtime"
+      ]
     },
     "human_nature.psyche_commands": {
       "path": "human_nature/psyche_commands.py",
@@ -4387,6 +4478,50 @@
       ],
       "callers": []
     },
+    "human_nature.psyche_runtime": {
+      "path": "human_nature/psyche_runtime.py",
+      "purpose": "Psyche runtime — the per-tick glue that makes the interior LIVE.",
+      "exports": [
+        {
+          "name": "ensure_psyche",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], personality: dict | None=None) -> dict[str, Any]",
+          "summary": "Populate any missing psyche sub-state on `ss`",
+          "lineno": 35
+        },
+        {
+          "name": "tick",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], appraisal: dict[str, Any], scars: dict | None=None, prev_label: str | None=None) -> dict[str, Any]",
+          "summary": "Advance the interior one workspace tick",
+          "lineno": 48
+        },
+        {
+          "name": "integrate_outcome",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], run_valence: float, run_arousal: float, outcome_features: dict[str, Any]) -> dict[str, Any]",
+          "summary": "Teardown: fold this run's outcome into mood and drives",
+          "lineno": 70
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.affect_manifold",
+        "human_nature.drives",
+        "human_nature.mood",
+        "human_nature.personality",
+        "human_nature.prototypes"
+      ],
+      "side_effects": [
+        "mutates the passed-in self_state dict in place"
+      ],
+      "test": [
+        "tests/human_nature/test_psyche_runtime.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge.lifecycle"
+      ]
+    },
     "human_nature.psyche_store": {
       "path": "human_nature/psyche_store.py",
       "purpose": "Psyche Store — durable cross-run persistence for mood/drives/personality/scars.",
@@ -4436,7 +4571,9 @@
       "test": [
         "tests/human_nature/test_psyche_store.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge.lifecycle"
+      ]
     },
     "human_nature.psyche_surface": {
       "path": "human_nature/psyche_surface.py",
@@ -4501,7 +4638,10 @@
       "test": [
         "tests/human_nature/test_run_events.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.execute_attempt_mixin",
+        "platform_core.orchestration.human_nature_bridge.instinct"
+      ]
     },
     "human_nature.scar_graph": {
       "path": "human_nature/scar_graph.py",
@@ -7374,7 +7514,8 @@
         "tests/evolution/test_conviction_ledger.py"
       ],
       "callers": [
-        "human_nature.instinct"
+        "human_nature.instinct",
+        "platform_core.orchestration.human_nature_bridge.planning"
       ]
     },
     "memory.exp_index": {
@@ -7476,7 +7617,8 @@
         "tests/execution/test_eval_runner.py"
       ],
       "callers": [
-        "memory.ledger.core"
+        "memory.ledger.core",
+        "platform_core.orchestration.human_nature_bridge.planning"
       ]
     },
     "memory.experience_content": {
@@ -7646,7 +7788,9 @@
         "tests/evolution/test_solution_cache_provenance.py"
       ],
       "callers": [
-        "memory.ledger.core"
+        "memory.ledger.core",
+        "platform_core.orchestration.human_nature_bridge.lifecycle",
+        "platform_core.orchestration.human_nature_bridge.planning"
       ]
     },
     "memory.experience_subtasks": {
@@ -8744,6 +8888,7 @@
         "learning.evolution.sie_steps",
         "memory.novelty.index",
         "memory.novelty.store",
+        "platform_core.orchestration.human_nature_bridge.execution",
         "platform_core.orchestration.plan_mixin"
       ]
     },
@@ -13494,6 +13639,13 @@
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.evidence_gate",
         "platform_core.orchestration.execute_mixin",
+        "platform_core.orchestration.human_nature_bridge.affect",
+        "platform_core.orchestration.human_nature_bridge.instinct",
+        "platform_core.orchestration.human_nature_bridge.inventor",
+        "platform_core.orchestration.human_nature_bridge.lifecycle",
+        "platform_core.orchestration.human_nature_bridge.planning",
+        "platform_core.orchestration.human_nature_bridge.society",
+        "platform_core.orchestration.human_nature_bridge.verification",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.run_phase_outcome",
         "platform_core.runtime.resilience",
@@ -15711,6 +15863,7 @@
       ],
       "depends_on": [
         "config",
+        "human_nature.run_events",
         "notifications.dashboard",
         "notifications.event_bus",
         "notifications.subprocess_feed",
@@ -15718,6 +15871,7 @@
         "platform_core.execution.wiring",
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.human_nature_bridge",
+        "platform_core.orchestration.human_nature_bridge.authority_gate",
         "platform_core.orchestration.step_resume",
         "platform_core.orchestration.step_sink",
         "platform_core.runtime",
@@ -15976,6 +16130,344 @@
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.review_mixin"
       ]
+    },
+    "platform_core.orchestration.human_nature_bridge": {
+      "path": "platform_core/orchestration/human_nature_bridge/__init__.py",
+      "purpose": "Human-Nature layer bridge -- wires human_nature.integration into run-loop boundary hooks.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "mutates state.meta when enabled",
+        "writes continuity letters + ab_runs.db rows"
+      ],
+      "test": [],
+      "callers": [
+        "platform_core.orchestration.execute_attempt_mixin",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
+    },
+    "platform_core.orchestration.human_nature_bridge._common": {
+      "path": "platform_core/orchestration/human_nature_bridge/_common.py",
+      "purpose": "Shared internals for the human_nature_bridge package (logger + state accessor).",
+      "exports": [],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "platform_core.orchestration.human_nature_bridge.affect": {
+      "path": "platform_core/orchestration/human_nature_bridge/affect.py",
+      "purpose": "Emotion faculty: affect -> emotion label -> advisory behavior coupling.",
+      "exports": [
+        {
+          "name": "emotionNudge",
+          "kind": "function",
+          "signature": "(behavior_intent: 'str | None') -> int",
+          "summary": "Pure helper: map a coupled behavior intent to a BOUNDED retry-budget delta in",
+          "lineno": 53
+        },
+        {
+          "name": "emotionAdvisory",
+          "kind": "function",
+          "signature": "(state: Any, dashboard: Any=None) -> dict",
+          "summary": "Wire the Human-Nature emotion faculty as an ADVISORY behavior coupling",
+          "lineno": 62
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.emotions",
+        "platform_core.core.best_effort"
+      ],
+      "side_effects": [
+        "mutates state.meta[\"hn_behavior\"] when enabled"
+      ],
+      "test": [
+        "tests/human_nature/test_affect_manifold.py",
+        "tests/platform/test_ci_affected.py"
+      ],
+      "callers": []
+    },
+    "platform_core.orchestration.human_nature_bridge.authority_gate": {
+      "path": "platform_core/orchestration/human_nature_bridge/authority_gate.py",
+      "purpose": "Shared earned-authority resolver for later human_nature couplings.",
+      "exports": [
+        {
+          "name": "resolveTier",
+          "kind": "function",
+          "signature": "(faculty: str, domain: str, conviction: float, track: dict, action: str='advise', charter: dict | None=None) -> str",
+          "summary": "Resolve the effective earned-authority tier via the 5-cap min",
+          "lineno": 19
+        }
+      ],
+      "depends_on": [
+        "human_nature.authority",
+        "human_nature.operator_authority"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/orchestration/test_authority_gate.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.execute_attempt_mixin"
+      ]
+    },
+    "platform_core.orchestration.human_nature_bridge.execution": {
+      "path": "platform_core/orchestration/human_nature_bridge/execution.py",
+      "purpose": "Per-attempt couplings: retrieval-grounded signals + intuition effort bias.",
+      "exports": [
+        {
+          "name": "attemptSignals",
+          "kind": "function",
+          "signature": "(state: Any, subtask: dict) -> dict",
+          "summary": "Assemble REAL momentary confidence signals for ``preActRouting`` from data that",
+          "lineno": 55
+        },
+        {
+          "name": "preActRouting",
+          "kind": "function",
+          "signature": "(state: Any, domain: str, signals: 'dict | None'=None) -> str",
+          "summary": "Hook 2: best-effort thin wrapper over ``integration.route_pre_act``",
+          "lineno": 83
+        },
+        {
+          "name": "biasEffort",
+          "kind": "function",
+          "signature": "(current_effort: str, routing: str) -> str",
+          "summary": "Pure ADVISORY bias: when *routing* == \"fast\", drop *current_effort* ONE tier on",
+          "lineno": 98
+        },
+        {
+          "name": "biasEffortTiered",
+          "kind": "function",
+          "signature": "(current_effort: str, routing: str, tier: str) -> str",
+          "summary": "Soft-tier BIDIRECTIONAL effort bias, gated on ``config.HN_EXEC_AUTHORITY``",
+          "lineno": 113
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.integration",
+        "memory.retrieval"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/execution/test_execution_docker.py",
+        "tests/execution/test_execution_environment.py",
+        "tests/execution/test_execution_local.py",
+        "tests/execution/test_execution_remote.py",
+        "tests/execution/test_execution_router.py",
+        "tests/execution/test_execution_security.py",
+        "tests/execution/test_execution_worktree.py",
+        "tests/orchestration/test_bridge_execution_tiered.py"
+      ],
+      "callers": []
+    },
+    "platform_core.orchestration.human_nature_bridge.instinct": {
+      "path": "platform_core/orchestration/human_nature_bridge/instinct.py",
+      "purpose": "Instinct hook: scan the run's event log for dangerous motifs and surface a signal.",
+      "exports": [
+        {
+          "name": "instinctCheck",
+          "kind": "function",
+          "signature": "(state: Any, dashboard: Any=None) -> 'dict | None'",
+          "summary": "Hook: scan the run's event log for dangerous motif PREFIXES/exact matches",
+          "lineno": 77
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.instinct_signal",
+        "human_nature.instinct_stream",
+        "human_nature.run_events",
+        "platform_core.core.best_effort"
+      ],
+      "side_effects": [
+        "mutates state.meta[\"hn_instinct\"] when enabled and a motif matches"
+      ],
+      "test": [
+        "tests/notifications/test_instinct.py"
+      ],
+      "callers": []
+    },
+    "platform_core.orchestration.human_nature_bridge.inventor": {
+      "path": "platform_core/orchestration/human_nature_bridge/inventor.py",
+      "purpose": "Inventor engine coupling -- psyche-derived exploration/QD-budget advisory knobs.",
+      "exports": [
+        {
+          "name": "inventorCouple",
+          "kind": "function",
+          "signature": "(state: Any, dashboard: Any=None) -> 'dict | None'",
+          "summary": "When the inventor engine is active (config.INVENTOR_MODE_ENABLED and",
+          "lineno": 73
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.drives",
+        "human_nature.personality",
+        "platform_core.core.best_effort"
+      ],
+      "side_effects": [
+        "mutates state.meta[\"hn_inventor\"] when active"
+      ],
+      "test": [
+        "tests/orchestration/test_bridge_inventor.py",
+        "tests/orchestration/test_inventor_e2e.py",
+        "tests/platform/test_inventor_flags_config.py"
+      ],
+      "callers": []
+    },
+    "platform_core.orchestration.human_nature_bridge.lifecycle": {
+      "path": "platform_core/orchestration/human_nature_bridge/lifecycle.py",
+      "purpose": "Run-boundary lifecycle hooks: preamble self-state init + teardown appraisal/AB.",
+      "exports": [
+        {
+          "name": "runPreambleHooks",
+          "kind": "function",
+          "signature": "(state: Any) -> None",
+          "summary": "Hook 1: lazily initialise self_state at run start",
+          "lineno": 53
+        },
+        {
+          "name": "runTeardownHooks",
+          "kind": "function",
+          "signature": "(orch: Any, state: Any) -> None",
+          "summary": "Hook 6 (A/B recording) always fires",
+          "lineno": 101
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.ab_harness",
+        "human_nature.continuity",
+        "human_nature.integration",
+        "human_nature.psyche_runtime",
+        "human_nature.psyche_store",
+        "memory.experience_solutions",
+        "platform_core.core.best_effort",
+        "platform_core.orchestration.time_utils"
+      ],
+      "side_effects": [
+        "writes continuity letters + ab_runs.db rows",
+        "mutates state.meta when enabled"
+      ],
+      "test": [
+        "tests/platform/test_lifecycle.py"
+      ],
+      "callers": []
+    },
+    "platform_core.orchestration.human_nature_bridge.planning": {
+      "path": "platform_core/orchestration/human_nature_bridge/planning.py",
+      "purpose": "Plan-gate couplings: mid-run instinct + advisory-only opinion surfacing.",
+      "exports": [
+        {
+          "name": "midRunInstinct",
+          "kind": "function",
+          "signature": "(state: Any, dashboard: Any=None) -> 'str | None'",
+          "summary": "Hook 4: once per run, fire the ledger-grounded instinct (\"gut\") check and SURFACE the",
+          "lineno": 22
+        },
+        {
+          "name": "opinionAdvisory",
+          "kind": "function",
+          "signature": "(state: Any, dashboard: Any=None) -> 'list[dict]'",
+          "summary": "Advisory-only opinion coupling on the plan gate",
+          "lineno": 85
+        },
+        {
+          "name": "opinionVote",
+          "kind": "function",
+          "signature": "(state: Any, dashboard: Any=None) -> 'list[dict]'",
+          "summary": "Earned-authority VOTE coupling on the plan gate",
+          "lineno": 121
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.conviction",
+        "human_nature.integration",
+        "human_nature.opinions",
+        "memory.conviction_ledger",
+        "memory.experience_adapters",
+        "memory.experience_solutions",
+        "platform_core.core.best_effort"
+      ],
+      "side_effects": [
+        "mutates state.meta[\"hn_opinions\"] / state.meta[\"hn_votes\"] when enabled"
+      ],
+      "test": [
+        "tests/orchestration/test_bridge_planning_vote.py"
+      ],
+      "callers": []
+    },
+    "platform_core.orchestration.human_nature_bridge.society": {
+      "path": "platform_core/orchestration/human_nature_bridge/society.py",
+      "purpose": "Society coupling: internal faculty dissonance triggers a heterogeneous debate.",
+      "exports": [
+        {
+          "name": "maybeDebate",
+          "kind": "function",
+          "signature": "(state: Any, coordinator: Any=None, dashboard: Any=None) -> 'dict | None'",
+          "summary": "If the psyche's faculties disagree strongly (high dissonance) and debate budget",
+          "lineno": 78
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.conflict",
+        "platform_core.core.best_effort"
+      ],
+      "side_effects": [
+        "mutates state.meta[\"hn_debate\"] when enabled",
+        "may invoke coordinator.resolveContested"
+      ],
+      "test": [
+        "tests/orchestration/test_bridge_society.py",
+        "tests/orchestration/test_society_batch.py",
+        "tests/orchestration/test_society_blackboard.py",
+        "tests/orchestration/test_society_config.py",
+        "tests/orchestration/test_society_contracts.py",
+        "tests/orchestration/test_society_coordinator.py",
+        "tests/orchestration/test_society_debate.py",
+        "tests/orchestration/test_society_off_invariance.py",
+        "tests/orchestration/test_society_roles.py",
+        "tests/orchestration/test_society_worker.py"
+      ],
+      "callers": []
+    },
+    "platform_core.orchestration.human_nature_bridge.verification": {
+      "path": "platform_core/orchestration/human_nature_bridge/verification.py",
+      "purpose": "Verify-deepen coupling: ADDITIVE-ONLY request surface for extra verification.",
+      "exports": [
+        {
+          "name": "requestDeepen",
+          "kind": "function",
+          "signature": "(state: Any, reason: str='', conviction: float=0.0, dashboard: Any=None) -> int",
+          "summary": "ADDITIVE-ONLY: if the psyche's earned authority for an additive",
+          "lineno": 32
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.core.best_effort"
+      ],
+      "side_effects": [
+        "mutates state.meta[\"hn_verify_deepen\"] when enabled and authority clears \"hold\""
+      ],
+      "test": [
+        "tests/execution/test_verification_diff.py",
+        "tests/orchestration/test_bridge_verification.py"
+      ],
+      "callers": []
     },
     "platform_core.orchestration.innovation_report": {
       "path": "platform_core/orchestration/innovation_report.py",
@@ -17216,6 +17708,7 @@
         "tests/orchestration/test_time_utils.py"
       ],
       "callers": [
+        "platform_core.orchestration.human_nature_bridge.lifecycle",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.run_phase_outcome"
       ]
