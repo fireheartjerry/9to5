@@ -11,6 +11,7 @@ from agents.planning.pre_execution_council import (
     CouncilMessage,
     CouncilQualityWarning,
     CouncilRunner,
+    RunCompositionSummary,
     evaluate_message_quality,
     run_pre_execution_council,
 )
@@ -426,6 +427,11 @@ def test_prompt_hierarchy_context_version_and_compact_protocol_are_included(tmp_
     prompt = result.messages[0].prompt_excerpt
     assert "Prompt version: pre_execution_council_v0" in prompt
     assert "You are participating in a pre-execution council" in prompt
+    assert "Run composition:" in prompt
+    assert "Pre-execution means no implementation or orchestration mutation. It does not mean providers are mocked." in prompt
+    assert "Run type: mock-only council." in prompt
+    assert "Live requested seats: (none)." in prompt
+    assert "live providers disabled in v0" not in prompt
     assert "You are the GPT seat" in prompt
     assert "Context pack summary:" in prompt
     assert "Current compact council state:" in prompt
@@ -533,6 +539,73 @@ def test_logging_writes_redacted_json_and_markdown_artifacts(tmp_path):
     metadata = json.loads((log_dir / "metadata.json").read_text(encoding="utf-8"))
     assert metadata["prompt_version"] == "pre_execution_council_v0"
     assert metadata["mock_only"] is True
+    assert metadata["run_composition_summary"]["run_type"] == "mock-only council"
+    assert metadata["run_composition_summary"]["live_requested_seats"] == []
+
+
+def test_run_composition_summary_formats_mixed_runs_without_mock_only_run_label():
+    summary = RunCompositionSummary(
+        execution_mode="pre-execution",
+        conversation_policy="selector",
+        run_type="mixed/live-capable council",
+        enabled_seats=["GPT", "Gemini", "Claude"],
+        live_requested_seats=["GPT"],
+        pending_live_seats=[],
+        actual_live_seats=["GPT"],
+        fallback_seats=["Gemini"],
+        mock_only_seats=["Claude"],
+        quota_limited_seats=[],
+        rate_limited_seats=["Gemini"],
+        unavailable_seats=[],
+        provider_health_summary=["Fully live seats: GPT.", "Rate limit observed: Gemini."],
+    )
+    block = summary.to_prompt_block()
+    assert "pre-execution council" in block
+    assert "It does not mean providers are mocked." in block
+    assert "Run type: mixed/live-capable council." in block
+    assert "Run type: mock-only council." not in block
+    assert "Live requested seats: GPT." in block
+    assert "Live requested but not yet called seats: (none)." in block
+    assert "Actual live seats so far: GPT." in block
+    assert "Mocked/control seats in this run: Claude." in block
+
+
+def test_live_requested_provider_forbidden_actions_are_filtered_from_prompt_context(tmp_path):
+    seats = [
+        _RecordingSeat("GPT"),
+        _RecordingSeat("Gemini"),
+        _RecordingSeat("Claude"),
+        _RecordingSeat("Local LLM"),
+        _RecordingSeat("Groq"),
+        _RecordingSeat("Cloudflare"),
+    ]
+    cfg = _enabled_config(
+        tmp_path,
+        live_groq_enabled=True,
+        live_cloudflare_enabled=True,
+        messages_per_seat=1,
+        total_target_messages=6,
+    )
+    result = CouncilRunner(cfg, seats=seats).run(
+        CouncilContextPack.for_task(
+            "filter live requested provider constraints",
+            work_dir=Path.cwd(),
+            forbidden_actions=[
+                "Do not call ChatGPT browser driver.",
+                "Do not call Gemini.",
+                "Do not call Claude Code.",
+                "Do not call local LLM/Ollama.",
+                "Do not call Groq.",
+                "Do not call Cloudflare Workers AI.",
+                "Do not wire into orchestration.",
+            ],
+        )
+    )
+    prompt = result.messages[0].prompt_excerpt
+    assert "Do not call Groq." not in prompt
+    assert "Do not call Cloudflare Workers AI." not in prompt
+    assert "Do not wire into orchestration." in prompt
+    assert "explicitly requested live council seats: Cloudflare, Groq" in prompt
 
 
 def test_redactor_removes_secrets_and_sensitive_runtime_details():
@@ -1320,6 +1393,39 @@ def test_provider_summary_reports_gpt_continuity_and_claude_mock(tmp_path):
     assert claude["last_provider_state"] == "mock_only"
     assert claude["requested_live"] is False
     assert any("Claude: mock-only" in line for line in result.brief.provider_participation_summary)
+
+
+def test_run_composition_prompt_and_metadata_update_after_live_turn(tmp_path):
+    seats = [
+        _ContinuityOkGptSeat(),
+        _RecordingSeat("Gemini"),
+        _RecordingSeat("Claude"),
+        _RecordingSeat("Local LLM"),
+    ]
+    cfg = _enabled_config(tmp_path, live_gpt_enabled=True, messages_per_seat=1, total_target_messages=4)
+    result = CouncilRunner(cfg, seats=seats).run(CouncilContextPack.for_task("composition live update", work_dir=Path.cwd()))
+    first_prompt = result.messages[0].prompt_excerpt
+    second_prompt = result.messages[1].prompt_excerpt
+    assert "Run type: mixed/live-capable council." in first_prompt
+    assert "Live requested seats: GPT." in first_prompt
+    assert "Live requested but not yet called seats: GPT." in first_prompt
+    assert "Actual live seats so far: (none)." in first_prompt
+    assert "Unavailable seats: (none)." in first_prompt
+    assert "pending, not unavailable" in first_prompt
+    assert "If your own seat is live-requested" in first_prompt
+    assert "expected planning calls, not production execution" in first_prompt
+    assert "Actual live seats so far: GPT." in second_prompt
+    assert "Live requested but not yet called seats: (none)." in second_prompt
+    assert "Mocked/control seats in this run: Gemini, Claude, Local LLM." in second_prompt
+
+    metadata = json.loads((Path(result.log_dir) / "metadata.json").read_text(encoding="utf-8"))
+    summary = metadata["run_composition_summary"]
+    assert metadata["mock_only"] is False
+    assert summary["run_type"] == "mixed/live-capable council"
+    assert summary["live_requested_seats"] == ["GPT"]
+    assert summary["pending_live_seats"] == []
+    assert summary["actual_live_seats"] == ["GPT"]
+    assert summary["mock_only_seats"] == ["Gemini", "Claude", "Local LLM"]
 
 
 def test_mixed_live_mock_brief_has_current_provider_summary_and_no_stale_mock_only_language(tmp_path):

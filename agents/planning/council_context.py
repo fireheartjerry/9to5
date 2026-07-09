@@ -1,4 +1,4 @@
-"""Curated context pack for the mock-only pre-execution council.
+"""Curated context pack for the pre-execution council.
 
 RUN/TEST: python -m pytest tests/planning/test_pre_execution_council.py
 
@@ -106,14 +106,14 @@ class CouncilContextPack:
             forbidden_actions=list(forbidden_actions or []),
             safety_boundaries=list(safety_boundaries or []),
             available_tools_providers=[
-                "mock GPT seat",
-                "mock Gemini seat",
-                "mock Claude seat",
-                "mock Local LLM seat",
-                "live providers disabled in v0",
+                "GPT council seat",
+                "Gemini council seat",
+                "Claude council seat",
+                "Local LLM council seat",
+                "optional live seats only when explicitly requested",
             ],
             git_status_summary=safe_git_status_summary(work_dir),
-            execution_mode="mock-only pre-execution planning",
+            execution_mode="pre-execution planning",
         )
 
     def to_safe_dict(self) -> dict[str, Any]:

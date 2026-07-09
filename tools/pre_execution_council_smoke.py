@@ -1,4 +1,4 @@
-"""CLI smoke for the mock-only pre-execution council.
+"""CLI smoke for the pre-execution council.
 
 RUN/TEST: ENABLE_PRE_EXECUTION_COUNCIL=1 python tools/pre_execution_council_smoke.py --task "..."
 
@@ -23,7 +23,7 @@ from agents.planning.pre_execution_council import CouncilConfig, run_pre_executi
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the mock-only pre-execution council smoke.")
+    parser = argparse.ArgumentParser(description="Run the pre-execution council smoke.")
     parser.add_argument("--task", required=True, help="Task for the council to deliberate.")
     parser.add_argument("--messages-per-seat", type=int, default=12)
     parser.add_argument("--show-transcript", action="store_true")

@@ -1,6 +1,6 @@
-"""Default-off, mock-only pre-execution council runner.
+"""Default-off pre-execution council runner.
 
-This v0 deliberately avoids live providers and production orchestration wiring.
+This deliberately avoids production orchestration wiring.
 
 RUN/TEST: python -m pytest tests/planning/test_pre_execution_council.py
 
@@ -11,6 +11,7 @@ EXPORTS:
   CouncilQualityWarning
   CouncilMessage
   CouncilBrief
+  RunCompositionSummary
   CouncilRunResult
   MockCouncilSeat
   LiveGeminiCouncilSeat
@@ -36,7 +37,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -272,6 +273,64 @@ Transcript: `{self.transcript_path or '(not logged)'}`
 """
 
 
+@dataclass(frozen=True)
+class RunCompositionSummary:
+    execution_mode: str
+    conversation_policy: str
+    run_type: str
+    enabled_seats: list[str]
+    live_requested_seats: list[str]
+    pending_live_seats: list[str]
+    actual_live_seats: list[str]
+    fallback_seats: list[str]
+    mock_only_seats: list[str]
+    quota_limited_seats: list[str]
+    rate_limited_seats: list[str]
+    unavailable_seats: list[str]
+    provider_health_summary: list[str]
+
+    @property
+    def all_mock_only(self) -> bool:
+        return self.run_type == "mock-only council"
+
+    def to_prompt_block(self) -> str:
+        def csv(items: list[str]) -> str:
+            return ", ".join(items) if items else "(none)"
+
+        lines = [
+            "This is a pre-execution council. Pre-execution means no implementation or orchestration mutation. It does not mean providers are mocked.",
+            f"Run type: {self.run_type}.",
+            f"Conversation policy: {self.conversation_policy}.",
+            f"Enabled seats: {csv(self.enabled_seats)}.",
+            f"Live requested seats: {csv(self.live_requested_seats)}.",
+            f"Live requested but not yet called seats: {csv(self.pending_live_seats)}.",
+            f"Actual live seats so far: {csv(self.actual_live_seats)}.",
+            f"Fallback seats so far: {csv(self.fallback_seats)}.",
+            f"Mocked/control seats in this run: {csv(self.mock_only_seats)}.",
+            f"Quota-limited seats: {csv(self.quota_limited_seats)}.",
+            f"Rate-limited seats: {csv(self.rate_limited_seats)}.",
+            f"Unavailable seats: {csv(self.unavailable_seats)}.",
+            (
+                "Composition guidance: A live-requested seat with no actual live turns yet is pending, not unavailable. "
+                "If your own seat is live-requested, this prompt is the gated council call for that seat. "
+                "External calls made by explicitly requested live council seat adapters are expected planning calls, "
+                "not production execution. "
+                "Mocked/control seats do not make this whole run mock-only. Do not argue that live providers are forbidden "
+                "unless the summary lists them as fallback, unavailable, quota-limited, or rate-limited."
+            ),
+            "Provider health: " + (" | ".join(self._prompt_health_lines()) if self.provider_health_summary else "(none recorded yet)."),
+        ]
+        return "\n".join(lines)
+
+    def _prompt_health_lines(self) -> list[str]:
+        if self.all_mock_only:
+            return list(self.provider_health_summary)
+        return [
+            line.replace("Mock-only seats:", "Mocked/control seats in this mixed run:")
+            for line in self.provider_health_summary
+        ]
+
+
 @dataclass
 class CouncilRunResult:
     run_id: str
@@ -338,7 +397,7 @@ MOCK_TURN_LIBRARY = {
         "[SYNTHESIS] Gemini live is the first provider because its transport is stateless and already guarded.",
     ),
     "Claude": (
-        "[PLAN] Keep core modules under agents/planning and leave provider transports under agents/execution. [DATA] Tests should prove no live provider is reachable.",
+        "[PLAN] Keep core modules under agents/planning and leave provider transports under agents/execution. [DATA] Tests should prove only explicitly requested council live seats are reachable.",
         "[RISK] Production insertion before the runner is stable would perturb run startup. [CONSTRAINT] Document the seam but do not call it from orchestration.",
         "[ACTION] Validate with focused council tests, existing browser/Gemini tests, repo-map check, and whitespace check.",
         "[DATA] Config aliases should support the short Gemini flag while preserving registry constants.",
@@ -353,7 +412,7 @@ MOCK_TURN_LIBRARY = {
     ),
     "Local LLM": (
         "[RISK] A default-on council would add cost and latency before every run. [CONSTRAINT] The enable flag must be false by default.",
-        "[DISAGREE] Do not add live local-model calls in v0; mock the privacy/safety critique until the interface is clear.",
+        "[DISAGREE] Do not add live local-model calls unless explicitly requested; mock the privacy/safety critique until the interface is clear.",
         "[ACTION] Redact secrets, browser profile hints, and runtime overrides before writing replay files.",
         "[RISK] Fallback paths can hide broken providers unless metadata records the reason.",
         "[CLAIM] A cheap dissent seat is valuable only if it names concrete failure cases.",
@@ -1156,9 +1215,10 @@ class CouncilRunner:
                     warnings=warnings,
                     logger=logger,
                 )
-            brief = self._synthesize_brief(run_id, context_pack, compact_state, messages, logger)
+            brief = self._synthesize_brief(run_id, context_pack, compact_state, messages, seats, logger)
             brief.validate_required_fields()
             if logger:
+                composition = self._run_composition_summary(seats, messages)
                 logger.write_brief(brief, brief.to_markdown())
                 logger.write_metadata(
                     {
@@ -1179,10 +1239,8 @@ class CouncilRunner:
                             if self.config.conversation_policy == "selector"
                             else {}
                         ),
-                        "mock_only": not any(
-                            m.provider_metadata.get("live_provider_invoked") and not m.provider_metadata.get("fallback")
-                            for m in messages
-                        ),
+                        "run_composition_summary": asdict(composition),
+                        "mock_only": composition.all_mock_only,
                         "live_provider_flags": {
                             "gpt": self.config.live_gpt_enabled,
                             "gemini": self.config.live_gemini_enabled,
@@ -1231,6 +1289,7 @@ class CouncilRunner:
             seat = seats[(turn_index - 1) % len(seats)]
             prompt = self._build_prompt(
                 context_pack=context_pack,
+                enabled_seats=seats,
                 seat=seat,
                 temporary_hats=hats_by_seat.get(seat.name, []),
                 messages=messages,
@@ -1267,6 +1326,7 @@ class CouncilRunner:
         for seat in seats:
             prompt = self._build_selector_prompt(
                 context_pack=context_pack,
+                enabled_seats=seats,
                 seat=seat,
                 temporary_hats=hats_by_seat.get(seat.name, []),
                 messages=messages,
@@ -1299,6 +1359,7 @@ class CouncilRunner:
                 challenge = self._targeted_debate_challenge(seat, compact_state, debate_round)
                 prompt = self._build_selector_prompt(
                     context_pack=context_pack,
+                    enabled_seats=seats,
                     seat=seat,
                     temporary_hats=hats_by_seat.get(seat.name, []),
                     messages=messages,
@@ -1325,6 +1386,7 @@ class CouncilRunner:
         for seat, challenge in self._critique_pair(seats, messages):
             prompt = self._build_selector_prompt(
                 context_pack=context_pack,
+                enabled_seats=seats,
                 seat=seat,
                 temporary_hats=hats_by_seat.get(seat.name, []),
                 messages=messages,
@@ -1444,6 +1506,7 @@ class CouncilRunner:
         self,
         *,
         context_pack: CouncilContextPack,
+        enabled_seats: list[CouncilSeat],
         seat: CouncilSeat,
         temporary_hats: list[str],
         messages: list[CouncilMessage],
@@ -1456,7 +1519,8 @@ class CouncilRunner:
         seat_prompt = SEAT_SYSTEM_PROMPTS.get(seat.name, "")
         turn = build_turn_prompt(
             task=context_pack.original_task,
-            context_pack_summary=context_pack.summarize_for_prompt(),
+            context_pack_summary=self._context_summary_for_prompt(context_pack, max_chars=6000),
+            run_composition=self._run_composition_summary(enabled_seats, messages).to_prompt_block(),
             seat_name=seat.name,
             temporary_roles=temporary_hats,
             recent_transcript=recent,
@@ -1477,6 +1541,7 @@ class CouncilRunner:
         self,
         *,
         context_pack: CouncilContextPack,
+        enabled_seats: list[CouncilSeat],
         seat: CouncilSeat,
         temporary_hats: list[str],
         messages: list[CouncilMessage],
@@ -1491,7 +1556,8 @@ class CouncilRunner:
         seat_prompt = SEAT_SYSTEM_PROMPTS.get(seat.name, "")
         turn = build_turn_prompt(
             task=context_pack.original_task,
-            context_pack_summary=context_pack.summarize_for_prompt(max_chars=3000),
+            context_pack_summary=self._context_summary_for_prompt(context_pack, max_chars=3000),
+            run_composition=self._run_composition_summary(enabled_seats, messages).to_prompt_block(),
             seat_name=seat.name,
             temporary_roles=temporary_hats,
             recent_transcript=excerpts,
@@ -1511,6 +1577,41 @@ class CouncilRunner:
             "Use only the compact state and relevant excerpts below. Do not assume you have the full raw transcript.\n\n"
             f"{turn}"
         )
+
+    def _context_summary_for_prompt(self, context_pack: CouncilContextPack, *, max_chars: int) -> str:
+        allowed_live_actions = self._requested_live_forbidden_actions()
+        if not allowed_live_actions:
+            return context_pack.summarize_for_prompt(max_chars=max_chars)
+        filtered = [
+            action
+            for action in context_pack.forbidden_actions
+            if action not in allowed_live_actions
+        ]
+        available = list(context_pack.available_tools_providers)
+        requested = ", ".join(sorted(self._requested_live_seat_names()))
+        if requested:
+            available.append(f"explicitly requested live council seats: {requested}")
+        prompt_pack = replace(
+            context_pack,
+            forbidden_actions=filtered,
+            available_tools_providers=available,
+        )
+        return prompt_pack.summarize_for_prompt(max_chars=max_chars)
+
+    def _requested_live_forbidden_actions(self) -> set[str]:
+        by_seat = {
+            "GPT": "Do not call ChatGPT browser driver.",
+            "Gemini": "Do not call Gemini.",
+            "Claude": "Do not call Claude Code.",
+            "Local LLM": "Do not call local LLM/Ollama.",
+            "Groq": "Do not call Groq.",
+            "Cloudflare": "Do not call Cloudflare Workers AI.",
+        }
+        return {
+            action
+            for seat, action in by_seat.items()
+            if seat in self._requested_live_seat_names()
+        }
 
     def _relevant_excerpts(self, messages: list[CouncilMessage], seat_name: str) -> str:
         if not messages:
@@ -1681,6 +1782,7 @@ class CouncilRunner:
         context_pack: CouncilContextPack,
         compact_state: dict[str, list[str]],
         messages: list[CouncilMessage],
+        seats: list[CouncilSeat],
         logger: CouncilRunLogger | None,
     ) -> CouncilBrief:
         task = context_pack.original_task.strip()
@@ -1704,6 +1806,8 @@ class CouncilRunner:
         provider_participation = self._provider_participation_lines(seat_states)
         provider_timeline = self._provider_timeline_lines(seat_states)
         run_health = self._run_health_lines(seat_states, messages)
+        composition = self._run_composition_summary(seats, messages)
+        run_health.insert(0, f"Run composition: {composition.run_type}; policy={composition.conversation_policy}.")
 
         if mixed_live_run:
             first_slice = (
@@ -1893,6 +1997,126 @@ class CouncilRunner:
             implementation_prompt_export=implementation_prompt,
             transcript_path=str(logger.transcript_md_path) if logger else "",
         )
+
+    def _run_composition_summary(
+        self,
+        seats: list[CouncilSeat],
+        messages: list[CouncilMessage],
+    ) -> RunCompositionSummary:
+        seat_states = self._seat_run_summaries(messages)
+        enabled_names = [seat.name for seat in seats]
+        requested_by_config = self._requested_live_seat_names()
+        enabled_states = []
+        for name in enabled_names:
+            state = dict(seat_states.get(name) or self._empty_seat_state(name))
+            if name in requested_by_config:
+                state["requested_live"] = True
+                if state["actual_live_all"]:
+                    state["last_provider_state"] = "fully_live"
+                elif state["actual_live_any"]:
+                    state["last_provider_state"] = "partially_live_then_fallback"
+                elif state["fallback_turn_count"]:
+                    state["last_provider_state"] = "requested_live_all_fallback"
+                else:
+                    state["last_provider_state"] = "requested_live_no_live_result"
+            elif not state.get("turn_count"):
+                state["last_provider_state"] = "mock_only"
+            enabled_states.append(state)
+
+        actual_live = [s["seat_name"] for s in enabled_states if s["actual_live_any"]]
+        fallback = [s["seat_name"] for s in enabled_states if s["fallback_turn_count"]]
+        pending_live = [
+            s["seat_name"]
+            for s in enabled_states
+            if s["requested_live"] and not s["turn_count"]
+        ]
+        mock_only = [
+            s["seat_name"]
+            for s in enabled_states
+            if s["last_provider_state"] == "mock_only"
+        ]
+        quota_limited = [s["seat_name"] for s in enabled_states if s["quota_limit_seen"]]
+        rate_limited = [s["seat_name"] for s in enabled_states if s["rate_limit_seen"]]
+        unavailable = [s["seat_name"] for s in enabled_states if self._state_is_unavailable(s)]
+        requested_live = [name for name in enabled_names if name in requested_by_config]
+        all_mock_only = bool(enabled_states) and not any(
+            bool(s["requested_live"] or s["actual_live_any"] or s["fallback_turn_count"])
+            for s in enabled_states
+        )
+        provider_health = self._run_health_lines({s["seat_name"]: s for s in enabled_states}, messages)
+        return RunCompositionSummary(
+            execution_mode="pre-execution",
+            conversation_policy=self.config.conversation_policy,
+            run_type="mock-only council" if all_mock_only else "mixed/live-capable council",
+            enabled_seats=enabled_names,
+            live_requested_seats=requested_live,
+            pending_live_seats=pending_live,
+            actual_live_seats=actual_live,
+            fallback_seats=fallback,
+            mock_only_seats=mock_only,
+            quota_limited_seats=quota_limited,
+            rate_limited_seats=rate_limited,
+            unavailable_seats=unavailable,
+            provider_health_summary=provider_health,
+        )
+
+    def _requested_live_seat_names(self) -> set[str]:
+        names = set()
+        if self.config.live_gpt_enabled:
+            names.add("GPT")
+        if self.config.live_gemini_enabled:
+            names.add("Gemini")
+        if self.config.live_claude_enabled:
+            names.add("Claude")
+        if self.config.live_local_enabled:
+            names.add("Local LLM")
+        if self.config.live_groq_enabled:
+            names.add("Groq")
+        if self.config.live_cloudflare_enabled:
+            names.add("Cloudflare")
+        return names
+
+    def _empty_seat_state(self, name: str) -> dict[str, Any]:
+        return {
+            "seat_name": name,
+            "requested_live": False,
+            "actual_live_any": False,
+            "actual_live_all": False,
+            "actual_live_turn_count": 0,
+            "fallback_turn_count": 0,
+            "mock_turn_count": 0,
+            "providers_used": [],
+            "models_used": [],
+            "fallback_reasons": [],
+            "rate_limit_seen": False,
+            "quota_limit_seen": False,
+            "continuity_status": "",
+            "last_provider_state": "never_requested_live",
+            "provider_timeline": [],
+            "turn_count": 0,
+        }
+
+    def _state_is_unavailable(self, state: dict[str, Any]) -> bool:
+        if state["requested_live"] and not state["turn_count"]:
+            return False
+        if state["last_provider_state"] == "requested_live_no_live_result":
+            return True
+        if not state["fallback_reasons"]:
+            return False
+        if state["rate_limit_seen"] or state["quota_limit_seen"]:
+            return False
+        reason = " ".join(str(r).lower() for r in state["fallback_reasons"])
+        unavailable_markers = (
+            "missing config",
+            "missing",
+            "unavailable",
+            "transport",
+            "returned no text",
+            "empty response",
+            "malformed response",
+            "failed",
+        )
+        return any(marker in reason for marker in unavailable_markers)
 
     def _seat_run_summaries(self, messages: list[CouncilMessage]) -> dict[str, dict[str, Any]]:
         seat_names = [spec.name for spec in DEFAULT_SEAT_SPECS]

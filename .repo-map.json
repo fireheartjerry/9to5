@@ -1398,7 +1398,7 @@
     },
     "agents.planning.council_context": {
       "path": "agents/planning/council_context.py",
-      "purpose": "Curated context pack for the mock-only pre-execution council.",
+      "purpose": "Curated context pack for the pre-execution council.",
       "exports": [
         {
           "name": "safe_git_status_summary",
@@ -1513,7 +1513,7 @@
         {
           "name": "build_turn_prompt",
           "kind": "function",
-          "signature": "(*, task: str, context_pack_summary: str, seat_name: str, temporary_roles: Iterable[str], recent_transcript: str, compact_state: str, unresolved_disagreements: str, working_brief: str, compact_protocol: bool=True, anti_filler: bool=True) -> str",
+          "signature": "(*, task: str, context_pack_summary: str, seat_name: str, temporary_roles: Iterable[str], recent_transcript: str, compact_state: str, unresolved_disagreements: str, working_brief: str, run_composition: str='', compact_protocol: bool=True, anti_filler: bool=True) -> str",
           "summary": "",
           "lineno": 200
         }
@@ -2072,126 +2072,133 @@
     },
     "agents.planning.pre_execution_council": {
       "path": "agents/planning/pre_execution_council.py",
-      "purpose": "Default-off, mock-only pre-execution council runner.",
+      "purpose": "Default-off pre-execution council runner.",
       "exports": [
         {
           "name": "CouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 65
+          "lineno": 66
         },
         {
           "name": "CouncilConfig",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 73
+          "lineno": 74
         },
         {
           "name": "CouncilQualityWarning",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 141
+          "lineno": 142
         },
         {
           "name": "CouncilMessage",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 149
+          "lineno": 150
         },
         {
           "name": "CouncilBrief",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 165
+          "lineno": 166
+        },
+        {
+          "name": "RunCompositionSummary",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 277
         },
         {
           "name": "CouncilRunResult",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 276
+          "lineno": 335
         },
         {
           "name": "MockCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 289
+          "lineno": 348
         },
         {
           "name": "LiveGeminiCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 387
+          "lineno": 446
         },
         {
           "name": "LiveLocalCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 454
+          "lineno": 513
         },
         {
           "name": "LiveGroqCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 564
+          "lineno": 623
         },
         {
           "name": "LiveCloudflareCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 737
+          "lineno": 796
         },
         {
           "name": "LiveGPTBrowserCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "Live GPT seat: one browser chat thread per council run + structured continuity checks.",
-          "lineno": 909
+          "lineno": 968
         },
         {
           "name": "is_enabled",
           "kind": "function",
           "signature": "(config_obj: CouncilConfig | None=None) -> bool",
           "summary": "",
-          "lineno": 1079
+          "lineno": 1138
         },
         {
           "name": "CouncilRunner",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 1084
+          "lineno": 1143
         },
         {
           "name": "evaluate_message_quality",
           "kind": "function",
           "signature": "(message: CouncilMessage) -> list[CouncilQualityWarning]",
           "summary": "",
-          "lineno": 2243
+          "lineno": 2467
         },
         {
           "name": "run_pre_execution_council",
           "kind": "function",
           "signature": "(task: str, *, work_dir: str | Path | None=None, council_config: CouncilConfig | None=None) -> CouncilRunResult",
           "summary": "",
-          "lineno": 2276
+          "lineno": 2500
         },
         {
           "name": "env_enabled",
           "kind": "function",
           "signature": "() -> bool",
           "summary": "",
-          "lineno": 2297
+          "lineno": 2521
         }
       ],
       "depends_on": [
@@ -20830,7 +20837,7 @@
     },
     "tools.pre_execution_council_smoke": {
       "path": "tools/pre_execution_council_smoke.py",
-      "purpose": "CLI smoke for the mock-only pre-execution council.",
+      "purpose": "CLI smoke for the pre-execution council.",
       "exports": [
         {
           "name": "main",

@@ -10,7 +10,7 @@ EXPORTS:
   continuity_instruction(token: dict[str, Any]) -> str  -- Prompt block: require structured continuity echo, not a free-text canary word.
   parse_continuity_token(text: str) -> dict[str, Any] | None  -- Extract the first [CONTINUITY] JSON object from a reply, if present.
   check_continuity(text: str, expected: dict[str, Any]) -> tuple[bool, str]  -- Return (ok, detail)
-  build_turn_prompt(*, task: str, context_pack_summary: str, seat_name: str, temporary_roles: Iterable[str], recent_transcript: str, compact_state: str, unresolved_disagreements: str, working_brief: str, compact_protocol: bool=True, anti_filler: bool=True) -> str
+  build_turn_prompt(*, task: str, context_pack_summary: str, seat_name: str, temporary_roles: Iterable[str], recent_transcript: str, compact_state: str, unresolved_disagreements: str, working_brief: str, run_composition: str='', compact_protocol: bool=True, anti_filler: bool=True) -> str
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
@@ -207,6 +207,7 @@ def build_turn_prompt(
     compact_state: str,
     unresolved_disagreements: str,
     working_brief: str,
+    run_composition: str = "",
     compact_protocol: bool = True,
     anti_filler: bool = True,
 ) -> str:
@@ -224,6 +225,9 @@ def build_turn_prompt(
 
 Context pack summary:
 {context_pack_summary}
+
+Run composition:
+{run_composition or "(not provided)"}
 
 Your permanent seat:
 {seat_name}
