@@ -118,6 +118,95 @@ class ClaudeCliCfg:
     EXECUTOR_OUTPUT_JSON: bool = _F(default_factory=lambda: _envBool("EXECUTOR_OUTPUT_JSON", True))
     # Resume the SAME Claude session across a subtask's retries (--resume <session_id>).
     EXECUTOR_RESUME_RETRIES: bool = _F(default_factory=lambda: _envBool("EXECUTOR_RESUME_RETRIES", True))
+    # --- clarification gate / AskUserQuestion bridge (dark by default) ---
+    CLARIFICATION_GATE_ENABLED: bool = _F(default_factory=lambda: _envBool("CLARIFICATION_GATE_ENABLED", False))
+    CLARIFICATION_GATE_DRY_RUN: bool = _F(default_factory=lambda: _envBool("CLARIFICATION_GATE_DRY_RUN", False))
+    CLARIFICATION_EXECUTOR_BACKEND: str = _F(
+        default_factory=lambda: os.getenv("CLARIFICATION_EXECUTOR_BACKEND", "sdk_preferred"))
+    CLARIFICATION_SCORE_ENABLE_THRESHOLD: int = _F(
+        default_factory=lambda: _envInt("CLARIFICATION_SCORE_ENABLE_THRESHOLD", 4))
+    CLARIFICATION_SCORE_FORCE_THRESHOLD: int = _F(
+        default_factory=lambda: _envInt("CLARIFICATION_SCORE_FORCE_THRESHOLD", 7))
+    CLARIFICATION_PROVIDER: str = _F(default_factory=lambda: os.getenv("CLARIFICATION_PROVIDER", "ollama_first"))
+    CLARIFICATION_MAX_QUESTIONS: int = _F(default_factory=lambda: _envInt("CLARIFICATION_MAX_QUESTIONS", 3))
+    CLARIFICATION_HIGH_RISK_UNKNOWN: str = _F(
+        default_factory=lambda: os.getenv("CLARIFICATION_HIGH_RISK_UNKNOWN", "block"))
+    CLARIFICATION_DUPLICATE_POLICY: str = _F(
+        default_factory=lambda: os.getenv("CLARIFICATION_DUPLICATE_POLICY", "reuse_answer"))
+    CLARIFICATION_REQUIRE_OPTION_LABEL_MATCH: bool = _F(
+        default_factory=lambda: _envBool("CLARIFICATION_REQUIRE_OPTION_LABEL_MATCH", True))
+    CLARIFICATION_LOG_DECISIONS: bool = _F(
+        default_factory=lambda: _envBool("CLARIFICATION_LOG_DECISIONS", True))
+    CLARIFICATION_DECISION_ID_REQUIRED: bool = _F(
+        default_factory=lambda: _envBool("CLARIFICATION_DECISION_ID_REQUIRED", True))
+    CLARIFICATION_HIGH_RISK_HEURISTIC_ASSUMPTIONS: bool = _F(
+        default_factory=lambda: _envBool("CLARIFICATION_HIGH_RISK_HEURISTIC_ASSUMPTIONS", False))
+    CLARIFICATION_SEMANTIC_REUSE_HIGH_RISK: bool = _F(
+        default_factory=lambda: _envBool("CLARIFICATION_SEMANTIC_REUSE_HIGH_RISK", False))
+    CLARIFICATION_REPLANNER_ON_BLOCK: bool = _F(
+        default_factory=lambda: _envBool("CLARIFICATION_REPLANNER_ON_BLOCK", True))
+    # --- pre-execution council (v0: mock-only, default-off, not wired into orchestration) ---
+    ENABLE_PRE_EXECUTION_COUNCIL: bool = _F(
+        default_factory=lambda: _envBool("ENABLE_PRE_EXECUTION_COUNCIL", False))
+    PRE_EXECUTION_COUNCIL_PROMPT_VERSION: str = _F(
+        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_PROMPT_VERSION", "pre_execution_council_v0"))
+    PRE_EXECUTION_COUNCIL_MESSAGES_PER_SEAT: int = _F(
+        default_factory=lambda: _envInt("PRE_EXECUTION_COUNCIL_MESSAGES_PER_SEAT", 12))
+    PRE_EXECUTION_COUNCIL_TOTAL_TARGET_MESSAGES: int = _F(
+        default_factory=lambda: _envInt("PRE_EXECUTION_COUNCIL_TOTAL_TARGET_MESSAGES", 48))
+    PRE_EXECUTION_COUNCIL_LOGGING_ENABLED: bool = _F(
+        default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_LOGGING_ENABLED", True))
+    PRE_EXECUTION_COUNCIL_OUTPUT_DIR: str = _F(
+        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_OUTPUT_DIR", "state/council_runs"))
+    PRE_EXECUTION_COUNCIL_TRANSCRIPT_MODE: str = _F(
+        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_TRANSCRIPT_MODE", "full"))
+    PRE_EXECUTION_COUNCIL_COMPACT_PROTOCOL: bool = _F(
+        default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_COMPACT_PROTOCOL", True))
+    PRE_EXECUTION_COUNCIL_ANTI_FILLER: bool = _F(
+        default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_ANTI_FILLER", True))
+    PRE_EXECUTION_COUNCIL_MOCK_SEATS_ENABLED: bool = _F(
+        default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_MOCK_SEATS_ENABLED", True))
+    PRE_EXECUTION_COUNCIL_CONVERSATION_POLICY: str = _F(
+        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_CONVERSATION_POLICY", "round_robin"))
+    PRE_EXECUTION_COUNCIL_SELECTOR_DEBATE_ROUNDS: int = _F(
+        default_factory=lambda: _envInt("PRE_EXECUTION_COUNCIL_SELECTOR_DEBATE_ROUNDS", 1))
+    PRE_EXECUTION_COUNCIL_LIVE_GPT_ENABLED: bool = _F(
+        default_factory=lambda: (
+            _envBool("PRE_EXECUTION_COUNCIL_LIVE_GPT_ENABLED", False)
+            or _envBool("ENABLE_PRE_EXECUTION_COUNCIL_GPT_BROWSER", False)
+        ))
+    PRE_EXECUTION_COUNCIL_GPT_PROJECT_URL: str = _F(
+        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_GPT_PROJECT_URL", ""))
+    PRE_EXECUTION_COUNCIL_GPT_MODEL: str = _F(
+        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_GPT_MODEL", ""))
+    PRE_EXECUTION_COUNCIL_GPT_REASONING: str = _F(
+        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_GPT_REASONING", ""))
+    PRE_EXECUTION_COUNCIL_LIVE_GEMINI_ENABLED: bool = _F(
+        default_factory=lambda: (
+            _envBool("PRE_EXECUTION_COUNCIL_LIVE_GEMINI_ENABLED", False)
+            or _envBool("ENABLE_PRE_EXECUTION_COUNCIL_GEMINI", False)
+        ))
+    PRE_EXECUTION_COUNCIL_LIVE_GROQ_ENABLED: bool = _F(
+        default_factory=lambda: (
+            _envBool("PRE_EXECUTION_COUNCIL_LIVE_GROQ_ENABLED", False)
+            or _envBool("ENABLE_PRE_EXECUTION_COUNCIL_GROQ", False)
+        ))
+    PRE_EXECUTION_COUNCIL_GROQ_MODEL: str = _F(
+        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_GROQ_MODEL", "qwen/qwen3-32b"))
+    PRE_EXECUTION_COUNCIL_GROQ_FALLBACK_MODELS: str = _F(
+        default_factory=lambda: os.getenv(
+            "PRE_EXECUTION_COUNCIL_GROQ_FALLBACK_MODELS",
+            "llama-3.1-8b-instant,llama-3.3-70b-versatile,openai/gpt-oss-20b",
+        ))
+    PRE_EXECUTION_COUNCIL_LIVE_CLAUDE_ENABLED: bool = _F(
+        default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_LIVE_CLAUDE_ENABLED", False))
+    PRE_EXECUTION_COUNCIL_LIVE_LOCAL_ENABLED: bool = _F(
+        default_factory=lambda: (
+            _envBool("PRE_EXECUTION_COUNCIL_LIVE_LOCAL_ENABLED", False)
+            or _envBool("ENABLE_PRE_EXECUTION_COUNCIL_LOCAL", False)
+        ))
+    PRE_EXECUTION_COUNCIL_LOCAL_MODEL: str = _F(
+        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_LOCAL_MODEL", ""))
     # --- living Claude Code knowledge base (fetch + injection behaviour) ---
     # CLAUDE_DOC_FETCH's run-scoped live value lives in settings.runFlags().
     CLAUDE_DOC_FETCH: bool = _F(default_factory=lambda: _envBool("CLAUDE_DOC_FETCH", True))

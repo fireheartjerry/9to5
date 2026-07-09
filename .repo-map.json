@@ -563,6 +563,43 @@
       ],
       "callers": []
     },
+    "agents.execution.chatgpt_browser_driver": {
+      "path": "agents/execution/chatgpt_browser_driver.py",
+      "purpose": "Experimental ChatGPT browser driver for the 9to5 project.",
+      "exports": [
+        {
+          "name": "ChatGptBrowserError",
+          "kind": "class",
+          "signature": "",
+          "summary": "Controlled failure for the experimental browser driver.",
+          "lineno": 76
+        },
+        {
+          "name": "ChatGptBrowserSession",
+          "kind": "class",
+          "signature": "",
+          "summary": "One ChatGPT project chat thread for the life of a single council run.",
+          "lineno": 455
+        },
+        {
+          "name": "send_prompt_to_project",
+          "kind": "function",
+          "signature": "(project_url: str, model: str, reasoning: str, prompt: str) -> str",
+          "summary": "Send one prompt to the ChatGPT 9to5 project and return the latest assistant text.",
+          "lineno": 572
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_chatgpt_browser_driver.py"
+      ],
+      "callers": [
+        "agents.planning.pre_execution_council"
+      ]
+    },
     "agents.execution.executor": {
       "path": "agents/execution/executor.py",
       "purpose": "Executor (the hands) -- run Claude Code CLI from an Orchestrator invocation spec.",
@@ -572,7 +609,7 @@
           "kind": "function",
           "signature": "(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, system_prompt: Optional[str]=None, extra: Optional[str]=None, timeout: Optional[int]=None, resume_session: Optional[str]=None, cancel_check=None, feed=None, parent_trajectory_step_id: Optional[str]=None, environment=None, env_handle=None) -> dict",
           "summary": "Prepare the environment from the invocation spec, then fire one Claude run.",
-          "lineno": 229
+          "lineno": 232
         }
       ],
       "depends_on": [
@@ -771,7 +808,9 @@
       "test": [
         "tests/orchestration/test_gemini_driver.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.pre_execution_council"
+      ]
     },
     "agents.execution.native_executor": {
       "path": "agents/execution/native_executor.py",
@@ -1272,6 +1311,8 @@
         "agents.playbook",
         "agents.replanner",
         "agents.second_brain",
+        "platform_core.orchestration.execute_attempt_mixin",
+        "platform_core.orchestration.plan_mixin",
         "tools.elaborator_eval"
       ]
     },
@@ -1354,6 +1395,174 @@
         "tests/execution/test_completion_envelope.py"
       ],
       "callers": []
+    },
+    "agents.planning.council_context": {
+      "path": "agents/planning/council_context.py",
+      "purpose": "Curated context pack for the mock-only pre-execution council.",
+      "exports": [
+        {
+          "name": "safe_git_status_summary",
+          "kind": "function",
+          "signature": "(work_dir: str | Path | None=None) -> str",
+          "summary": "Return branch + short dirty summary without file contents or env details.",
+          "lineno": 61
+        },
+        {
+          "name": "CouncilContextPack",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 74
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.planning.council_roles",
+        "agents.planning.pre_execution_council"
+      ]
+    },
+    "agents.planning.council_logging": {
+      "path": "agents/planning/council_logging.py",
+      "purpose": "Redacted logging and replay files for pre-execution council runs.",
+      "exports": [
+        {
+          "name": "redact_council_text",
+          "kind": "function",
+          "signature": "(text: Any) -> str",
+          "summary": "",
+          "lineno": 41
+        },
+        {
+          "name": "slugify",
+          "kind": "function",
+          "signature": "(text: str, limit: int=42) -> str",
+          "summary": "",
+          "lineno": 66
+        },
+        {
+          "name": "CouncilRunLogger",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 71
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.planning.pre_execution_council"
+      ]
+    },
+    "agents.planning.council_prompts": {
+      "path": "agents/planning/council_prompts.py",
+      "purpose": "Prompt templates for the pre-execution council.",
+      "exports": [
+        {
+          "name": "compact_protocol_block",
+          "kind": "function",
+          "signature": "(enabled: bool=True) -> str",
+          "summary": "",
+          "lineno": 127
+        },
+        {
+          "name": "make_continuity_token",
+          "kind": "function",
+          "signature": "(*, run_id: str, seat: str, turn: int, prompt_version: str=PROMPT_VERSION) -> dict[str, Any]",
+          "summary": "Build a small structured continuity marker for one live-seat turn.",
+          "lineno": 133
+        },
+        {
+          "name": "format_continuity_line",
+          "kind": "function",
+          "signature": "(token: dict[str, Any]) -> str",
+          "summary": "Serialize a continuity token as a single required reply line.",
+          "lineno": 149
+        },
+        {
+          "name": "continuity_instruction",
+          "kind": "function",
+          "signature": "(token: dict[str, Any]) -> str",
+          "summary": "Prompt block: require structured continuity echo, not a free-text canary word.",
+          "lineno": 154
+        },
+        {
+          "name": "parse_continuity_token",
+          "kind": "function",
+          "signature": "(text: str) -> dict[str, Any] | None",
+          "summary": "Extract the first [CONTINUITY] JSON object from a reply, if present.",
+          "lineno": 165
+        },
+        {
+          "name": "check_continuity",
+          "kind": "function",
+          "signature": "(text: str, expected: dict[str, Any]) -> tuple[bool, str]",
+          "summary": "Return (ok, detail)",
+          "lineno": 177
+        },
+        {
+          "name": "build_turn_prompt",
+          "kind": "function",
+          "signature": "(*, task: str, context_pack_summary: str, seat_name: str, temporary_roles: Iterable[str], recent_transcript: str, compact_state: str, unresolved_disagreements: str, working_brief: str, compact_protocol: bool=True, anti_filler: bool=True) -> str",
+          "summary": "",
+          "lineno": 188
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.planning.pre_execution_council"
+      ]
+    },
+    "agents.planning.council_roles": {
+      "path": "agents/planning/council_roles.py",
+      "purpose": "Seat definitions and deterministic temporary hats for the pre-execution council.",
+      "exports": [
+        {
+          "name": "CouncilSeatSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 23
+        },
+        {
+          "name": "TemporaryHat",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 32
+        },
+        {
+          "name": "assign_temporary_hats",
+          "kind": "function",
+          "signature": "(context_pack: CouncilContextPack, seats: tuple[CouncilSeatSpec, ...]=DEFAULT_SEAT_SPECS, deterministic_seed: str | None=None) -> dict[str, list[str]]",
+          "summary": "",
+          "lineno": 81
+        }
+      ],
+      "depends_on": [
+        "agents.planning.council_context"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "agents.planning.pre_execution_council"
+      ]
     },
     "agents.planning.debugging_workflow": {
       "path": "agents/planning/debugging_workflow.py",
@@ -1860,6 +2069,144 @@
         "tests/evolution/test_playbook.py"
       ],
       "callers": []
+    },
+    "agents.planning.pre_execution_council": {
+      "path": "agents/planning/pre_execution_council.py",
+      "purpose": "Default-off, mock-only pre-execution council runner.",
+      "exports": [
+        {
+          "name": "CouncilSeat",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 63
+        },
+        {
+          "name": "CouncilConfig",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 71
+        },
+        {
+          "name": "CouncilQualityWarning",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 135
+        },
+        {
+          "name": "CouncilMessage",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 143
+        },
+        {
+          "name": "CouncilBrief",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 159
+        },
+        {
+          "name": "CouncilRunResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 270
+        },
+        {
+          "name": "MockCouncilSeat",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 283
+        },
+        {
+          "name": "LiveGeminiCouncilSeat",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 373
+        },
+        {
+          "name": "LiveLocalCouncilSeat",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 440
+        },
+        {
+          "name": "LiveGroqCouncilSeat",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 550
+        },
+        {
+          "name": "LiveGPTBrowserCouncilSeat",
+          "kind": "class",
+          "signature": "",
+          "summary": "Live GPT seat: one browser chat thread per council run + structured continuity checks.",
+          "lineno": 762
+        },
+        {
+          "name": "is_enabled",
+          "kind": "function",
+          "signature": "(config_obj: CouncilConfig | None=None) -> bool",
+          "summary": "",
+          "lineno": 932
+        },
+        {
+          "name": "CouncilRunner",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 937
+        },
+        {
+          "name": "evaluate_message_quality",
+          "kind": "function",
+          "signature": "(message: CouncilMessage) -> list[CouncilQualityWarning]",
+          "summary": "",
+          "lineno": 2058
+        },
+        {
+          "name": "run_pre_execution_council",
+          "kind": "function",
+          "signature": "(task: str, *, work_dir: str | Path | None=None, council_config: CouncilConfig | None=None) -> CouncilRunResult",
+          "summary": "",
+          "lineno": 2091
+        },
+        {
+          "name": "env_enabled",
+          "kind": "function",
+          "signature": "() -> bool",
+          "summary": "",
+          "lineno": 2111
+        }
+      ],
+      "depends_on": [
+        "agents.execution.chatgpt_browser_driver",
+        "agents.execution.gemini_driver",
+        "agents.planning.council_context",
+        "agents.planning.council_logging",
+        "agents.planning.council_prompts",
+        "agents.planning.council_roles",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/planning/test_pre_execution_council.py"
+      ],
+      "callers": [
+        "tools.groq_probe",
+        "tools.pre_execution_council_compare",
+        "tools.pre_execution_council_smoke"
+      ]
     },
     "agents.planning.replanner": {
       "path": "agents/planning/replanner.py",
@@ -2932,6 +3279,8 @@
         "agents.hook_handlers.core",
         "agents.hook_handlers.selfmod",
         "agents.planning.clarifier",
+        "agents.planning.council_context",
+        "agents.planning.council_logging",
         "agents.planning.elaborator.candidates",
         "agents.planning.elaborator.core",
         "agents.planning.elaborator.defer",
@@ -2944,6 +3293,7 @@
         "agents.planning.elaborator.schema",
         "agents.planning.elaborator.self_review",
         "agents.planning.playbook",
+        "agents.planning.pre_execution_council",
         "agents.planning.replanner",
         "agents.planning.second_brain",
         "agents.review.adversary_review",
@@ -3169,7 +3519,8 @@
         "society.worker",
         "state.task_io",
         "state.task_schema",
-        "tools.elaborator_eval"
+        "tools.elaborator_eval",
+        "tools.groq_probe"
       ]
     },
     "conftest": {
@@ -3730,14 +4081,14 @@
           "kind": "function",
           "signature": "(task_id: str, body_state: dict[str, Any], *, letters_dir: Optional[Any]=None, stamp: Optional[str]=None) -> dict[str, Any]",
           "summary": "Compose and save a letter to the future self for *task_id*.",
-          "lineno": 97
+          "lineno": 107
         },
         {
           "name": "read_letters",
           "kind": "function",
           "signature": "(task_id: str, *, letters_dir: Optional[Any]=None) -> list[str]",
           "summary": "Read all letters for *task_id*, in filename-sorted (chronological) order.",
-          "lineno": 131
+          "lineno": 141
         }
       ],
       "depends_on": [
@@ -8392,6 +8743,7 @@
         "tests/orchestration/test_files_touched_propagation.py",
         "tests/orchestration/test_plan_project_context.py",
         "tests/orchestration/test_work_profile.py",
+        "tests/planning/test_pre_execution_council.py",
         "tests/platform/test_compress.py",
         "tests/platform/test_progress_reporter.py",
         "tests/platform/test_protocols.py",
@@ -13373,21 +13725,21 @@
           "kind": "function",
           "signature": "() -> ClaudeCliCfg",
           "summary": "",
-          "lineno": 154
+          "lineno": 243
         },
         {
           "name": "SieCfg",
           "kind": "class",
           "signature": "",
           "summary": "SIE/learning + Obsidian service + adversary + orchestration/run-control knobs.",
-          "lineno": 160
+          "lineno": 249
         },
         {
           "name": "buildSieCfg",
           "kind": "function",
           "signature": "() -> SieCfg",
           "summary": "",
-          "lineno": 356
+          "lineno": 445
         }
       ],
       "depends_on": [
@@ -15748,7 +16100,7 @@
         {
           "name": "runSieAndReplan",
           "kind": "function",
-          "signature": "(orch, state: TaskState, subtask: dict, spec: dict, combined: str, passed: bool, final: str, architect_doc: str, dashboard, adv_verdict, adv_stub: bool) -> None",
+          "signature": "(orch, state: TaskState, subtask: dict, spec: dict, combined: str, passed: bool, final: str, architect_doc: str, dashboard, adv_verdict, adv_stub: bool, result: dict | None=None) -> None",
           "summary": "Capture SIE reflection, memoize passing spec, and trigger adaptive replan.",
           "lineno": 28
         },
@@ -15757,7 +16109,7 @@
           "kind": "function",
           "signature": "(orch, state: TaskState, subtask: dict, combined: str, architect_doc: str, dashboard) -> None",
           "summary": "Dual-ledger replan driver: one tiny Progress Ledger call updates the stall counter",
-          "lineno": 74
+          "lineno": 82
         }
       ],
       "depends_on": [
@@ -15946,10 +16298,11 @@
           "kind": "class",
           "signature": "",
           "summary": "Runs ONE subtask attempt: spec authoring, live feed/trajectory, hands invocation, verif…",
-          "lineno": 33
+          "lineno": 35
         }
       ],
       "depends_on": [
+        "agents.planning",
         "config",
         "human_nature.run_events",
         "notifications.dashboard",
@@ -16019,7 +16372,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment.",
-          "lineno": 42
+          "lineno": 43
         }
       ],
       "depends_on": [
@@ -16366,7 +16719,8 @@
         "tests/execution/test_execution_router.py",
         "tests/execution/test_execution_security.py",
         "tests/execution/test_execution_worktree.py",
-        "tests/orchestration/test_bridge_execution_tiered.py"
+        "tests/orchestration/test_bridge_execution_tiered.py",
+        "tests/planning/test_pre_execution_council.py"
       ],
       "callers": []
     },
@@ -16517,7 +16871,7 @@
           "kind": "function",
           "signature": "(state: Any, coordinator: Any=None, dashboard: Any=None) -> 'dict | None'",
           "summary": "If the psyche's faculties disagree strongly (high dissonance) and debate budget",
-          "lineno": 92
+          "lineno": 105
         }
       ],
       "depends_on": [
@@ -16941,11 +17295,12 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles subtask plan authoring, invocation spec construction, and SIE authoring context.",
-          "lineno": 40
+          "lineno": 41
         }
       ],
       "depends_on": [
         "agents.completion_envelope",
+        "agents.planning",
         "agents.verifier",
         "config",
         "learning.knowledge_graph",
@@ -18311,56 +18666,56 @@
           "kind": "function",
           "signature": "(name: str) -> Path",
           "summary": "",
-          "lineno": 51
+          "lineno": 60
         },
         {
           "name": "writeHeartbeat",
           "kind": "function",
           "signature": "(name: str, pid: Optional[int]=None, seq: Optional[int]=None) -> None",
           "summary": "Atomic-replace ``state/heartbeats/<name>.json``",
-          "lineno": 55
+          "lineno": 65
         },
         {
           "name": "beat",
           "kind": "function",
           "signature": "(name: str, *, interval_s: float=HEARTBEAT_INTERVAL_SECONDS) -> bool",
           "summary": "Throttled ``writeHeartbeat`` for hot loops (the run loop calls this every iteration).",
-          "lineno": 75
+          "lineno": 86
         },
         {
           "name": "readHeartbeat",
           "kind": "function",
           "signature": "(name: str) -> Optional[dict]",
           "summary": "",
-          "lineno": 89
+          "lineno": 100
         },
         {
           "name": "clearHeartbeat",
           "kind": "function",
           "signature": "(name: str) -> None",
           "summary": "Best-effort unlink (clean run teardown)",
-          "lineno": 94
+          "lineno": 109
         },
         {
           "name": "isRunAlive",
           "kind": "function",
           "signature": "(task_id: str, *, grace_s: float=RUN_GRACE_SECONDS) -> bool",
           "summary": "True while the orchestrator process behind ``task_id`` may still be running.",
-          "lineno": 137
+          "lineno": 152
         },
         {
           "name": "writeBotHeartbeat",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Gateway-bot heartbeat",
-          "lineno": 148
+          "lineno": 167
         },
         {
           "name": "isBotAlive",
           "kind": "function",
           "signature": "(*, grace_s: float=BOT_GRACE_SECONDS) -> bool",
           "summary": "True while the gateway bot process may still be running (heartbeat fresh or pid alive).",
-          "lineno": 153
+          "lineno": 172
         }
       ],
       "depends_on": [
@@ -20327,6 +20682,28 @@
       ],
       "callers": []
     },
+    "tools.groq_probe": {
+      "path": "tools/groq_probe.py",
+      "purpose": "Safe Groq model-access probe.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 132
+        }
+      ],
+      "depends_on": [
+        "agents.planning.pre_execution_council",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "tools.iteration_bench": {
       "path": "tools/iteration_bench.py",
       "purpose": "Benchmark harness for validated Claude/agent iteration speed.",
@@ -20345,6 +20722,52 @@
       ],
       "test": [
         "tests/platform/test_dev_commands.py"
+      ],
+      "callers": []
+    },
+    "tools.pre_execution_council_compare": {
+      "path": "tools/pre_execution_council_compare.py",
+      "purpose": "Compare round-robin and selector pre-execution council artifacts.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 117
+        }
+      ],
+      "depends_on": [
+        "agents.planning.pre_execution_council"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/planning/test_pre_execution_council.py"
+      ],
+      "callers": []
+    },
+    "tools.pre_execution_council_smoke": {
+      "path": "tools/pre_execution_council_smoke.py",
+      "purpose": "CLI smoke for the mock-only pre-execution council.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 54
+        }
+      ],
+      "depends_on": [
+        "agents.planning.pre_execution_council"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/planning/test_pre_execution_council.py"
       ],
       "callers": []
     },

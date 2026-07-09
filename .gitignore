@@ -48,6 +48,8 @@ state/terminal_nav.json
 state/terminal_mirror.json
 # Leftover ChatGPT Chromium profile from the pre-Gemini browser layer (runtime data; safe to delete)
 state/chatgpt_profile/
+# Dedicated ChatGPT reconnaissance profile (runtime data; never commit browser sessions)
+state/chatgpt_profile_recon/
 # Python/tooling caches and local test output
 layer_dump.txt
 __pycache__/
