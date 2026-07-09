@@ -16,6 +16,7 @@ from agents.planning.pre_execution_council import (
 )
 from tools.pre_execution_council_compare import _config as _compare_config
 from tools.pre_execution_council_compare import _metric_line, _parse_args as _compare_parse_args
+from tools.pre_execution_council_quality_report import build_report, load_run
 
 
 def _last_continuity_line(prompt: str) -> str:
@@ -310,6 +311,79 @@ def test_compare_metric_line_reports_artifact_quality_fields(tmp_path):
     assert "prompt_chars=" in line
     assert "brief_chars=" in line
     assert "first_slice=" in line
+
+
+def _write_quality_report_run(tmp_path, name, *, policy, first_slice, provider_summaries=None, warnings=None, messages=None):
+    run_dir = tmp_path / name
+    run_dir.mkdir()
+    (run_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "conversation_policy": policy,
+                "warnings": warnings or [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    brief = {
+        "recommended_first_execution_slice": first_slice,
+        "implementation_prompt_export": first_slice,
+        "disagreements_between_agents": ["[DISAGREE] one"] if "selector" in policy else [],
+        "provider_run_summaries": provider_summaries or [],
+    }
+    (run_dir / "brief.json").write_text(json.dumps(brief), encoding="utf-8")
+    (run_dir / "brief.md").write_text(f"# Brief\n{first_slice}\n", encoding="utf-8")
+    rows = messages or [
+        {
+            "speaker": "GPT",
+            "prompt_excerpt": "x" * 10,
+            "content": "[CLAIM] compact",
+        }
+    ]
+    (run_dir / "transcript.jsonl").write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    return run_dir
+
+
+def test_quality_report_summarizes_comparison_and_live_diversity(tmp_path):
+    mock_round = _write_quality_report_run(tmp_path, "mock_round", policy="round_robin", first_slice="Mock core")
+    mock_selector = _write_quality_report_run(tmp_path, "mock_selector", policy="selector", first_slice="Mock core")
+    live_selector = _write_quality_report_run(
+        tmp_path,
+        "live_selector",
+        policy="selector",
+        first_slice="Tighten CouncilBrief synthesis for mixed live/mock runs",
+        provider_summaries=[
+            {
+                "seat_name": "Cloudflare",
+                "last_provider_state": "fully_live",
+                "actual_live_any": True,
+                "actual_live_turn_count": 1,
+                "fallback_turn_count": 0,
+                "models_used": ["@cf/meta/llama-3.1-8b-instruct-fp8-fast"],
+            }
+        ],
+        messages=[
+            {
+                "speaker": "Cloudflare",
+                "prompt_excerpt": "x" * 20,
+                "content": "[RISK] Cloudflare adds latency and cost critique.",
+            }
+        ],
+    )
+    report = build_report(
+        [
+            type("Comparison", (), {"label": "mock", "round_robin": load_run("mock_round", mock_round), "selector": load_run("mock_selector", mock_selector)})(),
+            type("Comparison", (), {"label": "live", "round_robin": load_run("live_round", mock_round), "selector": load_run("live_selector", live_selector)})(),
+        ],
+        [],
+    )
+    assert "Council Quality Evaluation Report v1" in report
+    assert "live_diversity_helped: yes" in report
+    assert "Cloudflare participated live" in report
+    assert "recommended_next_slice" in report
 
 
 def test_compare_defaults_to_mock_only_even_when_env_live_flags_are_set(monkeypatch):

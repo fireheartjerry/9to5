@@ -2210,6 +2210,7 @@
         "tests/planning/test_pre_execution_council.py"
       ],
       "callers": [
+        "tools.cloudflare_workers_ai_probe",
         "tools.groq_probe",
         "tools.pre_execution_council_compare",
         "tools.pre_execution_council_smoke"
@@ -3526,6 +3527,7 @@
         "society.worker",
         "state.task_io",
         "state.task_schema",
+        "tools.cloudflare_workers_ai_probe",
         "tools.elaborator_eval",
         "tools.groq_probe"
       ]
@@ -20310,6 +20312,28 @@
       ],
       "callers": []
     },
+    "tools.cloudflare_workers_ai_probe": {
+      "path": "tools/cloudflare_workers_ai_probe.py",
+      "purpose": "Safe Cloudflare Workers AI access probe.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 54
+        }
+      ],
+      "depends_on": [
+        "agents.planning.pre_execution_council",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "tools.codemod": {
       "path": "tools/codemod.py",
       "purpose": "codemod -- AST/libcst-based mechanical edits across the repo (formatting-preserving).",
@@ -20747,6 +20771,55 @@
       "depends_on": [
         "agents.planning.pre_execution_council"
       ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/planning/test_pre_execution_council.py"
+      ],
+      "callers": []
+    },
+    "tools.pre_execution_council_quality_report": {
+      "path": "tools/pre_execution_council_quality_report.py",
+      "purpose": "Generate a quality report from pre-execution council comparison artifacts.",
+      "exports": [
+        {
+          "name": "RunArtifact",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 31
+        },
+        {
+          "name": "ComparisonArtifact",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 74
+        },
+        {
+          "name": "load_run",
+          "kind": "function",
+          "signature": "(label: str, raw_path: str | Path) -> RunArtifact",
+          "summary": "",
+          "lineno": 121
+        },
+        {
+          "name": "build_report",
+          "kind": "function",
+          "signature": "(comparisons: list[ComparisonArtifact], smoke_runs: list[RunArtifact]) -> str",
+          "summary": "",
+          "lineno": 245
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 302
+        }
+      ],
+      "depends_on": [],
       "side_effects": [
         "unannotated"
       ],
