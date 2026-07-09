@@ -61,6 +61,8 @@ header .tunnel{color:#00d4aa}
 .sub{padding:3px 0;border-bottom:1px solid var(--border-faint);cursor:pointer}
 .sub .st{float:right;text-transform:uppercase;letter-spacing:.5px}
 .raw{background:var(--bg-raw);border:1px solid var(--border);max-height:220px;overflow:auto;font-size:11px;color:#9a9a9a;padding:4px;margin:4px 0;white-space:pre-wrap}
+.council-log{background:var(--bg-raw);border:1px solid var(--border);min-height:260px;max-height:calc(100vh - 260px);overflow:auto;font-size:11px;color:#c8c8c8;padding:6px;white-space:pre-wrap}
+.council-col .btn{margin:6px 0}
 .curve{border-top:1px solid var(--border);padding:6px 10px;height:64px;overflow:auto}
 .arc{color:#c8c8c8;white-space:pre-wrap;font-size:12px}
 .wtrail{font-size:12px;color:#c8c8c8}
@@ -94,7 +96,8 @@ header .tunnel{color:#00d4aa}
 .sec{position:sticky;top:0;background:var(--bg);z-index:1}
 .cols>.col:nth-child(1){flex:0 0 230px}
 .cols>.col:nth-child(2){flex:1 1 auto}
-.cols>.col:nth-child(3){flex:0 0 300px}
+.cols>.col:nth-child(3){flex:0 0 280px}
+.cols>.col:nth-child(4){flex:0 0 340px}
 .cols .col:nth-child(1),.cols .col:nth-child(2){resize:horizontal;min-width:160px;max-width:60vw}
 input[name="tab"]{position:absolute;left:-9999px}
 @media (max-width:960px){
@@ -104,13 +107,16 @@ input[name="tab"]{position:absolute;left:-9999px}
   .col{display:none;height:auto;max-height:70vh}
   #tab-meta:checked~.tabbar label[for="tab-meta"],
   #tab-feed:checked~.tabbar label[for="tab-feed"],
-  #tab-subs:checked~.tabbar label[for="tab-subs"]{color:var(--accent-teal)}
+  #tab-subs:checked~.tabbar label[for="tab-subs"],
+  #tab-council:checked~.tabbar label[for="tab-council"]{color:var(--accent-teal)}
   #tab-meta:checked~main .col:nth-child(1),
   #tab-feed:checked~main .col:nth-child(2),
-  #tab-subs:checked~main .col:nth-child(3){display:block}
+  #tab-subs:checked~main .col:nth-child(3),
+  #tab-council:checked~main .col:nth-child(4){display:block}
   #tab-meta:focus-visible~.tabbar label[for="tab-meta"],
   #tab-feed:focus-visible~.tabbar label[for="tab-feed"],
-  #tab-subs:focus-visible~.tabbar label[for="tab-subs"]{outline:2px solid var(--accent-teal);outline-offset:2px}
+  #tab-subs:focus-visible~.tabbar label[for="tab-subs"],
+  #tab-council:focus-visible~.tabbar label[for="tab-council"]{outline:2px solid var(--accent-teal);outline-offset:2px}
 }
 @media (min-width:961px){.tabbar{display:none}input[name="tab"]{visibility:hidden}}
 """

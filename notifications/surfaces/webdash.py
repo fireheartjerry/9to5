@@ -14,6 +14,7 @@ query string on the operator's machine; every route that exposes run data is tok
 Routes:
   GET  /                       -> Bloomberg HTML shell (no run data; open ?token= to load data)
   GET  /api/state?token=       -> JSON snapshot {meta, subtasks, health, arc, wisdom_trail, ...}
+  GET  /api/council?token=     -> JSON full pre-execution council transcript for the run
   GET  /api/events?token=      -> Server-Sent Events stream of bus events
   GET  /api/raw?sid=&token=    -> JSON list of the last 500 raw stdout lines for a subtask
   POST /api/control            -> {action, arg} -> ControlBus mutation (X-9to5-Token header)
@@ -22,7 +23,7 @@ Routes:
 EXPORTS:
   startWebDashboard(task_id: str, port: Optional[int]=None) -> Optional[str]  -- Start the dashboard in a daemon thread
   stopWebDashboard() -> None  -- Shut down the running dashboard server (frees the port)
-DEPENDS-ON: config, memory.experience, notifications.event_bus, notifications.health_aura, notifications.webdash_page, platform_core.core.best_effort, platform_core.runtime, platform_core.runtime.control, state.task
+DEPENDS-ON: config, memory.experience, notifications.council_transcript, notifications.event_bus, notifications.health_aura, notifications.webdash_page, platform_core.core.best_effort, platform_core.runtime, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_webdash_control.py tests/notifications/test_bloomberg_webdash.py tests/notifications/test_webdash_page_split.py
 """
@@ -41,6 +42,7 @@ from urllib.parse import parse_qs, urlparse
 import config
 from notifications.event_bus import get_bus
 from notifications.health_aura import aura_color, compute_health
+from notifications.council_transcript import council_summary, read_transcript
 from notifications.webdash_page import PAGE as _PAGE
 from platform_core.core.best_effort import best_effort, degradationLine, degradationSummary
 from platform_core.runtime import perf
@@ -220,6 +222,7 @@ def _snapshot(task_id: str) -> dict:
         "wisdom_trail": derived["wisdom_trail"],
         "intelligence_curve": derived["intelligence_curve"],
         "comparative": derived["comparative"],
+        "council": council_summary(state),
         "degradations": degradationSummary(),
         "degraded_line": degradationLine(),
         "subtasks": [
@@ -335,11 +338,18 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         # public tunnel, so these MUST require the per-run token exactly like /api/control. Only
         # the token-less HTML shell (below) is served openly; it carries no run data itself and
         # bootstraps the token from the URL query string on the operator's own machine.
-        if self.path.startswith(("/api/state", "/api/events", "/api/raw")) and not self._authed():
+        if self.path.startswith(("/api/state", "/api/events", "/api/raw", "/api/council")) and not self._authed():
             self._send(403, b'{"ok":false,"error":"forbidden"}', "application/json")
             return
         if self.path.startswith("/api/state"):
             self._send(200, json.dumps(_snapshot(self.task_id)).encode("utf-8"), "application/json")
+        elif self.path.startswith("/api/council"):
+            try:
+                state = TaskState.load(self.task_id)
+                payload = read_transcript(state)
+            except Exception:  # noqa: BLE001
+                payload = {"ok": False, "error": "council transcript unavailable", "content": ""}
+            self._send(200, json.dumps(payload).encode("utf-8"), "application/json")
         elif self.path.startswith("/api/events"):
             self._serve_sse()
         elif self.path.startswith("/api/raw"):

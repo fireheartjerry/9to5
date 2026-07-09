@@ -17,6 +17,7 @@ const __T="__WEBDASH_TOKEN__";
 const __TOK=__T||(new URLSearchParams(location.search).get('token'))||"";
 const TUNNEL_ICON='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="4" width="20" height="14" rx="1"/><path d="M8 21h8M12 17v4"/></svg>';
 let EVENTS=[], LOCKED=true, NEXT_POLL_MS=2000;
+let COUNCIL_LOADED=false;
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 const DESTRUCTIVE=new Set(['abort','reject']);
 function toast(msg,ok){
@@ -103,6 +104,20 @@ async function expandRaw(sid,el){
   d.before(copyBtn);
 }
 function kv(k,v){return '<div class="kv"><span class="k">'+esc(k)+'</span><span class="val">'+esc(v)+'</span></div>';}
+async function loadCouncil(btn){
+  if(btn){btn.classList.add('busy');btn.disabled=true;}
+  try{
+    const r=await (await fetch('/api/council?token='+encodeURIComponent(__TOK))).json();
+    const log=document.getElementById('councilLog');
+    if(!r.ok){log.textContent=r.error||'Council transcript unavailable';return;}
+    log.textContent=(r.truncated?'[truncated]\n':'')+(r.content||'');
+    COUNCIL_LOADED=true;
+  }catch(e){
+    document.getElementById('councilLog').textContent='Council transcript failed: '+e.message;
+  }finally{
+    if(btn){btn.classList.remove('busy');btn.disabled=false;}
+  }
+}
 function renderState(r){
   if(r.empty){document.getElementById('status').textContent='no task';return;}
   const m=r.meta;
@@ -124,6 +139,7 @@ function renderState(r){
     +kv('elapsed',fmt(r.elapsed_s))+kv('eta',fmt(r.eta_s))
     +kv('replans',r.replans)+kv('adversary',r.adversary)+kv('cost',r.cost||'—');
   if(r.discovery)meta+='<div class="sec">DISCOVERY</div>'+kv('findings',r.discovery.findings)+kv('theme',r.discovery.theme);
+  if(r.council&&r.council.status&&r.council.status!=='not_run')meta+='<div class="sec">COUNCIL</div>'+kv('status',r.council.status)+kv('run',(r.council.run_id||'').slice(0,8))+kv('transcript',r.council.transcript_available?'available':'missing');
   if(r.comparative){meta+='<div class="sec">THIS RUN vs AVG</div>'
     +kv('pace',r.comparative.pace)+kv('innovation',r.comparative.innovation)
     +kv('adversary',r.comparative.adversary)+kv('replans',r.comparative.replans);}
@@ -138,6 +154,12 @@ function renderState(r){
       +'<span class="st '+c+'">'+esc(s.status)+' '+v+'</span><br>▼ EXPAND RAW STDOUT</div>';
   }).join('')||'<div class="muted">—</div>';
   document.getElementById('arc').textContent=r.arc&&r.arc.length?r.arc.map(b=>b.text).join('\n'):'—';
+  const c=r.council||{};
+  const health=(c.provider_health||[]).map(x=>'<div class="wtrail">- '+esc(x)+'</div>').join('');
+  document.getElementById('councilSummary').innerHTML=c.status&&c.status!=='not_run'
+    ? kv('status',c.status)+kv('run',(c.run_id||'').slice(0,8))+kv('transcript',c.transcript_available?'available':'missing')+kv('discord',c.discord_transcript_message_id?'posted':'not posted')+(health?'<div class="sec">PROVIDER HEALTH</div>'+health:'')
+    : '<div class="muted">No pre-execution council recorded for this run.</div>';
+  if(!c.transcript_available&&!COUNCIL_LOADED)document.getElementById('councilLog').textContent='';
   const cv=r.intelligence_curve||[];
   if(!cv.length){
     document.getElementById('curve').innerHTML='<span class="muted">accumulating…</span>';

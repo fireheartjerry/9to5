@@ -8,7 +8,7 @@ def test_page_is_bloomberg():
     p = webdash._PAGE
     for token in ("#000000", "#ff9f00", "#00d4aa", "#ff4444", "EventSource",
                   "ui-monospace", "EXPAND RAW STDOUT", "INTELLIGENCE CURVE", "/api/events",
-                  "/api/raw"):
+                  "/api/raw", "/api/council", "PRE-EXECUTION COUNCIL"):
         assert token in p, token
 
 
@@ -36,13 +36,40 @@ def test_snapshot_has_surface_keys(monkeypatch, tmp_path):
     snap = webdash._snapshot(state.task_id)
     for k in ("codename", "tunnel_url"):
         assert k in snap["meta"]
-    for k in ("health", "arc", "wisdom_trail", "intelligence_curve", "comparative",
+    for k in ("health", "arc", "wisdom_trail", "intelligence_curve", "comparative", "council",
               "model", "replans", "adversary", "discovery"):
         assert k in snap, k
     assert snap["health"]["score"] == 100
     assert snap["health"]["color"] == "#00d4aa"
     assert snap["tunnel_url"] == "https://abc.trycloudflare.com"
     assert snap["meta"]["task_id"] == state.task_id
+    assert snap["council"]["status"] == "not_run"
+
+
+def test_council_transcript_endpoint_payload(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "STATE_DIR", tmp_path / "tasks")
+    monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path)
+    from state.task import TaskState
+    transcript_dir = tmp_path / "state" / "council_runs" / "run"
+    transcript_dir.mkdir(parents=True)
+    transcript = transcript_dir / "transcript.md"
+    transcript.write_text("GPT: hello\nCerebras: sharp critique\n", encoding="utf-8")
+    state = TaskState.create("show council transcript", 1.0)
+    state.meta["pre_execution_council"] = {
+        "status": "completed",
+        "run_id": "run-123456",
+        "provider_health": ["GPT: live", "Cerebras: live"],
+        "transcript_path": str(transcript),
+    }
+    state.save()
+
+    snap = webdash._snapshot(state.task_id)
+    payload = webdash.read_transcript(state)
+
+    assert snap["council"]["transcript_available"] is True
+    assert "Cerebras: live" in snap["council"]["provider_health"]
+    assert payload["ok"] is True
+    assert "Cerebras: sharp critique" in payload["content"]
 
 
 def test_snapshot_missing_task_is_empty(monkeypatch, tmp_path):

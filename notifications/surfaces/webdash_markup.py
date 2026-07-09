@@ -28,10 +28,12 @@ MARKUP = r"""<!doctype html><html><head><meta charset="utf-8"><title>9TO5</title
 <input type="radio" name="tab" id="tab-meta" checked>
 <input type="radio" name="tab" id="tab-feed">
 <input type="radio" name="tab" id="tab-subs">
+<input type="radio" name="tab" id="tab-council">
 <div class="tabbar">
   <label for="tab-meta">Meta</label>
   <label for="tab-feed">Feed</label>
   <label for="tab-subs">Subtasks</label>
+  <label for="tab-council">Council</label>
 </div>
 <main class="cols">
   <div class="col" id="meta" aria-label="Mission and progress"></div>
@@ -54,6 +56,12 @@ MARKUP = r"""<!doctype html><html><head><meta charset="utf-8"><title>9TO5</title
     <div class="sec">NARRATIVE ARC</div>
     <div class="arc" id="arc">—</div>
   </aside>
+  <section class="col council-col" aria-label="Pre-execution council conversation">
+    <div class="sec">PRE-EXECUTION COUNCIL</div>
+    <div id="councilSummary" class="muted">â€”</div>
+    <button class="btn" onclick="loadCouncil(this)">Load conversation</button>
+    <pre class="council-log" id="councilLog"></pre>
+  </section>
 </main>
 <div class="curve" role="img" aria-label="Intelligence curve chart">
   <span class="sec">INTELLIGENCE CURVE</span> <span id="curve"></span>

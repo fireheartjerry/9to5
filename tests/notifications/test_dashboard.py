@@ -1,5 +1,6 @@
 """Unit tests for DiscordDashboard (no live Discord connection)."""
 import sys
+import tempfile
 import threading
 import unittest
 from datetime import datetime, timedelta
@@ -266,6 +267,28 @@ class TestEventPersistence(unittest.TestCase):
             d.start(st)
         save_ev.assert_not_called()
         self.assertEqual(len(d._eventsSnapshot()), 0)
+
+
+class TestCouncilTranscriptPost(unittest.TestCase):
+    def test_posts_transcript_once_and_records_message_id(self):
+        d = DiscordDashboard()
+        st = _state()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            transcript_dir = root / "state" / "council_runs" / "run"
+            transcript_dir.mkdir(parents=True)
+            transcript = transcript_dir / "transcript.md"
+            transcript.write_text("GPT: hello\nCerebras: concise\n", encoding="utf-8")
+            st.meta["pre_execution_council"] = {"status": "completed"}
+            ref = mock.Mock(run_id="abcdef123456", transcript_path=str(transcript))
+            with mock.patch.object(config, "DISCORD_DASHBOARD", True), \
+                 mock.patch.object(config, "PROJECT_ROOT", root), \
+                 mock.patch("notifications.dashboard.discord.postFile", return_value="msg-1") as post:
+                d.post_council_transcript(st, ref)
+                d.post_council_transcript(st, ref)
+            post.assert_called_once()
+            self.assertEqual(st.meta["pre_execution_council"]["discord_transcript_message_id"], "msg-1")
+            self.assertTrue(any("transcript posted" in e for e in d._eventsSnapshot()))
 
 
 # ---- merged from test_dashboard_cv2.py ----

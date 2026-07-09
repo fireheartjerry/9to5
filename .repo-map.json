@@ -1566,6 +1566,59 @@
         "agents.planning.pre_execution_council"
       ]
     },
+    "agents.planning.council_seam": {
+      "path": "agents/planning/council_seam.py",
+      "purpose": "Default-off seam between run preamble and normal execution planning.",
+      "exports": [
+        {
+          "name": "CouncilSeamConfig",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 40
+        },
+        {
+          "name": "CouncilBriefReference",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 61
+        },
+        {
+          "name": "maybe_prepare_council_brief",
+          "kind": "function",
+          "signature": "(*, state: Any, work_dir: str, elaborated: str, resume: bool, config_obj: CouncilSeamConfig | None=None, run_council: CouncilRunnerFn | None=None) -> CouncilBriefReference | None",
+          "summary": "Optionally run the council and persist compact metadata.",
+          "lineno": 95
+        },
+        {
+          "name": "architect_advisory_block",
+          "kind": "function",
+          "signature": "(reference: CouncilBriefReference, *, max_chars: int) -> str",
+          "summary": "Build the bounded architect-only advisory block.",
+          "lineno": 212
+        },
+        {
+          "name": "planner_advisory_block",
+          "kind": "function",
+          "signature": "(reference: CouncilBriefReference, *, max_chars: int) -> str",
+          "summary": "Build the bounded planner-only advisory block.",
+          "lineno": 245
+        }
+      ],
+      "depends_on": [
+        "agents.planning.pre_execution_council",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/orchestration/test_pre_execution_council_seam.py",
+        "tests/planning/test_pre_execution_council_seam.py"
+      ],
+      "callers": []
+    },
     "agents.planning.debugging_workflow": {
       "path": "agents/planning/debugging_workflow.py",
       "purpose": "debugging_workflow -- integrated skill-gap + trace-replay diagnostic.",
@@ -2226,6 +2279,7 @@
         "tests/planning/test_pre_execution_council.py"
       ],
       "callers": [
+        "agents.planning.council_seam",
         "tools.cerebras_probe",
         "tools.cloudflare_workers_ai_probe",
         "tools.groq_probe",
@@ -3306,6 +3360,7 @@
         "agents.planning.clarifier",
         "agents.planning.council_context",
         "agents.planning.council_logging",
+        "agents.planning.council_seam",
         "agents.planning.elaborator.candidates",
         "agents.planning.elaborator.core",
         "agents.planning.elaborator.defer",
@@ -12815,13 +12870,14 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 56
+          "lineno": 57
         }
       ],
       "depends_on": [
         "config",
         "notifications.branding",
         "notifications.commands",
+        "notifications.council_transcript",
         "notifications.cv2",
         "notifications.discord_bot",
         "notifications.event_bus",
@@ -13018,19 +13074,20 @@
           "kind": "function",
           "signature": "(task_id: str, port: Optional[int]=None) -> Optional[str]",
           "summary": "Start the dashboard in a daemon thread",
-          "lineno": 402
+          "lineno": 412
         },
         {
           "name": "stopWebDashboard",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Shut down the running dashboard server (frees the port)",
-          "lineno": 435
+          "lineno": 445
         }
       ],
       "depends_on": [
         "config",
         "memory.experience",
+        "notifications.council_transcript",
         "notifications.event_bus",
         "notifications.health_aura",
         "notifications.webdash_page",

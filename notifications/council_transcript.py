@@ -1,0 +1,71 @@
+"""Read-only helpers for surfacing pre-execution council transcripts."""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import config
+
+
+MAX_TRANSCRIPT_BYTES = 2_000_000
+
+
+def council_meta(state: Any) -> dict:
+    meta = getattr(state, "meta", {}) or {}
+    value = meta.get("pre_execution_council") or {}
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def council_summary(state: Any) -> dict:
+    meta = council_meta(state)
+    transcript = _safe_transcript_path(meta.get("transcript_path"))
+    return {
+        "status": meta.get("status") or "not_run",
+        "run_id": meta.get("run_id") or "",
+        "run_mode": meta.get("run_mode") or "",
+        "provider_health": list(meta.get("provider_health") or [])[:12],
+        "selected_first_slice": meta.get("selected_first_slice") or "",
+        "warnings": list(meta.get("warnings") or [])[:12],
+        "transcript_available": bool(transcript and transcript.exists()),
+        "discord_transcript_message_id": meta.get("discord_transcript_message_id") or "",
+    }
+
+
+def read_transcript(state: Any) -> dict:
+    meta = council_meta(state)
+    path = _safe_transcript_path(meta.get("transcript_path"))
+    if path is None:
+        return {"ok": False, "error": "no council transcript path", "content": ""}
+    if not path.exists() or not path.is_file():
+        return {"ok": False, "error": "council transcript is not available", "content": ""}
+    data = path.read_bytes()
+    truncated = len(data) > MAX_TRANSCRIPT_BYTES
+    if truncated:
+        data = data[:MAX_TRANSCRIPT_BYTES]
+    return {
+        "ok": True,
+        "run_id": meta.get("run_id") or "",
+        "filename": path.name,
+        "truncated": truncated,
+        "content": data.decode("utf-8", errors="replace"),
+    }
+
+
+def resolve_transcript_path(raw: Any) -> Path | None:
+    return _safe_transcript_path(raw)
+
+
+def _safe_transcript_path(raw: Any) -> Path | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    path = Path(text)
+    if not path.is_absolute():
+        path = Path(config.PROJECT_ROOT) / path
+    try:
+        resolved = path.resolve()
+        allowed = (Path(config.PROJECT_ROOT) / "state" / "council_runs").resolve()
+        resolved.relative_to(allowed)
+    except (OSError, ValueError):
+        return None
+    return resolved

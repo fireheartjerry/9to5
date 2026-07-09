@@ -145,6 +145,8 @@ class Orchestrator(
                 elaborated=elaborated,
                 resume=resume,
             )
+            if council_brief_ref is not None:
+                dashboard.post_council_transcript(state, council_brief_ref)
             if resume and state.subtasks:
                 architect_doc = self._resumeSetup(state, work_dir, bus, dashboard)
             else:
