@@ -205,6 +205,14 @@ class ClaudeCliCfg:
             "PRE_EXECUTION_COUNCIL_CLOUDFLARE_MODEL",
             "@cf/meta/llama-3.1-8b-instruct-fp8-fast",
         ))
+    PRE_EXECUTION_COUNCIL_LIVE_CEREBRAS_ENABLED: bool = _F(
+        default_factory=lambda: (
+            _envBool("PRE_EXECUTION_COUNCIL_LIVE_CEREBRAS_ENABLED", False)
+            or _envBool("ENABLE_PRE_EXECUTION_COUNCIL_CEREBRAS", False)
+        ))
+    PRE_EXECUTION_COUNCIL_CEREBRAS_MODEL: str = _F(
+        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_CEREBRAS_MODEL", "gpt-oss-120b"))
+    CEREBRAS_API_KEY: str = _F(default_factory=lambda: os.getenv("CEREBRAS_API_KEY", ""))
     PRE_EXECUTION_COUNCIL_LIVE_CLAUDE_ENABLED: bool = _F(
         default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_LIVE_CLAUDE_ENABLED", False))
     PRE_EXECUTION_COUNCIL_LIVE_LOCAL_ENABLED: bool = _F(
@@ -214,6 +222,19 @@ class ClaudeCliCfg:
         ))
     PRE_EXECUTION_COUNCIL_LOCAL_MODEL: str = _F(
         default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_LOCAL_MODEL", ""))
+    # --- pre-execution council orchestration seam (default-off metadata-only bridge) ---
+    PRE_EXECUTION_COUNCIL_SEAM_ENABLED: bool = _F(
+        default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_SEAM_ENABLED", False))
+    PRE_EXECUTION_COUNCIL_RUN_ON_RESUME: bool = _F(
+        default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_RUN_ON_RESUME", False))
+    PRE_EXECUTION_COUNCIL_STRICT_MODE: bool = _F(
+        default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_STRICT_MODE", False))
+    PRE_EXECUTION_COUNCIL_INJECT_ARCHITECT_CONTEXT: bool = _F(
+        default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_INJECT_ARCHITECT_CONTEXT", False))
+    PRE_EXECUTION_COUNCIL_INJECT_PLANNER_CONTEXT: bool = _F(
+        default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_INJECT_PLANNER_CONTEXT", False))
+    PRE_EXECUTION_COUNCIL_MAX_INJECTED_CHARS: int = _F(
+        default_factory=lambda: _envInt("PRE_EXECUTION_COUNCIL_MAX_INJECTED_CHARS", 2500))
     # --- living Claude Code knowledge base (fetch + injection behaviour) ---
     # CLAUDE_DOC_FETCH's run-scoped live value lives in settings.runFlags().
     CLAUDE_DOC_FETCH: bool = _F(default_factory=lambda: _envBool("CLAUDE_DOC_FETCH", True))

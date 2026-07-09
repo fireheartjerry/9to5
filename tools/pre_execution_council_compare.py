@@ -33,6 +33,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--live-gemini", action="store_true", help="Explicitly allow live Gemini in comparison.")
     parser.add_argument("--live-groq", action="store_true", help="Explicitly allow live Groq in comparison.")
     parser.add_argument("--live-cloudflare", action="store_true", help="Explicitly allow live Cloudflare Workers AI in comparison.")
+    parser.add_argument("--live-cerebras", action="store_true", help="Explicitly allow live Cerebras in comparison.")
     parser.add_argument("--live-local", action="store_true", help="Explicitly allow live Local LLM in comparison.")
     parser.add_argument("--gpt-project-url", default="")
     parser.add_argument("--gpt-model", default="")
@@ -41,6 +42,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--groq-model", default="")
     parser.add_argument("--groq-fallback-models", default="")
     parser.add_argument("--cloudflare-model", default="")
+    parser.add_argument("--cerebras-model", default="")
     return parser.parse_args(argv)
 
 
@@ -50,8 +52,9 @@ def _config(args: argparse.Namespace, *, policy: str) -> CouncilConfig:
     live_gemini = bool(args.live_gemini and not args.mock_only)
     live_groq = bool(args.live_groq and not args.mock_only)
     live_cloudflare = bool(args.live_cloudflare and not args.mock_only)
+    live_cerebras = bool(args.live_cerebras and not args.mock_only)
     live_local = bool(args.live_local and not args.mock_only)
-    seat_count = 4 + int(live_groq) + int(live_cloudflare)
+    seat_count = 4 + int(live_groq) + int(live_cloudflare) + int(live_cerebras)
     return CouncilConfig(
         enabled=True,
         prompt_version=env_cfg.prompt_version,
@@ -77,6 +80,8 @@ def _config(args: argparse.Namespace, *, policy: str) -> CouncilConfig:
         groq_fallback_models=args.groq_fallback_models or env_cfg.groq_fallback_models,
         live_cloudflare_enabled=live_cloudflare,
         cloudflare_model=args.cloudflare_model or env_cfg.cloudflare_model,
+        live_cerebras_enabled=live_cerebras,
+        cerebras_model=args.cerebras_model or env_cfg.cerebras_model,
     )
 
 
@@ -92,6 +97,8 @@ def _requested_live_text(args: argparse.Namespace) -> str:
         providers.append("groq")
     if args.live_cloudflare:
         providers.append("cloudflare")
+    if args.live_cerebras:
+        providers.append("cerebras")
     if args.live_local:
         providers.append("local")
     return ",".join(providers) if providers else "(none)"

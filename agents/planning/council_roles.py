@@ -72,6 +72,12 @@ DEFAULT_SEAT_SPECS = (
         permanent_role="edge-hosted open-model critique, latency/cost scrutiny, deployment-adjacent risk checks",
         strengths=("edge-hosted model", "latency", "cost", "deployment-adjacent critique", "risk checks"),
     ),
+    CouncilSeatSpec(
+        name="Cerebras",
+        provider="mock",
+        permanent_role="ultra-fast execution feasibility, latency-aware implementation critique, rapid counterexamples",
+        strengths=("ultra-fast critique", "execution feasibility", "latency", "counterexamples", "simpler first slice"),
+    ),
 )
 
 TEMPORARY_HATS = (

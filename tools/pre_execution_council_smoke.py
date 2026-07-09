@@ -54,6 +54,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         default="",
         help="Model name for --live-cloudflare; defaults to PRE_EXECUTION_COUNCIL_CLOUDFLARE_MODEL.",
     )
+    parser.add_argument("--live-cerebras", action="store_true", help="Add live Cerebras as an optional extra seat.")
+    parser.add_argument(
+        "--cerebras-model",
+        default="",
+        help="Model name for --live-cerebras; defaults to PRE_EXECUTION_COUNCIL_CEREBRAS_MODEL.",
+    )
     return parser.parse_args(argv)
 
 
@@ -62,7 +68,8 @@ def main(argv: list[str] | None = None) -> int:
     env_cfg = CouncilConfig.from_config()
     live_groq = bool(args.live_groq or env_cfg.live_groq_enabled)
     live_cloudflare = bool(args.live_cloudflare or env_cfg.live_cloudflare_enabled)
-    seat_count = 4 + int(live_groq) + int(live_cloudflare)
+    live_cerebras = bool(args.live_cerebras or env_cfg.live_cerebras_enabled)
+    seat_count = 4 + int(live_groq) + int(live_cloudflare) + int(live_cerebras)
     cfg = CouncilConfig(
         enabled=True,
         prompt_version=env_cfg.prompt_version,
@@ -89,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
         groq_fallback_models=args.groq_fallback_models or env_cfg.groq_fallback_models,
         live_cloudflare_enabled=live_cloudflare,
         cloudflare_model=args.cloudflare_model or env_cfg.cloudflare_model,
+        live_cerebras_enabled=live_cerebras,
+        cerebras_model=args.cerebras_model or env_cfg.cerebras_model,
     )
     result = run_pre_execution_council(
         args.task,

@@ -18,6 +18,7 @@ from agents.planning.pre_execution_council import (
 from tools.pre_execution_council_compare import _config as _compare_config
 from tools.pre_execution_council_compare import _metric_line, _parse_args as _compare_parse_args
 from tools.pre_execution_council_quality_report import build_report, load_run
+from tools.cerebras_probe import main as cerebras_probe_main
 
 
 def _last_continuity_line(prompt: str) -> str:
@@ -393,6 +394,7 @@ def test_compare_defaults_to_mock_only_even_when_env_live_flags_are_set(monkeypa
     monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_LIVE_GPT_ENABLED", True, raising=False)
     monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_LIVE_LOCAL_ENABLED", True, raising=False)
     monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_LIVE_CLOUDFLARE_ENABLED", True, raising=False)
+    monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_LIVE_CEREBRAS_ENABLED", True, raising=False)
     args = _compare_parse_args(["--task", "compare safety"])
     cfg = _compare_config(args, policy="selector")
     assert cfg.live_gpt_enabled is False
@@ -400,26 +402,29 @@ def test_compare_defaults_to_mock_only_even_when_env_live_flags_are_set(monkeypa
     assert cfg.live_groq_enabled is False
     assert cfg.live_local_enabled is False
     assert cfg.live_cloudflare_enabled is False
+    assert cfg.live_cerebras_enabled is False
 
 
 def test_compare_allows_only_explicit_live_provider_flags(monkeypatch):
     monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_LIVE_GPT_ENABLED", True, raising=False)
     monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_LIVE_LOCAL_ENABLED", True, raising=False)
-    args = _compare_parse_args(["--task", "compare live", "--live-gemini", "--live-groq", "--live-cloudflare"])
+    args = _compare_parse_args(["--task", "compare live", "--live-gemini", "--live-groq", "--live-cloudflare", "--live-cerebras"])
     cfg = _compare_config(args, policy="selector")
     assert cfg.live_gpt_enabled is False
     assert cfg.live_gemini_enabled is True
     assert cfg.live_groq_enabled is True
     assert cfg.live_local_enabled is False
     assert cfg.live_cloudflare_enabled is True
+    assert cfg.live_cerebras_enabled is True
 
 
 def test_compare_mock_only_overrides_explicit_live_flags():
-    args = _compare_parse_args(["--task", "compare mock", "--mock-only", "--live-gemini", "--live-groq", "--live-cloudflare"])
+    args = _compare_parse_args(["--task", "compare mock", "--mock-only", "--live-gemini", "--live-groq", "--live-cloudflare", "--live-cerebras"])
     cfg = _compare_config(args, policy="selector")
     assert cfg.live_gemini_enabled is False
     assert cfg.live_groq_enabled is False
     assert cfg.live_cloudflare_enabled is False
+    assert cfg.live_cerebras_enabled is False
 
 
 def test_prompt_hierarchy_context_version_and_compact_protocol_are_included(tmp_path):
@@ -1083,10 +1088,233 @@ def test_cloudflare_malformed_response_falls_back_safely(tmp_path, monkeypatch):
     assert "cloudflare-test-key" not in blob
 
 
+def test_cerebras_env_alias_enables_cerebras_flag(monkeypatch):
+    monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_LIVE_CEREBRAS_ENABLED", True, raising=False)
+    monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_CEREBRAS_MODEL", "gpt-oss-120b", raising=False)
+    monkeypatch.setattr(config, "CEREBRAS_API_KEY", "cerebras-test-key", raising=False)
+    cfg = CouncilConfig.from_config()
+    assert cfg.live_cerebras_enabled is True
+    assert cfg.cerebras_model == "gpt-oss-120b"
+    assert config.CEREBRAS_API_KEY == "cerebras-test-key"
+
+
+def test_cerebras_disabled_by_default_in_seat_set(tmp_path):
+    result = run_pre_execution_council("cerebras disabled task", council_config=_enabled_config(tmp_path))
+    assert {m.speaker for m in result.messages} == {"GPT", "Gemini", "Claude", "Local LLM"}
+    assert len(result.messages) == 48
+
+
+def test_cerebras_enabled_uses_extra_seat_and_message_target(tmp_path):
+    cfg = _enabled_config(tmp_path, live_cerebras_enabled=True, messages_per_seat=12, total_target_messages=48)
+    result = run_pre_execution_council("cerebras five-seat task", council_config=cfg)
+    assert len(result.messages) == 60
+    assert {m.speaker for m in result.messages} == {"GPT", "Gemini", "Claude", "Local LLM", "Cerebras"}
+
+
+def test_cerebras_live_missing_key_falls_back_to_mock_with_safe_metadata(tmp_path, monkeypatch):
+    monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
+    cfg = _enabled_config(tmp_path, live_cerebras_enabled=True, messages_per_seat=1, total_target_messages=5)
+    result = run_pre_execution_council("cerebras fallback task", council_config=cfg)
+    cerebras = next(m for m in result.messages if m.speaker == "Cerebras")
+    assert cerebras.provider_metadata["provider"] == "mock"
+    assert cerebras.provider_metadata["requested_live"] is True
+    assert cerebras.provider_metadata["actual_live"] is False
+    assert cerebras.provider_metadata["fallback_from"] == "cerebras"
+    assert cerebras.provider_metadata["fallback"] is True
+    assert cerebras.provider_metadata["live_provider_invoked"] is False
+    assert "CEREBRAS_API_KEY missing" in cerebras.provider_metadata["fallback_reason"]
+    assert "cerebras-test-key" not in cerebras.content
+    assert "CEREBRAS_API_KEY" not in cerebras.provider_metadata
+
+
+class _FakeCerebrasClient:
+    def __init__(self, reply):
+        self.reply = reply
+        self.calls = []
+
+    def urlopen(self, req, timeout=0):
+        self.calls.append((req, timeout))
+
+        class _Resp:
+            def __init__(self, body):
+                self._body = body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return self._body
+
+        return _Resp(json.dumps({"choices": [{"message": {"content": self.reply}}]}).encode("utf-8"))
+
+
+def test_cerebras_live_seat_can_run_with_fake_response(tmp_path, monkeypatch):
+    monkeypatch.setenv("CEREBRAS_API_KEY", "cerebras-test-key")
+    fake = _FakeCerebrasClient(
+        "[CLAIM] Cerebras compresses the first slice. [RISK] Overbuilt provider work delays execution."
+    )
+    monkeypatch.setattr("agents.planning.pre_execution_council.urllib.request.urlopen", fake.urlopen)
+    cfg = _enabled_config(
+        tmp_path,
+        live_cerebras_enabled=True,
+        cerebras_model="gpt-oss-120b",
+        messages_per_seat=1,
+        total_target_messages=5,
+    )
+    result = CouncilRunner(cfg).run(CouncilContextPack.for_task("cerebras live task", work_dir=Path.cwd()))
+    cerebras = next(m for m in result.messages if m.speaker == "Cerebras")
+    assert cerebras.provider_metadata["provider"] == "cerebras"
+    assert cerebras.provider_metadata["actual_live"] is True
+    assert cerebras.provider_metadata["fallback"] is False
+    assert cerebras.provider_metadata["model"] == "gpt-oss-120b"
+    assert cerebras.provider_metadata["runtime"] == "cerebras-openai-compatible-chat"
+    assert "compresses the first slice" in cerebras.content
+    req, timeout = fake.calls[0]
+    assert timeout == 60.0
+    assert req.full_url == "https://api.cerebras.ai/v1/chat/completions"
+    payload = json.loads(req.data.decode("utf-8"))
+    assert payload["model"] == "gpt-oss-120b"
+    assert payload["messages"][0]["role"] == "system"
+    blob = "\n".join(p.read_text(encoding="utf-8") for p in Path(result.log_dir).iterdir() if p.is_file())
+    assert "cerebras-test-key" not in blob
+    assert "Authorization" not in blob
+
+
+def test_cerebras_rate_limit_falls_back_safely(tmp_path, monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise urllib.error.HTTPError("https://api.cerebras.ai/v1/chat/completions", 429, "rate limit", {}, None)
+
+    monkeypatch.setenv("CEREBRAS_API_KEY", "cerebras-test-key")
+    monkeypatch.setattr("agents.planning.pre_execution_council.urllib.request.urlopen", boom)
+    cfg = _enabled_config(tmp_path, live_cerebras_enabled=True, messages_per_seat=1, total_target_messages=5)
+    result = CouncilRunner(cfg).run(CouncilContextPack.for_task("cerebras rate limit task", work_dir=Path.cwd()))
+    cerebras = next(m for m in result.messages if m.speaker == "Cerebras")
+    assert cerebras.provider_metadata["provider"] == "mock"
+    assert cerebras.provider_metadata["fallback_from"] == "cerebras"
+    assert cerebras.provider_metadata["actual_live"] is False
+    assert cerebras.provider_metadata["live_provider_invoked"] is True
+    assert "429" in cerebras.provider_metadata["fallback_reason"]
+
+
+def test_cerebras_model_not_found_falls_back_safely(tmp_path, monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise urllib.error.HTTPError("https://api.cerebras.ai/v1/chat/completions", 404, "model not found", {}, None)
+
+    monkeypatch.setenv("CEREBRAS_API_KEY", "cerebras-test-key")
+    monkeypatch.setattr("agents.planning.pre_execution_council.urllib.request.urlopen", boom)
+    cfg = _enabled_config(tmp_path, live_cerebras_enabled=True, cerebras_model="missing-model", messages_per_seat=1, total_target_messages=5)
+    result = CouncilRunner(cfg).run(CouncilContextPack.for_task("cerebras missing model task", work_dir=Path.cwd()))
+    cerebras = next(m for m in result.messages if m.speaker == "Cerebras")
+    assert cerebras.provider_metadata["provider"] == "mock"
+    assert "model not found" in cerebras.provider_metadata["fallback_reason"]
+    assert cerebras.provider_metadata["model"] == "missing-model"
+
+
+def test_cerebras_empty_response_falls_back_safely(tmp_path, monkeypatch):
+    monkeypatch.setenv("CEREBRAS_API_KEY", "cerebras-test-key")
+    fake = _FakeCerebrasClient("")
+    monkeypatch.setattr("agents.planning.pre_execution_council.urllib.request.urlopen", fake.urlopen)
+    cfg = _enabled_config(tmp_path, live_cerebras_enabled=True, messages_per_seat=1, total_target_messages=5)
+    result = CouncilRunner(cfg).run(CouncilContextPack.for_task("cerebras empty response task", work_dir=Path.cwd()))
+    cerebras = next(m for m in result.messages if m.speaker == "Cerebras")
+    assert cerebras.provider_metadata["provider"] == "mock"
+    assert cerebras.provider_metadata["actual_live"] is False
+    assert "returned no text" in cerebras.provider_metadata["fallback_reason"]
+    assert "cerebras-test-key" not in cerebras.content
+
+
+def test_cerebras_malformed_response_falls_back_safely(tmp_path, monkeypatch):
+    class BadCerebrasClient:
+        def urlopen(self, req, timeout=0):
+            class _Resp:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    return False
+
+                def read(self):
+                    return b'{"unexpected": true}'
+
+            return _Resp()
+
+    monkeypatch.setenv("CEREBRAS_API_KEY", "cerebras-test-key")
+    monkeypatch.setattr("agents.planning.pre_execution_council.urllib.request.urlopen", BadCerebrasClient().urlopen)
+    cfg = _enabled_config(tmp_path, live_cerebras_enabled=True, messages_per_seat=1, total_target_messages=5)
+    result = CouncilRunner(cfg).run(CouncilContextPack.for_task("cerebras malformed response task", work_dir=Path.cwd()))
+    cerebras = next(m for m in result.messages if m.speaker == "Cerebras")
+    assert cerebras.provider_metadata["provider"] == "mock"
+    assert cerebras.provider_metadata["actual_live"] is False
+    assert "malformed response" in cerebras.provider_metadata["fallback_reason"]
+    blob = "\n".join(p.read_text(encoding="utf-8") for p in Path(result.log_dir).iterdir() if p.is_file())
+    assert "cerebras-test-key" not in blob
+
+
+def test_cerebras_provider_summary_reports_live_and_fallback_states(tmp_path):
+    seats = [
+        _RecordingSeat("GPT"),
+        _RecordingSeat("Gemini"),
+        _RecordingSeat("Claude"),
+        _RecordingSeat("Local LLM"),
+        _LiveThenFallbackSeat(
+            "Cerebras",
+            provider="cerebras",
+            model="gpt-oss-120b",
+            fallback_reason="Cerebras rate limited (429)",
+        ),
+    ]
+    cfg = _enabled_config(tmp_path, live_cerebras_enabled=True, messages_per_seat=2, total_target_messages=10)
+    result = CouncilRunner(cfg, seats=seats).run(CouncilContextPack.for_task("cerebras partial summary", work_dir=Path.cwd()))
+    cerebras = next(item for item in result.brief.provider_run_summaries if item["seat_name"] == "Cerebras")
+    assert cerebras["last_provider_state"] == "partially_live_then_fallback"
+    assert cerebras["actual_live_any"] is True
+    assert cerebras["fallback_turn_count"] == 1
+    assert any("partially live via cerebras" in line for line in result.brief.provider_participation_summary)
+    assert any("Rate limit observed: Cerebras." in line for line in result.brief.council_run_health)
+
+
+def test_cerebras_live_requested_forbidden_action_is_filtered_from_prompt_context(tmp_path):
+    seats = [
+        _RecordingSeat("GPT"),
+        _RecordingSeat("Gemini"),
+        _RecordingSeat("Claude"),
+        _RecordingSeat("Local LLM"),
+        _RecordingSeat("Cerebras"),
+    ]
+    cfg = _enabled_config(tmp_path, live_cerebras_enabled=True, messages_per_seat=1, total_target_messages=5)
+    ctx = CouncilContextPack.for_task(
+        "cerebras prompt context",
+        work_dir=Path.cwd(),
+        forbidden_actions=[
+            "Do not call Cerebras.",
+            "Do not wire into orchestration.",
+        ],
+    )
+    CouncilRunner(cfg, seats=seats).run(ctx)
+    prompt = seats[-1].prompts[0]
+    assert "Do not call Cerebras." not in prompt
+    assert "Do not wire into orchestration." in prompt
+    assert "explicitly requested live council seats: Cerebras" in prompt
+
+
+def test_cerebras_probe_output_is_safe_for_missing_key(monkeypatch, capsys):
+    monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
+    rc = cerebras_probe_main(["--model", "gpt-oss-120b"])
+    out = capsys.readouterr().out
+    assert rc == 2
+    assert "gpt-oss-120b\tmissing_api_key\tauth\tfalse" in out
+    assert "CEREBRAS_API_KEY" not in out
+    assert "Authorization" not in out
+
+
 def test_future_provider_roadmap_note_does_not_create_live_behavior():
     note = Path("agents/planning/pre_execution_council_provider_roadmap.md").read_text(encoding="utf-8")
     assert "Cloudflare Workers AI" in note
-    assert "GitHub Models or Cerebras" in note
+    assert "Cerebras" in note
+    assert "GitHub Models" in note
     assert "xAI Grok browser" in note
     assert "Claude live" in note
 

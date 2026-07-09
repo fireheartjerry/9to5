@@ -18,6 +18,7 @@ EXPORTS:
   LiveLocalCouncilSeat
   LiveGroqCouncilSeat
   LiveCloudflareCouncilSeat
+  LiveCerebrasCouncilSeat
   LiveGPTBrowserCouncilSeat  -- Live GPT seat: one browser chat thread per council run + structured continuity checks.
   is_enabled(config_obj: CouncilConfig | None=None) -> bool
   CouncilRunner
@@ -95,6 +96,8 @@ class CouncilConfig:
     groq_fallback_models: str = ""
     live_cloudflare_enabled: bool = False
     cloudflare_model: str = ""
+    live_cerebras_enabled: bool = False
+    cerebras_model: str = ""
     logging_enabled: bool = True
     output_dir: str = "state/council_runs"
 
@@ -124,6 +127,8 @@ class CouncilConfig:
             groq_fallback_models=str(getattr(config, "PRE_EXECUTION_COUNCIL_GROQ_FALLBACK_MODELS", "")),
             live_cloudflare_enabled=bool(config.PRE_EXECUTION_COUNCIL_LIVE_CLOUDFLARE_ENABLED),
             cloudflare_model=str(config.PRE_EXECUTION_COUNCIL_CLOUDFLARE_MODEL),
+            live_cerebras_enabled=bool(config.PRE_EXECUTION_COUNCIL_LIVE_CEREBRAS_ENABLED),
+            cerebras_model=str(config.PRE_EXECUTION_COUNCIL_CEREBRAS_MODEL),
             logging_enabled=bool(config.PRE_EXECUTION_COUNCIL_LOGGING_ENABLED),
             output_dir=str(config.PRE_EXECUTION_COUNCIL_OUTPUT_DIR),
         )
@@ -439,6 +444,14 @@ MOCK_TURN_LIBRARY = {
         "[DISAGREE] Do not treat provider diversity as quality by itself; require distinct critique and clean metadata.",
         "[DATA] The useful signal is whether Workers AI adds a different risk/cost perspective without exposing credentials.",
         "[SYNTHESIS] Cloudflare is valuable only as a narrow optional council voice with no production insertion.",
+    ),
+    "Cerebras": (
+        "[CLAIM] Cerebras should be the ultra-fast execution critic, not another broad reasoning seat. [PLAN] Pressure-test the smallest viable slice.",
+        "[RISK] Speed can hide overbuilt scope if the prompt asks for architecture theater. [CONSTRAINT] Force concise implementation blockers.",
+        "[QUESTION] Which part of this plan can be deleted without reducing the chance of a useful first result?",
+        "[DATA] The useful signal is latency-aware feasibility, immediate counterexamples, and simpler sequencing.",
+        "[DISAGREE] Do not add another provider just to increase seat count; make Cerebras compress and sharpen the handoff.",
+        "[SYNTHESIS] Cerebras earns its seat only if it makes the next Codex prompt smaller, faster, and less brittle.",
     ),
 }
 
@@ -905,6 +918,170 @@ def _cloudflare_workers_ai_run(
             if result.get(key):
                 return str(result[key]).strip()
     raise RuntimeError("Cloudflare Workers AI malformed response: missing result.response")
+
+
+CEREBRAS_DEFAULT_MODEL = "gpt-oss-120b"
+CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1"
+CEREBRAS_HTTP_HEADERS = {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "User-Agent": "9to5-pre-execution-council/1.0",
+}
+
+
+def _cerebras_error_category(exc: BaseException) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        code = getattr(exc, "code", 0)
+        if code in (401, 403):
+            return "auth"
+        if code == 404:
+            return "model_not_found"
+        if code == 429:
+            return "rate_limit"
+        return "http"
+    text = str(exc).lower()
+    if "missing" in text and "api_key" in text:
+        return "auth"
+    if "401" in text or "unauthorized" in text or "forbidden" in text:
+        return "auth"
+    if "404" in text or "model not found" in text:
+        return "model_not_found"
+    if "429" in text or "rate limit" in text or "too many requests" in text:
+        return "rate_limit"
+    if "malformed" in text:
+        return "malformed_response"
+    if "no text" in text or "empty" in text:
+        return "empty_response"
+    return "transport"
+
+
+def _cerebras_error_message(exc: BaseException) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        code = getattr(exc, "code", "unknown")
+        if code == 401:
+            return "Cerebras unauthorized (401)"
+        if code == 403:
+            return "Cerebras forbidden (403)"
+        if code == 404:
+            return "Cerebras model not found (404)"
+        if code == 429:
+            return "Cerebras rate limited (429)"
+        return f"Cerebras HTTP error {code}"
+    if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError)):
+        return f"Cerebras transport unavailable: {exc}"
+    return str(exc)
+
+
+class LiveCerebrasCouncilSeat:
+    def __init__(self, spec: CouncilSeatSpec, model: str | None = None) -> None:
+        self.spec = spec
+        self.name = spec.name
+        self._mock = MockCouncilSeat(spec)
+        self._model = model or getattr(config, "PRE_EXECUTION_COUNCIL_CEREBRAS_MODEL", "") or CEREBRAS_DEFAULT_MODEL
+        self._fallback_reason = ""
+        self._live_turns = 0
+        self._request_attempted = False
+
+    def ask(self, prompt: str, context: dict[str, Any]) -> str:
+        if self._fallback_reason:
+            return self._fallback(prompt, context)
+        if not os.getenv("CEREBRAS_API_KEY", "").strip():
+            self._fallback_reason = "CEREBRAS_API_KEY missing"
+            return self._fallback(prompt, context)
+        try:
+            self._request_attempted = True
+            reply = _cerebras_chat_completion(
+                model=self._model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are the Cerebras council seat: ultra-fast execution feasibility critic, "
+                            "latency-aware plan reviewer, rapid counterexample generator, and simpler-first-slice pressure. "
+                            "Do not duplicate Groq or Cloudflare."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+                timeout=60.0,
+            )
+            if not reply:
+                self._fallback_reason = "Cerebras returned no text"
+                return self._fallback(prompt, context)
+            self._live_turns += 1
+            return redact_council_text(str(reply))
+        except Exception as exc:  # noqa: BLE001 -- optional API seat must degrade cleanly
+            self._fallback_reason = redact_council_text(_cerebras_error_message(exc))
+            return self._fallback(prompt, context)
+
+    def _fallback(self, prompt: str, context: dict[str, Any]) -> str:
+        mock_reply = self._mock.ask(prompt, context)
+        return (
+            "[RISK] Cerebras live seat unavailable; falling back to mock Cerebras. "
+            f"[DATA] fallback_reason={redact_council_text(self._fallback_reason)}. {mock_reply}"
+        )
+
+    def provider_metadata(self) -> dict[str, Any]:
+        if self._fallback_reason:
+            return _seat_metadata(
+                provider="mock",
+                requested_live=True,
+                actual_live=False,
+                fallback_from="cerebras",
+                fallback_reason=self._fallback_reason,
+                model=self._model,
+                runtime="cerebras-openai-compatible-chat",
+                live_provider_invoked=self._request_attempted or self._live_turns > 0,
+            )
+        return _seat_metadata(
+            provider="cerebras",
+            requested_live=True,
+            actual_live=True,
+            model=self._model,
+            runtime="cerebras-openai-compatible-chat",
+            live_provider_invoked=True,
+        )
+
+
+def _cerebras_chat_completion(
+    *,
+    model: str,
+    messages: list[dict[str, str]],
+    temperature: float = 0.0,
+    timeout: float = 30.0,
+) -> str:
+    api_key = os.getenv("CEREBRAS_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("CEREBRAS_API_KEY missing")
+    payload = json.dumps(
+        {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        f"{CEREBRAS_BASE_URL}/chat/completions",
+        data=payload,
+        headers={
+            **CEREBRAS_HTTP_HEADERS,
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError:
+        raise
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Cerebras transport unavailable: {exc}") from exc
+    try:
+        text = data["choices"][0]["message"]["content"]
+    except Exception as exc:  # noqa: BLE001 -- malformed provider response
+        raise RuntimeError(f"Cerebras malformed response: {exc}") from exc
+    return str(text).strip()
 
 
 def _ollama_generate(prompt: str, model: str) -> str:
@@ -1468,6 +1645,8 @@ class CouncilRunner:
                 continue
             if spec.name == "Cloudflare" and not self.config.live_cloudflare_enabled:
                 continue
+            if spec.name == "Cerebras" and not self.config.live_cerebras_enabled:
+                continue
             if spec.name == "GPT" and self.config.live_gpt_enabled:
                 seats.append(
                     LiveGPTBrowserCouncilSeat(
@@ -1498,6 +1677,8 @@ class CouncilRunner:
                 )
             elif spec.name == "Cloudflare" and self.config.live_cloudflare_enabled:
                 seats.append(LiveCloudflareCouncilSeat(spec, model=self.config.cloudflare_model))
+            elif spec.name == "Cerebras" and self.config.live_cerebras_enabled:
+                seats.append(LiveCerebrasCouncilSeat(spec, model=self.config.cerebras_model))
             else:
                 seats.append(MockCouncilSeat(spec))
         return seats
@@ -1606,6 +1787,7 @@ class CouncilRunner:
             "Local LLM": "Do not call local LLM/Ollama.",
             "Groq": "Do not call Groq.",
             "Cloudflare": "Do not call Cloudflare Workers AI.",
+            "Cerebras": "Do not call Cerebras.",
         }
         return {
             action
@@ -1798,11 +1980,13 @@ class CouncilRunner:
         local_live = seat_states["Local LLM"]["actual_live_any"]
         groq_live = seat_states["Groq"]["actual_live_any"]
         cloudflare_live = seat_states["Cloudflare"]["actual_live_any"]
+        cerebras_live = seat_states["Cerebras"]["actual_live_any"]
         gpt_requested = seat_states["GPT"]["requested_live"]
         gemini_requested = seat_states["Gemini"]["requested_live"]
         local_requested = seat_states["Local LLM"]["requested_live"]
         groq_requested = seat_states["Groq"]["requested_live"]
         cloudflare_requested = seat_states["Cloudflare"]["requested_live"]
+        cerebras_requested = seat_states["Cerebras"]["requested_live"]
         provider_participation = self._provider_participation_lines(seat_states)
         provider_timeline = self._provider_timeline_lines(seat_states)
         run_health = self._run_health_lines(seat_states, messages)
@@ -1866,6 +2050,18 @@ class CouncilRunner:
                 "PRE_EXECUTION_COUNCIL_CLOUDFLARE_MODEL. Keep GPT browser safety unchanged, do not add other providers, "
                 "fallback on missing config/rate limit/transport/empty/malformed response, add provider metadata, "
                 "redacted logs, CLI flags, compare support, and focused tests. Do not wire into orchestration."
+            )
+        elif cerebras_requested or "cerebras" in task_lower:
+            first_slice = (
+                "Add a gated Cerebras live council seat so the mixed council can include an optional ultra-fast "
+                "execution-feasibility critic only when explicitly enabled."
+            )
+            implementation_prompt = (
+                "Add gated Cerebras council seat using the OpenAI-compatible chat-completions API with "
+                "CEREBRAS_API_KEY, ENABLE_PRE_EXECUTION_COUNCIL_CEREBRAS, and PRE_EXECUTION_COUNCIL_CEREBRAS_MODEL. "
+                "Keep GPT browser safety unchanged, do not add planner injection or other providers, fallback on "
+                "missing key/unauthorized/rate limit/model/transport/empty/malformed response, add provider metadata, "
+                "redacted logs, CLI flags, compare support, a safe probe, and focused tests. Do not wire into orchestration."
             )
         elif gemini_requested or "gemini" in task_lower:
             first_slice = (
@@ -1935,6 +2131,8 @@ class CouncilRunner:
             missing_information.append("A stable Groq actual_live=true run is still needed before relying on that seat.")
         if cloudflare_requested and not cloudflare_live:
             missing_information.append("A stable Cloudflare Workers AI actual_live=true run is still needed before relying on that seat.")
+        if cerebras_requested and not cerebras_live:
+            missing_information.append("A stable Cerebras actual_live=true run is still needed before relying on that seat.")
         missing_information.append("Future orchestration insertion still needs separate disabled-path invariance tests.")
 
         ui_browser_plan = []
@@ -2074,6 +2272,8 @@ class CouncilRunner:
             names.add("Groq")
         if self.config.live_cloudflare_enabled:
             names.add("Cloudflare")
+        if self.config.live_cerebras_enabled:
+            names.add("Cerebras")
         return names
 
     def _empty_seat_state(self, name: str) -> dict[str, Any]:
@@ -2302,6 +2502,8 @@ class CouncilRunner:
             prefix = "Groq"
         elif "cloudflare" in lower or "workers ai" in lower:
             prefix = "Cloudflare"
+        elif "cerebras" in lower:
+            prefix = "Cerebras"
         elif "gpt" in lower or "browser" in lower:
             prefix = "GPT browser"
         elif "local" in lower or "ollama" in lower:
@@ -2449,6 +2651,8 @@ class CouncilRunner:
             enabled_actions.add("Do not call Groq.")
         if seat_states["Cloudflare"]["requested_live"]:
             enabled_actions.add("Do not call Cloudflare Workers AI.")
+        if seat_states["Cerebras"]["requested_live"]:
+            enabled_actions.add("Do not call Cerebras.")
         for item in list(context_pack.forbidden_actions):
             if item in enabled_actions:
                 continue
@@ -2508,6 +2712,7 @@ def run_pre_execution_council(task: str, *, work_dir: str | Path | None = None, 
             "Do not call local LLM/Ollama.",
             "Do not call Groq.",
             "Do not call Cloudflare Workers AI.",
+            "Do not call Cerebras.",
             "Do not wire into orchestration.",
         ],
         safety_boundaries=[
