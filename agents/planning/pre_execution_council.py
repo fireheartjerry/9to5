@@ -16,6 +16,7 @@ EXPORTS:
   LiveGeminiCouncilSeat
   LiveLocalCouncilSeat
   LiveGroqCouncilSeat
+  LiveCloudflareCouncilSeat
   LiveGPTBrowserCouncilSeat  -- Live GPT seat: one browser chat thread per council run + structured continuity checks.
   is_enabled(config_obj: CouncilConfig | None=None) -> bool
   CouncilRunner
@@ -32,6 +33,7 @@ import os
 import json
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -90,6 +92,8 @@ class CouncilConfig:
     live_groq_enabled: bool = False
     groq_model: str = ""
     groq_fallback_models: str = ""
+    live_cloudflare_enabled: bool = False
+    cloudflare_model: str = ""
     logging_enabled: bool = True
     output_dir: str = "state/council_runs"
 
@@ -117,6 +121,8 @@ class CouncilConfig:
             live_groq_enabled=bool(config.PRE_EXECUTION_COUNCIL_LIVE_GROQ_ENABLED),
             groq_model=str(config.PRE_EXECUTION_COUNCIL_GROQ_MODEL),
             groq_fallback_models=str(getattr(config, "PRE_EXECUTION_COUNCIL_GROQ_FALLBACK_MODELS", "")),
+            live_cloudflare_enabled=bool(config.PRE_EXECUTION_COUNCIL_LIVE_CLOUDFLARE_ENABLED),
+            cloudflare_model=str(config.PRE_EXECUTION_COUNCIL_CLOUDFLARE_MODEL),
             logging_enabled=bool(config.PRE_EXECUTION_COUNCIL_LOGGING_ENABLED),
             output_dir=str(config.PRE_EXECUTION_COUNCIL_OUTPUT_DIR),
         )
@@ -366,6 +372,14 @@ MOCK_TURN_LIBRARY = {
         "[DISAGREE] Do not over-explain the architecture. Groq should attack the shape of the plan, not restate it.",
         "[DATA] The useful signal is failure modes, bottlenecks, and alternative sequencing, not generic encouragement.",
         "[SYNTHESIS] Keep Groq concise so the council gets diversity without transcript bloat.",
+    ),
+    "Cloudflare": (
+        "[CLAIM] Cloudflare should be an optional edge-hosted critique seat, not a default dependency. [PLAN] Use it to pressure-test latency, cost, and deployment-adjacent risks.",
+        "[RISK] Adding another live provider can hide orchestration creep. [CONSTRAINT] Keep it pre-execution, explicitly gated, and fallback-safe.",
+        "[QUESTION] Which part of the plan benefits from an edge-hosted open model instead of the existing mock or API seats?",
+        "[DISAGREE] Do not treat provider diversity as quality by itself; require distinct critique and clean metadata.",
+        "[DATA] The useful signal is whether Workers AI adds a different risk/cost perspective without exposing credentials.",
+        "[SYNTHESIS] Cloudflare is valuable only as a narrow optional council voice with no production insertion.",
     ),
 }
 
@@ -699,6 +713,139 @@ def _groq_chat_completion(
     except Exception as exc:  # noqa: BLE001 -- malformed provider response
         raise RuntimeError(f"Groq malformed response: {exc}") from exc
     return str(text).strip()
+
+
+CLOUDFLARE_DEFAULT_MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8-fast"
+CLOUDFLARE_HTTP_HEADERS = {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "User-Agent": "9to5-pre-execution-council/1.0",
+}
+
+
+def _cloudflare_error_message(exc: BaseException) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        code = getattr(exc, "code", "unknown")
+        if code == 429:
+            return "Cloudflare Workers AI rate limited (429)"
+        return f"Cloudflare Workers AI HTTP error {code}"
+    if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError)):
+        return f"Cloudflare Workers AI transport unavailable: {exc}"
+    return str(exc)
+
+
+class LiveCloudflareCouncilSeat:
+    def __init__(self, spec: CouncilSeatSpec, model: str | None = None) -> None:
+        self.spec = spec
+        self.name = spec.name
+        self._mock = MockCouncilSeat(spec)
+        self._model = model or getattr(config, "PRE_EXECUTION_COUNCIL_CLOUDFLARE_MODEL", "") or CLOUDFLARE_DEFAULT_MODEL
+        self._fallback_reason = ""
+        self._live_turns = 0
+
+    def ask(self, prompt: str, context: dict[str, Any]) -> str:
+        if self._fallback_reason:
+            return self._fallback(prompt, context)
+        if not os.getenv("CLOUDFLARE_ACCOUNT_ID", ""):
+            self._fallback_reason = "CLOUDFLARE_ACCOUNT_ID missing"
+            return self._fallback(prompt, context)
+        if not os.getenv("CLOUDFLARE_WORKER_AI_API_KEY", ""):
+            self._fallback_reason = "CLOUDFLARE_WORKER_AI_API_KEY missing"
+            return self._fallback(prompt, context)
+        try:
+            reply = _cloudflare_workers_ai_run(
+                model=self._model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are the Cloudflare Workers AI council seat: edge-hosted open-model critique, "
+                            "latency/cost scrutiny, deployment-adjacent risk checks, and concise alternative planning."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                timeout=60.0,
+            )
+            if not reply:
+                self._fallback_reason = "Cloudflare Workers AI returned no text"
+                return self._fallback(prompt, context)
+            self._live_turns += 1
+            return redact_council_text(str(reply))
+        except Exception as exc:  # noqa: BLE001 -- optional API seat must degrade cleanly
+            self._fallback_reason = redact_council_text(_cloudflare_error_message(exc))
+            return self._fallback(prompt, context)
+
+    def _fallback(self, prompt: str, context: dict[str, Any]) -> str:
+        mock_reply = self._mock.ask(prompt, context)
+        return (
+            "[RISK] Cloudflare Workers AI live seat unavailable; falling back to mock Cloudflare. "
+            f"[DATA] fallback_reason={redact_council_text(self._fallback_reason)}. {mock_reply}"
+        )
+
+    def provider_metadata(self) -> dict[str, Any]:
+        if self._fallback_reason:
+            return _seat_metadata(
+                provider="mock",
+                requested_live=True,
+                actual_live=False,
+                fallback_from="cloudflare",
+                fallback_reason=self._fallback_reason,
+                model=self._model,
+                runtime="cloudflare-workers-ai",
+                live_provider_invoked=self._live_turns > 0,
+            )
+        return _seat_metadata(
+            provider="cloudflare",
+            requested_live=True,
+            actual_live=True,
+            model=self._model,
+            runtime="cloudflare-workers-ai",
+            live_provider_invoked=True,
+        )
+
+
+def _cloudflare_workers_ai_run(
+    *,
+    model: str,
+    messages: list[dict[str, str]],
+    timeout: float = 30.0,
+) -> str:
+    account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+    api_key = os.getenv("CLOUDFLARE_WORKER_AI_API_KEY", "").strip()
+    if not account_id:
+        raise RuntimeError("CLOUDFLARE_ACCOUNT_ID missing")
+    if not api_key:
+        raise RuntimeError("CLOUDFLARE_WORKER_AI_API_KEY missing")
+    encoded_model = urllib.parse.quote(model, safe="@/")
+    payload = json.dumps({"messages": messages}).encode("utf-8")
+    req = urllib.request.Request(
+        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{encoded_model}",
+        data=payload,
+        headers={
+            **CLOUDFLARE_HTTP_HEADERS,
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError:
+        raise
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Cloudflare Workers AI transport unavailable: {exc}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError("Cloudflare Workers AI malformed response: root is not an object")
+    if data.get("success") is False:
+        errors = data.get("errors")
+        raise RuntimeError(f"Cloudflare Workers AI error: {redact_council_text(str(errors or 'success=false'))}")
+    result = data.get("result")
+    if isinstance(result, dict):
+        for key in ("response", "text", "content"):
+            if result.get(key):
+                return str(result[key]).strip()
+    raise RuntimeError("Cloudflare Workers AI malformed response: missing result.response")
 
 
 def _ollama_generate(prompt: str, model: str) -> str:
@@ -1042,6 +1189,7 @@ class CouncilRunner:
                             "claude": self.config.live_claude_enabled,
                             "local": self.config.live_local_enabled,
                             "groq": self.config.live_groq_enabled,
+                            "cloudflare": self.config.live_cloudflare_enabled,
                         },
                         "warnings": [asdict(w) for w in warnings],
                     }
@@ -1256,6 +1404,8 @@ class CouncilRunner:
         for spec in DEFAULT_SEAT_SPECS:
             if spec.name == "Groq" and not self.config.live_groq_enabled:
                 continue
+            if spec.name == "Cloudflare" and not self.config.live_cloudflare_enabled:
+                continue
             if spec.name == "GPT" and self.config.live_gpt_enabled:
                 seats.append(
                     LiveGPTBrowserCouncilSeat(
@@ -1284,6 +1434,8 @@ class CouncilRunner:
                         fallback_models=self.config.groq_fallback_models,
                     )
                 )
+            elif spec.name == "Cloudflare" and self.config.live_cloudflare_enabled:
+                seats.append(LiveCloudflareCouncilSeat(spec, model=self.config.cloudflare_model))
             else:
                 seats.append(MockCouncilSeat(spec))
         return seats
@@ -1441,7 +1593,7 @@ class CouncilRunner:
         }
         for msg in reversed(messages[-6:]):
             meta = msg.provider_metadata or {}
-            if str(meta.get("fallback_from", "")).lower() != "groq" and str(meta.get("provider", "")).lower() != "mock":
+            if str(meta.get("fallback_from", "")).lower() != "groq":
                 continue
             reason = str(meta.get("fallback_reason", "") or "").lower()
             if "429" in reason or "rate limit" in reason:
@@ -1543,10 +1695,12 @@ class CouncilRunner:
         gemini_live = seat_states["Gemini"]["actual_live_any"]
         local_live = seat_states["Local LLM"]["actual_live_any"]
         groq_live = seat_states["Groq"]["actual_live_any"]
+        cloudflare_live = seat_states["Cloudflare"]["actual_live_any"]
         gpt_requested = seat_states["GPT"]["requested_live"]
         gemini_requested = seat_states["Gemini"]["requested_live"]
         local_requested = seat_states["Local LLM"]["requested_live"]
         groq_requested = seat_states["Groq"]["requested_live"]
+        cloudflare_requested = seat_states["Cloudflare"]["requested_live"]
         provider_participation = self._provider_participation_lines(seat_states)
         provider_timeline = self._provider_timeline_lines(seat_states)
         run_health = self._run_health_lines(seat_states, messages)
@@ -1596,6 +1750,18 @@ class CouncilRunner:
                 "--groq-model, fallback on missing key/429/transport/empty/malformed response, provider metadata, "
                 "redacted logs, and focused tests. Do not wire into orchestration. Leave room for future provider "
                 "seats like Cloudflare Workers AI, GitHub Models, Cerebras, xAI Grok browser, and Claude live later."
+            )
+        elif cloudflare_requested or "cloudflare" in task_lower or "workers ai" in task_lower:
+            first_slice = (
+                "Add a gated Cloudflare Workers AI live council seat so the mixed council can run with an optional "
+                "edge-hosted open-model critique seat only when explicitly enabled."
+            )
+            implementation_prompt = (
+                "Add gated Cloudflare Workers AI council seat using the REST run endpoint with CLOUDFLARE_ACCOUNT_ID, "
+                "CLOUDFLARE_WORKER_AI_API_KEY, ENABLE_PRE_EXECUTION_COUNCIL_CLOUDFLARE, and "
+                "PRE_EXECUTION_COUNCIL_CLOUDFLARE_MODEL. Keep GPT browser safety unchanged, do not add other providers, "
+                "fallback on missing config/rate limit/transport/empty/malformed response, add provider metadata, "
+                "redacted logs, CLI flags, compare support, and focused tests. Do not wire into orchestration."
             )
         elif gemini_requested or "gemini" in task_lower:
             first_slice = (
@@ -1663,6 +1829,8 @@ class CouncilRunner:
             missing_information.append("A stable Local actual_live=true run is still needed before relying on that seat.")
         if groq_requested and not groq_live:
             missing_information.append("A stable Groq actual_live=true run is still needed before relying on that seat.")
+        if cloudflare_requested and not cloudflare_live:
+            missing_information.append("A stable Cloudflare Workers AI actual_live=true run is still needed before relying on that seat.")
         missing_information.append("Future orchestration insertion still needs separate disabled-path invariance tests.")
 
         ui_browser_plan = []
@@ -1716,7 +1884,7 @@ class CouncilRunner:
             ),
             recommended_first_execution_slice=first_slice,
             confidence_level="medium-high",
-            provider_run_summaries=list(seat_states.values()),
+            provider_run_summaries=self._provider_run_summaries(seat_states),
             provider_participation_summary=provider_participation,
             live_fallback_timeline=provider_timeline,
             council_run_health=run_health,
@@ -1815,6 +1983,7 @@ class CouncilRunner:
             )
         for state in summary.values():
             turn_count = int(state.pop("_turn_count", 0))
+            state["turn_count"] = turn_count
             actual_count = int(state["actual_live_turn_count"])
             state["actual_live_all"] = bool(turn_count and state["requested_live"] and actual_count == turn_count)
             if not turn_count:
@@ -1831,10 +2000,21 @@ class CouncilRunner:
                 state["last_provider_state"] = "requested_live_no_live_result"
         return summary
 
+    def _visible_seat_states(self, seat_states: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        core = {"GPT", "Gemini", "Claude", "Local LLM"}
+        visible = []
+        for state in seat_states.values():
+            if state["seat_name"] in core or state["requested_live"] or state.get("turn_count", 0):
+                visible.append(state)
+        return visible
+
+    def _provider_run_summaries(self, seat_states: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        return [dict(state) for state in self._visible_seat_states(seat_states)]
+
     def _live_summary_text(self, seat_states: dict[str, dict[str, Any]]) -> str:
         parts = []
-        for seat_name in [spec.name for spec in DEFAULT_SEAT_SPECS]:
-            state = seat_states[seat_name]
+        for state in self._visible_seat_states(seat_states):
+            seat_name = state["seat_name"]
             live_providers = [p for p in state.get("providers_used", []) if p != "mock"]
             live_provider = live_providers[-1] if live_providers else "live provider"
             if state["last_provider_state"] == "fully_live":
@@ -1896,6 +2076,8 @@ class CouncilRunner:
             prefix = "Gemini"
         elif "groq" in lower:
             prefix = "Groq"
+        elif "cloudflare" in lower or "workers ai" in lower:
+            prefix = "Cloudflare"
         elif "gpt" in lower or "browser" in lower:
             prefix = "GPT browser"
         elif "local" in lower or "ollama" in lower:
@@ -1936,8 +2118,8 @@ class CouncilRunner:
             "fully_live": "fully live",
             "requested_live_no_live_result": "requested live without a live result",
         }
-        for seat_name in [spec.name for spec in DEFAULT_SEAT_SPECS]:
-            state = seat_states[seat_name]
+        for state in self._visible_seat_states(seat_states):
+            seat_name = state["seat_name"]
             live_providers = [p for p in state.get("providers_used", []) if p != "mock"]
             live_provider = live_providers[-1] if live_providers else ""
             state_label = labels.get(str(state["last_provider_state"]), str(state["last_provider_state"]))
@@ -1963,18 +2145,19 @@ class CouncilRunner:
 
     def _provider_timeline_lines(self, seat_states: dict[str, dict[str, Any]]) -> list[str]:
         lines = []
-        for seat_name in [spec.name for spec in DEFAULT_SEAT_SPECS]:
-            timeline = seat_states[seat_name]["provider_timeline"]
+        for state in self._visible_seat_states(seat_states):
+            timeline = state["provider_timeline"]
             if timeline:
-                lines.append(f"{seat_name}: {' -> '.join(timeline)}")
+                lines.append(f"{state['seat_name']}: {' -> '.join(timeline)}")
         return lines or ["No provider turns were recorded."]
 
     def _run_health_lines(self, seat_states: dict[str, dict[str, Any]], messages: list[CouncilMessage]) -> list[str]:
         lines = [f"Recorded {len(messages)} council message(s) across provider metadata."]
-        fully_live = [s["seat_name"] for s in seat_states.values() if s["last_provider_state"] == "fully_live"]
-        partial = [s["seat_name"] for s in seat_states.values() if s["last_provider_state"] == "partially_live_then_fallback"]
-        all_fallback = [s["seat_name"] for s in seat_states.values() if s["last_provider_state"] == "requested_live_all_fallback"]
-        mock_only = [s["seat_name"] for s in seat_states.values() if s["last_provider_state"] == "mock_only"]
+        visible_states = self._visible_seat_states(seat_states)
+        fully_live = [s["seat_name"] for s in visible_states if s["last_provider_state"] == "fully_live"]
+        partial = [s["seat_name"] for s in visible_states if s["last_provider_state"] == "partially_live_then_fallback"]
+        all_fallback = [s["seat_name"] for s in visible_states if s["last_provider_state"] == "requested_live_all_fallback"]
+        mock_only = [s["seat_name"] for s in visible_states if s["last_provider_state"] == "mock_only"]
         if fully_live:
             lines.append(f"Fully live seats: {', '.join(fully_live)}.")
         if partial:
@@ -1983,14 +2166,14 @@ class CouncilRunner:
             lines.append(f"Requested-live seats that fully fell back: {', '.join(all_fallback)}.")
         if mock_only:
             lines.append(f"Mock-only seats: {', '.join(mock_only)}.")
-        for state in seat_states.values():
+        for state in visible_states:
             if state["continuity_status"]:
                 lines.append(f"{state['seat_name']} continuity: {state['continuity_status']}.")
-        if any(s["rate_limit_seen"] for s in seat_states.values()):
-            limited = [s["seat_name"] for s in seat_states.values() if s["rate_limit_seen"]]
+        if any(s["rate_limit_seen"] for s in visible_states):
+            limited = [s["seat_name"] for s in visible_states if s["rate_limit_seen"]]
             lines.append(f"Rate limit observed: {', '.join(limited)}.")
-        if any(s["quota_limit_seen"] for s in seat_states.values()):
-            limited = [s["seat_name"] for s in seat_states.values() if s["quota_limit_seen"]]
+        if any(s["quota_limit_seen"] for s in visible_states):
+            limited = [s["seat_name"] for s in visible_states if s["quota_limit_seen"]]
             lines.append(f"Quota limit observed: {', '.join(limited)}.")
         return lines
 
@@ -2040,6 +2223,8 @@ class CouncilRunner:
             enabled_actions.add("Do not call local LLM/Ollama.")
         if seat_states["Groq"]["requested_live"]:
             enabled_actions.add("Do not call Groq.")
+        if seat_states["Cloudflare"]["requested_live"]:
+            enabled_actions.add("Do not call Cloudflare Workers AI.")
         for item in list(context_pack.forbidden_actions):
             if item in enabled_actions:
                 continue
@@ -2098,6 +2283,7 @@ def run_pre_execution_council(task: str, *, work_dir: str | Path | None = None, 
             "Do not call Claude Code.",
             "Do not call local LLM/Ollama.",
             "Do not call Groq.",
+            "Do not call Cloudflare Workers AI.",
             "Do not wire into orchestration.",
         ],
         safety_boundaries=[

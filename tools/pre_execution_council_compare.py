@@ -32,6 +32,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--live-gpt-browser", action="store_true", help="Explicitly allow live GPT browser in comparison.")
     parser.add_argument("--live-gemini", action="store_true", help="Explicitly allow live Gemini in comparison.")
     parser.add_argument("--live-groq", action="store_true", help="Explicitly allow live Groq in comparison.")
+    parser.add_argument("--live-cloudflare", action="store_true", help="Explicitly allow live Cloudflare Workers AI in comparison.")
     parser.add_argument("--live-local", action="store_true", help="Explicitly allow live Local LLM in comparison.")
     parser.add_argument("--gpt-project-url", default="")
     parser.add_argument("--gpt-model", default="")
@@ -39,6 +40,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--local-model", default="")
     parser.add_argument("--groq-model", default="")
     parser.add_argument("--groq-fallback-models", default="")
+    parser.add_argument("--cloudflare-model", default="")
     return parser.parse_args(argv)
 
 
@@ -47,8 +49,9 @@ def _config(args: argparse.Namespace, *, policy: str) -> CouncilConfig:
     live_gpt = bool(args.live_gpt_browser and not args.mock_only)
     live_gemini = bool(args.live_gemini and not args.mock_only)
     live_groq = bool(args.live_groq and not args.mock_only)
+    live_cloudflare = bool(args.live_cloudflare and not args.mock_only)
     live_local = bool(args.live_local and not args.mock_only)
-    seat_count = 5 if live_groq else 4
+    seat_count = 4 + int(live_groq) + int(live_cloudflare)
     return CouncilConfig(
         enabled=True,
         prompt_version=env_cfg.prompt_version,
@@ -72,6 +75,8 @@ def _config(args: argparse.Namespace, *, policy: str) -> CouncilConfig:
         local_model=args.local_model,
         groq_model=args.groq_model or env_cfg.groq_model,
         groq_fallback_models=args.groq_fallback_models or env_cfg.groq_fallback_models,
+        live_cloudflare_enabled=live_cloudflare,
+        cloudflare_model=args.cloudflare_model or env_cfg.cloudflare_model,
     )
 
 
@@ -85,6 +90,8 @@ def _requested_live_text(args: argparse.Namespace) -> str:
         providers.append("gemini")
     if args.live_groq:
         providers.append("groq")
+    if args.live_cloudflare:
+        providers.append("cloudflare")
     if args.live_local:
         providers.append("local")
     return ",".join(providers) if providers else "(none)"

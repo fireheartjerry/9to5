@@ -1,0 +1,80 @@
+"""Safe Cloudflare Workers AI access probe.
+
+RUN/TEST: python tools/cloudflare_workers_ai_probe.py --model "@cf/meta/llama-3.1-8b-instruct-fp8-fast"
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import urllib.error
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import config  # noqa: E402
+from agents.planning.pre_execution_council import (  # noqa: E402
+    CLOUDFLARE_DEFAULT_MODEL,
+    _cloudflare_error_message,
+    _cloudflare_workers_ai_run,
+)
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Probe Cloudflare Workers AI without printing secrets.")
+    parser.add_argument("--model", default=CLOUDFLARE_DEFAULT_MODEL)
+    parser.add_argument("--timeout", type=float, default=20.0)
+    return parser.parse_args(argv)
+
+
+def _safe_status(exc: BaseException) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"http_{getattr(exc, 'code', 'unknown')}"
+    text = _cloudflare_error_message(exc).lower()
+    if "missing" in text:
+        return "missing_config"
+    if "rate limited" in text or "429" in text:
+        return "rate_limited"
+    if "malformed" in text:
+        return "malformed_response"
+    if "transport unavailable" in text:
+        return "transport_unavailable"
+    return "error"
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv or sys.argv[1:])
+    _ = config.ENABLE_PRE_EXECUTION_COUNCIL
+    print("check\tmodel\tstatus\tactual_live")
+    if not os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip():
+        print(f"chat\t{args.model}\tmissing_account_id\tfalse")
+        return 2
+    if not os.getenv("CLOUDFLARE_WORKER_AI_API_KEY", "").strip():
+        print(f"chat\t{args.model}\tmissing_api_key\tfalse")
+        return 2
+    try:
+        reply = _cloudflare_workers_ai_run(
+            model=args.model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": "Reply with exactly: cloudflare_probe_ok",
+                }
+            ],
+            timeout=args.timeout,
+        )
+    except Exception as exc:  # noqa: BLE001 -- probe reports safe categories only
+        root = exc.__cause__ if exc.__cause__ is not None else exc
+        print(f"chat\t{args.model}\t{_safe_status(root)}\tfalse")
+        return 1
+    if not reply:
+        print(f"chat\t{args.model}\tempty_response\tfalse")
+        return 1
+    print(f"chat\t{args.model}\tok\ttrue")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

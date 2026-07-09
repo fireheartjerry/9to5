@@ -317,30 +317,34 @@ def test_compare_defaults_to_mock_only_even_when_env_live_flags_are_set(monkeypa
     monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_LIVE_GROQ_ENABLED", True, raising=False)
     monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_LIVE_GPT_ENABLED", True, raising=False)
     monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_LIVE_LOCAL_ENABLED", True, raising=False)
+    monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_LIVE_CLOUDFLARE_ENABLED", True, raising=False)
     args = _compare_parse_args(["--task", "compare safety"])
     cfg = _compare_config(args, policy="selector")
     assert cfg.live_gpt_enabled is False
     assert cfg.live_gemini_enabled is False
     assert cfg.live_groq_enabled is False
     assert cfg.live_local_enabled is False
+    assert cfg.live_cloudflare_enabled is False
 
 
 def test_compare_allows_only_explicit_live_provider_flags(monkeypatch):
     monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_LIVE_GPT_ENABLED", True, raising=False)
     monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_LIVE_LOCAL_ENABLED", True, raising=False)
-    args = _compare_parse_args(["--task", "compare live", "--live-gemini", "--live-groq"])
+    args = _compare_parse_args(["--task", "compare live", "--live-gemini", "--live-groq", "--live-cloudflare"])
     cfg = _compare_config(args, policy="selector")
     assert cfg.live_gpt_enabled is False
     assert cfg.live_gemini_enabled is True
     assert cfg.live_groq_enabled is True
     assert cfg.live_local_enabled is False
+    assert cfg.live_cloudflare_enabled is True
 
 
 def test_compare_mock_only_overrides_explicit_live_flags():
-    args = _compare_parse_args(["--task", "compare mock", "--mock-only", "--live-gemini", "--live-groq"])
+    args = _compare_parse_args(["--task", "compare mock", "--mock-only", "--live-gemini", "--live-groq", "--live-cloudflare"])
     cfg = _compare_config(args, policy="selector")
     assert cfg.live_gemini_enabled is False
     assert cfg.live_groq_enabled is False
+    assert cfg.live_cloudflare_enabled is False
 
 
 def test_prompt_hierarchy_context_version_and_compact_protocol_are_included(tmp_path):
@@ -472,6 +476,7 @@ def test_no_live_provider_flags_are_enabled_by_default(tmp_path):
     assert cfg.live_claude_enabled is False
     assert cfg.live_local_enabled is False
     assert cfg.live_groq_enabled is False
+    assert cfg.live_cloudflare_enabled is False
     result = run_pre_execution_council("provider safety task", council_config=cfg)
     assert all(m.provider_metadata["live_provider_invoked"] is False for m in result.messages)
 
@@ -787,6 +792,148 @@ def test_groq_malformed_response_falls_back_safely(tmp_path, monkeypatch):
     assert "malformed response" in groq.provider_metadata["fallback_reason"]
     blob = "\n".join(p.read_text(encoding="utf-8") for p in Path(result.log_dir).iterdir() if p.is_file())
     assert "groq-test-key" not in blob
+
+
+def test_cloudflare_env_alias_enables_cloudflare_flag(monkeypatch):
+    monkeypatch.setattr(config, "PRE_EXECUTION_COUNCIL_LIVE_CLOUDFLARE_ENABLED", True, raising=False)
+    assert CouncilConfig.from_config().live_cloudflare_enabled is True
+
+
+def test_cloudflare_disabled_by_default_in_seat_set(tmp_path):
+    result = run_pre_execution_council("cloudflare disabled task", council_config=_enabled_config(tmp_path))
+    assert {m.speaker for m in result.messages} == {"GPT", "Gemini", "Claude", "Local LLM"}
+    assert len(result.messages) == 48
+
+
+def test_cloudflare_enabled_uses_extra_seat_and_message_target(tmp_path):
+    cfg = _enabled_config(tmp_path, live_cloudflare_enabled=True, messages_per_seat=12, total_target_messages=48)
+    result = run_pre_execution_council("cloudflare five-seat task", council_config=cfg)
+    assert len(result.messages) == 60
+    assert {m.speaker for m in result.messages} == {"GPT", "Gemini", "Claude", "Local LLM", "Cloudflare"}
+
+
+def test_cloudflare_live_missing_key_falls_back_to_mock_with_safe_metadata(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "account-test-id")
+    monkeypatch.delenv("CLOUDFLARE_WORKER_AI_API_KEY", raising=False)
+    cfg = _enabled_config(tmp_path, live_cloudflare_enabled=True, messages_per_seat=1, total_target_messages=5)
+    result = run_pre_execution_council("cloudflare fallback task", council_config=cfg)
+    cloudflare = next(m for m in result.messages if m.speaker == "Cloudflare")
+    assert cloudflare.provider_metadata["provider"] == "mock"
+    assert cloudflare.provider_metadata["requested_live"] is True
+    assert cloudflare.provider_metadata["actual_live"] is False
+    assert cloudflare.provider_metadata["fallback_from"] == "cloudflare"
+    assert cloudflare.provider_metadata["fallback"] is True
+    assert "CLOUDFLARE_WORKER_AI_API_KEY missing" in cloudflare.provider_metadata["fallback_reason"]
+    assert "account-test-id" not in cloudflare.content
+    assert "CLOUDFLARE_WORKER_AI_API_KEY" not in cloudflare.provider_metadata
+
+
+class _FakeCloudflareClient:
+    def __init__(self, reply):
+        self.reply = reply
+        self.calls = []
+
+    def urlopen(self, req, timeout=0):
+        self.calls.append((req, timeout))
+
+        class _Resp:
+            def __init__(self, body):
+                self._body = body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return self._body
+
+        return _Resp(json.dumps({"success": True, "result": {"response": self.reply}}).encode("utf-8"))
+
+
+def test_cloudflare_live_seat_can_run_with_fake_response(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "account-test-id")
+    monkeypatch.setenv("CLOUDFLARE_WORKER_AI_API_KEY", "cloudflare-test-key")
+    fake = _FakeCloudflareClient(
+        "[CLAIM] Cloudflare adds an edge-hosted cost and latency critique. [RISK] Keep it gated."
+    )
+    monkeypatch.setattr("agents.planning.pre_execution_council.urllib.request.urlopen", fake.urlopen)
+    cfg = _enabled_config(
+        tmp_path,
+        live_cloudflare_enabled=True,
+        cloudflare_model="@cf/meta/llama-3.1-8b-instruct-fp8-fast",
+        messages_per_seat=1,
+        total_target_messages=5,
+    )
+    result = CouncilRunner(cfg).run(CouncilContextPack.for_task("cloudflare live task", work_dir=Path.cwd()))
+    cloudflare = next(m for m in result.messages if m.speaker == "Cloudflare")
+    assert cloudflare.provider_metadata["provider"] == "cloudflare"
+    assert cloudflare.provider_metadata["actual_live"] is True
+    assert cloudflare.provider_metadata["fallback"] is False
+    assert cloudflare.provider_metadata["model"] == "@cf/meta/llama-3.1-8b-instruct-fp8-fast"
+    assert cloudflare.provider_metadata["runtime"] == "cloudflare-workers-ai"
+    assert "edge-hosted cost and latency critique" in cloudflare.content
+    req, timeout = fake.calls[0]
+    assert timeout == 60.0
+    assert "/accounts/account-test-id/ai/run/@cf/meta/llama-3.1-8b-instruct-fp8-fast" in req.full_url
+    payload = json.loads(req.data.decode("utf-8"))
+    assert payload["messages"][0]["role"] == "system"
+    blob = "\n".join(p.read_text(encoding="utf-8") for p in Path(result.log_dir).iterdir() if p.is_file())
+    assert "cloudflare-test-key" not in blob
+    assert "Authorization" not in blob
+
+
+def test_cloudflare_rate_limit_falls_back_without_groq_cooldown(tmp_path, monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise urllib.error.HTTPError("https://api.cloudflare.com", 429, "rate limit", {}, None)
+
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "account-test-id")
+    monkeypatch.setenv("CLOUDFLARE_WORKER_AI_API_KEY", "cloudflare-test-key")
+    monkeypatch.setattr("agents.planning.pre_execution_council.urllib.request.urlopen", boom)
+    cfg = _enabled_config(
+        tmp_path,
+        live_cloudflare_enabled=True,
+        conversation_policy="selector",
+        messages_per_seat=1,
+        total_target_messages=5,
+    )
+    result = CouncilRunner(cfg).run(CouncilContextPack.for_task("cloudflare rate limit task", work_dir=Path.cwd()))
+    cloudflare = next(m for m in result.messages if m.speaker == "Cloudflare")
+    assert cloudflare.provider_metadata["provider"] == "mock"
+    assert cloudflare.provider_metadata["fallback_from"] == "cloudflare"
+    assert cloudflare.provider_metadata["actual_live"] is False
+    assert "429" in cloudflare.provider_metadata["fallback_reason"]
+    metadata = json.loads((Path(result.log_dir) / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["provider_budget_state"]["groq"]["recent_429"] is False
+
+
+def test_cloudflare_malformed_response_falls_back_safely(tmp_path, monkeypatch):
+    class BadCloudflareClient:
+        def urlopen(self, req, timeout=0):
+            class _Resp:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    return False
+
+                def read(self):
+                    return b'{"success": true, "result": {}}'
+
+            return _Resp()
+
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "account-test-id")
+    monkeypatch.setenv("CLOUDFLARE_WORKER_AI_API_KEY", "cloudflare-test-key")
+    monkeypatch.setattr("agents.planning.pre_execution_council.urllib.request.urlopen", BadCloudflareClient().urlopen)
+    cfg = _enabled_config(tmp_path, live_cloudflare_enabled=True, messages_per_seat=1, total_target_messages=5)
+    result = CouncilRunner(cfg).run(CouncilContextPack.for_task("cloudflare malformed response task", work_dir=Path.cwd()))
+    cloudflare = next(m for m in result.messages if m.speaker == "Cloudflare")
+    assert cloudflare.provider_metadata["provider"] == "mock"
+    assert cloudflare.provider_metadata["actual_live"] is False
+    assert "malformed response" in cloudflare.provider_metadata["fallback_reason"]
+    blob = "\n".join(p.read_text(encoding="utf-8") for p in Path(result.log_dir).iterdir() if p.is_file())
+    assert "cloudflare-test-key" not in blob
 
 
 def test_future_provider_roadmap_note_does_not_create_live_behavior():

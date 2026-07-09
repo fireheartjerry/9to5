@@ -9,7 +9,7 @@ This note is planning-only. Do not wire these providers into production orchestr
 
 ## Future Optional Seats
 
-- Cloudflare Workers AI: explicitly gated later with `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, and `PRE_EXECUTION_COUNCIL_CLOUDFLARE_MODEL`; never log tokens; fall back to mock on quota, transport, or model errors; add after selector-mode planning unless there is a strong reason to do it sooner.
+- Cloudflare Workers AI: optional gated seat with `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_WORKER_AI_API_KEY`, `ENABLE_PRE_EXECUTION_COUNCIL_CLOUDFLARE`, and `PRE_EXECUTION_COUNCIL_CLOUDFLARE_MODEL`; never log tokens; fall back to mock on quota, transport, or model errors; keep pre-execution only.
 - GitHub Models or Cerebras: optional API seats only; explicitly gated; safe metadata and fallback behavior; never required for council execution.
 - xAI Grok browser: do not confuse with Groq API; browser automation only; consider only after the browser automation abstraction is mature.
 - Claude live: keep mocked while quota/safety is blocked; eventual integration must be read-only, planning-only, non-mutating, and explicitly gated.

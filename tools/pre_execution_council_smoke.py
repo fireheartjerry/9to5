@@ -48,17 +48,26 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         default="",
         help="Comma-separated fallback models for --live-groq.",
     )
+    parser.add_argument("--live-cloudflare", action="store_true", help="Add live Cloudflare Workers AI as an optional extra seat.")
+    parser.add_argument(
+        "--cloudflare-model",
+        default="",
+        help="Model name for --live-cloudflare; defaults to PRE_EXECUTION_COUNCIL_CLOUDFLARE_MODEL.",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv or sys.argv[1:])
     env_cfg = CouncilConfig.from_config()
+    live_groq = bool(args.live_groq or env_cfg.live_groq_enabled)
+    live_cloudflare = bool(args.live_cloudflare or env_cfg.live_cloudflare_enabled)
+    seat_count = 4 + int(live_groq) + int(live_cloudflare)
     cfg = CouncilConfig(
         enabled=True,
         prompt_version=env_cfg.prompt_version,
         messages_per_seat=max(1, args.messages_per_seat),
-        total_target_messages=max(1, args.messages_per_seat) * (5 if (args.live_groq or env_cfg.live_groq_enabled) else 4),
+        total_target_messages=max(1, args.messages_per_seat) * seat_count,
         transcript_mode=env_cfg.transcript_mode,
         compact_protocol=env_cfg.compact_protocol,
         anti_filler=env_cfg.anti_filler,
@@ -75,9 +84,11 @@ def main(argv: list[str] | None = None) -> int:
         live_claude_enabled=False,
         live_local_enabled=bool(args.live_local or env_cfg.live_local_enabled),
         local_model=args.local_model or env_cfg.local_model,
-        live_groq_enabled=bool(args.live_groq or env_cfg.live_groq_enabled),
+        live_groq_enabled=live_groq,
         groq_model=args.groq_model or env_cfg.groq_model,
         groq_fallback_models=args.groq_fallback_models or env_cfg.groq_fallback_models,
+        live_cloudflare_enabled=live_cloudflare,
+        cloudflare_model=args.cloudflare_model or env_cfg.cloudflare_model,
     )
     result = run_pre_execution_council(
         args.task,

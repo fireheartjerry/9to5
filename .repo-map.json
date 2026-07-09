@@ -1473,49 +1473,49 @@
           "kind": "function",
           "signature": "(enabled: bool=True) -> str",
           "summary": "",
-          "lineno": 127
+          "lineno": 139
         },
         {
           "name": "make_continuity_token",
           "kind": "function",
           "signature": "(*, run_id: str, seat: str, turn: int, prompt_version: str=PROMPT_VERSION) -> dict[str, Any]",
           "summary": "Build a small structured continuity marker for one live-seat turn.",
-          "lineno": 133
+          "lineno": 145
         },
         {
           "name": "format_continuity_line",
           "kind": "function",
           "signature": "(token: dict[str, Any]) -> str",
           "summary": "Serialize a continuity token as a single required reply line.",
-          "lineno": 149
+          "lineno": 161
         },
         {
           "name": "continuity_instruction",
           "kind": "function",
           "signature": "(token: dict[str, Any]) -> str",
           "summary": "Prompt block: require structured continuity echo, not a free-text canary word.",
-          "lineno": 154
+          "lineno": 166
         },
         {
           "name": "parse_continuity_token",
           "kind": "function",
           "signature": "(text: str) -> dict[str, Any] | None",
           "summary": "Extract the first [CONTINUITY] JSON object from a reply, if present.",
-          "lineno": 165
+          "lineno": 177
         },
         {
           "name": "check_continuity",
           "kind": "function",
           "signature": "(text: str, expected: dict[str, Any]) -> tuple[bool, str]",
           "summary": "Return (ok, detail)",
-          "lineno": 177
+          "lineno": 189
         },
         {
           "name": "build_turn_prompt",
           "kind": "function",
           "signature": "(*, task: str, context_pack_summary: str, seat_name: str, temporary_roles: Iterable[str], recent_transcript: str, compact_state: str, unresolved_disagreements: str, working_brief: str, compact_protocol: bool=True, anti_filler: bool=True) -> str",
           "summary": "",
-          "lineno": 188
+          "lineno": 200
         }
       ],
       "depends_on": [],
@@ -1550,7 +1550,7 @@
           "kind": "function",
           "signature": "(context_pack: CouncilContextPack, seats: tuple[CouncilSeatSpec, ...]=DEFAULT_SEAT_SPECS, deterministic_seed: str | None=None) -> dict[str, list[str]]",
           "summary": "",
-          "lineno": 81
+          "lineno": 87
         }
       ],
       "depends_on": [
@@ -2079,112 +2079,119 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 63
+          "lineno": 65
         },
         {
           "name": "CouncilConfig",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 71
+          "lineno": 73
         },
         {
           "name": "CouncilQualityWarning",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 135
+          "lineno": 141
         },
         {
           "name": "CouncilMessage",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 143
+          "lineno": 149
         },
         {
           "name": "CouncilBrief",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 159
+          "lineno": 165
         },
         {
           "name": "CouncilRunResult",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 270
+          "lineno": 276
         },
         {
           "name": "MockCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 283
+          "lineno": 289
         },
         {
           "name": "LiveGeminiCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 373
+          "lineno": 387
         },
         {
           "name": "LiveLocalCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 440
+          "lineno": 454
         },
         {
           "name": "LiveGroqCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 550
+          "lineno": 564
+        },
+        {
+          "name": "LiveCloudflareCouncilSeat",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 737
         },
         {
           "name": "LiveGPTBrowserCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "Live GPT seat: one browser chat thread per council run + structured continuity checks.",
-          "lineno": 762
+          "lineno": 909
         },
         {
           "name": "is_enabled",
           "kind": "function",
           "signature": "(config_obj: CouncilConfig | None=None) -> bool",
           "summary": "",
-          "lineno": 932
+          "lineno": 1079
         },
         {
           "name": "CouncilRunner",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 937
+          "lineno": 1084
         },
         {
           "name": "evaluate_message_quality",
           "kind": "function",
           "signature": "(message: CouncilMessage) -> list[CouncilQualityWarning]",
           "summary": "",
-          "lineno": 2058
+          "lineno": 2243
         },
         {
           "name": "run_pre_execution_council",
           "kind": "function",
           "signature": "(task: str, *, work_dir: str | Path | None=None, council_config: CouncilConfig | None=None) -> CouncilRunResult",
           "summary": "",
-          "lineno": 2091
+          "lineno": 2276
         },
         {
           "name": "env_enabled",
           "kind": "function",
           "signature": "() -> bool",
           "summary": "",
-          "lineno": 2111
+          "lineno": 2297
         }
       ],
       "depends_on": [
@@ -13725,21 +13732,21 @@
           "kind": "function",
           "signature": "() -> ClaudeCliCfg",
           "summary": "",
-          "lineno": 243
+          "lineno": 250
         },
         {
           "name": "SieCfg",
           "kind": "class",
           "signature": "",
           "summary": "SIE/learning + Obsidian service + adversary + orchestration/run-control knobs.",
-          "lineno": 249
+          "lineno": 256
         },
         {
           "name": "buildSieCfg",
           "kind": "function",
           "signature": "() -> SieCfg",
           "summary": "",
-          "lineno": 445
+          "lineno": 452
         }
       ],
       "depends_on": [
@@ -20734,7 +20741,7 @@
           "kind": "function",
           "signature": "(argv: list[str] | None=None) -> int",
           "summary": "",
-          "lineno": 117
+          "lineno": 124
         }
       ],
       "depends_on": [
@@ -20757,7 +20764,7 @@
           "kind": "function",
           "signature": "(argv: list[str] | None=None) -> int",
           "summary": "",
-          "lineno": 54
+          "lineno": 60
         }
       ],
       "depends_on": [

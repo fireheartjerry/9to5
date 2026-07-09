@@ -66,6 +66,12 @@ DEFAULT_SEAT_SPECS = (
         permanent_role="fast open-model dissent, alternative critique, failure spotting, concise counter-planning",
         strengths=("fast dissent", "alternative critique", "failure spotting", "counter-planning"),
     ),
+    CouncilSeatSpec(
+        name="Cloudflare",
+        provider="mock",
+        permanent_role="edge-hosted open-model critique, latency/cost scrutiny, deployment-adjacent risk checks",
+        strengths=("edge-hosted model", "latency", "cost", "deployment-adjacent critique", "risk checks"),
+    ),
 )
 
 TEMPORARY_HATS = (
