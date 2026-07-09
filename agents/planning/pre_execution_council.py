@@ -1816,8 +1816,8 @@ class CouncilRunner:
             )
             implementation_prompt = (
                 "Improve CouncilBrief synthesis for mixed live/mock councils. Aggregate provider metadata across all "
-                "turns, show partial-live vs fallback status, include GPT continuity health, remove stale mock-only "
-                "language, dedupe/truncate excerpts cleanly, and keep the output as a concise Codex-ready "
+                "turns, show partial-live vs fallback status, include GPT continuity health, remove stale "
+                "run-composition language, dedupe/truncate excerpts cleanly, and keep the output as a concise Codex-ready "
                 "implementation prompt. Do not add providers or wire into orchestration."
             )
         elif gpt_requested or "gpt" in task_lower or "browser" in task_lower:

@@ -1448,6 +1448,7 @@ def test_mixed_live_mock_brief_has_current_provider_summary_and_no_stale_mock_on
     assert "## Known Limitations" in markdown
     assert "partially live" in markdown
     assert "mock-only Pre-Execution Council v0" not in result.brief.implementation_prompt_export
+    assert "mock-only" not in result.brief.implementation_prompt_export.lower()
     assert "live providers disabled in v0" not in markdown
     assert result.brief.actionable_next_command_or_task_prompt == result.brief.implementation_prompt_export
     assert result.brief.actionable_next_command_or_task_prompt.startswith(
