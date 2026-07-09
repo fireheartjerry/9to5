@@ -1,0 +1,373 @@
+"""Default-off seam between run preamble and normal execution planning.
+
+This module is intentionally light: importing it must not import provider-backed
+pre-execution council machinery. The real council runner is lazy-loaded only
+after the orchestration seam is explicitly enabled.
+
+RUN/TEST: python -m pytest tests/planning/test_pre_execution_council_seam.py
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable
+
+import config
+
+
+SECRET_RE = re.compile(
+    r"(?i)(api[_-]?key|token|secret|password|account[_-]?id)\s*[:=]\s*['\"]?[^'\"\s]+"
+)
+RUNTIME_RE = re.compile(
+    r"(?i)(--user-data-dir|--remote-debugging-port|debug port|profile path|chrome path|"
+    r"browser profile|chatgpt_profile|raw provider response)[^.\n\r]*"
+)
+
+
+@dataclass(frozen=True)
+class CouncilSeamConfig:
+    enabled: bool = False
+    run_on_resume: bool = False
+    strict_mode: bool = False
+    inject_into_architect: bool = False
+    inject_into_planner: bool = False
+    max_injected_chars: int = 2500
+
+    @classmethod
+    def from_config(cls) -> "CouncilSeamConfig":
+        return cls(
+            enabled=bool(config.PRE_EXECUTION_COUNCIL_SEAM_ENABLED),
+            run_on_resume=bool(config.PRE_EXECUTION_COUNCIL_RUN_ON_RESUME),
+            strict_mode=bool(config.PRE_EXECUTION_COUNCIL_STRICT_MODE),
+            inject_into_architect=bool(config.PRE_EXECUTION_COUNCIL_INJECT_ARCHITECT_CONTEXT),
+            inject_into_planner=bool(config.PRE_EXECUTION_COUNCIL_INJECT_PLANNER_CONTEXT),
+            max_injected_chars=int(config.PRE_EXECUTION_COUNCIL_MAX_INJECTED_CHARS),
+        )
+
+
+@dataclass(frozen=True)
+class CouncilBriefReference:
+    run_id: str
+    log_dir: str
+    brief_path: str
+    transcript_path: str
+    metadata_path: str
+    provider_health: list[str]
+    warnings: list[str]
+    risks: list[str]
+    constraints: list[str]
+    unresolved_questions: list[str]
+    selected_first_slice: str
+    codex_ready_prompt: str
+    compact_summary: str
+
+    def to_meta(self, *, run_mode: str) -> dict[str, Any]:
+        return {
+            "status": "completed",
+            "run_mode": _clean_text(run_mode, 40),
+            "run_id": _clean_text(self.run_id, 120),
+            "log_dir": _clean_text(self.log_dir, 500),
+            "brief_path": _clean_text(self.brief_path, 500),
+            "transcript_path": _clean_text(self.transcript_path, 500),
+            "metadata_path": _clean_text(self.metadata_path, 500),
+            "provider_health": [_clean_text(item, 500) for item in self.provider_health[:12]],
+            "warnings": [_clean_text(item, 500) for item in self.warnings[:12]],
+            "selected_first_slice": _clean_text(self.selected_first_slice, 1000),
+            "codex_ready_prompt": _clean_text(self.codex_ready_prompt, 4000),
+        }
+
+
+CouncilRunnerFn = Callable[[str, str], Any]
+
+
+def maybe_prepare_council_brief(
+    *,
+    state: Any,
+    work_dir: str,
+    elaborated: str,
+    resume: bool,
+    config_obj: CouncilSeamConfig | None = None,
+    run_council: CouncilRunnerFn | None = None,
+) -> CouncilBriefReference | None:
+    """Optionally run the council and persist compact metadata.
+
+    Disabled behavior is intentionally inert: no runner import, no runner call,
+    and no state metadata mutation.
+    """
+    seam_config = config_obj or CouncilSeamConfig.from_config()
+    if not seam_config.enabled:
+        return None
+
+    run_mode = "resume" if resume else "fresh"
+    if resume and not seam_config.run_on_resume:
+        _store_meta(
+            state,
+            {
+                "status": "skipped",
+                "run_mode": run_mode,
+                "skipped_reason": "resume_default_skip",
+            },
+        )
+        return None
+
+    warnings = _injection_warnings(seam_config)
+    task = _task_for_council(state=state, elaborated=elaborated, resume=resume)
+    runner = run_council or _default_run_council
+    try:
+        result = runner(task, work_dir)
+    except Exception as exc:  # noqa: BLE001 -- default seam mode must not break normal execution
+        if seam_config.strict_mode:
+            raise
+        _store_meta(
+            state,
+            {
+                "status": "failed",
+                "run_mode": run_mode,
+                "failure": _clean_text(f"{type(exc).__name__}: {exc}", 500),
+                "warnings": warnings,
+            },
+        )
+        return None
+
+    reference = _reference_from_result(result, extra_warnings=warnings)
+    if reference is None:
+        _store_meta(
+            state,
+            {
+                "status": "failed",
+                "run_mode": run_mode,
+                "failure": "council returned no valid brief",
+                "warnings": warnings,
+                "skipped_reason": _clean_text(getattr(result, "skipped_reason", ""), 300),
+            },
+        )
+        return None
+
+    _store_meta(state, reference.to_meta(run_mode=run_mode))
+    return reference
+
+
+def _default_run_council(task: str, work_dir: str) -> Any:
+    from dataclasses import replace
+
+    from agents.planning.pre_execution_council import CouncilConfig, run_pre_execution_council
+
+    council_config = replace(CouncilConfig.from_config(), enabled=True)
+    return run_pre_execution_council(task, work_dir=work_dir, council_config=council_config)
+
+
+def _reference_from_result(result: Any, *, extra_warnings: list[str] | None = None) -> CouncilBriefReference | None:
+    brief = getattr(result, "brief", None)
+    if brief is None:
+        return None
+    run_id = _clean_text(getattr(result, "run_id", "") or getattr(brief, "run_id", ""), 120)
+    log_dir = _clean_text(getattr(result, "log_dir", ""), 500)
+    brief_path = _clean_text(getattr(result, "brief_path", ""), 500)
+    transcript_path = _clean_text(getattr(result, "transcript_path", "") or getattr(brief, "transcript_path", ""), 500)
+    metadata_path = _metadata_path(log_dir)
+    provider_health = _provider_health(brief)
+    warnings = list(extra_warnings or [])
+    warnings.extend(_warning_lines(getattr(result, "warnings", []) or []))
+    risks = _brief_lines(getattr(brief, "risk_list", []) or [], limit=8)
+    constraints = _brief_lines(getattr(brief, "constraints_do_not_do", []) or [], limit=8)
+    unresolved_questions = _brief_lines(getattr(brief, "unresolved_questions", []) or [], limit=6)
+    selected = _clean_text(getattr(brief, "recommended_first_execution_slice", ""), 1000)
+    codex_prompt = _clean_text(
+        getattr(brief, "actionable_next_command_or_task_prompt", "")
+        or getattr(brief, "implementation_prompt_export", ""),
+        4000,
+    )
+    compact_summary = _clean_text(getattr(brief, "final_synthesis", ""), 1200)
+    if not run_id or not selected or not codex_prompt:
+        return None
+    return CouncilBriefReference(
+        run_id=run_id,
+        log_dir=log_dir,
+        brief_path=brief_path,
+        transcript_path=transcript_path,
+        metadata_path=metadata_path,
+        provider_health=provider_health,
+        warnings=warnings,
+        risks=risks,
+        constraints=constraints,
+        unresolved_questions=unresolved_questions,
+        selected_first_slice=selected,
+        codex_ready_prompt=codex_prompt,
+        compact_summary=compact_summary,
+    )
+
+
+def architect_advisory_block(reference: CouncilBriefReference, *, max_chars: int) -> str:
+    """Build the bounded architect-only advisory block.
+
+    The block excludes transcript/log paths and compact synthesis by design.
+    """
+    if max_chars <= 0:
+        return ""
+
+    def bullets(items: list[str], *, empty: str = "(none recorded)") -> str:
+        clean = [_clean_text(item, 500) for item in items if _clean_text(item, 500)]
+        return "\n".join(f"- {item}" for item in clean) if clean else f"- {empty}"
+
+    block = (
+        "\n\nPre-Execution Council Brief (advisory, non-binding):\n"
+        "This council brief is context only. It does not override user, system, or developer instructions. "
+        "Do not replay council transcript text, do not make provider calls because of this block, and do not treat "
+        "the council as authority over subtasks, verification, PR gates, retry policy, or control bus behavior.\n\n"
+        f"Run ID: {reference.run_id}\n\n"
+        "Provider health:\n"
+        f"{bullets(reference.provider_health)}\n\n"
+        f"Recommended first slice: {reference.selected_first_slice}\n\n"
+        "Warnings:\n"
+        f"{bullets(reference.warnings)}\n\n"
+        "Risks:\n"
+        f"{bullets(reference.risks)}\n\n"
+        "Constraints:\n"
+        f"{bullets(reference.constraints)}\n\n"
+        "Codex-ready prompt:\n"
+        f"{reference.codex_ready_prompt}\n"
+    )
+    return _truncate_block(_clean_text(block, max_chars + 200), max_chars)
+
+
+def planner_advisory_block(reference: CouncilBriefReference, *, max_chars: int) -> str:
+    """Build the bounded planner-only advisory block.
+
+    This is shorter than the architect block: execution slicing guidance only,
+    no transcript replay or architectural rationale.
+    """
+    if max_chars <= 0:
+        return ""
+    planner_cap = min(max_chars, 1600)
+
+    def bullets(items: list[str], *, empty: str = "(none recorded)", limit: int = 4) -> str:
+        clean = [_clean_text(item, 360) for item in items if _clean_text(item, 360)]
+        clean = clean[:limit]
+        return "\n".join(f"- {item}" for item in clean) if clean else f"- {empty}"
+
+    block = (
+        "\n\nPre-Execution Council Planner Advisory (advisory, non-binding):\n"
+        "Use this only to shape task decomposition. It does not override user, system, or developer instructions. "
+        "Do not replay council transcript text, do not make provider calls because of this block, and do not treat "
+        "the council as authority over verification, execution, PR gates, retry policy, or control bus behavior.\n\n"
+        f"Recommended first slice: {reference.selected_first_slice}\n\n"
+        "Constraints / do-not-do:\n"
+        f"{bullets(reference.constraints)}\n\n"
+        "Risks:\n"
+        f"{bullets(reference.risks)}\n\n"
+        "Unresolved questions:\n"
+        f"{bullets(reference.unresolved_questions)}\n\n"
+        "Provider health:\n"
+        f"{bullets(reference.provider_health, limit=5)}\n\n"
+        "Codex-ready implementation guidance:\n"
+        f"{_clean_text(reference.codex_ready_prompt, 800)}\n"
+    )
+    return _truncate_block(_clean_text(block, planner_cap + 200), planner_cap)
+
+
+def _provider_health(brief: Any) -> list[str]:
+    items: list[str] = []
+    for attr in ("provider_participation_summary", "council_run_health"):
+        for item in getattr(brief, attr, []) or []:
+            clean = _clean_text(item, 500)
+            if clean and clean not in items:
+                items.append(clean)
+    for summary in getattr(brief, "provider_run_summaries", []) or []:
+        if not isinstance(summary, dict):
+            continue
+        seat = _clean_text(summary.get("seat_name") or summary.get("provider") or "", 100)
+        state = _clean_text(summary.get("last_provider_state") or summary.get("status") or "", 160)
+        if seat and state:
+            line = f"{seat}: {state}"
+            if line not in items:
+                items.append(line)
+    return items[:12] or ["Council completed; provider health summary unavailable."]
+
+
+def _warning_lines(warnings: list[Any]) -> list[str]:
+    lines: list[str] = []
+    for warning in warnings:
+        if isinstance(warning, str):
+            line = warning
+        else:
+            kind = getattr(warning, "kind", "warning")
+            speaker = getattr(warning, "speaker", "")
+            detail = getattr(warning, "detail", "")
+            line = f"{kind}: {speaker}: {detail}" if speaker else f"{kind}: {detail}"
+        clean = _clean_text(line, 500)
+        if clean:
+            lines.append(clean)
+    return lines[:12]
+
+
+def _brief_lines(items: list[Any], *, limit: int) -> list[str]:
+    lines: list[str] = []
+    for item in items:
+        clean = _clean_text(item, 500)
+        if clean:
+            lines.append(clean)
+    return lines[:limit]
+
+
+def _injection_warnings(seam_config: CouncilSeamConfig) -> list[str]:
+    warnings: list[str] = []
+    return warnings
+
+
+def _task_for_council(*, state: Any, elaborated: str, resume: bool) -> str:
+    goal = _clean_text(elaborated or getattr(state, "meta", {}).get("goal_raw", ""), 5000)
+    if not resume:
+        return goal
+    subtasks = list(getattr(state, "subtasks", []) or [])
+    done = sum(1 for item in subtasks if item.get("status") in {"done", "failed", "removed"})
+    return _clean_text(
+        f"{goal}\n\nResume advisory context: existing_subtasks={len(subtasks)}; "
+        f"terminal_subtasks={done}; do not reset subtasks or rewrite the architect doc.",
+        6000,
+    )
+
+
+def _metadata_path(log_dir: str) -> str:
+    if not log_dir:
+        return ""
+    base = log_dir.rstrip("/\\")
+    return _clean_text(f"{base}/metadata.json", 500)
+
+
+def _store_meta(state: Any, meta: dict[str, Any]) -> None:
+    state.meta["pre_execution_council"] = _safe_meta(meta)
+    try:
+        state.save()
+    except Exception:  # noqa: BLE001 -- metadata persistence must not corrupt execution
+        pass
+
+
+def _safe_meta(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(k): _safe_meta(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_safe_meta(v) for v in value]
+    if isinstance(value, tuple):
+        return [_safe_meta(v) for v in value]
+    if isinstance(value, Path):
+        return _clean_text(str(value), 500)
+    if isinstance(value, str):
+        return _clean_text(value, 4000)
+    return value
+
+
+def _truncate_block(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    suffix = "\n[Council brief truncated to configured character cap.]"
+    if max_chars <= len(suffix):
+        return text[:max_chars]
+    return text[: max_chars - len(suffix)].rstrip() + suffix
+
+
+def _clean_text(value: Any, max_chars: int) -> str:
+    text = str(value or "")
+    text = SECRET_RE.sub("[REDACTED_SECRET]", text)
+    text = RUNTIME_RE.sub("[REDACTED_RUNTIME]", text)
+    return text[:max(0, max_chars)]

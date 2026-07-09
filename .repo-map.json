@@ -2226,6 +2226,7 @@
         "tests/planning/test_pre_execution_council.py"
       ],
       "callers": [
+        "tools.cerebras_probe",
         "tools.cloudflare_workers_ai_probe",
         "tools.groq_probe",
         "tools.pre_execution_council_compare",
@@ -3543,6 +3544,7 @@
         "society.worker",
         "state.task_io",
         "state.task_schema",
+        "tools.cerebras_probe",
         "tools.cloudflare_workers_ai_probe",
         "tools.elaborator_eval",
         "tools.groq_probe"
@@ -20209,6 +20211,28 @@
         }
       ],
       "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "tools.cerebras_probe": {
+      "path": "tools/cerebras_probe.py",
+      "purpose": "Safe Cerebras access probe.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 56
+        }
+      ],
+      "depends_on": [
+        "agents.planning.pre_execution_council",
+        "config"
+      ],
       "side_effects": [
         "unannotated"
       ],
