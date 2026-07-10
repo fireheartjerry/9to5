@@ -478,7 +478,8 @@
         "agents.gemini_driver",
         "agents.native_executor",
         "agents.timing_harness",
-        "agents.workflow_resolver"
+        "agents.workflow_resolver",
+        "tools.chatgpt_browser_spike"
       ]
     },
     "agents.execution.browser_executor": {
@@ -579,14 +580,14 @@
           "kind": "class",
           "signature": "",
           "summary": "One ChatGPT project chat thread for the life of a single council run.",
-          "lineno": 455
+          "lineno": 458
         },
         {
           "name": "send_prompt_to_project",
           "kind": "function",
           "signature": "(project_url: str, model: str, reasoning: str, prompt: str) -> str",
           "summary": "Send one prompt to the ChatGPT 9to5 project and return the latest assistant text.",
-          "lineno": 572
+          "lineno": 575
         }
       ],
       "depends_on": [],
@@ -599,6 +600,36 @@
       "callers": [
         "agents.planning.pre_execution_council"
       ]
+    },
+    "agents.execution.claude_sdk_bridge": {
+      "path": "agents/execution/claude_sdk_bridge.py",
+      "purpose": "Claude Agent SDK bridge smoke helpers for AskUserQuestion.",
+      "exports": [
+        {
+          "name": "sdkCapabilitySnapshot",
+          "kind": "function",
+          "signature": "(permission_mode=None, tools=None) -> dict",
+          "summary": "",
+          "lineno": 40
+        },
+        {
+          "name": "buildAskUserQuestionAllow",
+          "kind": "function",
+          "signature": "(input_data: dict, answers: dict)",
+          "summary": "Return the SDK PermissionResultAllow shape, or a dict fallback when SDK is absent.",
+          "lineno": 66
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "optional import of claude_agent_sdk"
+      ],
+      "test": [
+        "tests/execution/test_claude_sdk_bridge.py"
+      ],
+      "callers": []
     },
     "agents.execution.executor": {
       "path": "agents/execution/executor.py",
@@ -1055,28 +1086,28 @@
           "kind": "function",
           "signature": "(data)",
           "summary": "Notification: forward the message to Discord as a compact embed.",
-          "lineno": 138
+          "lineno": 141
         },
         {
           "name": "logAll",
           "kind": "function",
           "signature": "(data)",
           "summary": "PostToolUse / any: append one JSON line {time, tool_name} to the log.",
-          "lineno": 155
+          "lineno": 158
         },
         {
           "name": "logTelemetry",
           "kind": "function",
           "signature": "(data)",
           "summary": "Any Claude hook: append compact non-blocking iteration telemetry.",
-          "lineno": 175
+          "lineno": 178
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "()",
           "summary": "Dispatch to the requested handler based on argv[1].",
-          "lineno": 188
+          "lineno": 191
         }
       ],
       "depends_on": [
@@ -1308,6 +1339,7 @@
         "agents.debugging_workflow",
         "agents.elaborator",
         "agents.evidence_receipt",
+        "agents.planning.assumption_resolver",
         "agents.playbook",
         "agents.replanner",
         "agents.second_brain",
@@ -1317,6 +1349,96 @@
         "platform_core.orchestration.run_phase_mixin",
         "tools.elaborator_eval"
       ]
+    },
+    "agents.planning.assumption_resolver": {
+      "path": "agents/planning/assumption_resolver.py",
+      "purpose": "AssumptionResolver -- grounded answers for Claude clarification questions.",
+      "exports": [
+        {
+          "name": "questionHash",
+          "kind": "function",
+          "signature": "(question_text: str) -> str",
+          "summary": "",
+          "lineno": 32
+        },
+        {
+          "name": "decisionId",
+          "kind": "function",
+          "signature": "(question: dict, answer: dict | None=None) -> str",
+          "summary": "",
+          "lineno": 37
+        },
+        {
+          "name": "extractQuestionBlock",
+          "kind": "function",
+          "signature": "(text: str) -> list[dict]",
+          "summary": "",
+          "lineno": 43
+        },
+        {
+          "name": "validateQuestions",
+          "kind": "function",
+          "signature": "(questions: list[dict]) -> tuple[list[dict], list[str]]",
+          "summary": "",
+          "lineno": 61
+        },
+        {
+          "name": "resolveQuestions",
+          "kind": "function",
+          "signature": "(chat: Callable, goal: str, subtask: dict, questions: list[dict], memory: dict | None=None) -> dict",
+          "summary": "",
+          "lineno": 146
+        },
+        {
+          "name": "buildResumeFeedback",
+          "kind": "function",
+          "signature": "(resolved: dict) -> str",
+          "summary": "",
+          "lineno": 228
+        }
+      ],
+      "depends_on": [
+        "agents.planning",
+        "config",
+        "llm_io"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/orchestration/test_assumption_resolver.py"
+      ],
+      "callers": []
+    },
+    "agents.planning.clarification_gate": {
+      "path": "agents/planning/clarification_gate.py",
+      "purpose": "ClarificationGate -- decide when executor questions are worth the cost.",
+      "exports": [
+        {
+          "name": "scoreAttempt",
+          "kind": "function",
+          "signature": "(state, subtask: dict, spec: dict | None=None, *, attempt: int=1, context_chars: int=0) -> dict",
+          "summary": "Return an observable skip/enable/force decision with score signals.",
+          "lineno": 45
+        },
+        {
+          "name": "questionPolicyBlock",
+          "kind": "function",
+          "signature": "(decision: dict) -> str",
+          "summary": "Compact executor instruction for gated question use.",
+          "lineno": 94
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/orchestration/test_clarification_gate.py"
+      ],
+      "callers": []
     },
     "agents.planning.clarifier": {
       "path": "agents/planning/clarifier.py",
@@ -2286,6 +2408,43 @@
         "tools.pre_execution_council_compare",
         "tools.pre_execution_council_smoke"
       ]
+    },
+    "agents.planning.question_memory": {
+      "path": "agents/planning/question_memory.py",
+      "purpose": "QuestionMemory -- reuse prior clarification answers without exact wording loops.",
+      "exports": [
+        {
+          "name": "mapLabel",
+          "kind": "function",
+          "signature": "(label: str | None, labels: list[str]) -> Optional[str]",
+          "summary": "",
+          "lineno": 27
+        },
+        {
+          "name": "remember",
+          "kind": "function",
+          "signature": "(session: dict, records: list[dict]) -> dict",
+          "summary": "",
+          "lineno": 39
+        },
+        {
+          "name": "findReusable",
+          "kind": "function",
+          "signature": "(session: dict, question: dict) -> Optional[dict]",
+          "summary": "",
+          "lineno": 49
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/orchestration/test_question_memory.py"
+      ],
+      "callers": []
     },
     "agents.planning.replanner": {
       "path": "agents/planning/replanner.py",
@@ -3347,6 +3506,7 @@
         "agents.discovery.lenses",
         "agents.discovery.synthesis",
         "agents.execution.browser_executor",
+        "agents.execution.claude_sdk_bridge",
         "agents.execution.executor",
         "agents.execution.executor_env",
         "agents.execution.executor_session",
@@ -3356,6 +3516,8 @@
         "agents.execution.native_executor",
         "agents.hook_handlers.core",
         "agents.hook_handlers.selfmod",
+        "agents.planning.assumption_resolver",
+        "agents.planning.clarification_gate",
         "agents.planning.clarifier",
         "agents.planning.council_context",
         "agents.planning.council_logging",
@@ -3373,6 +3535,7 @@
         "agents.planning.elaborator.self_review",
         "agents.planning.playbook",
         "agents.planning.pre_execution_council",
+        "agents.planning.question_memory",
         "agents.planning.replanner",
         "agents.planning.second_brain",
         "agents.review.adversary_review",
@@ -3522,6 +3685,7 @@
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.brain_json",
         "platform_core.orchestration.branch_runner",
+        "platform_core.orchestration.clarification_replan",
         "platform_core.orchestration.code_graph",
         "platform_core.orchestration.compaction",
         "platform_core.orchestration.conflict_sim",
@@ -7843,6 +8007,7 @@
       "callers": [
         "agents.discovery.lenses",
         "agents.discovery.synthesis",
+        "agents.planning.assumption_resolver",
         "agents.planning.clarifier",
         "agents.planning.elaborator.core",
         "agents.planning.elaborator.escalate",
@@ -15920,6 +16085,29 @@
       ],
       "callers": []
     },
+    "platform_core.orchestration.clarification_replan": {
+      "path": "platform_core/orchestration/clarification_replan.py",
+      "purpose": "Clarification-block replanning helpers.",
+      "exports": [
+        {
+          "name": "blockedClarificationDecision",
+          "kind": "function",
+          "signature": "(subtask: dict, result: dict) -> dict",
+          "summary": "Create a read-only probe subtask for a high-risk unresolved clarification block.",
+          "lineno": 30
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/orchestration/test_clarification_replan.py"
+      ],
+      "callers": []
+    },
     "platform_core.orchestration.code_graph": {
       "path": "platform_core/orchestration/code_graph.py",
       "purpose": "Code-graph blast-radius scoring: SCC condensation + dependency reachability.",
@@ -20338,6 +20526,43 @@
         "unannotated"
       ],
       "test": [],
+      "callers": []
+    },
+    "tools.chatgpt_browser_spike": {
+      "path": "tools/chatgpt_browser_spike.py",
+      "purpose": "Standalone CLI wrapper for the experimental ChatGPT browser driver.",
+      "exports": [
+        {
+          "name": "run_spike",
+          "kind": "function",
+          "signature": "(args: argparse.Namespace) -> int",
+          "summary": "",
+          "lineno": 28
+        },
+        {
+          "name": "parse_args",
+          "kind": "function",
+          "signature": "(argv: list[str]) -> argparse.Namespace",
+          "summary": "",
+          "lineno": 83
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 96
+        }
+      ],
+      "depends_on": [
+        "agents.execution"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/tools/test_chatgpt_browser_spike.py"
+      ],
       "callers": []
     },
     "tools.ci_affected": {

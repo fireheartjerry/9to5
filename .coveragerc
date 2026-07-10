@@ -1,0 +1,18 @@
+[run]
+branch = True
+source =
+    agents
+    human_nature
+    introspect
+    learning
+    memory
+    notifications
+    platform_core
+    society
+    state
+    tools
+    workflows
+
+[report]
+skip_covered = True
+show_missing = True

@@ -250,7 +250,8 @@ def _visible_composer(page: Any) -> Any | None:
         try:
             if locator.first.is_visible(timeout=250):
                 return locator.first
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 -- selectors are intentionally best-effort
+            LOG.debug("composer selector unavailable: %s", exc)
             continue
     return None
 
@@ -260,7 +261,8 @@ def _fast_any_visible(page: Any, selectors: tuple[str, ...]) -> bool:
         try:
             if page.locator(selector).first.is_visible(timeout=100):
                 return True
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 -- selectors are intentionally best-effort
+            LOG.debug("visibility selector unavailable: %s", exc)
             continue
     return False
 
@@ -349,8 +351,8 @@ def _verify_or_select_model_reasoning(page: Any, model: str, reasoning: str) -> 
         warnings.append("Intelligence menu interaction was brittle; model/reasoning may be unchanged.")
     try:
         page.keyboard.press("Escape")
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 -- closing a transient menu is best-effort
+        LOG.debug("could not close Intelligence menu: %s", exc)
     if not model_seen:
         warnings.append(f"Model option missing: {model}")
     if not reasoning_seen:
@@ -392,7 +394,8 @@ def _assistant_texts(page: Any) -> list[str]:
                 text = item.inner_text(timeout=1500).strip()
                 if text:
                     texts.append(text)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 -- a stale message must not abort extraction
+            LOG.debug("assistant message extraction skipped: %s", exc)
             continue
     return texts
 
@@ -549,16 +552,16 @@ class ChatGptBrowserSession:
         if page is not None:
             try:
                 page.close()
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 -- page may already be closed
+                LOG.debug("ChatGPT page close skipped: %s", exc)
         self._browser = None
         playwright = self._playwright
         self._playwright = None
         if playwright is not None:
             try:
                 playwright.stop()
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 -- Playwright may already be stopped
+                LOG.debug("Playwright stop skipped: %s", exc)
 
     def __enter__(self) -> "ChatGptBrowserSession":
         self.open()

@@ -7,6 +7,13 @@ on:
     branches: ["**"]
   merge_group:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: "Validation tier to run manually"
+        required: true
+        default: fast
+        type: choice
+        options: [fast, exhaustive]
   schedule:
     - cron: "17 8 * * *"
 
@@ -40,16 +47,16 @@ jobs:
       testbrain_explain: ${{ steps.affected.outputs.testbrain_explain }}
       testbrain_matrix: ${{ steps.affected.outputs.testbrain_matrix }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         with:
           python-version: "3.12"
 
       - name: Restore test-brain history
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .testbrain
           key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
@@ -145,7 +152,7 @@ jobs:
           fi
       - name: Upload test-brain reports
         if: always() && hashFiles('.testbrain/reports/**') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: testbrain-reports
           path: .testbrain/reports
@@ -156,8 +163,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         with:
           python-version: "3.12"
       - name: Repo-map drift check
@@ -169,12 +176,12 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
         with:
           enable-cache: true
           cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -190,12 +197,12 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
         with:
           enable-cache: true
           cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -217,19 +224,19 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJson(needs.classify.outputs.testbrain_matrix) }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
         if: matrix.has_targets
         with:
           enable-cache: true
           cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         if: matrix.has_targets
         with:
           python-version: "3.12"
       - name: Restore test-brain history
         if: matrix.has_targets
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .testbrain
           key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-smart-${{ matrix.shard }}
@@ -253,7 +260,7 @@ jobs:
         run: echo "smart shard ${{ matrix.shard }} has no targets"
       - name: Save test-brain history
         if: always() && matrix.has_targets && hashFiles('.testbrain/**') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .testbrain
           key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-smart-${{ matrix.shard }}
@@ -264,16 +271,16 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
         with:
           enable-cache: true
           cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         with:
           python-version: "3.12"
       - name: Restore test-brain history
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .testbrain
           key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-fast
@@ -306,7 +313,7 @@ jobs:
       - name: Download test-brain reports
         if: always()
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: testbrain-reports
           path: .testbrain/reports
@@ -333,10 +340,39 @@ jobs:
         run: cat .testbrain/reports/mapping.md >> "$GITHUB_STEP_SUMMARY"
       - name: Save test-brain history
         if: always() && hashFiles('.testbrain/**') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .testbrain
           key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-fast
+
+  ci:
+    # Stable, always-reported required check. Path-specific jobs are intentionally skipped,
+    # so branch rules must require this aggregation gate rather than an individual lane.
+    needs: [classify, docs, workflow-validation, tooling, smart-shards, fast]
+    if: always()
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify the selected CI lane
+        shell: bash
+        env:
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          DOCS_ONLY: ${{ needs.classify.outputs.docs_only }}
+          WORKFLOW_ONLY: ${{ needs.classify.outputs.workflow_only }}
+          TOOLING_ONLY: ${{ needs.classify.outputs.tooling_only }}
+          CORE: ${{ needs.classify.outputs.core }}
+          DOCS_RESULT: ${{ needs.docs.result }}
+          WORKFLOW_RESULT: ${{ needs.workflow-validation.result }}
+          TOOLING_RESULT: ${{ needs.tooling.result }}
+          FAST_RESULT: ${{ needs.fast.result }}
+        run: |
+          set -euo pipefail
+          [[ "$CLASSIFY_RESULT" == "success" ]] || { echo "classify=$CLASSIFY_RESULT"; exit 1; }
+          [[ "$DOCS_ONLY" != "true" || "$DOCS_RESULT" == "success" ]] || { echo "docs=$DOCS_RESULT"; exit 1; }
+          [[ "$WORKFLOW_ONLY" != "true" || "$WORKFLOW_RESULT" == "success" ]] || { echo "workflow-validation=$WORKFLOW_RESULT"; exit 1; }
+          [[ "$TOOLING_ONLY" != "true" || "$TOOLING_RESULT" == "success" ]] || { echo "tooling=$TOOLING_RESULT"; exit 1; }
+          [[ "$CORE" != "true" || "$FAST_RESULT" == "success" ]] || { echo "fast=$FAST_RESULT"; exit 1; }
+          echo "Selected CI lane passed."
 
   slow:
     needs: classify
@@ -344,12 +380,12 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
         with:
           enable-cache: true
           cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -365,12 +401,12 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
         with:
           enable-cache: true
           cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -384,12 +420,12 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
         with:
           enable-cache: true
           cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -398,16 +434,16 @@ jobs:
         run: python main.py --e2e
 
   nightly-fast-py311:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
         with:
           enable-cache: true
           cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         with:
           python-version: "3.11"
       - name: Install dependencies
@@ -418,16 +454,16 @@ jobs:
         run: python -m pytest -m "not slow" -n auto --dist loadscope -q
 
   exhaustive:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'exhaustive')
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
         with:
           enable-cache: true
           cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -441,3 +477,29 @@ jobs:
         run: python main.py --dry-run --goal "nightly exhaustive smoke" --hours 1 --no-web
       - name: Virtual-operator E2E suite
         run: python main.py --e2e
+
+  coverage:
+    # Coverage is intentionally scheduled/manual-exhaustive only: it improves trend visibility
+    # without extending the PR feedback loop or competing with the fast affected-test lane.
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'exhaustive')
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements*.txt"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
+      - name: Collect fast-lane coverage
+        run: python -m pytest -m "not slow" --cov --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml -q
+      - name: Upload coverage report
+        if: always() && hashFiles('coverage.xml') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-${{ github.run_id }}
+          path: coverage.xml

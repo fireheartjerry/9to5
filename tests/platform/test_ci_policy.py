@@ -44,3 +44,14 @@ def test_fast_gate_waits_for_smart_shards_without_skipping_full_fallback():
     assert "smart lane delegated to smart-shards" in text
     assert "smart-shards result was" in text
     assert "full fast lane" in text
+
+
+def test_workflow_has_one_stable_required_gate_and_off_pr_coverage():
+    text = _workflow_text()
+
+    assert "  ci:\n" in text
+    assert "needs: [classify, docs, workflow-validation, tooling, smart-shards, fast]" in text
+    assert "Selected CI lane passed." in text
+    assert "options: [fast, exhaustive]" in text
+    assert "coverage:" in text
+    assert "--cov-branch" in text
