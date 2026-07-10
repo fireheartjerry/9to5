@@ -77,9 +77,10 @@ class TestElaboratorE2E(unittest.TestCase):
                  mock.patch.object(config, "ELABORATOR_DEFER_ENABLED", False), \
                  mock.patch.object(config, "SOCIETY_ENABLED", True), \
                  mock.patch.object(config, "ELABORATOR_CANDIDATES_MAX", 3), \
-                 mock.patch("agents.planning.elaborator.precedent.precedentBlock",
-                            return_value="PRECEDENT (how similar goals resolved before):\n"
-                                         "- past success: prior thing"), \
+                 mock.patch("agents.planning.elaborator.precedent.precedentEvidence",
+                            return_value={"block": "PRECEDENT (how similar goals resolved before):\n"
+                                                  "- past success: prior thing",
+                                          "success_hits": 1, "failure_hits": 0}), \
                  mock.patch("agents.planning.elaborator.judge.judgeElaboration",
                             return_value={"verdict": "challenged",
                                           "concerns": ["double-check scope"]}):

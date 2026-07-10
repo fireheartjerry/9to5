@@ -22,9 +22,10 @@ EXPORTS:
   scriptedChat(work_dir: str)  -- Return ``(chat, holder)``
   runOne(goal: str, is_vague: bool, work_dir: str) -> dict  -- Elaborate ``goal`` twice (flags OFF vs excellence-ON) against the same repo.
   runBattery() -> list[dict]  -- Run the whole battery, each item in a fresh temp repo.
+  historicalCases(records=None, *, limit: int=100) -> list[dict]  -- Read-only audit of completed task history for elaboration outcome evidence.
   report(results: list[dict]) -> str  -- Readable per-goal + aggregate table with the on-vs-off delta.
   main() -> None
-DEPENDS-ON: agents.planning, agents.planning.elaborator, agents.planning.elaborator.core, config
+DEPENDS-ON: agents.planning, agents.planning.elaborator, agents.planning.elaborator.core, config, state.task
 SIDE-EFFECTS: creates a throwaway temp repo per battery item (auto-cleaned)
 RUN/TEST: python -m pytest tests/orchestration/test_elaborator.py
 """
@@ -50,6 +51,18 @@ REAL_MODULE = "real_module.py"          # created under each temp repo -> ground
 FAKE_PATH = "does/not/exist.py"         # never created -> ungrounded
 SECTIONS = ("Objective", "Deliverables", "Acceptance Criteria", "Constraints", "Assumptions")
 MARKERS = ("ACTUAL REPOSITORY SNAPSHOT", "STATE OF THE REPO", "PRECEDENT")
+
+# Reviewable fixtures cover several repository shapes instead of a single synthetic
+# file. The suite remains offline and deterministic, but its path expectations now
+# mirror the modules a real elaborator must reason about.
+FIXTURE_CASES = (
+    {"goal": "add a helper to agents/planning/elaborator/core.py", "vague": False,
+     "files": ("agents/planning/elaborator/core.py", "tests/orchestration/test_elaborator.py")},
+    {"goal": "improve everything", "vague": True,
+     "files": ("platform_core/orchestration/plan_mixin.py", "tests/orchestration/test_elaborator.py")},
+    {"goal": "fix the failing tests", "vague": True,
+     "files": ("tests/orchestration/test_elaborator.py", "agents/planning/elaborator/schema.py")},
+)
 
 
 def _spec(path: str) -> str:
@@ -134,7 +147,8 @@ def _runWithFlags(goal: str, work_dir: str, on: bool) -> dict:
     patches = [mock.patch.object(config, k, v) for k, v in _flags(on).items()]
     # Precedent is injected (fixed fake hits) so the ON prompt reliably carries the marker
     # without touching the real embedding index -- keeps the harness offline & deterministic.
-    patches.append(mock.patch.object(precedent, "precedentBlock", return_value=_PRECEDENT_BLOCK))
+    patches.append(mock.patch.object(precedent, "precedentEvidence", return_value={
+        "block": _PRECEDENT_BLOCK, "success_hits": 1, "failure_hits": 1}))
     for p in patches:
         p.start()
     try:
@@ -147,11 +161,15 @@ def _runWithFlags(goal: str, work_dir: str, on: bool) -> dict:
     return scores
 
 
-def _makeRepo(root: str) -> None:
+def _makeRepo(root: str, files: tuple[str, ...] = (REAL_MODULE,)) -> None:
     """Create the minimal REAL grounding a run needs: the target module + an AGENTS.md so
     ``repoContext`` fires and the snapshot marker appears."""
-    with open(os.path.join(root, REAL_MODULE), "w", encoding="utf-8") as fh:
-        fh.write("def helper():\n    return 1\n")
+    files = tuple(dict.fromkeys((REAL_MODULE, *files)))
+    for rel in files:
+        path = os.path.join(root, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("def helper():\n    return 1\n")
     with open(os.path.join(root, "AGENTS.md"), "w", encoding="utf-8") as fh:
         fh.write("# Repo map\n\n- real_module.py — the module under evaluation\n")
 
@@ -166,21 +184,42 @@ def runOne(goal: str, is_vague: bool, work_dir: str) -> dict:
     }
 
 
-BATTERY = [
-    ("add a helper to agents/planning/elaborator/core.py", False),
-    ("improve everything", True),
-    ("fix the failing tests", True),
-]
+BATTERY = [(case["goal"], case["vague"]) for case in FIXTURE_CASES]
 
 
 def runBattery() -> list[dict]:
     """Run the whole battery, each item in a fresh temp repo."""
     results: list[dict] = []
-    for goal, is_vague in BATTERY:
+    for case in FIXTURE_CASES:
         with tempfile.TemporaryDirectory() as root:
-            _makeRepo(root)
-            results.append(runOne(goal, is_vague, root))
+            _makeRepo(root, case["files"])
+            results.append(runOne(case["goal"], case["vague"], root))
     return results
+
+
+def historicalCases(records=None, *, limit: int = 100) -> list[dict]:
+    """Read-only audit of completed task history for elaboration outcome evidence."""
+    if records is None:
+        from state.task import TaskState
+        records = (data for _path, data in TaskState.iterStored())
+    out = []
+    for data in records:
+        meta = (data or {}).get("meta") or {}
+        if meta.get("status") not in ("done", "complete", "partial"):
+            continue
+        raw, spec = meta.get("goal_raw"), meta.get("goal_elaborated")
+        universe = meta.get("universe") or {}
+        if not raw or not spec:
+            continue
+        evidence = meta.get("elaboration") or {}
+        out.append({"task_id": (data or {}).get("task_id", ""),
+                    "has_approved_spec": bool(str(spec).strip()),
+                    "has_universe": bool(universe.get("hard_boundaries")),
+                    "has_selection_evidence": bool(evidence.get("candidates") or evidence.get("schema")),
+                    "human_edited": bool(evidence.get("human_edited"))})
+        if len(out) >= max(1, int(limit)):
+            break
+    return out
 
 
 def _mean(results: list[dict], side: str, key: str) -> float:

@@ -18,6 +18,7 @@ RUN/TEST: python -m pytest tests/evolution/test_experience_content.py
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Optional
 
@@ -142,10 +143,16 @@ def lexicalSearch(query: str, limit: int = 50, db_path: Optional[Path] = None) -
     terms = " ".join(str(query or "").replace("\n", " ").split())
     if not terms:
         return []
+    # FTS5 treats punctuation such as a hyphen as query syntax. Search
+    # user-authored goals as literal tokens so they cannot name fake columns.
+    tokens = re.findall(r"\w+", terms, flags=re.UNICODE)
+    if not tokens:
+        return []
+    match_query = " ".join(f'"{token}"' for token in tokens)
     with best_effort("ledger.exp_content_fts", log=LOG):
         with _connect(db_path) as conn:
             if not _ensure_fts(conn):
                 return []
-            rows = conn.execute("SELECT run_id, st_id, bm25(exp_content_fts) AS rank FROM exp_content_fts WHERE exp_content_fts MATCH ? ORDER BY rank LIMIT ?", (terms, max(1, int(limit)))).fetchall()
+            rows = conn.execute("SELECT run_id, st_id, bm25(exp_content_fts) AS rank FROM exp_content_fts WHERE exp_content_fts MATCH ? ORDER BY rank LIMIT ?", (match_query, max(1, int(limit)))).fetchall()
             return [{"run_id": row["run_id"], "st_id": row["st_id"], "lexical_rank": float(row["rank"])} for row in rows]
     return []

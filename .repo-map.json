@@ -1909,14 +1909,14 @@
           "kind": "function",
           "signature": "(goal_raw: str, work_dir: str | None=None, chat=None, out_meta=None) -> str",
           "summary": "Return the elaborated specification for ``goal_raw`` (never raises",
-          "lineno": 130
+          "lineno": 187
         },
         {
           "name": "extractUniverse",
           "kind": "function",
           "signature": "(goal_raw: str, goal_elaborated: str, work_dir: str, chat=None) -> dict",
           "summary": "Extract the operating universe (scope boundary) from the goal (with safe defaults).",
-          "lineno": 204
+          "lineno": 283
         }
       ],
       "depends_on": [
@@ -1965,8 +1965,8 @@
         {
           "name": "escalateToModel",
           "kind": "function",
-          "signature": "(goal: str, *, chat=None) -> str",
-          "summary": "Re-elaborate `goal` with the configured escalation model",
+          "signature": "(goal: str, *, local_spec: str='', repo_context: str='', uncertainty: dict | None=None, chat=None) -> str",
+          "summary": "Re-elaborate with the same evidence, not a context-free second guess.",
           "lineno": 23
         }
       ],
@@ -1990,13 +1990,15 @@
         {
           "name": "recordElaborationOutcome",
           "kind": "function",
-          "signature": "(goal: str, stance: str, *, clean_run: bool, store_fn=None) -> bool",
-          "summary": "Best-effort record of (goal, winning stance, clean_run)",
-          "lineno": 30
+          "signature": "(goal: str, stance: str, *, clean_run: bool, run_id: str='', spec: str='', metadata: dict | None=None, store_fn=None) -> bool",
+          "summary": "Persist the approved spec, selection evidence, and eventual run outcome.",
+          "lineno": 45
         }
       ],
       "depends_on": [
         "config",
+        "memory.experience_content",
+        "memory.ledger",
         "memory.retrievals"
       ],
       "side_effects": [
@@ -2018,21 +2020,21 @@
           "kind": "function",
           "signature": "(work_dir: str | None) -> str",
           "summary": "Compact, REAL repository grounding for the brain so it stops inventing",
-          "lineno": 34
+          "lineno": 48
         },
         {
           "name": "isVagueGoal",
           "kind": "function",
           "signature": "(goal: str) -> bool",
           "summary": "A goal is vague if it is short, uses a generic verb, and names no path/module.",
-          "lineno": 83
+          "lineno": 97
         },
         {
           "name": "vagueGoalBundle",
           "kind": "function",
           "signature": "(work_dir: str | None) -> str",
           "summary": "A compact state-of-repo bundle (real module names + size violations) so a vague",
-          "lineno": 113
+          "lineno": 127
         }
       ],
       "depends_on": [
@@ -2079,8 +2081,8 @@
           "name": "splitVerified",
           "kind": "function",
           "signature": "(allowed_paths: list[str], work_dir: str) -> dict",
-          "summary": "Return {\"allowed_paths\": [existing], \"unverified_paths\": [missing]} preserving order.",
-          "lineno": 28
+          "summary": "Verify paths under ``work_dir`` and surface outside-root paths explicitly.",
+          "lineno": 40
         }
       ],
       "depends_on": [],
@@ -2097,11 +2099,18 @@
       "purpose": "Case-based-reasoning grounding (§3d): inject similar past (goal->outcome) exemplars.",
       "exports": [
         {
+          "name": "precedentEvidence",
+          "kind": "function",
+          "signature": "(goal: str, *, k: int=3, retrieve_fn=None, fail_fn=None) -> dict",
+          "summary": "Return a compact evidence block plus factual hit counts for downstream scoring.",
+          "lineno": 38
+        },
+        {
           "name": "precedentBlock",
           "kind": "function",
           "signature": "(goal: str, *, k: int=3, retrieve_fn=None, fail_fn=None) -> str",
-          "summary": "Top-k similar past successes + failures as a compact prompt block, or \"\" when nothing",
-          "lineno": 31
+          "summary": "Compatibility wrapper returning only the prompt block.",
+          "lineno": 64
         }
       ],
       "depends_on": [
@@ -2145,21 +2154,35 @@
     },
     "agents.planning.elaborator.schema": {
       "path": "agents/planning/elaborator/schema.py",
-      "purpose": "Elaborator output schema + Layer-1 deterministic validation.",
+      "purpose": "Elaborator output schema + Layer-1 deterministic validation and rendering.",
       "exports": [
         {
           "name": "validateSpec",
           "kind": "function",
           "signature": "(data: dict) -> tuple[bool, list[str]]",
           "summary": "Return (ok, errors)",
-          "lineno": 23
+          "lineno": 25
+        },
+        {
+          "name": "normalizeSpec",
+          "kind": "function",
+          "signature": "(data: dict) -> dict",
+          "summary": "Return a whitespace-normalized copy of a validated structured spec.",
+          "lineno": 43
+        },
+        {
+          "name": "renderSpec",
+          "kind": "function",
+          "signature": "(data: dict) -> str",
+          "summary": "Render a normalized structured spec as reviewable Markdown.",
+          "lineno": 59
         },
         {
           "name": "validateUniverse",
           "kind": "function",
           "signature": "(data: dict) -> tuple[bool, list[str]]",
           "summary": "Return (ok, errors)",
-          "lineno": 41
+          "lineno": 85
         }
       ],
       "depends_on": [
@@ -3834,6 +3857,17 @@
       "test": [],
       "callers": []
     },
+    "developer_tools": {
+      "path": "developer_tools/__init__.py",
+      "purpose": "Project-analysis and safe-refactoring capabilities for 9to5 developers.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "developer_tools.exploration": {
       "path": "developer_tools/exploration/__init__.py",
       "purpose": "explore -- solution-space exploration over an introspected project (stdlib-only leaf).",
@@ -4618,6 +4652,28 @@
       "test": [],
       "callers": []
     },
+    "human_nature.faculties": {
+      "path": "human_nature/faculties/__init__.py",
+      "purpose": "Named cognitive faculties that make up the human-nature domain.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "human_nature.faculties.affect": {
+      "path": "human_nature/faculties/affect/__init__.py",
+      "purpose": "Affect modelling, appraisal, regulation, and emotional projections.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "human_nature.faculties.affect.affect_manifold": {
       "path": "human_nature/faculties/affect/affect_manifold.py",
       "purpose": "Affect manifold — the continuous 9-axis affect substrate (state-space model).",
@@ -4788,6 +4844,17 @@
       "test": [
         "tests/human_nature/test_prototypes.py"
       ],
+      "callers": []
+    },
+    "human_nature.faculties.governance": {
+      "path": "human_nature/faculties/governance/__init__.py",
+      "purpose": "Authority, autonomy, confidence, and expression-governance policies.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
       "callers": []
     },
     "human_nature.faculties.governance.authority": {
@@ -5023,6 +5090,17 @@
       "test": [
         "tests/human_nature/test_operator_authority.py"
       ],
+      "callers": []
+    },
+    "human_nature.faculties.identity": {
+      "path": "human_nature/faculties/identity/__init__.py",
+      "purpose": "Persistent self, character, charter, and user-model faculties.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
       "callers": []
     },
     "human_nature.faculties.identity.attention_schema": {
@@ -5377,6 +5455,17 @@
       "test": [
         "tests/human_nature/test_workspace.py"
       ],
+      "callers": []
+    },
+    "human_nature.faculties.runtime": {
+      "path": "human_nature/faculties/runtime/__init__.py",
+      "purpose": "Lifecycle and stateful psyche integration for a live run.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
       "callers": []
     },
     "human_nature.faculties.runtime.ab_harness": {
@@ -5759,6 +5848,17 @@
       "test": [
         "tests/human_nature/test_run_events.py"
       ],
+      "callers": []
+    },
+    "human_nature.faculties.signals": {
+      "path": "human_nature/faculties/signals/__init__.py",
+      "purpose": "Fast judgement, instinct, opinion, motif, and scar-signal faculties.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
       "callers": []
     },
     "human_nature.faculties.signals.instinct": {
@@ -8332,7 +8432,7 @@
           "kind": "function",
           "signature": "() -> int",
           "summary": "",
-          "lineno": 390
+          "lineno": 409
         }
       ],
       "depends_on": [
@@ -8345,6 +8445,7 @@
         "platform_core.cli",
         "platform_core.cli.main_cli",
         "platform_core.core",
+        "platform_core.core.best_effort",
         "platform_core.ops.doctor",
         "platform_core.ops.external_project",
         "platform_core.ops.health",
@@ -8362,7 +8463,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/platform/test_main_cli.py"
+        "tests/platform/test_main_cli.py",
+        "tests/test_main_elaboration.py"
       ],
       "callers": []
     },
@@ -8534,6 +8636,7 @@
         "tests/evolution/test_experience_content.py"
       ],
       "callers": [
+        "agents.planning.elaborator.evolve",
         "memory.ledger.subtasks",
         "memory.retrievals.core"
       ]
@@ -8720,6 +8823,7 @@
       ],
       "test": [],
       "callers": [
+        "agents.planning.elaborator.evolve",
         "memory.exp_index",
         "memory.experience",
         "memory.experience_adapters",
@@ -8826,42 +8930,42 @@
           "kind": "function",
           "signature": "(*, attempt_count: Any=None, adversary_verdict: Any=None, cost_usd: Any=None) -> float",
           "summary": "Write-time salience: a noisy first-pass subtask that EVENTUALLY passed, or a",
-          "lineno": 38
+          "lineno": 39
         },
         {
           "name": "recordSolutionContent",
           "kind": "function",
           "signature": "(run_id: str, st_id: str, *, solution_content: str, post_mortem: str, importance: float, model_id: Optional[str], db_path: Optional[Path]=None) -> bool",
           "summary": "Upsert one ``exp_content`` row keyed by ``(run_id, st_id)``",
-          "lineno": 71
+          "lineno": 72
         },
         {
           "name": "recordFromSubtask",
           "kind": "function",
           "signature": "(run_id: str, st: dict[str, Any], db_path: Optional[Path]=None) -> bool",
           "summary": "Convenience: extract content + compute importance from ``st`` then store",
-          "lineno": 98
+          "lineno": 99
         },
         {
           "name": "fetchSolutionContent",
           "kind": "function",
           "signature": "(run_id: str, st_id: str, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]",
           "summary": "The stored content row for ``(run_id, st_id)``, or None",
-          "lineno": 116
+          "lineno": 117
         },
         {
           "name": "fetchSolutionContents",
           "kind": "function",
           "signature": "(keys: list[tuple[str, str]], db_path: Optional[Path]=None) -> dict[tuple[str, str], dict]",
           "summary": "",
-          "lineno": 128
+          "lineno": 129
         },
         {
           "name": "lexicalSearch",
           "kind": "function",
           "signature": "(query: str, limit: int=50, db_path: Optional[Path]=None) -> list[dict]",
           "summary": "Derived FTS5 lane",
-          "lineno": 140
+          "lineno": 141
         }
       ],
       "depends_on": [
@@ -14091,7 +14195,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Brain + autonomous loop",
-          "lineno": 69
+          "lineno": 91
         }
       ],
       "depends_on": [
@@ -14348,7 +14452,7 @@
           "kind": "function",
           "signature": "() -> SieCfg",
           "summary": "",
-          "lineno": 479
+          "lineno": 483
         }
       ],
       "depends_on": [
@@ -14676,6 +14780,7 @@
         "agents.hook_handlers.obsidian",
         "agents.planning.elaborator.precedent",
         "agents.planning.elaborator.predict",
+        "main",
         "memory.ledger.content",
         "memory.ledger.journal",
         "memory.ledger.runs",
@@ -20195,8 +20300,8 @@
         {
           "name": "buildOrchestrator",
           "kind": "function",
-          "signature": "(n_subtasks: int=3)",
-          "summary": "An Orchestrator wired entirely with simulation doubles (no external services).",
+          "signature": "(n_subtasks: int=3, *, offline: bool=True)",
+          "summary": "An Orchestrator wired with simulation doubles.",
           "lineno": 170
         },
         {
@@ -20204,21 +20309,21 @@
           "kind": "class",
           "signature": "",
           "summary": "Plans N subtasks, each producing a real file under ``work_dir`` with a REAL",
-          "lineno": 191
+          "lineno": 196
         },
         {
           "name": "builderRunClaude",
           "kind": "function",
           "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, _project_root=None, **_kw)",
           "summary": "Fake hands that ACTUALLY write the target file parsed from the subtask's verify cmd,",
-          "lineno": 220
+          "lineno": 225
         },
         {
           "name": "buildBuilderOrchestrator",
           "kind": "function",
           "signature": "(work_dir: str, n_subtasks: int=3)",
           "summary": "An Orchestrator that produces real artifacts under work_dir and verifies them for real.",
-          "lineno": 256
+          "lineno": 261
         }
       ],
       "depends_on": [
@@ -20715,7 +20820,8 @@
         "platform_core.runtime.resilience",
         "platform_core.simulator.bot_replay",
         "platform_core.simulator.testing.e2e",
-        "platform_core.simulator.testing.operator"
+        "platform_core.simulator.testing.operator",
+        "tools.elaborator_eval"
       ]
     },
     "state.task_io": {
@@ -21428,56 +21534,64 @@
           "kind": "function",
           "signature": "(spec: str, work_dir: str) -> dict",
           "summary": "Deterministic quality signals for a produced spec.",
-          "lineno": 67
+          "lineno": 80
         },
         {
           "name": "promptSignal",
           "kind": "function",
           "signature": "(user_prompt: str) -> int",
           "summary": "How many real-context grounding markers reached the model (0-3).",
-          "lineno": 80
+          "lineno": 93
         },
         {
           "name": "scriptedChat",
           "kind": "function",
           "signature": "(work_dir: str)",
           "summary": "Return ``(chat, holder)``",
-          "lineno": 87
+          "lineno": 100
         },
         {
           "name": "runOne",
           "kind": "function",
           "signature": "(goal: str, is_vague: bool, work_dir: str) -> dict",
           "summary": "Elaborate ``goal`` twice (flags OFF vs excellence-ON) against the same repo.",
-          "lineno": 159
+          "lineno": 177
         },
         {
           "name": "runBattery",
           "kind": "function",
           "signature": "() -> list[dict]",
           "summary": "Run the whole battery, each item in a fresh temp repo.",
-          "lineno": 176
+          "lineno": 190
+        },
+        {
+          "name": "historicalCases",
+          "kind": "function",
+          "signature": "(records=None, *, limit: int=100) -> list[dict]",
+          "summary": "Read-only audit of completed task history for elaboration outcome evidence.",
+          "lineno": 200
         },
         {
           "name": "report",
           "kind": "function",
           "signature": "(results: list[dict]) -> str",
           "summary": "Readable per-goal + aggregate table with the on-vs-off delta.",
-          "lineno": 190
+          "lineno": 229
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "() -> None",
           "summary": "",
-          "lineno": 215
+          "lineno": 254
         }
       ],
       "depends_on": [
         "agents.planning",
         "agents.planning.elaborator",
         "agents.planning.elaborator.core",
-        "config"
+        "config",
+        "state.task"
       ],
       "side_effects": [
         "creates a throwaway temp repo per battery item (auto-cleaned)"

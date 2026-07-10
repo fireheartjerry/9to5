@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 import llm_io
+import config
 from agents import elaborator
 
 
@@ -17,6 +18,14 @@ def _client(chat):
 
 
 class TestElaborate(unittest.TestCase):
+    def setUp(self):
+        self._flags = mock.patch.multiple(config, ELABORATOR_EXCELLENCE_ENABLED=False,
+                                          SOCIETY_ENABLED=False)
+        self._flags.start()
+
+    def tearDown(self):
+        self._flags.stop()
+
     def test_success_returns_content(self):
         chat = mock.Mock(return_value={"message": {"content": "  the spec  "}})
         with mock.patch.object(llm_io, "getClient", return_value=_client(chat)):
@@ -56,6 +65,13 @@ class TestElaborate(unittest.TestCase):
 
 
 class TestUniverse(unittest.TestCase):
+    def setUp(self):
+        self._flag = mock.patch.object(config, "ELABORATOR_EXCELLENCE_ENABLED", False)
+        self._flag.start()
+
+    def tearDown(self):
+        self._flag.stop()
+
     def test_defaults_when_brain_unavailable(self):
         chat = mock.Mock(side_effect=RuntimeError("down"))
         with mock.patch.object(llm_io, "getClient", return_value=_client(chat)), \
@@ -88,6 +104,14 @@ class TestUniverse(unittest.TestCase):
 
 
 class TestRepoGrounding(unittest.TestCase):
+    def setUp(self):
+        self._flags = mock.patch.multiple(config, ELABORATOR_EXCELLENCE_ENABLED=False,
+                                          SOCIETY_ENABLED=False)
+        self._flags.start()
+
+    def tearDown(self):
+        self._flags.stop()
+
     def _repo(self, tmp):
         # A minimal real repo snapshot: AGENTS.md with a distinctive real path.
         with open(os.path.join(tmp, "AGENTS.md"), "w", encoding="utf-8") as fh:
@@ -139,7 +163,9 @@ class TestExcellenceGating(unittest.TestCase):
         def injected(system, user, *, act, want_json=False):
             return next(scripted)
 
-        with mock.patch.object(__import__("config"), "ELABORATOR_EXCELLENCE_ENABLED", True):
+        with mock.patch.object(config, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+             mock.patch.object(config, "ELABORATOR_BESTOFN_ENABLED", False), \
+             mock.patch.object(config, "SOCIETY_ENABLED", False):
             out = elaborator.elaborate("improve everything", chat=injected)
         self.assertIn("SPEC BODY", out)
         self.assertIn("Inferred: scope", out)
@@ -152,6 +178,63 @@ class TestExcellenceGating(unittest.TestCase):
             u = elaborator.extractUniverse("g", "spec", ".", chat=injected)
         self.assertIn("nope/missing.py", u["unverified_paths"])
         self.assertNotIn("nope/missing.py", u["allowed_paths"])
+
+    def test_flag_on_universe_does_not_expand_outside_repo(self):
+        def injected(system, user, *, act, want_json=False):
+            return {"message": {"content": '{"allowed_paths":["."],"allowed_to_expand_to":["../outside"]}'}}
+
+        cfg = __import__("config")
+        with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True):
+            u = elaborator.extractUniverse("g", "spec", ".", chat=injected)
+        self.assertEqual(u["allowed_to_expand_to"], [])
+        self.assertIn("../outside", u["out_of_scope_paths"])
+
+    def test_structured_output_is_validated_and_rendered_for_review(self):
+        payload = (
+            '{"objective":"Improve planner reliability","why":"avoid repeated failures",'
+            '"who":"planning modules","where":"platform_core/orchestration",'
+            '"how":"add deterministic validation","deliverables":["edit planner.py"],'
+            '"acceptance_criteria":["focused tests pass"],"constraints":["keep scope narrow"],'
+            '"assumptions":[]}'
+        )
+
+        def injected(system, user, *, act, want_json=False):
+            if act == "elaborate":
+                return {"message": {"content": payload}}
+            return {"message": {"content": ""}}
+
+        cfg = __import__("config")
+        meta = {}
+        with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+             mock.patch.object(cfg, "ELABORATOR_BESTOFN_ENABLED", False), \
+             mock.patch.object(cfg, "SOCIETY_ENABLED", False):
+            out = elaborator.elaborate("improve planning", chat=injected, out_meta=meta)
+        self.assertIn("# Context", out)
+        self.assertIn("Improve planner reliability", out)
+        self.assertEqual(meta["schema"]["format"], "structured")
+        self.assertTrue(meta["schema"]["valid"])
+
+    def test_invalid_structured_output_repairs_once_then_renders(self):
+        replies = iter([
+            {"message": {"content": '{"objective":"x"}'}},
+            {"message": {"content": (
+                '{"objective":"x","why":"y","who":"z","where":"repo","how":"h",'
+                '"deliverables":["d"],"acceptance_criteria":["a"],"constraints":["c"],"assumptions":[]}'
+            )}},
+            {"message": {"content": ""}},
+        ])
+
+        def injected(system, user, *, act, want_json=False):
+            return next(replies)
+
+        cfg = __import__("config")
+        meta = {}
+        with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+             mock.patch.object(cfg, "ELABORATOR_BESTOFN_ENABLED", False), \
+             mock.patch.object(cfg, "SOCIETY_ENABLED", False):
+            out = elaborator.elaborate("x", chat=injected, out_meta=meta)
+        self.assertIn("# Objective", out)
+        self.assertTrue(meta["schema"]["repaired"])
 
 
 class TestFiveW3H(unittest.TestCase):
@@ -211,8 +294,9 @@ class TestPhase2Wiring(unittest.TestCase):
         cfg = __import__("config")
         with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
              mock.patch.object(cfg, "ELABORATOR_PRECEDENT_ENABLED", True), \
-             mock.patch("agents.planning.elaborator.precedent.precedentBlock",
-                        return_value="PRECEDENT (how similar goals resolved before):\n- past success: X"):
+             mock.patch("agents.planning.elaborator.precedent.precedentEvidence",
+                        return_value={"block": "PRECEDENT (how similar goals resolved before):\n- past success: X",
+                                      "success_hits": 1, "failure_hits": 0}):
             elaborator.elaborate("do a thing", chat=injected)
         self.assertIn("PRECEDENT", seen["user"])
 
@@ -241,6 +325,7 @@ class TestPhase2Wiring(unittest.TestCase):
 
         cfg = __import__("config")
         with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+             mock.patch.object(cfg, "ELABORATOR_BESTOFN_ENABLED", False), \
              mock.patch.object(cfg, "SOCIETY_ENABLED", True), \
              mock.patch("agents.planning.elaborator.judge.judgeElaboration",
                         return_value={"verdict": "challenged", "concerns": ["path X not real"]}):
@@ -353,6 +438,27 @@ class TestDeferLive(unittest.TestCase):
              mock.patch.object(cfg, "SOCIETY_ENABLED", False):
             out = elaborator.elaborate("do a thing", chat=injected)
         self.assertIn("ESCALATED SPEC", out)
+
+    def test_structured_deferred_spec_is_rendered_before_human_approval(self):
+        structured = ('{"objective":"Escalated","why":"risk","who":"planner","where":"repo",'
+                      '"how":"validate","deliverables":["edit x.py"],'
+                      '"acceptance_criteria":["tests pass"],"constraints":["narrow"],"assumptions":[]}')
+        def injected(system, user, *, act, want_json=False):
+            if act == "elaborate":
+                return {"message": {"content": "SPEC"}}
+            if act == "self_review":
+                return {"message": {"content": "Inferred: a — because b\nInferred: c — because d"}}
+            if act == "elaborate_defer":
+                return {"message": {"content": structured}}
+            return {"message": {"content": ""}}
+        cfg = __import__("config")
+        with mock.patch.object(cfg, "ELABORATOR_EXCELLENCE_ENABLED", True), \
+             mock.patch.object(cfg, "ELABORATOR_BESTOFN_ENABLED", False), \
+             mock.patch.object(cfg, "ELABORATOR_DEFER_ENABLED", True), \
+             mock.patch.object(cfg, "SOCIETY_ENABLED", False):
+            out = elaborator.elaborate("do a thing", chat=injected)
+        self.assertIn("# Objective", out)
+        self.assertIn("Escalated", out)
 
 
 class TestOutMeta(unittest.TestCase):

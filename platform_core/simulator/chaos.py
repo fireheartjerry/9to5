@@ -141,4 +141,4 @@ def buildChaosOrchestrator(work_dir: str, seed: int = 0, n_subtasks: int = 3):
     LOG.info("chaos orchestrator built (work_dir=%s seed=%s)", work_dir, seed)
     return Orchestrator(brain=chaosBrain(seed, n_subtasks=n_subtasks), obs=simulation.SimObs(),
                         run_claude=chaosRunClaude(seed), replan=simulation.simReplan,
-                        review=simulation.simReview)
+                        review=simulation.simReview, skip_pre_execution_council=True, offline_mode=True)

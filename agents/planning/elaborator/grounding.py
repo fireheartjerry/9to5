@@ -21,7 +21,7 @@ LOG = config.getLogger("elaborator.grounding")
 # (mtime, context) keyed by work_dir. AGENTS.md's mtime is the staleness signal: a self-
 # referential run that regenerates AGENTS.md mid-process must not keep injecting the FIRST
 # task's now-stale snapshot into every later elaboration in the same process (BUG-018).
-_REPO_CTX_CACHE: dict[str, tuple[float, str]] = {}
+_REPO_CTX_CACHE: dict[str, tuple[tuple[float, str], str]] = {}
 
 
 def _agentsMdMtime(work_dir: str) -> float:
@@ -29,6 +29,20 @@ def _agentsMdMtime(work_dir: str) -> float:
         return os.path.getmtime(os.path.join(work_dir, "AGENTS.md"))
     except OSError:
         return 0.0
+
+
+def _repoFingerprint(work_dir: str) -> tuple[float, str]:
+    """A cheap freshness key for both generated navigation and Git-history context."""
+    head = ""
+    try:
+        proc = subprocess.run(["git", "-C", work_dir, "rev-parse", "HEAD"],
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=2)
+        if proc.returncode == 0:
+            head = (proc.stdout or "").strip()
+    except Exception as exc:  # noqa: BLE001 -- a non-repository simply has no Git fingerprint
+        LOG.debug("repository fingerprint unavailable for %s: %s", work_dir, exc)
+    return (_agentsMdMtime(work_dir), head)
 
 
 def repoContext(work_dir: str | None) -> str:
@@ -44,9 +58,9 @@ def repoContext(work_dir: str | None) -> str:
     if not work_dir:
         return ""
     key = str(work_dir)
-    mtime = _agentsMdMtime(key)
+    fingerprint = _repoFingerprint(key)
     cached = _REPO_CTX_CACHE.get(key)
-    if cached is not None and cached[0] == mtime:
+    if cached is not None and cached[0] == fingerprint:
         return cached[1]
     parts: list[str] = []
     try:
@@ -71,7 +85,7 @@ def repoContext(work_dir: str | None) -> str:
     block = "\n\n".join(parts).strip()
     if len(block) > 7000:  # keep well inside num_ctx alongside the capabilities block
         block = block[:7000] + "\n...(truncated)"
-    _REPO_CTX_CACHE[key] = (mtime, block)
+    _REPO_CTX_CACHE[key] = (fingerprint, block)
     return block
 
 

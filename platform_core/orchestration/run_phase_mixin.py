@@ -270,6 +270,7 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
                      resume: bool, bus: "ControlBus",
                      dashboard: "DiscordDashboard") -> "tuple[str, str]":
         """Finish run setup (knowledge refresh, bus config, icons, dashboard). Returns (web_url, elaborated)."""
+        web_url = None
         resetDegradations()   # per-run degradation picture (the WARNING dedup stays per-process)
         # ABSOLUTE FIRST: refresh the living Claude Code knowledge so every Ollama call
         # in this run reasons from the current feature set (idempotent per process).
@@ -286,43 +287,46 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
             # bot are live during the pre-run elaboration window, so a full clear() here wiped an
             # abort/pause the user issued while Ollama was still elaborating. Preserve that intent.
             bus.clearForRunStart()
-        if bus.getSeen() is None:   # seed so a stale '!abort' from a prior run is never replayed
+        if not self._offline_mode and bus.getSeen() is None:   # seed so a stale '!abort' from a prior run is never replayed
             with best_effort("discord.baseline_seen", log=LOG):
                 bus.setSeen(discord.baselineLatestId())
-        with best_effort("discord.icons", log=LOG):   # provision the app-emoji icon set
-            from notifications import icons
-            icons.ensureIcons()
-        import orchestrator as _orch_mod  # deferred: avoids circular at import time; tests patch here
-        web_url = _orch_mod.startWebDashboard(state.task_id)
-        with best_effort("terminal.surface_start", log=LOG):
-            from notifications.terminal_surface import TerminalSurface, set_terminal_surface
-            from notifications import terminal_ipc as _tipc
-            _tipc.clear()                      # fresh bridge for this run
-            _surface = TerminalSurface()
-            set_terminal_surface(_surface)
-            _surface.start()
+        if not self._offline_mode:
+            with best_effort("discord.icons", log=LOG):   # provision the app-emoji icon set
+                from notifications import icons
+                icons.ensureIcons()
+            import orchestrator as _orch_mod  # deferred: avoids circular at import time; tests patch here
+            web_url = _orch_mod.startWebDashboard(state.task_id)
+            with best_effort("terminal.surface_start", log=LOG):
+                from notifications.terminal_surface import TerminalSurface, set_terminal_surface
+                from notifications import terminal_ipc as _tipc
+                _tipc.clear()                      # fresh bridge for this run
+                _surface = TerminalSurface()
+                set_terminal_surface(_surface)
+                _surface.start()
         # Hyper-robust public tunnel alongside the local dashboard (non-blocking; URL via callback).
         # state_lock: the tunnel's daemon thread mutates state.meta -- same discipline as dashboard.start.
         # Gated on WEB_DASHBOARD: the tunnel exists only to expose the dashboard, and an ungated
         # start meant every sim/fuzz/e2e run spawned a REAL provider (cloudflared download + live
         # tunnel process) -- the dominant source of suite hangs and orphaned processes.
         self._tunnel = None   # best_effort below: a failed start must never block a run
-        if config.WEB_DASHBOARD:
+        if not self._offline_mode and config.WEB_DASHBOARD:
             with best_effort("tunnel.start", log=LOG):
                 from notifications.tunnel import TunnelManager
                 tunnel = TunnelManager(state=state, state_lock=self._state_lock)
                 tunnel.on_url(dashboard.set_tunnel_url)
                 tunnel.start(config.WEB_DASHBOARD_PORT)
                 self._tunnel = tunnel
-        dashboard.start(state, "resuming" if resume else "starting", state_lock=self._state_lock)
+        if not self._offline_mode:
+            dashboard.start(state, "resuming" if resume else "starting", state_lock=self._state_lock)
         elaborated = state.meta["goal_elaborated"] or state.meta["goal_raw"]
         self.writeIndex(state)
         # Phase 2: bring the Gemini second brain online for this run (probe + run conversation).
         # No-op unless GEMINI_ENABLED; failure leaves the Ollama brain in charge.
-        self._openGeminiSession(state, dashboard)
-        with best_effort("human_nature.preamble", log=LOG):
-            from platform_core.orchestration.human_nature_bridge import runPreambleHooks
-            runPreambleHooks(state)
+        if not self._offline_mode:
+            self._openGeminiSession(state, dashboard)
+            with best_effort("human_nature.preamble", log=LOG):
+                from platform_core.orchestration.human_nature_bridge import runPreambleHooks
+                runPreambleHooks(state)
         return web_url, elaborated
 
     def _resolvePrePrGate(self, state: TaskState, work_dir: str, auto_pr: bool,
@@ -393,7 +397,13 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         final_status = "done" if (all_done and not held_broken and not dropped_planned) else "partial"
         if config.ELABORATOR_EXCELLENCE_ENABLED:   # Stage D fitness -- best-effort, must NEVER block completion
             try:
-                _elaborator_evolve.recordElaborationOutcome(state.meta.get("goal_raw", ""), state.meta.get("elaboration_stance", "single-shot"), clean_run=(final_status == "done"))
+                _elaborator_evolve.recordElaborationOutcome(
+                    state.meta.get("goal_raw", ""), state.meta.get("elaboration_stance", "single-shot"),
+                    clean_run=(final_status == "done"), run_id=state.task_id,
+                    spec=state.meta.get("goal_elaborated", ""),
+                    metadata={**(state.meta.get("elaboration") or {}), "final_status": final_status,
+                              "subtasks_done": done, "subtasks_total": total},
+                )
             except Exception:  # noqa: BLE001 -- best-effort Stage D learning; never affect run completion
                 pass
         from notifications.lane_feed import laneTap
@@ -472,28 +482,30 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         bus.setPendingGate(None)
         _heartbeat.clearHeartbeat(bus.task_id)   # stop advertising liveness for this run
         self._closeGeminiSession()   # tear down the Gemini second-brain session for this run
-        with best_effort("dashboard.unpin", log=LOG):
-            dashboard.unpin()
+        if not self._offline_mode:
+            with best_effort("dashboard.unpin", log=LOG):
+                dashboard.unpin()
         self._stopTunnel()
-        with best_effort("terminal.surface_finalize", log=LOG):
-            from notifications.terminal_surface import get_terminal_surface, set_terminal_surface
-            _t = get_terminal_surface()
-            if _t is not None:
-                _t.finalize()
-                _t.unpin()
-            set_terminal_surface(None)
-        _webdash_mod.stopWebDashboard()
+        if not self._offline_mode:
+            with best_effort("terminal.surface_finalize", log=LOG):
+                from notifications.terminal_surface import get_terminal_surface, set_terminal_surface
+                _t = get_terminal_surface()
+                if _t is not None:
+                    _t.finalize()
+                    _t.unpin()
+                set_terminal_surface(None)
+            _webdash_mod.stopWebDashboard()
         self._cleanupScaffolding(work_dir)   # never leave 9to5 scratch dirs in the user's project
         # Best-effort state retention sweep: prune old per-run blackboard/compaction artifacts and
         # archive terminal task JSON. Fail-open — never blocks or breaks teardown.
-        if getattr(config, "RETENTION_ENABLED", False):
+        if not self._offline_mode and getattr(config, "RETENTION_ENABLED", False):
             try:
                 from platform_core.ops import retention
                 retention.sweepAll()
             except Exception:  # noqa: BLE001
                 LOG.debug("retention sweep at teardown failed (ignored)", exc_info=True)
         # Fire throttled SIE learning passes off-thread so they never slow teardown.
-        if config.SIE_AUTO_MAINTENANCE:
+        if not self._offline_mode and config.SIE_AUTO_MAINTENANCE:
             with best_effort("sie.maintenance", log=LOG):   # learning never blocks teardown
                 from learning import sie
                 _mt = sie.run_maintenance_async(reason="post-run")
@@ -503,11 +515,12 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
                 # When not due it returns ~instantly, so this adds no latency on most runs.
                 if _mt is not None:
                     _mt.join(timeout=config.SIE_MAINTENANCE_JOIN_SECONDS)
-        if state is not None:
+        if not self._offline_mode and state is not None:
             with best_effort("human_nature.teardown", log=LOG):
                 from platform_core.orchestration.human_nature_bridge import runTeardownHooks
                 runTeardownHooks(self, state)
-        self._postGrowth()
+        if not self._offline_mode:
+            self._postGrowth()
 
     def _postGrowth(self) -> None:
         """Teardown growth post (delegates to run_phase_outcome)."""

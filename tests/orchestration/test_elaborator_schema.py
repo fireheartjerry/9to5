@@ -35,6 +35,12 @@ class TestValidateSpec(unittest.TestCase):
         ok, errors = schema.validateSpec(bad)
         self.assertFalse(ok)
 
+    def test_rendered_structured_spec_keeps_all_review_sections(self):
+        rendered = schema.renderSpec(self._good())
+        for heading in ("Objective", "Context", "Deliverables", "Acceptance Criteria", "Constraints", "Assumptions"):
+            self.assertIn(heading, rendered)
+        self.assertIn("**Why:** because", rendered)
+
 
 class TestValidateUniverse(unittest.TestCase):
     def test_baseline_hard_boundaries_reported_missing(self):

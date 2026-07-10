@@ -92,15 +92,59 @@ ELABORATOR_SYSTEM_5W3H = (
     "sections; the dimensional reasoning informs them but need not appear as separate headers."
 )
 
+ELABORATOR_STRUCTURED_SYSTEM = (
+    ELABORATOR_SYSTEM_5W3H
+    + " INTERNAL CONTRACT: return JSON ONLY with exactly these keys: "
+    '"objective", "why", "who", "where", "how" (non-empty strings), and '
+    '"deliverables", "acceptance_criteria", "constraints", "assumptions" (arrays of strings). '
+    "Do not wrap the JSON in a code fence. The caller renders this JSON as the human-reviewable Markdown spec."
+)
 
-def _bestOfN(goal_raw: str, work_dir, user: str, system: str, chat) -> "tuple[str, str]":
+
+def _validatedSpec(raw: str, goal_raw: str, system: str, user: str, chat=None) -> "tuple[str, dict]":
+    """Render valid structured output; repair one malformed JSON response at most once.
+
+    Legacy Markdown/plain-text doubles remain accepted to preserve the frozen public
+    contract and offline simulation compatibility. Real excellence prompts request
+    JSON, so malformed JSON is the signal that triggers the deterministic repair path.
+    """
+    raw = (raw or "").strip()
+    data = llm_io.parseJsonLoose(raw)
+    if isinstance(data, dict):
+        ok, errors = schema.validateSpec(data)
+        if ok:
+            return schema.renderSpec(data), {"format": "structured", "valid": True, "repaired": False}
+        repair_user = (
+            f"Raw goal:\n{goal_raw}\n\nInvalid structured elaboration:\n{raw[:5000]}\n\n"
+            f"Validation errors: {'; '.join(errors)}\n\nReturn a corrected JSON object only."
+        )
+        repaired = llm_io.responseText(
+            _chat(system, repair_user, act="elaborate_repair", want_json=True, chat=chat)
+        ).strip()
+        repaired_data = llm_io.parseJsonLoose(repaired)
+        repaired_ok, repaired_errors = schema.validateSpec(repaired_data) if isinstance(repaired_data, dict) else (
+            False, ["repair response is not a JSON object"])
+        if repaired_ok:
+            return schema.renderSpec(repaired_data), {"format": "structured", "valid": True, "repaired": True}
+        return _fallbackSpec(goal_raw), {
+            "format": "structured", "valid": False, "repaired": True,
+            "errors": errors + repaired_errors,
+        }
+    # A compatibility response is observable rather than silently mistaken for a
+    # validated structured spec. Production excellence calls are instructed to use JSON.
+    return raw, {"format": "legacy", "valid": False, "repaired": False}
+
+
+def _bestOfN(goal_raw: str, work_dir, user: str, system: str, chat, *, precedent_hits: int = 0) -> "tuple[str, str, dict]":
     """§7 A'/A/B: generate N stance-varied candidates, select the most grounded.
     Returns ``(spec, stance)`` so the caller can record which stance won."""
     n = candidates.budgetFor(goal_raw, is_vague=isVagueGoal(goal_raw),
-                             precedent_hits=0, max_n=int(config.ELABORATOR_CANDIDATES_MAX))
+                             precedent_hits=precedent_hits, max_n=int(config.ELABORATOR_CANDIDATES_MAX))
     if n <= 1:
         resp = _chat(system, user, act="elaborate", chat=chat)
-        return llm_io.responseText(resp).strip(), "single-shot"
+        out = llm_io.responseText(resp).strip()
+        return out, "single-shot", {"candidate_count": 1, "objective_spread": 1.0,
+                                      "groundedness": _groundedness(out, work_dir), "scores": {}}
 
     def gen_fn(goal, wd, stance):
         stance_system = f"{system} Adopt a {stance} stance toward scope and risk."
@@ -109,22 +153,35 @@ def _bestOfN(goal_raw: str, work_dir, user: str, system: str, chat) -> "tuple[st
 
     cands = [c for c in candidates.generate(goal_raw, work_dir, n=n, gen_fn=gen_fn) if c["spec"]]
     if not cands:
-        return "", "single-shot"
+        return "", "single-shot", {"candidate_count": 0, "objective_spread": 0.0,
+                                      "groundedness": 0.0, "scores": {}}
     predicted: dict = {}
     if config.ELABORATOR_LOOKAHEAD_ENABLED:
         for c in cands:
             predicted[c["id"]] = predict.predictOutcome(c["spec"], work_dir, chat=chat)["predicted_success"]
 
+    scores: dict[str, float] = {}
+    grounded: dict[str, float] = {}
     def _weight(c):
-        return candidates.meritWeight(
+        grounded[c["id"]] = _groundedness(c["spec"], work_dir)
+        score = candidates.meritWeight(
             c,
-            groundedness=_groundedness(c["spec"], work_dir),
+            groundedness=grounded[c["id"]],
+            precedent=min(1.0, precedent_hits / 3.0),
             predicted=predicted.get(c["id"], 0.0),
         )
+        scores[c["id"]] = score
+        return score
 
     best = candidates.selectBest(cands, weight_fn=_weight,
                                  use_optimizer=bool(config.PORTFOLIO_OPTIMIZER_ENABLED))
-    return (best["spec"], best["id"]) if best else (cands[0]["spec"], cands[0]["id"])
+    selected = best or cands[0]
+    _weight(selected)  # optimizer backends may not invoke our local weight callback.
+    values = list(scores.values())
+    metrics = {"candidate_count": len(cands), "objective_spread": (max(values) - min(values)) if len(values) > 1 else 1.0,
+               "groundedness": grounded.get(selected["id"], 0.0), "scores": scores,
+               "predicted": predicted, "precedent_hits": precedent_hits}
+    return selected["spec"], selected["id"], metrics
 
 
 def elaborate(goal_raw: str, work_dir: str | None = None, chat=None, out_meta=None) -> str:
@@ -149,20 +206,29 @@ def elaborate(goal_raw: str, work_dir: str | None = None, chat=None, out_meta=No
         if bundle:
             user += ("\n\nSTATE OF THE REPO (name real files from here for a broad goal):\n"
                      f"{bundle}\n")
+    precedent_meta = {"block": "", "success_hits": 0, "failure_hits": 0}
     if config.ELABORATOR_EXCELLENCE_ENABLED and config.ELABORATOR_PRECEDENT_ENABLED:
-        pb = precedent.precedentBlock(goal_raw)
+        precedent_meta = precedent.precedentEvidence(goal_raw)
+        pb = precedent_meta["block"]
         if pb:
             user += "\n\n" + pb + "\n"
-    system = ELABORATOR_SYSTEM_5W3H if config.ELABORATOR_EXCELLENCE_ENABLED else ELABORATOR_SYSTEM
+    system = ELABORATOR_STRUCTURED_SYSTEM if config.ELABORATOR_EXCELLENCE_ENABLED else ELABORATOR_SYSTEM
     if config.ELABORATOR_EXCELLENCE_ENABLED and config.ELABORATOR_BESTOFN_ENABLED:
-        out, _stance = _bestOfN(goal_raw, work_dir, user, system, chat)
+        out, _stance, candidate_meta = _bestOfN(goal_raw, work_dir, user, system, chat,
+                                                 precedent_hits=precedent_meta["success_hits"])
     else:
         resp = _chat(system, user, act="elaborate", chat=chat)
         out = llm_io.responseText(resp).strip()
         _stance = "single-shot"
+        candidate_meta = {"candidate_count": 1, "objective_spread": 1.0,
+                          "groundedness": _groundedness(out, work_dir), "scores": {},
+                          "precedent_hits": precedent_meta["success_hits"]}
     if not out:
         LOG.warning("elaboration unavailable after retries; using raw goal as spec")
         return _fallbackSpec(goal_raw)
+    schema_meta = {"format": "markdown", "valid": True, "repaired": False}
+    if config.ELABORATOR_EXCELLENCE_ENABLED:
+        out, schema_meta = _validatedSpec(out, goal_raw, system, user, chat=chat)
     if config.ELABORATOR_EXCELLENCE_ENABLED:
         inferred = self_review.reviewAssumptions(out, goal_raw, chat=chat)
         if inferred:
@@ -173,13 +239,26 @@ def elaborate(goal_raw: str, work_dir: str | None = None, chat=None, out_meta=No
             note = "; ".join(str(c) for c in verdict["concerns"])
             out = f"{out}\n\n# Review Note\n{note}\n"
     if config.ELABORATOR_EXCELLENCE_ENABLED and config.ELABORATOR_DEFER_ENABLED:
-        elevated = out.count("Inferred:")
-        unc = uncertainty.runUncertainty(elevated_count=elevated, objective_spread=1.0,
-                                         precedent_hits=0)
+        inferred_count = out.count("Inferred:")
+        risk = uncertainty.riskBand(path_verified=candidate_meta["groundedness"] >= 0.99,
+                                    precedent_support=precedent_meta["success_hits"] > 0)
+        elevated = inferred_count if risk == "elevated" else 0
+        unc = uncertainty.runUncertainty(elevated_count=elevated,
+                                         objective_spread=candidate_meta["objective_spread"],
+                                         precedent_hits=precedent_meta["success_hits"])
+        local_out = out
         out = defer.maybeDefer(out, goal_raw, unc,
-                               escalate_fn=lambda g: escalate.escalateToModel(g, chat=chat))
+                               escalate_fn=lambda g: escalate.escalateToModel(
+                                   g, local_spec=local_out, repo_context=ctx, uncertainty=unc, chat=chat))
+        if out != local_out:
+            out, escalated_schema = _validatedSpec(out, goal_raw, system, user, chat=chat)
+            schema_meta = {**escalated_schema, "escalated": True}
     if out_meta is not None:
         out_meta["stance"] = _stance
+        out_meta["schema"] = schema_meta
+        out_meta["candidates"] = candidate_meta
+        out_meta["precedent"] = precedent_meta
+        out_meta["uncertainty"] = unc if config.ELABORATOR_EXCELLENCE_ENABLED and config.ELABORATOR_DEFER_ENABLED else {}
     return out
 
 
@@ -231,4 +310,8 @@ def extractUniverse(goal_raw: str, goal_elaborated: str, work_dir: str, chat=Non
         split = path_verify.splitVerified(u["allowed_paths"], work_dir)
         u["allowed_paths"] = split["allowed_paths"] or [work_dir]
         u["unverified_paths"] = split["unverified_paths"]
+        expand = path_verify.splitVerified(u["allowed_to_expand_to"], work_dir)
+        u["allowed_to_expand_to"] = expand["allowed_paths"]
+        u["unverified_expand_paths"] = expand["unverified_paths"]
+        u["out_of_scope_paths"] = split["out_of_scope_paths"] + expand["out_of_scope_paths"]
     return u

@@ -48,6 +48,14 @@ def test_record_upserts_on_conflict(db):
     assert experience_content.fetchSolutionContent("r1", "st-1", db_path=db)["solution_content"] == "v2"
 
 
+def test_lexical_search_quotes_punctuation_as_literal_terms(db):
+    experience_content.recordSolutionContent(
+        "r1", "st-hyphen", solution_content="offline notice regression fixed",
+        post_mortem="", importance=1.0, model_id="m", db_path=db)
+    hits = experience_content.lexicalSearch("offline-notice regression", db_path=db)
+    assert any(hit["st_id"] == "st-hyphen" for hit in hits)
+
+
 def test_compute_importance_rewards_hard_won_contested_costly():
     base = experience_content.computeImportance(attempt_count=1, adversary_verdict="pass", cost_usd=0.0)
     harder = experience_content.computeImportance(attempt_count=3, adversary_verdict="challenged", cost_usd=2.0)

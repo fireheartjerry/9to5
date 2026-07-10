@@ -1087,6 +1087,8 @@
       ],
       "depends_on": [
         "config",
+        "memory.experience_content",
+        "memory.ledger",
         "memory.retrievals"
       ],
       "callers": [],
@@ -1144,6 +1146,7 @@
       "path": "agents/planning/elaborator/precedent.py",
       "purpose": "Case-based-reasoning grounding (§3d): inject similar past (goal->outcome) exemplars.",
       "exports": [
+        "precedentEvidence",
         "precedentBlock"
       ],
       "depends_on": [
@@ -1175,9 +1178,11 @@
     },
     "agents.planning.elaborator.schema": {
       "path": "agents/planning/elaborator/schema.py",
-      "purpose": "Elaborator output schema + Layer-1 deterministic validation.",
+      "purpose": "Elaborator output schema + Layer-1 deterministic validation and rendering.",
       "exports": [
         "validateSpec",
+        "normalizeSpec",
+        "renderSpec",
         "validateUniverse"
       ],
       "depends_on": [
@@ -2213,6 +2218,14 @@
       "callers": [],
       "test": []
     },
+    "developer_tools": {
+      "path": "developer_tools/__init__.py",
+      "purpose": "Project-analysis and safe-refactoring capabilities for 9to5 developers.",
+      "exports": [],
+      "depends_on": [],
+      "callers": [],
+      "test": []
+    },
     "developer_tools.exploration": {
       "path": "developer_tools/exploration/__init__.py",
       "purpose": "explore -- solution-space exploration over an introspected project (stdlib-only leaf).",
@@ -2645,6 +2658,22 @@
       "callers": [],
       "test": []
     },
+    "human_nature.faculties": {
+      "path": "human_nature/faculties/__init__.py",
+      "purpose": "Named cognitive faculties that make up the human-nature domain.",
+      "exports": [],
+      "depends_on": [],
+      "callers": [],
+      "test": []
+    },
+    "human_nature.faculties.affect": {
+      "path": "human_nature/faculties/affect/__init__.py",
+      "purpose": "Affect modelling, appraisal, regulation, and emotional projections.",
+      "exports": [],
+      "depends_on": [],
+      "callers": [],
+      "test": []
+    },
     "human_nature.faculties.affect.affect_manifold": {
       "path": "human_nature/faculties/affect/affect_manifold.py",
       "purpose": "Affect manifold — the continuous 9-axis affect substrate (state-space model).",
@@ -2717,6 +2746,14 @@
       "test": [
         "tests/human_nature/test_prototypes.py"
       ]
+    },
+    "human_nature.faculties.governance": {
+      "path": "human_nature/faculties/governance/__init__.py",
+      "purpose": "Authority, autonomy, confidence, and expression-governance policies.",
+      "exports": [],
+      "depends_on": [],
+      "callers": [],
+      "test": []
     },
     "human_nature.faculties.governance.authority": {
       "path": "human_nature/faculties/governance/authority.py",
@@ -2817,6 +2854,14 @@
       "test": [
         "tests/human_nature/test_operator_authority.py"
       ]
+    },
+    "human_nature.faculties.identity": {
+      "path": "human_nature/faculties/identity/__init__.py",
+      "purpose": "Persistent self, character, charter, and user-model faculties.",
+      "exports": [],
+      "depends_on": [],
+      "callers": [],
+      "test": []
     },
     "human_nature.faculties.identity.attention_schema": {
       "path": "human_nature/faculties/identity/attention_schema.py",
@@ -2953,6 +2998,14 @@
       "test": [
         "tests/human_nature/test_workspace.py"
       ]
+    },
+    "human_nature.faculties.runtime": {
+      "path": "human_nature/faculties/runtime/__init__.py",
+      "purpose": "Lifecycle and stateful psyche integration for a live run.",
+      "exports": [],
+      "depends_on": [],
+      "callers": [],
+      "test": []
     },
     "human_nature.faculties.runtime.ab_harness": {
       "path": "human_nature/faculties/runtime/ab_harness.py",
@@ -3115,6 +3168,14 @@
       "test": [
         "tests/human_nature/test_run_events.py"
       ]
+    },
+    "human_nature.faculties.signals": {
+      "path": "human_nature/faculties/signals/__init__.py",
+      "purpose": "Fast judgement, instinct, opinion, motif, and scar-signal faculties.",
+      "exports": [],
+      "depends_on": [],
+      "callers": [],
+      "test": []
     },
     "human_nature.faculties.signals.instinct": {
       "path": "human_nature/faculties/signals/instinct.py",
@@ -4566,6 +4627,7 @@
         "platform_core.cli",
         "platform_core.cli.main_cli",
         "platform_core.core",
+        "platform_core.core.best_effort",
         "platform_core.ops.doctor",
         "platform_core.ops.external_project",
         "platform_core.ops.health",
@@ -4581,7 +4643,8 @@
       ],
       "callers": [],
       "test": [
-        "tests/platform/test_main_cli.py"
+        "tests/platform/test_main_cli.py",
+        "tests/test_main_elaboration.py"
       ]
     },
     "memory": {
@@ -4713,6 +4776,7 @@
         "memory.ledger"
       ],
       "callers": [
+        "agents.planning.elaborator.evolve",
         "memory.ledger.subtasks",
         "memory.retrievals.core"
       ],
@@ -4871,6 +4935,7 @@
       "exports": [],
       "depends_on": [],
       "callers": [
+        "agents.planning.elaborator.evolve",
         "memory.exp_index",
         "memory.experience",
         "memory.experience_adapters",
@@ -7957,6 +8022,7 @@
         "agents.hook_handlers.obsidian",
         "agents.planning.elaborator.precedent",
         "agents.planning.elaborator.predict",
+        "main",
         "memory.ledger.content",
         "memory.ledger.journal",
         "memory.ledger.runs",
@@ -10978,7 +11044,8 @@
         "platform_core.runtime.resilience",
         "platform_core.simulator.bot_replay",
         "platform_core.simulator.testing.e2e",
-        "platform_core.simulator.testing.operator"
+        "platform_core.simulator.testing.operator",
+        "tools.elaborator_eval"
       ],
       "test": [
         "tests/control/test_task.py"
@@ -11247,6 +11314,7 @@
         "scriptedChat",
         "runOne",
         "runBattery",
+        "historicalCases",
         "report",
         "main"
       ],
@@ -11254,7 +11322,8 @@
         "agents.planning",
         "agents.planning.elaborator",
         "agents.planning.elaborator.core",
-        "config"
+        "config",
+        "state.task"
       ],
       "callers": [],
       "test": [

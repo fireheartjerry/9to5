@@ -121,7 +121,7 @@ class OrchestratorLlmMixin:
         finally:
             if recorder is not None and span is not None:
                 recorder.closeSpan(span)
-        if resp is None:
+        if resp is None and not getattr(self, "_offline_mode", False):
             try:
                 discord.sendEmbed(discord.noticeEmbed(
                     f"Brain (Ollama) unavailable after {retries} attempts; falling back (act={act})"))

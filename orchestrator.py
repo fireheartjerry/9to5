@@ -57,6 +57,28 @@ _ORANGE = 0xE67E22
 _RED = 0xE74C3C
 
 
+class _OfflineDashboard:
+    """Drop-in surface sink for fully offline simulations and dry-runs."""
+
+    def event(self, *_args, **_kwargs) -> None:
+        pass
+
+    def set_tunnel_url(self, *_args, **_kwargs) -> None:
+        pass
+
+    def post_council_transcript(self, *_args, **_kwargs) -> None:
+        pass
+
+    def start(self, *_args, **_kwargs) -> None:
+        pass
+
+    def update(self, *_args, **_kwargs) -> None:
+        pass
+
+    def unpin(self) -> None:
+        pass
+
+
 def _chatText(resp) -> str:
     return _brain_io._chatText(resp)
 
@@ -79,7 +101,8 @@ class Orchestrator(
     """Brain + autonomous loop.  All methods live in the five mixin modules above;
     only __init__ and runFull (the public entry point) are defined here."""
 
-    def __init__(self, *, brain=None, obs=None, run_claude=None, replan=None, review=None) -> None:
+    def __init__(self, *, brain=None, obs=None, run_claude=None, replan=None, review=None,
+                 skip_pre_execution_council: bool | None = None, offline_mode: bool = False) -> None:
         # Dependency seams (defaults = the real Layer-3/Layer-4 wiring). Injecting fakes here lets
         # the whole orchestration loop run with NO Ollama / Claude CLI / Obsidian -- which is what
         # the integration tests and the --dry-run simulation mode use. replanner.replan MUST be
@@ -107,6 +130,14 @@ class Orchestrator(
         self._poll_lock = threading.Lock()  # serialize Discord poll cursor across parallel workers (CB-7)
         self._selfref_prompt_cache: dict = {}  # task_id -> self-ref system-prompt prefix (built once)
         self._brain_tag_override: str | None = None  # force a model tag (adapter A/B eval)
+        # A fully injected harness is a simulation by contract: it must not inherit
+        # provider-backed features from ambient configuration. Callers that exercise
+        # the council specifically can opt back in with ``skip_pre_execution_council=False``.
+        fully_injected = all(x is not None for x in (brain, obs, run_claude, replan, review))
+        self._skip_pre_execution_council = (
+            fully_injected if skip_pre_execution_council is None else skip_pre_execution_council
+        )
+        self._offline_mode = offline_mode or fully_injected
         # SIE: register a per-adapter fitness evaluator so adapter promotion is autonomous.
         # The brain authors a spec for each golden goal under the candidate tag; the held-out
         # verify scores it. Best-effort registration; skips cleanly if the brain is offline.
@@ -132,19 +163,21 @@ class Orchestrator(
         parallelism: int = 1,
     ) -> dict:
         bus = ControlBus(state.task_id)
-        dashboard = DiscordDashboard()
+        dashboard = _OfflineDashboard() if self._offline_mode else DiscordDashboard()
         web_url: str | None = None
         self._active_work_profile = (state.meta or {}).get("work_profile")
         try:
             web_url, elaborated = self._runPreamble(state, work_dir, control_mode, resume, bus, dashboard)
             if not resume and self._detectSelfReferential(state, work_dir):
                 self._prepareSelfReferential(state, work_dir, bus, dashboard)
-            council_brief_ref = _council_seam.maybe_prepare_council_brief(
-                state=state,
-                work_dir=work_dir,
-                elaborated=elaborated,
-                resume=resume,
-            )
+            council_brief_ref = None
+            if not self._skip_pre_execution_council:
+                council_brief_ref = _council_seam.maybe_prepare_council_brief(
+                    state=state,
+                    work_dir=work_dir,
+                    elaborated=elaborated,
+                    resume=resume,
+                )
             if council_brief_ref is not None:
                 dashboard.post_council_transcript(state, council_brief_ref)
             if resume and state.subtasks:

@@ -27,6 +27,13 @@ class TestPathVerify(unittest.TestCase):
             result = path_verify.splitVerified(["agents/*.py"], tmp)
         self.assertEqual(result["allowed_paths"], ["agents/*.py"])
 
+    def test_existing_path_outside_repo_is_not_treated_as_grounded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            outside = os.path.abspath(__file__)
+            result = path_verify.splitVerified([outside], tmp)
+        self.assertEqual(result["allowed_paths"], [])
+        self.assertEqual(result["out_of_scope_paths"], [outside])
+
 
 class TestVagueGoal(unittest.TestCase):
     def test_detects_vague_goal(self):

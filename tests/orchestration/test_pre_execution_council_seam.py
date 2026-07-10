@@ -107,6 +107,23 @@ def test_disabled_orchestration_path_does_not_call_council_runner(monkeypatch, t
     assert "pre_execution_council" not in state.meta
 
 
+def test_simulation_never_starts_council_when_globally_enabled(monkeypatch, tmp_path):
+    """Offline simulation must not activate provider/browser-backed council seats."""
+    _patch_common_flags(monkeypatch, tmp_path, PRE_EXECUTION_COUNCIL_SEAM_ENABLED=True)
+    (tmp_path / "work").mkdir(exist_ok=True)
+
+    def runner(_task, _work_dir):
+        raise AssertionError("simulation must not invoke the pre-execution council")
+
+    monkeypatch.setattr(council_seam, "_default_run_council", runner)
+    state = _state()
+    summary = simulation.buildOrchestrator(n_subtasks=1).runFull(
+        state, work_dir=str(tmp_path / "work"), auto_pr=False, control_mode="watch")
+
+    assert summary["status"] == "done"
+    assert "pre_execution_council" not in state.meta
+
+
 def test_enabled_metadata_only_path_persists_meta_without_prompt_injection(monkeypatch, tmp_path):
     _patch_common_flags(monkeypatch, tmp_path, PRE_EXECUTION_COUNCIL_SEAM_ENABLED=True)
     (tmp_path / "work").mkdir(exist_ok=True)
@@ -119,6 +136,8 @@ def test_enabled_metadata_only_path_persists_meta_without_prompt_injection(monke
         run_claude=run_claude,
         replan=simulation.simReplan,
         review=simulation.simReview,
+        skip_pre_execution_council=False,
+        offline_mode=True,
     )
     state = _state()
 
@@ -151,7 +170,12 @@ def test_resume_default_skip_in_orchestration_does_not_change_subtasks(monkeypat
     state.updateSubtask("st-001", status="done")
     state.updateSubtask("st-002", status="in_progress")
 
-    summary = simulation.buildOrchestrator(n_subtasks=1).runFull(
+    orch = Orchestrator(
+        brain=simulation.SimBrain(n_subtasks=1), obs=simulation.SimObs(),
+        run_claude=simulation.simRunClaude, replan=simulation.simReplan,
+        review=simulation.simReview, skip_pre_execution_council=False, offline_mode=True,
+    )
+    summary = orch.runFull(
         state,
         work_dir=str(tmp_path / "work"),
         auto_pr=False,
@@ -185,6 +209,8 @@ def test_architect_injection_enabled_adds_advisory_block_without_planner_injecti
         run_claude=run_claude,
         replan=simulation.simReplan,
         review=simulation.simReview,
+        skip_pre_execution_council=False,
+        offline_mode=True,
     )
 
     state = _state()
@@ -222,6 +248,8 @@ def test_planner_injection_enabled_adds_advisory_block_without_architect_injecti
         run_claude=simulation.simRunClaude,
         replan=simulation.simReplan,
         review=simulation.simReview,
+        skip_pre_execution_council=False,
+        offline_mode=True,
     )
 
     state = _state()

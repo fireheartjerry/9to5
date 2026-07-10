@@ -62,6 +62,8 @@ class OrchestratorRunPhaseSurfaceMixin:
     def _finalizeSurfaces(self, state: TaskState, status: str, done: int, total: int,
                           elapsed: str) -> None:
         """Run-end surfaces: arc final beat, perfect-run moment, self-reflection post."""
+        if getattr(self, "_offline_mode", False):
+            return
         try:
             from notifications import reflection_post, run_arc
             from memory import experience

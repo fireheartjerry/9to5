@@ -18,7 +18,7 @@ EXPORTS:
   simReplan(*args, **kwargs)
   simReview(subtask_title, trigger_reason, executor_output, *, ollama_chat=None, goal='')
   SimObs  -- In-memory Obsidian double: records writes, never touches disk or REST.
-  buildOrchestrator(n_subtasks: int=3)  -- An Orchestrator wired entirely with simulation doubles (no external services).
+  buildOrchestrator(n_subtasks: int=3, *, offline: bool=True)  -- An Orchestrator wired with simulation doubles.
   BuilderBrain  -- Plans N subtasks, each producing a real file under ``work_dir`` with a REAL
   builderRunClaude(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, _project_root=None, **_kw)  -- Fake hands that ACTUALLY write the target file parsed from the subtask's verify cmd,
   buildBuilderOrchestrator(work_dir: str, n_subtasks: int=3)  -- An Orchestrator that produces real artifacts under work_dir and verifies them for real.
@@ -167,8 +167,12 @@ class SimObs:
         return {"rest_ok": False, "authed": False}
 
 
-def buildOrchestrator(n_subtasks: int = 3):
-    """An Orchestrator wired entirely with simulation doubles (no external services)."""
+def buildOrchestrator(n_subtasks: int = 3, *, offline: bool = True):
+    """An Orchestrator wired with simulation doubles.
+
+    Offline is the safe default for tests and ``--dry-run``. ``--sim-run``
+    explicitly opts into live surfaces while retaining simulated work.
+    """
     try:
         from orchestrator import Orchestrator
     except ImportError as exc:
@@ -178,7 +182,8 @@ def buildOrchestrator(n_subtasks: int = 3):
             f"Underlying error: {exc}"
         ) from exc
     return Orchestrator(brain=SimBrain(n_subtasks=n_subtasks), obs=SimObs(),
-                        run_claude=simRunClaude, replan=simReplan, review=simReview)
+                        run_claude=simRunClaude, replan=simReplan, review=simReview,
+                        skip_pre_execution_council=True, offline_mode=offline)
 
 
 # ---------------------------------------------------------------------------
@@ -265,4 +270,5 @@ def buildBuilderOrchestrator(work_dir: str, n_subtasks: int = 3):
         ) from exc
     return Orchestrator(brain=BuilderBrain(work_dir, n_subtasks), obs=SimObs(),
                         run_claude=_functools.partial(builderRunClaude, _project_root=str(work_dir)),
-                        replan=simReplan, review=simReview)
+                        replan=simReplan, review=simReview, skip_pre_execution_council=True,
+                        offline_mode=True)

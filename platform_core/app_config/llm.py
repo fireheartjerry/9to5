@@ -399,6 +399,10 @@ class SieCfg:
     CLAUDE_ATTEMPT_COST_HINT_USD: float = _F(default_factory=lambda: _envFloat("CLAUDE_ATTEMPT_COST_HINT_USD", 0.0))
     # --- compute / LoRA / self-play / bootstrap ---
     SIE_COMPUTE: str = _F(default_factory=lambda: os.getenv("SIE_COMPUTE", "auto"))
+    # Hugging Face source model used only by the opt-in local LoRA trainer.  It
+    # intentionally defaults empty: an operator must select a base compatible
+    # with the configured Ollama model before training can start.
+    LORA_HF_BASE_REPO: str = _F(default_factory=lambda: os.getenv("LORA_HF_BASE_REPO", "").strip())
     LORA_RANK: int = _F(default_factory=lambda: _envInt("LORA_RANK", 16))
     LORA_EPOCHS: int = _F(default_factory=lambda: _envInt("LORA_EPOCHS", 2))
     SELFPLAY_ENABLED: bool = _F(default_factory=lambda: _envBool("SELFPLAY_ENABLED", True))
