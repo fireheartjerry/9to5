@@ -1,9 +1,9 @@
 """WorkerAgent: CAS-claim on task JSON, injectable run_fn, posts result to board."""
 import threading
 
-from society.blackboard import Blackboard
-from society.roles import ROLES
-from society.worker import WorkerAgent
+from platform_core.orchestration.society.blackboard import Blackboard
+from platform_core.orchestration.society.roles import ROLES
+from platform_core.orchestration.society.worker import WorkerAgent
 from state.task import TaskState
 
 

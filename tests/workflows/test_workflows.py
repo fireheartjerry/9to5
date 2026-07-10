@@ -17,7 +17,7 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from workflows.registry import DEFINITIONS_DIR, _VALID_EFFORT_VALUES, loadRegistry  # noqa: E402
+from platform_core.orchestration.workflows.registry import DEFINITIONS_DIR, _VALID_EFFORT_VALUES, loadRegistry  # noqa: E402
 
 _MIN_REDUCTION = 0.20  # 20% wall-clock time reduction threshold
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def test_validate_accepts_normal_relpaths(tmp_path):
-    from refactor.refactor_edits import (
+    from developer_tools.refactoring.refactor_edits import (
         DeleteFile,
         RenameFile,
         ReplaceInFile,
@@ -20,7 +20,7 @@ def test_validate_accepts_normal_relpaths(tmp_path):
 
 
 def test_validate_rejects_escapes_and_absolute_outside(tmp_path):
-    from refactor.refactor_edits import DeleteFile, WriteFile, validateEdit
+    from developer_tools.refactoring.refactor_edits import DeleteFile, WriteFile, validateEdit
 
     assert validateEdit(tmp_path, WriteFile("../outside.py", "x")) is not None
     assert validateEdit(tmp_path, WriteFile("pkg/../../outside.py", "x")) is not None
@@ -31,7 +31,7 @@ def test_validate_rejects_escapes_and_absolute_outside(tmp_path):
 
 
 def test_validate_rejects_forbidden_segments(tmp_path):
-    from refactor.refactor_edits import (
+    from developer_tools.refactoring.refactor_edits import (
         FORBIDDEN_SEGMENTS,
         RenameFile,
         WriteFile,
@@ -52,7 +52,7 @@ def test_edit_dataclasses_frozen():
 
     import pytest
 
-    from refactor.refactor_edits import WriteFile
+    from developer_tools.refactoring.refactor_edits import WriteFile
 
     edit = WriteFile("a.py", "x")
     assert dataclasses.is_dataclass(edit)

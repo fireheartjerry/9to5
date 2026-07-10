@@ -7,7 +7,7 @@ import pytest
 
 
 def test_apply_all_or_nothing_rollback(fixture_project):
-    from refactor import RefactorTransaction, ReplaceInFile, WriteFile
+    from developer_tools.refactoring import RefactorTransaction, ReplaceInFile, WriteFile
 
     unrelated = fixture_project / "scratch.txt"
     unrelated.write_text("dirty", encoding="utf-8")
@@ -23,7 +23,7 @@ def test_apply_all_or_nothing_rollback(fixture_project):
 
 
 def test_apply_success_and_gate_cmd(fixture_project):
-    from refactor import RefactorTransaction, WriteFile
+    from developer_tools.refactoring import RefactorTransaction, WriteFile
 
     tx = RefactorTransaction(fixture_project)
     tx.add(WriteFile("pkg/extra.py", "VALUE = 1\n"))
@@ -33,7 +33,7 @@ def test_apply_success_and_gate_cmd(fixture_project):
 
 
 def test_gate_cmd_failure_rolls_back(fixture_project):
-    from refactor import RefactorTransaction, WriteFile
+    from developer_tools.refactoring import RefactorTransaction, WriteFile
 
     tx = RefactorTransaction(fixture_project)
     tx.add(WriteFile("pkg/extra.py", "VALUE = 1\n"))
@@ -43,7 +43,7 @@ def test_gate_cmd_failure_rolls_back(fixture_project):
 
 
 def test_replace_must_match_once(fixture_project):
-    from refactor import RefactorTransaction, ReplaceInFile
+    from developer_tools.refactoring import RefactorTransaction, ReplaceInFile
 
     tx = RefactorTransaction(fixture_project)
     tx.add(ReplaceInFile("pkg/core.py", "NO_SUCH_TEXT", "x"))
@@ -52,7 +52,7 @@ def test_replace_must_match_once(fixture_project):
 
 
 def test_replace_rejects_multiple_matches(fixture_project):
-    from refactor import RefactorTransaction, ReplaceInFile
+    from developer_tools.refactoring import RefactorTransaction, ReplaceInFile
 
     (fixture_project / "pkg" / "dup.py").write_text("x = 1\nx = 1\n", encoding="utf-8")
     tx = RefactorTransaction(fixture_project)
@@ -62,7 +62,7 @@ def test_replace_rejects_multiple_matches(fixture_project):
 
 
 def test_new_cycle_blocked(fixture_project):
-    from refactor import RefactorTransaction, WriteFile
+    from developer_tools.refactoring import RefactorTransaction, WriteFile
 
     tx = RefactorTransaction(fixture_project)
     tx.add(WriteFile("pkg/c1.py", "import pkg.c2\n"))
@@ -78,7 +78,7 @@ def test_new_cycle_blocked(fixture_project):
 
 
 def test_add_rejects_invalid_edit(fixture_project):
-    from refactor import RefactorTransaction, WriteFile
+    from developer_tools.refactoring import RefactorTransaction, WriteFile
 
     tx = RefactorTransaction(fixture_project)
     with pytest.raises(ValueError):
@@ -88,7 +88,7 @@ def test_add_rejects_invalid_edit(fixture_project):
 
 
 def test_rename_and_delete_roundtrip(fixture_project):
-    from refactor import DeleteFile, RefactorTransaction, RenameFile
+    from developer_tools.refactoring import DeleteFile, RefactorTransaction, RenameFile
 
     tx = RefactorTransaction(fixture_project)
     tx.add(RenameFile("lib.js", "lib2.js"))
@@ -101,7 +101,7 @@ def test_rename_and_delete_roundtrip(fixture_project):
 
 
 def test_preview_uses_impact_report(fixture_project):
-    from refactor import RefactorTransaction, ReplaceInFile
+    from developer_tools.refactoring import RefactorTransaction, ReplaceInFile
 
     tx = RefactorTransaction(fixture_project)
     tx.add(ReplaceInFile("pkg/core.py", "def coreFunc():", "def coreFn():"))
@@ -113,7 +113,7 @@ def test_preview_uses_impact_report(fixture_project):
 
 
 def test_cli_check_reports_cycles(fixture_project, capsys):
-    from refactor.__main__ import main
+    from developer_tools.refactoring.__main__ import main
 
     rc = main(["check", str(fixture_project)])
     out = capsys.readouterr().out

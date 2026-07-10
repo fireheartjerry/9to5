@@ -15,7 +15,7 @@ EXPORTS:
   blast_radius(touched: Iterable[str], *, graph: dict[str, Iterable[str]], entrypoints: Iterable[str]=(), public_api: Iterable[str]=()) -> dict  -- Risk verdict for a change set
   build_import_graph(root: Optional[str]=None) -> dict[str, list[str]]  -- Best-effort import graph (module -> imported modules) via introspect
   blast_radius_for(touched: Iterable[str], *, root: Optional[str]=None) -> dict  -- Convenience: build the repo import graph then score ``touched`` (fail-open to medium).
-DEPENDS-ON: config, introspect.extractProject
+DEPENDS-ON: config, developer_tools.introspection
 SIDE-EFFECTS: build_import_graph reads the project via introspect (best-effort)
 RUN/TEST: python -m pytest tests/orchestration/test_code_graph.py
 """
@@ -152,7 +152,7 @@ def blast_radius(touched: Iterable[str], *, graph: dict[str, Iterable[str]],
 def build_import_graph(root: Optional[str] = None) -> dict[str, list[str]]:
     """Best-effort import graph (module -> imported modules) via introspect. {} on failure."""
     try:
-        from introspect import extractProject
+        from developer_tools.introspection import extractProject
         model = extractProject(root or str(config.PROJECT_ROOT),
                                max_files=getattr(config, "PROJECT_INTROSPECTION_MAX_FILES", 4000))
         graph: dict[str, list[str]] = {}
@@ -172,7 +172,7 @@ def blast_radius_for(touched: Iterable[str], *, root: Optional[str] = None) -> d
     ep: tuple = ()
     pub: tuple = ()
     try:
-        from introspect import extractProject
+        from developer_tools.introspection import extractProject
         model = extractProject(root or str(config.PROJECT_ROOT),
                                max_files=getattr(config, "PROJECT_INTROSPECTION_MAX_FILES", 4000))
         ep = tuple(getattr(model.boundaries, "entrypoints", ()) or ())

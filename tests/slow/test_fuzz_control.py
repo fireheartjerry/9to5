@@ -9,7 +9,7 @@ import time
 import unittest
 
 from state.task import TaskState
-from testing import e2e
+from platform_core.simulator.testing import e2e
 
 _TERMINAL = set(TaskState._TERMINAL)
 _ACTIONS = ["pause", "resume", "skip", "add", "approve", "reject", "status"]

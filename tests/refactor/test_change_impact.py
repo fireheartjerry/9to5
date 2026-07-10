@@ -3,9 +3,9 @@ from __future__ import annotations
 
 
 def test_impact_detects_orphans_and_cycle(fixture_project):
-    from introspect import extractProject
-    from refactor.change_impact import predictImpact
-    from refactor.refactor_edits import ReplaceInFile, WriteFile
+    from developer_tools.introspection import extractProject
+    from developer_tools.refactoring.change_impact import predictImpact
+    from developer_tools.refactoring.refactor_edits import ReplaceInFile, WriteFile
 
     model = extractProject(fixture_project, use_cache=False)
     edits = [ReplaceInFile("pkg/core.py", "def coreFunc():", "def coreFn():")]
@@ -17,9 +17,9 @@ def test_impact_detects_orphans_and_cycle(fixture_project):
 
 
 def test_impact_predicts_new_cycle(fixture_project):
-    from introspect import extractProject
-    from refactor.change_impact import predictImpact
-    from refactor.refactor_edits import WriteFile
+    from developer_tools.introspection import extractProject
+    from developer_tools.refactoring.change_impact import predictImpact
+    from developer_tools.refactoring.refactor_edits import WriteFile
 
     model = extractProject(fixture_project, use_cache=False)
     edits = [
@@ -34,9 +34,9 @@ def test_impact_predicts_new_cycle(fixture_project):
 
 
 def test_impact_maps_affected_tests_and_never_writes(fixture_project):
-    from introspect import extractProject
-    from refactor.change_impact import predictImpact
-    from refactor.refactor_edits import ReplaceInFile
+    from developer_tools.introspection import extractProject
+    from developer_tools.refactoring.change_impact import predictImpact
+    from developer_tools.refactoring.refactor_edits import ReplaceInFile
 
     core = fixture_project / "pkg" / "core.py"
     before = core.read_bytes()
@@ -48,9 +48,9 @@ def test_impact_maps_affected_tests_and_never_writes(fixture_project):
 
 
 def test_impact_delete_file_orphans_importers(fixture_project):
-    from introspect import extractProject
-    from refactor.change_impact import predictImpact
-    from refactor.refactor_edits import DeleteFile
+    from developer_tools.introspection import extractProject
+    from developer_tools.refactoring.change_impact import predictImpact
+    from developer_tools.refactoring.refactor_edits import DeleteFile
 
     model = extractProject(fixture_project, use_cache=False)
     rep = predictImpact(model, [DeleteFile("pkg/core.py")])

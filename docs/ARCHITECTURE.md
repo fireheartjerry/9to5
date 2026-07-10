@@ -246,7 +246,7 @@ Hard boundaries should include secrets, VCS internals, venvs, generated/runtime 
 
 ## Workflow registry
 
-`workflows/registry.py` loads `WorkflowDefinition` JSON files from `workflows/definitions/` and
+`platform_core/orchestration/workflows/registry.py` loads `WorkflowDefinition` JSON files from `platform_core/orchestration/workflows/definitions/` and
 exposes them as a dict keyed by workflow name. The orchestrator sets `InvocationSpec.use_workflow`
 and `workflow_definition` to run a multi-phase agent workflow instead of a single prompt.
 
@@ -303,30 +303,30 @@ Recommended role:
 
 The default topology is a star: one Ollama brain plans, one Claude executor acts. Epic 5 adds
 an optional 9to5-owned **multi-agent workforce** behind `config.SOCIETY_ENABLED` (default
-`False`). The `society/` package is a peer of `agents/`/`workflows/`:
+`False`). The `platform_core/orchestration/society/` package belongs with the workflow registry:
 
-- **`society/coordinator.py` — `Coordinator`**: deterministic Python (NOT a new LLM). Posts
+- **`platform_core/orchestration/society/coordinator.py` — `Coordinator`**: deterministic Python (NOT a new LLM). Posts
   Task-Ledger facts, selects a file-disjoint batch (Epic-1 CAS seam), spawns one `WorkerAgent`
   per claim, collects results, detects contested subtasks, and enforces a per-run USD budget
   governor (`SOCIETY_TOKEN_BUDGET_USD`).
-- **`society/worker.py` — `WorkerAgent`**: role-scoped wrapper over `agents/executor.py::runClaude`.
+- **`platform_core/orchestration/society/worker.py` — `WorkerAgent`**: role-scoped wrapper over `agents/executor.py::runClaude`.
   Performs the atomic CAS claim against **task JSON** (single source of truth for status/claim),
   builds a narrowed `InvocationSpec`, runs in its work_dir, posts a `result` to the blackboard.
-- **`society/blackboard.py` — `Blackboard`**: append-only per-run JSONL coordination surface
+- **`platform_core/orchestration/society/blackboard.py` — `Blackboard`**: append-only per-run JSONL coordination surface
   (threadlock + best-effort cross-process file lock, malformed-line tolerant). Holds ONLY
   coordination artifacts; every append mirrors to `event_bus` for live surfaces.
-- **`society/roles.py`**: role registry + capability router.
-  (`society/inbox.py` and `society/debate.py` were deleted 2026-07-01 — unwired halves
+- **`platform_core/orchestration/society/roles.py`**: role registry + capability router.
+  (`platform_core/orchestration/society/inbox.py` and `platform_core/orchestration/society/debate.py` were deleted 2026-07-01 — unwired halves
   with zero production callers.)
 
 **Budget gate is WIRED:** `Coordinator._handleSocietyBatch` consults `budgetExceeded()`
 before EVERY worker spawn (hard pre-spawn gate against `SOCIETY_TOKEN_BUDGET_USD`), and
-`society/society_batch.py` seeds `coord.spent_usd` from prior blackboard `budget`/cost
+`platform_core/orchestration/society/society_batch.py` seeds `coord.spent_usd` from prior blackboard `budget`/cost
 entries so the budget is run-wide, not per-batch.
 
 **LOCKED concurrency boundary:** threads + per-worker git worktree filesystem isolation
 (mirrors `run_loop_mixin._handleParallelBatch`), NOT process-per-worker. Run-loop wiring lives
-in `society/society_batch.py` (extracted to keep `run_loop_mixin.py` ≤450); the mixin's
+in `platform_core/orchestration/society/society_batch.py` (extracted to keep `run_loop_mixin.py` ≤450); the mixin's
 `_societyGate`/`_handleSocietyBatch` delegate to it. With the flag **off**, the gate is closed
 and the star/parallel path is byte-identical to today.
 
@@ -336,30 +336,30 @@ defaults to deps-only batching (`file_sets_fn=None`), workers default to the sha
 (advisory mode, serial), `BlackboardEntry.span_id` stays `None`, and `_remediationUnsafe`
 already encodes the worktree-isolation flip (peer-safe once each worker edits its own tree).
 
-## Any-project capabilities (introspect / refactor / explore)
+## Any-project capabilities (`developer_tools/`)
 
 Three stdlib-only leaf packages give 9TO5 typed understanding of ANY project root, not just
 this repo. Dependency direction is one-way: `explore` → `introspect` ← `refactor` (both
 consumers import `introspect`; nothing imports back). Orchestration touches them only through
 lazy, fail-open imports — with the flags off, planning and fork behavior are byte-identical.
 
-- **`introspect/`** — `extractProject(root)` builds a frozen `ProjectModel` (languages,
+- **`developer_tools/introspection/`** — `extractProject(root)` builds a frozen `ProjectModel` (languages,
   modules, import edges, detected test/build/lint commands proved by config files, boundary
   map) for any directory; `contextForPrompt(model, budget_chars=...)` renders a budgeted
   digest. Wiring: `plan_mixin` injects that digest into the plan prompt when
   `PROJECT_INTROSPECTION_ENABLED` (default ON) is set, capped by
   `PROJECT_INTROSPECTION_MAX_FILES` (default 4000). Fail-open: introspection errors never
   block planning.
-- **`refactor/`** — refactoring safety as a library: import-cycle detection
+- **`developer_tools/refactoring/`** — refactoring safety as a library: import-cycle detection
   (`findCycles`/`wouldCreateCycle`), pre-apply impact prediction (`predictImpact` →
   `ImpactReport` with orphaned usages, new cycles, affected tests), and
   `RefactorTransaction` — atomic multi-file apply with byte snapshots + on-disk crash
   journal (`recoverJournal`), py_compile gate, only-NEW-cycles gate, and an optional
-  shell-free gate command. CLI: `python -m refactor check <root>` (exit 1 on cycles).
+  shell-free gate command. CLI: `python -m developer_tools.refactoring check <root>` (exit 1 on cycles).
   Path guard: edits escaping the root or touching `FORBIDDEN_SEGMENTS` (`.git`, `.env`,
   venvs, `node_modules`, `__pycache__`) are rejected with an explicit reason.
   Recipe: `docs/edit_recipes/refactor_multi_file.md`.
-- **`explore/`** — solution-space exploration over an introspected project:
+- **`developer_tools/exploration/`** — solution-space exploration over an introspected project:
   `generateApproaches` (archetype-grounded candidates, optional brain) →
   `scoreApproaches` (fit/risk/effort/testability trade-offs) → `selectOrSynthesize`;
   one-call facade `exploreSolutionSpace(goal, root_or_model)`. Wiring: when
@@ -407,13 +407,12 @@ Proof-of-concept driver: `scripts/poc_any_project.py` (self-scan + external-repo
 
 ## Deleted subsystems (2026-07-01 first-principles rewrite)
 
-Zero-production-caller subsystems were removed (~-22k LOC): `human_nature/`
-(recoverable at commit `a7b1b2d`; specs remain in `docs/human-nature/`), `monitoring/`,
-`scheduling/`, `workflows/scheduler.py`, `notifications/bus.py` + `predictive.py`,
+Zero-production-caller subsystems were removed (~-22k LOC): `monitoring/`, `scheduling/`,
+`notifications/bus.py` + `predictive.py`,
 `agents/orchestration_pipeline*`, `learning/{rollout,counterfactual,adapter_ops,reward}.py`,
 `memory/{subtask_manager,reflection_consolidate}.py`, the retry stack
 (`error_handling`/`retry_policy`/`enhanced_error_handling` — recovery is
-`platform_core/runtime/resilience.py`), `society/{debate,inbox}.py`, and
+`platform_core/runtime/resilience.py`), and
 `llm_epic_flags.py`. Portfolio: `docs/superpowers/specs/2026-07-01-first-principles-rewrite-design.md`.
 
 ## Module layout (post-modularization)
@@ -438,6 +437,12 @@ The `Orchestrator` class is assembled from 8 focused mixins in
 
 Helper modules re-exported into the `orchestrator.py` namespace include
 `brain_io.py`, `knowledge_refresh.py`, and `time_utils.py` (same package).
+
+### Vertical domain layout
+
+- `developer_tools/` groups the introspection, exploration, and refactoring packages.
+- `platform_core/orchestration/` owns the workforce (`society/`) and declarative workflow registry (`workflows/`); `platform_core/simulator/testing/` owns virtual-operator helpers.
+- `human_nature/faculties/` groups its implementation by affect, governance, identity, signals, and runtime. `human_nature/__init__.py` maintains historical module imports as compatibility aliases.
 
 ### Sub-module extraction with re-export facade
 

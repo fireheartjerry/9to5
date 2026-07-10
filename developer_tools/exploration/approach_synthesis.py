@@ -4,7 +4,7 @@
 EXPORTS:
   SynthesisResult  -- The selected approach plus lifted mitigations and a scored rationale.
   selectOrSynthesize(candidates: list[ApproachCandidate], scores: list[TradeoffScore], *, brain=None) -> SynthesisResult  -- Pick the winner (total desc, fewer files, lowest id) and lift mitigations.
-DEPENDS-ON: explore.approach_gen, explore.approach_tradeoffs
+DEPENDS-ON: developer_tools.exploration.approach_gen, developer_tools.exploration.approach_tradeoffs
 SIDE-EFFECTS: none (brain, when given, may only reword the rationale)
 RUN/TEST: python -m pytest tests/explore/test_approach_synthesis.py
 """
@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from explore.approach_gen import ApproachCandidate, brainText
-from explore.approach_tradeoffs import TradeoffScore
+from developer_tools.exploration.approach_gen import ApproachCandidate, brainText
+from developer_tools.exploration.approach_tradeoffs import TradeoffScore
 
 MITIGATION_MARKERS = ("test", "rollback", "guard", "verify")
 

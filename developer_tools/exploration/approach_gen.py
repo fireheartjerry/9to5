@@ -5,7 +5,7 @@ EXPORTS:
   ApproachCandidate  -- One candidate approach to a goal, comparable and JSON-friendly.
   generateApproaches(goal: str, model: ProjectModel, *, brain=None, n: int=3) -> list[ApproachCandidate]  -- Generate up to ``n`` approach candidates for ``goal`` against ``model``.
   brainText(raw) -> str  -- Accept Brain-protocol return shapes: plain str or ollama chat dict.
-DEPENDS-ON: introspect.project_model
+DEPENDS-ON: developer_tools.introspection.project_model
 SIDE-EFFECTS: none (brain callable is caller-injected; None => deterministic fallback)
 RUN/TEST: python -m pytest tests/explore/test_approach_gen.py
 """
@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from introspect.project_model import ProjectModel
+from developer_tools.introspection.project_model import ProjectModel
 
 APPROACH_ARCHETYPES = (
     "minimal-patch",

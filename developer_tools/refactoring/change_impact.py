@@ -10,7 +10,7 @@ touched files -> convention-mapped tests.
 EXPORTS:
   ImpactReport  -- Prediction of what a planned edit set breaks (pure, computed pre-apply).
   predictImpact(model: ProjectModel, edits: list) -> ImpactReport  -- Predict orphaned usages, new import cycles, and affected tests for ``edits``.
-DEPENDS-ON: introspect.project_model, introspect.project_test_map, introspect.python_import_graph, refactor.cycle_detect, refactor.refactor_edits, refactor.symbol_usages
+DEPENDS-ON: developer_tools.introspection.project_model, developer_tools.introspection.project_test_map, developer_tools.introspection.python_import_graph, developer_tools.refactoring.cycle_detect, developer_tools.refactoring.refactor_edits, developer_tools.refactoring.symbol_usages
 SIDE-EFFECTS: creates and removes a scratch temp dir during analysis
 RUN/TEST: python -m pytest tests/refactor/test_change_impact.py
 """
@@ -21,13 +21,13 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from introspect.project_model import ModuleInfo, ProjectModel
-from introspect.project_test_map import mapFileToTests
-from introspect.python_import_graph import analyzePython
+from developer_tools.introspection.project_model import ModuleInfo, ProjectModel
+from developer_tools.introspection.project_test_map import mapFileToTests
+from developer_tools.introspection.python_import_graph import analyzePython
 
-from refactor.cycle_detect import buildImportGraph, wouldCreateCycle
-from refactor.refactor_edits import DeleteFile, RenameFile, ReplaceInFile, WriteFile
-from refactor.symbol_usages import Usage, findUsagesMulti
+from developer_tools.refactoring.cycle_detect import buildImportGraph, wouldCreateCycle
+from developer_tools.refactoring.refactor_edits import DeleteFile, RenameFile, ReplaceInFile, WriteFile
+from developer_tools.refactoring.symbol_usages import Usage, findUsagesMulti
 
 
 @dataclass(frozen=True)

@@ -13,3 +13,66 @@ SIDE-EFFECTS: none
 RUN/TEST: (no mapped test)
 """
 from __future__ import annotations
+
+from importlib import import_module
+import sys
+
+
+# Keep the former flat module paths stable while implementation lives in
+# concern-oriented faculties.  The insertion order also ensures dependencies
+# that still use a legacy import are registered before their dependants load.
+_LEGACY_MODULES = {
+    # Affect
+    "affect_manifold": "human_nature.faculties.affect.affect_manifold",
+    "appraisal": "human_nature.faculties.affect.appraisal",
+    "emotions": "human_nature.faculties.affect.emotions",
+    "mood": "human_nature.faculties.affect.mood",
+    "prototypes": "human_nature.faculties.affect.prototypes",
+    # Governance
+    "authority": "human_nature.faculties.governance.authority",
+    "autonomy": "human_nature.faculties.governance.autonomy",
+    "conflict": "human_nature.faculties.governance.conflict",
+    "conviction": "human_nature.faculties.governance.conviction",
+    "drift": "human_nature.faculties.governance.drift",
+    "gating": "human_nature.faculties.governance.gating",
+    "operator_authority": "human_nature.faculties.governance.operator_authority",
+    # Identity
+    "attention_schema": "human_nature.faculties.identity.attention_schema",
+    "character_vector": "human_nature.faculties.identity.character_vector",
+    "charter": "human_nature.faculties.identity.charter",
+    "continuity": "human_nature.faculties.identity.continuity",
+    "personality": "human_nature.faculties.identity.personality",
+    "self_state": "human_nature.faculties.identity.self_state",
+    "self_model": "human_nature.faculties.identity.self_model",
+    "user_model": "human_nature.faculties.identity.user_model",
+    "workspace": "human_nature.faculties.identity.workspace",
+    # Signals
+    "instinct": "human_nature.faculties.signals.instinct",
+    "instinct_signal": "human_nature.faculties.signals.instinct_signal",
+    "instinct_stream": "human_nature.faculties.signals.instinct_stream",
+    "intuition": "human_nature.faculties.signals.intuition",
+    "momentary": "human_nature.faculties.signals.momentary",
+    "motif_mining": "human_nature.faculties.signals.motif_mining",
+    "opinions": "human_nature.faculties.signals.opinions",
+    "scar_graph": "human_nature.faculties.signals.scar_graph",
+    # Runtime
+    "ab_harness": "human_nature.faculties.runtime.ab_harness",
+    "consolidation": "human_nature.faculties.runtime.consolidation",
+    "drives": "human_nature.faculties.runtime.drives",
+    "psyche_commands": "human_nature.faculties.runtime.psyche_commands",
+    "psyche_runtime": "human_nature.faculties.runtime.psyche_runtime",
+    "psyche_store": "human_nature.faculties.runtime.psyche_store",
+    "psyche_surface": "human_nature.faculties.runtime.psyche_surface",
+    "run_events": "human_nature.faculties.runtime.run_events",
+    "integration": "human_nature.faculties.runtime.integration",
+}
+
+
+def _install_legacy_modules() -> None:
+    for legacy_name, implementation_name in _LEGACY_MODULES.items():
+        module = import_module(implementation_name)
+        sys.modules[f"{__name__}.{legacy_name}"] = module
+        setattr(sys.modules[__name__], legacy_name, module)
+
+
+_install_legacy_modules()

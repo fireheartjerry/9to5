@@ -87,8 +87,8 @@ class TestExploreSeededAngles:
 
     def _patch_explore(self, monkeypatch, candidates, scores):
         import config
-        import explore
-        import introspect
+        import developer_tools.exploration as explore
+        import developer_tools.introspection as introspect
         monkeypatch.setattr(config, "EXPLORE_APPROACHES_ENABLED", True, raising=False)
         monkeypatch.setattr(introspect, "extractProject", lambda root, **kw: object())
         monkeypatch.setattr(explore, "generateApproaches", lambda goal, model, **kw: candidates)
@@ -118,7 +118,7 @@ class TestExploreSeededAngles:
 
     def test_explore_raising_falls_back_to_bank(self, monkeypatch):
         import config
-        import introspect
+        import developer_tools.introspection as introspect
         monkeypatch.setattr(config, "EXPLORE_APPROACHES_ENABLED", True, raising=False)
 
         def _boom(root, **kw):
@@ -139,8 +139,8 @@ class TestExploreSeededAngles:
     def test_work_dir_param_scopes_exploration_root(self, monkeypatch, tmp_path):
         """forkPlan(work_dir=...) must explore that dir, not config.PROJECT_ROOT."""
         import config
-        import explore
-        import introspect
+        import developer_tools.exploration as explore
+        import developer_tools.introspection as introspect
         seen_roots = []
         monkeypatch.setattr(config, "EXPLORE_APPROACHES_ENABLED", True, raising=False)
         monkeypatch.setattr(introspect, "extractProject",
@@ -153,8 +153,8 @@ class TestExploreSeededAngles:
     def test_no_work_dir_falls_back_to_project_root(self, monkeypatch):
         """Omitting work_dir preserves today's behavior: explore config.PROJECT_ROOT."""
         import config
-        import explore
-        import introspect
+        import developer_tools.exploration as explore
+        import developer_tools.introspection as introspect
         seen_roots = []
         monkeypatch.setattr(config, "EXPLORE_APPROACHES_ENABLED", True, raising=False)
         monkeypatch.setattr(introspect, "extractProject",

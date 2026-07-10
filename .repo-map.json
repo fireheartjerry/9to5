@@ -9,9 +9,8 @@
     "check_workflow",
     "config",
     "conftest",
-    "explore",
+    "developer_tools",
     "human_nature",
-    "introspect",
     "knowledge",
     "learning",
     "llm_io",
@@ -21,15 +20,11 @@
     "notifications",
     "orchestrator",
     "platform_core",
-    "refactor",
     "selfmod",
-    "society",
     "src",
     "state",
-    "testing",
     "tests",
-    "validate_workflows",
-    "workflows"
+    "validate_workflows"
   ],
   "modules": {
     "agents": {
@@ -219,8 +214,10 @@
       "test": [],
       "callers": [
         "agents.discovery",
+        "agents.discovery.inventor",
         "agents.discovery.lenses",
-        "platform_core.orchestration.run_phase_mixin"
+        "platform_core.orchestration.run_phase_mixin",
+        "tools.innovator_eval"
       ]
     },
     "agents.discovery.corpus": {
@@ -297,6 +294,42 @@
       ],
       "test": [
         "tests/orchestration/test_discovery_digest.py"
+      ],
+      "callers": []
+    },
+    "agents.discovery.inventor": {
+      "path": "agents/discovery/inventor.py",
+      "purpose": "Local-only divergent invention engine for transformative discovery.",
+      "exports": [
+        {
+          "name": "InnovatorEvent",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 43
+        },
+        {
+          "name": "run_excellence",
+          "kind": "function",
+          "signature": "(digest: dict, observer: Callable[[InnovatorEvent], None] | None=None, chat_fn=None) -> DiscoveryReport",
+          "summary": "Generate a local-only, observable six-idea transformative portfolio.",
+          "lineno": 246
+        }
+      ],
+      "depends_on": [
+        "agents.discovery",
+        "agents.discovery.models",
+        "config",
+        "llm_io",
+        "memory.novelty_index"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/orchestration/test_bridge_inventor.py",
+        "tests/orchestration/test_inventor_e2e.py",
+        "tests/platform/test_inventor_flags_config.py"
       ],
       "callers": []
     },
@@ -403,6 +436,7 @@
       ],
       "callers": [
         "agents.discovery",
+        "agents.discovery.inventor",
         "agents.discovery.lenses",
         "agents.discovery.synthesis"
       ]
@@ -978,7 +1012,7 @@
         "orchestrator",
         "platform_core.ops.health",
         "platform_core.orchestration.safety_mixin",
-        "society.worker"
+        "platform_core.orchestration.society.worker"
       ]
     },
     "agents.executor_env": {
@@ -2529,7 +2563,7 @@
       "callers": [
         "agents.execution.executor",
         "learning.evolution.candidate",
-        "society.roles"
+        "platform_core.orchestration.society.roles"
       ]
     },
     "agents.replanner": {
@@ -2946,7 +2980,7 @@
         "platform_core.orchestration.adversary_loop",
         "platform_core.orchestration.control_review_mixin",
         "platform_core.orchestration.review_mixin",
-        "society.debate"
+        "platform_core.orchestration.society.debate"
       ]
     },
     "agents.timing_harness": {
@@ -3275,8 +3309,8 @@
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_loop_replan_mixin",
         "platform_core.orchestration.run_phase_mixin",
-        "platform_core.orchestration.subtask",
-        "society.worker"
+        "platform_core.orchestration.society.worker",
+        "platform_core.orchestration.subtask"
       ]
     },
     "agents.verifier_runner": {
@@ -3510,6 +3544,7 @@
         "agents.discovery",
         "agents.discovery.corpus",
         "agents.discovery.digest",
+        "agents.discovery.inventor",
         "agents.discovery.ledger_bridge",
         "agents.discovery.lenses",
         "agents.discovery.synthesis",
@@ -3556,21 +3591,21 @@
         "agents.trace.replay",
         "agents.trace.replay_cli",
         "agents.trace.replay_events",
-        "human_nature.ab_harness",
-        "human_nature.authority",
-        "human_nature.consolidation",
-        "human_nature.continuity",
-        "human_nature.emotions",
-        "human_nature.instinct",
-        "human_nature.integration",
-        "human_nature.intuition",
-        "human_nature.momentary",
-        "human_nature.mood",
-        "human_nature.operator_authority",
-        "human_nature.opinions",
-        "human_nature.psyche_runtime",
-        "human_nature.psyche_store",
-        "introspect.project_extract",
+        "developer_tools.introspection.project_extract",
+        "human_nature.faculties.affect.emotions",
+        "human_nature.faculties.affect.mood",
+        "human_nature.faculties.governance.authority",
+        "human_nature.faculties.governance.operator_authority",
+        "human_nature.faculties.identity.continuity",
+        "human_nature.faculties.runtime.ab_harness",
+        "human_nature.faculties.runtime.consolidation",
+        "human_nature.faculties.runtime.integration",
+        "human_nature.faculties.runtime.psyche_runtime",
+        "human_nature.faculties.runtime.psyche_store",
+        "human_nature.faculties.signals.instinct",
+        "human_nature.faculties.signals.intuition",
+        "human_nature.faculties.signals.momentary",
+        "human_nature.faculties.signals.opinions",
         "learning.evolution.adapter_promotion",
         "learning.evolution.bootstrap",
         "learning.evolution.candidate",
@@ -3744,6 +3779,12 @@
         "platform_core.orchestration.run_phase_outcome",
         "platform_core.orchestration.run_phase_surface_mixin",
         "platform_core.orchestration.safety_mixin",
+        "platform_core.orchestration.society.blackboard",
+        "platform_core.orchestration.society.coordinator",
+        "platform_core.orchestration.society.debate",
+        "platform_core.orchestration.society.roles",
+        "platform_core.orchestration.society.society_batch",
+        "platform_core.orchestration.society.worker",
         "platform_core.orchestration.solution_space",
         "platform_core.orchestration.step_resume",
         "platform_core.orchestration.step_sink",
@@ -3761,21 +3802,17 @@
         "platform_core.simulator.bot_replay",
         "platform_core.simulator.chaos",
         "platform_core.simulator.simulation",
+        "platform_core.simulator.testing.e2e",
         "scripts.poc_any_project",
         "scripts.repo_health",
         "selfmod",
-        "society.blackboard",
-        "society.coordinator",
-        "society.debate",
-        "society.roles",
-        "society.society_batch",
-        "society.worker",
         "state.task_io",
         "state.task_schema",
         "tools.cerebras_probe",
         "tools.cloudflare_workers_ai_probe",
         "tools.elaborator_eval",
-        "tools.groq_probe"
+        "tools.groq_probe",
+        "tools.innovator_eval"
       ]
     },
     "conftest": {
@@ -3797,8 +3834,8 @@
       "test": [],
       "callers": []
     },
-    "explore": {
-      "path": "explore/__init__.py",
+    "developer_tools.exploration": {
+      "path": "developer_tools/exploration/__init__.py",
       "purpose": "explore -- solution-space exploration over an introspected project (stdlib-only leaf).",
       "exports": [
         {
@@ -3810,20 +3847,24 @@
         }
       ],
       "depends_on": [
-        "explore.approach_gen",
-        "explore.approach_synthesis",
-        "explore.approach_tradeoffs",
-        "introspect.extractProject",
-        "introspect.project_model"
+        "developer_tools.exploration.approach_gen",
+        "developer_tools.exploration.approach_synthesis",
+        "developer_tools.exploration.approach_tradeoffs",
+        "developer_tools.introspection",
+        "developer_tools.introspection.project_model"
       ],
       "side_effects": [
         "none"
       ],
       "test": [],
-      "callers": []
+      "callers": [
+        "developer_tools.exploration.__main__",
+        "platform_core.orchestration.fork_policy",
+        "scripts.poc_any_project"
+      ]
     },
-    "explore.__main__": {
-      "path": "explore/__main__.py",
+    "developer_tools.exploration.__main__": {
+      "path": "developer_tools/exploration/__main__.py",
       "purpose": "CLI: ``python -m explore \"<goal>\" <root>`` -- print ranked approaches + winner.",
       "exports": [
         {
@@ -3835,10 +3876,8 @@
         }
       ],
       "depends_on": [
-        "explore.generateApproaches",
-        "explore.scoreApproaches",
-        "explore.selectOrSynthesize",
-        "introspect.project_extract"
+        "developer_tools.exploration",
+        "developer_tools.introspection.project_extract"
       ],
       "side_effects": [
         "prints to stdout"
@@ -3846,8 +3885,8 @@
       "test": [],
       "callers": []
     },
-    "explore.approach_gen": {
-      "path": "explore/approach_gen.py",
+    "developer_tools.exploration.approach_gen": {
+      "path": "developer_tools/exploration/approach_gen.py",
       "purpose": "Approach generation: archetype-templated (brainless) or brain-authored candidates.",
       "exports": [
         {
@@ -3873,7 +3912,7 @@
         }
       ],
       "depends_on": [
-        "introspect.project_model"
+        "developer_tools.introspection.project_model"
       ],
       "side_effects": [
         "none (brain callable is caller-injected",
@@ -3883,13 +3922,13 @@
         "tests/explore/test_approach_gen.py"
       ],
       "callers": [
-        "explore",
-        "explore.approach_synthesis",
-        "explore.approach_tradeoffs"
+        "developer_tools.exploration",
+        "developer_tools.exploration.approach_synthesis",
+        "developer_tools.exploration.approach_tradeoffs"
       ]
     },
-    "explore.approach_synthesis": {
-      "path": "explore/approach_synthesis.py",
+    "developer_tools.exploration.approach_synthesis": {
+      "path": "developer_tools/exploration/approach_synthesis.py",
       "purpose": "Winner selection + mechanical synthesis of runner-up mitigations.",
       "exports": [
         {
@@ -3908,8 +3947,8 @@
         }
       ],
       "depends_on": [
-        "explore.approach_gen",
-        "explore.approach_tradeoffs"
+        "developer_tools.exploration.approach_gen",
+        "developer_tools.exploration.approach_tradeoffs"
       ],
       "side_effects": [
         "none (brain, when given, may only reword the rationale)"
@@ -3918,11 +3957,11 @@
         "tests/explore/test_approach_synthesis.py"
       ],
       "callers": [
-        "explore"
+        "developer_tools.exploration"
       ]
     },
-    "explore.approach_tradeoffs": {
-      "path": "explore/approach_tradeoffs.py",
+    "developer_tools.exploration.approach_tradeoffs": {
+      "path": "developer_tools/exploration/approach_tradeoffs.py",
       "purpose": "Trade-off scoring: deterministic risk/effort/testability/fit composite per candidate.",
       "exports": [
         {
@@ -3941,8 +3980,8 @@
         }
       ],
       "depends_on": [
-        "explore.approach_gen",
-        "introspect.project_model"
+        "developer_tools.exploration.approach_gen",
+        "developer_tools.introspection.project_model"
       ],
       "side_effects": [
         "none"
@@ -3951,8 +3990,621 @@
         "tests/explore/test_approach_tradeoffs.py"
       ],
       "callers": [
-        "explore",
-        "explore.approach_synthesis"
+        "developer_tools.exploration",
+        "developer_tools.exploration.approach_synthesis"
+      ]
+    },
+    "developer_tools.introspection": {
+      "path": "developer_tools/introspection/__init__.py",
+      "purpose": "introspect -- typed runtime project model for ANY root directory (stdlib-only leaf).",
+      "exports": [],
+      "depends_on": [
+        "developer_tools.introspection.project_extract",
+        "developer_tools.introspection.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [],
+      "callers": [
+        "developer_tools.exploration",
+        "developer_tools.refactoring.__main__",
+        "developer_tools.refactoring.refactor_transaction",
+        "platform_core.orchestration.code_graph",
+        "platform_core.orchestration.fork_policy",
+        "platform_core.orchestration.plan_context",
+        "scripts.poc_any_project"
+      ]
+    },
+    "developer_tools.introspection.__main__": {
+      "path": "developer_tools/introspection/__main__.py",
+      "purpose": "CLI: ``python -m introspect <root> [--json]`` -- print a project digest or model JSON.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "Extract the model for <root> and print its digest (default) or JSON.",
+          "lineno": 17
+        }
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_extract"
+      ],
+      "side_effects": [
+        "prints to stdout",
+        "may read/write the project-model cache"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "developer_tools.introspection.generic_import_scan": {
+      "path": "developer_tools/introspection/generic_import_scan.py",
+      "purpose": "Regex import scan for JS/TS files: `import ... from '...'` and `require('...')`.",
+      "exports": [
+        {
+          "name": "analyzeGeneric",
+          "kind": "function",
+          "signature": "(root: str | Path, relpaths: list[str]) -> dict[str, ModuleInfo]",
+          "summary": "Analyze JS/TS relpaths under ``root``",
+          "lineno": 32
+        }
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/introspect/test_generic_import_scan.py"
+      ],
+      "callers": [
+        "developer_tools.introspection.project_extract"
+      ]
+    },
+    "developer_tools.introspection.project_boundaries": {
+      "path": "developer_tools/introspection/project_boundaries.py",
+      "purpose": "Ownership/interface map: packages, re-export facades, entrypoints, config surface.",
+      "exports": [
+        {
+          "name": "detectBoundaries",
+          "kind": "function",
+          "signature": "(root: str | Path, modules: list[ModuleInfo]) -> BoundaryMap",
+          "summary": "Boundary map for ``root`` given its scanned/analyzed modules.",
+          "lineno": 44
+        }
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/introspect/test_project_boundaries.py"
+      ],
+      "callers": [
+        "developer_tools.introspection.project_extract"
+      ]
+    },
+    "developer_tools.introspection.project_commands": {
+      "path": "developer_tools/introspection/project_commands.py",
+      "purpose": "Detect test/build/lint/typecheck commands from config files -- never guessed.",
+      "exports": [
+        {
+          "name": "detectCommands",
+          "kind": "function",
+          "signature": "(root: str | Path) -> list[DetectedCommand]",
+          "summary": "All commands provable from config files under ``root`` (root level only).",
+          "lineno": 42
+        }
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/introspect/test_project_commands.py"
+      ],
+      "callers": [
+        "developer_tools.introspection.project_extract"
+      ]
+    },
+    "developer_tools.introspection.project_extract": {
+      "path": "developer_tools/introspection/project_extract.py",
+      "purpose": "Facade: build a full ProjectModel for any root + render an LLM prompt digest.",
+      "exports": [
+        {
+          "name": "extractProject",
+          "kind": "function",
+          "signature": "(root: str | Path, *, max_files: int=4000, use_cache: bool=True) -> ProjectModel",
+          "summary": "Extract (or load from cache) the full typed model of ``root``.",
+          "lineno": 47
+        },
+        {
+          "name": "contextForPrompt",
+          "kind": "function",
+          "signature": "(model: ProjectModel, *, budget_chars: int=4000) -> str",
+          "summary": "LLM-ready sectioned digest of the model, hard-truncated at ``budget_chars``.",
+          "lineno": 175
+        }
+      ],
+      "depends_on": [
+        "config",
+        "developer_tools.introspection.generic_import_scan",
+        "developer_tools.introspection.project_boundaries",
+        "developer_tools.introspection.project_commands",
+        "developer_tools.introspection.project_model",
+        "developer_tools.introspection.project_scanner",
+        "developer_tools.introspection.python_import_graph"
+      ],
+      "side_effects": [
+        "reads/writes JSON cache files under state/project_models/ (when 9to5"
+      ],
+      "test": [
+        "tests/introspect/test_project_extract.py"
+      ],
+      "callers": [
+        "developer_tools.exploration.__main__",
+        "developer_tools.introspection",
+        "developer_tools.introspection.__main__"
+      ]
+    },
+    "developer_tools.introspection.project_model": {
+      "path": "developer_tools/introspection/project_model.py",
+      "purpose": "Typed, JSON-round-trippable project model shared by every introspect analyzer.",
+      "exports": [
+        {
+          "name": "ModuleInfo",
+          "kind": "class",
+          "signature": "",
+          "summary": "One source file: POSIX relpath id + language + analysis results.",
+          "lineno": 31
+        },
+        {
+          "name": "DetectedCommand",
+          "kind": "class",
+          "signature": "",
+          "summary": "A test/build/lint/typecheck command with the config file that proved it.",
+          "lineno": 44
+        },
+        {
+          "name": "BoundaryMap",
+          "kind": "class",
+          "signature": "",
+          "summary": "Ownership/interface map: packages, re-export facades, entrypoints, config surface.",
+          "lineno": 53
+        },
+        {
+          "name": "ProjectModel",
+          "kind": "class",
+          "signature": "",
+          "summary": "Full typed model of one project root",
+          "lineno": 63
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/introspect/test_project_model.py"
+      ],
+      "callers": [
+        "developer_tools.exploration",
+        "developer_tools.exploration.approach_gen",
+        "developer_tools.exploration.approach_tradeoffs",
+        "developer_tools.introspection",
+        "developer_tools.introspection.generic_import_scan",
+        "developer_tools.introspection.project_boundaries",
+        "developer_tools.introspection.project_commands",
+        "developer_tools.introspection.project_extract",
+        "developer_tools.introspection.project_scanner",
+        "developer_tools.introspection.python_import_graph",
+        "developer_tools.refactoring.change_impact",
+        "developer_tools.refactoring.cycle_detect"
+      ]
+    },
+    "developer_tools.introspection.project_scanner": {
+      "path": "developer_tools/introspection/project_scanner.py",
+      "purpose": "Deterministic file-tree scan: classify source files into ModuleInfo skeletons.",
+      "exports": [
+        {
+          "name": "gitignoreExcludes",
+          "kind": "function",
+          "signature": "(root_path: Path) -> tuple[frozenset[str], frozenset[str]]",
+          "summary": "(dir names, dir relpaths) to prune, parsed from the root ``.gitignore``.",
+          "lineno": 77
+        },
+        {
+          "name": "pruneDirnames",
+          "kind": "function",
+          "signature": "(rel_dir: str, dirnames: list[str], ig_names: frozenset[str], ig_rels: frozenset[str]) -> list[str]",
+          "summary": "Sorted dirnames minus EXCLUDE_DIRS and gitignore-derived exclusions.",
+          "lineno": 101
+        },
+        {
+          "name": "scanProject",
+          "kind": "function",
+          "signature": "(root: str | Path, *, max_files: int=4000) -> list[ModuleInfo]",
+          "summary": "Scan ``root`` into sorted ModuleInfo skeletons, at most ``max_files`` entries.",
+          "lineno": 111
+        }
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/introspect/test_project_scanner.py"
+      ],
+      "callers": [
+        "developer_tools.introspection.project_extract",
+        "developer_tools.refactoring.symbol_usages"
+      ]
+    },
+    "developer_tools.introspection.project_test_map": {
+      "path": "developer_tools/introspection/project_test_map.py",
+      "purpose": "Convention-based file->test mapping for any root (no manual map required).",
+      "exports": [
+        {
+          "name": "mapFileToTests",
+          "kind": "function",
+          "signature": "(root: str | Path, relpath: str, test_files: list[str], overrides: dict[str, list[str]] | None=None) -> list[str]",
+          "summary": "Tests covering ``relpath``: overrides -> exact -> prefix -> glob -> JS sibling -> [].",
+          "lineno": 29
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/introspect/test_project_test_map.py"
+      ],
+      "callers": [
+        "developer_tools.refactoring.change_impact"
+      ]
+    },
+    "developer_tools.introspection.python_import_graph": {
+      "path": "developer_tools/introspection/python_import_graph.py",
+      "purpose": "AST analysis for Python modules: exports, first-party import edges, side effects.",
+      "exports": [
+        {
+          "name": "analyzePython",
+          "kind": "function",
+          "signature": "(root: str | Path, relpaths: list[str]) -> dict[str, ModuleInfo]",
+          "summary": "Analyze the given ``.py`` relpaths under ``root`` into full ModuleInfos.",
+          "lineno": 28
+        }
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/introspect/test_python_import_graph.py"
+      ],
+      "callers": [
+        "developer_tools.introspection.project_extract",
+        "developer_tools.refactoring.change_impact"
+      ]
+    },
+    "developer_tools.refactoring": {
+      "path": "developer_tools/refactoring/__init__.py",
+      "purpose": "refactor -- cycle detection, impact prediction, atomic transactions (stdlib leaf).",
+      "exports": [],
+      "depends_on": [
+        "developer_tools.refactoring.change_impact",
+        "developer_tools.refactoring.cycle_detect",
+        "developer_tools.refactoring.refactor_edits",
+        "developer_tools.refactoring.refactor_transaction",
+        "developer_tools.refactoring.symbol_usages"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [],
+      "callers": [
+        "scripts.poc_any_project"
+      ]
+    },
+    "developer_tools.refactoring.__main__": {
+      "path": "developer_tools/refactoring/__main__.py",
+      "purpose": "CLI: ``python -m refactor check <root>`` -- import-cycle report, exit 1 on cycles.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "Report modules + import cycles for a root",
+          "lineno": 19
+        }
+      ],
+      "depends_on": [
+        "developer_tools.introspection",
+        "developer_tools.refactoring.cycle_detect"
+      ],
+      "side_effects": [
+        "prints to stdout"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "developer_tools.refactoring.change_impact": {
+      "path": "developer_tools/refactoring/change_impact.py",
+      "purpose": "Pure breaking-change prediction for a planned edit set -- no disk writes.",
+      "exports": [
+        {
+          "name": "ImpactReport",
+          "kind": "class",
+          "signature": "",
+          "summary": "Prediction of what a planned edit set breaks (pure, computed pre-apply).",
+          "lineno": 34
+        },
+        {
+          "name": "predictImpact",
+          "kind": "function",
+          "signature": "(model: ProjectModel, edits: list) -> ImpactReport",
+          "summary": "Predict orphaned usages, new import cycles, and affected tests for ``edits``.",
+          "lineno": 44
+        }
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_model",
+        "developer_tools.introspection.project_test_map",
+        "developer_tools.introspection.python_import_graph",
+        "developer_tools.refactoring.cycle_detect",
+        "developer_tools.refactoring.refactor_edits",
+        "developer_tools.refactoring.symbol_usages"
+      ],
+      "side_effects": [
+        "creates and removes a scratch temp dir during analysis"
+      ],
+      "test": [
+        "tests/refactor/test_change_impact.py"
+      ],
+      "callers": [
+        "developer_tools.refactoring",
+        "developer_tools.refactoring.refactor_transaction"
+      ]
+    },
+    "developer_tools.refactoring.cycle_detect": {
+      "path": "developer_tools/refactoring/cycle_detect.py",
+      "purpose": "Import-cycle detection + pre-flight cycle prediction (iterative Tarjan SCC).",
+      "exports": [
+        {
+          "name": "buildImportGraph",
+          "kind": "function",
+          "signature": "(model: ProjectModel) -> dict[str, set[str]]",
+          "summary": "Adjacency dict over module relpaths from the model's load-time import edges.",
+          "lineno": 22
+        },
+        {
+          "name": "findCycles",
+          "kind": "function",
+          "signature": "(graph: dict[str, set[str]]) -> list[list[str]]",
+          "summary": "All import cycles in ``graph``: SCCs of size >1 plus self-loops.",
+          "lineno": 31
+        },
+        {
+          "name": "wouldCreateCycle",
+          "kind": "function",
+          "signature": "(graph: dict[str, set[str]], added_edges: list[tuple[str, str]], removed_edges: list[tuple[str, str]] | tuple[tuple[str, str], ...]=()) -> list[list[str]]",
+          "summary": "Cycles that would exist AFTER the edge changes but do not exist now.",
+          "lineno": 48
+        }
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_model"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/refactor/test_cycle_detect.py"
+      ],
+      "callers": [
+        "developer_tools.refactoring",
+        "developer_tools.refactoring.__main__",
+        "developer_tools.refactoring.change_impact",
+        "developer_tools.refactoring.refactor_transaction"
+      ]
+    },
+    "developer_tools.refactoring.refactor_edits": {
+      "path": "developer_tools/refactoring/refactor_edits.py",
+      "purpose": "Edit primitives (frozen dataclasses) + fail-closed path validation.",
+      "exports": [
+        {
+          "name": "WriteFile",
+          "kind": "class",
+          "signature": "",
+          "summary": "Create or overwrite ``path`` with ``content`` (UTF-8).",
+          "lineno": 28
+        },
+        {
+          "name": "ReplaceInFile",
+          "kind": "class",
+          "signature": "",
+          "summary": "Replace ``old`` with ``new`` in ``path``",
+          "lineno": 36
+        },
+        {
+          "name": "DeleteFile",
+          "kind": "class",
+          "signature": "",
+          "summary": "Delete ``path``.",
+          "lineno": 45
+        },
+        {
+          "name": "RenameFile",
+          "kind": "class",
+          "signature": "",
+          "summary": "Move ``path`` to ``new_path`` (content preserved byte-for-byte).",
+          "lineno": 52
+        },
+        {
+          "name": "editPaths",
+          "kind": "function",
+          "signature": "(edit) -> tuple[str, ...]",
+          "summary": "Every path the edit touches (both endpoints for RenameFile).",
+          "lineno": 64
+        },
+        {
+          "name": "validateEdit",
+          "kind": "function",
+          "signature": "(root: Path, edit) -> str | None",
+          "summary": "None when the edit is safe to consider, else a human-readable rejection.",
+          "lineno": 71
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/refactor/test_refactor_edits.py"
+      ],
+      "callers": [
+        "developer_tools.refactoring",
+        "developer_tools.refactoring.change_impact",
+        "developer_tools.refactoring.refactor_transaction"
+      ]
+    },
+    "developer_tools.refactoring.refactor_journal": {
+      "path": "developer_tools/refactoring/refactor_journal.py",
+      "purpose": "Crash journal for RefactorTransaction: spill snapshots to disk pre-write.",
+      "exports": [
+        {
+          "name": "writeJournal",
+          "kind": "function",
+          "signature": "(root: Path, snapshots: dict[str, object]) -> Path",
+          "summary": "Spill ``snapshots`` to a new ``refactor-tx-*`` temp dir",
+          "lineno": 34
+        },
+        {
+          "name": "loadJournal",
+          "kind": "function",
+          "signature": "(journal_dir: str | Path) -> tuple[Path, dict[str, object]]",
+          "summary": "(root, snapshots) parsed back from a journal dir's manifest.",
+          "lineno": 51
+        },
+        {
+          "name": "restoreSnapshots",
+          "kind": "function",
+          "signature": "(root: Path, snapshots: dict[str, object]) -> list[str]",
+          "summary": "Restore every snapshot byte-for-byte (MISSING => unlink)",
+          "lineno": 61
+        },
+        {
+          "name": "deleteJournal",
+          "kind": "function",
+          "signature": "(journal_dir: Path) -> None",
+          "summary": "Best-effort removal of a journal dir (no error when already gone).",
+          "lineno": 78
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "creates/deletes a temp journal dir",
+        "restoreSnapshots writes/unlinks"
+      ],
+      "test": [
+        "tests/refactor/test_refactor_hardening.py"
+      ],
+      "callers": [
+        "developer_tools.refactoring.refactor_transaction"
+      ]
+    },
+    "developer_tools.refactoring.refactor_transaction": {
+      "path": "developer_tools/refactoring/refactor_transaction.py",
+      "purpose": "Atomic multi-file refactor transaction: snapshot -> journal -> write -> gate -> rollback.",
+      "exports": [
+        {
+          "name": "RefactorResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "Outcome of one apply(): all-applied or nothing-applied, with the why.",
+          "lineno": 56
+        },
+        {
+          "name": "RefactorTransaction",
+          "kind": "class",
+          "signature": "",
+          "summary": "Collect edits against one root, preview their impact, apply atomically.",
+          "lineno": 65
+        },
+        {
+          "name": "recoverJournal",
+          "kind": "function",
+          "signature": "(journal_dir: str | Path) -> RefactorResult",
+          "summary": "Restore a crashed apply() from its on-disk journal",
+          "lineno": 311
+        }
+      ],
+      "depends_on": [
+        "developer_tools.introspection",
+        "developer_tools.refactoring.change_impact",
+        "developer_tools.refactoring.cycle_detect",
+        "developer_tools.refactoring.refactor_edits",
+        "developer_tools.refactoring.refactor_journal"
+      ],
+      "side_effects": [
+        "writes/renames/deletes files under the transaction root during apply",
+        ""
+      ],
+      "test": [
+        "tests/refactor/test_refactor_transaction.py"
+      ],
+      "callers": [
+        "developer_tools.refactoring"
+      ]
+    },
+    "developer_tools.refactoring.symbol_usages": {
+      "path": "developer_tools/refactoring/symbol_usages.py",
+      "purpose": "Cross-root symbol usage scan: every AST Name/Attribute/ImportFrom reference.",
+      "exports": [
+        {
+          "name": "Usage",
+          "kind": "class",
+          "signature": "",
+          "summary": "One reference to a symbol: POSIX relpath, 1-based line, reference kind.",
+          "lineno": 27
+        },
+        {
+          "name": "findUsages",
+          "kind": "function",
+          "signature": "(root: str | Path, symbol: str) -> list[Usage]",
+          "summary": "Every reference to ``symbol`` in .py files under ``root``, sorted.",
+          "lineno": 35
+        },
+        {
+          "name": "findUsagesMulti",
+          "kind": "function",
+          "signature": "(root: str | Path, symbols: set[str]) -> dict[str, list[Usage]]",
+          "summary": "Per-symbol usage lists for a whole symbol SET in one walk.",
+          "lineno": 46
+        }
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_scanner"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/refactor/test_symbol_usages.py"
+      ],
+      "callers": [
+        "developer_tools.refactoring",
+        "developer_tools.refactoring.change_impact"
       ]
     },
     "human_nature": {
@@ -3966,40 +4618,8 @@
       "test": [],
       "callers": []
     },
-    "human_nature.ab_harness": {
-      "path": "human_nature/ab_harness.py",
-      "purpose": "A/B validation harness — behaviour-coupling gate before any flag goes ON-by-default.",
-      "exports": [
-        {
-          "name": "record_run",
-          "kind": "function",
-          "signature": "(run_id: str, arm: str, metrics: dict[str, Any], *, db_path: Optional[Path]=None) -> None",
-          "summary": "Record a single run's metrics for the given experiment arm.",
-          "lineno": 79
-        },
-        {
-          "name": "compare",
-          "kind": "function",
-          "signature": "(*, db_path: Optional[Path]=None) -> dict[str, Any]",
-          "summary": "Aggregate per-arm averages and return the on-minus-off delta.",
-          "lineno": 118
-        }
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "side_effects": [
-        "creates/writes the ab_runs SQLite db at AB_HARNESS_DB_PATH (or db_path)"
-      ],
-      "test": [
-        "tests/human_nature/test_ab_harness.py"
-      ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.lifecycle"
-      ]
-    },
-    "human_nature.affect_manifold": {
-      "path": "human_nature/affect_manifold.py",
+    "human_nature.faculties.affect.affect_manifold": {
+      "path": "human_nature/faculties/affect/affect_manifold.py",
       "purpose": "Affect manifold — the continuous 9-axis affect substrate (state-space model).",
       "exports": [
         {
@@ -4031,12 +4651,10 @@
       "test": [
         "tests/human_nature/test_affect_manifold.py"
       ],
-      "callers": [
-        "human_nature.psyche_runtime"
-      ]
+      "callers": []
     },
-    "human_nature.appraisal": {
-      "path": "human_nature/appraisal.py",
+    "human_nature.faculties.affect.appraisal": {
+      "path": "human_nature/faculties/affect/appraisal.py",
       "purpose": "Appraisal engine — Scherer/OCC appraisal variables → PAD affect coordinate.",
       "exports": [
         {
@@ -4061,34 +4679,119 @@
       "test": [
         "tests/human_nature/test_appraisal.py"
       ],
-      "callers": [
-        "human_nature.integration"
-      ]
+      "callers": []
     },
-    "human_nature.attention_schema": {
-      "path": "human_nature/attention_schema.py",
-      "purpose": "Attention Schema — the system's model of its own attention (AST; Graziano).",
+    "human_nature.faculties.affect.emotions": {
+      "path": "human_nature/faculties/affect/emotions.py",
+      "purpose": "Emotions faculty — affect → behavior/comms coupling (F8 mandate) and regulation.",
       "exports": [
         {
-          "name": "AttentionSchema",
-          "kind": "class",
-          "signature": "",
-          "summary": "Model of the system's own attention.",
-          "lineno": 37
+          "name": "couple",
+          "kind": "function",
+          "signature": "(emotion_label: str, state: dict[str, Any], *, behavior_enabled: Optional[bool]=None) -> dict[str, Any]",
+          "summary": "Map an emotion label to a behavior intent and functional comms string.",
+          "lineno": 45
+        },
+        {
+          "name": "bias_appraisal",
+          "kind": "function",
+          "signature": "(pad: dict[str, Any], morale: float) -> dict[str, Any]",
+          "summary": "Apply mood-congruent bias to an ambiguous PAD coordinate.",
+          "lineno": 73
+        },
+        {
+          "name": "regulate",
+          "kind": "function",
+          "signature": "(pad: dict[str, Any], *, decay: float=0.7) -> dict[str, Any]",
+          "summary": "Homeostatic decay of all PAD dimensions toward the zero setpoint.",
+          "lineno": 100
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_emotions.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.affect.mood": {
+      "path": "human_nature/faculties/affect/mood.py",
+      "purpose": "Mood — the slow, persistent affective homeostat (long-horizon, cross-run).",
+      "exports": [
+        {
+          "name": "new_mood",
+          "kind": "function",
+          "signature": "() -> dict[str, float]",
+          "summary": "",
+          "lineno": 31
+        },
+        {
+          "name": "blend_outcome",
+          "kind": "function",
+          "signature": "(mood: dict[str, Any], run_valence: float, run_arousal: float, weight: float=0.3) -> dict[str, float]",
+          "summary": "Exponential moving average of `mood` toward this run's outcome signal.",
+          "lineno": 35
+        },
+        {
+          "name": "decay",
+          "kind": "function",
+          "signature": "(mood: dict[str, Any], setpoint: dict[str, Any], rate: float) -> dict[str, float]",
+          "summary": "Move `mood` toward `setpoint` by `rate` (0=no change, 1=snap to setpoint).",
+          "lineno": 53
+        },
+        {
+          "name": "congruent_bias",
+          "kind": "function",
+          "signature": "(valence: float, mood: dict[str, Any], strength: float=0.5) -> float",
+          "summary": "Apply mood-congruent bias to an ambiguous input valence.",
+          "lineno": 72
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_mood.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.affect.prototypes": {
+      "path": "human_nature/faculties/affect/prototypes.py",
+      "purpose": "Prototype projection — continuous affect manifold → discrete emotion labels.",
+      "exports": [
+        {
+          "name": "mixture",
+          "kind": "function",
+          "signature": "(a: dict) -> dict[str, float]",
+          "summary": "RBF activation per prototype, normalized so the values sum to 1.0.",
+          "lineno": 79
+        },
+        {
+          "name": "dominant",
+          "kind": "function",
+          "signature": "(a: dict, prev: str | None=None, theta_on: float=0.5, theta_off: float=0.35) -> str",
+          "summary": "Dominant emotion label for manifold ``a`` with flicker-resistant hysteresis.",
+          "lineno": 96
         }
       ],
       "depends_on": [],
       "side_effects": [
-        "none (pure",
-        "mutates own internal state only)"
+        "none (pure)"
       ],
       "test": [
-        "tests/human_nature/test_attention_schema.py"
+        "tests/human_nature/test_prototypes.py"
       ],
       "callers": []
     },
-    "human_nature.authority": {
-      "path": "human_nature/authority.py",
+    "human_nature.faculties.governance.authority": {
+      "path": "human_nature/faculties/governance/authority.py",
       "purpose": "Earned control-authority ladder (5-tier extension of F6 autonomy).",
       "exports": [
         {
@@ -4129,12 +4832,10 @@
       "test": [
         "tests/human_nature/test_authority.py"
       ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.authority_gate"
-      ]
+      "callers": []
     },
-    "human_nature.autonomy": {
-      "path": "human_nature/autonomy.py",
+    "human_nature.faculties.governance.autonomy": {
+      "path": "human_nature/faculties/governance/autonomy.py",
       "purpose": "Earned-autonomy dynamic trust contract (F6).",
       "exports": [
         {
@@ -4168,8 +4869,186 @@
       ],
       "callers": []
     },
-    "human_nature.character_vector": {
-      "path": "human_nature/character_vector.py",
+    "human_nature.faculties.governance.conflict": {
+      "path": "human_nature/faculties/governance/conflict.py",
+      "purpose": "Conflict — internal DISSONANCE scoring and resolution routing.",
+      "exports": [
+        {
+          "name": "dissonance",
+          "kind": "function",
+          "signature": "(opinion: float, intuition: float, instinct: float, self_model_calibration: float) -> float",
+          "summary": "",
+          "lineno": 27
+        },
+        {
+          "name": "route",
+          "kind": "function",
+          "signature": "(dissonance_level: float, budget: dict) -> str",
+          "summary": "",
+          "lineno": 39
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure functions)"
+      ],
+      "test": [
+        "tests/human_nature/test_conflict.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.governance.conviction": {
+      "path": "human_nature/faculties/governance/conviction.py",
+      "purpose": "Conviction Engine — the single source of every \"earned\" signal.",
+      "exports": [
+        {
+          "name": "recalibrate",
+          "kind": "function",
+          "signature": "(p: float, temperature: float=2.5) -> float",
+          "summary": "",
+          "lineno": 26
+        },
+        {
+          "name": "track_weight",
+          "kind": "function",
+          "signature": "(track: dict[str, Any]) -> float",
+          "summary": "",
+          "lineno": 34
+        },
+        {
+          "name": "compute_conviction",
+          "kind": "function",
+          "signature": "(momentary: float, track: dict[str, Any], *, recal: bool=True) -> float",
+          "summary": "",
+          "lineno": 40
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_conviction.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.governance.drift": {
+      "path": "human_nature/faculties/governance/drift.py",
+      "purpose": "Drift monitor — measures expressed persona intensity vs the charter target.",
+      "exports": [
+        {
+          "name": "measure_drift",
+          "kind": "function",
+          "signature": "(expressed: Sequence[float], target: float) -> float",
+          "summary": "",
+          "lineno": 21
+        },
+        {
+          "name": "has_drifted",
+          "kind": "function",
+          "signature": "(expressed: Sequence[float], target: float, threshold: float=0.3) -> bool",
+          "summary": "",
+          "lineno": 28
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_drift.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.governance.gating": {
+      "path": "human_nature/faculties/governance/gating.py",
+      "purpose": "PRISM gate — persona/affect expression is allowed on human-facing surfaces only.",
+      "exports": [
+        {
+          "name": "is_expression_allowed",
+          "kind": "function",
+          "signature": "(surface: str) -> bool",
+          "summary": "",
+          "lineno": 19
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_gating.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.governance.operator_authority": {
+      "path": "human_nature/faculties/governance/operator_authority.py",
+      "purpose": "Operator / safety / verifier-invariance authority caps feeding authority.resolve.",
+      "exports": [
+        {
+          "name": "domain_ceiling",
+          "kind": "function",
+          "signature": "(domain: str) -> str",
+          "summary": "Return the structural authority ceiling for an opinion *domain*.",
+          "lineno": 74
+        },
+        {
+          "name": "operator_ceiling",
+          "kind": "function",
+          "signature": "(faculty: str, domain: str, charter: dict | None=None) -> str",
+          "summary": "Return the constitutional ceiling the operator grants (faculty, domain).",
+          "lineno": 82
+        },
+        {
+          "name": "safety_ceiling",
+          "kind": "function",
+          "signature": "(domain: str) -> str",
+          "summary": "Return the hard safety ceiling for *domain*.",
+          "lineno": 104
+        },
+        {
+          "name": "verifier_invariance_ceiling",
+          "kind": "function",
+          "signature": "(action: str) -> str",
+          "summary": "Return the ceiling that keeps the verifier verdict untouchable.",
+          "lineno": 117
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_operator_authority.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.identity.attention_schema": {
+      "path": "human_nature/faculties/identity/attention_schema.py",
+      "purpose": "Attention Schema — the system's model of its own attention (AST; Graziano).",
+      "exports": [
+        {
+          "name": "AttentionSchema",
+          "kind": "class",
+          "signature": "",
+          "summary": "Model of the system's own attention.",
+          "lineno": 37
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure",
+        "mutates own internal state only)"
+      ],
+      "test": [
+        "tests/human_nature/test_attention_schema.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.identity.character_vector": {
+      "path": "human_nature/faculties/identity/character_vector.py",
       "purpose": "TARS dials — versioned, inspectable, propose-not-apply character vector (F6).",
       "exports": [
         {
@@ -4209,13 +5088,10 @@
       "test": [
         "tests/human_nature/test_character_vector.py"
       ],
-      "callers": [
-        "human_nature.psyche_commands",
-        "notifications.psyche_cog"
-      ]
+      "callers": []
     },
-    "human_nature.charter": {
-      "path": "human_nature/charter.py",
+    "human_nature.faculties.identity.charter": {
+      "path": "human_nature/faculties/identity/charter.py",
       "purpose": "Living Constitution — versioned, human-gated charter (F1, F6).",
       "exports": [
         {
@@ -4255,44 +5131,286 @@
       "test": [
         "tests/human_nature/test_charter.py"
       ],
-      "callers": [
-        "human_nature.consolidation",
-        "human_nature.psyche_commands",
-        "notifications.psyche_cog"
-      ]
+      "callers": []
     },
-    "human_nature.conflict": {
-      "path": "human_nature/conflict.py",
-      "purpose": "Conflict — internal DISSONANCE scoring and resolution routing.",
+    "human_nature.faculties.identity.continuity": {
+      "path": "human_nature/faculties/identity/continuity.py",
+      "purpose": "Diachronic narrative self — letters to my future self (inspectable artifacts).",
       "exports": [
         {
-          "name": "dissonance",
+          "name": "write_letter",
           "kind": "function",
-          "signature": "(opinion: float, intuition: float, instinct: float, self_model_calibration: float) -> float",
-          "summary": "",
-          "lineno": 27
+          "signature": "(task_id: str, body_state: dict[str, Any], *, letters_dir: Optional[Any]=None, stamp: Optional[str]=None) -> dict[str, Any]",
+          "summary": "Compose and save a letter to the future self for *task_id*.",
+          "lineno": 107
         },
         {
-          "name": "route",
+          "name": "read_letters",
           "kind": "function",
-          "signature": "(dissonance_level: float, budget: dict) -> str",
-          "summary": "",
-          "lineno": 39
+          "signature": "(task_id: str, *, letters_dir: Optional[Any]=None) -> list[str]",
+          "summary": "Read all letters for *task_id*, in filename-sorted (chronological) order.",
+          "lineno": 141
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "writes markdown files under STATE_DIR/task_id/letters/ (or letters_dir)"
+      ],
+      "test": [
+        "tests/human_nature/test_continuity.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.identity.personality": {
+      "path": "human_nature/faculties/identity/personality.py",
+      "purpose": "PERSONALITY — versioned trait vector wrapping character_vector, and its setpoints.",
+      "exports": [
+        {
+          "name": "new_personality",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Return a fresh personality vector with all traits at the neutral midpoint.",
+          "lineno": 57
+        },
+        {
+          "name": "drive_setpoints",
+          "kind": "function",
+          "signature": "(p: dict[str, Any]) -> dict[str, float]",
+          "summary": "Derive the 8 drive setpoints from ``p``'s traits",
+          "lineno": 70
+        },
+        {
+          "name": "mood_setpoint",
+          "kind": "function",
+          "signature": "(p: dict[str, Any]) -> dict[str, float]",
+          "summary": "Derive a baseline {valence, arousal} mood setpoint from ``p``'s traits.",
+          "lineno": 91
+        },
+        {
+          "name": "risk_band",
+          "kind": "function",
+          "signature": "(p: dict[str, Any]) -> float",
+          "summary": "Derive a [0,1] risk-tolerance band: rises with (1-caution) and openness,",
+          "lineno": 104
+        },
+        {
+          "name": "propose_trait",
+          "kind": "function",
+          "signature": "(p: dict[str, Any], trait: str, value: float) -> dict[str, Any]",
+          "summary": "System action — return a proposal dict",
+          "lineno": 115
+        },
+        {
+          "name": "ratify",
+          "kind": "function",
+          "signature": "(p: dict[str, Any], proposal: dict[str, Any]) -> dict[str, Any]",
+          "summary": "Apply a proposal (clamped) + bump version",
+          "lineno": 130
         }
       ],
       "depends_on": [],
       "side_effects": [
-        "none (pure functions)"
+        "none (pure",
+        "does not mutate inputs)"
       ],
       "test": [
-        "tests/human_nature/test_conflict.py"
+        "tests/human_nature/test_personality.py"
       ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.society"
-      ]
+      "callers": []
     },
-    "human_nature.consolidation": {
-      "path": "human_nature/consolidation.py",
+    "human_nature.faculties.identity.self_model": {
+      "path": "human_nature/faculties/identity/self_model.py",
+      "purpose": "Self-model — metacognitive supervisor (F11 / F3 + honest phenomenology).",
+      "exports": [
+        {
+          "name": "competence_report",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], domain: str) -> dict[str, Any]",
+          "summary": "Calibrated competence with epistemic interval and verdict.",
+          "lineno": 42
+        },
+        {
+          "name": "johari",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], ood: bool, surprise: float) -> dict[str, Any]",
+          "summary": "Johari-window blind-spot analysis.",
+          "lineno": 67
+        },
+        {
+          "name": "dissonance",
+          "kind": "function",
+          "signature": "(felt: float, demonstrated: float, self_report: float, observed: float) -> dict[str, Any]",
+          "summary": "Two dissonance channels (spec § self-awareness, F3).",
+          "lineno": 96
+        },
+        {
+          "name": "honest_phenomenology",
+          "kind": "function",
+          "signature": "() -> str",
+          "summary": "Return the fixed, honest access-vs-phenomenal paragraph.",
+          "lineno": 136
+        }
+      ],
+      "depends_on": [
+        "human_nature.self_state"
+      ],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_self_model.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.identity.self_state": {
+      "path": "human_nature/faculties/identity/self_state.py",
+      "purpose": "SelfState — the unified interior of the human-nature layer (a serializable dict).",
+      "exports": [
+        {
+          "name": "new_self_state",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "",
+          "lineno": 30
+        },
+        {
+          "name": "migrate",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any]) -> dict[str, Any]",
+          "summary": "",
+          "lineno": 47
+        },
+        {
+          "name": "get_competence",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], domain: str) -> dict[str, Any]",
+          "summary": "",
+          "lineno": 56
+        },
+        {
+          "name": "observe_competence",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], domain: str, success: bool) -> None",
+          "summary": "",
+          "lineno": 60
+        },
+        {
+          "name": "set_affect",
+          "kind": "function",
+          "signature": "(ss: dict[str, Any], valence: float, arousal: float, control: float) -> None",
+          "summary": "",
+          "lineno": 67
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "mutates the passed-in dict in place"
+      ],
+      "test": [
+        "tests/human_nature/test_self_state.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.identity.user_model": {
+      "path": "human_nature/faculties/identity/user_model.py",
+      "purpose": "Theory-of-Mind of the user — the Dyad model (service-only, manipulation-guarded).",
+      "exports": [
+        {
+          "name": "new_user_model",
+          "kind": "function",
+          "signature": "() -> dict[str, Any]",
+          "summary": "Return a fresh user model with neutral defaults.",
+          "lineno": 54
+        },
+        {
+          "name": "update",
+          "kind": "function",
+          "signature": "(model: dict[str, Any], observation: dict[str, Any]) -> dict[str, Any]",
+          "summary": "Fold one observation into a NEW model dict (input is never mutated).",
+          "lineno": 69
+        },
+        {
+          "name": "snapshot",
+          "kind": "function",
+          "signature": "(model: dict[str, Any]) -> dict[str, Any]",
+          "summary": "Return a fully inspectable, deep-copied view of the user model.",
+          "lineno": 107
+        }
+      ],
+      "depends_on": [
+        "memory.user_prefs"
+      ],
+      "side_effects": [
+        "none in-module (persistence delegated to _prefs when available)"
+      ],
+      "test": [
+        "tests/human_nature/test_user_model.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.identity.workspace": {
+      "path": "human_nature/faculties/identity/workspace.py",
+      "purpose": "Global Workspace — the GWT competition/broadcast loop (Baars, Dehaene).",
+      "exports": [
+        {
+          "name": "Workspace",
+          "kind": "class",
+          "signature": "",
+          "summary": "Global Workspace: specialists compete, winner is broadcast.",
+          "lineno": 21
+        },
+        {
+          "name": "salience",
+          "kind": "function",
+          "signature": "(item: dict, weights: dict | None=None) -> float",
+          "summary": "Weighted sum over the 10 named salience terms",
+          "lineno": 82
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure",
+        "broadcast may call specialist.on_broadcast callbacks)"
+      ],
+      "test": [
+        "tests/human_nature/test_workspace.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.runtime.ab_harness": {
+      "path": "human_nature/faculties/runtime/ab_harness.py",
+      "purpose": "A/B validation harness — behaviour-coupling gate before any flag goes ON-by-default.",
+      "exports": [
+        {
+          "name": "record_run",
+          "kind": "function",
+          "signature": "(run_id: str, arm: str, metrics: dict[str, Any], *, db_path: Optional[Path]=None) -> None",
+          "summary": "Record a single run's metrics for the given experiment arm.",
+          "lineno": 79
+        },
+        {
+          "name": "compare",
+          "kind": "function",
+          "signature": "(*, db_path: Optional[Path]=None) -> dict[str, Any]",
+          "summary": "Aggregate per-arm averages and return the on-minus-off delta.",
+          "lineno": 118
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "creates/writes the ab_runs SQLite db at AB_HARNESS_DB_PATH (or db_path)"
+      ],
+      "test": [
+        "tests/human_nature/test_ab_harness.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.runtime.consolidation": {
+      "path": "human_nature/faculties/runtime/consolidation.py",
       "purpose": "Consolidation cycle — the \"sleep\" phase between runs (propose, never apply).",
       "exports": [
         {
@@ -4323,111 +5441,10 @@
       "test": [
         "tests/human_nature/test_consolidation.py"
       ],
-      "callers": [
-        "human_nature.integration"
-      ]
-    },
-    "human_nature.continuity": {
-      "path": "human_nature/continuity.py",
-      "purpose": "Diachronic narrative self — letters to my future self (inspectable artifacts).",
-      "exports": [
-        {
-          "name": "write_letter",
-          "kind": "function",
-          "signature": "(task_id: str, body_state: dict[str, Any], *, letters_dir: Optional[Any]=None, stamp: Optional[str]=None) -> dict[str, Any]",
-          "summary": "Compose and save a letter to the future self for *task_id*.",
-          "lineno": 107
-        },
-        {
-          "name": "read_letters",
-          "kind": "function",
-          "signature": "(task_id: str, *, letters_dir: Optional[Any]=None) -> list[str]",
-          "summary": "Read all letters for *task_id*, in filename-sorted (chronological) order.",
-          "lineno": 141
-        }
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "side_effects": [
-        "writes markdown files under STATE_DIR/task_id/letters/ (or letters_dir)"
-      ],
-      "test": [
-        "tests/human_nature/test_continuity.py"
-      ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.lifecycle"
-      ]
-    },
-    "human_nature.conviction": {
-      "path": "human_nature/conviction.py",
-      "purpose": "Conviction Engine — the single source of every \"earned\" signal.",
-      "exports": [
-        {
-          "name": "recalibrate",
-          "kind": "function",
-          "signature": "(p: float, temperature: float=2.5) -> float",
-          "summary": "",
-          "lineno": 26
-        },
-        {
-          "name": "track_weight",
-          "kind": "function",
-          "signature": "(track: dict[str, Any]) -> float",
-          "summary": "",
-          "lineno": 34
-        },
-        {
-          "name": "compute_conviction",
-          "kind": "function",
-          "signature": "(momentary: float, track: dict[str, Any], *, recal: bool=True) -> float",
-          "summary": "",
-          "lineno": 40
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "none (pure)"
-      ],
-      "test": [
-        "tests/human_nature/test_conviction.py"
-      ],
-      "callers": [
-        "human_nature.intuition",
-        "human_nature.momentary",
-        "platform_core.orchestration.human_nature_bridge.planning"
-      ]
-    },
-    "human_nature.drift": {
-      "path": "human_nature/drift.py",
-      "purpose": "Drift monitor — measures expressed persona intensity vs the charter target.",
-      "exports": [
-        {
-          "name": "measure_drift",
-          "kind": "function",
-          "signature": "(expressed: Sequence[float], target: float) -> float",
-          "summary": "",
-          "lineno": 21
-        },
-        {
-          "name": "has_drifted",
-          "kind": "function",
-          "signature": "(expressed: Sequence[float], target: float, threshold: float=0.3) -> bool",
-          "summary": "",
-          "lineno": 28
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "none (pure)"
-      ],
-      "test": [
-        "tests/human_nature/test_drift.py"
-      ],
       "callers": []
     },
-    "human_nature.drives": {
-      "path": "human_nature/drives.py",
+    "human_nature.faculties.runtime.drives": {
+      "path": "human_nature/faculties/runtime/drives.py",
       "purpose": "Drives — the 8-drive homeostatic core of the human-nature layer.",
       "exports": [
         {
@@ -4466,185 +5483,10 @@
       "test": [
         "tests/human_nature/test_drives.py"
       ],
-      "callers": [
-        "human_nature.psyche_runtime",
-        "platform_core.orchestration.human_nature_bridge.inventor"
-      ]
+      "callers": []
     },
-    "human_nature.emotions": {
-      "path": "human_nature/emotions.py",
-      "purpose": "Emotions faculty — affect → behavior/comms coupling (F8 mandate) and regulation.",
-      "exports": [
-        {
-          "name": "couple",
-          "kind": "function",
-          "signature": "(emotion_label: str, state: dict[str, Any], *, behavior_enabled: Optional[bool]=None) -> dict[str, Any]",
-          "summary": "Map an emotion label to a behavior intent and functional comms string.",
-          "lineno": 45
-        },
-        {
-          "name": "bias_appraisal",
-          "kind": "function",
-          "signature": "(pad: dict[str, Any], morale: float) -> dict[str, Any]",
-          "summary": "Apply mood-congruent bias to an ambiguous PAD coordinate.",
-          "lineno": 73
-        },
-        {
-          "name": "regulate",
-          "kind": "function",
-          "signature": "(pad: dict[str, Any], *, decay: float=0.7) -> dict[str, Any]",
-          "summary": "Homeostatic decay of all PAD dimensions toward the zero setpoint.",
-          "lineno": 100
-        }
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "side_effects": [
-        "none (pure)"
-      ],
-      "test": [
-        "tests/human_nature/test_emotions.py"
-      ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.affect"
-      ]
-    },
-    "human_nature.gating": {
-      "path": "human_nature/gating.py",
-      "purpose": "PRISM gate — persona/affect expression is allowed on human-facing surfaces only.",
-      "exports": [
-        {
-          "name": "is_expression_allowed",
-          "kind": "function",
-          "signature": "(surface: str) -> bool",
-          "summary": "",
-          "lineno": 19
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "none (pure)"
-      ],
-      "test": [
-        "tests/human_nature/test_gating.py"
-      ],
-      "callers": [
-        "human_nature.psyche_surface"
-      ]
-    },
-    "human_nature.instinct": {
-      "path": "human_nature/instinct.py",
-      "purpose": "Instinct faculty — ledger-grounded \"something feels off\" signal (Phase 3.4).",
-      "exports": [
-        {
-          "name": "maybe_flag",
-          "kind": "function",
-          "signature": "(state: dict[str, Any], reflections: list[dict], failure_modes: list[dict], *, chat: Optional[Callable]=None, db_path: Optional[Path]=None) -> Optional[str]",
-          "summary": "Fire the instinct check",
-          "lineno": 127
-        }
-      ],
-      "depends_on": [
-        "config",
-        "llm_io",
-        "memory.conviction_ledger",
-        "notifications.instinct"
-      ],
-      "side_effects": [
-        "mutates state[\"meta\"][\"instinct_flags\"]",
-        "writes conviction ledger"
-      ],
-      "test": [
-        "tests/notifications/test_instinct.py"
-      ],
-      "callers": [
-        "human_nature.integration"
-      ]
-    },
-    "human_nature.instinct_signal": {
-      "path": "human_nature/instinct_signal.py",
-      "purpose": "InstinctSignal — structured output of the streaming instinct engine.",
-      "exports": [
-        {
-          "name": "InstinctSignal",
-          "kind": "class",
-          "signature": "",
-          "summary": "One streaming-instinct-engine match, with confidence/severity and a recommendation.",
-          "lineno": 33
-        },
-        {
-          "name": "from_dict",
-          "kind": "function",
-          "signature": "(d: dict) -> 'InstinctSignal'",
-          "summary": "Reconstruct an InstinctSignal from its to_dict() output.",
-          "lineno": 69
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "none (pure)"
-      ],
-      "test": [
-        "tests/human_nature/test_instinct_signal.py"
-      ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.instinct"
-      ]
-    },
-    "human_nature.instinct_stream": {
-      "path": "human_nature/instinct_stream.py",
-      "purpose": "Instinct stream matcher — cheap multi-pattern failure-motif detection.",
-      "exports": [
-        {
-          "name": "build_matcher",
-          "kind": "function",
-          "signature": "(motifs: list[tuple[str, list[str]]]) -> dict",
-          "summary": "Build an Aho-Corasick automaton over the event-type alphabet.",
-          "lineno": 26
-        },
-        {
-          "name": "scan",
-          "kind": "function",
-          "signature": "(matcher: dict, seq: list[str]) -> list[dict]",
-          "summary": "Run the automaton",
-          "lineno": 65
-        },
-        {
-          "name": "match_prefix",
-          "kind": "function",
-          "signature": "(seq: list[str], motif: list[str]) -> float",
-          "summary": "Fraction of `motif` matched as a prefix aligned at seq's tail, in [0, 1].",
-          "lineno": 87
-        },
-        {
-          "name": "scan_prefixes",
-          "kind": "function",
-          "signature": "(matcher_motifs: list[tuple[str, list[str]]], seq: list[str], threshold: float) -> list[dict]",
-          "summary": "Report motifs whose tail prefix-score(seq) is in [threshold, 1.0).",
-          "lineno": 104
-        },
-        {
-          "name": "near_duplicate",
-          "kind": "function",
-          "signature": "(seq_a: list[str], seq_b: list[str]) -> float",
-          "summary": "LCS ratio similarity in [0, 1]: 2*LCS/(len_a+len_b)",
-          "lineno": 116
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "none (pure functions)"
-      ],
-      "test": [
-        "tests/human_nature/test_instinct_stream.py"
-      ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.instinct"
-      ]
-    },
-    "human_nature.integration": {
-      "path": "human_nature/integration.py",
+    "human_nature.faculties.runtime.integration": {
+      "path": "human_nature/faculties/runtime/integration.py",
       "purpose": "Integration hooks — flag-gated run-loop wiring for the human-nature layer.",
       "exports": [
         {
@@ -4706,337 +5548,10 @@
         "tests/slow/test_discovery_integration.py",
         "tests/slow/test_integration_loop.py"
       ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.execution",
-        "platform_core.orchestration.human_nature_bridge.lifecycle",
-        "platform_core.orchestration.human_nature_bridge.planning"
-      ]
-    },
-    "human_nature.intuition": {
-      "path": "human_nature/intuition.py",
-      "purpose": "Intuition faculty — System-1 pre-verbal confidence + dual-process routing.",
-      "exports": [
-        {
-          "name": "snap",
-          "kind": "function",
-          "signature": "(domain: str, signals: dict, *, chat: Optional[Callable]=None) -> dict",
-          "summary": "Fuse available signals into a pre-verbal confidence snapshot.",
-          "lineno": 56
-        },
-        {
-          "name": "route",
-          "kind": "function",
-          "signature": "(snap_result: dict, *, shortcut_enabled: Optional[bool]=None) -> str",
-          "summary": "Dual-process routing: return \"fast\" or \"deliberate\".",
-          "lineno": 73
-        }
-      ],
-      "depends_on": [
-        "config",
-        "human_nature.conviction"
-      ],
-      "side_effects": [
-        "none in current implementation (chat param reserved for future use)"
-      ],
-      "test": [
-        "tests/human_nature/test_intuition.py"
-      ],
-      "callers": [
-        "human_nature.integration"
-      ]
-    },
-    "human_nature.momentary": {
-      "path": "human_nature/momentary.py",
-      "purpose": "Momentary confidence providers for the human-nature Conviction Engine.",
-      "exports": [
-        {
-          "name": "verbalized_p_true",
-          "kind": "function",
-          "signature": "(statement: str, *, chat: Optional[Callable]=None) -> float",
-          "summary": "Ask HN_FAST_MODEL for P(True) of *statement*",
-          "lineno": 80
-        },
-        {
-          "name": "self_consistency",
-          "kind": "function",
-          "signature": "(sampler: Callable, n: int=5) -> float",
-          "summary": "Run *sampler* n times",
-          "lineno": 97
-        },
-        {
-          "name": "cross_cast_agreement",
-          "kind": "function",
-          "signature": "(votes: list) -> float",
-          "summary": "Fraction of *votes* equal to the modal vote",
-          "lineno": 110
-        }
-      ],
-      "depends_on": [
-        "config",
-        "human_nature.conviction",
-        "llm_io"
-      ],
-      "side_effects": [
-        "calls Ollama (HN_FAST_MODEL) when chat=None"
-      ],
-      "test": [
-        "tests/human_nature/test_momentary.py"
-      ],
       "callers": []
     },
-    "human_nature.mood": {
-      "path": "human_nature/mood.py",
-      "purpose": "Mood — the slow, persistent affective homeostat (long-horizon, cross-run).",
-      "exports": [
-        {
-          "name": "new_mood",
-          "kind": "function",
-          "signature": "() -> dict[str, float]",
-          "summary": "",
-          "lineno": 31
-        },
-        {
-          "name": "blend_outcome",
-          "kind": "function",
-          "signature": "(mood: dict[str, Any], run_valence: float, run_arousal: float, weight: float=0.3) -> dict[str, float]",
-          "summary": "Exponential moving average of `mood` toward this run's outcome signal.",
-          "lineno": 35
-        },
-        {
-          "name": "decay",
-          "kind": "function",
-          "signature": "(mood: dict[str, Any], setpoint: dict[str, Any], rate: float) -> dict[str, float]",
-          "summary": "Move `mood` toward `setpoint` by `rate` (0=no change, 1=snap to setpoint).",
-          "lineno": 53
-        },
-        {
-          "name": "congruent_bias",
-          "kind": "function",
-          "signature": "(valence: float, mood: dict[str, Any], strength: float=0.5) -> float",
-          "summary": "Apply mood-congruent bias to an ambiguous input valence.",
-          "lineno": 72
-        }
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "side_effects": [
-        "none (pure)"
-      ],
-      "test": [
-        "tests/human_nature/test_mood.py"
-      ],
-      "callers": [
-        "human_nature.psyche_runtime"
-      ]
-    },
-    "human_nature.motif_mining": {
-      "path": "human_nature/motif_mining.py",
-      "purpose": "Offline miner for recurring failure motifs and anomaly scoring.",
-      "exports": [
-        {
-          "name": "mine_frequent",
-          "kind": "function",
-          "signature": "(sequences: list[list[str]], min_support: int, min_len: int=2, max_len: int=5) -> list[dict]",
-          "summary": "Mine frequent contiguous subsequences across sequences.",
-          "lineno": 29
-        },
-        {
-          "name": "anomaly_score",
-          "kind": "function",
-          "signature": "(seq: list[str], success_seqs: list[list[str]]) -> float",
-          "summary": "Return [0, 1]: 1 - max LCS-ratio of seq against any success sequence.",
-          "lineno": 68
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "none (pure functions)"
-      ],
-      "test": [
-        "tests/human_nature/test_motif_mining.py"
-      ],
-      "callers": []
-    },
-    "human_nature.operator_authority": {
-      "path": "human_nature/operator_authority.py",
-      "purpose": "Operator / safety / verifier-invariance authority caps feeding authority.resolve.",
-      "exports": [
-        {
-          "name": "domain_ceiling",
-          "kind": "function",
-          "signature": "(domain: str) -> str",
-          "summary": "Return the structural authority ceiling for an opinion *domain*.",
-          "lineno": 74
-        },
-        {
-          "name": "operator_ceiling",
-          "kind": "function",
-          "signature": "(faculty: str, domain: str, charter: dict | None=None) -> str",
-          "summary": "Return the constitutional ceiling the operator grants (faculty, domain).",
-          "lineno": 82
-        },
-        {
-          "name": "safety_ceiling",
-          "kind": "function",
-          "signature": "(domain: str) -> str",
-          "summary": "Return the hard safety ceiling for *domain*.",
-          "lineno": 104
-        },
-        {
-          "name": "verifier_invariance_ceiling",
-          "kind": "function",
-          "signature": "(action: str) -> str",
-          "summary": "Return the ceiling that keeps the verifier verdict untouchable.",
-          "lineno": 117
-        }
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "side_effects": [
-        "none (pure)"
-      ],
-      "test": [
-        "tests/human_nature/test_operator_authority.py"
-      ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.authority_gate"
-      ]
-    },
-    "human_nature.opinions": {
-      "path": "human_nature/opinions.py",
-      "purpose": "Opinions faculty — tiered, domain-gated, conviction-gated opinion engine.",
-      "exports": [
-        {
-          "name": "Opinion",
-          "kind": "class",
-          "signature": "",
-          "summary": "A single tiered opinion with its domain and conviction score.",
-          "lineno": 71
-        },
-        {
-          "name": "tier",
-          "kind": "function",
-          "signature": "(conviction: float, domain: str) -> str",
-          "summary": "Return the effective tier for *conviction* in *domain*.",
-          "lineno": 78
-        },
-        {
-          "name": "rederive",
-          "kind": "function",
-          "signature": "(user_assertion: str, my_stance: str, evidence: str, *, chat: Optional[Callable]=None) -> dict",
-          "summary": "Neutral-judge re-derivation on pushback (F5).",
-          "lineno": 115
-        }
-      ],
-      "depends_on": [
-        "config",
-        "llm_io"
-      ],
-      "side_effects": [
-        "calls Ollama (HN_FAST_MODEL) when rederive chat=None"
-      ],
-      "test": [
-        "tests/human_nature/test_opinions.py"
-      ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.planning"
-      ]
-    },
-    "human_nature.personality": {
-      "path": "human_nature/personality.py",
-      "purpose": "PERSONALITY — versioned trait vector wrapping character_vector, and its setpoints.",
-      "exports": [
-        {
-          "name": "new_personality",
-          "kind": "function",
-          "signature": "() -> dict[str, Any]",
-          "summary": "Return a fresh personality vector with all traits at the neutral midpoint.",
-          "lineno": 57
-        },
-        {
-          "name": "drive_setpoints",
-          "kind": "function",
-          "signature": "(p: dict[str, Any]) -> dict[str, float]",
-          "summary": "Derive the 8 drive setpoints from ``p``'s traits",
-          "lineno": 70
-        },
-        {
-          "name": "mood_setpoint",
-          "kind": "function",
-          "signature": "(p: dict[str, Any]) -> dict[str, float]",
-          "summary": "Derive a baseline {valence, arousal} mood setpoint from ``p``'s traits.",
-          "lineno": 91
-        },
-        {
-          "name": "risk_band",
-          "kind": "function",
-          "signature": "(p: dict[str, Any]) -> float",
-          "summary": "Derive a [0,1] risk-tolerance band: rises with (1-caution) and openness,",
-          "lineno": 104
-        },
-        {
-          "name": "propose_trait",
-          "kind": "function",
-          "signature": "(p: dict[str, Any], trait: str, value: float) -> dict[str, Any]",
-          "summary": "System action — return a proposal dict",
-          "lineno": 115
-        },
-        {
-          "name": "ratify",
-          "kind": "function",
-          "signature": "(p: dict[str, Any], proposal: dict[str, Any]) -> dict[str, Any]",
-          "summary": "Apply a proposal (clamped) + bump version",
-          "lineno": 130
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "none (pure",
-        "does not mutate inputs)"
-      ],
-      "test": [
-        "tests/human_nature/test_personality.py"
-      ],
-      "callers": [
-        "human_nature.psyche_runtime",
-        "platform_core.orchestration.human_nature_bridge.inventor"
-      ]
-    },
-    "human_nature.prototypes": {
-      "path": "human_nature/prototypes.py",
-      "purpose": "Prototype projection — continuous affect manifold → discrete emotion labels.",
-      "exports": [
-        {
-          "name": "mixture",
-          "kind": "function",
-          "signature": "(a: dict) -> dict[str, float]",
-          "summary": "RBF activation per prototype, normalized so the values sum to 1.0.",
-          "lineno": 79
-        },
-        {
-          "name": "dominant",
-          "kind": "function",
-          "signature": "(a: dict, prev: str | None=None, theta_on: float=0.5, theta_off: float=0.35) -> str",
-          "summary": "Dominant emotion label for manifold ``a`` with flicker-resistant hysteresis.",
-          "lineno": 96
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "none (pure)"
-      ],
-      "test": [
-        "tests/human_nature/test_prototypes.py"
-      ],
-      "callers": [
-        "human_nature.psyche_runtime",
-        "platform_core.orchestration.human_nature_bridge.affect"
-      ]
-    },
-    "human_nature.psyche_commands": {
-      "path": "human_nature/psyche_commands.py",
+    "human_nature.faculties.runtime.psyche_commands": {
+      "path": "human_nature/faculties/runtime/psyche_commands.py",
       "purpose": "Psyche Discord command routers — pure functions, no discord.py import.",
       "exports": [
         {
@@ -5086,12 +5601,10 @@
       "test": [
         "tests/human_nature/test_psyche_commands.py"
       ],
-      "callers": [
-        "notifications.psyche_cog"
-      ]
+      "callers": []
     },
-    "human_nature.psyche_runtime": {
-      "path": "human_nature/psyche_runtime.py",
+    "human_nature.faculties.runtime.psyche_runtime": {
+      "path": "human_nature/faculties/runtime/psyche_runtime.py",
       "purpose": "Psyche runtime — the per-tick glue that makes the interior LIVE.",
       "exports": [
         {
@@ -5130,12 +5643,10 @@
       "test": [
         "tests/human_nature/test_psyche_runtime.py"
       ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.lifecycle"
-      ]
+      "callers": []
     },
-    "human_nature.psyche_store": {
-      "path": "human_nature/psyche_store.py",
+    "human_nature.faculties.runtime.psyche_store": {
+      "path": "human_nature/faculties/runtime/psyche_store.py",
       "purpose": "Psyche Store — durable cross-run persistence for mood/drives/personality/scars.",
       "exports": [
         {
@@ -5183,12 +5694,10 @@
       "test": [
         "tests/human_nature/test_psyche_store.py"
       ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.lifecycle"
-      ]
+      "callers": []
     },
-    "human_nature.psyche_surface": {
-      "path": "human_nature/psyche_surface.py",
+    "human_nature.faculties.runtime.psyche_surface": {
+      "path": "human_nature/faculties/runtime/psyche_surface.py",
       "purpose": "Psyche surface — legible interior readouts for Discord and web (PRISM-gated).",
       "exports": [
         {
@@ -5217,8 +5726,8 @@
       ],
       "callers": []
     },
-    "human_nature.run_events": {
-      "path": "human_nature/run_events.py",
+    "human_nature.faculties.runtime.run_events": {
+      "path": "human_nature/faculties/runtime/run_events.py",
       "purpose": "Run event log — a discrete event stream over one 9to5 run.",
       "exports": [
         {
@@ -5250,13 +5759,250 @@
       "test": [
         "tests/human_nature/test_run_events.py"
       ],
-      "callers": [
-        "platform_core.orchestration.execute_attempt_mixin",
-        "platform_core.orchestration.human_nature_bridge.instinct"
-      ]
+      "callers": []
     },
-    "human_nature.scar_graph": {
-      "path": "human_nature/scar_graph.py",
+    "human_nature.faculties.signals.instinct": {
+      "path": "human_nature/faculties/signals/instinct.py",
+      "purpose": "Instinct faculty — ledger-grounded \"something feels off\" signal (Phase 3.4).",
+      "exports": [
+        {
+          "name": "maybe_flag",
+          "kind": "function",
+          "signature": "(state: dict[str, Any], reflections: list[dict], failure_modes: list[dict], *, chat: Optional[Callable]=None, db_path: Optional[Path]=None) -> Optional[str]",
+          "summary": "Fire the instinct check",
+          "lineno": 127
+        }
+      ],
+      "depends_on": [
+        "config",
+        "llm_io",
+        "memory.conviction_ledger",
+        "notifications.instinct"
+      ],
+      "side_effects": [
+        "mutates state[\"meta\"][\"instinct_flags\"]",
+        "writes conviction ledger"
+      ],
+      "test": [
+        "tests/notifications/test_instinct.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.signals.instinct_signal": {
+      "path": "human_nature/faculties/signals/instinct_signal.py",
+      "purpose": "InstinctSignal — structured output of the streaming instinct engine.",
+      "exports": [
+        {
+          "name": "InstinctSignal",
+          "kind": "class",
+          "signature": "",
+          "summary": "One streaming-instinct-engine match, with confidence/severity and a recommendation.",
+          "lineno": 33
+        },
+        {
+          "name": "from_dict",
+          "kind": "function",
+          "signature": "(d: dict) -> 'InstinctSignal'",
+          "summary": "Reconstruct an InstinctSignal from its to_dict() output.",
+          "lineno": 69
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure)"
+      ],
+      "test": [
+        "tests/human_nature/test_instinct_signal.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.signals.instinct_stream": {
+      "path": "human_nature/faculties/signals/instinct_stream.py",
+      "purpose": "Instinct stream matcher — cheap multi-pattern failure-motif detection.",
+      "exports": [
+        {
+          "name": "build_matcher",
+          "kind": "function",
+          "signature": "(motifs: list[tuple[str, list[str]]]) -> dict",
+          "summary": "Build an Aho-Corasick automaton over the event-type alphabet.",
+          "lineno": 26
+        },
+        {
+          "name": "scan",
+          "kind": "function",
+          "signature": "(matcher: dict, seq: list[str]) -> list[dict]",
+          "summary": "Run the automaton",
+          "lineno": 65
+        },
+        {
+          "name": "match_prefix",
+          "kind": "function",
+          "signature": "(seq: list[str], motif: list[str]) -> float",
+          "summary": "Fraction of `motif` matched as a prefix aligned at seq's tail, in [0, 1].",
+          "lineno": 87
+        },
+        {
+          "name": "scan_prefixes",
+          "kind": "function",
+          "signature": "(matcher_motifs: list[tuple[str, list[str]]], seq: list[str], threshold: float) -> list[dict]",
+          "summary": "Report motifs whose tail prefix-score(seq) is in [threshold, 1.0).",
+          "lineno": 104
+        },
+        {
+          "name": "near_duplicate",
+          "kind": "function",
+          "signature": "(seq_a: list[str], seq_b: list[str]) -> float",
+          "summary": "LCS ratio similarity in [0, 1]: 2*LCS/(len_a+len_b)",
+          "lineno": 116
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure functions)"
+      ],
+      "test": [
+        "tests/human_nature/test_instinct_stream.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.signals.intuition": {
+      "path": "human_nature/faculties/signals/intuition.py",
+      "purpose": "Intuition faculty — System-1 pre-verbal confidence + dual-process routing.",
+      "exports": [
+        {
+          "name": "snap",
+          "kind": "function",
+          "signature": "(domain: str, signals: dict, *, chat: Optional[Callable]=None) -> dict",
+          "summary": "Fuse available signals into a pre-verbal confidence snapshot.",
+          "lineno": 56
+        },
+        {
+          "name": "route",
+          "kind": "function",
+          "signature": "(snap_result: dict, *, shortcut_enabled: Optional[bool]=None) -> str",
+          "summary": "Dual-process routing: return \"fast\" or \"deliberate\".",
+          "lineno": 73
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.conviction"
+      ],
+      "side_effects": [
+        "none in current implementation (chat param reserved for future use)"
+      ],
+      "test": [
+        "tests/human_nature/test_intuition.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.signals.momentary": {
+      "path": "human_nature/faculties/signals/momentary.py",
+      "purpose": "Momentary confidence providers for the human-nature Conviction Engine.",
+      "exports": [
+        {
+          "name": "verbalized_p_true",
+          "kind": "function",
+          "signature": "(statement: str, *, chat: Optional[Callable]=None) -> float",
+          "summary": "Ask HN_FAST_MODEL for P(True) of *statement*",
+          "lineno": 80
+        },
+        {
+          "name": "self_consistency",
+          "kind": "function",
+          "signature": "(sampler: Callable, n: int=5) -> float",
+          "summary": "Run *sampler* n times",
+          "lineno": 97
+        },
+        {
+          "name": "cross_cast_agreement",
+          "kind": "function",
+          "signature": "(votes: list) -> float",
+          "summary": "Fraction of *votes* equal to the modal vote",
+          "lineno": 110
+        }
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.conviction",
+        "llm_io"
+      ],
+      "side_effects": [
+        "calls Ollama (HN_FAST_MODEL) when chat=None"
+      ],
+      "test": [
+        "tests/human_nature/test_momentary.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.signals.motif_mining": {
+      "path": "human_nature/faculties/signals/motif_mining.py",
+      "purpose": "Offline miner for recurring failure motifs and anomaly scoring.",
+      "exports": [
+        {
+          "name": "mine_frequent",
+          "kind": "function",
+          "signature": "(sequences: list[list[str]], min_support: int, min_len: int=2, max_len: int=5) -> list[dict]",
+          "summary": "Mine frequent contiguous subsequences across sequences.",
+          "lineno": 29
+        },
+        {
+          "name": "anomaly_score",
+          "kind": "function",
+          "signature": "(seq: list[str], success_seqs: list[list[str]]) -> float",
+          "summary": "Return [0, 1]: 1 - max LCS-ratio of seq against any success sequence.",
+          "lineno": 68
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none (pure functions)"
+      ],
+      "test": [
+        "tests/human_nature/test_motif_mining.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.signals.opinions": {
+      "path": "human_nature/faculties/signals/opinions.py",
+      "purpose": "Opinions faculty — tiered, domain-gated, conviction-gated opinion engine.",
+      "exports": [
+        {
+          "name": "Opinion",
+          "kind": "class",
+          "signature": "",
+          "summary": "A single tiered opinion with its domain and conviction score.",
+          "lineno": 71
+        },
+        {
+          "name": "tier",
+          "kind": "function",
+          "signature": "(conviction: float, domain: str) -> str",
+          "summary": "Return the effective tier for *conviction* in *domain*.",
+          "lineno": 78
+        },
+        {
+          "name": "rederive",
+          "kind": "function",
+          "signature": "(user_assertion: str, my_stance: str, evidence: str, *, chat: Optional[Callable]=None) -> dict",
+          "summary": "Neutral-judge re-derivation on pushback (F5).",
+          "lineno": 115
+        }
+      ],
+      "depends_on": [
+        "config",
+        "llm_io"
+      ],
+      "side_effects": [
+        "calls Ollama (HN_FAST_MODEL) when rederive chat=None"
+      ],
+      "test": [
+        "tests/human_nature/test_opinions.py"
+      ],
+      "callers": []
+    },
+    "human_nature.faculties.signals.scar_graph": {
+      "path": "human_nature/faculties/signals/scar_graph.py",
       "purpose": "Scar-Tissue Failure Graph — pure directed weighted graph ops over a dict.",
       "exports": [
         {
@@ -5316,473 +6062,7 @@
       "test": [
         "tests/human_nature/test_scar_graph.py"
       ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.instinct",
-        "platform_core.orchestration.human_nature_bridge.lifecycle"
-      ]
-    },
-    "human_nature.self_model": {
-      "path": "human_nature/self_model.py",
-      "purpose": "Self-model — metacognitive supervisor (F11 / F3 + honest phenomenology).",
-      "exports": [
-        {
-          "name": "competence_report",
-          "kind": "function",
-          "signature": "(ss: dict[str, Any], domain: str) -> dict[str, Any]",
-          "summary": "Calibrated competence with epistemic interval and verdict.",
-          "lineno": 42
-        },
-        {
-          "name": "johari",
-          "kind": "function",
-          "signature": "(ss: dict[str, Any], ood: bool, surprise: float) -> dict[str, Any]",
-          "summary": "Johari-window blind-spot analysis.",
-          "lineno": 67
-        },
-        {
-          "name": "dissonance",
-          "kind": "function",
-          "signature": "(felt: float, demonstrated: float, self_report: float, observed: float) -> dict[str, Any]",
-          "summary": "Two dissonance channels (spec § self-awareness, F3).",
-          "lineno": 96
-        },
-        {
-          "name": "honest_phenomenology",
-          "kind": "function",
-          "signature": "() -> str",
-          "summary": "Return the fixed, honest access-vs-phenomenal paragraph.",
-          "lineno": 136
-        }
-      ],
-      "depends_on": [
-        "human_nature.self_state"
-      ],
-      "side_effects": [
-        "none (pure)"
-      ],
-      "test": [
-        "tests/human_nature/test_self_model.py"
-      ],
       "callers": []
-    },
-    "human_nature.self_state": {
-      "path": "human_nature/self_state.py",
-      "purpose": "SelfState — the unified interior of the human-nature layer (a serializable dict).",
-      "exports": [
-        {
-          "name": "new_self_state",
-          "kind": "function",
-          "signature": "() -> dict[str, Any]",
-          "summary": "",
-          "lineno": 30
-        },
-        {
-          "name": "migrate",
-          "kind": "function",
-          "signature": "(ss: dict[str, Any]) -> dict[str, Any]",
-          "summary": "",
-          "lineno": 47
-        },
-        {
-          "name": "get_competence",
-          "kind": "function",
-          "signature": "(ss: dict[str, Any], domain: str) -> dict[str, Any]",
-          "summary": "",
-          "lineno": 56
-        },
-        {
-          "name": "observe_competence",
-          "kind": "function",
-          "signature": "(ss: dict[str, Any], domain: str, success: bool) -> None",
-          "summary": "",
-          "lineno": 60
-        },
-        {
-          "name": "set_affect",
-          "kind": "function",
-          "signature": "(ss: dict[str, Any], valence: float, arousal: float, control: float) -> None",
-          "summary": "",
-          "lineno": 67
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "mutates the passed-in dict in place"
-      ],
-      "test": [
-        "tests/human_nature/test_self_state.py"
-      ],
-      "callers": [
-        "human_nature.consolidation",
-        "human_nature.integration",
-        "human_nature.self_model",
-        "notifications.psyche_cog"
-      ]
-    },
-    "human_nature.user_model": {
-      "path": "human_nature/user_model.py",
-      "purpose": "Theory-of-Mind of the user — the Dyad model (service-only, manipulation-guarded).",
-      "exports": [
-        {
-          "name": "new_user_model",
-          "kind": "function",
-          "signature": "() -> dict[str, Any]",
-          "summary": "Return a fresh user model with neutral defaults.",
-          "lineno": 54
-        },
-        {
-          "name": "update",
-          "kind": "function",
-          "signature": "(model: dict[str, Any], observation: dict[str, Any]) -> dict[str, Any]",
-          "summary": "Fold one observation into a NEW model dict (input is never mutated).",
-          "lineno": 69
-        },
-        {
-          "name": "snapshot",
-          "kind": "function",
-          "signature": "(model: dict[str, Any]) -> dict[str, Any]",
-          "summary": "Return a fully inspectable, deep-copied view of the user model.",
-          "lineno": 107
-        }
-      ],
-      "depends_on": [
-        "memory.user_prefs"
-      ],
-      "side_effects": [
-        "none in-module (persistence delegated to _prefs when available)"
-      ],
-      "test": [
-        "tests/human_nature/test_user_model.py"
-      ],
-      "callers": [
-        "human_nature.psyche_commands"
-      ]
-    },
-    "human_nature.workspace": {
-      "path": "human_nature/workspace.py",
-      "purpose": "Global Workspace — the GWT competition/broadcast loop (Baars, Dehaene).",
-      "exports": [
-        {
-          "name": "Workspace",
-          "kind": "class",
-          "signature": "",
-          "summary": "Global Workspace: specialists compete, winner is broadcast.",
-          "lineno": 21
-        },
-        {
-          "name": "salience",
-          "kind": "function",
-          "signature": "(item: dict, weights: dict | None=None) -> float",
-          "summary": "Weighted sum over the 10 named salience terms",
-          "lineno": 82
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "none (pure",
-        "broadcast may call specialist.on_broadcast callbacks)"
-      ],
-      "test": [
-        "tests/human_nature/test_workspace.py"
-      ],
-      "callers": []
-    },
-    "introspect": {
-      "path": "introspect/__init__.py",
-      "purpose": "introspect -- typed runtime project model for ANY root directory (stdlib-only leaf).",
-      "exports": [],
-      "depends_on": [
-        "introspect.project_extract",
-        "introspect.project_model"
-      ],
-      "side_effects": [
-        "none"
-      ],
-      "test": [],
-      "callers": [
-        "platform_core.orchestration.plan_context"
-      ]
-    },
-    "introspect.__main__": {
-      "path": "introspect/__main__.py",
-      "purpose": "CLI: ``python -m introspect <root> [--json]`` -- print a project digest or model JSON.",
-      "exports": [
-        {
-          "name": "main",
-          "kind": "function",
-          "signature": "(argv: list[str] | None=None) -> int",
-          "summary": "Extract the model for <root> and print its digest (default) or JSON.",
-          "lineno": 17
-        }
-      ],
-      "depends_on": [
-        "introspect.project_extract"
-      ],
-      "side_effects": [
-        "prints to stdout",
-        "may read/write the project-model cache"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "introspect.generic_import_scan": {
-      "path": "introspect/generic_import_scan.py",
-      "purpose": "Regex import scan for JS/TS files: `import ... from '...'` and `require('...')`.",
-      "exports": [
-        {
-          "name": "analyzeGeneric",
-          "kind": "function",
-          "signature": "(root: str | Path, relpaths: list[str]) -> dict[str, ModuleInfo]",
-          "summary": "Analyze JS/TS relpaths under ``root``",
-          "lineno": 32
-        }
-      ],
-      "depends_on": [
-        "introspect.project_model"
-      ],
-      "side_effects": [
-        "none"
-      ],
-      "test": [
-        "tests/introspect/test_generic_import_scan.py"
-      ],
-      "callers": [
-        "introspect.project_extract"
-      ]
-    },
-    "introspect.project_boundaries": {
-      "path": "introspect/project_boundaries.py",
-      "purpose": "Ownership/interface map: packages, re-export facades, entrypoints, config surface.",
-      "exports": [
-        {
-          "name": "detectBoundaries",
-          "kind": "function",
-          "signature": "(root: str | Path, modules: list[ModuleInfo]) -> BoundaryMap",
-          "summary": "Boundary map for ``root`` given its scanned/analyzed modules.",
-          "lineno": 44
-        }
-      ],
-      "depends_on": [
-        "introspect.project_model"
-      ],
-      "side_effects": [
-        "none"
-      ],
-      "test": [
-        "tests/introspect/test_project_boundaries.py"
-      ],
-      "callers": [
-        "introspect.project_extract"
-      ]
-    },
-    "introspect.project_commands": {
-      "path": "introspect/project_commands.py",
-      "purpose": "Detect test/build/lint/typecheck commands from config files -- never guessed.",
-      "exports": [
-        {
-          "name": "detectCommands",
-          "kind": "function",
-          "signature": "(root: str | Path) -> list[DetectedCommand]",
-          "summary": "All commands provable from config files under ``root`` (root level only).",
-          "lineno": 42
-        }
-      ],
-      "depends_on": [
-        "introspect.project_model"
-      ],
-      "side_effects": [
-        "none"
-      ],
-      "test": [
-        "tests/introspect/test_project_commands.py"
-      ],
-      "callers": [
-        "introspect.project_extract"
-      ]
-    },
-    "introspect.project_extract": {
-      "path": "introspect/project_extract.py",
-      "purpose": "Facade: build a full ProjectModel for any root + render an LLM prompt digest.",
-      "exports": [
-        {
-          "name": "extractProject",
-          "kind": "function",
-          "signature": "(root: str | Path, *, max_files: int=4000, use_cache: bool=True) -> ProjectModel",
-          "summary": "Extract (or load from cache) the full typed model of ``root``.",
-          "lineno": 47
-        },
-        {
-          "name": "contextForPrompt",
-          "kind": "function",
-          "signature": "(model: ProjectModel, *, budget_chars: int=4000) -> str",
-          "summary": "LLM-ready sectioned digest of the model, hard-truncated at ``budget_chars``.",
-          "lineno": 175
-        }
-      ],
-      "depends_on": [
-        "config",
-        "introspect.generic_import_scan",
-        "introspect.project_boundaries",
-        "introspect.project_commands",
-        "introspect.project_model",
-        "introspect.project_scanner",
-        "introspect.python_import_graph"
-      ],
-      "side_effects": [
-        "reads/writes JSON cache files under state/project_models/ (when 9to5"
-      ],
-      "test": [
-        "tests/introspect/test_project_extract.py"
-      ],
-      "callers": [
-        "explore.__main__",
-        "introspect",
-        "introspect.__main__"
-      ]
-    },
-    "introspect.project_model": {
-      "path": "introspect/project_model.py",
-      "purpose": "Typed, JSON-round-trippable project model shared by every introspect analyzer.",
-      "exports": [
-        {
-          "name": "ModuleInfo",
-          "kind": "class",
-          "signature": "",
-          "summary": "One source file: POSIX relpath id + language + analysis results.",
-          "lineno": 31
-        },
-        {
-          "name": "DetectedCommand",
-          "kind": "class",
-          "signature": "",
-          "summary": "A test/build/lint/typecheck command with the config file that proved it.",
-          "lineno": 44
-        },
-        {
-          "name": "BoundaryMap",
-          "kind": "class",
-          "signature": "",
-          "summary": "Ownership/interface map: packages, re-export facades, entrypoints, config surface.",
-          "lineno": 53
-        },
-        {
-          "name": "ProjectModel",
-          "kind": "class",
-          "signature": "",
-          "summary": "Full typed model of one project root",
-          "lineno": 63
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "none"
-      ],
-      "test": [
-        "tests/introspect/test_project_model.py"
-      ],
-      "callers": [
-        "explore",
-        "explore.approach_gen",
-        "explore.approach_tradeoffs",
-        "introspect",
-        "introspect.generic_import_scan",
-        "introspect.project_boundaries",
-        "introspect.project_commands",
-        "introspect.project_extract",
-        "introspect.project_scanner",
-        "introspect.python_import_graph",
-        "refactor.change_impact",
-        "refactor.cycle_detect"
-      ]
-    },
-    "introspect.project_scanner": {
-      "path": "introspect/project_scanner.py",
-      "purpose": "Deterministic file-tree scan: classify source files into ModuleInfo skeletons.",
-      "exports": [
-        {
-          "name": "gitignoreExcludes",
-          "kind": "function",
-          "signature": "(root_path: Path) -> tuple[frozenset[str], frozenset[str]]",
-          "summary": "(dir names, dir relpaths) to prune, parsed from the root ``.gitignore``.",
-          "lineno": 77
-        },
-        {
-          "name": "pruneDirnames",
-          "kind": "function",
-          "signature": "(rel_dir: str, dirnames: list[str], ig_names: frozenset[str], ig_rels: frozenset[str]) -> list[str]",
-          "summary": "Sorted dirnames minus EXCLUDE_DIRS and gitignore-derived exclusions.",
-          "lineno": 101
-        },
-        {
-          "name": "scanProject",
-          "kind": "function",
-          "signature": "(root: str | Path, *, max_files: int=4000) -> list[ModuleInfo]",
-          "summary": "Scan ``root`` into sorted ModuleInfo skeletons, at most ``max_files`` entries.",
-          "lineno": 111
-        }
-      ],
-      "depends_on": [
-        "introspect.project_model"
-      ],
-      "side_effects": [
-        "none"
-      ],
-      "test": [
-        "tests/introspect/test_project_scanner.py"
-      ],
-      "callers": [
-        "introspect.project_extract",
-        "refactor.symbol_usages"
-      ]
-    },
-    "introspect.project_test_map": {
-      "path": "introspect/project_test_map.py",
-      "purpose": "Convention-based file->test mapping for any root (no manual map required).",
-      "exports": [
-        {
-          "name": "mapFileToTests",
-          "kind": "function",
-          "signature": "(root: str | Path, relpath: str, test_files: list[str], overrides: dict[str, list[str]] | None=None) -> list[str]",
-          "summary": "Tests covering ``relpath``: overrides -> exact -> prefix -> glob -> JS sibling -> [].",
-          "lineno": 29
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "none"
-      ],
-      "test": [
-        "tests/introspect/test_project_test_map.py"
-      ],
-      "callers": [
-        "refactor.change_impact"
-      ]
-    },
-    "introspect.python_import_graph": {
-      "path": "introspect/python_import_graph.py",
-      "purpose": "AST analysis for Python modules: exports, first-party import edges, side effects.",
-      "exports": [
-        {
-          "name": "analyzePython",
-          "kind": "function",
-          "signature": "(root: str | Path, relpaths: list[str]) -> dict[str, ModuleInfo]",
-          "summary": "Analyze the given ``.py`` relpaths under ``root`` into full ModuleInfos.",
-          "lineno": 28
-        }
-      ],
-      "depends_on": [
-        "introspect.project_model"
-      ],
-      "side_effects": [
-        "none"
-      ],
-      "test": [
-        "tests/introspect/test_python_import_graph.py"
-      ],
-      "callers": [
-        "introspect.project_extract",
-        "refactor.change_impact"
-      ]
     },
     "knowledge": {
       "path": "knowledge.py",
@@ -5807,7 +6087,8 @@
         "agents.planning.replanner",
         "agents.review.architect",
         "platform_core.core.surfaces",
-        "platform_core.orchestration.knowledge_refresh"
+        "platform_core.orchestration.knowledge_refresh",
+        "platform_core.simulator.testing.e2e"
       ]
     },
     "learning": {
@@ -8017,6 +8298,7 @@
         "tests/orchestration/test_llm_io_pydantic.py"
       ],
       "callers": [
+        "agents.discovery.inventor",
         "agents.discovery.lenses",
         "agents.discovery.synthesis",
         "agents.planning.assumption_resolver",
@@ -8029,10 +8311,10 @@
         "agents.review.adversary",
         "agents.review.adversary_review",
         "agents.review.architect",
-        "human_nature.consolidation",
-        "human_nature.instinct",
-        "human_nature.momentary",
-        "human_nature.opinions",
+        "human_nature.faculties.runtime.consolidation",
+        "human_nature.faculties.signals.instinct",
+        "human_nature.faculties.signals.momentary",
+        "human_nature.faculties.signals.opinions",
         "notifications.ask",
         "notifications.brain_dialogue",
         "notifications.briefing",
@@ -8073,8 +8355,8 @@
         "platform_core.runtime.resilience",
         "platform_core.simulator.chaos",
         "platform_core.simulator.simulation",
-        "state.task",
-        "testing.e2e"
+        "platform_core.simulator.testing.e2e",
+        "state.task"
       ],
       "side_effects": [
         "unannotated"
@@ -8131,7 +8413,7 @@
         "tests/evolution/test_conviction_ledger.py"
       ],
       "callers": [
-        "human_nature.instinct",
+        "human_nature.faculties.signals.instinct",
         "platform_core.orchestration.human_nature_bridge.planning"
       ]
     },
@@ -8211,9 +8493,9 @@
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_phase_outcome",
         "platform_core.orchestration.run_phase_surface_mixin",
+        "platform_core.orchestration.society.society_batch",
         "platform_core.orchestration.step_resume",
         "platform_core.orchestration.step_sink",
-        "society.society_batch",
         "state.task_schema"
       ]
     },
@@ -9458,6 +9740,7 @@
         "tests/evolution/test_novelty_index.py"
       ],
       "callers": [
+        "agents.discovery.inventor",
         "agents.discovery.ledger_bridge",
         "agents.discovery.synthesis",
         "platform_core.orchestration.qd_archive"
@@ -9938,7 +10221,7 @@
         "tests/evolution/test_user_prefs.py"
       ],
       "callers": [
-        "human_nature.user_model",
+        "human_nature.faculties.identity.user_model",
         "notifications.bot.cogs.context_cog",
         "notifications.bot.cogs.log_cog",
         "notifications.commands",
@@ -10826,7 +11109,8 @@
         "notifications.slash",
         "notifications.surfaces.dashboard",
         "platform_core.orchestration.control_mixin",
-        "platform_core.simulator.bot_replay"
+        "platform_core.simulator.bot_replay",
+        "platform_core.simulator.testing.operator"
       ]
     },
     "notifications.console_hud": {
@@ -11486,9 +11770,9 @@
         "platform_core.execution.router",
         "platform_core.orchestration.execute_attempt_mixin",
         "platform_core.orchestration.run_phase_surface_mixin",
+        "platform_core.orchestration.society.coordinator",
         "platform_core.orchestration.step_sink",
-        "platform_core.runtime.cost_budget",
-        "society.coordinator"
+        "platform_core.runtime.cost_budget"
       ]
     },
     "notifications.health_aura": {
@@ -11574,7 +11858,7 @@
         "tests/notifications/test_instinct.py"
       ],
       "callers": [
-        "human_nature.instinct",
+        "human_nature.faculties.signals.instinct",
         "platform_core.orchestration.run_phase_outcome"
       ]
     },
@@ -13688,7 +13972,8 @@
       ],
       "callers": [
         "orchestrator",
-        "platform_core.orchestration.run_phase_mixin"
+        "platform_core.orchestration.run_phase_mixin",
+        "platform_core.simulator.testing.operator"
       ]
     },
     "notifications.webdash_markup": {
@@ -13876,7 +14161,8 @@
         "platform_core.knowledge_base.builder",
         "platform_core.knowledge_base.compress",
         "platform_core.knowledge_base.scraper",
-        "platform_core.orchestration.knowledge_refresh"
+        "platform_core.orchestration.knowledge_refresh",
+        "platform_core.simulator.testing.e2e"
       ]
     },
     "platform_core.app_config._env": {
@@ -14123,7 +14409,7 @@
       "callers": [
         "config",
         "platform_core.app_config.settings",
-        "society.society_batch"
+        "platform_core.orchestration.society.society_batch"
       ]
     },
     "platform_core.app_config.prompts": {
@@ -14412,8 +14698,9 @@
         "platform_core.orchestration.human_nature_bridge.verification",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.run_phase_outcome",
+        "platform_core.orchestration.society.society_batch",
         "platform_core.runtime.resilience",
-        "society.society_batch"
+        "platform_core.simulator.testing.e2e"
       ]
     },
     "platform_core.core.clock": {
@@ -14678,8 +14965,8 @@
         "tests/platform/test_contracts.py"
       ],
       "callers": [
-        "src.workflow_registry",
-        "workflows.registry"
+        "platform_core.orchestration.workflows.registry",
+        "src.workflow_registry"
       ]
     },
     "platform_core.core.epoch": {
@@ -15934,7 +16221,7 @@
         }
       ],
       "depends_on": [
-        "workflows.registry"
+        "platform_core.orchestration.workflows.registry"
       ],
       "side_effects": [
         "unannotated"
@@ -16035,9 +16322,9 @@
         "platform_core.orchestration.run_loop_replan_mixin",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.run_phase_outcome",
-        "platform_core.orchestration.solution_space",
-        "society.roles",
-        "society.society_batch"
+        "platform_core.orchestration.society.roles",
+        "platform_core.orchestration.society.society_batch",
+        "platform_core.orchestration.solution_space"
       ]
     },
     "platform_core.orchestration.adversary_loop": {
@@ -16240,7 +16527,7 @@
       ],
       "depends_on": [
         "config",
-        "introspect.extractProject"
+        "developer_tools.introspection"
       ],
       "side_effects": [
         "build_import_graph reads the project via introspect (best-effort)"
@@ -16850,9 +17137,8 @@
       ],
       "depends_on": [
         "config",
-        "explore.generateApproaches",
-        "explore.scoreApproaches",
-        "introspect.extractProject",
+        "developer_tools.exploration",
+        "developer_tools.introspection",
         "platform_core.orchestration",
         "platform_core.orchestration.subtask"
       ],
@@ -17791,7 +18077,7 @@
       ],
       "depends_on": [
         "config",
-        "introspect",
+        "developer_tools.introspection",
         "platform_core.orchestration.llm_navigation"
       ],
       "side_effects": [
@@ -18186,10 +18472,10 @@
         "platform_core.orchestration",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.run_loop_replan_mixin",
+        "platform_core.orchestration.society.society_batch",
         "platform_core.orchestration.subtask",
         "platform_core.runtime",
         "platform_core.runtime.control",
-        "society.society_batch",
         "state.task"
       ],
       "side_effects": [
@@ -18467,6 +18753,243 @@
       ],
       "callers": [
         "platform_core.orchestration.execute_delegates_mixin"
+      ]
+    },
+    "platform_core.orchestration.society": {
+      "path": "platform_core/orchestration/society/__init__.py",
+      "purpose": "society -- 9to5-owned multi-agent workforce (Epic 5).",
+      "exports": [],
+      "depends_on": [
+        "platform_core.orchestration.society.blackboard",
+        "platform_core.orchestration.society.coordinator",
+        "platform_core.orchestration.society.debate",
+        "platform_core.orchestration.society.roles",
+        "platform_core.orchestration.society.worker"
+      ],
+      "side_effects": [
+        "writes state/blackboard/<task_id>.jsonl"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "platform_core.orchestration.society.blackboard": {
+      "path": "platform_core/orchestration/society/blackboard.py",
+      "purpose": "Append-only, per-run JSONL blackboard -- the workforce coordination surface.",
+      "exports": [
+        {
+          "name": "BlackboardEntry",
+          "kind": "class",
+          "signature": "",
+          "summary": "One append-only coordination artifact",
+          "lineno": 36
+        },
+        {
+          "name": "makeEntry",
+          "kind": "function",
+          "signature": "(kind: str, author: str, to: str, value: dict, *, subtask_id: Optional[str]=None, key: Optional[str]=None, refs: Optional[list]=None, span_id: Optional[str]=None) -> BlackboardEntry",
+          "summary": "Construct a BlackboardEntry, deriving a logical key slot when not supplied.",
+          "lineno": 50
+        },
+        {
+          "name": "Blackboard",
+          "kind": "class",
+          "signature": "",
+          "summary": "Append-only JSONL coordination store",
+          "lineno": 61
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "writes <path>.jsonl"
+      ],
+      "test": [
+        "tests/orchestration/test_society_blackboard.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.society",
+        "platform_core.orchestration.society.coordinator",
+        "platform_core.orchestration.society.debate",
+        "platform_core.orchestration.society.society_batch",
+        "platform_core.orchestration.society.worker"
+      ]
+    },
+    "platform_core.orchestration.society.coordinator": {
+      "path": "platform_core/orchestration/society/coordinator.py",
+      "purpose": "Coordinator -- deterministic Python workforce orchestration (NOT a new LLM).",
+      "exports": [
+        {
+          "name": "busMirror",
+          "kind": "function",
+          "signature": "(task_id: str, bus=None) -> Callable[[dict], None]",
+          "summary": "Build a presentation-only on_append hook mirroring blackboard appends to the bus.",
+          "lineno": 34
+        },
+        {
+          "name": "Coordinator",
+          "kind": "class",
+          "signature": "",
+          "summary": "Owns workforce orchestration over the blackboard",
+          "lineno": 51
+        }
+      ],
+      "depends_on": [
+        "config",
+        "notifications.event_bus",
+        "platform_core.orchestration.society.blackboard",
+        "platform_core.orchestration.society.debate",
+        "platform_core.orchestration.society.roles",
+        "platform_core.orchestration.society.worker",
+        "state.task"
+      ],
+      "side_effects": [
+        "claims/updates task JSON, runs workers, appends to the blackboard"
+      ],
+      "test": [
+        "tests/orchestration/test_society_coordinator.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.society",
+        "platform_core.orchestration.society.society_batch"
+      ]
+    },
+    "platform_core.orchestration.society.debate": {
+      "path": "platform_core/orchestration/society/debate.py",
+      "purpose": "Structured debate / speaker-selection -- bounded convergence for contested results.",
+      "exports": [
+        {
+          "name": "selectNextSpeaker",
+          "kind": "function",
+          "signature": "(thread: list, roster: list) -> str",
+          "summary": "Pick the role whose latest proposal is unanswered (no later entry refs it).",
+          "lineno": 32
+        },
+        {
+          "name": "runDebate",
+          "kind": "function",
+          "signature": "(blackboard, subtask_id: str, roster: list, *, arbiter_fn: Optional[Callable]=None, max_rounds: Optional[int]=None, goal: str='') -> dict",
+          "summary": "Run bounded speaker-selected rounds; converge or stop",
+          "lineno": 51
+        }
+      ],
+      "depends_on": [
+        "agents.second_brain",
+        "config",
+        "platform_core.orchestration.society.blackboard"
+      ],
+      "side_effects": [
+        "appends proposal/vote entries to the blackboard"
+      ],
+      "test": [
+        "tests/orchestration/test_society_debate.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.society",
+        "platform_core.orchestration.society.coordinator"
+      ]
+    },
+    "platform_core.orchestration.society.roles": {
+      "path": "platform_core/orchestration/society/roles.py",
+      "purpose": "Role registry + capability router for the workforce (owl Workforce coordinator).",
+      "exports": [
+        {
+          "name": "RoleSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "A specialized worker role: scoped playbook profile + model/effort + toolkit.",
+          "lineno": 25
+        },
+        {
+          "name": "classifyRole",
+          "kind": "function",
+          "signature": "(subtask: dict, hint: str='', work_profile=None) -> RoleSpec",
+          "summary": "Pick the best-fit role",
+          "lineno": 62
+        }
+      ],
+      "depends_on": [
+        "agents.playbook",
+        "config",
+        "platform_core.orchestration"
+      ],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/orchestration/test_society_roles.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.society",
+        "platform_core.orchestration.society.coordinator"
+      ]
+    },
+    "platform_core.orchestration.society.society_batch": {
+      "path": "platform_core/orchestration/society/society_batch.py",
+      "purpose": "Run-loop society-batch wiring -- extracted from run_loop_mixin to keep it <=450 lines.",
+      "exports": [
+        {
+          "name": "societyGate",
+          "kind": "function",
+          "signature": "(ready: list) -> bool",
+          "summary": "True when the workforce should engage: flag ON and >=2 disjoint-ready subtasks.",
+          "lineno": 27
+        },
+        {
+          "name": "handleSocietyBatch",
+          "kind": "function",
+          "signature": "(state, ready: list, work_dir: str, parallelism: int, state_lock, *, run_fn: Optional[Callable]=None) -> 'tuple[int, None]'",
+          "summary": "Delegate a ready batch to the society Coordinator (worktree-isolated workers).",
+          "lineno": 52
+        }
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience",
+        "platform_core.app_config.paths",
+        "platform_core.core.best_effort",
+        "platform_core.orchestration",
+        "platform_core.orchestration.society.blackboard",
+        "platform_core.orchestration.society.coordinator"
+      ],
+      "side_effects": [
+        "runs society workers (claims/updates task JSON, appends to the blackboard)"
+      ],
+      "test": [
+        "tests/orchestration/test_society_batch.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.run_loop_mixin"
+      ]
+    },
+    "platform_core.orchestration.society.worker": {
+      "path": "platform_core/orchestration/society/worker.py",
+      "purpose": "WorkerAgent -- a role-scoped wrapper over agents/executor.py::runClaude.",
+      "exports": [
+        {
+          "name": "WorkerAgent",
+          "kind": "class",
+          "signature": "",
+          "summary": "Claim a subtask, execute it under a role, post the result.",
+          "lineno": 33
+        }
+      ],
+      "depends_on": [
+        "agents.executor",
+        "agents.verifier",
+        "config",
+        "platform_core.orchestration.society.blackboard",
+        "state.task"
+      ],
+      "side_effects": [
+        "claims+updates task JSON, runs Claude, appends to the blackboard"
+      ],
+      "test": [
+        "tests/orchestration/test_society_worker.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.society",
+        "platform_core.orchestration.society.coordinator"
       ]
     },
     "platform_core.orchestration.solution_space": {
@@ -18852,6 +19375,44 @@
       ],
       "callers": []
     },
+    "platform_core.orchestration.workflows": {
+      "path": "platform_core/orchestration/workflows/__init__.py",
+      "purpose": "Workflow registry package.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "platform_core.orchestration.workflows.registry": {
+      "path": "platform_core/orchestration/workflows/registry.py",
+      "purpose": "Workflow registry — loads and validates WorkflowDefinition JSON files.",
+      "exports": [
+        {
+          "name": "loadRegistry",
+          "kind": "function",
+          "signature": "(definitions_dir: Path=DEFINITIONS_DIR) -> Dict[str, WorkflowDefinition]",
+          "summary": "Load all *.json files from *definitions_dir*, validate, and return by name.",
+          "lineno": 93
+        }
+      ],
+      "depends_on": [
+        "platform_core.core.contracts"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/orchestration/test_orchestrator_with_registry.py",
+        "tests/workflows/test_workflow_registry.py",
+        "tests/workflows/test_workflows_registry.py"
+      ],
+      "callers": [
+        "platform_core.ops.validate_workflows"
+      ]
+    },
     "platform_core.runtime": {
       "path": "platform_core/runtime/__init__.py",
       "purpose": "Runtime control, recovery, and resilience infrastructure.",
@@ -18878,7 +19439,8 @@
         "platform_core.orchestration.safety_mixin",
         "platform_core.orchestration.validation_cache",
         "platform_core.runtime.autonomy_allowance",
-        "platform_core.runtime.control"
+        "platform_core.runtime.control",
+        "platform_core.simulator.testing.e2e"
       ]
     },
     "platform_core.runtime.action_risk": {
@@ -19048,7 +19610,8 @@
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.safety_mixin",
         "platform_core.runtime.resilience",
-        "platform_core.simulator.bot_replay"
+        "platform_core.simulator.bot_replay",
+        "platform_core.simulator.testing.operator"
       ]
     },
     "platform_core.runtime.control_store": {
@@ -19670,315 +20233,118 @@
         "tests/slow/test_simulation_core.py"
       ],
       "callers": [
-        "main"
+        "main",
+        "platform_core.simulator.testing.e2e"
       ]
     },
-    "refactor": {
-      "path": "refactor/__init__.py",
-      "purpose": "refactor -- cycle detection, impact prediction, atomic transactions (stdlib leaf).",
+    "platform_core.simulator.testing": {
+      "path": "platform_core/simulator/testing/__init__.py",
+      "purpose": "9TO5 end-to-end \"virtual operator\" testing.",
       "exports": [],
-      "depends_on": [
-        "refactor.change_impact",
-        "refactor.cycle_detect",
-        "refactor.refactor_edits",
-        "refactor.refactor_transaction",
-        "refactor.symbol_usages"
-      ],
+      "depends_on": [],
       "side_effects": [
-        "none"
+        "unannotated"
       ],
       "test": [],
       "callers": []
     },
-    "refactor.__main__": {
-      "path": "refactor/__main__.py",
-      "purpose": "CLI: ``python -m refactor check <root>`` -- import-cycle report, exit 1 on cycles.",
+    "platform_core.simulator.testing.e2e": {
+      "path": "platform_core/simulator/testing/e2e.py",
+      "purpose": "End-to-end scenario runner: launch a FULL simulated run and drive it with a",
       "exports": [
+        {
+          "name": "ScenarioResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 39
+        },
+        {
+          "name": "runScenario",
+          "kind": "function",
+          "signature": "(name: str, goal: str, script: Callable[[VirtualOperator], None], *, expect_status: str='done', mode: str='gated', n_subtasks: int=2, surface: str='web', timeout: float=15.0, review=None, auto_pr: bool=False) -> ScenarioResult",
+          "summary": "",
+          "lineno": 102
+        },
+        {
+          "name": "buildSuite",
+          "kind": "function",
+          "signature": "() -> list",
+          "summary": "",
+          "lineno": 205
+        },
+        {
+          "name": "runSuite",
+          "kind": "function",
+          "signature": "() -> list",
+          "summary": "",
+          "lineno": 235
+        },
         {
           "name": "main",
           "kind": "function",
-          "signature": "(argv: list[str] | None=None) -> int",
-          "summary": "Report modules + import cycles for a root",
-          "lineno": 19
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 249
         }
       ],
       "depends_on": [
-        "introspect.extractProject",
-        "refactor.cycle_detect"
+        "config",
+        "knowledge",
+        "platform_core.app_config",
+        "platform_core.core.best_effort",
+        "platform_core.runtime",
+        "platform_core.simulator.simulation",
+        "platform_core.simulator.testing.operator",
+        "state.task"
       ],
       "side_effects": [
-        "prints to stdout"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "refactor.change_impact": {
-      "path": "refactor/change_impact.py",
-      "purpose": "Pure breaking-change prediction for a planned edit set -- no disk writes.",
-      "exports": [
-        {
-          "name": "ImpactReport",
-          "kind": "class",
-          "signature": "",
-          "summary": "Prediction of what a planned edit set breaks (pure, computed pre-apply).",
-          "lineno": 34
-        },
-        {
-          "name": "predictImpact",
-          "kind": "function",
-          "signature": "(model: ProjectModel, edits: list) -> ImpactReport",
-          "summary": "Predict orphaned usages, new import cycles, and affected tests for ``edits``.",
-          "lineno": 44
-        }
-      ],
-      "depends_on": [
-        "introspect.project_model",
-        "introspect.project_test_map",
-        "introspect.python_import_graph",
-        "refactor.cycle_detect",
-        "refactor.refactor_edits",
-        "refactor.symbol_usages"
-      ],
-      "side_effects": [
-        "creates and removes a scratch temp dir during analysis"
+        "unannotated"
       ],
       "test": [
-        "tests/refactor/test_change_impact.py"
+        "tests/orchestration/test_elaborator_e2e.py",
+        "tests/orchestration/test_inventor_e2e.py",
+        "tests/slow/test_e2e_operator.py"
       ],
       "callers": [
-        "refactor",
-        "refactor.refactor_transaction"
+        "main"
       ]
     },
-    "refactor.cycle_detect": {
-      "path": "refactor/cycle_detect.py",
-      "purpose": "Import-cycle detection + pre-flight cycle prediction (iterative Tarjan SCC).",
+    "platform_core.simulator.testing.operator": {
+      "path": "platform_core/simulator/testing/operator.py",
+      "purpose": "VirtualOperator -- a scripted \"human at the controls\".",
       "exports": [
         {
-          "name": "buildImportGraph",
-          "kind": "function",
-          "signature": "(model: ProjectModel) -> dict[str, set[str]]",
-          "summary": "Adjacency dict over module relpaths from the model's load-time import edges.",
-          "lineno": 22
-        },
-        {
-          "name": "findCycles",
-          "kind": "function",
-          "signature": "(graph: dict[str, set[str]]) -> list[list[str]]",
-          "summary": "All import cycles in ``graph``: SCCs of size >1 plus self-loops.",
-          "lineno": 31
-        },
-        {
-          "name": "wouldCreateCycle",
-          "kind": "function",
-          "signature": "(graph: dict[str, set[str]], added_edges: list[tuple[str, str]], removed_edges: list[tuple[str, str]] | tuple[tuple[str, str], ...]=()) -> list[list[str]]",
-          "summary": "Cycles that would exist AFTER the edge changes but do not exist now.",
-          "lineno": 48
-        }
-      ],
-      "depends_on": [
-        "introspect.project_model"
-      ],
-      "side_effects": [
-        "none"
-      ],
-      "test": [
-        "tests/refactor/test_cycle_detect.py"
-      ],
-      "callers": [
-        "refactor",
-        "refactor.__main__",
-        "refactor.change_impact",
-        "refactor.refactor_transaction"
-      ]
-    },
-    "refactor.refactor_edits": {
-      "path": "refactor/refactor_edits.py",
-      "purpose": "Edit primitives (frozen dataclasses) + fail-closed path validation.",
-      "exports": [
-        {
-          "name": "WriteFile",
+          "name": "OperatorTimeout",
           "kind": "class",
           "signature": "",
-          "summary": "Create or overwrite ``path`` with ``content`` (UTF-8).",
-          "lineno": 28
+          "summary": "The operator waited for a condition that never happened (the run is stuck/broken).",
+          "lineno": 32
         },
         {
-          "name": "ReplaceInFile",
+          "name": "VirtualOperator",
           "kind": "class",
           "signature": "",
-          "summary": "Replace ``old`` with ``new`` in ``path``",
+          "summary": "",
           "lineno": 36
-        },
-        {
-          "name": "DeleteFile",
-          "kind": "class",
-          "signature": "",
-          "summary": "Delete ``path``.",
-          "lineno": 45
-        },
-        {
-          "name": "RenameFile",
-          "kind": "class",
-          "signature": "",
-          "summary": "Move ``path`` to ``new_path`` (content preserved byte-for-byte).",
-          "lineno": 52
-        },
-        {
-          "name": "editPaths",
-          "kind": "function",
-          "signature": "(edit) -> tuple[str, ...]",
-          "summary": "Every path the edit touches (both endpoints for RenameFile).",
-          "lineno": 64
-        },
-        {
-          "name": "validateEdit",
-          "kind": "function",
-          "signature": "(root: Path, edit) -> str | None",
-          "summary": "None when the edit is safe to consider, else a human-readable rejection.",
-          "lineno": 71
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "none"
-      ],
-      "test": [
-        "tests/refactor/test_refactor_edits.py"
-      ],
-      "callers": [
-        "refactor",
-        "refactor.change_impact",
-        "refactor.refactor_transaction"
-      ]
-    },
-    "refactor.refactor_journal": {
-      "path": "refactor/refactor_journal.py",
-      "purpose": "Crash journal for RefactorTransaction: spill snapshots to disk pre-write.",
-      "exports": [
-        {
-          "name": "writeJournal",
-          "kind": "function",
-          "signature": "(root: Path, snapshots: dict[str, object]) -> Path",
-          "summary": "Spill ``snapshots`` to a new ``refactor-tx-*`` temp dir",
-          "lineno": 34
-        },
-        {
-          "name": "loadJournal",
-          "kind": "function",
-          "signature": "(journal_dir: str | Path) -> tuple[Path, dict[str, object]]",
-          "summary": "(root, snapshots) parsed back from a journal dir's manifest.",
-          "lineno": 51
-        },
-        {
-          "name": "restoreSnapshots",
-          "kind": "function",
-          "signature": "(root: Path, snapshots: dict[str, object]) -> list[str]",
-          "summary": "Restore every snapshot byte-for-byte (MISSING => unlink)",
-          "lineno": 61
-        },
-        {
-          "name": "deleteJournal",
-          "kind": "function",
-          "signature": "(journal_dir: Path) -> None",
-          "summary": "Best-effort removal of a journal dir (no error when already gone).",
-          "lineno": 78
-        }
-      ],
-      "depends_on": [],
-      "side_effects": [
-        "creates/deletes a temp journal dir",
-        "restoreSnapshots writes/unlinks"
-      ],
-      "test": [
-        "tests/refactor/test_refactor_hardening.py"
-      ],
-      "callers": [
-        "refactor.refactor_transaction"
-      ]
-    },
-    "refactor.refactor_transaction": {
-      "path": "refactor/refactor_transaction.py",
-      "purpose": "Atomic multi-file refactor transaction: snapshot -> journal -> write -> gate -> rollback.",
-      "exports": [
-        {
-          "name": "RefactorResult",
-          "kind": "class",
-          "signature": "",
-          "summary": "Outcome of one apply(): all-applied or nothing-applied, with the why.",
-          "lineno": 56
-        },
-        {
-          "name": "RefactorTransaction",
-          "kind": "class",
-          "signature": "",
-          "summary": "Collect edits against one root, preview their impact, apply atomically.",
-          "lineno": 65
-        },
-        {
-          "name": "recoverJournal",
-          "kind": "function",
-          "signature": "(journal_dir: str | Path) -> RefactorResult",
-          "summary": "Restore a crashed apply() from its on-disk journal",
-          "lineno": 311
         }
       ],
       "depends_on": [
-        "introspect.extractProject",
-        "refactor.change_impact",
-        "refactor.cycle_detect",
-        "refactor.refactor_edits",
-        "refactor.refactor_journal"
+        "notifications.commands",
+        "notifications.webdash",
+        "platform_core.runtime.control",
+        "state.task"
       ],
       "side_effects": [
-        "writes/renames/deletes files under the transaction root during apply",
-        ""
+        "unannotated"
       ],
       "test": [
-        "tests/refactor/test_refactor_transaction.py"
+        "tests/human_nature/eval/test_operator_sovereignty.py",
+        "tests/human_nature/test_operator_authority.py",
+        "tests/slow/test_e2e_operator.py"
       ],
       "callers": [
-        "refactor"
-      ]
-    },
-    "refactor.symbol_usages": {
-      "path": "refactor/symbol_usages.py",
-      "purpose": "Cross-root symbol usage scan: every AST Name/Attribute/ImportFrom reference.",
-      "exports": [
-        {
-          "name": "Usage",
-          "kind": "class",
-          "signature": "",
-          "summary": "One reference to a symbol: POSIX relpath, 1-based line, reference kind.",
-          "lineno": 27
-        },
-        {
-          "name": "findUsages",
-          "kind": "function",
-          "signature": "(root: str | Path, symbol: str) -> list[Usage]",
-          "summary": "Every reference to ``symbol`` in .py files under ``root``, sorted.",
-          "lineno": 35
-        },
-        {
-          "name": "findUsagesMulti",
-          "kind": "function",
-          "signature": "(root: str | Path, symbols: set[str]) -> dict[str, list[Usage]]",
-          "summary": "Per-symbol usage lists for a whole symbol SET in one walk.",
-          "lineno": 46
-        }
-      ],
-      "depends_on": [
-        "introspect.project_scanner"
-      ],
-      "side_effects": [
-        "none"
-      ],
-      "test": [
-        "tests/refactor/test_symbol_usages.py"
-      ],
-      "callers": [
-        "refactor",
-        "refactor.change_impact"
+        "platform_core.simulator.testing.e2e"
       ]
     },
     "scripts.bug_triage": {
@@ -20145,15 +20511,9 @@
       ],
       "depends_on": [
         "config",
-        "explore.exploreSolutionSpace",
-        "explore.generateApproaches",
-        "introspect.contextForPrompt",
-        "introspect.extractProject",
-        "refactor.RefactorTransaction",
-        "refactor.ReplaceInFile",
-        "refactor.WriteFile",
-        "refactor.buildImportGraph",
-        "refactor.findCycles"
+        "developer_tools.exploration",
+        "developer_tools.introspection",
+        "developer_tools.refactoring"
       ],
       "side_effects": [
         "unannotated"
@@ -20238,243 +20598,6 @@
         "platform_core.orchestration.control_mixin"
       ]
     },
-    "society": {
-      "path": "society/__init__.py",
-      "purpose": "society -- 9to5-owned multi-agent workforce (Epic 5).",
-      "exports": [],
-      "depends_on": [
-        "society.blackboard",
-        "society.coordinator",
-        "society.debate",
-        "society.roles",
-        "society.worker"
-      ],
-      "side_effects": [
-        "writes state/blackboard/<task_id>.jsonl"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "society.blackboard": {
-      "path": "society/blackboard.py",
-      "purpose": "Append-only, per-run JSONL blackboard -- the workforce coordination surface.",
-      "exports": [
-        {
-          "name": "BlackboardEntry",
-          "kind": "class",
-          "signature": "",
-          "summary": "One append-only coordination artifact",
-          "lineno": 36
-        },
-        {
-          "name": "makeEntry",
-          "kind": "function",
-          "signature": "(kind: str, author: str, to: str, value: dict, *, subtask_id: Optional[str]=None, key: Optional[str]=None, refs: Optional[list]=None, span_id: Optional[str]=None) -> BlackboardEntry",
-          "summary": "Construct a BlackboardEntry, deriving a logical key slot when not supplied.",
-          "lineno": 50
-        },
-        {
-          "name": "Blackboard",
-          "kind": "class",
-          "signature": "",
-          "summary": "Append-only JSONL coordination store",
-          "lineno": 61
-        }
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "side_effects": [
-        "writes <path>.jsonl"
-      ],
-      "test": [
-        "tests/orchestration/test_society_blackboard.py"
-      ],
-      "callers": [
-        "society",
-        "society.coordinator",
-        "society.debate",
-        "society.society_batch",
-        "society.worker"
-      ]
-    },
-    "society.coordinator": {
-      "path": "society/coordinator.py",
-      "purpose": "Coordinator -- deterministic Python workforce orchestration (NOT a new LLM).",
-      "exports": [
-        {
-          "name": "busMirror",
-          "kind": "function",
-          "signature": "(task_id: str, bus=None) -> Callable[[dict], None]",
-          "summary": "Build a presentation-only on_append hook mirroring blackboard appends to the bus.",
-          "lineno": 34
-        },
-        {
-          "name": "Coordinator",
-          "kind": "class",
-          "signature": "",
-          "summary": "Owns workforce orchestration over the blackboard",
-          "lineno": 51
-        }
-      ],
-      "depends_on": [
-        "config",
-        "notifications.event_bus",
-        "society.blackboard",
-        "society.debate",
-        "society.roles",
-        "society.worker",
-        "state.task"
-      ],
-      "side_effects": [
-        "claims/updates task JSON, runs workers, appends to the blackboard"
-      ],
-      "test": [
-        "tests/orchestration/test_society_coordinator.py"
-      ],
-      "callers": [
-        "society",
-        "society.society_batch"
-      ]
-    },
-    "society.debate": {
-      "path": "society/debate.py",
-      "purpose": "Structured debate / speaker-selection -- bounded convergence for contested results.",
-      "exports": [
-        {
-          "name": "selectNextSpeaker",
-          "kind": "function",
-          "signature": "(thread: list, roster: list) -> str",
-          "summary": "Pick the role whose latest proposal is unanswered (no later entry refs it).",
-          "lineno": 32
-        },
-        {
-          "name": "runDebate",
-          "kind": "function",
-          "signature": "(blackboard, subtask_id: str, roster: list, *, arbiter_fn: Optional[Callable]=None, max_rounds: Optional[int]=None, goal: str='') -> dict",
-          "summary": "Run bounded speaker-selected rounds; converge or stop",
-          "lineno": 51
-        }
-      ],
-      "depends_on": [
-        "agents.second_brain",
-        "config",
-        "society.blackboard"
-      ],
-      "side_effects": [
-        "appends proposal/vote entries to the blackboard"
-      ],
-      "test": [
-        "tests/orchestration/test_society_debate.py"
-      ],
-      "callers": [
-        "society",
-        "society.coordinator"
-      ]
-    },
-    "society.roles": {
-      "path": "society/roles.py",
-      "purpose": "Role registry + capability router for the workforce (owl Workforce coordinator).",
-      "exports": [
-        {
-          "name": "RoleSpec",
-          "kind": "class",
-          "signature": "",
-          "summary": "A specialized worker role: scoped playbook profile + model/effort + toolkit.",
-          "lineno": 25
-        },
-        {
-          "name": "classifyRole",
-          "kind": "function",
-          "signature": "(subtask: dict, hint: str='', work_profile=None) -> RoleSpec",
-          "summary": "Pick the best-fit role",
-          "lineno": 62
-        }
-      ],
-      "depends_on": [
-        "agents.playbook",
-        "config",
-        "platform_core.orchestration"
-      ],
-      "side_effects": [
-        "none"
-      ],
-      "test": [
-        "tests/orchestration/test_society_roles.py"
-      ],
-      "callers": [
-        "society",
-        "society.coordinator"
-      ]
-    },
-    "society.society_batch": {
-      "path": "society/society_batch.py",
-      "purpose": "Run-loop society-batch wiring -- extracted from run_loop_mixin to keep it <=450 lines.",
-      "exports": [
-        {
-          "name": "societyGate",
-          "kind": "function",
-          "signature": "(ready: list) -> bool",
-          "summary": "True when the workforce should engage: flag ON and >=2 disjoint-ready subtasks.",
-          "lineno": 27
-        },
-        {
-          "name": "handleSocietyBatch",
-          "kind": "function",
-          "signature": "(state, ready: list, work_dir: str, parallelism: int, state_lock, *, run_fn: Optional[Callable]=None) -> 'tuple[int, None]'",
-          "summary": "Delegate a ready batch to the society Coordinator (worktree-isolated workers).",
-          "lineno": 52
-        }
-      ],
-      "depends_on": [
-        "config",
-        "memory.experience",
-        "platform_core.app_config.paths",
-        "platform_core.core.best_effort",
-        "platform_core.orchestration",
-        "society.blackboard",
-        "society.coordinator"
-      ],
-      "side_effects": [
-        "runs society workers (claims/updates task JSON, appends to the blackboard)"
-      ],
-      "test": [
-        "tests/orchestration/test_society_batch.py"
-      ],
-      "callers": [
-        "platform_core.orchestration.run_loop_mixin"
-      ]
-    },
-    "society.worker": {
-      "path": "society/worker.py",
-      "purpose": "WorkerAgent -- a role-scoped wrapper over agents/executor.py::runClaude.",
-      "exports": [
-        {
-          "name": "WorkerAgent",
-          "kind": "class",
-          "signature": "",
-          "summary": "Claim a subtask, execute it under a role, post the result.",
-          "lineno": 33
-        }
-      ],
-      "depends_on": [
-        "agents.executor",
-        "agents.verifier",
-        "config",
-        "society.blackboard",
-        "state.task"
-      ],
-      "side_effects": [
-        "claims+updates task JSON, runs Claude, appends to the blackboard"
-      ],
-      "test": [
-        "tests/orchestration/test_society_worker.py"
-      ],
-      "callers": [
-        "society",
-        "society.coordinator"
-      ]
-    },
     "src": {
       "path": "src/__init__.py",
       "purpose": "",
@@ -20495,28 +20618,28 @@
           "kind": "class",
           "signature": "",
           "summary": "Raised when a workflow name is not present in the registry.",
-          "lineno": 62
+          "lineno": 65
         },
         {
           "name": "WorkflowValidationError",
           "kind": "class",
           "signature": "",
           "summary": "Raised when a workflow definition fails structural validation.",
-          "lineno": 66
+          "lineno": 69
         },
         {
           "name": "WorkflowCollisionError",
           "kind": "class",
           "signature": "",
           "summary": "Raised when addWorkflow() would silently overwrite a built-in (disk-loaded) definition.",
-          "lineno": 70
+          "lineno": 73
         },
         {
           "name": "WorkflowRegistry",
           "kind": "class",
           "signature": "",
           "summary": "Thread-safe mutable registry of WorkflowDefinition entries.",
-          "lineno": 78
+          "lineno": 81
         }
       ],
       "depends_on": [
@@ -20586,11 +20709,13 @@
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.run_phase_surface_mixin",
         "platform_core.orchestration.safety_mixin",
+        "platform_core.orchestration.society.coordinator",
+        "platform_core.orchestration.society.worker",
         "platform_core.orchestration.solution_space",
         "platform_core.runtime.resilience",
         "platform_core.simulator.bot_replay",
-        "society.coordinator",
-        "society.worker"
+        "platform_core.simulator.testing.e2e",
+        "platform_core.simulator.testing.operator"
       ]
     },
     "state.task_io": {
@@ -21384,6 +21509,35 @@
       "test": [],
       "callers": []
     },
+    "tools.innovator_eval": {
+      "path": "tools/innovator_eval.py",
+      "purpose": "Compare legacy discovery with the local-only Innovator Excellence engine.",
+      "exports": [
+        {
+          "name": "run",
+          "kind": "function",
+          "signature": "(scripted: bool=False) -> list[dict]",
+          "summary": "",
+          "lineno": 55
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "",
+          "lineno": 74
+        }
+      ],
+      "depends_on": [
+        "agents.discovery",
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "tools.iteration_bench": {
       "path": "tools/iteration_bench.py",
       "purpose": "Benchmark harness for validated Claude/agent iteration speed.",
@@ -22025,44 +22179,6 @@
         "tests/workflows/test_validate_workflows.py"
       ],
       "callers": []
-    },
-    "workflows": {
-      "path": "workflows/__init__.py",
-      "purpose": "Workflow registry package.",
-      "exports": [],
-      "depends_on": [],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [],
-      "callers": []
-    },
-    "workflows.registry": {
-      "path": "workflows/registry.py",
-      "purpose": "Workflow registry — loads and validates WorkflowDefinition JSON files.",
-      "exports": [
-        {
-          "name": "loadRegistry",
-          "kind": "function",
-          "signature": "(definitions_dir: Path=DEFINITIONS_DIR) -> Dict[str, WorkflowDefinition]",
-          "summary": "Load all *.json files from *definitions_dir*, validate, and return by name.",
-          "lineno": 93
-        }
-      ],
-      "depends_on": [
-        "platform_core.core.contracts"
-      ],
-      "side_effects": [
-        "unannotated"
-      ],
-      "test": [
-        "tests/orchestration/test_orchestrator_with_registry.py",
-        "tests/workflows/test_workflow_registry.py",
-        "tests/workflows/test_workflows_registry.py"
-      ],
-      "callers": [
-        "platform_core.ops.validate_workflows"
-      ]
     }
   }
 }

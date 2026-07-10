@@ -19,13 +19,13 @@ import logging
 import unittest
 from pathlib import Path
 
-from workflows.registry import (
+from platform_core.orchestration.workflows.registry import (
     _validateAgent,
     _validatePhase,
     _validateWorkflowDefinition,
     loadRegistry,
 )
-from workflows import registry as _reg_module
+from platform_core.orchestration.workflows import registry as _reg_module
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +281,7 @@ class TestLoadRegistry(unittest.TestCase):
 
     def test_warning_logged_for_invalid_definition(self):
         _write_json(self.defs_dir, "bad.json", {"unknown_key": True})
-        with self.assertLogs("workflows.registry", level=logging.WARNING):
+        with self.assertLogs("platform_core.orchestration.workflows.registry", level=logging.WARNING):
             loadRegistry(self.defs_dir)
 
 
@@ -299,7 +299,7 @@ class TestShippedDefinitions(unittest.TestCase):
     EXPECTED_WORKFLOWS = {"code_review", "bug_investigation", "feature_implementation"}
 
     def test_all_shipped_workflows_load(self):
-        from workflows.registry import DEFINITIONS_DIR
+        from platform_core.orchestration.workflows.registry import DEFINITIONS_DIR
         reg = loadRegistry(DEFINITIONS_DIR)
         missing = self.EXPECTED_WORKFLOWS - set(reg.keys())
         self.assertFalse(
@@ -309,7 +309,7 @@ class TestShippedDefinitions(unittest.TestCase):
 
     def test_success_rate_is_100_percent(self):
         """All known definitions load; zero are skipped due to validation errors."""
-        from workflows.registry import DEFINITIONS_DIR
+        from platform_core.orchestration.workflows.registry import DEFINITIONS_DIR
         reg = loadRegistry(DEFINITIONS_DIR)
         loaded_count = len([k for k in reg if k in self.EXPECTED_WORKFLOWS])
         rate = loaded_count / len(self.EXPECTED_WORKFLOWS)
@@ -319,33 +319,33 @@ class TestShippedDefinitions(unittest.TestCase):
         )
 
     def test_code_review_has_parallel_phase(self):
-        from workflows.registry import DEFINITIONS_DIR
+        from platform_core.orchestration.workflows.registry import DEFINITIONS_DIR
         reg = loadRegistry(DEFINITIONS_DIR)
         wf = reg["code_review"]
         parallel_phases = [p for p in wf.get("phases", []) if p.get("parallel")]
         self.assertTrue(parallel_phases, "code_review must have at least one parallel phase")
 
     def test_code_review_has_three_agents(self):
-        from workflows.registry import DEFINITIONS_DIR
+        from platform_core.orchestration.workflows.registry import DEFINITIONS_DIR
         reg = loadRegistry(DEFINITIONS_DIR)
         wf = reg["code_review"]
         all_agents = [a for p in wf.get("phases", []) for a in p.get("agents", [])]
         self.assertEqual(len(all_agents), 3)
 
     def test_bug_investigation_has_three_phases(self):
-        from workflows.registry import DEFINITIONS_DIR
+        from platform_core.orchestration.workflows.registry import DEFINITIONS_DIR
         reg = loadRegistry(DEFINITIONS_DIR)
         wf = reg["bug_investigation"]
         self.assertEqual(len(wf.get("phases", [])), 3)
 
     def test_feature_implementation_has_three_phases(self):
-        from workflows.registry import DEFINITIONS_DIR
+        from platform_core.orchestration.workflows.registry import DEFINITIONS_DIR
         reg = loadRegistry(DEFINITIONS_DIR)
         wf = reg["feature_implementation"]
         self.assertEqual(len(wf.get("phases", [])), 3)
 
     def test_all_agents_have_valid_effort(self):
-        from workflows.registry import DEFINITIONS_DIR, _VALID_EFFORT_VALUES
+        from platform_core.orchestration.workflows.registry import DEFINITIONS_DIR, _VALID_EFFORT_VALUES
         reg = loadRegistry(DEFINITIONS_DIR)
         for wf_name, wf in reg.items():
             for phase in wf.get("phases", []):
@@ -357,7 +357,7 @@ class TestShippedDefinitions(unittest.TestCase):
                         )
 
     def test_all_definitions_have_synthesis(self):
-        from workflows.registry import DEFINITIONS_DIR
+        from platform_core.orchestration.workflows.registry import DEFINITIONS_DIR
         reg = loadRegistry(DEFINITIONS_DIR)
         for wf_name in self.EXPECTED_WORKFLOWS:
             with self.subTest(workflow=wf_name):
@@ -368,7 +368,7 @@ class TestShippedDefinitions(unittest.TestCase):
                 self.assertTrue(reg[wf_name]["synthesis"].strip())
 
     def test_all_definitions_have_description(self):
-        from workflows.registry import DEFINITIONS_DIR
+        from platform_core.orchestration.workflows.registry import DEFINITIONS_DIR
         reg = loadRegistry(DEFINITIONS_DIR)
         for wf_name in self.EXPECTED_WORKFLOWS:
             with self.subTest(workflow=wf_name):

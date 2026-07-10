@@ -1,10 +1,10 @@
 """Tests for explore.approach_tradeoffs -- deterministic trade-off scoring."""
 from __future__ import annotations
 
-from introspect import extractProject
+from developer_tools.introspection import extractProject
 
-from explore.approach_gen import generateApproaches
-from explore.approach_tradeoffs import (
+from developer_tools.exploration.approach_gen import generateApproaches
+from developer_tools.exploration.approach_tradeoffs import (
     W_EFFORT,
     W_FIT,
     W_RISK,

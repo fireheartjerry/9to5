@@ -3,13 +3,13 @@ from __future__ import annotations
 
 
 def _scan(root):
-    from introspect.project_scanner import scanProject
+    from developer_tools.introspection.project_scanner import scanProject
 
     return scanProject(root, max_files=100)
 
 
 def test_boundaries_on_fixture(fixture_project):
-    from introspect.project_boundaries import detectBoundaries
+    from developer_tools.introspection.project_boundaries import detectBoundaries
 
     bounds = detectBoundaries(fixture_project, _scan(fixture_project))
     assert bounds.packages == ("pkg",)
@@ -18,14 +18,14 @@ def test_boundaries_on_fixture(fixture_project):
 
 
 def test_non_facade_module_excluded(fixture_project):
-    from introspect.project_boundaries import detectBoundaries
+    from developer_tools.introspection.project_boundaries import detectBoundaries
 
     bounds = detectBoundaries(fixture_project, _scan(fixture_project))
     assert "pkg/core.py" not in bounds.facades       # defines a function -> not a facade
 
 
 def test_future_only_module_is_not_facade(fixture_project):
-    from introspect.project_boundaries import detectBoundaries
+    from developer_tools.introspection.project_boundaries import detectBoundaries
 
     (fixture_project / "pkg" / "future_only.py").write_text(
         '"""Docstring plus a future import only -- NOT a re-export facade."""\n'
@@ -38,7 +38,7 @@ def test_future_only_module_is_not_facade(fixture_project):
 
 
 def test_entrypoints_detected(fixture_project):
-    from introspect.project_boundaries import detectBoundaries
+    from developer_tools.introspection.project_boundaries import detectBoundaries
 
     (fixture_project / "main.py").write_text("print('hi')\n", encoding="utf-8")
     (fixture_project / "pkg" / "__main__.py").write_text("print('m')\n", encoding="utf-8")

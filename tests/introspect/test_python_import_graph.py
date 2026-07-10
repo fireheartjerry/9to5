@@ -12,7 +12,7 @@ FIXTURE_PY_FILES = [
 
 
 def test_python_graph_edges_and_lazy(fixture_project):
-    from introspect.python_import_graph import analyzePython
+    from developer_tools.introspection.python_import_graph import analyzePython
 
     mods = analyzePython(fixture_project, FIXTURE_PY_FILES)
     core = mods["pkg/core.py"]
@@ -25,7 +25,7 @@ def test_python_graph_edges_and_lazy(fixture_project):
 
 
 def test_lazy_import_split(fixture_project):
-    from introspect.python_import_graph import analyzePython
+    from developer_tools.introspection.python_import_graph import analyzePython
 
     mods = analyzePython(fixture_project, FIXTURE_PY_FILES)
     test_mod = mods["tests/test_core.py"]
@@ -35,7 +35,7 @@ def test_lazy_import_split(fixture_project):
 
 
 def test_facade_honors_dunder_all(fixture_project):
-    from introspect.python_import_graph import analyzePython
+    from developer_tools.introspection.python_import_graph import analyzePython
 
     mods = analyzePython(fixture_project, FIXTURE_PY_FILES)
     facade = mods["pkg/__init__.py"]
@@ -44,7 +44,7 @@ def test_facade_honors_dunder_all(fixture_project):
 
 
 def test_stdlib_imports_not_first_party(fixture_project):
-    from introspect.python_import_graph import analyzePython
+    from developer_tools.introspection.python_import_graph import analyzePython
 
     mods = analyzePython(fixture_project, FIXTURE_PY_FILES)
     util = mods["pkg/util.py"]
@@ -53,7 +53,7 @@ def test_stdlib_imports_not_first_party(fixture_project):
 
 
 def test_open_tagged_only_for_write_modes(fixture_project):
-    from introspect.python_import_graph import analyzePython
+    from developer_tools.introspection.python_import_graph import analyzePython
 
     cases = {
         "pkg/fx_read.py": 'open("x")\n',                          # default mode: read
@@ -77,7 +77,7 @@ def test_open_tagged_only_for_write_modes(fixture_project):
 
 
 def test_syntax_error_yields_skeleton(fixture_project):
-    from introspect.python_import_graph import analyzePython
+    from developer_tools.introspection.python_import_graph import analyzePython
 
     bad = fixture_project / "pkg" / "broken.py"
     bad.write_text("def x(:\n", encoding="utf-8")
@@ -88,7 +88,7 @@ def test_syntax_error_yields_skeleton(fixture_project):
 
 
 def test_relative_import_resolution(fixture_project):
-    from introspect.python_import_graph import analyzePython
+    from developer_tools.introspection.python_import_graph import analyzePython
 
     rel = fixture_project / "pkg" / "rel.py"
     rel.write_text("from . import util\nfrom .core import coreFunc\n", encoding="utf-8")

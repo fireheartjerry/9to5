@@ -1,7 +1,7 @@
 """Tests for society batch gate helpers."""
 from __future__ import annotations
 
-from society import society_batch
+from platform_core.orchestration.society import society_batch
 
 
 def test_society_gate_requires_flag_and_multiple_ready(monkeypatch):

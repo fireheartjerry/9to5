@@ -3,14 +3,14 @@ from __future__ import annotations
 
 
 def test_find_usages(fixture_project):
-    from refactor.symbol_usages import findUsages
+    from developer_tools.refactoring.symbol_usages import findUsages
 
     hits = findUsages(fixture_project, "coreFunc")
     assert any(u.file == "tests/test_core.py" and u.kind == "import" for u in hits)
 
 
 def test_find_usages_kinds(fixture_project):
-    from refactor.symbol_usages import Usage, findUsages
+    from developer_tools.refactoring.symbol_usages import Usage, findUsages
 
     (fixture_project / "pkg" / "caller.py").write_text(
         "import pkg.core\n\n\ndef call():\n    return pkg.core.coreFunc()\n",
@@ -23,7 +23,7 @@ def test_find_usages_kinds(fixture_project):
 
 
 def test_find_usages_skips_excluded_dirs_and_sorted(fixture_project):
-    from refactor.symbol_usages import findUsages
+    from developer_tools.refactoring.symbol_usages import findUsages
 
     hidden = fixture_project / ".git" / "hook.py"
     hidden.write_text("coreFunc()\n", encoding="utf-8")
@@ -33,13 +33,13 @@ def test_find_usages_skips_excluded_dirs_and_sorted(fixture_project):
 
 
 def test_find_usages_unknown_symbol_empty(fixture_project):
-    from refactor.symbol_usages import findUsages
+    from developer_tools.refactoring.symbol_usages import findUsages
 
     assert findUsages(fixture_project, "definitelyNotAName") == []
 
 
 def test_find_usages_multi_matches_per_symbol_calls(fixture_project):
-    from refactor.symbol_usages import findUsages, findUsagesMulti
+    from developer_tools.refactoring.symbol_usages import findUsages, findUsagesMulti
 
     symbols = {"coreFunc", "helper", "definitelyNotAName"}
     multi = findUsagesMulti(fixture_project, symbols)

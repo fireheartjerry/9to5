@@ -1,5 +1,5 @@
 """Append-only JSONL blackboard: ordering, attribution, malformed tolerance."""
-from society.blackboard import Blackboard, BlackboardEntry
+from platform_core.orchestration.society.blackboard import Blackboard, BlackboardEntry
 
 
 def _entry(key, kind, author, to, value):
@@ -43,7 +43,7 @@ def test_for_task_uses_blackboard_dir(tmp_path):
 
 import threading as _threading
 
-from society.blackboard import Blackboard as _BB, BlackboardEntry as _BE
+from platform_core.orchestration.society.blackboard import Blackboard as _BB, BlackboardEntry as _BE
 
 
 def test_concurrent_append_no_lost_or_torn_lines(tmp_path):

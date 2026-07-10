@@ -37,7 +37,7 @@ EXPORTS:
   cloneOrFixture(ext_root: Path) -> tuple[Path, bool]  -- (project dir, offline?)
   writeFixture(dest: Path) -> None  -- Minimal python package (pyproject + pytest config + a test) at ``dest``.
   main() -> int  -- Run parts A and B
-DEPENDS-ON: config, explore.exploreSolutionSpace, explore.generateApproaches, introspect.contextForPrompt, introspect.extractProject, refactor.RefactorTransaction, refactor.ReplaceInFile, refactor.WriteFile, refactor.buildImportGraph, refactor.findCycles
+DEPENDS-ON: config, developer_tools.exploration, developer_tools.introspection, developer_tools.refactoring
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -58,9 +58,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import config  # noqa: E402
-from explore import exploreSolutionSpace, generateApproaches  # noqa: E402
-from introspect import contextForPrompt, extractProject  # noqa: E402
-from refactor import (  # noqa: E402
+from developer_tools.exploration import exploreSolutionSpace, generateApproaches  # noqa: E402
+from developer_tools.introspection import contextForPrompt, extractProject  # noqa: E402
+from developer_tools.refactoring import (  # noqa: E402
     RefactorTransaction,
     ReplaceInFile,
     WriteFile,

@@ -10,13 +10,13 @@ EXPORTS:
   buildImportGraph(model: ProjectModel) -> dict[str, set[str]]  -- Adjacency dict over module relpaths from the model's load-time import edges.
   findCycles(graph: dict[str, set[str]]) -> list[list[str]]  -- All import cycles in ``graph``: SCCs of size >1 plus self-loops.
   wouldCreateCycle(graph: dict[str, set[str]], added_edges: list[tuple[str, str]], removed_edges: list[tuple[str, str]] | tuple[tuple[str, str], ...]=()) -> list[list[str]]  -- Cycles that would exist AFTER the edge changes but do not exist now.
-DEPENDS-ON: introspect.project_model
+DEPENDS-ON: developer_tools.introspection.project_model
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/refactor/test_cycle_detect.py
 """
 from __future__ import annotations
 
-from introspect.project_model import ProjectModel
+from developer_tools.introspection.project_model import ProjectModel
 
 
 def buildImportGraph(model: ProjectModel) -> dict[str, set[str]]:

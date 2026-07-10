@@ -146,8 +146,10 @@
       ],
       "callers": [
         "agents.discovery",
+        "agents.discovery.inventor",
         "agents.discovery.lenses",
-        "platform_core.orchestration.run_phase_mixin"
+        "platform_core.orchestration.run_phase_mixin",
+        "tools.innovator_eval"
       ],
       "test": []
     },
@@ -184,6 +186,27 @@
       "callers": [],
       "test": [
         "tests/orchestration/test_discovery_digest.py"
+      ]
+    },
+    "agents.discovery.inventor": {
+      "path": "agents/discovery/inventor.py",
+      "purpose": "Local-only divergent invention engine for transformative discovery.",
+      "exports": [
+        "InnovatorEvent",
+        "run_excellence"
+      ],
+      "depends_on": [
+        "agents.discovery",
+        "agents.discovery.models",
+        "config",
+        "llm_io",
+        "memory.novelty_index"
+      ],
+      "callers": [],
+      "test": [
+        "tests/orchestration/test_bridge_inventor.py",
+        "tests/orchestration/test_inventor_e2e.py",
+        "tests/platform/test_inventor_flags_config.py"
       ]
     },
     "agents.discovery.ledger_bridge": {
@@ -235,6 +258,7 @@
       "depends_on": [],
       "callers": [
         "agents.discovery",
+        "agents.discovery.inventor",
         "agents.discovery.lenses",
         "agents.discovery.synthesis"
       ],
@@ -531,7 +555,7 @@
         "orchestrator",
         "platform_core.ops.health",
         "platform_core.orchestration.safety_mixin",
-        "society.worker"
+        "platform_core.orchestration.society.worker"
       ],
       "test": [
         "tests/execution/test_executor.py"
@@ -1332,7 +1356,7 @@
       "callers": [
         "agents.execution.executor",
         "learning.evolution.candidate",
-        "society.roles"
+        "platform_core.orchestration.society.roles"
       ],
       "test": [
         "tests/evolution/test_playbook.py"
@@ -1552,7 +1576,7 @@
         "platform_core.orchestration.adversary_loop",
         "platform_core.orchestration.control_review_mixin",
         "platform_core.orchestration.review_mixin",
-        "society.debate"
+        "platform_core.orchestration.society.debate"
       ],
       "test": [
         "tests/slow/test_phase2_second_brain.py"
@@ -1788,8 +1812,8 @@
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_loop_replan_mixin",
         "platform_core.orchestration.run_phase_mixin",
-        "platform_core.orchestration.subtask",
-        "society.worker"
+        "platform_core.orchestration.society.worker",
+        "platform_core.orchestration.subtask"
       ],
       "test": [
         "tests/execution/test_verifier.py"
@@ -1899,6 +1923,7 @@
         "agents.discovery",
         "agents.discovery.corpus",
         "agents.discovery.digest",
+        "agents.discovery.inventor",
         "agents.discovery.ledger_bridge",
         "agents.discovery.lenses",
         "agents.discovery.synthesis",
@@ -1945,21 +1970,21 @@
         "agents.trace.replay",
         "agents.trace.replay_cli",
         "agents.trace.replay_events",
-        "human_nature.ab_harness",
-        "human_nature.authority",
-        "human_nature.consolidation",
-        "human_nature.continuity",
-        "human_nature.emotions",
-        "human_nature.instinct",
-        "human_nature.integration",
-        "human_nature.intuition",
-        "human_nature.momentary",
-        "human_nature.mood",
-        "human_nature.operator_authority",
-        "human_nature.opinions",
-        "human_nature.psyche_runtime",
-        "human_nature.psyche_store",
-        "introspect.project_extract",
+        "developer_tools.introspection.project_extract",
+        "human_nature.faculties.affect.emotions",
+        "human_nature.faculties.affect.mood",
+        "human_nature.faculties.governance.authority",
+        "human_nature.faculties.governance.operator_authority",
+        "human_nature.faculties.identity.continuity",
+        "human_nature.faculties.runtime.ab_harness",
+        "human_nature.faculties.runtime.consolidation",
+        "human_nature.faculties.runtime.integration",
+        "human_nature.faculties.runtime.psyche_runtime",
+        "human_nature.faculties.runtime.psyche_store",
+        "human_nature.faculties.signals.instinct",
+        "human_nature.faculties.signals.intuition",
+        "human_nature.faculties.signals.momentary",
+        "human_nature.faculties.signals.opinions",
         "learning.evolution.adapter_promotion",
         "learning.evolution.bootstrap",
         "learning.evolution.candidate",
@@ -2133,6 +2158,12 @@
         "platform_core.orchestration.run_phase_outcome",
         "platform_core.orchestration.run_phase_surface_mixin",
         "platform_core.orchestration.safety_mixin",
+        "platform_core.orchestration.society.blackboard",
+        "platform_core.orchestration.society.coordinator",
+        "platform_core.orchestration.society.debate",
+        "platform_core.orchestration.society.roles",
+        "platform_core.orchestration.society.society_batch",
+        "platform_core.orchestration.society.worker",
         "platform_core.orchestration.solution_space",
         "platform_core.orchestration.step_resume",
         "platform_core.orchestration.step_sink",
@@ -2150,21 +2181,17 @@
         "platform_core.simulator.bot_replay",
         "platform_core.simulator.chaos",
         "platform_core.simulator.simulation",
+        "platform_core.simulator.testing.e2e",
         "scripts.poc_any_project",
         "scripts.repo_health",
         "selfmod",
-        "society.blackboard",
-        "society.coordinator",
-        "society.debate",
-        "society.roles",
-        "society.society_batch",
-        "society.worker",
         "state.task_io",
         "state.task_schema",
         "tools.cerebras_probe",
         "tools.cloudflare_workers_ai_probe",
         "tools.elaborator_eval",
-        "tools.groq_probe"
+        "tools.groq_probe",
+        "tools.innovator_eval"
       ],
       "test": [
         "tests/human_nature/test_hn_config.py",
@@ -2186,39 +2213,41 @@
       "callers": [],
       "test": []
     },
-    "explore": {
-      "path": "explore/__init__.py",
+    "developer_tools.exploration": {
+      "path": "developer_tools/exploration/__init__.py",
       "purpose": "explore -- solution-space exploration over an introspected project (stdlib-only leaf).",
       "exports": [
         "exploreSolutionSpace"
       ],
       "depends_on": [
-        "explore.approach_gen",
-        "explore.approach_synthesis",
-        "explore.approach_tradeoffs",
-        "introspect.extractProject",
-        "introspect.project_model"
+        "developer_tools.exploration.approach_gen",
+        "developer_tools.exploration.approach_synthesis",
+        "developer_tools.exploration.approach_tradeoffs",
+        "developer_tools.introspection",
+        "developer_tools.introspection.project_model"
       ],
-      "callers": [],
+      "callers": [
+        "developer_tools.exploration.__main__",
+        "platform_core.orchestration.fork_policy",
+        "scripts.poc_any_project"
+      ],
       "test": []
     },
-    "explore.__main__": {
-      "path": "explore/__main__.py",
+    "developer_tools.exploration.__main__": {
+      "path": "developer_tools/exploration/__main__.py",
       "purpose": "CLI: ``python -m explore \"<goal>\" <root>`` -- print ranked approaches + winner.",
       "exports": [
         "main"
       ],
       "depends_on": [
-        "explore.generateApproaches",
-        "explore.scoreApproaches",
-        "explore.selectOrSynthesize",
-        "introspect.project_extract"
+        "developer_tools.exploration",
+        "developer_tools.introspection.project_extract"
       ],
       "callers": [],
       "test": []
     },
-    "explore.approach_gen": {
-      "path": "explore/approach_gen.py",
+    "developer_tools.exploration.approach_gen": {
+      "path": "developer_tools/exploration/approach_gen.py",
       "purpose": "Approach generation: archetype-templated (brainless) or brain-authored candidates.",
       "exports": [
         "ApproachCandidate",
@@ -2226,52 +2255,386 @@
         "brainText"
       ],
       "depends_on": [
-        "introspect.project_model"
+        "developer_tools.introspection.project_model"
       ],
       "callers": [
-        "explore",
-        "explore.approach_synthesis",
-        "explore.approach_tradeoffs"
+        "developer_tools.exploration",
+        "developer_tools.exploration.approach_synthesis",
+        "developer_tools.exploration.approach_tradeoffs"
       ],
       "test": [
         "tests/explore/test_approach_gen.py"
       ]
     },
-    "explore.approach_synthesis": {
-      "path": "explore/approach_synthesis.py",
+    "developer_tools.exploration.approach_synthesis": {
+      "path": "developer_tools/exploration/approach_synthesis.py",
       "purpose": "Winner selection + mechanical synthesis of runner-up mitigations.",
       "exports": [
         "SynthesisResult",
         "selectOrSynthesize"
       ],
       "depends_on": [
-        "explore.approach_gen",
-        "explore.approach_tradeoffs"
+        "developer_tools.exploration.approach_gen",
+        "developer_tools.exploration.approach_tradeoffs"
       ],
       "callers": [
-        "explore"
+        "developer_tools.exploration"
       ],
       "test": [
         "tests/explore/test_approach_synthesis.py"
       ]
     },
-    "explore.approach_tradeoffs": {
-      "path": "explore/approach_tradeoffs.py",
+    "developer_tools.exploration.approach_tradeoffs": {
+      "path": "developer_tools/exploration/approach_tradeoffs.py",
       "purpose": "Trade-off scoring: deterministic risk/effort/testability/fit composite per candidate.",
       "exports": [
         "TradeoffScore",
         "scoreApproaches"
       ],
       "depends_on": [
-        "explore.approach_gen",
-        "introspect.project_model"
+        "developer_tools.exploration.approach_gen",
+        "developer_tools.introspection.project_model"
       ],
       "callers": [
-        "explore",
-        "explore.approach_synthesis"
+        "developer_tools.exploration",
+        "developer_tools.exploration.approach_synthesis"
       ],
       "test": [
         "tests/explore/test_approach_tradeoffs.py"
+      ]
+    },
+    "developer_tools.introspection": {
+      "path": "developer_tools/introspection/__init__.py",
+      "purpose": "introspect -- typed runtime project model for ANY root directory (stdlib-only leaf).",
+      "exports": [],
+      "depends_on": [
+        "developer_tools.introspection.project_extract",
+        "developer_tools.introspection.project_model"
+      ],
+      "callers": [
+        "developer_tools.exploration",
+        "developer_tools.refactoring.__main__",
+        "developer_tools.refactoring.refactor_transaction",
+        "platform_core.orchestration.code_graph",
+        "platform_core.orchestration.fork_policy",
+        "platform_core.orchestration.plan_context",
+        "scripts.poc_any_project"
+      ],
+      "test": []
+    },
+    "developer_tools.introspection.__main__": {
+      "path": "developer_tools/introspection/__main__.py",
+      "purpose": "CLI: ``python -m introspect <root> [--json]`` -- print a project digest or model JSON.",
+      "exports": [
+        "main"
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_extract"
+      ],
+      "callers": [],
+      "test": []
+    },
+    "developer_tools.introspection.generic_import_scan": {
+      "path": "developer_tools/introspection/generic_import_scan.py",
+      "purpose": "Regex import scan for JS/TS files: `import ... from '...'` and `require('...')`.",
+      "exports": [
+        "analyzeGeneric"
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_model"
+      ],
+      "callers": [
+        "developer_tools.introspection.project_extract"
+      ],
+      "test": [
+        "tests/introspect/test_generic_import_scan.py"
+      ]
+    },
+    "developer_tools.introspection.project_boundaries": {
+      "path": "developer_tools/introspection/project_boundaries.py",
+      "purpose": "Ownership/interface map: packages, re-export facades, entrypoints, config surface.",
+      "exports": [
+        "detectBoundaries"
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_model"
+      ],
+      "callers": [
+        "developer_tools.introspection.project_extract"
+      ],
+      "test": [
+        "tests/introspect/test_project_boundaries.py"
+      ]
+    },
+    "developer_tools.introspection.project_commands": {
+      "path": "developer_tools/introspection/project_commands.py",
+      "purpose": "Detect test/build/lint/typecheck commands from config files -- never guessed.",
+      "exports": [
+        "detectCommands"
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_model"
+      ],
+      "callers": [
+        "developer_tools.introspection.project_extract"
+      ],
+      "test": [
+        "tests/introspect/test_project_commands.py"
+      ]
+    },
+    "developer_tools.introspection.project_extract": {
+      "path": "developer_tools/introspection/project_extract.py",
+      "purpose": "Facade: build a full ProjectModel for any root + render an LLM prompt digest.",
+      "exports": [
+        "extractProject",
+        "contextForPrompt"
+      ],
+      "depends_on": [
+        "config",
+        "developer_tools.introspection.generic_import_scan",
+        "developer_tools.introspection.project_boundaries",
+        "developer_tools.introspection.project_commands",
+        "developer_tools.introspection.project_model",
+        "developer_tools.introspection.project_scanner",
+        "developer_tools.introspection.python_import_graph"
+      ],
+      "callers": [
+        "developer_tools.exploration.__main__",
+        "developer_tools.introspection",
+        "developer_tools.introspection.__main__"
+      ],
+      "test": [
+        "tests/introspect/test_project_extract.py"
+      ]
+    },
+    "developer_tools.introspection.project_model": {
+      "path": "developer_tools/introspection/project_model.py",
+      "purpose": "Typed, JSON-round-trippable project model shared by every introspect analyzer.",
+      "exports": [
+        "ModuleInfo",
+        "DetectedCommand",
+        "BoundaryMap",
+        "ProjectModel"
+      ],
+      "depends_on": [],
+      "callers": [
+        "developer_tools.exploration",
+        "developer_tools.exploration.approach_gen",
+        "developer_tools.exploration.approach_tradeoffs",
+        "developer_tools.introspection",
+        "developer_tools.introspection.generic_import_scan",
+        "developer_tools.introspection.project_boundaries",
+        "developer_tools.introspection.project_commands",
+        "developer_tools.introspection.project_extract",
+        "developer_tools.introspection.project_scanner",
+        "developer_tools.introspection.python_import_graph",
+        "developer_tools.refactoring.change_impact",
+        "developer_tools.refactoring.cycle_detect"
+      ],
+      "test": [
+        "tests/introspect/test_project_model.py"
+      ]
+    },
+    "developer_tools.introspection.project_scanner": {
+      "path": "developer_tools/introspection/project_scanner.py",
+      "purpose": "Deterministic file-tree scan: classify source files into ModuleInfo skeletons.",
+      "exports": [
+        "gitignoreExcludes",
+        "pruneDirnames",
+        "scanProject"
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_model"
+      ],
+      "callers": [
+        "developer_tools.introspection.project_extract",
+        "developer_tools.refactoring.symbol_usages"
+      ],
+      "test": [
+        "tests/introspect/test_project_scanner.py"
+      ]
+    },
+    "developer_tools.introspection.project_test_map": {
+      "path": "developer_tools/introspection/project_test_map.py",
+      "purpose": "Convention-based file->test mapping for any root (no manual map required).",
+      "exports": [
+        "mapFileToTests"
+      ],
+      "depends_on": [],
+      "callers": [
+        "developer_tools.refactoring.change_impact"
+      ],
+      "test": [
+        "tests/introspect/test_project_test_map.py"
+      ]
+    },
+    "developer_tools.introspection.python_import_graph": {
+      "path": "developer_tools/introspection/python_import_graph.py",
+      "purpose": "AST analysis for Python modules: exports, first-party import edges, side effects.",
+      "exports": [
+        "analyzePython"
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_model"
+      ],
+      "callers": [
+        "developer_tools.introspection.project_extract",
+        "developer_tools.refactoring.change_impact"
+      ],
+      "test": [
+        "tests/introspect/test_python_import_graph.py"
+      ]
+    },
+    "developer_tools.refactoring": {
+      "path": "developer_tools/refactoring/__init__.py",
+      "purpose": "refactor -- cycle detection, impact prediction, atomic transactions (stdlib leaf).",
+      "exports": [],
+      "depends_on": [
+        "developer_tools.refactoring.change_impact",
+        "developer_tools.refactoring.cycle_detect",
+        "developer_tools.refactoring.refactor_edits",
+        "developer_tools.refactoring.refactor_transaction",
+        "developer_tools.refactoring.symbol_usages"
+      ],
+      "callers": [
+        "scripts.poc_any_project"
+      ],
+      "test": []
+    },
+    "developer_tools.refactoring.__main__": {
+      "path": "developer_tools/refactoring/__main__.py",
+      "purpose": "CLI: ``python -m refactor check <root>`` -- import-cycle report, exit 1 on cycles.",
+      "exports": [
+        "main"
+      ],
+      "depends_on": [
+        "developer_tools.introspection",
+        "developer_tools.refactoring.cycle_detect"
+      ],
+      "callers": [],
+      "test": []
+    },
+    "developer_tools.refactoring.change_impact": {
+      "path": "developer_tools/refactoring/change_impact.py",
+      "purpose": "Pure breaking-change prediction for a planned edit set -- no disk writes.",
+      "exports": [
+        "ImpactReport",
+        "predictImpact"
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_model",
+        "developer_tools.introspection.project_test_map",
+        "developer_tools.introspection.python_import_graph",
+        "developer_tools.refactoring.cycle_detect",
+        "developer_tools.refactoring.refactor_edits",
+        "developer_tools.refactoring.symbol_usages"
+      ],
+      "callers": [
+        "developer_tools.refactoring",
+        "developer_tools.refactoring.refactor_transaction"
+      ],
+      "test": [
+        "tests/refactor/test_change_impact.py"
+      ]
+    },
+    "developer_tools.refactoring.cycle_detect": {
+      "path": "developer_tools/refactoring/cycle_detect.py",
+      "purpose": "Import-cycle detection + pre-flight cycle prediction (iterative Tarjan SCC).",
+      "exports": [
+        "buildImportGraph",
+        "findCycles",
+        "wouldCreateCycle"
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_model"
+      ],
+      "callers": [
+        "developer_tools.refactoring",
+        "developer_tools.refactoring.__main__",
+        "developer_tools.refactoring.change_impact",
+        "developer_tools.refactoring.refactor_transaction"
+      ],
+      "test": [
+        "tests/refactor/test_cycle_detect.py"
+      ]
+    },
+    "developer_tools.refactoring.refactor_edits": {
+      "path": "developer_tools/refactoring/refactor_edits.py",
+      "purpose": "Edit primitives (frozen dataclasses) + fail-closed path validation.",
+      "exports": [
+        "WriteFile",
+        "ReplaceInFile",
+        "DeleteFile",
+        "RenameFile",
+        "editPaths",
+        "validateEdit"
+      ],
+      "depends_on": [],
+      "callers": [
+        "developer_tools.refactoring",
+        "developer_tools.refactoring.change_impact",
+        "developer_tools.refactoring.refactor_transaction"
+      ],
+      "test": [
+        "tests/refactor/test_refactor_edits.py"
+      ]
+    },
+    "developer_tools.refactoring.refactor_journal": {
+      "path": "developer_tools/refactoring/refactor_journal.py",
+      "purpose": "Crash journal for RefactorTransaction: spill snapshots to disk pre-write.",
+      "exports": [
+        "writeJournal",
+        "loadJournal",
+        "restoreSnapshots",
+        "deleteJournal"
+      ],
+      "depends_on": [],
+      "callers": [
+        "developer_tools.refactoring.refactor_transaction"
+      ],
+      "test": [
+        "tests/refactor/test_refactor_hardening.py"
+      ]
+    },
+    "developer_tools.refactoring.refactor_transaction": {
+      "path": "developer_tools/refactoring/refactor_transaction.py",
+      "purpose": "Atomic multi-file refactor transaction: snapshot -> journal -> write -> gate -> rollback.",
+      "exports": [
+        "RefactorResult",
+        "RefactorTransaction",
+        "recoverJournal"
+      ],
+      "depends_on": [
+        "developer_tools.introspection",
+        "developer_tools.refactoring.change_impact",
+        "developer_tools.refactoring.cycle_detect",
+        "developer_tools.refactoring.refactor_edits",
+        "developer_tools.refactoring.refactor_journal"
+      ],
+      "callers": [
+        "developer_tools.refactoring"
+      ],
+      "test": [
+        "tests/refactor/test_refactor_transaction.py"
+      ]
+    },
+    "developer_tools.refactoring.symbol_usages": {
+      "path": "developer_tools/refactoring/symbol_usages.py",
+      "purpose": "Cross-root symbol usage scan: every AST Name/Attribute/ImportFrom reference.",
+      "exports": [
+        "Usage",
+        "findUsages",
+        "findUsagesMulti"
+      ],
+      "depends_on": [
+        "developer_tools.introspection.project_scanner"
+      ],
+      "callers": [
+        "developer_tools.refactoring",
+        "developer_tools.refactoring.change_impact"
+      ],
+      "test": [
+        "tests/refactor/test_symbol_usages.py"
       ]
     },
     "human_nature": {
@@ -2282,25 +2645,8 @@
       "callers": [],
       "test": []
     },
-    "human_nature.ab_harness": {
-      "path": "human_nature/ab_harness.py",
-      "purpose": "A/B validation harness — behaviour-coupling gate before any flag goes ON-by-default.",
-      "exports": [
-        "record_run",
-        "compare"
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.lifecycle"
-      ],
-      "test": [
-        "tests/human_nature/test_ab_harness.py"
-      ]
-    },
-    "human_nature.affect_manifold": {
-      "path": "human_nature/affect_manifold.py",
+    "human_nature.faculties.affect.affect_manifold": {
+      "path": "human_nature/faculties/affect/affect_manifold.py",
       "purpose": "Affect manifold — the continuous 9-axis affect substrate (state-space model).",
       "exports": [
         "new_manifold",
@@ -2308,42 +2654,72 @@
         "decay"
       ],
       "depends_on": [],
-      "callers": [
-        "human_nature.psyche_runtime"
-      ],
+      "callers": [],
       "test": [
         "tests/human_nature/test_affect_manifold.py"
       ]
     },
-    "human_nature.appraisal": {
-      "path": "human_nature/appraisal.py",
+    "human_nature.faculties.affect.appraisal": {
+      "path": "human_nature/faculties/affect/appraisal.py",
       "purpose": "Appraisal engine — Scherer/OCC appraisal variables → PAD affect coordinate.",
       "exports": [
         "appraise",
         "emotion_label"
       ],
       "depends_on": [],
-      "callers": [
-        "human_nature.integration"
-      ],
+      "callers": [],
       "test": [
         "tests/human_nature/test_appraisal.py"
       ]
     },
-    "human_nature.attention_schema": {
-      "path": "human_nature/attention_schema.py",
-      "purpose": "Attention Schema — the system's model of its own attention (AST; Graziano).",
+    "human_nature.faculties.affect.emotions": {
+      "path": "human_nature/faculties/affect/emotions.py",
+      "purpose": "Emotions faculty — affect → behavior/comms coupling (F8 mandate) and regulation.",
       "exports": [
-        "AttentionSchema"
+        "couple",
+        "bias_appraisal",
+        "regulate"
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_emotions.py"
+      ]
+    },
+    "human_nature.faculties.affect.mood": {
+      "path": "human_nature/faculties/affect/mood.py",
+      "purpose": "Mood — the slow, persistent affective homeostat (long-horizon, cross-run).",
+      "exports": [
+        "new_mood",
+        "blend_outcome",
+        "decay",
+        "congruent_bias"
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_mood.py"
+      ]
+    },
+    "human_nature.faculties.affect.prototypes": {
+      "path": "human_nature/faculties/affect/prototypes.py",
+      "purpose": "Prototype projection — continuous affect manifold → discrete emotion labels.",
+      "exports": [
+        "mixture",
+        "dominant"
       ],
       "depends_on": [],
       "callers": [],
       "test": [
-        "tests/human_nature/test_attention_schema.py"
+        "tests/human_nature/test_prototypes.py"
       ]
     },
-    "human_nature.authority": {
-      "path": "human_nature/authority.py",
+    "human_nature.faculties.governance.authority": {
+      "path": "human_nature/faculties/governance/authority.py",
       "purpose": "Earned control-authority ladder (5-tier extension of F6 autonomy).",
       "exports": [
         "band",
@@ -2354,15 +2730,13 @@
       "depends_on": [
         "config"
       ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.authority_gate"
-      ],
+      "callers": [],
       "test": [
         "tests/human_nature/test_authority.py"
       ]
     },
-    "human_nature.autonomy": {
-      "path": "human_nature/autonomy.py",
+    "human_nature.faculties.governance.autonomy": {
+      "path": "human_nature/faculties/governance/autonomy.py",
       "purpose": "Earned-autonomy dynamic trust contract (F6).",
       "exports": [
         "ceiling",
@@ -2375,97 +2749,21 @@
         "tests/human_nature/test_autonomy.py"
       ]
     },
-    "human_nature.character_vector": {
-      "path": "human_nature/character_vector.py",
-      "purpose": "TARS dials — versioned, inspectable, propose-not-apply character vector (F6).",
-      "exports": [
-        "new_character_vector",
-        "set_dial",
-        "propose_change",
-        "ratify"
-      ],
-      "depends_on": [],
-      "callers": [
-        "human_nature.psyche_commands",
-        "notifications.psyche_cog"
-      ],
-      "test": [
-        "tests/human_nature/test_character_vector.py"
-      ]
-    },
-    "human_nature.charter": {
-      "path": "human_nature/charter.py",
-      "purpose": "Living Constitution — versioned, human-gated charter (F1, F6).",
-      "exports": [
-        "new_charter",
-        "draft_amendment",
-        "ratify",
-        "active_tenets"
-      ],
-      "depends_on": [],
-      "callers": [
-        "human_nature.consolidation",
-        "human_nature.psyche_commands",
-        "notifications.psyche_cog"
-      ],
-      "test": [
-        "tests/human_nature/test_charter.py"
-      ]
-    },
-    "human_nature.conflict": {
-      "path": "human_nature/conflict.py",
+    "human_nature.faculties.governance.conflict": {
+      "path": "human_nature/faculties/governance/conflict.py",
       "purpose": "Conflict — internal DISSONANCE scoring and resolution routing.",
       "exports": [
         "dissonance",
         "route"
       ],
       "depends_on": [],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.society"
-      ],
+      "callers": [],
       "test": [
         "tests/human_nature/test_conflict.py"
       ]
     },
-    "human_nature.consolidation": {
-      "path": "human_nature/consolidation.py",
-      "purpose": "Consolidation cycle — the \"sleep\" phase between runs (propose, never apply).",
-      "exports": [
-        "run_cycle",
-        "propose_updates"
-      ],
-      "depends_on": [
-        "config",
-        "human_nature.charter",
-        "human_nature.self_state",
-        "llm_io"
-      ],
-      "callers": [
-        "human_nature.integration"
-      ],
-      "test": [
-        "tests/human_nature/test_consolidation.py"
-      ]
-    },
-    "human_nature.continuity": {
-      "path": "human_nature/continuity.py",
-      "purpose": "Diachronic narrative self — letters to my future self (inspectable artifacts).",
-      "exports": [
-        "write_letter",
-        "read_letters"
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.lifecycle"
-      ],
-      "test": [
-        "tests/human_nature/test_continuity.py"
-      ]
-    },
-    "human_nature.conviction": {
-      "path": "human_nature/conviction.py",
+    "human_nature.faculties.governance.conviction": {
+      "path": "human_nature/faculties/governance/conviction.py",
       "purpose": "Conviction Engine — the single source of every \"earned\" signal.",
       "exports": [
         "recalibrate",
@@ -2473,17 +2771,13 @@
         "compute_conviction"
       ],
       "depends_on": [],
-      "callers": [
-        "human_nature.intuition",
-        "human_nature.momentary",
-        "platform_core.orchestration.human_nature_bridge.planning"
-      ],
+      "callers": [],
       "test": [
         "tests/human_nature/test_conviction.py"
       ]
     },
-    "human_nature.drift": {
-      "path": "human_nature/drift.py",
+    "human_nature.faculties.governance.drift": {
+      "path": "human_nature/faculties/governance/drift.py",
       "purpose": "Drift monitor — measures expressed persona intensity vs the charter target.",
       "exports": [
         "measure_drift",
@@ -2495,8 +2789,206 @@
         "tests/human_nature/test_drift.py"
       ]
     },
-    "human_nature.drives": {
-      "path": "human_nature/drives.py",
+    "human_nature.faculties.governance.gating": {
+      "path": "human_nature/faculties/governance/gating.py",
+      "purpose": "PRISM gate — persona/affect expression is allowed on human-facing surfaces only.",
+      "exports": [
+        "is_expression_allowed"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_gating.py"
+      ]
+    },
+    "human_nature.faculties.governance.operator_authority": {
+      "path": "human_nature/faculties/governance/operator_authority.py",
+      "purpose": "Operator / safety / verifier-invariance authority caps feeding authority.resolve.",
+      "exports": [
+        "domain_ceiling",
+        "operator_ceiling",
+        "safety_ceiling",
+        "verifier_invariance_ceiling"
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_operator_authority.py"
+      ]
+    },
+    "human_nature.faculties.identity.attention_schema": {
+      "path": "human_nature/faculties/identity/attention_schema.py",
+      "purpose": "Attention Schema — the system's model of its own attention (AST; Graziano).",
+      "exports": [
+        "AttentionSchema"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_attention_schema.py"
+      ]
+    },
+    "human_nature.faculties.identity.character_vector": {
+      "path": "human_nature/faculties/identity/character_vector.py",
+      "purpose": "TARS dials — versioned, inspectable, propose-not-apply character vector (F6).",
+      "exports": [
+        "new_character_vector",
+        "set_dial",
+        "propose_change",
+        "ratify"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_character_vector.py"
+      ]
+    },
+    "human_nature.faculties.identity.charter": {
+      "path": "human_nature/faculties/identity/charter.py",
+      "purpose": "Living Constitution — versioned, human-gated charter (F1, F6).",
+      "exports": [
+        "new_charter",
+        "draft_amendment",
+        "ratify",
+        "active_tenets"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_charter.py"
+      ]
+    },
+    "human_nature.faculties.identity.continuity": {
+      "path": "human_nature/faculties/identity/continuity.py",
+      "purpose": "Diachronic narrative self — letters to my future self (inspectable artifacts).",
+      "exports": [
+        "write_letter",
+        "read_letters"
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_continuity.py"
+      ]
+    },
+    "human_nature.faculties.identity.personality": {
+      "path": "human_nature/faculties/identity/personality.py",
+      "purpose": "PERSONALITY — versioned trait vector wrapping character_vector, and its setpoints.",
+      "exports": [
+        "new_personality",
+        "drive_setpoints",
+        "mood_setpoint",
+        "risk_band",
+        "propose_trait",
+        "ratify"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_personality.py"
+      ]
+    },
+    "human_nature.faculties.identity.self_model": {
+      "path": "human_nature/faculties/identity/self_model.py",
+      "purpose": "Self-model — metacognitive supervisor (F11 / F3 + honest phenomenology).",
+      "exports": [
+        "competence_report",
+        "johari",
+        "dissonance",
+        "honest_phenomenology"
+      ],
+      "depends_on": [
+        "human_nature.self_state"
+      ],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_self_model.py"
+      ]
+    },
+    "human_nature.faculties.identity.self_state": {
+      "path": "human_nature/faculties/identity/self_state.py",
+      "purpose": "SelfState — the unified interior of the human-nature layer (a serializable dict).",
+      "exports": [
+        "new_self_state",
+        "migrate",
+        "get_competence",
+        "observe_competence",
+        "set_affect"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_self_state.py"
+      ]
+    },
+    "human_nature.faculties.identity.user_model": {
+      "path": "human_nature/faculties/identity/user_model.py",
+      "purpose": "Theory-of-Mind of the user — the Dyad model (service-only, manipulation-guarded).",
+      "exports": [
+        "new_user_model",
+        "update",
+        "snapshot"
+      ],
+      "depends_on": [
+        "memory.user_prefs"
+      ],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_user_model.py"
+      ]
+    },
+    "human_nature.faculties.identity.workspace": {
+      "path": "human_nature/faculties/identity/workspace.py",
+      "purpose": "Global Workspace — the GWT competition/broadcast loop (Baars, Dehaene).",
+      "exports": [
+        "Workspace",
+        "salience"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_workspace.py"
+      ]
+    },
+    "human_nature.faculties.runtime.ab_harness": {
+      "path": "human_nature/faculties/runtime/ab_harness.py",
+      "purpose": "A/B validation harness — behaviour-coupling gate before any flag goes ON-by-default.",
+      "exports": [
+        "record_run",
+        "compare"
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_ab_harness.py"
+      ]
+    },
+    "human_nature.faculties.runtime.consolidation": {
+      "path": "human_nature/faculties/runtime/consolidation.py",
+      "purpose": "Consolidation cycle — the \"sleep\" phase between runs (propose, never apply).",
+      "exports": [
+        "run_cycle",
+        "propose_updates"
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.charter",
+        "human_nature.self_state",
+        "llm_io"
+      ],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_consolidation.py"
+      ]
+    },
+    "human_nature.faculties.runtime.drives": {
+      "path": "human_nature/faculties/runtime/drives.py",
       "purpose": "Drives — the 8-drive homeostatic core of the human-nature layer.",
       "exports": [
         "new_drives",
@@ -2505,100 +2997,13 @@
         "derived"
       ],
       "depends_on": [],
-      "callers": [
-        "human_nature.psyche_runtime",
-        "platform_core.orchestration.human_nature_bridge.inventor"
-      ],
+      "callers": [],
       "test": [
         "tests/human_nature/test_drives.py"
       ]
     },
-    "human_nature.emotions": {
-      "path": "human_nature/emotions.py",
-      "purpose": "Emotions faculty — affect → behavior/comms coupling (F8 mandate) and regulation.",
-      "exports": [
-        "couple",
-        "bias_appraisal",
-        "regulate"
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.affect"
-      ],
-      "test": [
-        "tests/human_nature/test_emotions.py"
-      ]
-    },
-    "human_nature.gating": {
-      "path": "human_nature/gating.py",
-      "purpose": "PRISM gate — persona/affect expression is allowed on human-facing surfaces only.",
-      "exports": [
-        "is_expression_allowed"
-      ],
-      "depends_on": [],
-      "callers": [
-        "human_nature.psyche_surface"
-      ],
-      "test": [
-        "tests/human_nature/test_gating.py"
-      ]
-    },
-    "human_nature.instinct": {
-      "path": "human_nature/instinct.py",
-      "purpose": "Instinct faculty — ledger-grounded \"something feels off\" signal (Phase 3.4).",
-      "exports": [
-        "maybe_flag"
-      ],
-      "depends_on": [
-        "config",
-        "llm_io",
-        "memory.conviction_ledger",
-        "notifications.instinct"
-      ],
-      "callers": [
-        "human_nature.integration"
-      ],
-      "test": [
-        "tests/notifications/test_instinct.py"
-      ]
-    },
-    "human_nature.instinct_signal": {
-      "path": "human_nature/instinct_signal.py",
-      "purpose": "InstinctSignal — structured output of the streaming instinct engine.",
-      "exports": [
-        "InstinctSignal",
-        "from_dict"
-      ],
-      "depends_on": [],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.instinct"
-      ],
-      "test": [
-        "tests/human_nature/test_instinct_signal.py"
-      ]
-    },
-    "human_nature.instinct_stream": {
-      "path": "human_nature/instinct_stream.py",
-      "purpose": "Instinct stream matcher — cheap multi-pattern failure-motif detection.",
-      "exports": [
-        "build_matcher",
-        "scan",
-        "match_prefix",
-        "scan_prefixes",
-        "near_duplicate"
-      ],
-      "depends_on": [],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.instinct"
-      ],
-      "test": [
-        "tests/human_nature/test_instinct_stream.py"
-      ]
-    },
-    "human_nature.integration": {
-      "path": "human_nature/integration.py",
+    "human_nature.faculties.runtime.integration": {
+      "path": "human_nature/faculties/runtime/integration.py",
       "purpose": "Integration hooks — flag-gated run-loop wiring for the human-nature layer.",
       "exports": [
         "is_enabled",
@@ -2616,19 +3021,149 @@
         "human_nature.intuition",
         "human_nature.self_state"
       ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.execution",
-        "platform_core.orchestration.human_nature_bridge.lifecycle",
-        "platform_core.orchestration.human_nature_bridge.planning"
-      ],
+      "callers": [],
       "test": [
         "tests/human_nature/test_integration_hn.py",
         "tests/slow/test_discovery_integration.py",
         "tests/slow/test_integration_loop.py"
       ]
     },
-    "human_nature.intuition": {
-      "path": "human_nature/intuition.py",
+    "human_nature.faculties.runtime.psyche_commands": {
+      "path": "human_nature/faculties/runtime/psyche_commands.py",
+      "purpose": "Psyche Discord command routers — pure functions, no discord.py import.",
+      "exports": [
+        "cmd_psyche",
+        "cmd_dial",
+        "cmd_charter",
+        "cmd_whatyouknow",
+        "cmd_why_i_feel"
+      ],
+      "depends_on": [
+        "human_nature.character_vector",
+        "human_nature.charter",
+        "human_nature.user_model"
+      ],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_psyche_commands.py"
+      ]
+    },
+    "human_nature.faculties.runtime.psyche_runtime": {
+      "path": "human_nature/faculties/runtime/psyche_runtime.py",
+      "purpose": "Psyche runtime — the per-tick glue that makes the interior LIVE.",
+      "exports": [
+        "ensure_psyche",
+        "tick",
+        "integrate_outcome"
+      ],
+      "depends_on": [
+        "config",
+        "human_nature.affect_manifold",
+        "human_nature.drives",
+        "human_nature.mood",
+        "human_nature.personality",
+        "human_nature.prototypes"
+      ],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_psyche_runtime.py"
+      ]
+    },
+    "human_nature.faculties.runtime.psyche_store": {
+      "path": "human_nature/faculties/runtime/psyche_store.py",
+      "purpose": "Psyche Store — durable cross-run persistence for mood/drives/personality/scars.",
+      "exports": [
+        "PsycheStore",
+        "open_store",
+        "load_psyche",
+        "save_psyche",
+        "close_store"
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_psyche_store.py"
+      ]
+    },
+    "human_nature.faculties.runtime.psyche_surface": {
+      "path": "human_nature/faculties/runtime/psyche_surface.py",
+      "purpose": "Psyche surface — legible interior readouts for Discord and web (PRISM-gated).",
+      "exports": [
+        "render_discord",
+        "render_web"
+      ],
+      "depends_on": [
+        "human_nature.gating"
+      ],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_psyche_surface.py"
+      ]
+    },
+    "human_nature.faculties.runtime.run_events": {
+      "path": "human_nature/faculties/runtime/run_events.py",
+      "purpose": "Run event log — a discrete event stream over one 9to5 run.",
+      "exports": [
+        "new_event_log",
+        "record_event",
+        "event_sequence"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_run_events.py"
+      ]
+    },
+    "human_nature.faculties.signals.instinct": {
+      "path": "human_nature/faculties/signals/instinct.py",
+      "purpose": "Instinct faculty — ledger-grounded \"something feels off\" signal (Phase 3.4).",
+      "exports": [
+        "maybe_flag"
+      ],
+      "depends_on": [
+        "config",
+        "llm_io",
+        "memory.conviction_ledger",
+        "notifications.instinct"
+      ],
+      "callers": [],
+      "test": [
+        "tests/notifications/test_instinct.py"
+      ]
+    },
+    "human_nature.faculties.signals.instinct_signal": {
+      "path": "human_nature/faculties/signals/instinct_signal.py",
+      "purpose": "InstinctSignal — structured output of the streaming instinct engine.",
+      "exports": [
+        "InstinctSignal",
+        "from_dict"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_instinct_signal.py"
+      ]
+    },
+    "human_nature.faculties.signals.instinct_stream": {
+      "path": "human_nature/faculties/signals/instinct_stream.py",
+      "purpose": "Instinct stream matcher — cheap multi-pattern failure-motif detection.",
+      "exports": [
+        "build_matcher",
+        "scan",
+        "match_prefix",
+        "scan_prefixes",
+        "near_duplicate"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/human_nature/test_instinct_stream.py"
+      ]
+    },
+    "human_nature.faculties.signals.intuition": {
+      "path": "human_nature/faculties/signals/intuition.py",
       "purpose": "Intuition faculty — System-1 pre-verbal confidence + dual-process routing.",
       "exports": [
         "snap",
@@ -2638,15 +3173,13 @@
         "config",
         "human_nature.conviction"
       ],
-      "callers": [
-        "human_nature.integration"
-      ],
+      "callers": [],
       "test": [
         "tests/human_nature/test_intuition.py"
       ]
     },
-    "human_nature.momentary": {
-      "path": "human_nature/momentary.py",
+    "human_nature.faculties.signals.momentary": {
+      "path": "human_nature/faculties/signals/momentary.py",
       "purpose": "Momentary confidence providers for the human-nature Conviction Engine.",
       "exports": [
         "verbalized_p_true",
@@ -2663,27 +3196,8 @@
         "tests/human_nature/test_momentary.py"
       ]
     },
-    "human_nature.mood": {
-      "path": "human_nature/mood.py",
-      "purpose": "Mood — the slow, persistent affective homeostat (long-horizon, cross-run).",
-      "exports": [
-        "new_mood",
-        "blend_outcome",
-        "decay",
-        "congruent_bias"
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "callers": [
-        "human_nature.psyche_runtime"
-      ],
-      "test": [
-        "tests/human_nature/test_mood.py"
-      ]
-    },
-    "human_nature.motif_mining": {
-      "path": "human_nature/motif_mining.py",
+    "human_nature.faculties.signals.motif_mining": {
+      "path": "human_nature/faculties/signals/motif_mining.py",
       "purpose": "Offline miner for recurring failure motifs and anomaly scoring.",
       "exports": [
         "mine_frequent",
@@ -2695,27 +3209,8 @@
         "tests/human_nature/test_motif_mining.py"
       ]
     },
-    "human_nature.operator_authority": {
-      "path": "human_nature/operator_authority.py",
-      "purpose": "Operator / safety / verifier-invariance authority caps feeding authority.resolve.",
-      "exports": [
-        "domain_ceiling",
-        "operator_ceiling",
-        "safety_ceiling",
-        "verifier_invariance_ceiling"
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.authority_gate"
-      ],
-      "test": [
-        "tests/human_nature/test_operator_authority.py"
-      ]
-    },
-    "human_nature.opinions": {
-      "path": "human_nature/opinions.py",
+    "human_nature.faculties.signals.opinions": {
+      "path": "human_nature/faculties/signals/opinions.py",
       "purpose": "Opinions faculty — tiered, domain-gated, conviction-gated opinion engine.",
       "exports": [
         "Opinion",
@@ -2726,148 +3221,13 @@
         "config",
         "llm_io"
       ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.planning"
-      ],
+      "callers": [],
       "test": [
         "tests/human_nature/test_opinions.py"
       ]
     },
-    "human_nature.personality": {
-      "path": "human_nature/personality.py",
-      "purpose": "PERSONALITY — versioned trait vector wrapping character_vector, and its setpoints.",
-      "exports": [
-        "new_personality",
-        "drive_setpoints",
-        "mood_setpoint",
-        "risk_band",
-        "propose_trait",
-        "ratify"
-      ],
-      "depends_on": [],
-      "callers": [
-        "human_nature.psyche_runtime",
-        "platform_core.orchestration.human_nature_bridge.inventor"
-      ],
-      "test": [
-        "tests/human_nature/test_personality.py"
-      ]
-    },
-    "human_nature.prototypes": {
-      "path": "human_nature/prototypes.py",
-      "purpose": "Prototype projection — continuous affect manifold → discrete emotion labels.",
-      "exports": [
-        "mixture",
-        "dominant"
-      ],
-      "depends_on": [],
-      "callers": [
-        "human_nature.psyche_runtime",
-        "platform_core.orchestration.human_nature_bridge.affect"
-      ],
-      "test": [
-        "tests/human_nature/test_prototypes.py"
-      ]
-    },
-    "human_nature.psyche_commands": {
-      "path": "human_nature/psyche_commands.py",
-      "purpose": "Psyche Discord command routers — pure functions, no discord.py import.",
-      "exports": [
-        "cmd_psyche",
-        "cmd_dial",
-        "cmd_charter",
-        "cmd_whatyouknow",
-        "cmd_why_i_feel"
-      ],
-      "depends_on": [
-        "human_nature.character_vector",
-        "human_nature.charter",
-        "human_nature.user_model"
-      ],
-      "callers": [
-        "notifications.psyche_cog"
-      ],
-      "test": [
-        "tests/human_nature/test_psyche_commands.py"
-      ]
-    },
-    "human_nature.psyche_runtime": {
-      "path": "human_nature/psyche_runtime.py",
-      "purpose": "Psyche runtime — the per-tick glue that makes the interior LIVE.",
-      "exports": [
-        "ensure_psyche",
-        "tick",
-        "integrate_outcome"
-      ],
-      "depends_on": [
-        "config",
-        "human_nature.affect_manifold",
-        "human_nature.drives",
-        "human_nature.mood",
-        "human_nature.personality",
-        "human_nature.prototypes"
-      ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.lifecycle"
-      ],
-      "test": [
-        "tests/human_nature/test_psyche_runtime.py"
-      ]
-    },
-    "human_nature.psyche_store": {
-      "path": "human_nature/psyche_store.py",
-      "purpose": "Psyche Store — durable cross-run persistence for mood/drives/personality/scars.",
-      "exports": [
-        "PsycheStore",
-        "open_store",
-        "load_psyche",
-        "save_psyche",
-        "close_store"
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.lifecycle"
-      ],
-      "test": [
-        "tests/human_nature/test_psyche_store.py"
-      ]
-    },
-    "human_nature.psyche_surface": {
-      "path": "human_nature/psyche_surface.py",
-      "purpose": "Psyche surface — legible interior readouts for Discord and web (PRISM-gated).",
-      "exports": [
-        "render_discord",
-        "render_web"
-      ],
-      "depends_on": [
-        "human_nature.gating"
-      ],
-      "callers": [],
-      "test": [
-        "tests/human_nature/test_psyche_surface.py"
-      ]
-    },
-    "human_nature.run_events": {
-      "path": "human_nature/run_events.py",
-      "purpose": "Run event log — a discrete event stream over one 9to5 run.",
-      "exports": [
-        "new_event_log",
-        "record_event",
-        "event_sequence"
-      ],
-      "depends_on": [],
-      "callers": [
-        "platform_core.orchestration.execute_attempt_mixin",
-        "platform_core.orchestration.human_nature_bridge.instinct"
-      ],
-      "test": [
-        "tests/human_nature/test_run_events.py"
-      ]
-    },
-    "human_nature.scar_graph": {
-      "path": "human_nature/scar_graph.py",
+    "human_nature.faculties.signals.scar_graph": {
+      "path": "human_nature/faculties/signals/scar_graph.py",
       "purpose": "Scar-Tissue Failure Graph — pure directed weighted graph ops over a dict.",
       "exports": [
         "new_graph",
@@ -2879,257 +3239,9 @@
         "decay"
       ],
       "depends_on": [],
-      "callers": [
-        "platform_core.orchestration.human_nature_bridge.instinct",
-        "platform_core.orchestration.human_nature_bridge.lifecycle"
-      ],
+      "callers": [],
       "test": [
         "tests/human_nature/test_scar_graph.py"
-      ]
-    },
-    "human_nature.self_model": {
-      "path": "human_nature/self_model.py",
-      "purpose": "Self-model — metacognitive supervisor (F11 / F3 + honest phenomenology).",
-      "exports": [
-        "competence_report",
-        "johari",
-        "dissonance",
-        "honest_phenomenology"
-      ],
-      "depends_on": [
-        "human_nature.self_state"
-      ],
-      "callers": [],
-      "test": [
-        "tests/human_nature/test_self_model.py"
-      ]
-    },
-    "human_nature.self_state": {
-      "path": "human_nature/self_state.py",
-      "purpose": "SelfState — the unified interior of the human-nature layer (a serializable dict).",
-      "exports": [
-        "new_self_state",
-        "migrate",
-        "get_competence",
-        "observe_competence",
-        "set_affect"
-      ],
-      "depends_on": [],
-      "callers": [
-        "human_nature.consolidation",
-        "human_nature.integration",
-        "human_nature.self_model",
-        "notifications.psyche_cog"
-      ],
-      "test": [
-        "tests/human_nature/test_self_state.py"
-      ]
-    },
-    "human_nature.user_model": {
-      "path": "human_nature/user_model.py",
-      "purpose": "Theory-of-Mind of the user — the Dyad model (service-only, manipulation-guarded).",
-      "exports": [
-        "new_user_model",
-        "update",
-        "snapshot"
-      ],
-      "depends_on": [
-        "memory.user_prefs"
-      ],
-      "callers": [
-        "human_nature.psyche_commands"
-      ],
-      "test": [
-        "tests/human_nature/test_user_model.py"
-      ]
-    },
-    "human_nature.workspace": {
-      "path": "human_nature/workspace.py",
-      "purpose": "Global Workspace — the GWT competition/broadcast loop (Baars, Dehaene).",
-      "exports": [
-        "Workspace",
-        "salience"
-      ],
-      "depends_on": [],
-      "callers": [],
-      "test": [
-        "tests/human_nature/test_workspace.py"
-      ]
-    },
-    "introspect": {
-      "path": "introspect/__init__.py",
-      "purpose": "introspect -- typed runtime project model for ANY root directory (stdlib-only leaf).",
-      "exports": [],
-      "depends_on": [
-        "introspect.project_extract",
-        "introspect.project_model"
-      ],
-      "callers": [
-        "platform_core.orchestration.plan_context"
-      ],
-      "test": []
-    },
-    "introspect.__main__": {
-      "path": "introspect/__main__.py",
-      "purpose": "CLI: ``python -m introspect <root> [--json]`` -- print a project digest or model JSON.",
-      "exports": [
-        "main"
-      ],
-      "depends_on": [
-        "introspect.project_extract"
-      ],
-      "callers": [],
-      "test": []
-    },
-    "introspect.generic_import_scan": {
-      "path": "introspect/generic_import_scan.py",
-      "purpose": "Regex import scan for JS/TS files: `import ... from '...'` and `require('...')`.",
-      "exports": [
-        "analyzeGeneric"
-      ],
-      "depends_on": [
-        "introspect.project_model"
-      ],
-      "callers": [
-        "introspect.project_extract"
-      ],
-      "test": [
-        "tests/introspect/test_generic_import_scan.py"
-      ]
-    },
-    "introspect.project_boundaries": {
-      "path": "introspect/project_boundaries.py",
-      "purpose": "Ownership/interface map: packages, re-export facades, entrypoints, config surface.",
-      "exports": [
-        "detectBoundaries"
-      ],
-      "depends_on": [
-        "introspect.project_model"
-      ],
-      "callers": [
-        "introspect.project_extract"
-      ],
-      "test": [
-        "tests/introspect/test_project_boundaries.py"
-      ]
-    },
-    "introspect.project_commands": {
-      "path": "introspect/project_commands.py",
-      "purpose": "Detect test/build/lint/typecheck commands from config files -- never guessed.",
-      "exports": [
-        "detectCommands"
-      ],
-      "depends_on": [
-        "introspect.project_model"
-      ],
-      "callers": [
-        "introspect.project_extract"
-      ],
-      "test": [
-        "tests/introspect/test_project_commands.py"
-      ]
-    },
-    "introspect.project_extract": {
-      "path": "introspect/project_extract.py",
-      "purpose": "Facade: build a full ProjectModel for any root + render an LLM prompt digest.",
-      "exports": [
-        "extractProject",
-        "contextForPrompt"
-      ],
-      "depends_on": [
-        "config",
-        "introspect.generic_import_scan",
-        "introspect.project_boundaries",
-        "introspect.project_commands",
-        "introspect.project_model",
-        "introspect.project_scanner",
-        "introspect.python_import_graph"
-      ],
-      "callers": [
-        "explore.__main__",
-        "introspect",
-        "introspect.__main__"
-      ],
-      "test": [
-        "tests/introspect/test_project_extract.py"
-      ]
-    },
-    "introspect.project_model": {
-      "path": "introspect/project_model.py",
-      "purpose": "Typed, JSON-round-trippable project model shared by every introspect analyzer.",
-      "exports": [
-        "ModuleInfo",
-        "DetectedCommand",
-        "BoundaryMap",
-        "ProjectModel"
-      ],
-      "depends_on": [],
-      "callers": [
-        "explore",
-        "explore.approach_gen",
-        "explore.approach_tradeoffs",
-        "introspect",
-        "introspect.generic_import_scan",
-        "introspect.project_boundaries",
-        "introspect.project_commands",
-        "introspect.project_extract",
-        "introspect.project_scanner",
-        "introspect.python_import_graph",
-        "refactor.change_impact",
-        "refactor.cycle_detect"
-      ],
-      "test": [
-        "tests/introspect/test_project_model.py"
-      ]
-    },
-    "introspect.project_scanner": {
-      "path": "introspect/project_scanner.py",
-      "purpose": "Deterministic file-tree scan: classify source files into ModuleInfo skeletons.",
-      "exports": [
-        "gitignoreExcludes",
-        "pruneDirnames",
-        "scanProject"
-      ],
-      "depends_on": [
-        "introspect.project_model"
-      ],
-      "callers": [
-        "introspect.project_extract",
-        "refactor.symbol_usages"
-      ],
-      "test": [
-        "tests/introspect/test_project_scanner.py"
-      ]
-    },
-    "introspect.project_test_map": {
-      "path": "introspect/project_test_map.py",
-      "purpose": "Convention-based file->test mapping for any root (no manual map required).",
-      "exports": [
-        "mapFileToTests"
-      ],
-      "depends_on": [],
-      "callers": [
-        "refactor.change_impact"
-      ],
-      "test": [
-        "tests/introspect/test_project_test_map.py"
-      ]
-    },
-    "introspect.python_import_graph": {
-      "path": "introspect/python_import_graph.py",
-      "purpose": "AST analysis for Python modules: exports, first-party import edges, side effects.",
-      "exports": [
-        "analyzePython"
-      ],
-      "depends_on": [
-        "introspect.project_model"
-      ],
-      "callers": [
-        "introspect.project_extract",
-        "refactor.change_impact"
-      ],
-      "test": [
-        "tests/introspect/test_python_import_graph.py"
       ]
     },
     "knowledge": {
@@ -3149,7 +3261,8 @@
         "agents.planning.replanner",
         "agents.review.architect",
         "platform_core.core.surfaces",
-        "platform_core.orchestration.knowledge_refresh"
+        "platform_core.orchestration.knowledge_refresh",
+        "platform_core.simulator.testing.e2e"
       ],
       "test": [
         "tests/evolution/test_knowledge.py"
@@ -4409,6 +4522,7 @@
         "notifications.lane_feed"
       ],
       "callers": [
+        "agents.discovery.inventor",
         "agents.discovery.lenses",
         "agents.discovery.synthesis",
         "agents.planning.assumption_resolver",
@@ -4421,10 +4535,10 @@
         "agents.review.adversary",
         "agents.review.adversary_review",
         "agents.review.architect",
-        "human_nature.consolidation",
-        "human_nature.instinct",
-        "human_nature.momentary",
-        "human_nature.opinions",
+        "human_nature.faculties.runtime.consolidation",
+        "human_nature.faculties.signals.instinct",
+        "human_nature.faculties.signals.momentary",
+        "human_nature.faculties.signals.opinions",
         "notifications.ask",
         "notifications.brain_dialogue",
         "notifications.briefing",
@@ -4462,8 +4576,8 @@
         "platform_core.runtime.resilience",
         "platform_core.simulator.chaos",
         "platform_core.simulator.simulation",
-        "state.task",
-        "testing.e2e"
+        "platform_core.simulator.testing.e2e",
+        "state.task"
       ],
       "callers": [],
       "test": [
@@ -4490,7 +4604,7 @@
         "config"
       ],
       "callers": [
-        "human_nature.instinct",
+        "human_nature.faculties.signals.instinct",
         "platform_core.orchestration.human_nature_bridge.planning"
       ],
       "test": [
@@ -4559,9 +4673,9 @@
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_phase_outcome",
         "platform_core.orchestration.run_phase_surface_mixin",
+        "platform_core.orchestration.society.society_batch",
         "platform_core.orchestration.step_resume",
         "platform_core.orchestration.step_sink",
-        "society.society_batch",
         "state.task_schema"
       ],
       "test": [
@@ -5169,6 +5283,7 @@
         "memory.novelty"
       ],
       "callers": [
+        "agents.discovery.inventor",
         "agents.discovery.ledger_bridge",
         "agents.discovery.synthesis",
         "platform_core.orchestration.qd_archive"
@@ -5406,7 +5521,7 @@
         "memory.stores"
       ],
       "callers": [
-        "human_nature.user_model",
+        "human_nature.faculties.identity.user_model",
         "notifications.bot.cogs.context_cog",
         "notifications.bot.cogs.log_cog",
         "notifications.commands",
@@ -5907,7 +6022,8 @@
         "notifications.slash",
         "notifications.surfaces.dashboard",
         "platform_core.orchestration.control_mixin",
-        "platform_core.simulator.bot_replay"
+        "platform_core.simulator.bot_replay",
+        "platform_core.simulator.testing.operator"
       ],
       "test": [
         "tests/notifications/test_commands.py"
@@ -6222,9 +6338,9 @@
         "platform_core.execution.router",
         "platform_core.orchestration.execute_attempt_mixin",
         "platform_core.orchestration.run_phase_surface_mixin",
+        "platform_core.orchestration.society.coordinator",
         "platform_core.orchestration.step_sink",
-        "platform_core.runtime.cost_budget",
-        "society.coordinator"
+        "platform_core.runtime.cost_budget"
       ],
       "test": [
         "tests/notifications/test_event_bus.py"
@@ -6292,7 +6408,7 @@
         "memory.experience"
       ],
       "callers": [
-        "human_nature.instinct",
+        "human_nature.faculties.signals.instinct",
         "platform_core.orchestration.run_phase_outcome"
       ],
       "test": [
@@ -7422,7 +7538,8 @@
       ],
       "callers": [
         "orchestrator",
-        "platform_core.orchestration.run_phase_mixin"
+        "platform_core.orchestration.run_phase_mixin",
+        "platform_core.simulator.testing.operator"
       ],
       "test": [
         "tests/control/test_webdash_control.py",
@@ -7581,7 +7698,8 @@
         "platform_core.knowledge_base.builder",
         "platform_core.knowledge_base.compress",
         "platform_core.knowledge_base.scraper",
-        "platform_core.orchestration.knowledge_refresh"
+        "platform_core.orchestration.knowledge_refresh",
+        "platform_core.simulator.testing.e2e"
       ],
       "test": []
     },
@@ -7703,7 +7821,7 @@
       "callers": [
         "config",
         "platform_core.app_config.settings",
-        "society.society_batch"
+        "platform_core.orchestration.society.society_batch"
       ],
       "test": [
         "tests/orchestration/test_society_coordinator.py",
@@ -7861,8 +7979,9 @@
         "platform_core.orchestration.human_nature_bridge.verification",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.run_phase_outcome",
+        "platform_core.orchestration.society.society_batch",
         "platform_core.runtime.resilience",
-        "society.society_batch"
+        "platform_core.simulator.testing.e2e"
       ],
       "test": [
         "tests/orchestration/test_best_effort.py"
@@ -7938,8 +8057,8 @@
       ],
       "depends_on": [],
       "callers": [
-        "src.workflow_registry",
-        "workflows.registry"
+        "platform_core.orchestration.workflows.registry",
+        "src.workflow_registry"
       ],
       "test": [
         "tests/platform/test_contracts.py"
@@ -8514,7 +8633,7 @@
         "main"
       ],
       "depends_on": [
-        "workflows.registry"
+        "platform_core.orchestration.workflows.registry"
       ],
       "callers": [
         "validate_workflows"
@@ -8581,9 +8700,9 @@
         "platform_core.orchestration.run_loop_replan_mixin",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.run_phase_outcome",
-        "platform_core.orchestration.solution_space",
-        "society.roles",
-        "society.society_batch"
+        "platform_core.orchestration.society.roles",
+        "platform_core.orchestration.society.society_batch",
+        "platform_core.orchestration.solution_space"
       ],
       "test": []
     },
@@ -8692,7 +8811,7 @@
       ],
       "depends_on": [
         "config",
-        "introspect.extractProject"
+        "developer_tools.introspection"
       ],
       "callers": [],
       "test": [
@@ -9020,9 +9139,8 @@
       ],
       "depends_on": [
         "config",
-        "explore.generateApproaches",
-        "explore.scoreApproaches",
-        "introspect.extractProject",
+        "developer_tools.exploration",
+        "developer_tools.introspection",
         "platform_core.orchestration",
         "platform_core.orchestration.subtask"
       ],
@@ -9510,7 +9628,7 @@
       ],
       "depends_on": [
         "config",
-        "introspect",
+        "developer_tools.introspection",
         "platform_core.orchestration.llm_navigation"
       ],
       "callers": [
@@ -9752,10 +9870,10 @@
         "platform_core.orchestration",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.run_loop_replan_mixin",
+        "platform_core.orchestration.society.society_batch",
         "platform_core.orchestration.subtask",
         "platform_core.runtime",
         "platform_core.runtime.control",
-        "society.society_batch",
         "state.task"
       ],
       "callers": [
@@ -9939,6 +10057,150 @@
         "tests/orchestration/test_execute_quality_gate.py"
       ]
     },
+    "platform_core.orchestration.society": {
+      "path": "platform_core/orchestration/society/__init__.py",
+      "purpose": "society -- 9to5-owned multi-agent workforce (Epic 5).",
+      "exports": [],
+      "depends_on": [
+        "platform_core.orchestration.society.blackboard",
+        "platform_core.orchestration.society.coordinator",
+        "platform_core.orchestration.society.debate",
+        "platform_core.orchestration.society.roles",
+        "platform_core.orchestration.society.worker"
+      ],
+      "callers": [],
+      "test": []
+    },
+    "platform_core.orchestration.society.blackboard": {
+      "path": "platform_core/orchestration/society/blackboard.py",
+      "purpose": "Append-only, per-run JSONL blackboard -- the workforce coordination surface.",
+      "exports": [
+        "BlackboardEntry",
+        "makeEntry",
+        "Blackboard"
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "callers": [
+        "platform_core.orchestration.society",
+        "platform_core.orchestration.society.coordinator",
+        "platform_core.orchestration.society.debate",
+        "platform_core.orchestration.society.society_batch",
+        "platform_core.orchestration.society.worker"
+      ],
+      "test": [
+        "tests/orchestration/test_society_blackboard.py"
+      ]
+    },
+    "platform_core.orchestration.society.coordinator": {
+      "path": "platform_core/orchestration/society/coordinator.py",
+      "purpose": "Coordinator -- deterministic Python workforce orchestration (NOT a new LLM).",
+      "exports": [
+        "busMirror",
+        "Coordinator"
+      ],
+      "depends_on": [
+        "config",
+        "notifications.event_bus",
+        "platform_core.orchestration.society.blackboard",
+        "platform_core.orchestration.society.debate",
+        "platform_core.orchestration.society.roles",
+        "platform_core.orchestration.society.worker",
+        "state.task"
+      ],
+      "callers": [
+        "platform_core.orchestration.society",
+        "platform_core.orchestration.society.society_batch"
+      ],
+      "test": [
+        "tests/orchestration/test_society_coordinator.py"
+      ]
+    },
+    "platform_core.orchestration.society.debate": {
+      "path": "platform_core/orchestration/society/debate.py",
+      "purpose": "Structured debate / speaker-selection -- bounded convergence for contested results.",
+      "exports": [
+        "selectNextSpeaker",
+        "runDebate"
+      ],
+      "depends_on": [
+        "agents.second_brain",
+        "config",
+        "platform_core.orchestration.society.blackboard"
+      ],
+      "callers": [
+        "platform_core.orchestration.society",
+        "platform_core.orchestration.society.coordinator"
+      ],
+      "test": [
+        "tests/orchestration/test_society_debate.py"
+      ]
+    },
+    "platform_core.orchestration.society.roles": {
+      "path": "platform_core/orchestration/society/roles.py",
+      "purpose": "Role registry + capability router for the workforce (owl Workforce coordinator).",
+      "exports": [
+        "RoleSpec",
+        "classifyRole"
+      ],
+      "depends_on": [
+        "agents.playbook",
+        "config",
+        "platform_core.orchestration"
+      ],
+      "callers": [
+        "platform_core.orchestration.society",
+        "platform_core.orchestration.society.coordinator"
+      ],
+      "test": [
+        "tests/orchestration/test_society_roles.py"
+      ]
+    },
+    "platform_core.orchestration.society.society_batch": {
+      "path": "platform_core/orchestration/society/society_batch.py",
+      "purpose": "Run-loop society-batch wiring -- extracted from run_loop_mixin to keep it <=450 lines.",
+      "exports": [
+        "societyGate",
+        "handleSocietyBatch"
+      ],
+      "depends_on": [
+        "config",
+        "memory.experience",
+        "platform_core.app_config.paths",
+        "platform_core.core.best_effort",
+        "platform_core.orchestration",
+        "platform_core.orchestration.society.blackboard",
+        "platform_core.orchestration.society.coordinator"
+      ],
+      "callers": [
+        "platform_core.orchestration.run_loop_mixin"
+      ],
+      "test": [
+        "tests/orchestration/test_society_batch.py"
+      ]
+    },
+    "platform_core.orchestration.society.worker": {
+      "path": "platform_core/orchestration/society/worker.py",
+      "purpose": "WorkerAgent -- a role-scoped wrapper over agents/executor.py::runClaude.",
+      "exports": [
+        "WorkerAgent"
+      ],
+      "depends_on": [
+        "agents.executor",
+        "agents.verifier",
+        "config",
+        "platform_core.orchestration.society.blackboard",
+        "state.task"
+      ],
+      "callers": [
+        "platform_core.orchestration.society",
+        "platform_core.orchestration.society.coordinator"
+      ],
+      "test": [
+        "tests/orchestration/test_society_worker.py"
+      ]
+    },
     "platform_core.orchestration.solution_space": {
       "path": "platform_core/orchestration/solution_space.py",
       "purpose": "Solution-space fork coordinator: the ONE seam execute_mixin imports (Epic 6).",
@@ -10115,6 +10377,32 @@
         "tests/orchestration/test_work_profile.py"
       ]
     },
+    "platform_core.orchestration.workflows": {
+      "path": "platform_core/orchestration/workflows/__init__.py",
+      "purpose": "Workflow registry package.",
+      "exports": [],
+      "depends_on": [],
+      "callers": [],
+      "test": []
+    },
+    "platform_core.orchestration.workflows.registry": {
+      "path": "platform_core/orchestration/workflows/registry.py",
+      "purpose": "Workflow registry — loads and validates WorkflowDefinition JSON files.",
+      "exports": [
+        "loadRegistry"
+      ],
+      "depends_on": [
+        "platform_core.core.contracts"
+      ],
+      "callers": [
+        "platform_core.ops.validate_workflows"
+      ],
+      "test": [
+        "tests/orchestration/test_orchestrator_with_registry.py",
+        "tests/workflows/test_workflow_registry.py",
+        "tests/workflows/test_workflows_registry.py"
+      ]
+    },
     "platform_core.runtime": {
       "path": "platform_core/runtime/__init__.py",
       "purpose": "Runtime control, recovery, and resilience infrastructure.",
@@ -10137,7 +10425,8 @@
         "platform_core.orchestration.safety_mixin",
         "platform_core.orchestration.validation_cache",
         "platform_core.runtime.autonomy_allowance",
-        "platform_core.runtime.control"
+        "platform_core.runtime.control",
+        "platform_core.simulator.testing.e2e"
       ],
       "test": []
     },
@@ -10217,7 +10506,8 @@
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.safety_mixin",
         "platform_core.runtime.resilience",
-        "platform_core.simulator.bot_replay"
+        "platform_core.simulator.bot_replay",
+        "platform_core.simulator.testing.operator"
       ],
       "test": [
         "tests/control/test_control_concurrency.py",
@@ -10457,161 +10747,71 @@
         "orchestrator.Orchestrator"
       ],
       "callers": [
-        "main"
+        "main",
+        "platform_core.simulator.testing.e2e"
       ],
       "test": [
         "tests/slow/test_simulation_advanced.py",
         "tests/slow/test_simulation_core.py"
       ]
     },
-    "refactor": {
-      "path": "refactor/__init__.py",
-      "purpose": "refactor -- cycle detection, impact prediction, atomic transactions (stdlib leaf).",
+    "platform_core.simulator.testing": {
+      "path": "platform_core/simulator/testing/__init__.py",
+      "purpose": "9TO5 end-to-end \"virtual operator\" testing.",
       "exports": [],
-      "depends_on": [
-        "refactor.change_impact",
-        "refactor.cycle_detect",
-        "refactor.refactor_edits",
-        "refactor.refactor_transaction",
-        "refactor.symbol_usages"
-      ],
+      "depends_on": [],
       "callers": [],
       "test": []
     },
-    "refactor.__main__": {
-      "path": "refactor/__main__.py",
-      "purpose": "CLI: ``python -m refactor check <root>`` -- import-cycle report, exit 1 on cycles.",
+    "platform_core.simulator.testing.e2e": {
+      "path": "platform_core/simulator/testing/e2e.py",
+      "purpose": "End-to-end scenario runner: launch a FULL simulated run and drive it with a",
       "exports": [
+        "ScenarioResult",
+        "runScenario",
+        "buildSuite",
+        "runSuite",
         "main"
       ],
       "depends_on": [
-        "introspect.extractProject",
-        "refactor.cycle_detect"
+        "config",
+        "knowledge",
+        "platform_core.app_config",
+        "platform_core.core.best_effort",
+        "platform_core.runtime",
+        "platform_core.simulator.simulation",
+        "platform_core.simulator.testing.operator",
+        "state.task"
       ],
-      "callers": [],
-      "test": []
+      "callers": [
+        "main"
+      ],
+      "test": [
+        "tests/orchestration/test_elaborator_e2e.py",
+        "tests/orchestration/test_inventor_e2e.py",
+        "tests/slow/test_e2e_operator.py"
+      ]
     },
-    "refactor.change_impact": {
-      "path": "refactor/change_impact.py",
-      "purpose": "Pure breaking-change prediction for a planned edit set -- no disk writes.",
+    "platform_core.simulator.testing.operator": {
+      "path": "platform_core/simulator/testing/operator.py",
+      "purpose": "VirtualOperator -- a scripted \"human at the controls\".",
       "exports": [
-        "ImpactReport",
-        "predictImpact"
+        "OperatorTimeout",
+        "VirtualOperator"
       ],
       "depends_on": [
-        "introspect.project_model",
-        "introspect.project_test_map",
-        "introspect.python_import_graph",
-        "refactor.cycle_detect",
-        "refactor.refactor_edits",
-        "refactor.symbol_usages"
+        "notifications.commands",
+        "notifications.webdash",
+        "platform_core.runtime.control",
+        "state.task"
       ],
       "callers": [
-        "refactor",
-        "refactor.refactor_transaction"
+        "platform_core.simulator.testing.e2e"
       ],
       "test": [
-        "tests/refactor/test_change_impact.py"
-      ]
-    },
-    "refactor.cycle_detect": {
-      "path": "refactor/cycle_detect.py",
-      "purpose": "Import-cycle detection + pre-flight cycle prediction (iterative Tarjan SCC).",
-      "exports": [
-        "buildImportGraph",
-        "findCycles",
-        "wouldCreateCycle"
-      ],
-      "depends_on": [
-        "introspect.project_model"
-      ],
-      "callers": [
-        "refactor",
-        "refactor.__main__",
-        "refactor.change_impact",
-        "refactor.refactor_transaction"
-      ],
-      "test": [
-        "tests/refactor/test_cycle_detect.py"
-      ]
-    },
-    "refactor.refactor_edits": {
-      "path": "refactor/refactor_edits.py",
-      "purpose": "Edit primitives (frozen dataclasses) + fail-closed path validation.",
-      "exports": [
-        "WriteFile",
-        "ReplaceInFile",
-        "DeleteFile",
-        "RenameFile",
-        "editPaths",
-        "validateEdit"
-      ],
-      "depends_on": [],
-      "callers": [
-        "refactor",
-        "refactor.change_impact",
-        "refactor.refactor_transaction"
-      ],
-      "test": [
-        "tests/refactor/test_refactor_edits.py"
-      ]
-    },
-    "refactor.refactor_journal": {
-      "path": "refactor/refactor_journal.py",
-      "purpose": "Crash journal for RefactorTransaction: spill snapshots to disk pre-write.",
-      "exports": [
-        "writeJournal",
-        "loadJournal",
-        "restoreSnapshots",
-        "deleteJournal"
-      ],
-      "depends_on": [],
-      "callers": [
-        "refactor.refactor_transaction"
-      ],
-      "test": [
-        "tests/refactor/test_refactor_hardening.py"
-      ]
-    },
-    "refactor.refactor_transaction": {
-      "path": "refactor/refactor_transaction.py",
-      "purpose": "Atomic multi-file refactor transaction: snapshot -> journal -> write -> gate -> rollback.",
-      "exports": [
-        "RefactorResult",
-        "RefactorTransaction",
-        "recoverJournal"
-      ],
-      "depends_on": [
-        "introspect.extractProject",
-        "refactor.change_impact",
-        "refactor.cycle_detect",
-        "refactor.refactor_edits",
-        "refactor.refactor_journal"
-      ],
-      "callers": [
-        "refactor"
-      ],
-      "test": [
-        "tests/refactor/test_refactor_transaction.py"
-      ]
-    },
-    "refactor.symbol_usages": {
-      "path": "refactor/symbol_usages.py",
-      "purpose": "Cross-root symbol usage scan: every AST Name/Attribute/ImportFrom reference.",
-      "exports": [
-        "Usage",
-        "findUsages",
-        "findUsagesMulti"
-      ],
-      "depends_on": [
-        "introspect.project_scanner"
-      ],
-      "callers": [
-        "refactor",
-        "refactor.change_impact"
-      ],
-      "test": [
-        "tests/refactor/test_symbol_usages.py"
+        "tests/human_nature/eval/test_operator_sovereignty.py",
+        "tests/human_nature/test_operator_authority.py",
+        "tests/slow/test_e2e_operator.py"
       ]
     },
     "scripts.bug_triage": {
@@ -10658,15 +10858,9 @@
       ],
       "depends_on": [
         "config",
-        "explore.exploreSolutionSpace",
-        "explore.generateApproaches",
-        "introspect.contextForPrompt",
-        "introspect.extractProject",
-        "refactor.RefactorTransaction",
-        "refactor.ReplaceInFile",
-        "refactor.WriteFile",
-        "refactor.buildImportGraph",
-        "refactor.findCycles"
+        "developer_tools.exploration",
+        "developer_tools.introspection",
+        "developer_tools.refactoring"
       ],
       "callers": [],
       "test": []
@@ -10704,150 +10898,6 @@
       ],
       "test": [
         "tests/evolution/test_selfmod.py"
-      ]
-    },
-    "society": {
-      "path": "society/__init__.py",
-      "purpose": "society -- 9to5-owned multi-agent workforce (Epic 5).",
-      "exports": [],
-      "depends_on": [
-        "society.blackboard",
-        "society.coordinator",
-        "society.debate",
-        "society.roles",
-        "society.worker"
-      ],
-      "callers": [],
-      "test": []
-    },
-    "society.blackboard": {
-      "path": "society/blackboard.py",
-      "purpose": "Append-only, per-run JSONL blackboard -- the workforce coordination surface.",
-      "exports": [
-        "BlackboardEntry",
-        "makeEntry",
-        "Blackboard"
-      ],
-      "depends_on": [
-        "config"
-      ],
-      "callers": [
-        "society",
-        "society.coordinator",
-        "society.debate",
-        "society.society_batch",
-        "society.worker"
-      ],
-      "test": [
-        "tests/orchestration/test_society_blackboard.py"
-      ]
-    },
-    "society.coordinator": {
-      "path": "society/coordinator.py",
-      "purpose": "Coordinator -- deterministic Python workforce orchestration (NOT a new LLM).",
-      "exports": [
-        "busMirror",
-        "Coordinator"
-      ],
-      "depends_on": [
-        "config",
-        "notifications.event_bus",
-        "society.blackboard",
-        "society.debate",
-        "society.roles",
-        "society.worker",
-        "state.task"
-      ],
-      "callers": [
-        "society",
-        "society.society_batch"
-      ],
-      "test": [
-        "tests/orchestration/test_society_coordinator.py"
-      ]
-    },
-    "society.debate": {
-      "path": "society/debate.py",
-      "purpose": "Structured debate / speaker-selection -- bounded convergence for contested results.",
-      "exports": [
-        "selectNextSpeaker",
-        "runDebate"
-      ],
-      "depends_on": [
-        "agents.second_brain",
-        "config",
-        "society.blackboard"
-      ],
-      "callers": [
-        "society",
-        "society.coordinator"
-      ],
-      "test": [
-        "tests/orchestration/test_society_debate.py"
-      ]
-    },
-    "society.roles": {
-      "path": "society/roles.py",
-      "purpose": "Role registry + capability router for the workforce (owl Workforce coordinator).",
-      "exports": [
-        "RoleSpec",
-        "classifyRole"
-      ],
-      "depends_on": [
-        "agents.playbook",
-        "config",
-        "platform_core.orchestration"
-      ],
-      "callers": [
-        "society",
-        "society.coordinator"
-      ],
-      "test": [
-        "tests/orchestration/test_society_roles.py"
-      ]
-    },
-    "society.society_batch": {
-      "path": "society/society_batch.py",
-      "purpose": "Run-loop society-batch wiring -- extracted from run_loop_mixin to keep it <=450 lines.",
-      "exports": [
-        "societyGate",
-        "handleSocietyBatch"
-      ],
-      "depends_on": [
-        "config",
-        "memory.experience",
-        "platform_core.app_config.paths",
-        "platform_core.core.best_effort",
-        "platform_core.orchestration",
-        "society.blackboard",
-        "society.coordinator"
-      ],
-      "callers": [
-        "platform_core.orchestration.run_loop_mixin"
-      ],
-      "test": [
-        "tests/orchestration/test_society_batch.py"
-      ]
-    },
-    "society.worker": {
-      "path": "society/worker.py",
-      "purpose": "WorkerAgent -- a role-scoped wrapper over agents/executor.py::runClaude.",
-      "exports": [
-        "WorkerAgent"
-      ],
-      "depends_on": [
-        "agents.executor",
-        "agents.verifier",
-        "config",
-        "society.blackboard",
-        "state.task"
-      ],
-      "callers": [
-        "society",
-        "society.coordinator"
-      ],
-      "test": [
-        "tests/orchestration/test_society_worker.py"
       ]
     },
     "src": {
@@ -10922,11 +10972,13 @@
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.run_phase_surface_mixin",
         "platform_core.orchestration.safety_mixin",
+        "platform_core.orchestration.society.coordinator",
+        "platform_core.orchestration.society.worker",
         "platform_core.orchestration.solution_space",
         "platform_core.runtime.resilience",
         "platform_core.simulator.bot_replay",
-        "society.coordinator",
-        "society.worker"
+        "platform_core.simulator.testing.e2e",
+        "platform_core.simulator.testing.operator"
       ],
       "test": [
         "tests/control/test_task.py"
@@ -11222,6 +11274,20 @@
       "callers": [],
       "test": []
     },
+    "tools.innovator_eval": {
+      "path": "tools/innovator_eval.py",
+      "purpose": "Compare legacy discovery with the local-only Innovator Excellence engine.",
+      "exports": [
+        "run",
+        "main"
+      ],
+      "depends_on": [
+        "agents.discovery",
+        "config"
+      ],
+      "callers": [],
+      "test": []
+    },
     "tools.iteration_bench": {
       "path": "tools/iteration_bench.py",
       "purpose": "Benchmark harness for validated Claude/agent iteration speed.",
@@ -11468,32 +11534,6 @@
       "callers": [],
       "test": [
         "tests/workflows/test_validate_workflows.py"
-      ]
-    },
-    "workflows": {
-      "path": "workflows/__init__.py",
-      "purpose": "Workflow registry package.",
-      "exports": [],
-      "depends_on": [],
-      "callers": [],
-      "test": []
-    },
-    "workflows.registry": {
-      "path": "workflows/registry.py",
-      "purpose": "Workflow registry — loads and validates WorkflowDefinition JSON files.",
-      "exports": [
-        "loadRegistry"
-      ],
-      "depends_on": [
-        "platform_core.core.contracts"
-      ],
-      "callers": [
-        "platform_core.ops.validate_workflows"
-      ],
-      "test": [
-        "tests/orchestration/test_orchestrator_with_registry.py",
-        "tests/workflows/test_workflow_registry.py",
-        "tests/workflows/test_workflows_registry.py"
       ]
     }
   }

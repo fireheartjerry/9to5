@@ -1,7 +1,7 @@
 """Tests for introspect.project_model: JSON round-trip + dataclass defaults."""
 from __future__ import annotations
 
-from introspect.project_model import (
+from developer_tools.introspection.project_model import (
     BoundaryMap,
     DetectedCommand,
     ModuleInfo,

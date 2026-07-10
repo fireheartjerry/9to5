@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 def test_extract_full_model(fixture_project):
-    from introspect import extractProject
+    from developer_tools.introspection import extractProject
 
     m = extractProject(fixture_project, use_cache=False)
     assert ("pkg/core.py", "pkg/util.py") in m.import_edges
@@ -12,7 +12,7 @@ def test_extract_full_model(fixture_project):
 
 
 def test_extract_truncated_flag(fixture_project):
-    from introspect import extractProject
+    from developer_tools.introspection import extractProject
 
     m = extractProject(fixture_project, max_files=3, use_cache=False)
     assert m.truncated is True
@@ -23,7 +23,7 @@ def test_extract_cache_hit(fixture_project, tmp_path, monkeypatch):
     import config
 
     monkeypatch.setattr(config, "STATE_DIR", tmp_path / "state" / "tasks", raising=False)
-    from introspect import extractProject
+    from developer_tools.introspection import extractProject
 
     m1 = extractProject(fixture_project)
     m2 = extractProject(fixture_project)
@@ -34,7 +34,7 @@ def test_extract_cache_hit(fixture_project, tmp_path, monkeypatch):
 
 def test_mtime_hash_ignores_gitignored_dirs(fixture_project):
     """Runtime churn inside gitignored dirs must not invalidate the cache key."""
-    from introspect import project_extract
+    from developer_tools.introspection import project_extract
 
     (fixture_project / ".gitignore").write_text("bigvendor/\nstate/tasks/\n", encoding="utf-8")
     before = project_extract._mtimeHash(fixture_project)
@@ -50,7 +50,7 @@ def test_mtime_hash_ignores_gitignored_dirs(fixture_project):
 def test_cache_dir_inside_root_does_not_self_invalidate(fixture_project, monkeypatch):
     """Cache dir under the scanned root must not perturb the mtime hash that keys it
     (else self-extraction never cache-hits -- the 9to5 PROJECT_ROOT case)."""
-    from introspect import project_extract
+    from developer_tools.introspection import project_extract
 
     cache_dir = fixture_project / "state" / "project_models"
     monkeypatch.setattr(project_extract, "_cacheDir", lambda: cache_dir)
@@ -64,7 +64,7 @@ def test_cache_invalidated_by_content_edit(fixture_project, tmp_path, monkeypatc
     """Editing a file (HEAD unchanged) must invalidate the cache -- the dirty-tree path."""
     import os
     import config
-    from introspect import project_extract
+    from developer_tools.introspection import project_extract
 
     monkeypatch.setattr(config, "STATE_DIR", tmp_path / "state" / "tasks", raising=False)
     # Simulate a real git repo whose HEAD does not move across uncommitted edits.
@@ -86,7 +86,7 @@ def test_cache_invalidated_by_content_edit(fixture_project, tmp_path, monkeypatc
 def test_cache_key_includes_max_files(fixture_project, tmp_path, monkeypatch):
     """A truncated extract must not be served for a later, larger max_files call."""
     import config
-    from introspect import extractProject
+    from developer_tools.introspection import extractProject
 
     monkeypatch.setattr(config, "STATE_DIR", tmp_path / "state" / "tasks", raising=False)
     m1 = extractProject(fixture_project, max_files=1)
@@ -97,21 +97,21 @@ def test_cache_key_includes_max_files(fixture_project, tmp_path, monkeypatch):
 
 
 def test_context_for_prompt_budget(fixture_project):
-    from introspect import extractProject, contextForPrompt
+    from developer_tools.introspection import extractProject, contextForPrompt
 
     text = contextForPrompt(extractProject(fixture_project, use_cache=False), budget_chars=800)
     assert len(text) <= 800 and "pkg" in text and "pytest" in text
 
 
 def test_context_reports_cycle(fixture_project):
-    from introspect import extractProject, contextForPrompt
+    from developer_tools.introspection import extractProject, contextForPrompt
 
     text = contextForPrompt(extractProject(fixture_project, use_cache=False))
     assert "cycle" in text.lower()         # the deliberate cycle_a<->cycle_b pair counted
 
 
 def test_git_head_empty_for_non_repo(fixture_project):
-    from introspect import extractProject
+    from developer_tools.introspection import extractProject
 
     m = extractProject(fixture_project, use_cache=False)
     assert m.git_head == ""                # fixture .git dir is fake -> rev-parse fails
@@ -124,7 +124,7 @@ def test_cli_module_runs(fixture_project):
     import config
 
     proc = subprocess.run(
-        [sys.executable, "-m", "introspect", str(fixture_project)],
+        [sys.executable, "-m", "developer_tools.introspection", str(fixture_project)],
         capture_output=True,
         text=True,
         timeout=60,

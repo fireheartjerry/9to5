@@ -57,7 +57,7 @@ def test_plan_prompt_fail_open_on_scan_error(pin_flags, monkeypatch, tmp_path):
     def _boom(*a, **k):
         raise RuntimeError("scan exploded")
 
-    monkeypatch.setattr("introspect.project_extract.extractProject", _boom)
+    monkeypatch.setattr("developer_tools.introspection.project_extract.extractProject", _boom)
     orch = _makeOrch()
     orch._work_dir = str(tmp_path)
     captured = _stubBrain(orch)
@@ -69,7 +69,7 @@ def test_plan_prompt_fail_open_on_scan_error(pin_flags, monkeypatch, tmp_path):
 def test_flag_off_no_injection_and_no_scan(pin_flags, monkeypatch, tmp_path):
     pin_flags(PROJECT_INTROSPECTION_ENABLED=False, DUAL_LEDGER_PLANNER_ENABLED=False)
     spy = mock.Mock()
-    monkeypatch.setattr("introspect.project_extract.extractProject", spy)
+    monkeypatch.setattr("developer_tools.introspection.project_extract.extractProject", spy)
     orch = _makeOrch()
     orch._work_dir = str(_tinyProject(tmp_path))
     captured = _stubBrain(orch)
@@ -91,7 +91,7 @@ def test_plan_context_hard_time_budget(pin_flags, monkeypatch, tmp_path):
         release.wait(5)  # blocks past the (shrunk) budget; conftest only caps time.sleep
         raise RuntimeError("never reached in time")
 
-    monkeypatch.setattr("introspect.project_extract.extractProject", _slowExtract)
+    monkeypatch.setattr("developer_tools.introspection.project_extract.extractProject", _slowExtract)
     monkeypatch.setattr(pc, "PROJECT_CONTEXT_TIMEOUT_S", 0.2)
     orch = _makeOrch()
     orch._work_dir = str(tmp_path)

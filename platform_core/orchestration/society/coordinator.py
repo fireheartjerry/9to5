@@ -12,7 +12,7 @@ still gates. Workers never spawn sub-workers.
 EXPORTS:
   busMirror(task_id: str, bus=None) -> Callable[[dict], None]  -- Build a presentation-only on_append hook mirroring blackboard appends to the bus.
   Coordinator  -- Owns workforce orchestration over the blackboard
-DEPENDS-ON: config, notifications.event_bus, society.blackboard, society.debate, society.roles, society.worker, state.task
+DEPENDS-ON: config, notifications.event_bus, platform_core.orchestration.society.blackboard, platform_core.orchestration.society.debate, platform_core.orchestration.society.roles, platform_core.orchestration.society.worker, state.task
 SIDE-EFFECTS: claims/updates task JSON, runs workers, appends to the blackboard
 RUN/TEST: python -m pytest tests/orchestration/test_society_coordinator.py
 """
@@ -23,9 +23,9 @@ from typing import Callable, Optional
 
 import config
 from notifications.event_bus import Event, get_bus
-from society.blackboard import makeEntry
-from society.roles import classifyRole
-from society.worker import WorkerAgent
+from platform_core.orchestration.society.blackboard import makeEntry
+from platform_core.orchestration.society.roles import classifyRole
+from platform_core.orchestration.society.worker import WorkerAgent
 from state.task import nowIso
 
 LOG = config.getLogger("society.coordinator")
@@ -164,7 +164,7 @@ class Coordinator:
             if len(roster) < 2:
                 continue
             try:
-                from society.debate import runDebate
+                from platform_core.orchestration.society.debate import runDebate
                 goal = (self._state.meta or {}).get("goal", "")
                 v = runDebate(self._blackboard, sid, roster, goal=goal)
             except Exception as e:  # noqa: BLE001 -- debate is advisory; never break the batch

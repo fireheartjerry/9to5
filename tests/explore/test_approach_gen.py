@@ -1,10 +1,10 @@
 """Tests for explore.approach_gen -- brainless + brain-backed approach generation."""
 from __future__ import annotations
 
-from introspect import extractProject
+from developer_tools.introspection import extractProject
 from tests.factories import fake_brain
 
-from explore.approach_gen import APPROACH_ARCHETYPES, generateApproaches
+from developer_tools.exploration.approach_gen import APPROACH_ARCHETYPES, generateApproaches
 
 
 def test_generate_brainless_deterministic(fixture_project):

@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def test_rename_onto_existing_target_rejected(fixture_project):
-    from refactor import RefactorTransaction, RenameFile
+    from developer_tools.refactoring import RefactorTransaction, RenameFile
 
     src_before = (fixture_project / "app.js").read_bytes()
     dst_before = (fixture_project / "lib.js").read_bytes()
@@ -21,7 +21,7 @@ def test_rename_onto_existing_target_rejected(fixture_project):
 
 
 def test_split_gate_cmd_preserves_windows_paths():
-    from refactor.refactor_transaction import _splitGateCmd
+    from developer_tools.refactoring.refactor_transaction import _splitGateCmd
 
     parts = _splitGateCmd(r"python C:\tools\gate.py --strict")
     if os.name == "nt":
@@ -33,7 +33,7 @@ def test_split_gate_cmd_preserves_windows_paths():
 
 
 def test_gate_cmd_str_form_still_supported(fixture_project):
-    from refactor import RefactorTransaction, WriteFile
+    from developer_tools.refactoring import RefactorTransaction, WriteFile
 
     tx = RefactorTransaction(fixture_project)
     tx.add(WriteFile("pkg/extra.py", "VALUE = 1\n"))
@@ -42,7 +42,7 @@ def test_gate_cmd_str_form_still_supported(fixture_project):
 
 
 def test_gate_timeout_rolls_back(fixture_project):
-    from refactor import RefactorTransaction, WriteFile
+    from developer_tools.refactoring import RefactorTransaction, WriteFile
 
     tx = RefactorTransaction(fixture_project)
     tx.add(WriteFile("pkg/extra.py", "VALUE = 1\n"))
@@ -56,9 +56,9 @@ def test_gate_timeout_rolls_back(fixture_project):
 
 
 def test_crash_journal_recovery(fixture_project):
-    from refactor import RefactorTransaction, ReplaceInFile, WriteFile, recoverJournal
-    from refactor.refactor_edits import editPaths
-    from refactor.refactor_journal import writeJournal
+    from developer_tools.refactoring import RefactorTransaction, ReplaceInFile, WriteFile, recoverJournal
+    from developer_tools.refactoring.refactor_edits import editPaths
+    from developer_tools.refactoring.refactor_journal import writeJournal
 
     core = fixture_project / "pkg" / "core.py"
     before = core.read_bytes()
@@ -78,7 +78,7 @@ def test_crash_journal_recovery(fixture_project):
 
 
 def test_path_aliasing_same_file_in_one_tx(fixture_project):
-    from refactor import RefactorTransaction, ReplaceInFile, WriteFile
+    from developer_tools.refactoring import RefactorTransaction, ReplaceInFile, WriteFile
 
     tx = RefactorTransaction(fixture_project)
     tx.add(WriteFile("./a.py", "VALUE = 1\n"))
@@ -90,7 +90,7 @@ def test_path_aliasing_same_file_in_one_tx(fixture_project):
 
 
 def test_rollback_removes_created_dirs(fixture_project):
-    from refactor import RefactorTransaction, WriteFile
+    from developer_tools.refactoring import RefactorTransaction, WriteFile
 
     tx = RefactorTransaction(fixture_project)
     tx.add(WriteFile("newdir/sub/broken.py", "def x(:\n"))  # compile gate must fail
@@ -100,7 +100,7 @@ def test_rollback_removes_created_dirs(fixture_project):
 
 
 def test_same_file_double_edit_applies_in_order(fixture_project):
-    from refactor import RefactorTransaction, ReplaceInFile
+    from developer_tools.refactoring import RefactorTransaction, ReplaceInFile
 
     tx = RefactorTransaction(fixture_project)
     tx.add(ReplaceInFile("pkg/core.py", "def coreFunc():", "def coreFunc():  # one"))
@@ -113,7 +113,7 @@ def test_same_file_double_edit_applies_in_order(fixture_project):
 
 
 def test_replace_in_latin1_file_applies(fixture_project):
-    from refactor import RefactorTransaction, ReplaceInFile
+    from developer_tools.refactoring import RefactorTransaction, ReplaceInFile
 
     legacy = fixture_project / "pkg" / "legacy.py"
     legacy.write_bytes("# -*- coding: latin-1 -*-\n# caf\xe9\nVALUE = 1\n".encode("latin-1"))

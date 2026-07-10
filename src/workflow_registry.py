@@ -49,9 +49,12 @@ def _load_module(module_name: str, file_path: Path):
 
 
 # Load dependency by absolute resolved path — no sys.path mutation.
-_workflows_pkg = _load_module("workflows", _REPO_ROOT / "workflows" / "__init__.py")
+_WORKFLOWS_DIR = _REPO_ROOT / "platform_core" / "orchestration" / "workflows"
+_workflows_pkg = _load_module(
+    "platform_core.orchestration.workflows", _WORKFLOWS_DIR / "__init__.py"
+)
 _registry_mod = _load_module(
-    "workflows.registry", _REPO_ROOT / "workflows" / "registry.py"
+    "platform_core.orchestration.workflows.registry", _WORKFLOWS_DIR / "registry.py"
 )
 
 DEFINITIONS_DIR: Path = _registry_mod.DEFINITIONS_DIR

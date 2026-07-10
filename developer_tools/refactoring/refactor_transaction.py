@@ -18,7 +18,7 @@ EXPORTS:
   RefactorResult  -- Outcome of one apply(): all-applied or nothing-applied, with the why.
   RefactorTransaction  -- Collect edits against one root, preview their impact, apply atomically.
   recoverJournal(journal_dir: str | Path) -> RefactorResult  -- Restore a crashed apply() from its on-disk journal
-DEPENDS-ON: introspect.extractProject, refactor.change_impact, refactor.cycle_detect, refactor.refactor_edits, refactor.refactor_journal
+DEPENDS-ON: developer_tools.introspection, developer_tools.refactoring.change_impact, developer_tools.refactoring.cycle_detect, developer_tools.refactoring.refactor_edits, developer_tools.refactoring.refactor_journal
 SIDE-EFFECTS: writes/renames/deletes files under the transaction root during apply; 
 RUN/TEST: python -m pytest tests/refactor/test_refactor_transaction.py
 """
@@ -32,9 +32,9 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from refactor.change_impact import ImpactReport, predictImpact
-from refactor.cycle_detect import buildImportGraph, findCycles
-from refactor.refactor_edits import (
+from developer_tools.refactoring.change_impact import ImpactReport, predictImpact
+from developer_tools.refactoring.cycle_detect import buildImportGraph, findCycles
+from developer_tools.refactoring.refactor_edits import (
     DeleteFile,
     Edit,
     RenameFile,
@@ -43,7 +43,7 @@ from refactor.refactor_edits import (
     editPaths,
     validateEdit,
 )
-from refactor.refactor_journal import (
+from developer_tools.refactoring.refactor_journal import (
     MISSING,
     deleteJournal,
     loadJournal,
@@ -79,7 +79,7 @@ class RefactorTransaction:
     def preview(self, model=None) -> ImpactReport:
         """Pure impact prediction for the queued edits (no writes)."""
         if model is None:
-            from introspect import extractProject
+            from developer_tools.introspection import extractProject
 
             model = extractProject(self.root, use_cache=False)
         return predictImpact(model, self.edits)
@@ -273,7 +273,7 @@ class RefactorTransaction:
 
     def _cycleSet(self) -> set[tuple[str, ...]]:
         """Current import cycles of the root as canonical tuples."""
-        from introspect import extractProject
+        from developer_tools.introspection import extractProject
 
         model = extractProject(self.root, use_cache=False)
         return {tuple(c) for c in findCycles(buildImportGraph(model))}

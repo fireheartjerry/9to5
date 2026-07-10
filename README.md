@@ -84,7 +84,11 @@ push (py3.12); fast (py3.11+3.12) + slow + smoke on PRs; `compileall -q tests` f
 | `orchestrator.py` | brain (Ollama) + core loop (architect→plan→verify→exec→PR) |
 | `config.py` | env/config + logging + UTF-8 stdio |
 | `platform_core/runtime/control.py` | `ControlBus` — SQLite-backed (`state/control.db`) cross-process control (abort/pause/gates/ops) |
+| `platform_core/orchestration/{society,workflows}/` | workforce coordination and shipped workflow definitions |
+| `platform_core/simulator/testing/` | virtual-operator and end-to-end simulation helpers |
 | `agents/` | elaborator, architect, executor, adversary, replanner, **verifier**, clarifier, playbook |
+| `developer_tools/` | any-project introspection, solution-space exploration, and safe refactoring |
+| `human_nature/faculties/` | affect, governance, identity, signals, and live psyche runtime |
 | `state/task.py` | lean task-state model + JSON persistence |
 | `memory/obsidian.py` | REST-first, disk-fallback note writer/reader |
 | `notifications/discord_bot.py` | REST embeds + message create/edit/poll helpers |

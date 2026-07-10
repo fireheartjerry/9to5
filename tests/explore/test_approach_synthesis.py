@@ -1,13 +1,13 @@
 """Tests for explore.approach_synthesis and the exploreSolutionSpace facade."""
 from __future__ import annotations
 
-from introspect import extractProject
+from developer_tools.introspection import extractProject
 from tests.factories import fake_brain
 
-from explore import exploreSolutionSpace
-from explore.approach_gen import ApproachCandidate, generateApproaches
-from explore.approach_synthesis import MITIGATION_MARKERS, selectOrSynthesize
-from explore.approach_tradeoffs import TradeoffScore, scoreApproaches
+from developer_tools.exploration import exploreSolutionSpace
+from developer_tools.exploration.approach_gen import ApproachCandidate, generateApproaches
+from developer_tools.exploration.approach_synthesis import MITIGATION_MARKERS, selectOrSynthesize
+from developer_tools.exploration.approach_tradeoffs import TradeoffScore, scoreApproaches
 
 
 def _cand(cid: str, files: int, steps: tuple[str, ...]) -> ApproachCandidate:

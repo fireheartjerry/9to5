@@ -17,7 +17,7 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-_DEFN_PATH = _ROOT / "workflows" / "definitions" / "bug_investigation.json"
+_DEFN_PATH = _ROOT / "platform_core" / "orchestration" / "workflows" / "definitions" / "bug_investigation.json"
 
 
 def _load_defn() -> dict:

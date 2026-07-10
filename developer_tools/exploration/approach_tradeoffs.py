@@ -4,7 +4,7 @@
 EXPORTS:
   TradeoffScore  -- Component + composite scores for one candidate
   scoreApproaches(candidates: list[ApproachCandidate], model: ProjectModel) -> list[TradeoffScore]  -- Score every candidate against the project model
-DEPENDS-ON: explore.approach_gen, introspect.project_model
+DEPENDS-ON: developer_tools.exploration.approach_gen, developer_tools.introspection.project_model
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/explore/test_approach_tradeoffs.py
 """
@@ -12,9 +12,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from introspect.project_model import ProjectModel
+from developer_tools.introspection.project_model import ProjectModel
 
-from explore.approach_gen import ApproachCandidate
+from developer_tools.exploration.approach_gen import ApproachCandidate
 
 W_RISK = 0.35
 W_EFFORT = 0.20

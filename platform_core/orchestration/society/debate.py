@@ -9,7 +9,7 @@ ring (loki). Output is an advisory DebateVerdict -- the verifier still gates.
 EXPORTS:
   selectNextSpeaker(thread: list, roster: list) -> str  -- Pick the role whose latest proposal is unanswered (no later entry refs it).
   runDebate(blackboard, subtask_id: str, roster: list, *, arbiter_fn: Optional[Callable]=None, max_rounds: Optional[int]=None, goal: str='') -> dict  -- Run bounded speaker-selected rounds; converge or stop
-DEPENDS-ON: agents.second_brain, config, society.blackboard
+DEPENDS-ON: agents.second_brain, config, platform_core.orchestration.society.blackboard
 SIDE-EFFECTS: appends proposal/vote entries to the blackboard
 RUN/TEST: python -m pytest tests/orchestration/test_society_debate.py
 """
@@ -19,7 +19,7 @@ import hashlib
 from typing import Callable, Optional
 
 import config
-from society.blackboard import makeEntry
+from platform_core.orchestration.society.blackboard import makeEntry
 
 LOG = config.getLogger("society.debate")
 

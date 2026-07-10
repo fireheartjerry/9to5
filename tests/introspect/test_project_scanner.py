@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 def test_scanner_classifies_and_excludes(fixture_project):
-    from introspect.project_scanner import scanProject
+    from developer_tools.introspection.project_scanner import scanProject
 
     mods = scanProject(fixture_project, max_files=100)
     paths = {m.path for m in mods}
@@ -14,7 +14,7 @@ def test_scanner_classifies_and_excludes(fixture_project):
 
 
 def test_scanner_truncates_deterministically(fixture_project):
-    from introspect.project_scanner import scanProject
+    from developer_tools.introspection.project_scanner import scanProject
 
     a = scanProject(fixture_project, max_files=3)
     b = scanProject(fixture_project, max_files=3)
@@ -22,7 +22,7 @@ def test_scanner_truncates_deterministically(fixture_project):
 
 
 def test_scanner_sorted_and_counts_loc(fixture_project):
-    from introspect.project_scanner import scanProject
+    from developer_tools.introspection.project_scanner import scanProject
 
     mods = scanProject(fixture_project, max_files=100)
     paths = [m.path for m in mods]
@@ -37,7 +37,7 @@ def test_scanner_sorted_and_counts_loc(fixture_project):
 def test_scanner_prunes_gitignored_dirs(fixture_project):
     """Simple .gitignore dir patterns (bare name + nested relpath) prune like EXCLUDE_DIRS;
     wildcard/negation lines are ignored (honest subset)."""
-    from introspect.project_scanner import scanProject
+    from developer_tools.introspection.project_scanner import scanProject
 
     (fixture_project / ".gitignore").write_text(
         "# comment\nbigvendor/\nlogs\nnested/runtime/\n*.tmp\n!keep.py\n", encoding="utf-8")
@@ -51,7 +51,7 @@ def test_scanner_prunes_gitignored_dirs(fixture_project):
 
 
 def test_scanner_no_gitignore_is_fine(tmp_path):
-    from introspect.project_scanner import scanProject
+    from developer_tools.introspection.project_scanner import scanProject
 
     (tmp_path / "a.py").write_text("A = 1\n", encoding="utf-8")
     assert [m.path for m in scanProject(tmp_path)] == ["a.py"]

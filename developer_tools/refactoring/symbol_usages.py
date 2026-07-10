@@ -9,7 +9,7 @@ EXPORTS:
   Usage  -- One reference to a symbol: POSIX relpath, 1-based line, reference kind.
   findUsages(root: str | Path, symbol: str) -> list[Usage]  -- Every reference to ``symbol`` in .py files under ``root``, sorted.
   findUsagesMulti(root: str | Path, symbols: set[str]) -> dict[str, list[Usage]]  -- Per-symbol usage lists for a whole symbol SET in one walk.
-DEPENDS-ON: introspect.project_scanner
+DEPENDS-ON: developer_tools.introspection.project_scanner
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/refactor/test_symbol_usages.py
 """
@@ -20,7 +20,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from introspect.project_scanner import gitignoreExcludes, pruneDirnames
+from developer_tools.introspection.project_scanner import gitignoreExcludes, pruneDirnames
 
 
 @dataclass(frozen=True)

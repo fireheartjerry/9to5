@@ -10,7 +10,7 @@ EXPORTS:
   gitignoreExcludes(root_path: Path) -> tuple[frozenset[str], frozenset[str]]  -- (dir names, dir relpaths) to prune, parsed from the root ``.gitignore``.
   pruneDirnames(rel_dir: str, dirnames: list[str], ig_names: frozenset[str], ig_rels: frozenset[str]) -> list[str]  -- Sorted dirnames minus EXCLUDE_DIRS and gitignore-derived exclusions.
   scanProject(root: str | Path, *, max_files: int=4000) -> list[ModuleInfo]  -- Scan ``root`` into sorted ModuleInfo skeletons, at most ``max_files`` entries.
-DEPENDS-ON: introspect.project_model
+DEPENDS-ON: developer_tools.introspection.project_model
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/introspect/test_project_scanner.py
 """
@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from introspect.project_model import (
+from developer_tools.introspection.project_model import (
     LANG_JAVASCRIPT,
     LANG_OTHER,
     LANG_PYTHON,

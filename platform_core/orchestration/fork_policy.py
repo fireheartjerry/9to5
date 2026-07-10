@@ -6,7 +6,7 @@ EXPORTS:
   BranchSeed  -- One branch's diversity seed: effort (also picks the model) + an angle hint.
   ForkPlan
   forkPlan(subtask: dict, *, n: int, angles: tuple=DIVERSITY_ANGLES, work_profile=None, work_dir: str | None=None) -> ForkPlan  -- Build N diversity seeds spanning effort x angle
-DEPENDS-ON: config, explore.generateApproaches, explore.scoreApproaches, introspect.extractProject, platform_core.orchestration, platform_core.orchestration.subtask
+DEPENDS-ON: config, developer_tools.exploration, developer_tools.introspection, platform_core.orchestration, platform_core.orchestration.subtask
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_fork_policy.py
 """
@@ -89,8 +89,8 @@ def _angleHintsFromExplore(goal_text: str, n: int, work_dir: str | None) -> list
     try:
         if not getattr(config, "EXPLORE_APPROACHES_ENABLED", False):
             return None
-        from explore import generateApproaches, scoreApproaches
-        from introspect import extractProject
+        from developer_tools.exploration import generateApproaches, scoreApproaches
+        from developer_tools.introspection import extractProject
         model = extractProject(work_dir or config.PROJECT_ROOT,
                                max_files=getattr(config, "PROJECT_INTROSPECTION_MAX_FILES", 4000))
         # Generate a wider pool (EXPLORE_APPROACHES_N) so ranking has real choice, seed the top n.

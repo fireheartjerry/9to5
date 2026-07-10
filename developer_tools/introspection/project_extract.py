@@ -14,7 +14,7 @@ package still works outside 9to5 (cache disabled then).
 EXPORTS:
   extractProject(root: str | Path, *, max_files: int=4000, use_cache: bool=True) -> ProjectModel  -- Extract (or load from cache) the full typed model of ``root``.
   contextForPrompt(model: ProjectModel, *, budget_chars: int=4000) -> str  -- LLM-ready sectioned digest of the model, hard-truncated at ``budget_chars``.
-DEPENDS-ON: config, introspect.generic_import_scan, introspect.project_boundaries, introspect.project_commands, introspect.project_model, introspect.project_scanner, introspect.python_import_graph
+DEPENDS-ON: config, developer_tools.introspection.generic_import_scan, developer_tools.introspection.project_boundaries, developer_tools.introspection.project_commands, developer_tools.introspection.project_model, developer_tools.introspection.project_scanner, developer_tools.introspection.python_import_graph
 SIDE-EFFECTS: reads/writes JSON cache files under state/project_models/ (when 9to5
 RUN/TEST: python -m pytest tests/introspect/test_project_extract.py
 """
@@ -29,17 +29,17 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 
-from introspect.generic_import_scan import analyzeGeneric
-from introspect.project_boundaries import detectBoundaries
-from introspect.project_commands import detectCommands
-from introspect.project_model import (
+from developer_tools.introspection.generic_import_scan import analyzeGeneric
+from developer_tools.introspection.project_boundaries import detectBoundaries
+from developer_tools.introspection.project_commands import detectCommands
+from developer_tools.introspection.project_model import (
     LANG_JAVASCRIPT,
     LANG_PYTHON,
     LANG_TYPESCRIPT,
     ProjectModel,
 )
-from introspect.project_scanner import gitignoreExcludes, pruneDirnames, scanProject
-from introspect.python_import_graph import analyzePython
+from developer_tools.introspection.project_scanner import gitignoreExcludes, pruneDirnames, scanProject
+from developer_tools.introspection.python_import_graph import analyzePython
 
 TOP_FAN_IN_COUNT = 5
 

@@ -5,7 +5,7 @@ import json
 
 
 def test_pyproject_pytest_detected(fixture_project):
-    from introspect.project_commands import detectCommands
+    from developer_tools.introspection.project_commands import detectCommands
 
     cmds = detectCommands(fixture_project)
     hit = [c for c in cmds if c.kind == "test" and c.source == "pyproject.toml"]
@@ -13,7 +13,7 @@ def test_pyproject_pytest_detected(fixture_project):
 
 
 def test_package_json_scripts(fixture_project):
-    from introspect.project_commands import detectCommands
+    from developer_tools.introspection.project_commands import detectCommands
 
     (fixture_project / "package.json").write_text(
         json.dumps({"scripts": {"test": "jest", "lint": "eslint ."}}), encoding="utf-8"
@@ -25,7 +25,7 @@ def test_package_json_scripts(fixture_project):
 
 
 def test_empty_dir_never_guesses(tmp_path):
-    from introspect.project_commands import detectCommands
+    from developer_tools.introspection.project_commands import detectCommands
 
     empty = tmp_path / "empty"
     empty.mkdir()
@@ -33,7 +33,7 @@ def test_empty_dir_never_guesses(tmp_path):
 
 
 def test_every_command_has_source(fixture_project):
-    from introspect.project_commands import detectCommands
+    from developer_tools.introspection.project_commands import detectCommands
 
     (fixture_project / "Makefile").write_text(
         "test:\n\tpytest\nbuild:\n\techo build\n", encoding="utf-8"
@@ -44,7 +44,7 @@ def test_every_command_has_source(fixture_project):
 
 
 def test_pytest_ini_detected(tmp_path):
-    from introspect.project_commands import detectCommands
+    from developer_tools.introspection.project_commands import detectCommands
 
     proj = tmp_path / "p"
     proj.mkdir()
@@ -54,7 +54,7 @@ def test_pytest_ini_detected(tmp_path):
 
 
 def test_cargo_and_go(tmp_path):
-    from introspect.project_commands import detectCommands
+    from developer_tools.introspection.project_commands import detectCommands
 
     proj = tmp_path / "p"
     proj.mkdir()

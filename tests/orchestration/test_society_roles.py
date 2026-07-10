@@ -1,5 +1,5 @@
 """RoleSpec registry + classifyRole capability router (reuses playbook profiles)."""
-from society.roles import ROLES, RoleSpec, classifyRole
+from platform_core.orchestration.society.roles import ROLES, RoleSpec, classifyRole
 
 
 def test_registry_has_five_roles():

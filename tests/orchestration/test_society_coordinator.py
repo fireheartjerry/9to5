@@ -2,8 +2,8 @@
 """Coordinator: disjoint batch seam, parallel spawn, collect, budget gate, bus mirror."""
 import threading
 
-from society.blackboard import Blackboard, makeEntry
-from society.coordinator import Coordinator, busMirror
+from platform_core.orchestration.society.blackboard import Blackboard, makeEntry
+from platform_core.orchestration.society.coordinator import Coordinator, busMirror
 from state.task import TaskState
 
 
@@ -142,7 +142,7 @@ def test_budget_gate_refuses_spawn_and_posts_budget_entry(tmp_path, monkeypatch)
 def test_handle_society_batch_seeds_prior_spend_run_wide(tmp_path, monkeypatch):
     """society_batch seeds spent_usd from earlier result entries -> gate trips run-wide."""
     import config
-    from society import society_batch
+    from platform_core.orchestration.society import society_batch
     monkeypatch.setattr(config, "SOCIETY_TOKEN_BUDGET_USD", 0.05)
     monkeypatch.setattr("platform_core.app_config.paths.BLACKBOARD_DIR", tmp_path)
     state = _state_two_ready()
@@ -167,7 +167,7 @@ def test_handle_society_batch_seeds_prior_spend_run_wide(tmp_path, monkeypatch):
 
 def test_lost_claim_not_counted_as_loop_progress(tmp_path, monkeypatch):
     """kind='claim' (lost claim) messages never ran -> excluded from count_started."""
-    from society import society_batch
+    from platform_core.orchestration.society import society_batch
     monkeypatch.setattr("platform_core.app_config.paths.BLACKBOARD_DIR", tmp_path)
     state = _state_two_ready()
     # st-001 is already claimed elsewhere -> its worker loses the CAS claim.

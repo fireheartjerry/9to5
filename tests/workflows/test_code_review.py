@@ -16,7 +16,7 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from workflows.registry import (  # noqa: E402
+from platform_core.orchestration.workflows.registry import (  # noqa: E402
     DEFINITIONS_DIR,
     _validateWorkflowDefinition,
     loadRegistry,
@@ -109,7 +109,7 @@ class TestLoadRegistry(unittest.TestCase):
         self.assertIsNone(err)
 
     def test_skips_invalid_json_file(self):
-        with mock.patch("workflows.registry.Path.glob",
+        with mock.patch("platform_core.orchestration.workflows.registry.Path.glob",
                         return_value=[Path("bad.json")]):
             with mock.patch.object(Path, "read_text",
                                    side_effect=OSError("unreadable")):

@@ -6,8 +6,8 @@ from pathlib import Path
 from unittest import mock
 
 import config
-from testing import e2e
-from testing.operator import VirtualOperator
+from platform_core.simulator.testing import e2e
+from platform_core.simulator.testing.operator import VirtualOperator
 
 
 class TestE2EOperator(unittest.TestCase):

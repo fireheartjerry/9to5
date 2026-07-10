@@ -1,7 +1,7 @@
 # tests/orchestration/test_society_debate.py
 """Structured debate: deterministic speaker selection, convergence, round-cap, oscillation."""
-from society.blackboard import Blackboard, makeEntry
-from society.debate import selectNextSpeaker, runDebate
+from platform_core.orchestration.society.blackboard import Blackboard, makeEntry
+from platform_core.orchestration.society.debate import selectNextSpeaker, runDebate
 
 
 def test_select_next_speaker_picks_unanswered():
