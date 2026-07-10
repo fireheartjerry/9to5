@@ -1,5 +1,17 @@
 # CI/CD & Iteration-Speed Optimization
 
+## Trusted self-hosted CI and algorithmic selection (2026-07-10)
+
+CI runs on the repository-scoped `self-hosted`, `Windows`, `X64`, `9to5-ci` runner for
+trusted `main`, nightly, and manual-dispatch workflows only. PR and merge-queue execution are
+intentionally absent: local `python tools/dev.py ci-local` remains the fail-closed pre-push gate.
+
+`tools/test_brain_selection.py` keeps direct mappings and domain sentinels mandatory, then uses
+an exact bounded weighted-selection search for optional recent failures (deterministic greedy
+fallback for larger sets). `tools/ci_schedule.py` exposes LPT lane scheduling for the one-machine
+capacity model. The companion competitive-systems skill treats `3000+` as the Codeforces rating
+threshold and requires baseline evidence before applying advanced algorithms.
+
 Living doc tracking bottlenecks and fixes to speed up every feedback loop in 9TO5
 (GitHub CI, local test runs, and the autonomous orchestrate→execute→verify loop).
 

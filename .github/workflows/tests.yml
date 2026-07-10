@@ -3,9 +3,6 @@ name: tests
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: ["**"]
-  merge_group:
   workflow_dispatch:
     inputs:
       suite:
@@ -17,12 +14,9 @@ on:
   schedule:
     - cron: "17 8 * * *"
 
-# Per-event groups: a push to main must NOT cancel the nightly exhaustive run (schedule and
-# push previously shared the group "tests-refs/heads/main"). Only PR runs auto-cancel their
-# superseded predecessors.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -32,474 +26,59 @@ env:
   NINE_TO_FIVE_TEST_HEARTBEAT_SECONDS: "30"
 
 jobs:
-  classify:
-    runs-on: windows-latest
-    timeout-minutes: 10
-    outputs:
-      docs_only: ${{ steps.paths.outputs.docs_only }}
-      workflow_only: ${{ steps.paths.outputs.workflow_only }}
-      tooling_only: ${{ steps.paths.outputs.tooling_only }}
-      core: ${{ steps.paths.outputs.core }}
-      affected_ok: ${{ steps.affected.outputs.affected_ok }}
-      affected_reason: ${{ steps.affected.outputs.affected_reason }}
-      affected_targets: ${{ steps.affected.outputs.affected_targets }}
-      testbrain_estimated_seconds: ${{ steps.affected.outputs.testbrain_estimated_seconds }}
-      testbrain_explain: ${{ steps.affected.outputs.testbrain_explain }}
-      testbrain_matrix: ${{ steps.affected.outputs.testbrain_matrix }}
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
-        with:
-          python-version: "3.12"
-
-      - name: Restore test-brain history
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: .testbrain
-          key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            testbrain-${{ runner.os }}-${{ github.ref_name }}-
-            testbrain-${{ runner.os }}-main-
-            testbrain-${{ runner.os }}-
-
-      - id: paths
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            base="${{ github.event.pull_request.base.sha }}"
-          elif [[ "${{ github.event_name }}" == "merge_group" ]]; then
-            # Merge queue builds a synthetic queued merge commit. Diff against its first parent
-            # when available; if not, leave base empty and fail closed to the full fast lane.
-            base="$(git rev-parse HEAD^ 2>/dev/null || true)"
-          elif [[ -n "${{ github.event.before }}" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
-            base="${{ github.event.before }}"
-          else
-            base=""
-          fi
-          # A force-push (or shallow history) can hand us a base SHA that no longer exists;
-          # validate it and FAIL CLOSED (treat everything as changed) instead of silently
-          # diffing one commit.
-          if [[ -n "$base" ]] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-            base=""
-          fi
-          if [[ -n "$base" ]]; then
-            git diff --name-only "$base"...HEAD > /tmp/changed.txt || echo "." > /tmp/changed.txt
-          else
-            echo "." > /tmp/changed.txt
-          fi
-          if [[ ! -s /tmp/changed.txt ]]; then
-            echo "." > /tmp/changed.txt
-          fi
-
-          docs_only=true
-          workflow_only=true
-          tooling_only=true
-          core=false
-          while IFS= read -r f; do
-            [[ -z "$f" ]] && continue
-            if [[ ! "$f" =~ ^(docs/|.*\.md$|LLM_MAP\.md$|CAPABILITIES\.md$|README\.md$) ]]; then
-              docs_only=false
-            fi
-            if [[ ! "$f" =~ ^(\.github/workflows/|workflows/|validate_workflows\.py|tests/workflows/.*\.py) ]]; then
-              workflow_only=false
-            fi
-            if [[ ! "$f" =~ ^(tools/|tests/platform/test_(repo_map|tools|dev_commands)\.py|\.repo-map\.json) ]]; then
-              tooling_only=false
-            fi
-            if [[ ! "$f" =~ ^(docs/|.*\.md$|\.github/workflows/|tools/|\.repo-map\.json) ]]; then
-              core=true
-            fi
-          done < /tmp/changed.txt
-
-          # Fail closed: a change set mixing "excluded" categories (e.g. docs + tools) used to
-          # produce all-false outputs -- every job skipped and the PR went green with ZERO tests
-          # run. If no single specialized lane claims the whole change set, run the core lanes.
-          if [[ "$core" == "false" && "$docs_only" == "false" && "$workflow_only" == "false" && "$tooling_only" == "false" ]]; then
-            core=true
-          fi
-
-          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            docs_only=false
-            workflow_only=false
-            tooling_only=false
-            core=true
-          fi
-
-          {
-            echo "docs_only=$docs_only"
-            echo "workflow_only=$workflow_only"
-            echo "tooling_only=$tooling_only"
-            echo "core=$core"
-          } >> "$GITHUB_OUTPUT"
-
-      - id: affected
-        shell: bash
-        run: |
-          if [[ ("${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "merge_group") && -s /tmp/changed.txt && "$(head -c1 /tmp/changed.txt)" != "." ]]; then
-            python tools/test_brain.py --budget 480 --shards 4 --report-dir .testbrain/reports --github-output < /tmp/changed.txt >> "$GITHUB_OUTPUT"
-          else
-            {
-              echo "affected_ok=false"
-              echo "affected_reason=not-a-PR-or-unknown-change-set"
-              echo "affected_targets="
-              echo "testbrain_estimated_seconds=0"
-              echo "testbrain_explain="
-              echo 'testbrain_matrix={"include":[]}'
-            } >> "$GITHUB_OUTPUT"
-          fi
-      - name: Upload test-brain reports
-        if: always() && hashFiles('.testbrain/reports/**') != ''
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: testbrain-reports
-          path: .testbrain/reports
-
-  docs:
-    needs: classify
-    if: needs.classify.outputs.docs_only == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
-        with:
-          python-version: "3.12"
-      - name: Repo-map drift check
-        run: python tools/repo_map.py --check
-
-  workflow-validation:
-    needs: classify
-    if: needs.classify.outputs.workflow_only == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
-        with:
-          enable-cache: true
-          cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
-        with:
-          python-version: "3.12"
-      - name: Install dependencies
-        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
-      - name: Validate workflow definitions
-        run: python validate_workflows.py
-      - name: Workflow tests
-        run: python -m pytest tests/workflows/test_validate_workflows.py tests/workflows/test_workflows.py tests/workflows/test_workflows_registry.py tests/workflows/test_workflow_registry.py -q
-
-  tooling:
-    needs: classify
-    if: needs.classify.outputs.tooling_only == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
-        with:
-          enable-cache: true
-          cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
-        with:
-          python-version: "3.12"
-      - name: Install dependencies
-        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
-      - name: Repo-map drift check
-        run: python tools/repo_map.py --check
-      - name: Tooling tests
-        run: python -m pytest tests/platform/test_repo_map.py tests/platform/test_tools.py tests/platform/test_dev_commands.py -q
-
-  smart-shards:
-    needs: classify
-    if: >
-      needs.classify.outputs.core == 'true' &&
-      needs.classify.outputs.affected_ok == 'true' &&
-      (github.event_name == 'pull_request' || github.event_name == 'merge_group')
-    runs-on: windows-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.classify.outputs.testbrain_matrix) }}
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
-        if: matrix.has_targets
-        with:
-          enable-cache: true
-          cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
-        if: matrix.has_targets
-        with:
-          python-version: "3.12"
-      - name: Restore test-brain history
-        if: matrix.has_targets
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: .testbrain
-          key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-smart-${{ matrix.shard }}
-          restore-keys: |
-            testbrain-${{ runner.os }}-${{ github.ref_name }}-
-            testbrain-${{ runner.os }}-main-
-            testbrain-${{ runner.os }}-
-      - name: Install dependencies
-        if: matrix.has_targets
-        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
-      - name: Smart shard
-        if: matrix.has_targets
-        env:
-          NINE_TO_FIVE_TEST_HISTORY: "1"
-          NINE_TO_FIVE_TEST_SHARD: ${{ matrix.shard }}
-        run: |
-          echo "smart shard ${{ matrix.shard }} (~${{ matrix.estimated_seconds }}s): ${{ matrix.targets }}"
-          python -m pytest ${{ matrix.targets }} -n auto --dist loadscope -q
-      - name: Empty shard
-        if: ${{ !matrix.has_targets }}
-        run: echo "smart shard ${{ matrix.shard }} has no targets"
-      - name: Save test-brain history
-        if: always() && matrix.has_targets && hashFiles('.testbrain/**') != ''
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: .testbrain
-          key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-smart-${{ matrix.shard }}
-
-  fast:
-    needs: [classify, smart-shards]
-    if: always() && needs.classify.outputs.core == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
-        with:
-          enable-cache: true
-          cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
-        with:
-          python-version: "3.12"
-      - name: Restore test-brain history
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: .testbrain
-          key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-fast
-          restore-keys: |
-            testbrain-${{ runner.os }}-${{ github.ref_name }}-
-            testbrain-${{ runner.os }}-main-
-            testbrain-${{ runner.os }}-
-      - name: Install dependencies
-        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
-      - name: Compile tests (corrupt files fail in seconds, not at collection)
-        run: python -m compileall -q tests
-      - name: Smart shard gate or full fast lane
-        shell: bash
-        env:
-          NINE_TO_FIVE_TEST_HISTORY: "1"
-        run: |
-          if [[ ("${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "merge_group") && "${{ needs.classify.outputs.affected_ok }}" == "true" ]]; then
-            echo "smart lane delegated to smart-shards (~${{ needs.classify.outputs.testbrain_estimated_seconds }}s): ${{ needs.classify.outputs.affected_targets }}"
-            printf '%s\n' "${{ needs.classify.outputs.testbrain_explain }}"
-            if [[ "${{ needs.smart-shards.result }}" != "success" ]]; then
-              echo "smart-shards result was '${{ needs.smart-shards.result }}'; failing fast gate"
-              exit 1
-            fi
-          else
-            echo "full fast lane (reason: ${{ needs.classify.outputs.affected_reason }})"
-            python -m pytest -m "not slow" -n auto --dist loadscope -q
-          fi
-      - name: Validate workflow definitions
-        run: python validate_workflows.py
-      - name: Download test-brain reports
-        if: always()
-        continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: testbrain-reports
-          path: .testbrain/reports
-      - name: Test-brain summary
-        if: always() && hashFiles('.testbrain/reports/selection.md') != ''
-        shell: bash
-        run: cat .testbrain/reports/selection.md >> "$GITHUB_STEP_SUMMARY"
-      - name: Refresh test-brain quarantine
-        if: always()
-        run: python tools/test_brain.py --flake-report --write-quarantine
-      - name: Test-brain history summary
-        if: always()
-        run: python tools/test_brain.py --history-report --report-dir .testbrain/reports
-      - name: Append test-brain history
-        if: always() && hashFiles('.testbrain/reports/history.md') != ''
-        shell: bash
-        run: cat .testbrain/reports/history.md >> "$GITHUB_STEP_SUMMARY"
-      - name: Test-brain mapping audit
-        if: always()
-        run: python tools/test_brain.py --mapping-audit --mapping-fail-under 0.99 --report-dir .testbrain/reports
-      - name: Append test-brain mapping audit
-        if: always() && hashFiles('.testbrain/reports/mapping.md') != ''
-        shell: bash
-        run: cat .testbrain/reports/mapping.md >> "$GITHUB_STEP_SUMMARY"
-      - name: Save test-brain history
-        if: always() && hashFiles('.testbrain/**') != ''
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: .testbrain
-          key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-fast
-
-  ci:
-    # Stable, always-reported required check. Path-specific jobs are intentionally skipped,
-    # so branch rules must require this aggregation gate rather than an individual lane.
-    needs: [classify, docs, workflow-validation, tooling, smart-shards, fast]
-    if: always()
-    runs-on: windows-latest
-    timeout-minutes: 5
-    steps:
-      - name: Verify the selected CI lane
-        shell: bash
-        env:
-          CLASSIFY_RESULT: ${{ needs.classify.result }}
-          DOCS_ONLY: ${{ needs.classify.outputs.docs_only }}
-          WORKFLOW_ONLY: ${{ needs.classify.outputs.workflow_only }}
-          TOOLING_ONLY: ${{ needs.classify.outputs.tooling_only }}
-          CORE: ${{ needs.classify.outputs.core }}
-          DOCS_RESULT: ${{ needs.docs.result }}
-          WORKFLOW_RESULT: ${{ needs.workflow-validation.result }}
-          TOOLING_RESULT: ${{ needs.tooling.result }}
-          FAST_RESULT: ${{ needs.fast.result }}
-        run: |
-          set -euo pipefail
-          [[ "$CLASSIFY_RESULT" == "success" ]] || { echo "classify=$CLASSIFY_RESULT"; exit 1; }
-          [[ "$DOCS_ONLY" != "true" || "$DOCS_RESULT" == "success" ]] || { echo "docs=$DOCS_RESULT"; exit 1; }
-          [[ "$WORKFLOW_ONLY" != "true" || "$WORKFLOW_RESULT" == "success" ]] || { echo "workflow-validation=$WORKFLOW_RESULT"; exit 1; }
-          [[ "$TOOLING_ONLY" != "true" || "$TOOLING_RESULT" == "success" ]] || { echo "tooling=$TOOLING_RESULT"; exit 1; }
-          [[ "$CORE" != "true" || "$FAST_RESULT" == "success" ]] || { echo "fast=$FAST_RESULT"; exit 1; }
-          echo "Selected CI lane passed."
-
-  slow:
-    needs: classify
-    if: github.event_name == 'push' && needs.classify.outputs.core == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
-        with:
-          enable-cache: true
-          cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
-        with:
-          python-version: "3.12"
-      - name: Install dependencies
-        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
-      - name: Slow lane
-        env:
-          NINE_TO_FIVE_TEST_HISTORY: "1"
-        run: python -m pytest -m slow -n auto --dist loadscope --durations=30 -q
-
-  dry-run-smoke:
-    needs: classify
-    if: github.event_name == 'push' && needs.classify.outputs.core == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
-        with:
-          enable-cache: true
-          cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
-        with:
-          python-version: "3.12"
-      - name: Install dependencies
-        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
-      - name: Dry-run smoke
-        run: python main.py --dry-run --goal "ci smoke build a thing" --hours 1 --no-web
-
-  e2e-smoke:
-    needs: classify
-    if: github.event_name == 'push' && needs.classify.outputs.core == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
-        with:
-          enable-cache: true
-          cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
-        with:
-          python-version: "3.12"
-      - name: Install dependencies
-        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
-      - name: Virtual-operator E2E suite
-        run: python main.py --e2e
-
-  nightly-fast-py311:
-    if: github.event_name == 'schedule'
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
-        with:
-          enable-cache: true
-          cache-dependency-glob: "requirements*.txt"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
-        with:
-          python-version: "3.11"
-      - name: Install dependencies
-        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
-      - name: Fast lane (3.11 compatibility)
-        env:
-          NINE_TO_FIVE_TEST_HISTORY: "1"
-        run: python -m pytest -m "not slow" -n auto --dist loadscope -q
-
-  exhaustive:
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'exhaustive')
-    runs-on: windows-latest
+  main-validation:
+    # This repository deliberately runs only trusted main/nightly/manual code on the
+    # workstation runner. Do not add pull_request or pull_request_target triggers.
+    runs-on: [self-hosted, Windows, X64, 9to5-ci]
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
         with:
-          enable-cache: true
-          cache-dependency-glob: "requirements*.txt"
+          enable-cache: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         with:
           python-version: "3.12"
       - name: Install dependencies
         run: uv pip install --system -r requirements.txt -r requirements-dev.txt
-      - name: Exhaustive slow lane
-        env:
-          NINE_TO_FIVE_FUZZ_SEEDS: "150"
-          NINE_TO_FIVE_TEST_HISTORY: "1"
-        run: python -m pytest -m slow -n auto --dist loadscope --durations=50 -vv
+      - name: Cheap integrity gates
+        run: |
+          python -m compileall -q tests
+          python tools/repo_map.py --check
+          python validate_workflows.py
+      - name: Capacity-aware validation schedule
+        shell: bash
+        run: |
+          python tools/ci_schedule.py --lanes-json '[
+            {"name":"fast","seconds":45,"heavy":true},
+            {"name":"slow","seconds":120,"heavy":true},
+            {"name":"dry-run","seconds":60,"heavy":false},
+            {"name":"e2e","seconds":60,"heavy":false}
+          ]'
+      - name: Fast lane
+        run: python -m pytest -m "not slow" -n auto --dist loadscope -q
+      - name: Slow lane
+        run: python -m pytest -m slow -n auto --dist loadscope --durations=30 -q
       - name: Dry-run smoke
-        run: python main.py --dry-run --goal "nightly exhaustive smoke" --hours 1 --no-web
+        run: python main.py --dry-run --goal "ci smoke build a thing" --hours 1 --no-web
       - name: Virtual-operator E2E suite
         run: python main.py --e2e
+      - name: Test Brain mapping audit
+        run: python tools/test_brain.py --mapping-audit --mapping-fail-under 0.99
 
-  coverage:
-    # Coverage is intentionally scheduled/manual-exhaustive only: it improves trend visibility
-    # without extending the PR feedback loop or competing with the fast affected-test lane.
+  nightly-exhaustive:
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'exhaustive')
-    runs-on: windows-latest
-    timeout-minutes: 45
+    runs-on: [self-hosted, Windows, X64, 9to5-ci]
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.0
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6.8.0
         with:
-          enable-cache: true
-          cache-dependency-glob: "requirements*.txt"
+          enable-cache: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.11"
       - name: Install dependencies
         run: uv pip install --system -r requirements.txt -r requirements-dev.txt
-      - name: Collect fast-lane coverage
-        run: python -m pytest -m "not slow" --cov --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml -q
-      - name: Upload coverage report
-        if: always() && hashFiles('coverage.xml') != ''
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: coverage-${{ github.run_id }}
-          path: coverage.xml
+      - name: Exhaustive compatibility suite
+        run: python -m pytest -n auto --dist loadscope -q

@@ -21,6 +21,8 @@ Subcommands:
   flakes                report/write Test Brain quarantine candidates
   slowest               report slowest tests from Test Brain history
   map-audit             report source files with no affected-test mapping
+  strategy              recommend Codeforces 3000+ rating techniques for a bottleneck
+  context               build a compact LLM navigation context packet
   watch [files]         re-run affected tests on .py changes
   outline <file>        signatures + docstring-first-lines + anchors only
   where <symbol>        definition file:line + module-level callers (from .repo-map.json)
@@ -41,6 +43,8 @@ EXPORTS:
   cmd_slowest(args: list[str]) -> int
   cmd_map_audit(args: list[str]) -> int
   cmd_map(args: list[str]) -> int
+  cmd_strategy(args: list[str]) -> int
+  cmd_context(args: list[str]) -> int
   cmd_run(args: list[str]) -> int
   cmd_dryrun(args: list[str]) -> int
   cmd_e2e(args: list[str]) -> int
@@ -61,6 +65,8 @@ import iteration_bench  # noqa: E402
 import repo_map  # noqa: E402
 import size_audit  # noqa: E402
 import test_brain  # noqa: E402
+import strategy_catalog  # noqa: E402
+import llm_navigation  # noqa: E402
 
 from dev_checks import (  # noqa: E402
     REPO_ROOT, PY, _run,
@@ -108,6 +114,28 @@ def cmd_map(args: list[str]) -> int:
     return repo_map.main(args)
 
 
+def cmd_strategy(args: list[str]) -> int:
+    import argparse
+    parser = argparse.ArgumentParser(description="Recommend Codeforces 3000+ rating strategies.")
+    parser.add_argument("--kind", required=True)
+    parser.add_argument("--constraint", action="append", default=[])
+    ns = parser.parse_args(args)
+    for card in strategy_catalog.recommend_strategies({"kind": ns.kind, "constraints": ns.constraint}):
+        print(f"{card.key}: {card.complexity}; invariant={card.invariant}; benchmark={card.benchmark}")
+    return 0
+
+
+def cmd_context(args: list[str]) -> int:
+    import argparse, json
+    parser = argparse.ArgumentParser(description="Build a compact LLM navigation context packet.")
+    parser.add_argument("query")
+    parser.add_argument("--budget", type=int, default=12000)
+    ns = parser.parse_args(args)
+    projection = llm_navigation.build_projection(json.loads((REPO_ROOT / ".repo-map.json").read_text(encoding="utf-8")))
+    print(json.dumps(llm_navigation.build_context_packet(projection, ns.query, budget_chars=ns.budget), indent=2))
+    return 0
+
+
 def cmd_run(args: list[str]) -> int:
     return _run([PY, str(REPO_ROOT / "main.py"), *args]).returncode
 
@@ -134,6 +162,7 @@ COMMANDS = {
     "size-audit": cmd_size_audit,
     "affected": cmd_affected, "smart": cmd_smart, "flakes": cmd_flakes, "slowest": cmd_slowest,
     "map-audit": cmd_map_audit,
+    "strategy": cmd_strategy, "context": cmd_context,
     "watch": cmd_watch,
     "outline": cmd_outline, "where": cmd_where, "lint": cmd_lint, "typecheck": cmd_typecheck,
     "run": cmd_run, "dryrun": cmd_dryrun, "e2e": cmd_e2e, "codemod": cmd_codemod,

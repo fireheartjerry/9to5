@@ -40,6 +40,7 @@ from test_brain_selection import (  # noqa: F401 -- re-exported (facade rule)
     load_stats,
     mapping_debt_priority,
     mapping_debt_priority_label,
+    optimize_optional_targets,
     plan_shards,
     select_tests,
     sentinel_targets_for,

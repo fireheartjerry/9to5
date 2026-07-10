@@ -25,6 +25,7 @@ and reports results. Keep this file short so every session starts fast.
 - High-risk boundaries: `docs/DANGER_MAP.md`, `.claude/rules/orchestration.md`
 - State and memory: `docs/STATE.md`, `docs/MEMORY.md`
 - Repeatable playbooks: `docs/edit_recipes/`, `.claude/skills/`
+- Algorithmic performance work: `.claude/skills/competitive-systems/` (`3000+` means Codeforces rating)
 
 ## Tree Guide
 

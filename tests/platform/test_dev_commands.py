@@ -21,6 +21,8 @@ def test_new_agent_commands_are_registered():
         "flakes",
         "slowest",
         "map-audit",
+        "strategy",
+        "context",
     } <= set(dev.COMMANDS)
 
 

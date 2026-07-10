@@ -1,4 +1,4 @@
-"""Policy tests for the GitHub Actions test workflow."""
+"""Policy tests for the trusted self-hosted GitHub Actions workflow."""
 
 from __future__ import annotations
 
@@ -12,46 +12,36 @@ def _workflow_text() -> str:
     return WORKFLOW.read_text(encoding="utf-8")
 
 
-def test_test_workflow_keeps_merge_queue_and_fail_closed_test_brain_contract():
+def test_workflow_uses_only_lean_trusted_triggers_and_runner():
     text = _workflow_text()
 
-    assert "merge_group:" in text
-    assert "git rev-parse HEAD^" in text
-    assert "affected_ok=false" in text
-    assert "not-a-PR-or-unknown-change-set" in text
+    assert "pull_request:" not in text
+    assert "pull_request_target:" not in text
+    assert "merge_group:" not in text
+    assert "push:\n    branches: [main]" in text
+    assert "workflow_dispatch:" in text
+    assert "schedule:" in text
+    assert "runs-on: [self-hosted, Windows, X64, 9to5-ci]" in text
+    assert "contents: read" in text
 
 
-def test_test_workflow_publishes_test_brain_reports_and_matrix_output():
+def test_workflow_keeps_required_validation_and_capacity_schedule():
     text = _workflow_text()
 
-    assert "testbrain_matrix:" in text
-    assert 'testbrain_matrix={"include":[]}' in text
-    assert "testbrain-reports" in text
-    assert ".testbrain/reports/selection.md" in text
-    assert ".testbrain/reports/history.md" in text
-    assert ".testbrain/reports/mapping.md" in text
+    assert "python tools/repo_map.py --check" in text
+    assert "python validate_workflows.py" in text
+    assert "python tools/ci_schedule.py" in text
+    assert "pytest -m \"not slow\"" in text
+    assert "pytest -m slow" in text
+    assert "python main.py --dry-run" in text
+    assert "python main.py --e2e" in text
     assert "--mapping-fail-under 0.99" in text
 
 
-def test_fast_gate_waits_for_smart_shards_without_skipping_full_fallback():
+def test_workflow_avoids_paid_hosted_cache_and_artifact_steps():
     text = _workflow_text()
 
-    assert "smart-shards:" in text
-    assert "strategy:" in text
-    assert "matrix: ${{ fromJson(needs.classify.outputs.testbrain_matrix) }}" in text
-    assert "needs: [classify, smart-shards]" in text
-    assert "if: always() && needs.classify.outputs.core == 'true'" in text
-    assert "smart lane delegated to smart-shards" in text
-    assert "smart-shards result was" in text
-    assert "full fast lane" in text
-
-
-def test_workflow_has_one_stable_required_gate_and_off_pr_coverage():
-    text = _workflow_text()
-
-    assert "  ci:\n" in text
-    assert "needs: [classify, docs, workflow-validation, tooling, smart-shards, fast]" in text
-    assert "Selected CI lane passed." in text
-    assert "options: [fast, exhaustive]" in text
-    assert "coverage:" in text
-    assert "--cov-branch" in text
+    assert "actions/cache/" not in text
+    assert "upload-artifact" not in text
+    assert "download-artifact" not in text
+    assert "enable-cache: false" in text

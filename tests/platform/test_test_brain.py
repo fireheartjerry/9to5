@@ -334,3 +334,15 @@ def test_current_mapping_audit_has_no_critical_debt():
 
     critical = [row["file"] for row in report["unmapped"] if row["priority_label"] == "critical"]
     assert critical == []
+
+
+def test_optional_optimizer_keeps_required_and_uses_exact_budget_search():
+    stats = {
+        "tests/a.py": test_brain.TestStat("tests/a.py", runs=1, total_duration=4),
+        "tests/b.py": test_brain.TestStat("tests/b.py", runs=1, total_duration=3, failures=1, last_failed=time.time()),
+        "tests/c.py": test_brain.TestStat("tests/c.py", runs=1, total_duration=3),
+    }
+
+    picked = test_brain.optimize_optional_targets(["tests/a.py"], ["tests/b.py", "tests/c.py"], stats, 7)
+
+    assert picked == ["tests/b.py"]

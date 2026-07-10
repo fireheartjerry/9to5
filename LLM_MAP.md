@@ -73,6 +73,7 @@ tests/
 | Resilience / self-mod | `platform_core/runtime/resilience.py`, `selfmod.py` | Crash recovery + self-modification baseline |
 | Any-project capabilities | `introspect/`, `refactor/`, `explore/` | Typed project model for any root, refactoring safety (impact + atomic transactions, `python -m refactor check`), solution-space exploration; wired via lazy fail-open imports in `platform_core/orchestration/{plan_mixin,fork_policy}.py` |
 | Dev / AI-nav tooling | `tools/repo_map.py`, `tools/dev.py`, `tools/affected_tests.py`, `tools/codemod.py` | `@AI-MAP` headers, `.repo-map.json`, `AGENTS.md`, fast check loop |
+| Competitive optimization | `.claude/skills/competitive-systems/`, `tools/strategy_catalog.py`, `tools/llm_navigation.py` | Codeforces 3000+ rating techniques, compact context packets, measured CI/LLM optimization |
 | Config | `config.py`, `platform_core/app_config/`, `.env` | Runtime configuration |
 | Docs | `CLAUDE.md`, `LLM_MAP.md`, `docs/` | Operating and architectural context for future agents |
 

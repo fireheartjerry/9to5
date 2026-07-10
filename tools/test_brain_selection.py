@@ -34,6 +34,7 @@ from time import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import affected_tests  # noqa: E402
+from test_brain_optimizer import optimize_optional_targets
 
 REPO_ROOT = affected_tests.REPO_ROOT
 TESTBRAIN_DIR = REPO_ROOT / ".testbrain"
@@ -399,12 +400,14 @@ def select_tests(
     recent = [
         t for t in _recent_failures(stats) if t not in direct and t not in sentinels and t not in quarantined
     ]
-    targets = sorted(set(direct + sentinels + recent))
+    required = sorted(set(direct + sentinels))
+    selected_recent = optimize_optional_targets(required, recent, stats, budget_seconds)
+    targets = sorted(set(required + selected_recent))
     estimated = _estimate(targets, stats)
     explanations = [
         f"direct affected targets: {len(direct)}",
         f"domain sentinel targets added: {len(sentinels)}",
-        f"recent failing targets added: {len(recent)}",
+        f"recent failing targets selected: {len(selected_recent)}/{len(recent)}",
         f"quarantined recent failures skipped: {len(quarantined_recent)}",
         f"estimated runtime: {estimated:.2f}s / budget {budget_seconds:.2f}s",
     ]
@@ -415,7 +418,7 @@ def select_tests(
             targets=targets,
             estimated_seconds=estimated,
             direct_targets=direct,
-            recent_failure_targets=recent,
+            recent_failure_targets=selected_recent,
             sentinel_targets=sentinels,
             quarantined_targets=quarantined_recent,
             explanations=explanations,
@@ -427,7 +430,7 @@ def select_tests(
         targets=targets,
         estimated_seconds=estimated,
         direct_targets=direct,
-        recent_failure_targets=recent,
+        recent_failure_targets=selected_recent,
         sentinel_targets=sentinels,
         quarantined_targets=quarantined_recent,
         explanations=explanations,

@@ -28,6 +28,7 @@ from repo_map_render import (
 
 _JSON_PATH = REPO_ROOT / ".repo-map.json"
 _ROOT_AGENTS = REPO_ROOT / "AGENTS.md"
+_LLM_MAP = REPO_ROOT / ".llm-map.json"
 
 
 # ==== SUB-FUNCTIONS ====
@@ -66,6 +67,20 @@ def _writeJsonMap(json_text: str, *, check: bool, drift: list) -> None:
             drift.append(str(_JSON_PATH.relative_to(REPO_ROOT)))
     else:
         _JSON_PATH.write_text(json_text, encoding="utf-8", newline="\n")
+
+
+def _writeLlmProjection(m: dict, *, check: bool, drift: list) -> None:
+    """Write/check the compact LLM projection while preserving the canonical full map."""
+    from llm_navigation import build_projection
+    text = _dump_json(build_projection(m))
+    if check:
+        # Like AGENTS.md, this derived convenience artifact is optional on a fresh clone.
+        # Once generated and adopted it participates in drift protection.
+        have = _LLM_MAP.read_text(encoding="utf-8") if _LLM_MAP.exists() else None
+        if have is not None and have != text:
+            drift.append(str(_LLM_MAP.relative_to(REPO_ROOT)))
+    else:
+        _LLM_MAP.write_text(text, encoding="utf-8", newline="\n")
 
 
 def _writeAgentsMd(*, check: bool, root_md: str, pkg_mds: dict, drift: list) -> None:
@@ -131,6 +146,7 @@ def write_outputs(*, check: bool, only: Optional[str], no_headers: bool) -> int:
     root_md = render_root_agents_md(m)
     pkg_mds = {pkg: render_package_agents_md(m, pkg) for pkg in _packages_with_init(m)}
     _writeJsonMap(json_text, check=check, drift=drift)
+    _writeLlmProjection(m, check=check, drift=drift)
     _writeAgentsMd(check=check, root_md=root_md, pkg_mds=pkg_mds, drift=drift)
     _reportResults(drift, no_doc, check=check, only=only,
                    n_modules=len(m["modules"]), n_pkgs=len(pkg_mds))
