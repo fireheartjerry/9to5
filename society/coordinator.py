@@ -68,7 +68,20 @@ class Coordinator:
             return ready[:max_workers]
         chosen, used = [], set()
         for st in ready:
+            # The run loop normally supplies only pending work, but a concurrent
+            # claim can make that snapshot stale before this batch is selected.
+            # Skip it so it cannot block later runnable subtasks.
+            if st.get("status") != "pending":
+                continue
             files = file_sets_fn(st) or set()
+            # Keep the society path consistent with parallel_safety.safeParallelSet:
+            # an absent file set means we cannot prove this subtask is independent.
+            # Treating it as an empty set used to let the society batch run unknown
+            # edit scopes concurrently, which can produce conflicting changes.
+            if not files:
+                if not chosen:
+                    chosen.append(st)
+                break
             if files & used:
                 continue
             used |= files

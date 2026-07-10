@@ -188,6 +188,7 @@ class OrchestratorExecuteDelegatesMixin:
         dashboard: "DiscordDashboard",
         adv_verdict: "str | None",
         adv_stub: bool,
+        result: "dict | None" = None,
     ) -> None:
         """Capture SIE reflection, memoize passing spec, and trigger adaptive replan
         (delegates to dual_ledger_replan to hold the size budget)."""
@@ -205,6 +206,7 @@ class OrchestratorExecuteDelegatesMixin:
             dashboard,
             adv_verdict,
             adv_stub,
+            result=result,
         )
 
     def _progressLedgerReplan(

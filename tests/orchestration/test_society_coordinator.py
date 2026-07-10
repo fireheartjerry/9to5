@@ -34,6 +34,18 @@ def test_select_disjoint_batch_filters_overlap(tmp_path):
     assert len(batch) == 1
 
 
+def test_select_disjoint_batch_serializes_unknown_file_scope(tmp_path):
+    """Missing files_touched is unsafe, not a free pass to parallel execution."""
+    state = _state_two_ready()
+    bb = Blackboard(tmp_path / "c.jsonl")
+    coord = Coordinator(state, bb, threading.Lock(), work_dir=str(tmp_path))
+    ready = [s for s in state.subtasks if s["status"] == "pending"]
+
+    batch = coord.selectDisjointBatch(ready, max_workers=3, file_sets_fn=lambda _st: set())
+
+    assert [st["subtask_id"] for st in batch] == ["st-001"]
+
+
 def test_handle_society_batch_runs_workers_and_collects(tmp_path):
     state = _state_two_ready()
     bb = Blackboard(tmp_path / "c.jsonl")

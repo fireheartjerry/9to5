@@ -86,3 +86,17 @@ def test_garbage_heartbeat_file_degrades_to_pid_check():
     hb.heartbeatPath(tid).parent.mkdir(parents=True, exist_ok=True)
     hb.heartbeatPath(tid).write_text("{not json", encoding="utf-8")
     assert hb.isRunAlive(tid) is False             # unreadable + no pid anywhere -> dead
+
+
+def test_heartbeat_rejects_path_like_names():
+    bad = "../outside"
+    try:
+        hb.heartbeatPath(bad)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("path-like heartbeat name was accepted")
+
+    hb.writeHeartbeat(bad)                         # swallowed: caller liveness must not crash
+    assert hb.readHeartbeat(bad) is None
+    assert hb.isRunAlive(bad) is False

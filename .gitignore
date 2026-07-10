@@ -20,6 +20,8 @@ state/launch/
 state/ipc/
 state/compaction/
 state/blackboard/
+# Pre-execution council transcripts and context packs are generated runtime data.
+state/council_runs/
 # introspect ProjectModel disk cache (runtime, regenerable)
 state/project_models/
 # SIE Experience Ledger (runtime SQLite, accumulates per run)

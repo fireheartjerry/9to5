@@ -2618,14 +2618,14 @@
           "kind": "function",
           "signature": "(verify: Optional[dict], work_dir: str, executor_result: dict, *, declared_targets=None, cancel_check=None, timeout_seconds: Optional[int]=None) -> Receipt",
           "summary": "THE verification pipeline (single owner)",
-          "lineno": 336
+          "lineno": 340
         },
         {
           "name": "receiptToVResult",
           "kind": "function",
           "signature": "(receipt: Receipt) -> VResult",
           "summary": "The legacy vresult dict shape from a Receipt (compat shim, one release).",
-          "lineno": 402
+          "lineno": 417
         }
       ],
       "depends_on": [
@@ -2639,8 +2639,7 @@
         "reads git status"
       ],
       "test": [
-        "tests/execution/test_verification_diff.py",
-        "tests/orchestration/test_bridge_verification.py"
+        "tests/review/test_verification.py"
       ],
       "callers": []
     },
@@ -3472,6 +3471,7 @@
         "notifications.cast",
         "notifications.command_bot",
         "notifications.commands",
+        "notifications.council_transcript",
         "notifications.discord.channels",
         "notifications.discord.client",
         "notifications.discord.embeds",
@@ -10655,6 +10655,51 @@
         "notifications.bot.cogs.admin"
       ]
     },
+    "notifications.council_transcript": {
+      "path": "notifications/council_transcript.py",
+      "purpose": "Read-only helpers for surfacing pre-execution council transcripts.",
+      "exports": [
+        {
+          "name": "council_meta",
+          "kind": "function",
+          "signature": "(state: Any) -> dict",
+          "summary": "",
+          "lineno": 24
+        },
+        {
+          "name": "council_summary",
+          "kind": "function",
+          "signature": "(state: Any) -> dict",
+          "summary": "",
+          "lineno": 30
+        },
+        {
+          "name": "read_transcript",
+          "kind": "function",
+          "signature": "(state: Any) -> dict",
+          "summary": "",
+          "lineno": 45
+        },
+        {
+          "name": "resolve_transcript_path",
+          "kind": "function",
+          "signature": "(raw: Any) -> Path | None",
+          "summary": "",
+          "lineno": 65
+        }
+      ],
+      "depends_on": [
+        "config"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "notifications.surfaces.dashboard",
+        "notifications.surfaces.webdash"
+      ]
+    },
     "notifications.cv2": {
       "path": "notifications/cv2.py",
       "purpose": "Compatibility alias for :mod:`notifications.surfaces.cv2`.",
@@ -17006,8 +17051,7 @@
         "mutates state.meta[\"hn_verify_deepen\"] when enabled and authority clears \"hold\""
       ],
       "test": [
-        "tests/execution/test_verification_diff.py",
-        "tests/orchestration/test_bridge_verification.py"
+        "tests/review/test_verification.py"
       ],
       "callers": []
     },

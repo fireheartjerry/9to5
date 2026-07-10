@@ -127,6 +127,25 @@ def test_maybe_debate_rate_limited_after_budget_exhausted(monkeypatch):
     assert len(state["meta"]["hn_debate"]) == 1
 
 
+def test_maybe_debate_normalizes_legacy_single_record(monkeypatch):
+    from platform_core.orchestration.human_nature_bridge import society
+
+    monkeypatch.setattr(config, "HUMAN_NATURE_ENABLED", True)
+    monkeypatch.setattr(config, "HN_SOCIETY_TRIGGER", True)
+    monkeypatch.setattr(config, "HN_DEBATE_RATE_LIMIT", 1)
+    state = _disagreeing_state()
+    state["meta"]["hn_debate"] = {"dissonance": 0.1, "route": "none", "fired": False}
+    coordinator = _FakeCoordinator()
+
+    record = society.maybeDebate(state, coordinator)
+
+    assert record is not None
+    assert record["route"] == "debate"
+    assert coordinator.calls
+    assert isinstance(state["meta"]["hn_debate"], list)
+    assert state["meta"]["hn_debate"][0]["route"] == "none"
+
+
 def test_maybe_debate_identical_non_firing_check_is_idempotent(monkeypatch):
     from platform_core.orchestration.human_nature_bridge import society
 

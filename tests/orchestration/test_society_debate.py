@@ -1,6 +1,6 @@
 # tests/orchestration/test_society_debate.py
 """Structured debate: deterministic speaker selection, convergence, round-cap, oscillation."""
-from society.blackboard import Blackboard
+from society.blackboard import Blackboard, makeEntry
 from society.debate import selectNextSpeaker, runDebate
 
 
@@ -55,3 +55,24 @@ def test_stops_on_oscillation(tmp_path):
                   arbiter_fn=arbiter, max_rounds=10)
     assert v["resolved"] is False and v["stopped_reason"] == "oscillation"
     assert v["rounds"] < 10
+
+
+def test_debate_thread_is_scoped_to_contested_subtask(tmp_path):
+    bb = Blackboard(tmp_path / "d.jsonl")
+    bb.append(makeEntry(kind="proposal", author="coder", to="all",
+                        subtask_id="st-old", value={"proposal": "stale old debate"}))
+
+    seen_contents = []
+
+    def arbiter(**kw):
+        seen_contents.append(kw["content"])
+        return {"verdict": "challenged", "tier": "stub",
+                "value": {"is_resolved": False, "next_speaker": "reviewer",
+                          "proposal": "fresh new debate"}}
+
+    v = runDebate(bb, subtask_id="st-new", roster=["coder", "reviewer"],
+                  arbiter_fn=arbiter, max_rounds=1)
+    assert v["stopped_reason"] == "round_cap"
+    assert seen_contents == ["[]"]
+    rows = bb.readAll()
+    assert rows[-1]["subtask_id"] == "st-new"

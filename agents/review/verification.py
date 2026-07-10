@@ -29,7 +29,7 @@ EXPORTS:
   receiptToVResult(receipt: Receipt) -> VResult  -- The legacy vresult dict shape from a Receipt (compat shim, one release).
 DEPENDS-ON: agents.executor, agents.verification_diff, agents.verifier_sanitize, config
 SIDE-EFFECTS: runs the acceptance subprocess; reads git status
-RUN/TEST: python -m pytest tests/execution/test_verification_diff.py tests/orchestration/test_bridge_verification.py
+RUN/TEST: python -m pytest tests/review/test_verification.py
 """
 from __future__ import annotations
 
@@ -308,7 +308,11 @@ def _skippedReceipt(executor_result: dict, declared: "tuple[str, ...]",
     """No behavioral check ran: the executor's own exit is the only signal. Declared
     targets are STILL diff-grounded -- an unchanged declared target FAILS (R10c)."""
     ok = bool(executor_result.get("ok"))
-    changed = changedFiles(work_dir) if declared else None
+    try:
+        changed = changedFiles(work_dir) if declared else None
+    except (ValueError, TypeError, KeyError, OSError) as e:
+        LOG.warning("changedFiles error: %s", e)
+        changed = None
     grounded_ok, ground_fb = _checkDeclaredTargets(work_dir, declared, None, changed)
     if ok and not grounded_ok:
         return Receipt(verdict=Verdict.FAIL, cmd=(), rc=executor_result.get("returncode"),
@@ -348,7 +352,10 @@ def runReceipt(verify: Optional[dict], work_dir: str, executor_result: dict, *,
 
     expect = str(verify.get("expect"))                 # sanitizer guarantees a non-empty str
     run_dir = _normalizeWorkDir(cmd, work_dir)
-    argv = _splitCmd(cmd)
+    try:
+        argv = _splitCmd(cmd)
+    except (ValueError, TypeError) as e:
+        return _errorReceipt([], cmd, expect, f"cmd parse error: {e}", 0.0)
     LOG.info("Verifying (vector): %s  (expect: %s)", argv, expect)
     t0 = time.monotonic()
     try:
@@ -367,10 +374,18 @@ def runReceipt(verify: Optional[dict], work_dir: str, executor_result: dict, *,
     haystack = (proc.stdout or "") + (("\n" + (proc.stderr or "")) if proc.returncode == 0 else "")
     verdict, matched, missing = verdictFor(proc.returncode, haystack, expect)   # (c) STRICT
 
-    changed = changedFiles(work_dir)
+    try:
+        changed = changedFiles(work_dir)
+    except (ValueError, TypeError, KeyError, OSError) as e:
+        LOG.warning("changedFiles error: %s", e)
+        changed = None
     grounded_ok, ground_fb = True, ""
     if verdict is Verdict.PASS and raw_targets:
-        grounded_ok, ground_fb = _checkDeclaredTargets(work_dir, raw_targets, cmd, changed)  # (d)
+        try:
+            grounded_ok, ground_fb = _checkDeclaredTargets(work_dir, raw_targets, cmd, changed)  # (d)
+        except (ValueError, TypeError, KeyError) as e:
+            LOG.warning("diff-grounding error: %s", e)
+            grounded_ok, ground_fb = True, ""
         if not grounded_ok:
             verdict = Verdict.FAIL
 

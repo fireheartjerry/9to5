@@ -89,6 +89,19 @@ def _sameDebateCheck(existing: Any, record: dict) -> bool:
         return False
 
 
+def _debateRecords(meta: dict) -> list:
+    """Return the mutable debate-record list, normalizing older/scrambled shapes."""
+    existing = meta.get("hn_debate", [])
+    if isinstance(existing, list):
+        records = [rec for rec in existing if isinstance(rec, dict)]
+    elif isinstance(existing, dict):
+        records = [existing]
+    else:
+        records = []
+    meta["hn_debate"] = records
+    return records
+
+
 def maybeDebate(state: Any, coordinator: Any = None, dashboard: Any = None) -> "dict | None":
     """If the psyche's faculties disagree strongly (high dissonance) and debate budget
     remains, trigger a heterogeneous society debate via ``coordinator.resolveContested``
@@ -110,8 +123,8 @@ def maybeDebate(state: Any, coordinator: Any = None, dashboard: Any = None) -> "
         from human_nature import conflict
 
         dissonance = conflict.dissonance(opinion, intuition, instinct, calibration)
-        prior = meta.get("hn_debate", [])
-        fired_count = sum(1 for rec in prior if rec.get("fired"))
+        checks = _debateRecords(meta)
+        fired_count = sum(1 for rec in checks if rec.get("fired"))
         budget = max(0, config.HN_DEBATE_RATE_LIMIT - fired_count)
         route = conflict.route(dissonance, {"debate": budget, "allow_replan": False})
 
@@ -128,7 +141,6 @@ def maybeDebate(state: Any, coordinator: Any = None, dashboard: Any = None) -> "
                         dashboard.event(f"society debate — dissonance {dissonance:.2f}")
 
         record = {"dissonance": dissonance, "route": route, "fired": fired}
-        checks = meta.setdefault("hn_debate", [])
         for idx, existing in enumerate(checks):
             if _sameDebateCheck(existing, record):
                 if fired and not existing.get("fired"):

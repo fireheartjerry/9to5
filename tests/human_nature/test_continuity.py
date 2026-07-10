@@ -128,3 +128,28 @@ def test_read_letters_default_dir_reads_what_write_wrote():
 
     texts_after = read_letters("task-roundtrip")
     assert len(texts_after) == initial_count + 2
+
+
+def test_default_letters_dir_rejects_path_like_task_id():
+    try:
+        write_letter("../outside", {"x": 1})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("path-like task_id was accepted")
+
+    try:
+        read_letters("../outside")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("path-like task_id was accepted")
+
+
+def test_stamp_rejects_path_like_filename(tmp_path):
+    try:
+        write_letter("task-safe", {}, letters_dir=tmp_path / "letters", stamp="../outside")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("path-like stamp was accepted")

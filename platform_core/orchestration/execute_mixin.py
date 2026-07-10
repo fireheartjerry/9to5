@@ -10,6 +10,7 @@ RUN/TEST: python -m pytest tests/execution/test_execute_mixin_teardown.py tests/
 
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING
 
 import config
@@ -57,7 +58,10 @@ class OrchestratorExecuteMixin(OrchestratorExecuteAttemptMixin, OrchestratorExec
         dashboard: "DiscordDashboard",
     ) -> dict:
         """Author the invocation spec, record the routed session, surface the attempt."""
-        spec = self.authorInvocationSpec(state, subtask, architect_doc, failure_feedback)
+        if "attempt" in inspect.signature(self.authorInvocationSpec).parameters:
+            spec = self.authorInvocationSpec(state, subtask, architect_doc, failure_feedback, attempt=attempt)
+        else:
+            spec = self.authorInvocationSpec(state, subtask, architect_doc, failure_feedback)
         spec.setdefault("work_profile", state.meta.get("work_profile"))
         spec.setdefault("run_intent_policy", state.meta.get("run_intent_policy"))
         with self._state_lock:
@@ -162,6 +166,8 @@ class OrchestratorExecuteMixin(OrchestratorExecuteAttemptMixin, OrchestratorExec
                 raise AbortRun("abort requested")
             if (state.getSubtask(sid) or {}).get("status") == "removed":
                 return None, None, None, None, False, attempt
+            if isinstance(result, dict) and result.get("subtype") == "blocked_clarification":
+                break
             # R6: an operator kill never burns an attempt slot; a deadline-driven cancel must
             # stop respawning attempts the watcher would instantly re-kill.
             if isinstance(result, dict) and result.get("subtype") == "operator_killed":
@@ -225,7 +231,8 @@ class OrchestratorExecuteMixin(OrchestratorExecuteAttemptMixin, OrchestratorExec
             )
             # SIE subsystem I: learning summary + memoize passing spec + adaptive replan.
             self._runSieAndReplan(
-                state, subtask, spec, combined, passed, final, architect_doc, dashboard, adv_verdict, adv_stub
+                state, subtask, spec, combined, passed, final, architect_doc, dashboard, adv_verdict, adv_stub,
+                result=result,
             )
             with self._state_lock:
                 self.writeIndex(state)

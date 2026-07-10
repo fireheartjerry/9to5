@@ -59,7 +59,10 @@ def runDebate(blackboard, subtask_id: str, roster: list, *,
     speaker = roster[0]
     while rounds < max_rounds:
         rounds += 1
-        thread = blackboard.read(role="coordinator", kind="proposal")
+        thread = [
+            entry for entry in blackboard.read(role="coordinator", kind="proposal")
+            if entry.get("subtask_id") == subtask_id
+        ]
         if thread:
             speaker = selectNextSpeaker(thread, roster)
         verdict = arbiter_fn(review_type="subtask", title=f"debate:{subtask_id}",

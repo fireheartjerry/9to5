@@ -16,6 +16,7 @@ RUN/TEST: python -m pytest tests/human_nature/test_continuity.py
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any, Optional
 
 import config
@@ -44,10 +45,19 @@ What follows is a deliberately preserved artifact — trust this over vague reco
 *Written for continuity. Future self: read this, then act.*
 """
 
+_SAFE_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+
+
+def _safe_component(value: str, label: str) -> str:
+    """Return value if it is a single safe path component."""
+    if not isinstance(value, str) or not _SAFE_COMPONENT_RE.fullmatch(value) or ".." in value:
+        raise ValueError(f"invalid {label}: {value!r}")
+    return value
+
 
 def _default_letters_dir(task_id: str) -> Path:
     """Return the default letters directory for a task (under isolated STATE_DIR)."""
-    return Path(config.STATE_DIR) / task_id / "letters"
+    return Path(config.STATE_DIR) / _safe_component(task_id, "task_id") / "letters"
 
 
 def _state_lines(body_state: dict[str, Any]) -> str:
@@ -120,7 +130,7 @@ def write_letter(
     d = Path(letters_dir) if letters_dir is not None else _default_letters_dir(task_id)
     d.mkdir(parents=True, exist_ok=True)
 
-    fname = f"{stamp}.md" if stamp is not None else _next_filename(d)
+    fname = f"{_safe_component(stamp, 'stamp')}.md" if stamp is not None else _next_filename(d)
     fpath = d / fname
 
     text = _compose_letter(task_id, body_state)

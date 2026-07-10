@@ -144,9 +144,12 @@ def _buildRunConfig(spec: dict, task_state, subtask, resume_session: Optional[st
     base_cmd += ["--add-dir", str(config.PROJECT_ROOT)]   # make .claude discoverable from a sub-cwd
     # Epic 2: a read-only spec (the independent verifier) is denied Edit/Write at the hands layer, so
     # read-only is enforced by the tools layer -- not just the prompt -- same mechanism as the
-    # CORE_PROTECTED_FILES self-ref disallow below.
+    # CORE_PROTECTED_FILES self-ref disallow below. Clarification probes are stricter: they gather
+    # evidence for high-risk unknowns, so deny Bash too instead of trusting shell-command policing.
     if isinstance(spec, dict) and spec.get("read_only"):
         base_cmd += ["--disallowedTools", "Edit", "Write"]
+        if spec.get("clarification_probe"):
+            base_cmd += ["--disallowedTools", "Bash"]
     if (task_state is not None and getattr(task_state, "meta", {}).get("is_self_referential")
             and not getattr(config, "SELFMOD_ALLOW_CORE", False)):
         for core in config.CORE_PROTECTED_FILES:

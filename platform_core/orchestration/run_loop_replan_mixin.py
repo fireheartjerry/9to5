@@ -83,6 +83,10 @@ class OrchestratorRunLoopReplanMixin:
             st = state.addSubtask(title, add.get("description", ""),
                                   layer=add.get("layer", 3), verify=verifier.sanitizeVerify(add.get("verify")),
                                   files_touched=add.get("files_touched"))
+            extra = {k: add[k] for k in ("read_only", "clarification_probe") if k in add}
+            if extra:
+                state.updateSubtask(st["subtask_id"], **extra)
+                st.update(extra)
             live_titles.add(title.lower())
             active += 1
             diff.append(f"+ {st['subtask_id']} {st['title']}")

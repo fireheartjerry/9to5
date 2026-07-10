@@ -112,6 +112,13 @@ def test_read_only_disallows_edit_write():
     assert "--disallowedTools" in cmd
     i = cmd.index("--disallowedTools")
     assert cmd[i + 1] == "Edit" and cmd[i + 2] == "Write"
+    assert "Bash" not in cmd
+
+
+def test_clarification_probe_readonly_disallows_bash_too():
+    cmd = _build({"read_only": True, "clarification_probe": True})
+    assert "Edit" in cmd and "Write" in cmd
+    assert "Bash" in cmd
 
 
 def test_normal_spec_has_no_global_disallow():

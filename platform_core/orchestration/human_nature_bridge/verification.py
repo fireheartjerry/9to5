@@ -12,7 +12,7 @@ EXPORTS:
   requestDeepen(state: Any, reason: str='', conviction: float=0.0, dashboard: Any=None) -> int  -- ADDITIVE-ONLY: if the psyche's earned authority for an additive
 DEPENDS-ON: config, platform_core.core.best_effort
 SIDE-EFFECTS: mutates state.meta["hn_verify_deepen"] when enabled and authority clears "hold"
-RUN/TEST: python -m pytest tests/execution/test_verification_diff.py tests/orchestration/test_bridge_verification.py
+RUN/TEST: python -m pytest tests/review/test_verification.py
 """
 from __future__ import annotations
 

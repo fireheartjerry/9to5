@@ -25,6 +25,7 @@ RUN/TEST: python -m pytest tests/control/test_heartbeat.py
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -41,6 +42,7 @@ RUN_GRACE_SECONDS: float = 45.0
 # Presence loop ticks every config.PRESENCE_INTERVAL (30s) -> 3 missed ticks = dead.
 BOT_GRACE_SECONDS: float = 90.0
 BOT_NAME: str = "gateway-bot"
+_HEARTBEAT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 # In-process throttle/seq bookkeeping for ``beat`` (per heartbeat name).
 _BEAT_LOCK = threading.Lock()
@@ -48,8 +50,16 @@ _LAST_BEAT: dict[str, float] = {}
 _SEQ: dict[str, int] = {}
 
 
+def _validateHeartbeatName(name: str) -> str:
+    """Return a safe heartbeat filename stem, or raise for path-like names."""
+    if not isinstance(name, str) or not _HEARTBEAT_NAME_RE.fullmatch(name) or ".." in name:
+        raise ValueError(f"invalid heartbeat name: {name!r}")
+    return name
+
+
 def heartbeatPath(name: str) -> Path:
-    return Path(config.HEARTBEAT_DIR) / f"{name}.json"
+    safe_name = _validateHeartbeatName(name)
+    return Path(config.HEARTBEAT_DIR) / f"{safe_name}.json"
 
 
 def writeHeartbeat(name: str, pid: Optional[int] = None, seq: Optional[int] = None) -> None:
@@ -57,11 +67,12 @@ def writeHeartbeat(name: str, pid: Optional[int] = None, seq: Optional[int] = No
     must not break its caller (a failed write only makes the run LOOK stale, and the
     pid fallback in ``isRunAlive`` still vouches for it)."""
     try:
+        path = heartbeatPath(name)
         with _BEAT_LOCK:
             s = (_SEQ.get(name, 0) + 1) if seq is None else int(seq)
             _SEQ[name] = s
             _LAST_BEAT[name] = time.monotonic()
-        fsio.atomicWriteJson(heartbeatPath(name), {
+        fsio.atomicWriteJson(path, {
             "name": name,
             "pid": int(pid if pid is not None else os.getpid()),
             "seq": s,
@@ -87,7 +98,11 @@ def beat(name: str, *, interval_s: float = HEARTBEAT_INTERVAL_SECONDS) -> bool:
 
 
 def readHeartbeat(name: str) -> Optional[dict]:
-    data = fsio.loadJson(heartbeatPath(name), default=None)
+    try:
+        path = heartbeatPath(name)
+    except ValueError:
+        return None
+    data = fsio.loadJson(path, default=None)
     return data if isinstance(data, dict) else None
 
 
@@ -95,7 +110,7 @@ def clearHeartbeat(name: str) -> None:
     """Best-effort unlink (clean run teardown). Never raises."""
     try:
         heartbeatPath(name).unlink(missing_ok=True)
-    except OSError:
+    except (OSError, ValueError):
         pass
 
 
@@ -139,7 +154,11 @@ def isRunAlive(task_id: str, *, grace_s: float = RUN_GRACE_SECONDS) -> bool:
     Falls back to the task JSON's ``meta.run_pid`` for runs that have not written a
     heartbeat yet (e.g. still in the elaboration window)."""
     fallback = None
-    data = fsio.loadJson(Path(config.STATE_DIR) / f"{task_id}.json", default=None)
+    try:
+        task_state_path = Path(config.STATE_DIR) / f"{_validateHeartbeatName(task_id)}.json"
+    except ValueError:
+        return False
+    data = fsio.loadJson(task_state_path, default=None)
     if isinstance(data, dict):
         fallback = (data.get("meta") or {}).get("run_pid")
     return _alive(task_id, grace_s, fallback_pid=fallback)

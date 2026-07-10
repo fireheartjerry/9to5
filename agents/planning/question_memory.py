@@ -1,0 +1,82 @@
+"""QuestionMemory -- reuse prior clarification answers without exact wording loops.
+
+@AI-MAP v1
+EXPORTS:
+  remember(session: dict, records: list[dict]) -> dict
+  findReusable(session: dict, question: dict) -> Optional[dict]
+  mapLabel(label: str, labels: list[str]) -> Optional[str]
+DEPENDS-ON: none
+SIDE-EFFECTS: none
+RUN/TEST: python -m pytest tests/orchestration/test_question_memory.py
+"""
+from __future__ import annotations
+
+import re
+from typing import Optional
+
+
+def _norm(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]{4,}", (text or "").lower())
+            if w not in {"should", "would", "could", "which", "option", "approach"}}
+
+
+def _labels(q: dict) -> list[str]:
+    return [str(o.get("label")) for o in (q.get("options") or []) if isinstance(o, dict) and o.get("label")]
+
+
+def mapLabel(label: str | None, labels: list[str]) -> Optional[str]:
+    if not label:
+        return None
+    if label in labels:
+        return label
+    low = str(label).lower()
+    for cand in labels:
+        if cand.lower() == low:
+            return cand
+    return None
+
+
+def remember(session: dict, records: list[dict]) -> dict:
+    sess = dict(session or {})
+    mem = list(sess.get("clarification_memory") or [])
+    for rec in records or []:
+        if rec.get("selected_label"):
+            mem.append(dict(rec))
+    sess["clarification_memory"] = mem[-20:]
+    return sess
+
+
+def findReusable(session: dict, question: dict) -> Optional[dict]:
+    mem = list((session or {}).get("clarification_memory") or [])
+    qtext = str(question.get("question") or "")
+    labels = _labels(question)
+    decision_id = str(question.get("decision_id") or "").strip().lower()
+    current_risk = str(question.get("risk") or "").lower()
+    qwords = _norm(qtext)
+    if decision_id:
+        for rec in reversed(mem):
+            if str(rec.get("decision_id") or "").strip().lower() == decision_id \
+                    and mapLabel(rec.get("selected_label"), labels):
+                return rec
+    for rec in reversed(mem):
+        if rec.get("question_text") == qtext and mapLabel(rec.get("selected_label"), labels):
+            return rec
+    if current_risk == "high" and not _semanticHighRiskEnabled():
+        return None
+    for rec in reversed(mem):
+        if str(rec.get("risk") or "").lower() == "high" and not _semanticHighRiskEnabled():
+            continue
+        if not mapLabel(rec.get("selected_label"), labels):
+            continue
+        rwords = _norm(str(rec.get("question_text") or ""))
+        if qwords and rwords and len(qwords & rwords) / max(1, min(len(qwords), len(rwords))) >= 0.6:
+            return rec
+    return None
+
+
+def _semanticHighRiskEnabled() -> bool:
+    try:
+        import config
+        return bool(config.CLARIFICATION_SEMANTIC_REUSE_HIGH_RISK)
+    except Exception:
+        return False
