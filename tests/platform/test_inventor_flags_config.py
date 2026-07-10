@@ -13,6 +13,9 @@ _ALL = (
     "NOVELTY_INDEX_ENABLED", "NOVELTY_DEDUP_THRESHOLD", "NOVELTY_FINDER_FLOOR",
     "INVENTION_CORPUS_ENABLED", "INVENTION_CORPUS_TOPK", "INVENTOR_MODE_ENABLED",
     "INVENTOR_EXPLORE_APPROACHES_ENABLED", "CODE_GRAPH_ENABLED", "PORTFOLIO_OPTIMIZER_ENABLED",
+    "INVENTOR_EXCELLENCE_ENABLED", "INVENTOR_MODEL", "INVENTOR_RAW_IDEA_COUNT",
+    "INVENTOR_FINAL_IDEA_COUNT", "INVENTOR_TEMPERATURE", "INVENTOR_TOP_P",
+    "INVENTOR_DISCORD_TELEMETRY_ENABLED", "INVENTOR_DISCORD_FINALISTS_ENABLED",
     "QD_ARCHIVE_ENABLED", "QD_GENERATIONS_ENABLED", "QD_EMITTER_BANDIT_ENABLED",
     "QD_PARETO_CAP", "QD_PLATEAU_PATIENCE", "EMITTER_UCB_C", "SOLUTION_FORK_GENERATIONS",
     "SOLUTION_FORK_GEN_COST_CEILING_USD", "SOLUTION_FORK_GEN_WALLCLOCK_CEILING_SEC",
@@ -39,6 +42,7 @@ def test_additive_features_default_on(monkeypatch):
 def test_behavior_changers_ship_dark(monkeypatch):
     f = _clean(monkeypatch)
     assert f.INVENTOR_MODE_ENABLED is False
+    assert f.INVENTOR_EXCELLENCE_ENABLED is False
     assert f.QD_ARCHIVE_ENABLED is False
     assert f.QD_GENERATIONS_ENABLED is False
     assert f.QD_EMITTER_BANDIT_ENABLED is False
@@ -57,6 +61,9 @@ def test_numeric_defaults(monkeypatch):
     assert f.INVENTION_AUTO_NOVELTY_MIN == 0.75
     assert f.INVENTION_AUTO_CONFIDENCE_MIN == 0.80
     assert f.INVENTION_AUTO_RISK_MAX == "low"
+    assert f.INVENTOR_MODEL == "qwen2.5:7b"
+    assert f.INVENTOR_RAW_IDEA_COUNT == 18
+    assert f.INVENTOR_FINAL_IDEA_COUNT == 6
 
 
 def test_env_override_applies(monkeypatch):
@@ -82,6 +89,8 @@ def test_flags_exposed_via_facade():
     assert isinstance(config.INVENTION_AUTONOMY, str)
     assert isinstance(config.SOLUTION_FORK_GENERATIONS, int)
     assert isinstance(config.EMITTER_UCB_C, float)
+    assert isinstance(config.INVENTOR_EXCELLENCE_ENABLED, bool)
+    assert isinstance(config.INVENTOR_MODEL, str)
 
 
 def test_inventor_domain_registered_without_name_collision():

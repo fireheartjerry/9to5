@@ -43,6 +43,18 @@ class InventorFlags:
     INVENTOR_MODE_ENABLED: bool = _F(default_factory=lambda: _envBool("INVENTOR_MODE_ENABLED", False))
     INVENTOR_EXPLORE_APPROACHES_ENABLED: bool = _F(
         default_factory=lambda: _envBool("INVENTOR_EXPLORE_APPROACHES_ENABLED", True))
+    # --- Innovator Excellence: local-only divergent idea generation (ship DARK) ---
+    INVENTOR_EXCELLENCE_ENABLED: bool = _F(
+        default_factory=lambda: _envBool("INVENTOR_EXCELLENCE_ENABLED", False))
+    INVENTOR_MODEL: str = _F(default_factory=lambda: os.getenv("INVENTOR_MODEL", "qwen2.5:7b"))
+    INVENTOR_RAW_IDEA_COUNT: int = _F(default_factory=lambda: _envInt("INVENTOR_RAW_IDEA_COUNT", 18))
+    INVENTOR_FINAL_IDEA_COUNT: int = _F(default_factory=lambda: _envInt("INVENTOR_FINAL_IDEA_COUNT", 6))
+    INVENTOR_TEMPERATURE: float = _F(default_factory=lambda: _envFloat("INVENTOR_TEMPERATURE", 0.9))
+    INVENTOR_TOP_P: float = _F(default_factory=lambda: _envFloat("INVENTOR_TOP_P", 0.92))
+    INVENTOR_DISCORD_TELEMETRY_ENABLED: bool = _F(
+        default_factory=lambda: _envBool("INVENTOR_DISCORD_TELEMETRY_ENABLED", True))
+    INVENTOR_DISCORD_FINALISTS_ENABLED: bool = _F(
+        default_factory=lambda: _envBool("INVENTOR_DISCORD_FINALISTS_ENABLED", True))
     # --- Track D read-only analysis: additive-ON (never mutate behavior, only score) ---
     CODE_GRAPH_ENABLED: bool = _F(default_factory=lambda: _envBool("CODE_GRAPH_ENABLED", True))
     PORTFOLIO_OPTIMIZER_ENABLED: bool = _F(default_factory=lambda: _envBool("PORTFOLIO_OPTIMIZER_ENABLED", True))

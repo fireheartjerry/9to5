@@ -83,7 +83,16 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
             from agents import discovery as discovery_mod
             goal_raw = state.meta.get("goal_raw") or elaborated
             dashboard.update(state, "architecting", "running discovery engine")
-            report = discovery_mod.run_discovery(work_dir, goal_raw)
+            def _innovator_event(event):
+                if not getattr(config, "INVENTOR_DISCORD_TELEMETRY_ENABLED", True):
+                    return
+                role = f" {event.role}" if event.role else ""
+                counts = f" ({event.valid_count} valid)" if event.valid_count else ""
+                detail = event.detail or event.title
+                dashboard.event(f"innovator {event.phase}{role}: {event.status}{counts} {detail}"[:240])
+                if event.status in ("completed", "failed"):
+                    dashboard.update(state, "architecting", f"innovator {event.phase}{role}: {event.status}{counts}")
+            report = discovery_mod.run_discovery(work_dir, goal_raw, observer=_innovator_event)
         if report is not None:
             state.meta["discovery_report"] = report.to_dict()
             LOG.info("Discovery complete: %d findings, theme=%r",
@@ -94,8 +103,32 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
                           f"Theme: {report.theme_suggestion}.")
             self._narrate(f"🔍 Discovery: {len(report.findings)} findings, "
                           f"theme: {report.theme_suggestion}.")
+            if (getattr(config, "INVENTOR_EXCELLENCE_ENABLED", False)
+                    and getattr(config, "INVENTOR_DISCORD_FINALISTS_ENABLED", True)):
+                self._postInnovatorFinalists(state, report)
             self._bridgeInventions(state, report)
         return report
+
+    def _postInnovatorFinalists(self, state: TaskState, report) -> None:
+        """Post one compact proposal summary; granular status lives in the pinned dashboard."""
+        if not report.findings:
+            return
+        with best_effort("discovery.innovator_discord", log=LOG):
+            from notifications import discord_bot as discord
+            fields = []
+            for finding in report.findings[:6]:
+                card = getattr(finding, "invention", None)
+                if not card:
+                    continue
+                fields.append({"name": f"{card.horizon} · {finding.title[:80]}",
+                               "value": (f"{card.mechanism[:180]}\n"
+                                         f"`{(finding.target_subsystems or ['unknown'])[0][:120]}` · "
+                                         f"novelty {finding.measured_novelty:.2f} · {card.role}")[:1000],
+                               "inline": False})
+            if fields:
+                discord.sendEmbed({"title": "💡 Innovator Finalists", "color": 0x5865F2,
+                                   "description": "Local-only transformative proposals; not yet shipped.",
+                                   "fields": fields, "footer": {"text": f"task {state.task_id[:8]}"}})
 
     def _bridgeInventions(self, state: TaskState, report) -> None:
         """Inventor mode: register qualifying findings as executable invention seeds in the

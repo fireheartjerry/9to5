@@ -1,0 +1,254 @@
+"""Local-only divergent invention engine for transformative discovery.
+
+All generation is deliberately isolated until recombination.  This module calls only the
+local Ollama seam with ``config.INVENTOR_MODEL``; it has no cloud/provider fallback.
+"""
+from __future__ import annotations
+
+import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Callable
+
+import config
+import llm_io
+from agents.discovery import corpus
+from agents.discovery.models import DiscoveryReport, Finding, InventionCard
+
+LOG = config.getLogger("discovery.inventor")
+_HORIZONS = ("near_term", "asymmetric", "moonshot")
+_ROLES = (
+    ("first_principles", 1101, "Break a limiting architectural assumption using first principles."),
+    ("distant_analogy", 2202, "Transfer a mechanism from a distant technical domain."),
+    ("constraint_inversion", 3303, "Turn a system constraint into the source of a new capability."),
+    ("capability_composition", 4404, "Compose existing capabilities into an emergent system capability."),
+    ("future_back", 5505, "Design backwards from a future autonomous system that makes today's work trivial."),
+    ("frontier_transfer", 6606, "Adapt frontier research into a concrete, production-safe local design."),
+)
+_PAIRS = (("first_principles", "distant_analogy"), ("constraint_inversion", "future_back"),
+          ("capability_composition", "frontier_transfer"))
+_BANNED = ("clean up", "cleanup", "rename", "add tests", "write tests", "refactor")
+
+
+@dataclass
+class InnovatorEvent:
+    run_id: str = ""
+    sequence: int = 0
+    phase: str = ""
+    role: str = ""
+    status: str = ""
+    raw_count: int = 0
+    valid_count: int = 0
+    selected_count: int = 0
+    title: str = ""
+    horizon: str = ""
+    mechanism_label: str = ""
+    novelty: float | None = None
+    detail: str = ""
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> dict:
+        return self.__dict__.copy()
+
+
+class _Events:
+    def __init__(self, observer: Callable[[InnovatorEvent], None] | None) -> None:
+        self.observer, self.trace, self.n = observer, [], 0
+
+    def emit(self, phase: str, status: str, **kw) -> None:
+        self.n += 1
+        event = InnovatorEvent(sequence=self.n, phase=phase, status=status, **kw)
+        self.trace.append(event.to_dict())
+        if self.observer:
+            try:
+                self.observer(event)
+            except Exception:  # observer telemetry can never affect ideas
+                LOG.debug("innovator observer failed", exc_info=True)
+
+
+def _digest(digest: dict) -> str:
+    keys = ("architecture", "module_signatures", "dependency_graph", "innovation_seeds", "leverage_signals")
+    return json.dumps({k: str(digest.get(k) or "")[:1200] for k in keys}, ensure_ascii=False)[:5500]
+
+
+def _cards_from(raw: Any, role: str, prefix: str, parents: list[str] | None = None) -> list[Finding]:
+    rows = raw.get("ideas", raw.get("findings", [])) if isinstance(raw, dict) else raw
+    if not isinstance(rows, list):
+        return []
+    out = []
+    for i, row in enumerate(rows[:2]):
+        if not isinstance(row, dict):
+            continue
+        title = str(row.get("title") or "").strip()
+        mechanism = str(row.get("mechanism") or "").strip()
+        architecture = str(row.get("architecture") or "").strip()
+        experiment = str(row.get("experiment") or "").strip()
+        target = row.get("target_subsystems") or []
+        target = [str(x) for x in target][:6] if isinstance(target, list) else []
+        horizon = str(row.get("horizon") or "asymmetric")
+        text = " ".join((title, mechanism, architecture)).lower()
+        if (not title or not str(row.get("assumption") or "").strip() or not mechanism or not architecture
+                or not str(row.get("capability_unlock") or "").strip() or not str(row.get("metric") or "").strip()
+                or not experiment or not target
+                or horizon not in _HORIZONS or any(x in text for x in _BANNED)):
+            continue
+        card = InventionCard(id=f"{prefix}-{i}", role=role, parents=list(parents or []),
+            assumption=str(row.get("assumption") or ""), mechanism=mechanism[:500],
+            architecture=architecture[:1200], capability_unlock=str(row.get("capability_unlock") or "")[:500],
+            metric=str(row.get("metric") or "")[:300], experiment=experiment[:500],
+            preconditions=str(row.get("preconditions") or "")[:400], risks=str(row.get("risks") or "")[:400],
+            horizon=horizon, prior_art=str(row.get("prior_art") or "")[:400],
+            local_novelty=str(row.get("local_novelty") or "")[:400])
+        out.append(Finding(title=title[:180], type="new_capability", impact=5, specificity=5,
+            innovation=5, rationale=card.capability_unlock or card.assumption, affected_files=target,
+            source_lens=f"innovator:{role}", candidate_kind="architecture_unlock",
+            design_sketch=card.architecture, verification_plan=card.experiment,
+            target_subsystems=target, risk="medium", confidence=0.7, invention=card))
+    return out
+
+
+def _call(system: str, user: str, seed: int, chat_fn=None) -> Any:
+    options = {"temperature": float(config.INVENTOR_TEMPERATURE), "top_p": float(config.INVENTOR_TOP_P), "seed": seed}
+    if chat_fn is not None:
+        return chat_fn(system, user, act="innovator", want_json=True, model=config.INVENTOR_MODEL,
+                       generation_options=options)
+    return llm_io.chat(system, user, act="innovator", model=config.INVENTOR_MODEL,
+                       want_json=True, generation_options=options, retries=2)
+
+
+def _role_prompt(role: str, instruction: str, relevant: str, distant: str) -> str:
+    return (f"You are the {role} inventor. {instruction} Produce exactly two technically deep "
+            "inventions for this repository. You must not propose cleanup, generic testing, or a rename. "
+            "Return JSON only: {\"ideas\":[{\"title\":...,\"assumption\":...,\"mechanism\":...,"
+            "\"architecture\":...,\"capability_unlock\":...,\"target_subsystems\":[...],\"metric\":...,"
+            "\"experiment\":...,\"preconditions\":...,\"risks\":...,\"horizon\":\"near_term|asymmetric|moonshot\","
+            "\"prior_art\":...,\"local_novelty\":...}]}.\nRelevant pattern:\n" + relevant +
+            "\nDistant pattern:\n" + distant)
+
+
+def _raw_cards(digest: dict, events: _Events, chat_fn=None) -> list[Finding]:
+    query = _digest(digest)
+    cards = corpus.retrieve(query, k=10)
+    relevant = cards[0].text[:900] if cards else "none"
+    distant = cards[-1].text[:900] if len(cards) > 1 else relevant
+    out: list[Finding] = []
+    events.emit("divergence", "started", detail="six sealed local inventor roles")
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = {}
+        for role, seed, instruction in _ROLES:
+            events.emit("role", "started", role=role)
+            futures[pool.submit(_call, _role_prompt(role, instruction, relevant, distant),
+                                f"Repository digest:\n{query}", seed, chat_fn)] = role
+        for future in as_completed(futures):
+            role = futures[future]
+            try:
+                parsed = llm_io.responseJson(future.result())
+                found = _cards_from(parsed, role, role)
+                out.extend(found)
+                events.emit("role", "completed", role=role, raw_count=2, valid_count=len(found))
+            except Exception as e:
+                events.emit("role", "failed", role=role, detail=str(e)[:160])
+    return out
+
+
+def _recombine(raw: list[Finding], digest: dict, events: _Events, chat_fn=None) -> list[Finding]:
+    by_role: dict[str, list[Finding]] = {}
+    for item in raw:
+        by_role.setdefault(item.invention.role, []).append(item)
+    out = []
+    for pair_n, (left, right) in enumerate(_PAIRS):
+        parents = (by_role.get(left, [])[:1] + by_role.get(right, [])[:1])
+        if len(parents) != 2:
+            events.emit("recombination", "failed", role=f"{left}+{right}", detail="missing parent")
+            continue
+        role = f"{left}+{right}"
+        events.emit("recombination", "started", role=role)
+        parent_payload = [p.invention.to_dict() | {"title": p.title, "target_subsystems": p.target_subsystems}
+                          for p in parents]
+        system = ("Combine these two invention cards into exactly two new technical inventions. Preserve one "
+                  "mechanism from each parent and resolve their incompatibility. Return the same JSON schema "
+                  "as the inventor, with architecture and experiment mandatory.")
+        try:
+            resp = _call(system, json.dumps({"parents": parent_payload, "digest": _digest(digest)}),
+                         7700 + pair_n, chat_fn)
+            found = _cards_from(llm_io.responseJson(resp), role, f"recombine-{pair_n}",
+                                [p.invention.id for p in parents])
+            out.extend(found)
+            events.emit("recombination", "completed", role=role, raw_count=2, valid_count=len(found))
+        except Exception as e:
+            events.emit("recombination", "failed", role=role, detail=str(e)[:160])
+    return out
+
+
+def _score(cards: list[Finding], events: _Events, chat_fn=None) -> dict[str, float]:
+    events.emit("critique", "started", raw_count=len(cards))
+    scores = {f.invention.id: 0.5 for f in cards}
+    for chunk_index in range(0, len(cards), 6):
+        chunk = cards[chunk_index:chunk_index + 6]
+        system = ("Score each invention 0..1 for technical_depth, discontinuity, architecture, falsifiability, "
+                  "and leverage. Return JSON {\"scores\":[{\"id\":...,\"technical_depth\":0,...}]}. No prose.")
+        try:
+            resp = _call(system, json.dumps([{"id": f.invention.id, "title": f.title,
+                "mechanism": f.invention.mechanism, "architecture": f.invention.architecture,
+                "experiment": f.invention.experiment} for f in chunk]), 8800 + chunk_index, chat_fn)
+            for row in (llm_io.responseJson(resp) or {}).get("scores", []):
+                if isinstance(row, dict) and row.get("id") in scores:
+                    vals = [float(row.get(k, 0.0)) for k in
+                            ("technical_depth", "discontinuity", "architecture", "falsifiability", "leverage")]
+                    scores[row["id"]] = max(0.0, min(1.0, sum(vals) / len(vals)))
+        except Exception:
+            LOG.debug("innovator critique failed", exc_info=True)
+    events.emit("critique", "completed", valid_count=len(cards))
+    return scores
+
+
+def _select(cards: list[Finding], scores: dict[str, float], events: _Events) -> list[Finding]:
+    try:
+        from memory import novelty_index
+        for f in cards:
+            result = novelty_index.novelty_score(novelty_index.signature_text(f))
+            if not result.degraded:
+                f.measured_novelty = result.measured_novelty
+    except Exception:
+        pass
+    unique: list[Finding] = []
+    for f in sorted(cards, key=lambda x: (scores.get(x.invention.id, 0.5), x.title), reverse=True):
+        if any(f.invention.mechanism.lower() == k.invention.mechanism.lower() or
+               set(f.target_subsystems) & set(k.target_subsystems) for k in unique):
+            continue
+        unique.append(f)
+    events.emit("deduplication", "completed", raw_count=len(cards), valid_count=len(unique))
+    final = []
+    for horizon in _HORIZONS:
+        pool = [f for f in unique if f.invention.horizon == horizon]
+        final.extend(pool[:2])
+    for f in unique:
+        if len(final) >= int(config.INVENTOR_FINAL_IDEA_COUNT):
+            break
+        if f not in final:
+            final.append(f)
+    final = final[:int(config.INVENTOR_FINAL_IDEA_COUNT)]
+    for i, f in enumerate(final, 1):
+        f.rank = i
+    events.emit("selection", "completed", valid_count=len(unique), selected_count=len(final))
+    return final
+
+
+def run_excellence(digest: dict, observer: Callable[[InnovatorEvent], None] | None = None,
+                   chat_fn=None) -> DiscoveryReport:
+    """Generate a local-only, observable six-idea transformative portfolio."""
+    events = _Events(observer)
+    events.emit("engine", "started", detail=f"local model {config.INVENTOR_MODEL}")
+    try:
+        raw = _raw_cards(digest, events, chat_fn)
+        combined = _recombine(raw, digest, events, chat_fn)
+        all_cards = raw + combined
+        final = _select(all_cards, _score(all_cards, events, chat_fn), events)
+        return DiscoveryReport(theme_suggestion="transformative invention portfolio", findings=final,
+                               innovator_trace=events.trace)
+    except Exception as e:
+        LOG.warning("innovator excellence failed: %s", e)
+        events.emit("engine", "failed", detail=str(e)[:160])
+        return DiscoveryReport(theme_suggestion="transformative invention unavailable", findings=[],
+                               innovator_trace=events.trace)

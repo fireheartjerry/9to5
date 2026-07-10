@@ -228,6 +228,7 @@
       "path": "agents/discovery/models.py",
       "purpose": "Finding and DiscoveryReport dataclasses for the discovery engine.",
       "exports": [
+        "InventionCard",
         "Finding",
         "DiscoveryReport"
       ],
@@ -7893,6 +7894,26 @@
         "tests/platform/test_clock.py"
       ]
     },
+    "platform_core.core.concurrency": {
+      "path": "platform_core/core/concurrency.py",
+      "purpose": "Bounded, context-aware helpers for blocking concurrent work.",
+      "exports": [
+        "WorkerBudget",
+        "WorkerFailure",
+        "BoundedResult",
+        "boundedWorkerBudget",
+        "runBounded"
+      ],
+      "depends_on": [],
+      "callers": [
+        "platform_core.ops.health",
+        "platform_core.orchestration.parallel_safety",
+        "platform_core.orchestration.run_loop"
+      ],
+      "test": [
+        "tests/platform/test_concurrency.py"
+      ]
+    },
     "platform_core.core.contracts": {
       "path": "platform_core/core/contracts.py",
       "purpose": "contracts -- the central 9to5 data contracts as TypedDicts.",
@@ -9464,6 +9485,21 @@
       "callers": [],
       "test": [
         "tests/control/test_parallel_safety.py"
+      ]
+    },
+    "platform_core.orchestration.plan_concurrency": {
+      "path": "platform_core/orchestration/plan_concurrency.py",
+      "purpose": "Fail-closed normalization for planner-authored concurrency metadata.",
+      "exports": [
+        "PlannedSubtask",
+        "normalizePlanConcurrency"
+      ],
+      "depends_on": [],
+      "callers": [
+        "platform_core.orchestration.run_phase_mixin"
+      ],
+      "test": [
+        "tests/orchestration/test_plan_concurrency.py"
       ]
     },
     "platform_core.orchestration.plan_context": {

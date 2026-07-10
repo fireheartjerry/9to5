@@ -1,0 +1,10 @@
+[
+  {"id":"architecture","architecture":"A monolithic run loop coordinates planning, execution, and recovery."},
+  {"id":"memory","architecture":"Agent memory is retrieved only after failures."},
+  {"id":"verification","architecture":"Verification occurs only after a full implementation attempt."},
+  {"id":"collaboration","architecture":"Parallel workers share no explicit capability contract."},
+  {"id":"observability","architecture":"Operators discover stalled work from end-of-run logs."},
+  {"id":"scheduling","architecture":"Work is selected greedily without value-of-information estimates."},
+  {"id":"resilience","architecture":"Recovery retries the same failed approach with larger timeouts."},
+  {"id":"product","architecture":"Users must translate goals into low-level implementation steps."}
+]

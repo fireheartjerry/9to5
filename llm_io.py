@@ -26,7 +26,7 @@ EXPORTS:
   getClient()  -- Lazily build (and memoize) THE Ollama client
   chatAcceptsAct(chat_callable) -> bool  -- True when ``chat_callable`` can receive the structured ``act`` tag (an explicit ``act``
   callChat(chat_fn, system: str, user: str, *, act: str, **kw)  -- Invoke an INJECTED chat callable ``(system, user, ...)`` forwarding ``act`` only when t…
-  chat(system: str, user: str, *, act: str, model=None, want_json: bool=False, retries: int=3, client=None)  -- The single blessed LLM call (R5): retry/backoff + empty-completion salvage.
+  chat(system: str, user: str, *, act: str, model=None, want_json: bool=False, retries: int=3, client=None, generation_options: dict | None=None)  -- The single blessed LLM call (R5): retry/backoff + empty-completion salvage.
   responseText(resp) -> str  -- ``resp['message']['content']`` as text
   parseJsonLoose(text: str)  -- THE tolerant JSON ladder (promoted from brain_io.parseJsonText
   responseJson(resp)  -- Parse the JSON body of a chat response via the ONE loose ladder
@@ -82,7 +82,7 @@ def callChat(chat_fn, system: str, user: str, *, act: str, **kw):
 
 
 def chat(system: str, user: str, *, act: str, model=None, want_json: bool = False,
-         retries: int = 3, client=None):
+         retries: int = 3, client=None, generation_options: dict | None = None):
     """The single blessed LLM call (R5): retry/backoff + empty-completion salvage.
 
     Returns the raw response (dict or pydantic; extract via responseText/responseJson),
@@ -97,10 +97,12 @@ def chat(system: str, user: str, *, act: str, model=None, want_json: bool = Fals
     num_ctx = config.OLLAMA_NUM_CTX
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     model = model or config.OLLAMA_MODEL
+    safe_options = {k: v for k, v in (generation_options or {}).items()
+                    if k in {"temperature", "top_p", "seed"}}
     delay = 2.0
     for attempt in range(1, max(1, retries) + 1):
         try:
-            kwargs = {"options": {"num_ctx": num_ctx}, "keep_alive": config.OLLAMA_KEEP_ALIVE}
+            kwargs = {"options": {"num_ctx": num_ctx, **safe_options}, "keep_alive": config.OLLAMA_KEEP_ALIVE}
             if want_json:
                 kwargs["format"] = "json"
             resp = chat_fn(model=model, messages=messages, **kwargs, **extra)
@@ -110,7 +112,7 @@ def chat(system: str, user: str, *, act: str, model=None, want_json: bool = Fals
             # THAT is also empty is the attempt failed and backed off.
             if want_json and not responseText(resp).strip():
                 resp = chat_fn(model=model, messages=messages,
-                               options={"num_ctx": num_ctx},
+                               options={"num_ctx": num_ctx, **safe_options},
                                keep_alive=config.OLLAMA_KEEP_ALIVE, **extra)
                 if not responseText(resp).strip():
                     raise ValueError("empty completion")

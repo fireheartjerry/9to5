@@ -63,6 +63,11 @@ def signature_text(obj: Any) -> str:
     get = obj.get if isinstance(obj, dict) else (lambda k, d="": getattr(obj, k, d))
     parts = [str(get("title", "") or ""), str(get("summary", "") or ""),
              str(get("design_sketch", "") or get("rationale", "") or "")]
+    invention = get("invention", None)
+    if invention:
+        ig = invention.get if isinstance(invention, dict) else lambda k, d="": getattr(invention, k, d)
+        parts.extend(str(ig(k, "") or "") for k in
+                     ("assumption", "mechanism", "architecture", "capability_unlock"))
     subs = get("target_subsystems", None) or get("affected_files", None) or []
     if subs:
         parts.append(" ".join(str(s) for s in subs))

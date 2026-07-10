@@ -1,0 +1,79 @@
+"""Compare legacy discovery with the local-only Innovator Excellence engine.
+
+The tool writes no repository state unless ``--out`` is supplied.  ``--scripted`` is the
+offline deterministic contract check; default mode sends both sides to local Ollama only.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from unittest import mock
+
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+import config
+from agents.discovery import inventor, lenses
+
+FIXTURES = _ROOT / "tests" / "fixtures" / "innovator_eval" / "challenges.json"
+
+
+def _metrics(findings) -> dict:
+    cards = [f.invention for f in findings if getattr(f, "invention", None)]
+    mechanisms = {c.mechanism.lower() for c in cards if c.mechanism}
+    targets = {f.target_subsystems[0] for f in findings if f.target_subsystems}
+    horizons = {c.horizon for c in cards}
+    complete = sum(bool(c.architecture and c.mechanism and c.metric and c.experiment) for c in cards)
+    return {"count": len(findings), "cards": len(cards), "mechanisms": len(mechanisms),
+            "targets": len(targets), "horizons": sorted(horizons), "complete": complete}
+
+
+def _scripted(system, user, **kw):
+    seed = kw.get("generation_options", {}).get("seed", 0)
+    if system.startswith("Score each"):
+        return {"message": {"content": '{"scores": []}'}}
+    h = ("near_term", "asymmetric", "moonshot")[seed % 3]
+    idea = {"title": f"Candidate {seed}", "assumption": "current control loop is fixed",
+            "mechanism": f"mechanism-{seed}", "architecture": "typed event graph and reducer",
+            "capability_unlock": "adaptive orchestration", "target_subsystems": [f"agents/{seed}.py"],
+            "metric": "verified success rate", "experiment": "run isolated harness", "preconditions": "event bus",
+            "risks": "queue growth", "horizon": h, "prior_art": "pattern card", "local_novelty": "local adaptation"}
+    return {"message": {"content": json.dumps({"ideas": [idea, idea | {"title": idea["title"] + " B"}]})}}
+
+
+def run(scripted: bool = False) -> list[dict]:
+    fixtures = json.loads(FIXTURES.read_text(encoding="utf-8"))
+    rows = []
+    for fixture in fixtures:
+        digest = {"architecture": fixture["architecture"], "module_signatures": "", "dependency_graph": ""}
+        if scripted:
+            excellence = inventor.run_excellence(digest, chat_fn=_scripted)
+            legacy = []
+        else:
+            # Same local model for both sides.  Legacy receives its normal lens prompts.
+            with mock.patch.object(config, "OLLAMA_MODEL", config.INVENTOR_MODEL):
+                legacy = lenses.run_lens_panel(digest, transformative=True)
+            excellence = inventor.run_excellence(digest)
+        rows.append({"fixture": fixture["id"], "legacy": _metrics(legacy),
+                     "excellence": _metrics(excellence.findings),
+                     "trace_events": len(excellence.innovator_trace)})
+    return rows
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--scripted", action="store_true")
+    parser.add_argument("--out", type=Path)
+    args = parser.parse_args()
+    rows = run(args.scripted)
+    text = json.dumps(rows, indent=2)
+    if args.out:
+        args.out.write_text(text, encoding="utf-8")
+    print(text)
+
+
+if __name__ == "__main__":
+    main()
