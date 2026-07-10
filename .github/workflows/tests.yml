@@ -260,7 +260,7 @@ jobs:
         run: echo "smart shard ${{ matrix.shard }} has no targets"
       - name: Save test-brain history
         if: always() && matrix.has_targets && hashFiles('.testbrain/**') != ''
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .testbrain
           key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-smart-${{ matrix.shard }}
@@ -340,7 +340,7 @@ jobs:
         run: cat .testbrain/reports/mapping.md >> "$GITHUB_STEP_SUMMARY"
       - name: Save test-brain history
         if: always() && hashFiles('.testbrain/**') != ''
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .testbrain
           key: testbrain-${{ runner.os }}-${{ github.ref_name }}-${{ github.run_id }}-fast
