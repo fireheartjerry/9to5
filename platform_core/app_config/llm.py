@@ -450,7 +450,9 @@ class SieCfg:
     # Plans AUTO-APPROVE through Ollama; in gated mode the plan gate waits this long for an
     # optional human !abort/!reject/!skip/!add, then the brain approves.
     PLAN_GATE_AUTO_APPROVE_SECONDS: float = _F(default_factory=lambda: _envFloat("PLAN_GATE_AUTO_APPROVE_SECONDS", 8))
-    DEFAULT_PARALLELISM: int = _F(default_factory=lambda: 2 if _fullStack() else 1)  # >1 runs independent ready subtasks concurrently
+    DEFAULT_PARALLELISM: int = _F(default_factory=lambda: _envInt("DEFAULT_PARALLELISM", 3 if _fullStack() else 1))
+    PARALLEL_SUBTASKS_MAX: int = _F(default_factory=lambda: _envInt("PARALLEL_SUBTASKS_MAX", 3))
+    HEALTH_CHECK_MAX_WORKERS: int = _F(default_factory=lambda: _envInt("HEALTH_CHECK_MAX_WORKERS", 4))
     # --- Intelligence & Control (Spec B): predictive flags + Nightclaw instinct ---
     PREDICTIVE_FLAGS_ENABLED: bool = _F(default_factory=lambda: _envBool("PREDICTIVE_FLAGS_ENABLED", True))
     PREDICTIVE_FLAG_OLLAMA: bool = _F(default_factory=lambda: _envBool("PREDICTIVE_FLAG_OLLAMA", False))

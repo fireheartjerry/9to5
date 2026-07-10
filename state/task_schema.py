@@ -309,6 +309,7 @@ class TaskState:
                    layer: int = 3, depends_on: Optional[list[str]] = None,
                    verify: Optional[dict] = None,
                    files_touched: Optional[list[str]] = None,
+                   parallel_safe: bool = False,
                    fork_eligible: bool = False) -> dict[str, Any]:
         seq = self._nextSubtaskSeq()
         st: dict[str, Any] = {
@@ -320,6 +321,7 @@ class TaskState:
             "status": "pending",
             "depends_on": depends_on or [],
             "files_touched": files_touched or [],   # planner-authored; empty -> serialize (Epic 1c)
+            "parallel_safe": bool(parallel_safe),   # explicit planner assertion; default serial
             "claimed_by": None,                      # atomic-CAS claim slot (Epic 1c)
             "started_at": None,
             "completed_at": None,

@@ -2111,6 +2111,7 @@
         "platform_core.orchestration.human_nature_bridge.verification",
         "platform_core.orchestration.innovation_report",
         "platform_core.orchestration.invention_gate",
+        "platform_core.orchestration.invention_seeding",
         "platform_core.orchestration.judge_panel",
         "platform_core.orchestration.llm_mixin",
         "platform_core.orchestration.parallel_safety",
@@ -8438,7 +8439,8 @@
       "depends_on": [
         "agents.executor",
         "agents.executor_env",
-        "config"
+        "config",
+        "platform_core.core.concurrency"
       ],
       "callers": [
         "main",
@@ -8548,6 +8550,7 @@
         "platform_core.orchestration.fork_policy",
         "platform_core.orchestration.generational",
         "platform_core.orchestration.innovation_report",
+        "platform_core.orchestration.invention_seeding",
         "platform_core.orchestration.judge_panel",
         "platform_core.orchestration.llm_mixin",
         "platform_core.orchestration.plan_mixin",
@@ -8955,6 +8958,7 @@
       "path": "platform_core/orchestration/execute_mixin.py",
       "purpose": "Core execution mixin – attempt loop, verify, adversary remediation, SIE capture, enrichment.",
       "exports": [
+        "AttemptOutcome",
         "OrchestratorExecuteMixin"
       ],
       "depends_on": [
@@ -9312,6 +9316,22 @@
         "tests/orchestration/test_invention_gate.py"
       ]
     },
+    "platform_core.orchestration.invention_seeding": {
+      "path": "platform_core/orchestration/invention_seeding.py",
+      "purpose": "Live invention-seeding coordinator.",
+      "exports": [
+        "plan_seeds"
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.orchestration",
+        "platform_core.orchestration.invention_types"
+      ],
+      "callers": [],
+      "test": [
+        "tests/orchestration/test_invention_seeding.py"
+      ]
+    },
     "platform_core.orchestration.invention_types": {
       "path": "platform_core/orchestration/invention_types.py",
       "purpose": "Shared dataclasses for the Inventor pipeline (finders -> QD archive -> report).",
@@ -9333,6 +9353,7 @@
         "platform_core.orchestration.emitter_scheduler",
         "platform_core.orchestration.innovation_report",
         "platform_core.orchestration.invention_gate",
+        "platform_core.orchestration.invention_seeding",
         "platform_core.orchestration.portfolio_optimizer",
         "platform_core.orchestration.qd_archive",
         "platform_core.orchestration.solution_space"
@@ -9410,17 +9431,35 @@
         "tests/orchestration/test_llm_compaction_numctx.py"
       ]
     },
+    "platform_core.orchestration.llm_navigation": {
+      "path": "platform_core/orchestration/llm_navigation.py",
+      "purpose": "Compact, dependency-aware navigation packets for runtime LLM prompts.",
+      "exports": [
+        "build_projection",
+        "build_context_packet"
+      ],
+      "depends_on": [],
+      "callers": [
+        "platform_core.orchestration.plan_context"
+      ],
+      "test": [
+        "tests/platform/test_llm_navigation.py"
+      ]
+    },
     "platform_core.orchestration.parallel_safety": {
       "path": "platform_core/orchestration/parallel_safety.py",
       "purpose": "File-disjointness parallel-safety + atomic CAS claim (Epic 1, unit c; guild port).",
       "exports": [
+        "ParallelBatch",
         "filesTouched",
         "disjoint",
+        "selectSafeBatch",
         "safeParallelSet",
         "claim"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.core.concurrency"
       ],
       "callers": [],
       "test": [
@@ -9643,6 +9682,7 @@
         "notifications.lane_feed",
         "platform_core.core",
         "platform_core.core.clock",
+        "platform_core.core.concurrency",
         "platform_core.orchestration",
         "platform_core.runtime.control",
         "state.task"
@@ -9745,6 +9785,7 @@
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.human_nature_bridge",
         "platform_core.orchestration.knowledge_refresh",
+        "platform_core.orchestration.plan_concurrency",
         "platform_core.orchestration.plan_context",
         "platform_core.orchestration.run_phase_surface_mixin",
         "platform_core.orchestration.step_resume",
@@ -10287,9 +10328,13 @@
       "path": "platform_core/runtime/worktree.py",
       "purpose": "Git-worktree-per-subtask isolation backend (Epic 1, unit c; hermes/guild pattern port).",
       "exports": [
+        "WorktreeLease",
+        "WorktreeResult",
         "enterWorktree",
+        "enterWorktreeLease",
         "collectChanges",
         "exitWorktree",
+        "exitWorktreeLease",
         "removeWorktree",
         "gcOrphans",
         "isIsolated"

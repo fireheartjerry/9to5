@@ -1,5 +1,6 @@
 """Unit tests for health.collectHealth (structured results)."""
 import unittest
+import threading
 from unittest import mock
 
 import platform_core.ops.health as health
@@ -24,3 +25,14 @@ class TestCollectHealth(unittest.TestCase):
             checks = health.collectHealth()
         self.assertFalse(checks[0]["ok"])
         self.assertIn("errored", checks[0]["detail"])
+
+    def test_checks_fan_out_without_reordering_results(self):
+        started = threading.Barrier(2)
+
+        def slow(name):
+            started.wait(timeout=2)
+            return True, name, ""
+
+        with mock.patch.object(health, "CHECKS", [("first", lambda: slow("first")), ("second", lambda: slow("second"))]):
+            checks = health.collectHealth()
+        self.assertEqual([check["name"] for check in checks], ["first", "second"])

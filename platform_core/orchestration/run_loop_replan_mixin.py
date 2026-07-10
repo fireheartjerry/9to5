@@ -82,7 +82,7 @@ class OrchestratorRunLoopReplanMixin:
                 break
             st = state.addSubtask(title, add.get("description", ""),
                                   layer=add.get("layer", 3), verify=verifier.sanitizeVerify(add.get("verify")),
-                                  files_touched=add.get("files_touched"))
+                                  files_touched=add.get("files_touched"), parallel_safe=add.get("parallel_safe", False))
             extra = {k: add[k] for k in ("read_only", "clarification_probe") if k in add}
             if extra:
                 state.updateSubtask(st["subtask_id"], **extra)

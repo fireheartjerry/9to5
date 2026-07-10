@@ -3716,6 +3716,7 @@
         "platform_core.orchestration.human_nature_bridge.verification",
         "platform_core.orchestration.innovation_report",
         "platform_core.orchestration.invention_gate",
+        "platform_core.orchestration.invention_seeding",
         "platform_core.orchestration.judge_panel",
         "platform_core.orchestration.llm_mixin",
         "platform_core.orchestration.parallel_safety",
@@ -14054,7 +14055,7 @@
           "kind": "function",
           "signature": "() -> SieCfg",
           "summary": "",
-          "lineno": 477
+          "lineno": 479
         }
       ],
       "depends_on": [
@@ -15740,21 +15741,22 @@
           "name": "collectHealth",
           "kind": "function",
           "signature": "() -> list[dict]",
-          "summary": "Run every check and return structured results (used by the bot's /diagnostics).",
-          "lineno": 199
+          "summary": "Run independent checks concurrently while preserving the public result order.",
+          "lineno": 203
         },
         {
           "name": "runHealthChecks",
           "kind": "function",
           "signature": "() -> bool",
           "summary": "",
-          "lineno": 212
+          "lineno": 235
         }
       ],
       "depends_on": [
         "agents.executor",
         "agents.executor_env",
-        "config"
+        "config",
+        "platform_core.core.concurrency"
       ],
       "side_effects": [
         "unannotated"
@@ -15963,6 +15965,7 @@
         "platform_core.orchestration.fork_policy",
         "platform_core.orchestration.generational",
         "platform_core.orchestration.innovation_report",
+        "platform_core.orchestration.invention_seeding",
         "platform_core.orchestration.judge_panel",
         "platform_core.orchestration.llm_mixin",
         "platform_core.orchestration.plan_mixin",
@@ -16708,11 +16711,18 @@
       "purpose": "Core execution mixin – attempt loop, verify, adversary remediation, SIE capture, enrichment.",
       "exports": [
         {
+          "name": "AttemptOutcome",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 41
+        },
+        {
           "name": "OrchestratorExecuteMixin",
           "kind": "class",
           "signature": "",
           "summary": "Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment.",
-          "lineno": 43
+          "lineno": 57
         }
       ],
       "depends_on": [
@@ -17343,6 +17353,32 @@
       ],
       "callers": []
     },
+    "platform_core.orchestration.invention_seeding": {
+      "path": "platform_core/orchestration/invention_seeding.py",
+      "purpose": "Live invention-seeding coordinator.",
+      "exports": [
+        {
+          "name": "plan_seeds",
+          "kind": "function",
+          "signature": "(candidates: list, routes: list[str]) -> dict",
+          "summary": "Select and annotate invention seeds from one discovery report.",
+          "lineno": 67
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.orchestration",
+        "platform_core.orchestration.invention_types"
+      ],
+      "side_effects": [
+        "reads the project import graph best-effort",
+        "mutates only candidate provenance dicts"
+      ],
+      "test": [
+        "tests/orchestration/test_invention_seeding.py"
+      ],
+      "callers": []
+    },
     "platform_core.orchestration.invention_types": {
       "path": "platform_core/orchestration/invention_types.py",
       "purpose": "Shared dataclasses for the Inventor pipeline (finders -> QD archive -> report).",
@@ -17430,6 +17466,7 @@
         "platform_core.orchestration.emitter_scheduler",
         "platform_core.orchestration.innovation_report",
         "platform_core.orchestration.invention_gate",
+        "platform_core.orchestration.invention_seeding",
         "platform_core.orchestration.portfolio_optimizer",
         "platform_core.orchestration.qd_archive",
         "platform_core.orchestration.solution_space"
@@ -17561,41 +17598,86 @@
         "orchestrator"
       ]
     },
+    "platform_core.orchestration.llm_navigation": {
+      "path": "platform_core/orchestration/llm_navigation.py",
+      "purpose": "Compact, dependency-aware navigation packets for runtime LLM prompts.",
+      "exports": [
+        {
+          "name": "build_projection",
+          "kind": "function",
+          "signature": "(repo_map: dict) -> dict",
+          "summary": "",
+          "lineno": 23
+        },
+        {
+          "name": "build_context_packet",
+          "kind": "function",
+          "signature": "(projection: dict, query: str, *, budget_chars: int=3000) -> dict",
+          "summary": "",
+          "lineno": 73
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/platform/test_llm_navigation.py"
+      ],
+      "callers": [
+        "platform_core.orchestration.plan_context"
+      ]
+    },
     "platform_core.orchestration.parallel_safety": {
       "path": "platform_core/orchestration/parallel_safety.py",
       "purpose": "File-disjointness parallel-safety + atomic CAS claim (Epic 1, unit c; guild port).",
       "exports": [
         {
+          "name": "ParallelBatch",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 33
+        },
+        {
           "name": "filesTouched",
           "kind": "function",
           "signature": "(subtask: dict) -> set[str]",
           "summary": "Planner-authored file-set",
-          "lineno": 28
+          "lineno": 38
         },
         {
           "name": "disjoint",
           "kind": "function",
           "signature": "(a: dict, b: dict) -> bool",
           "summary": "True only if BOTH file-sets are known and share no file",
-          "lineno": 36
+          "lineno": 46
+        },
+        {
+          "name": "selectSafeBatch",
+          "kind": "function",
+          "signature": "(ready: list[dict], *, budget: WorkerBudget) -> ParallelBatch",
+          "summary": "Return a planner-ordered, explicitly opted-in concurrent batch.",
+          "lineno": 54
         },
         {
           "name": "safeParallelSet",
           "kind": "function",
           "signature": "(state, ready: list[dict], limit: int) -> list[dict]",
           "summary": "Greedily pick ready subtasks whose file-sets are pairwise disjoint + dependency-free.",
-          "lineno": 50
+          "lineno": 78
         },
         {
           "name": "claim",
           "kind": "function",
           "signature": "(state, sid: str) -> bool",
           "summary": "Atomic CAS: flip pending->in_progress ONLY if still pending (else lost-race=False).",
-          "lineno": 68
+          "lineno": 96
         }
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.core.concurrency"
       ],
       "side_effects": [
         "claim() flips subtask status via state.updateSubtask"
@@ -17685,7 +17767,7 @@
           "kind": "function",
           "signature": "(room: int, remaining_hours: float) -> str",
           "summary": "The HORIZON-FILL planner system prompt (self-improvement runs with time left).",
-          "lineno": 136
+          "lineno": 140
         }
       ],
       "depends_on": [
@@ -17971,6 +18053,7 @@
         "notifications.lane_feed",
         "platform_core.core",
         "platform_core.core.clock",
+        "platform_core.core.concurrency",
         "platform_core.orchestration",
         "platform_core.runtime.control",
         "state.task"
@@ -18001,7 +18084,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Handles the execution loop, backfill, livelock guard, and replan application.",
-          "lineno": 34
+          "lineno": 36
         }
       ],
       "depends_on": [
@@ -18100,6 +18183,7 @@
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.human_nature_bridge",
         "platform_core.orchestration.knowledge_refresh",
+        "platform_core.orchestration.plan_concurrency",
         "platform_core.orchestration.plan_context",
         "platform_core.orchestration.run_phase_surface_mixin",
         "platform_core.orchestration.step_resume",
@@ -19223,46 +19307,74 @@
       "purpose": "Git-worktree-per-subtask isolation backend (Epic 1, unit c; hermes/guild pattern port).",
       "exports": [
         {
+          "name": "WorktreeLease",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 39
+        },
+        {
+          "name": "WorktreeResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 47
+        },
+        {
           "name": "enterWorktree",
           "kind": "function",
           "signature": "(state, sid: str) -> str",
           "summary": "`git worktree add` a branch off HEAD into state/.sc-worktrees/<task8>/<sid>.",
-          "lineno": 51
+          "lineno": 72
+        },
+        {
+          "name": "enterWorktreeLease",
+          "kind": "function",
+          "signature": "(state, sid: str) -> WorktreeLease | None",
+          "summary": "Provision isolation for a parallel worker, failing closed on any git error.",
+          "lineno": 93
         },
         {
           "name": "collectChanges",
           "kind": "function",
           "signature": "(path: str, sid: str) -> None",
           "summary": "Stage+commit the worktree's working tree so a merge brings the executor's edits back.",
-          "lineno": 72
+          "lineno": 116
         },
         {
           "name": "exitWorktree",
           "kind": "function",
-          "signature": "(path: str, *, merge: bool) -> None",
+          "signature": "(path: str, *, merge: bool) -> WorktreeResult",
           "summary": "On success commit + merge the worktree branch back into the run branch, then remove the",
-          "lineno": 85
+          "lineno": 129
+        },
+        {
+          "name": "exitWorktreeLease",
+          "kind": "function",
+          "signature": "(lease: WorktreeLease, *, merge: bool) -> WorktreeResult",
+          "summary": "Finalize a typed lease while retaining the normal safe merge behavior.",
+          "lineno": 161
         },
         {
           "name": "removeWorktree",
           "kind": "function",
           "signature": "(path: str) -> None",
           "summary": "Path-scoped safe-remove: refuse any path outside state/.sc-worktrees/",
-          "lineno": 115
+          "lineno": 166
         },
         {
           "name": "gcOrphans",
           "kind": "function",
           "signature": "(state) -> None",
           "summary": "Remove leftover worktrees for THIS task (TTL/whitelist cleanup)",
-          "lineno": 130
+          "lineno": 181
         },
         {
           "name": "isIsolated",
           "kind": "function",
           "signature": "(path: str) -> bool",
           "summary": "True only when ``path`` lives under state/.sc-worktrees/ (an isolated worktree).",
-          "lineno": 142
+          "lineno": 193
         }
       ],
       "depends_on": [

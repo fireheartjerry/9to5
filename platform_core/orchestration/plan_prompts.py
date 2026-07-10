@@ -89,8 +89,12 @@ PLANNER_SYSTEM = (
     "verify that asserts EVERY requirement -- never a verify that checks just one of them.\n"
     "Honor the goal's constraints (e.g. 'standard library only' => no dependency installs).\n"
     'Respond with JSON ONLY: {"subtasks": [{"title": "...", "description": "...", "layer": 3, '
-    '"effort_level": "default|high|xhigh|ultracode", "verify": {"cmd": "...", "expect": "..."}}]}. '
+    '"effort_level": "default|high|xhigh|ultracode", "verify": {"cmd": "...", "expect": "..."}, '
+    '"depends_on": [0], "files_touched": ["repo/relative.py"], "parallel_safe": false}]}. '
     "1-4 subtasks total. Every subtask MUST include a verify block.\n"
+    "CONCURRENCY RULES: `depends_on` contains only earlier zero-based subtask indexes. Set `parallel_safe` true ONLY "
+    "for genuinely independent work and enumerate EVERY repo-relative file it may modify in `files_touched`; otherwise "
+    "use false and []. Missing or invalid metadata serializes the work.\n"
     "VERIFY RULES (a bad verify fails correct work -- follow EXACTLY):\n"
     "- Check OBSERVABLE BEHAVIOR only, never implementation details.\n"
     "- expect is REQUIRED on every verify. A verify without an expect is REJECTED and discarded "

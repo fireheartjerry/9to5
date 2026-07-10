@@ -10,6 +10,8 @@ RUN/TEST: python -m pytest tests/execution/test_worktree_batch.py tests/orchestr
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import ExitStack
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import config
@@ -192,59 +194,87 @@ class OrchestratorRunLoopMixin(OrchestratorRunLoopReplanMixin):
         from platform_core.orchestration import parallel_safety
         from platform_core.runtime import worktree
         isolate = getattr(config, "WORKTREE_ISOLATION_ENABLED", False)
-        futures = {}
-        cwds = {}
-        fut_by_sid: dict[str, object] = {}
-        handled: set[str] = set()   # sids whose worktree exitWorktree already ran
+        if len(batch) < 2 or not isolate:
+            # Concurrent writers are never allowed without independently provisioned leases.
+            st = batch[0]
+            position += 1
+            self._executeSubtask(state, st, architect_doc, work_dir, bus, dashboard, position)
+            return position, None
+
+        fallback = None
         abort = None
-        with ThreadPoolExecutor(max_workers=parallelism) as pool:
+        with ExitStack() as rollback:
+            leases = {}
             for st in batch:
-                sid = st["subtask_id"]
-                if isolate:
-                    with self._state_lock:           # atomic CAS: pending -> in_progress
-                        if not parallel_safety.claim(state, sid):
-                            continue                 # lost race / already claimed -> skip
-                    ctx = worktree.enterWorktree(state, sid)
+                lease = worktree.enterWorktreeLease(state, st["subtask_id"])
+                if lease is None:
+                    fallback = batch[0]
+                    break
+                leases[st["subtask_id"]] = lease
+                rollback.callback(worktree.exitWorktreeLease, lease, merge=False)
+            if fallback is None:
+                selected = []
+                for st in batch:
+                    with self._state_lock:
+                        if parallel_safety.claim(state, st["subtask_id"]):
+                            selected.append(st)
+                if len(selected) < 2:
+                    fallback = selected[0] if selected else batch[0]
                 else:
-                    # FX-8: derive cwd via the SAME helper as the sequential path.
-                    ctx = self._execCwd(state, sid, work_dir)
-                cwds[sid] = ctx
-                position += 1
-                fut = pool.submit(self._executeSubtask, state, st, architect_doc,
-                                  work_dir, bus, dashboard, position, ctx)
-                futures[fut] = st
-                fut_by_sid[sid] = fut
-            try:
-                for f in as_completed(futures):
-                    st = futures[f]
-                    try:
-                        f.result()
-                    except AbortRun as e:
-                        abort = e
-                        for pending in futures:   # stop scheduling the rest of the batch promptly
-                            pending.cancel()
-                        break
-                    except Exception as e:  # noqa: BLE001 -- a crashed worker must not strand the subtask
-                        LOG.error("parallel subtask %s crashed: %s", st.get("subtask_id"), e, exc_info=True)
-                        with self._state_lock:
-                            state.updateSubtask(st["subtask_id"], status="failed", completed_at=nowIso())
-                            state.addNotification("subtask_crashed", f"{st.get('subtask_id')}: {e}")
-                    finally:
-                        if isolate:
+                    futures = {}
+                    with ThreadPoolExecutor(max_workers=len(selected), thread_name_prefix="9to5-subtask") as pool:
+                        for st in selected:
+                            position += 1
+                            lease = leases[st["subtask_id"]]
+                            fut = pool.submit(
+                                self._executeSubtask, state, st, architect_doc, work_dir, bus, dashboard,
+                                position, str(lease.path), True,
+                            )
+                            futures[fut] = st
+                        outcomes, failures = {}, []
+                        for future in as_completed(futures):
+                            st = futures[future]
+                            try:
+                                outcomes[st["subtask_id"]] = future.result()
+                            except AbortRun as exc:
+                                abort = exc
+                            except Exception as exc:  # aggregate after all running workers join
+                                failures.append(exc)
+                                LOG.error("parallel subtask %s crashed: %s", st.get("subtask_id"), exc, exc_info=True)
+                    if abort is None:
+                        for st in selected:  # deterministic merge and state-finalization order
                             sid = st["subtask_id"]
-                            merged = (state.getSubtask(sid) or {}).get("status") == "done"
-                            worktree.exitWorktree(cwds.get(sid, ""), merge=merged)
-                            handled.add(sid)
-            finally:
-                # ABORT/early-exit safety: a `break` on AbortRun skips the per-future finally for
-                # cancelled/not-yet-iterated futures, leaking their ENTERED worktrees + claims. Reap
-                # only DONE ones here; a still-RUNNING future's worktree is DEFERRED to post-shutdown
-                # (below) -- exiting it now would delete a tree a live worker is still writing (B3).
-                if isolate:
-                    self._reapWorktrees(worktree, cwds, fut_by_sid, handled, defer_running=True)
-        # Pool has now fully shut down (running futures joined) -> safe to exit deferred worktrees (B3).
-        if isolate:
-            self._reapWorktrees(worktree, cwds, fut_by_sid, handled, defer_running=False)
+                            outcome = outcomes.get(sid)
+                            lease = leases[sid]
+                            if not hasattr(outcome, "passed"):
+                                worktree.exitWorktreeLease(lease, merge=False)
+                                with self._state_lock:
+                                    state.updateSubtask(sid, status="failed", completed_at=nowIso())
+                                    state.addNotification("parallel_worker_failed", sid)
+                                continue
+                            if outcome.passed:
+                                merged = worktree.exitWorktreeLease(lease, merge=True)
+                                if not merged.merged:
+                                    with self._state_lock:
+                                        state.updateSubtask(sid, status="failed", completed_at=nowIso())
+                                        state.addNotification("worktree_merge_failed", f"{sid}: {merged.error or 'merge failed'}")
+                                    continue
+                            else:
+                                worktree.exitWorktreeLease(lease, merge=False)
+                            self._finalizeAttemptOutcome(
+                                state, st, architect_doc, bus, dashboard, replace(outcome, exec_cwd=work_dir)
+                            )
+                        if failures:
+                            try:
+                                raise ExceptionGroup("parallel worker failures", failures)
+                            except ExceptionGroup:
+                                LOG.warning("parallel batch completed with %d worker failure(s)", len(failures))
+                    if abort is None:
+                        rollback.pop_all()
+        if fallback is not None:
+            position += 1
+            # A partially provisioned batch has been unwound; resume with one ordinary worker.
+            self._executeSubtask(state, fallback, architect_doc, work_dir, bus, dashboard, position)
         # Close thread-local SQLite connections so they don't accumulate across batches (CB-3).
         try:
             experience.close_pool()

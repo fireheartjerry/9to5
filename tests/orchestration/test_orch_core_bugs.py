@@ -104,11 +104,11 @@ class _FakeState:
         self.notifications = []
         self._n = 0
 
-    def addSubtask(self, title, description="", layer=3, verify=None, files_touched=None):
+    def addSubtask(self, title, description="", layer=3, verify=None, files_touched=None, parallel_safe=False):
         self._n += 1
         st = {"subtask_id": f"s{self._n}", "title": title, "description": description,
               "status": "pending", "layer": layer, "verify": verify,
-              "files_touched": files_touched or []}
+              "files_touched": files_touched or [], "parallel_safe": parallel_safe}
         self.subtasks.append(st)
         return st
 
@@ -203,19 +203,25 @@ def test_b3_running_future_worktree_exit_deferred_until_after_pool_join(monkeypa
 
     monkeypatch.setattr(config, "WORKTREE_ISOLATION_ENABLED", True, raising=False)
     monkeypatch.setattr(parallel_safety, "claim", lambda state, sid: True)
-    monkeypatch.setattr(worktree, "enterWorktree", lambda state, sid: f"ctx::{sid}")
+    from pathlib import Path
+    monkeypatch.setattr(
+        worktree, "enterWorktreeLease",
+        lambda state, sid: worktree.WorktreeLease(sid, Path(f"ctx::{sid}"), f"wt/test/{sid}", "base"),
+    )
     monkeypatch.setattr(experience, "close_pool", lambda: None)
 
     run_finished = {"run": False}
     run_started = threading.Event()
     exit_calls = []   # (ctx, merge, run_finished_snapshot_at_call_time)
 
-    def fake_exit(ctx, merge=False):
-        exit_calls.append((ctx, merge, run_finished["run"]))
+    def fake_exit(lease, merge=False):
+        exit_calls.append((str(lease.path), merge, run_finished["run"]))
+        return worktree.WorktreeResult(True, merge, True)
 
-    monkeypatch.setattr(worktree, "exitWorktree", fake_exit)
+    monkeypatch.setattr(worktree, "exitWorktreeLease", fake_exit)
 
     class _State:
+        task_id = "test-task"
         def getSubtask(self, sid):
             return {"status": "pending"}
 

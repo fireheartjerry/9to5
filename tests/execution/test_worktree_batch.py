@@ -2,6 +2,7 @@
 residual guard only skips remediation on a SHARED tree under parallelism."""
 import threading
 import time
+from pathlib import Path
 
 import config
 from platform_core.orchestration import parallel_safety
@@ -23,6 +24,7 @@ class _LoopHost(OrchestratorRunLoopMixin):
 class _FakeState:
     def __init__(self):
         self.meta = {}
+        self.task_id = "test-task"
         self.subtasks: list = []
 
     def getSubtask(self, sid):
@@ -48,17 +50,18 @@ def test_abort_cleans_every_entered_worktree(monkeypatch):
     def _enter(state, sid):
         path = f"/wt/{sid}"
         entered.append(path)
-        return path
+        return worktree.WorktreeLease(sid, Path(path), f"wt/test/{sid}", "base")
 
-    def _exit(path, *, merge):
-        exited.append(path)
+    def _exit(lease, *, merge):
+        exited.append(str(lease.path))
+        return worktree.WorktreeResult(True, merge, True)
 
-    monkeypatch.setattr(worktree, "enterWorktree", _enter)
-    monkeypatch.setattr(worktree, "exitWorktree", _exit)
+    monkeypatch.setattr(worktree, "enterWorktreeLease", _enter)
+    monkeypatch.setattr(worktree, "exitWorktreeLease", _exit)
 
     host = _LoopHost()
 
-    def _fake_exec(state, st, doc, work_dir, bus, dash, position, ctx):
+    def _fake_exec(state, st, doc, work_dir, bus, dash, position, ctx, defer_completion=False):
         if st["subtask_id"] == "st-A":
             raise AbortRun("operator abort")   # completes first -> triggers the break
         time.sleep(0.2)                         # still running when the break cancels it
@@ -70,7 +73,7 @@ def test_abort_cleans_every_entered_worktree(monkeypatch):
                                          object(), object(), 0, 2)
     assert isinstance(abort, AbortRun)
     assert len(entered) == 2
-    assert set(exited) == set(entered)          # BOTH worktrees cleaned despite the abort
+    assert {p.replace("\\", "/") for p in exited} == set(entered)  # BOTH leases cleaned despite the abort
 
 
 def test_gc_orphans_runs_at_loop_start(monkeypatch):
