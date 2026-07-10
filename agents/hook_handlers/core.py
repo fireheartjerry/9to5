@@ -22,6 +22,9 @@ RUN/TEST: python -m pytest tests/orchestration/test_orch_core_bugs.py tests/slow
 
 import sys
 import json
+import logging
+
+LOG = logging.getLogger("hooks")
 
 # Make "import config" (and other project modules) work regardless of cwd.
 # Derive the repo root from THIS file's location so hooks always adds ITS OWN tree,
@@ -147,8 +150,8 @@ def discordNotify(data):
                 "description": message[:1500],
             }
         )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 -- notification hooks must remain fail-open
+        LOG.debug("Discord hook notification skipped: %s", exc)
     sys.exit(0)
 
 
@@ -167,8 +170,8 @@ def logAll(data):
         }
         with log_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry) + "\n")
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 -- telemetry must never block tool use
+        LOG.debug("Hook event log skipped: %s", exc)
     sys.exit(0)
 
 
@@ -180,8 +183,8 @@ def logTelemetry(data):
 
         hook_name = sys.argv[1] if len(sys.argv) > 1 else "log_telemetry"
         claude_metrics.record_hook_event(hook_name, data if isinstance(data, dict) else {})
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 -- telemetry must never block tool use
+        LOG.debug("Hook metrics skipped: %s", exc)
     sys.exit(0)
 
 
