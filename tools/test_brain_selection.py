@@ -17,7 +17,7 @@ EXPORTS:
   load_quarantine(path: Path | None=None) -> set[str]
   sentinel_targets_for(files: list[str]) -> list[str]  -- Cheap domain sentinels for adjacent-contract coverage beyond direct mappings.
   plan_shards(targets: list[str], stats: dict[str, TestStat], shard_count: int) -> list[dict]  -- Greedy duration-balanced pytest target shards.
-  select_tests(files: list[str], repo_root: Path=REPO_ROOT, budget_seconds: float=480.0, history_dir: Path | None=None, quarantine_file: Path | None=None) -> Selection
+  select_tests(files: list[str], repo_root: Path=REPO_ROOT, budget_seconds: float=480.0, history_dir: Path | None=None, quarantine_file: Path | None=None, profile: str='legacy') -> Selection
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: write_quarantine writes the quarantine JSON file
 RUN/TEST: python -m pytest tests/platform/test_test_brain.py
@@ -34,7 +34,7 @@ from time import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import affected_tests  # noqa: E402
-from test_brain_optimizer import optimize_optional_targets
+from test_brain_optimizer import optimize_optional_targets, optimize_weighted_coverage
 
 REPO_ROOT = affected_tests.REPO_ROOT
 TESTBRAIN_DIR = REPO_ROOT / ".testbrain"
@@ -372,12 +372,39 @@ def _recent_failures(stats: dict[str, TestStat]) -> list[str]:
     return sorted(t for t, stat in stats.items() if stat.recent_failure and Path(REPO_ROOT / t).exists())
 
 
+def _coverage_inputs(rels: list[str], optional: list[str], stats: dict[str, TestStat]) -> tuple[dict[str, set[str]], dict[str, float]]:
+    """Static repo-map contract coverage for local selection; {} preserves legacy behavior."""
+    try:
+        modules = json.loads((REPO_ROOT / ".repo-map.json").read_text(encoding="utf-8")).get("modules", {})
+        by_path = {str(v.get("path", "")).replace("\\", "/"): (n, v) for n, v in modules.items()}
+    except Exception:
+        return {}, {}
+    atoms: dict[str, float] = {}; test_modules: dict[str, set[str]] = {}
+    for name, rec in modules.items():
+        for test in rec.get("test", ()) or (): test_modules.setdefault(str(test), set()).add(name)
+    for rel in rels:
+        pair = by_path.get(rel)
+        if not pair: continue
+        name, rec = pair; atoms[f"module:{name}"] = 3.0
+        for caller in rec.get("callers", ()) or (): atoms[f"caller:{caller}"] = 1.0
+    candidates: dict[str, set[str]] = {}
+    for test in optional:
+        covered = set()
+        for mod in test_modules.get(test, set()):
+            if f"module:{mod}" in atoms: covered.add(f"module:{mod}")
+            if f"caller:{mod}" in atoms: covered.add(f"caller:{mod}")
+        if stats.get(test, TestStat(test)).recent_failure:
+            atom = f"failure:{test}"; atoms[atom] = 2.0 + stats[test].failure_rate; covered.add(atom)
+        candidates[test] = covered
+    return candidates, atoms
+
+
 def select_tests(
     files: list[str],
     repo_root: Path = REPO_ROOT,
     budget_seconds: float = 480.0,
     history_dir: Path | None = None,
-    quarantine_file: Path | None = None,
+    quarantine_file: Path | None = None, profile: str = "legacy",
 ) -> Selection:
     rels = _clean_files(files)
     safety = _safety_reason(rels, repo_root)
@@ -401,7 +428,10 @@ def select_tests(
         t for t in _recent_failures(stats) if t not in direct and t not in sentinels and t not in quarantined
     ]
     required = sorted(set(direct + sentinels))
-    selected_recent = optimize_optional_targets(required, recent, stats, budget_seconds)
+    candidates, atom_weights = _coverage_inputs(rels, recent, stats)
+    selected_recent = (optimize_weighted_coverage(required, candidates, atom_weights, stats, budget_seconds)
+                       if profile == "local_coverage" and atom_weights
+                       else optimize_optional_targets(required, recent, stats, budget_seconds))
     targets = sorted(set(required + selected_recent))
     estimated = _estimate(targets, stats)
     explanations = [

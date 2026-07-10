@@ -330,6 +330,7 @@
         "config",
         "memory.experience_evolution",
         "memory.novelty_index",
+        "platform_core.orchestration",
         "platform_core.orchestration.invention_types"
       ],
       "side_effects": [
@@ -2256,133 +2257,133 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 67
+          "lineno": 69
         },
         {
           "name": "CouncilConfig",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 75
+          "lineno": 77
         },
         {
           "name": "CouncilQualityWarning",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 147
+          "lineno": 153
         },
         {
           "name": "CouncilMessage",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 155
+          "lineno": 161
         },
         {
           "name": "CouncilBrief",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 171
+          "lineno": 177
         },
         {
           "name": "RunCompositionSummary",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 282
+          "lineno": 288
         },
         {
           "name": "CouncilRunResult",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 340
+          "lineno": 346
         },
         {
           "name": "MockCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 353
+          "lineno": 359
         },
         {
           "name": "LiveGeminiCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 459
+          "lineno": 465
         },
         {
           "name": "LiveLocalCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 526
+          "lineno": 532
         },
         {
           "name": "LiveGroqCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 636
+          "lineno": 642
         },
         {
           "name": "LiveCloudflareCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 809
+          "lineno": 815
         },
         {
           "name": "LiveCerebrasCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 975
+          "lineno": 981
         },
         {
           "name": "LiveGPTBrowserCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "Live GPT seat: one browser chat thread per council run + structured continuity checks.",
-          "lineno": 1145
+          "lineno": 1151
         },
         {
           "name": "is_enabled",
           "kind": "function",
           "signature": "(config_obj: CouncilConfig | None=None) -> bool",
           "summary": "",
-          "lineno": 1315
+          "lineno": 1321
         },
         {
           "name": "CouncilRunner",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 1320
+          "lineno": 1326
         },
         {
           "name": "evaluate_message_quality",
           "kind": "function",
           "signature": "(message: CouncilMessage) -> list[CouncilQualityWarning]",
           "summary": "",
-          "lineno": 2671
+          "lineno": 2702
         },
         {
           "name": "run_pre_execution_council",
           "kind": "function",
           "signature": "(task: str, *, work_dir: str | Path | None=None, council_config: CouncilConfig | None=None) -> CouncilRunResult",
           "summary": "",
-          "lineno": 2704
+          "lineno": 2735
         },
         {
           "name": "env_enabled",
           "kind": "function",
           "signature": "() -> bool",
           "summary": "",
-          "lineno": 2726
+          "lineno": 2757
         }
       ],
       "depends_on": [
@@ -2656,7 +2657,7 @@
         {
           "name": "authorArchitectPrompt",
           "kind": "function",
-          "signature": "(goal_elaborated: str, chat=None, discovery_report=None, work_profile=None) -> str",
+          "signature": "(goal_elaborated: str, chat=None, discovery_report=None, work_profile=None, project_context: str='') -> str",
           "summary": "Ollama authors the prompt that will be sent to Claude Code CLI.",
           "lineno": 94
         }
@@ -5307,7 +5308,10 @@
       "test": [
         "tests/human_nature/test_scar_graph.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge.instinct",
+        "platform_core.orchestration.human_nature_bridge.lifecycle"
+      ]
     },
     "human_nature.self_model": {
       "path": "human_nature/self_model.py",
@@ -8532,28 +8536,42 @@
           "kind": "function",
           "signature": "(*, attempt_count: Any=None, adversary_verdict: Any=None, cost_usd: Any=None) -> float",
           "summary": "Write-time salience: a noisy first-pass subtask that EVENTUALLY passed, or a",
-          "lineno": 28
+          "lineno": 38
         },
         {
           "name": "recordSolutionContent",
           "kind": "function",
           "signature": "(run_id: str, st_id: str, *, solution_content: str, post_mortem: str, importance: float, model_id: Optional[str], db_path: Optional[Path]=None) -> bool",
           "summary": "Upsert one ``exp_content`` row keyed by ``(run_id, st_id)``",
-          "lineno": 61
+          "lineno": 71
         },
         {
           "name": "recordFromSubtask",
           "kind": "function",
           "signature": "(run_id: str, st: dict[str, Any], db_path: Optional[Path]=None) -> bool",
           "summary": "Convenience: extract content + compute importance from ``st`` then store",
-          "lineno": 84
+          "lineno": 98
         },
         {
           "name": "fetchSolutionContent",
           "kind": "function",
           "signature": "(run_id: str, st_id: str, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]",
           "summary": "The stored content row for ``(run_id, st_id)``, or None",
-          "lineno": 102
+          "lineno": 116
+        },
+        {
+          "name": "fetchSolutionContents",
+          "kind": "function",
+          "signature": "(keys: list[tuple[str, str]], db_path: Optional[Path]=None) -> dict[tuple[str, str], dict]",
+          "summary": "",
+          "lineno": 128
+        },
+        {
+          "name": "lexicalSearch",
+          "kind": "function",
+          "signature": "(query: str, limit: int=50, db_path: Optional[Path]=None) -> list[dict]",
+          "summary": "Derived FTS5 lane",
+          "lineno": 140
         }
       ],
       "depends_on": [
@@ -9610,56 +9628,56 @@
           "kind": "function",
           "signature": "(query_vec: list[float], k: int=5, *, only_passed: bool=True, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "The ``k`` most-similar embedded subtasks to ``query_vec``, each annotated with a",
-          "lineno": 231
+          "lineno": 243
         },
         {
           "name": "top_k_failures",
           "kind": "function",
           "signature": "(query_vec: list[float], k: int=2, *, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "The ``k`` most-similar embedded subtasks that FAILED verification (``verify_passed==0``…",
-          "lineno": 241
+          "lineno": 253
         },
         {
           "name": "retrieve",
           "kind": "function",
           "signature": "(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "Embed the (goal, title) query and return the top-K similar past successes.",
-          "lineno": 254
+          "lineno": 266
         },
         {
           "name": "retrieve_failures",
           "kind": "function",
           "signature": "(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "Embed the (goal, title) query and return up to ``k`` similar past FAILED subtasks.",
-          "lineno": 263
+          "lineno": 275
         },
         {
           "name": "retrieve_content",
           "kind": "function",
           "signature": "(goal: str, title: str='', *, k: Optional[int]=None, db_path: Optional[Path]=None) -> list[dict[str, Any]]",
           "summary": "Embed the query, look up the ANN index (fallback: O(n) scan), and JOIN each hit to",
-          "lineno": 298
+          "lineno": 310
         },
         {
           "name": "backfill_embeddings",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None) -> dict[str, int]",
           "summary": "Embed every verify-passing subtask that lacks an embedding (run off the hot path,",
-          "lineno": 340
+          "lineno": 373
         },
         {
           "name": "rebuild_retrieval_index",
           "kind": "function",
           "signature": "(db_path: Optional[Path]=None, include_failures: bool=True) -> dict[str, int]",
           "summary": "Rebuild the derived ANN index from SQLite embeddings",
-          "lineno": 376
+          "lineno": 409
         },
         {
           "name": "lessons_block",
           "kind": "function",
           "signature": "(goal: str, title: str='', *, db_path: Optional[Path]=None) -> str",
           "summary": "Orchestrator-facing one-call helper: retrieve + render, fully best-effort.",
-          "lineno": 419
+          "lineno": 452
         }
       ],
       "depends_on": [
@@ -14022,21 +14040,21 @@
           "kind": "function",
           "signature": "() -> ClaudeCliCfg",
           "summary": "",
-          "lineno": 271
+          "lineno": 275
         },
         {
           "name": "SieCfg",
           "kind": "class",
           "signature": "",
           "summary": "SIE/learning + Obsidian service + adversary + orchestration/run-control knobs.",
-          "lineno": 277
+          "lineno": 281
         },
         {
           "name": "buildSieCfg",
           "kind": "function",
           "signature": "() -> SieCfg",
           "summary": "",
-          "lineno": 473
+          "lineno": 477
         }
       ],
       "depends_on": [
@@ -14048,7 +14066,8 @@
       ],
       "test": [
         "tests/orchestration/test_llm_compaction_numctx.py",
-        "tests/orchestration/test_llm_io_pydantic.py"
+        "tests/orchestration/test_llm_io_pydantic.py",
+        "tests/platform/test_llm_navigation.py"
       ],
       "callers": [
         "platform_core.app_config.settings"
@@ -15922,6 +15941,7 @@
       "test": [],
       "callers": [
         "agents.discovery",
+        "agents.discovery.ledger_bridge",
         "agents.planning.elaborator.candidates",
         "agents.planning.replanner",
         "agents.review.architect",
@@ -17055,7 +17075,7 @@
           "kind": "function",
           "signature": "(state: Any, dashboard: Any=None) -> 'dict | None'",
           "summary": "Hook: scan the run's event log for dangerous motif PREFIXES/exact matches",
-          "lineno": 77
+          "lineno": 129
         }
       ],
       "depends_on": [
@@ -17063,6 +17083,7 @@
         "human_nature.instinct_signal",
         "human_nature.instinct_stream",
         "human_nature.run_events",
+        "human_nature.scar_graph",
         "platform_core.core.best_effort"
       ],
       "side_effects": [
@@ -17127,6 +17148,7 @@
         "human_nature.integration",
         "human_nature.psyche_runtime",
         "human_nature.psyche_store",
+        "human_nature.scar_graph",
         "memory.experience_solutions",
         "platform_core.core.best_effort",
         "platform_core.orchestration.time_utils"
@@ -17590,14 +17612,15 @@
         {
           "name": "projectContextBlock",
           "kind": "function",
-          "signature": "(work_dir: str) -> str",
+          "signature": "(work_dir: str, query: str='') -> str",
           "summary": "Budgeted introspection digest of work_dir for the plan prompt",
-          "lineno": 18
+          "lineno": 41
         }
       ],
       "depends_on": [
         "config",
-        "introspect"
+        "introspect",
+        "platform_core.orchestration.llm_navigation"
       ],
       "side_effects": [
         "unannotated"
@@ -17605,7 +17628,9 @@
       "test": [
         "tests/orchestration/test_plan_project_context.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.run_phase_mixin"
+      ]
     },
     "platform_core.orchestration.plan_mixin": {
       "path": "platform_core/orchestration/plan_mixin.py",
@@ -18075,6 +18100,7 @@
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.human_nature_bridge",
         "platform_core.orchestration.knowledge_refresh",
+        "platform_core.orchestration.plan_context",
         "platform_core.orchestration.run_phase_surface_mixin",
         "platform_core.orchestration.step_resume",
         "platform_core.orchestration.time_utils",
@@ -20607,6 +20633,41 @@
       ],
       "callers": []
     },
+    "tools.ci_schedule": {
+      "path": "tools/ci_schedule.py",
+      "purpose": "Capacity-aware CI lane scheduling using longest-processing-time placement.",
+      "exports": [
+        {
+          "name": "plan_lanes",
+          "kind": "function",
+          "signature": "(lanes: list[dict], workers: int=1) -> list[list[dict]]",
+          "summary": "Schedule lanes with LPT",
+          "lineno": 21
+        },
+        {
+          "name": "makespan",
+          "kind": "function",
+          "signature": "(schedule: list[list[dict]]) -> float",
+          "summary": "",
+          "lineno": 35
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 39
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/platform/test_ci_schedule.py"
+      ],
+      "callers": []
+    },
     "tools.claude_metrics": {
       "path": "tools/claude_metrics.py",
       "purpose": "Small JSONL telemetry helpers for Claude/agent iteration speed.",
@@ -20785,91 +20846,105 @@
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 79
+          "lineno": 85
         },
         {
           "name": "cmd_size_audit",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 83
+          "lineno": 89
         },
         {
           "name": "cmd_affected",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 87
+          "lineno": 93
         },
         {
           "name": "cmd_smart",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 91
+          "lineno": 97
         },
         {
           "name": "cmd_flakes",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 95
+          "lineno": 101
         },
         {
           "name": "cmd_slowest",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 99
+          "lineno": 105
         },
         {
           "name": "cmd_map_audit",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 103
+          "lineno": 109
         },
         {
           "name": "cmd_map",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 107
+          "lineno": 113
+        },
+        {
+          "name": "cmd_strategy",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 117
+        },
+        {
+          "name": "cmd_context",
+          "kind": "function",
+          "signature": "(args: list[str]) -> int",
+          "summary": "",
+          "lineno": 128
         },
         {
           "name": "cmd_run",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 111
+          "lineno": 139
         },
         {
           "name": "cmd_dryrun",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 115
+          "lineno": 143
         },
         {
           "name": "cmd_e2e",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 120
+          "lineno": 148
         },
         {
           "name": "cmd_codemod",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 124
+          "lineno": 152
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: list[str]) -> int",
           "summary": "",
-          "lineno": 144
+          "lineno": 173
         }
       ],
       "depends_on": [],
@@ -21128,6 +21203,34 @@
       ],
       "callers": []
     },
+    "tools.llm_navigation": {
+      "path": "tools/llm_navigation.py",
+      "purpose": "Compact, dependency-aware navigation projection and context packets for LLM agents.",
+      "exports": [
+        {
+          "name": "build_projection",
+          "kind": "function",
+          "signature": "(repo_map: dict) -> dict",
+          "summary": "Return the stable compact subset required for navigation and context selection.",
+          "lineno": 19
+        },
+        {
+          "name": "build_context_packet",
+          "kind": "function",
+          "signature": "(projection: dict, query: str, *, budget_chars: int=12000) -> dict",
+          "summary": "Retrieve direct matches then bounded graph neighbors without dropping direct hits.",
+          "lineno": 37
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/platform/test_llm_navigation.py"
+      ],
+      "callers": []
+    },
     "tools.pre_execution_council_compare": {
       "path": "tools/pre_execution_council_compare.py",
       "purpose": "Compare round-robin and selector pre-execution council artifacts.",
@@ -21330,7 +21433,7 @@
           "kind": "function",
           "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 115
+          "lineno": 130
         }
       ],
       "depends_on": [],
@@ -21411,6 +21514,62 @@
       ],
       "callers": []
     },
+    "tools.strategy_catalog": {
+      "path": "tools/strategy_catalog.py",
+      "purpose": "Competitive-programming strategy selection for measured engineering bottlenecks.",
+      "exports": [
+        {
+          "name": "StrategyCard",
+          "kind": "class",
+          "signature": "",
+          "summary": "One Codeforces 3000+ rating technique with an engineering applicability rule.",
+          "lineno": 20
+        },
+        {
+          "name": "recommend_strategies",
+          "kind": "function",
+          "signature": "(query: dict, limit: int=3) -> list[StrategyCard]",
+          "summary": "Return deterministic cards matching a structured bottleneck query.",
+          "lineno": 50
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
+      ],
+      "test": [
+        "tests/platform/test_strategy_catalog.py"
+      ],
+      "callers": []
+    },
+    "tools.sync_competitive_skill": {
+      "path": "tools/sync_competitive_skill.py",
+      "purpose": "Install the versioned competitive-systems skill into a Codex skills directory.",
+      "exports": [
+        {
+          "name": "sync",
+          "kind": "function",
+          "signature": "(destination: Path) -> Path",
+          "summary": "Copy the canonical project skill to ``destination/competitive-systems``.",
+          "lineno": 21
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 32
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "copies .claude/skills/competitive-systems into the selected destination"
+      ],
+      "test": [
+        "tests/platform/test_sync_competitive_skill.py"
+      ],
+      "callers": []
+    },
     "tools.test_brain": {
       "path": "tools/test_brain.py",
       "purpose": "test_brain -- explainable, history-aware test selection for CI and local runs.",
@@ -21420,13 +21579,41 @@
           "kind": "function",
           "signature": "(argv: list[str]) -> int",
           "summary": "",
-          "lineno": 217
+          "lineno": 219
         }
       ],
       "depends_on": [],
       "side_effects": [
         "--github-output prints GitHub output lines",
         "normal mode prints an explanation"
+      ],
+      "test": [
+        "tests/platform/test_test_brain.py"
+      ],
+      "callers": []
+    },
+    "tools.test_brain_optimizer": {
+      "path": "tools/test_brain_optimizer.py",
+      "purpose": "Exact and greedy budget optimization for optional Test Brain targets.",
+      "exports": [
+        {
+          "name": "optimize_optional_targets",
+          "kind": "function",
+          "signature": "(required: list[str], optional: list[str], stats: dict, budget_seconds: float) -> list[str]",
+          "summary": "Select optional targets under budget with exact search, then greedy fallback.",
+          "lineno": 24
+        },
+        {
+          "name": "optimize_weighted_coverage",
+          "kind": "function",
+          "signature": "(required: list[str], candidates: dict[str, set[str]], atom_weights: dict[str, float], stats: dict, budget_seconds: float) -> list[str]",
+          "summary": "Budgeted maximum coverage, exact through 18 candidates then greedy marginal gain.",
+          "lineno": 62
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "none"
       ],
       "test": [
         "tests/platform/test_test_brain.py"
@@ -21533,84 +21720,84 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 113
+          "lineno": 114
         },
         {
           "name": "Selection",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 150
+          "lineno": 151
         },
         {
           "name": "load_stats",
           "kind": "function",
           "signature": "(history_dir: Path | None=None) -> dict[str, TestStat]",
           "summary": "Load aggregate file-level test stats from pytest history JSONL.",
-          "lineno": 187
+          "lineno": 188
         },
         {
           "name": "flake_candidates",
           "kind": "function",
           "signature": "(stats: dict[str, TestStat]) -> list[TestStat]",
           "summary": "Return tests with mixed pass/fail history that are safe quarantine candidates.",
-          "lineno": 228
+          "lineno": 229
         },
         {
           "name": "slowest_tests",
           "kind": "function",
           "signature": "(stats: dict[str, TestStat], limit: int=20) -> list[TestStat]",
           "summary": "Return targets with the highest average runtime.",
-          "lineno": 236
+          "lineno": 237
         },
         {
           "name": "audit_mapping",
           "kind": "function",
           "signature": "(repo_root: Path=REPO_ROOT) -> dict",
           "summary": "Report source files that do not currently resolve to any affected-test target.",
-          "lineno": 257
+          "lineno": 258
         },
         {
           "name": "mapping_debt_priority",
           "kind": "function",
           "signature": "(path: str) -> int",
           "summary": "",
-          "lineno": 285
+          "lineno": 286
         },
         {
           "name": "mapping_debt_priority_label",
           "kind": "function",
           "signature": "(priority: int) -> str",
           "summary": "",
-          "lineno": 292
+          "lineno": 293
         },
         {
           "name": "load_quarantine",
           "kind": "function",
           "signature": "(path: Path | None=None) -> set[str]",
           "summary": "",
-          "lineno": 296
+          "lineno": 297
         },
         {
           "name": "sentinel_targets_for",
           "kind": "function",
           "signature": "(files: list[str]) -> list[str]",
           "summary": "Cheap domain sentinels for adjacent-contract coverage beyond direct mappings.",
-          "lineno": 309
+          "lineno": 310
         },
         {
           "name": "plan_shards",
           "kind": "function",
           "signature": "(targets: list[str], stats: dict[str, TestStat], shard_count: int) -> list[dict]",
           "summary": "Greedy duration-balanced pytest target shards.",
-          "lineno": 350
+          "lineno": 351
         },
         {
           "name": "select_tests",
           "kind": "function",
-          "signature": "(files: list[str], repo_root: Path=REPO_ROOT, budget_seconds: float=480.0, history_dir: Path | None=None, quarantine_file: Path | None=None) -> Selection",
+          "signature": "(files: list[str], repo_root: Path=REPO_ROOT, budget_seconds: float=480.0, history_dir: Path | None=None, quarantine_file: Path | None=None, profile: str='legacy') -> Selection",
           "summary": "",
-          "lineno": 374
+          "lineno": 402
         }
       ],
       "depends_on": [],

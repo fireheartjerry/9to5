@@ -1,0 +1,129 @@
+"""Live invention-seeding coordinator.
+
+This is the one deterministic seam between discovery findings and the evolution ledger.
+It turns raw invention findings into a safe, diverse seed portfolio: SCC-aware blast
+scoring, evidence-adjusted confidence, rollback-DSU collision detection, max-closure
+portfolio selection, and UCB/min-cost-flow emitter allocation.  Recombination lineage is
+also derived from the QD emitters' maximum-weight parent matching.  The coordinator does
+not execute candidates; it only records why a seed was admitted and how it should branch.
+
+@AI-MAP v1
+EXPORTS:
+  plan_seeds(candidates: list, routes: list[str]) -> dict  -- Annotate and select live invention ledger seeds.
+DEPENDS-ON: config, platform_core.orchestration.code_graph, platform_core.orchestration.conflict_sim, platform_core.orchestration.emitter_scheduler, platform_core.orchestration.evidence_extract, platform_core.orchestration.portfolio_optimizer, platform_core.orchestration.qd_emitters
+SIDE-EFFECTS: reads the project import graph best-effort; mutates only candidate provenance dicts
+RUN/TEST: python -m pytest tests/orchestration/test_invention_seeding.py
+"""
+from __future__ import annotations
+
+from collections import defaultdict
+from typing import Any
+
+import config
+from platform_core.orchestration import (code_graph, conflict_sim, emitter_scheduler,
+                                         evidence_extract, portfolio_optimizer, qd_emitters)
+from platform_core.orchestration.invention_types import EMITTERS
+
+LOG = config.getLogger("orchestrator.invention_seeding")
+
+# Deliberately process-local: observations are useful during a live run but are not silently
+# persisted as a cross-run policy change.
+_UCB = emitter_scheduler.UCB()
+_SEED_ROUTES = {"qd_seed", "auto_run_eligible", "proposal"}
+
+
+def _text(c: Any) -> str:
+    provenance = getattr(c, "provenance", None) or {}
+    return "\n".join([*(str(getattr(c, name, "") or "")
+                         for name in ("title", "summary", "design_sketch")),
+                      str(provenance.get("verification_plan", "") or "")])
+
+
+def _targets(c: Any) -> list[str]:
+    return [str(x) for x in (getattr(c, "target_subsystems", None) or []) if x]
+
+
+def _graph() -> dict:
+    """Build once per seed batch; graph failure is represented by code_graph's medium fallback."""
+    try:
+        return code_graph.build_import_graph()
+    except Exception as e:  # noqa: BLE001 -- seeding must remain fail-open
+        LOG.debug("invention seed graph unavailable (ignored): %s", e)
+        return {}
+
+
+def _conflicts(rows: list[dict]) -> tuple[list[tuple[str, str]], dict[str, list[str]]]:
+    groups = conflict_sim.conflict_groups(rows)
+    by_id: dict[str, list[str]] = {}
+    edges: list[tuple[str, str]] = []
+    for group in groups:
+        for cid in group:
+            by_id[cid] = group
+        for i, left in enumerate(group):
+            edges.extend((left, right) for right in group[i + 1:])
+    return edges, by_id
+
+
+def plan_seeds(candidates: list, routes: list[str]) -> dict:
+    """Select and annotate invention seeds from one discovery report.
+
+    ``candidates`` and ``routes`` are positional peers.  Only invention routes enter the
+    portfolio; skipped/improvement findings retain the bridge's legacy handling.  Every
+    algorithmic result is retained in provenance, making the later execution path auditable.
+    """
+    graph = _graph()
+    rows: list[dict] = []
+    source_by_id: dict[str, Any] = {}
+    for index, (candidate, route) in enumerate(zip(candidates, routes)):
+        if route not in _SEED_ROUTES:
+            continue
+        cid = f"seed-{index}"
+        targets = _targets(candidate)
+        blast = code_graph.blast_radius(targets, graph=graph)
+        evidence = evidence_extract.extract_evidence(_text(candidate), module_names=targets)
+        confidence = evidence_extract.confidence_adjust(getattr(candidate, "confidence", 0.0), evidence)
+        row = {
+            "id": cid, "title": getattr(candidate, "title", cid),
+            "target_cell": cid,
+            "target_subsystems": targets, "affected_files": targets,
+            "impact": getattr(candidate, "impact", 0.0),
+            "measured_novelty": getattr(candidate, "measured_novelty", 0.0),
+            "confidence": confidence, "feasibility": getattr(candidate, "feasibility", confidence),
+            "risk": getattr(candidate, "risk", "medium"), "blast_bin": blast["bin"],
+            "archive_cell_rarity": getattr(candidate, "measured_novelty", 0.0),
+            "reversible": True,
+        }
+        rows.append(row)
+        source_by_id[cid] = candidate
+        candidate.provenance["seeding_evidence"] = evidence
+        candidate.provenance["blast_radius"] = blast
+        candidate.confidence = confidence
+    if not rows:
+        return {"selected_ids": [], "selection": {}, "allocations": [], "recombination": None}
+
+    conflicts, groups = _conflicts(rows)  # rollback DSU groups overlapping candidate scopes.
+    selection = portfolio_optimizer.optimize(rows, conflicts=conflicts)
+    selected_ids = set(selection.selected_candidate_ids)
+    selected = [row for row in rows if row["id"] in selected_ids]
+    allocations = emitter_scheduler.allocate(
+        list(EMITTERS),
+        [{"key": row["id"], "qd_gain": row["impact"], "rarity": row["measured_novelty"]}
+         for row in selected],
+        fork_budget=max(1, len(selected)), ucb=_UCB)
+    alloc_by_id: dict[str, list[dict]] = defaultdict(list)
+    for allocation in allocations:
+        alloc_by_id[allocation.target_cell].append(allocation.to_dict())
+    recombination = qd_emitters.recombination_emitter(selected) if len(selected) > 1 else None
+
+    for row in rows:
+        candidate = source_by_id[row["id"]]
+        candidate.provenance["seeding"] = {
+            "selected": row["id"] in selected_ids,
+            "portfolio": selection.to_dict(),       # Dinic/min-cut decision and repaired conflicts.
+            "conflict_group": groups.get(row["id"], [row["id"]]),
+            "emitter_allocations": alloc_by_id.get(row["id"], []),
+            "recombination": recombination if recombination and
+                recombination.get("target_cell") == row["id"] else None,
+        }
+    return {"selected_ids": sorted(selected_ids), "selection": selection.to_dict(),
+            "allocations": [a.to_dict() for a in allocations], "recombination": recombination}

@@ -12,7 +12,7 @@ EXPORTS:
   finding_to_candidate(f: Any, run_id: str='') -> FindingCandidate  -- Adapt a discovery Finding (or dict) into a normalized FindingCandidate.
   route_candidate(fc: FindingCandidate, *, novelty_floor: float, novelty_hi: float, conf_hi: float) -> str  -- Pure routing decision (no I/O)
   bridge_report(report: Any, *, run_id: str='', db_path=None, embed_fn=None, store=None, record: bool=True) -> dict  -- Route + register every finding in a DiscoveryReport
-DEPENDS-ON: config, memory.experience_evolution, memory.novelty_index, platform_core.orchestration.invention_types
+DEPENDS-ON: config, memory.experience_evolution, memory.novelty_index, platform_core.orchestration, platform_core.orchestration.invention_types
 SIDE-EFFECTS: registers candidates in the evolution ledger + records findings to novelty history
 RUN/TEST: python -m pytest tests/orchestration/test_ledger_bridge.py
 """
@@ -95,20 +95,41 @@ def bridge_report(report: Any, *, run_id: str = "", db_path=None,
     floor, nov_hi, conf_hi = _thresholds()
     findings = list(getattr(report, "findings", None) or [])
     routes: dict[str, str] = {}
+    prepared: list[tuple[FindingCandidate, str, Any]] = []
     registered: dict[str, int] = {}
     for f in findings:
         fc = finding_to_candidate(f, run_id)
         route = route_candidate(fc, novelty_floor=floor, novelty_hi=nov_hi, conf_hi=conf_hi)
         routes[fc.title] = route
+        prepared.append((fc, route, f))
+
+    # The bridge is the live seeding seam: rank, deconflict, and allocate invention
+    # candidates before persisting them.  The coordinator is pure except for best-effort
+    # import-graph reads, and a failure preserves the historical direct-registration path.
+    seed_plan = {}
+    try:
+        from platform_core.orchestration import invention_seeding
+        seed_plan = invention_seeding.plan_seeds([p[0] for p in prepared], [p[1] for p in prepared])
+        selected = set(seed_plan.get("selected_ids", []))
+    except Exception as e:  # noqa: BLE001 -- never lose a discovery seed to optional analysis
+        LOG.warning("invention seeding failed; using unfiltered bridge (ignored): %s", e)
+        selected = {f"seed-{i}" for i, p in enumerate(prepared) if p[1] != "skipped"}
+
+    for index, (fc, route, f) in enumerate(prepared):
         if route == "skipped":
+            continue
+        if record:
+            _record_history(f, run_id, embed_fn, store)
+        # Improvements preserve the legacy direct route.  Invention routes are only
+        # persisted when the max-closure portfolio admitted their seed.
+        if route != "improvement" and f"seed-{index}" not in selected:
             continue
         cid = _register(fc, route, db_path)
         if cid is not None:
             registered[fc.title] = cid
-        if record:
-            _record_history(f, run_id, embed_fn, store)
     counts = {r: sum(1 for v in routes.values() if v == r) for r in ROUTES}
-    return {"routes": routes, "registered": registered, "counts": counts}
+    return {"routes": routes, "registered": registered, "counts": counts,
+            "seeding": seed_plan}
 
 
 def _record_history(finding: Any, run_id: str, embed_fn, store) -> None:

@@ -4,7 +4,7 @@
 EXPORTS:
   runPreambleHooks(state: Any) -> None  -- Hook 1: lazily initialise self_state at run start
   runTeardownHooks(orch: Any, state: Any) -> None  -- Hook 6 (A/B recording) always fires
-DEPENDS-ON: config, human_nature.ab_harness, human_nature.continuity, human_nature.integration, human_nature.psyche_runtime, human_nature.psyche_store, memory.experience_solutions, platform_core.core.best_effort, platform_core.orchestration.time_utils
+DEPENDS-ON: config, human_nature.ab_harness, human_nature.continuity, human_nature.integration, human_nature.psyche_runtime, human_nature.psyche_store, human_nature.scar_graph, memory.experience_solutions, platform_core.core.best_effort, platform_core.orchestration.time_utils
 SIDE-EFFECTS: writes continuity letters + ab_runs.db rows; mutates state.meta when enabled
 RUN/TEST: python -m pytest tests/platform/test_lifecycle.py
 """
@@ -153,6 +153,20 @@ def _integrateAndPersist(state: Any) -> None:
     run_valence = max(-1.0, min(1.0, test_pass * 2.0 - 1.0))
     features = {"verified_success": test_pass >= 0.5, "progress": test_pass}
     psyche_runtime.integrate_outcome(ss, run_valence, 0.0, features)
+    # A run that survived an active scar signal with a passing verification is evidence
+    # against that failure motif. Decay its node/edges before persistence; failed runs
+    # retain their elevated weight for the next Dijkstra/PageRank advisory.
+    if test_pass >= 0.5 and isinstance(ss.get("scars_ref"), dict):
+        try:
+            from human_nature import scar_graph
+
+            motif_ids = [str((record.get("signal") or {}).get("motif_id"))
+                         for record in (meta.get("hn_instinct") or [])
+                         if (record.get("signal") or {}).get("motif_id")]
+            if motif_ids:
+                scar_graph.decay(ss["scars_ref"], motif_ids, float(config.HN_SCAR_DECAY))
+        except Exception:  # noqa: BLE001 -- psyche checkpoint remains best-effort
+            LOG.debug("scar decay failed (ignored)", exc_info=True)
     meta["self_state"] = ss
     store = psyche_store.open_store()
     try:

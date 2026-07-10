@@ -10,6 +10,8 @@ EXPORTS:
   recordSolutionContent(run_id: str, st_id: str, *, solution_content: str, post_mortem: str, importance: float, model_id: Optional[str], db_path: Optional[Path]=None) -> bool  -- Upsert one ``exp_content`` row keyed by ``(run_id, st_id)``
   recordFromSubtask(run_id: str, st: dict[str, Any], db_path: Optional[Path]=None) -> bool  -- Convenience: extract content + compute importance from ``st`` then store
   fetchSolutionContent(run_id: str, st_id: str, db_path: Optional[Path]=None) -> Optional[dict[str, Any]]  -- The stored content row for ``(run_id, st_id)``, or None
+  fetchSolutionContents(keys: list[tuple[str, str]], db_path: Optional[Path]=None) -> dict[tuple[str, str], dict]
+  lexicalSearch(query: str, limit: int=50, db_path: Optional[Path]=None) -> list[dict]  -- Derived FTS5 lane
 DEPENDS-ON: memory.experience_schema, platform_core.core.best_effort
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_experience_content.py
@@ -23,6 +25,14 @@ from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _nowIso
 from platform_core.core.best_effort import best_effort
 
 _CONTESTED = {"challenged", "fail", "failed", "blocked", "reject", "rejected"}
+
+
+def _ensure_fts(conn) -> bool:
+    try:
+        conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS exp_content_fts USING fts5(run_id UNINDEXED, st_id UNINDEXED, text)")
+        return True
+    except Exception:
+        return False
 
 
 def computeImportance(*, attempt_count: Any = None, adversary_verdict: Any = None,
@@ -77,6 +87,10 @@ def recordSolutionContent(run_id: str, st_id: str, *, solution_content: str,
                      model_id=excluded.model_id""",
                 (run_id, st_id, solution_content, post_mortem, float(importance),
                  model_id, _nowIso()))
+            if _ensure_fts(conn):
+                conn.execute("DELETE FROM exp_content_fts WHERE run_id=? AND st_id=?", (run_id, st_id))
+                conn.execute("INSERT INTO exp_content_fts(run_id, st_id, text) VALUES (?, ?, ?)",
+                             (run_id, st_id, f"{solution_content}\n{post_mortem}"))
         return True
     return False
 
@@ -109,3 +123,29 @@ def fetchSolutionContent(run_id: str, st_id: str,
                 (run_id, st_id)).fetchone()
             return dict(row) if row else None
     return None
+
+
+def fetchSolutionContents(keys: list[tuple[str, str]], db_path: Optional[Path] = None) -> dict[tuple[str, str], dict]:
+    if not keys:
+        return {}
+    with best_effort("ledger.exp_content_batch_read", log=LOG):
+        with _connect(db_path) as conn:
+            query = " OR ".join("(run_id=? AND st_id=?)" for _ in keys)
+            params = [v for key in keys for v in key]
+            rows = conn.execute(f"SELECT * FROM exp_content WHERE {query}", params).fetchall()
+            return {(str(row["run_id"]), str(row["st_id"])): dict(row) for row in rows}
+    return {}
+
+
+def lexicalSearch(query: str, limit: int = 50, db_path: Optional[Path] = None) -> list[dict]:
+    """Derived FTS5 lane; callers fall back to semantic retrieval when it is unavailable."""
+    terms = " ".join(str(query or "").replace("\n", " ").split())
+    if not terms:
+        return []
+    with best_effort("ledger.exp_content_fts", log=LOG):
+        with _connect(db_path) as conn:
+            if not _ensure_fts(conn):
+                return []
+            rows = conn.execute("SELECT run_id, st_id, bm25(exp_content_fts) AS rank FROM exp_content_fts WHERE exp_content_fts MATCH ? ORDER BY rank LIMIT ?", (terms, max(1, int(limit)))).fetchall()
+            return [{"run_id": row["run_id"], "st_id": row["st_id"], "lexical_rank": float(row["rank"])} for row in rows]
+    return []

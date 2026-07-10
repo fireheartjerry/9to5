@@ -88,6 +88,7 @@ def _buildParser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--history-dir", type=Path, default=RUNS_DIR)
     parser.add_argument("--quarantine-file", type=Path, default=QUARANTINE_FILE)
+    parser.add_argument("--profile", choices=("legacy", "local_coverage"), default="local_coverage")
     parser.add_argument("--flake-report", action="store_true")
     parser.add_argument("--history-report", action="store_true")
     parser.add_argument("--mapping-audit", action="store_true")
@@ -180,7 +181,7 @@ def _printSelectionText(sel: Selection, shards: list[dict], shard_data: dict | N
 
 def _runSelection(args: argparse.Namespace) -> int:
     files = args.files or [ln.strip() for ln in sys.stdin.read().splitlines() if ln.strip()] or _git_changed()
-    sel = select_tests(files, REPO_ROOT, args.budget, args.history_dir, args.quarantine_file)
+    sel = select_tests(files, REPO_ROOT, args.budget, args.history_dir, args.quarantine_file, args.profile)
     if (args.matrix_json or args.shard_index) and args.shards <= 0:
         print("[test-brain] --matrix-json/--shard-index requires --shards N", file=sys.stderr)
         return 2

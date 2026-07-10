@@ -15,7 +15,7 @@ EXPORTS:
   buildSieCfg() -> SieCfg
 DEPENDS-ON: platform_core.app_config, platform_core.app_config._env
 SIDE-EFFECTS: none
-RUN/TEST: python -m pytest tests/orchestration/test_llm_compaction_numctx.py tests/orchestration/test_llm_io_pydantic.py
+RUN/TEST: python -m pytest tests/orchestration/test_llm_compaction_numctx.py tests/orchestration/test_llm_io_pydantic.py tests/platform/test_llm_navigation.py
 """
 from __future__ import annotations
 
@@ -170,6 +170,10 @@ class ClaudeCliCfg:
         default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_CONVERSATION_POLICY", "round_robin"))
     PRE_EXECUTION_COUNCIL_SELECTOR_DEBATE_ROUNDS: int = _F(
         default_factory=lambda: _envInt("PRE_EXECUTION_COUNCIL_SELECTOR_DEBATE_ROUNDS", 1))
+    PRE_EXECUTION_COUNCIL_PARALLEL_MEMOS_ENABLED: bool = _F(
+        default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_PARALLEL_MEMOS_ENABLED", False))
+    PRE_EXECUTION_COUNCIL_MAX_PARALLEL_SEATS: int = _F(
+        default_factory=lambda: _envInt("PRE_EXECUTION_COUNCIL_MAX_PARALLEL_SEATS", 4))
     PRE_EXECUTION_COUNCIL_LIVE_GPT_ENABLED: bool = _F(
         default_factory=lambda: (
             _envBool("PRE_EXECUTION_COUNCIL_LIVE_GPT_ENABLED", False)

@@ -228,6 +228,18 @@ def _annCandidateK(k: int) -> int:
     mult = max(1, int(getattr(config, "ANN_INDEX_CANDIDATE_MULTIPLIER", 10) or 1))
     return max(k, k * mult, 50 if k > 0 else 0)
 
+
+def _rrf(rows: list[dict], semantic: list[dict], lexical: list[dict]) -> None:
+    """Reciprocal-rank fusion keeps ANN and BM25 scores comparable and deterministic."""
+    score: dict[tuple[str, str], float] = {}
+    for source in (semantic, lexical):
+        for rank, row in enumerate(source, 1):
+            key = (str(row.get("run_id") or ""), str(row.get("st_id") or ""))
+            score[key] = score.get(key, 0.0) + 1.0 / (60 + rank)
+    for row in rows:
+        key = (str(row.get("run_id") or ""), str(row.get("st_id") or ""))
+        row["score"] = score.get(key, float(row.get("score") or 0.0))
+
 def top_k_similar(query_vec: list[float], k: int = 5, *, only_passed: bool = True,
                   db_path: Optional[Path] = None) -> list[dict[str, Any]]:
     """The ``k`` most-similar embedded subtasks to ``query_vec``, each annotated with a
@@ -306,10 +318,12 @@ def retrieve_content(goal: str, title: str = "", *, k: Optional[int] = None,
     k = k or config.RETRIEVAL_K
     floor = float(getattr(config, "RETRIEVAL_MIN_SCORE", 0.0) or 0.0)
     neighbors: list[dict[str, Any]] = []
+    ann_started = time.perf_counter()
     try:
         hits = exp_index.getIndex().query(qvec, _annCandidateK(k), floor)
     except Exception:  # noqa: BLE001 -- a broken index never blocks retrieval
         hits = []
+    perf.record("retrieval_ann", time.perf_counter() - ann_started, ann_hit=bool(hits), k=k)
     joined = 0
     if hits:
         for h in hits:
@@ -319,9 +333,25 @@ def retrieve_content(goal: str, title: str = "", *, k: Optional[int] = None,
             neighbors.append(payload)
     else:
         neighbors = top_k_similar(qvec, k, db_path=db_path)
+    semantic = [dict(row) for row in neighbors]
+    lexical_started = time.perf_counter()
+    try:
+        lexical = experience_content.lexicalSearch(signature_text(goal, title), _annCandidateK(k), db_path=db_path)
+    except Exception:
+        lexical = []
+    perf.record("retrieval_lexical", time.perf_counter() - lexical_started, lexical_hit=bool(lexical), k=k)
+    known = {(str(n.get("run_id") or ""), str(n.get("st_id") or "")) for n in neighbors}
+    for row in lexical:
+        key = (str(row.get("run_id") or ""), str(row.get("st_id") or ""))
+        if key not in known:
+            neighbors.append(dict(row))
+            known.add(key)
+    _rrf(neighbors, semantic, lexical)
+    hydration_started = time.perf_counter()
+    content = experience_content.fetchSolutionContents(
+        [(str(n.get("run_id") or ""), str(n.get("st_id") or "")) for n in neighbors], db_path=db_path)
     for n in neighbors:
-        row = experience_content.fetchSolutionContent(
-            n.get("run_id"), n.get("st_id"), db_path=db_path)
+        row = content.get((str(n.get("run_id") or ""), str(n.get("st_id") or "")))
         if row:
             joined += 1
             n["solution_content"] = row.get("solution_content")
@@ -331,8 +361,11 @@ def retrieve_content(goal: str, title: str = "", *, k: Optional[int] = None,
                 n["importance"] = row.get("importance")
     if hits and joined == 0:
         neighbors = top_k_similar(qvec, k, db_path=db_path)
+    perf.record("retrieval_hydration", time.perf_counter() - hydration_started, candidates=len(neighbors), joined=joined)
+    rerank_started = time.perf_counter()
     neighbors = retrieval_rank.rerank(neighbors)
     out = neighbors[:k]
+    perf.record("retrieval_rerank", time.perf_counter() - rerank_started, k=k)
     perf.record("retrieval_content", time.perf_counter() - t0, ann_hit=bool(hits), k=k)
     return out
 

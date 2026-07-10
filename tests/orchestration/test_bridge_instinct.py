@@ -56,6 +56,9 @@ def test_instinct_check_matches_prefix_and_records(monkeypatch):
     assert result["signal"]["match_type"] == "prefix"
     assert result["signal"]["recommended_action"] == "deepen_verification"
     assert result["signal"]["authority_request"] == "hold"
+    assert result["scar_analysis"]["recovery_path"] == [
+        "scar.large-diff-hidden-regression", "recovery.deepen-verification"]
+    assert "scar.large-diff-hidden-regression" in result["scar_analysis"]["toxic_patterns"]
     assert state["meta"]["hn_instinct"] == [result]
 
 

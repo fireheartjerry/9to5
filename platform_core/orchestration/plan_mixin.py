@@ -58,16 +58,16 @@ class OrchestratorPlanMixin:
     def _asText(v) -> str:
         return _asText(v)
 
-    def _projectContextBlock(self, work_dir: str) -> str:
+    def _projectContextBlock(self, work_dir: str, query: str = "") -> str:
         """Budgeted, fail-open introspection digest for the plan prompt (plan_context.py)."""
-        return _plan_context.projectContextBlock(work_dir)
+        return _plan_context.projectContextBlock(work_dir, query)
 
     def authorSubtaskPlan(self, goal_elaborated: str, architect_doc: str) -> list[dict]:
         prof = getattr(self, "_active_work_profile", None)
         profile_block = _work_profile.guidance_block(prof, context="planner")
         # Epic 2 (steal #2): dual-ledger planner. Flag-gated; on failure it returns None and we fall
         # straight through to the legacy one-shot planner below (never worse than today).
-        project_ctx = self._projectContextBlock(getattr(self, "_work_dir", None) or str(config.PROJECT_ROOT))
+        project_ctx = self._projectContextBlock(getattr(self, "_work_dir", None) or str(config.PROJECT_ROOT), goal_elaborated)
         ctx_block = f"\nPROJECT CONTEXT:\n{project_ctx}\n" if project_ctx else ""
         if config.DUAL_LEDGER_PLANNER_ENABLED:
             # Dual-ledger planner sees the same project context (own param, own budget -- appending to

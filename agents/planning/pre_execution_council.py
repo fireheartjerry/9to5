@@ -34,6 +34,8 @@ from __future__ import annotations
 import os
 import json
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -83,6 +85,8 @@ class CouncilConfig:
     mock_seats_enabled: bool = True
     conversation_policy: str = "round_robin"
     selector_debate_rounds: int = 1
+    parallel_memos_enabled: bool = False
+    max_parallel_seats: int = 4
     live_gpt_enabled: bool = False
     gpt_project_url: str = ""
     gpt_model: str = ""
@@ -114,6 +118,8 @@ class CouncilConfig:
             mock_seats_enabled=bool(config.PRE_EXECUTION_COUNCIL_MOCK_SEATS_ENABLED),
             conversation_policy=str(getattr(config, "PRE_EXECUTION_COUNCIL_CONVERSATION_POLICY", "round_robin")),
             selector_debate_rounds=int(getattr(config, "PRE_EXECUTION_COUNCIL_SELECTOR_DEBATE_ROUNDS", 1)),
+            parallel_memos_enabled=bool(getattr(config, "PRE_EXECUTION_COUNCIL_PARALLEL_MEMOS_ENABLED", False)),
+            max_parallel_seats=max(1, int(getattr(config, "PRE_EXECUTION_COUNCIL_MAX_PARALLEL_SEATS", 4))),
             live_gpt_enabled=bool(config.PRE_EXECUTION_COUNCIL_LIVE_GPT_ENABLED),
             gpt_project_url=str(config.PRE_EXECUTION_COUNCIL_GPT_PROJECT_URL),
             gpt_model=str(config.PRE_EXECUTION_COUNCIL_GPT_MODEL),
@@ -1500,35 +1506,22 @@ class CouncilRunner:
         logger: CouncilRunLogger | None,
     ) -> None:
         turn_index = 1
-        for seat in seats:
-            prompt = self._build_selector_prompt(
-                context_pack=context_pack,
-                enabled_seats=seats,
-                seat=seat,
-                temporary_hats=hats_by_seat.get(seat.name, []),
-                messages=messages,
-                compact_state=compact_state,
-                phase="independent_memo",
-                targeted_challenge=(
-                    "Write an independent memo: strongest claims, risks, missing data, and first-slice constraints. "
-                    "Do not respond to other seats yet."
-                ),
-            )
-            self._ask_and_record(
-                run_id=run_id,
-                context_pack=context_pack,
-                seat=seat,
-                prompt=prompt,
-                turn_index=turn_index,
-                hats=hats_by_seat.get(seat.name, []),
-                messages=messages,
-                compact_state=compact_state,
-                warnings=warnings,
-                logger=logger,
-                phase="independent_memo",
-                targeted_challenge="independent memo",
-            )
-            turn_index += 1
+        if self.config.parallel_memos_enabled and len(seats) > 1:
+            turn_index = self._run_parallel_memos(run_id, context_pack, seats, hats_by_seat, messages,
+                                                  compact_state, warnings, logger, turn_index)
+        else:
+            for seat in seats:
+                prompt = self._build_selector_prompt(
+                    context_pack=context_pack, enabled_seats=seats, seat=seat,
+                    temporary_hats=hats_by_seat.get(seat.name, []), messages=messages,
+                    compact_state=compact_state, phase="independent_memo",
+                    targeted_challenge="Write an independent memo: strongest claims, risks, missing data, and first-slice constraints. Do not respond to other seats yet.")
+                self._ask_and_record(run_id=run_id, context_pack=context_pack, seat=seat, prompt=prompt,
+                    turn_index=turn_index, hats=hats_by_seat.get(seat.name, []), messages=messages,
+                    compact_state=compact_state, warnings=warnings, logger=logger, phase="independent_memo",
+                    targeted_challenge="independent memo")
+                turn_index += 1
+        # Debate begins only after every independent memo has been recorded.
 
         debate_seats = self._select_debate_speakers(seats, compact_state, messages)
         for debate_round in range(1, max(1, self.config.selector_debate_rounds) + 1):
@@ -1603,6 +1596,7 @@ class CouncilRunner:
         phase: str,
         targeted_challenge: str,
     ) -> None:
+        started = time.perf_counter()
         content = seat.ask(
             prompt,
             {
@@ -1616,6 +1610,12 @@ class CouncilRunner:
                 "targeted_challenge": targeted_challenge,
             },
         )
+        self._record_content(run_id, seat, turn_index, content, hats, prompt, messages,
+                             compact_state, warnings, logger, phase, targeted_challenge,
+                             time.perf_counter() - started)
+
+    def _record_content(self, run_id, seat, turn_index, content, hats, prompt, messages,
+                        compact_state, warnings, logger, phase, targeted_challenge, elapsed_s: float) -> None:
         msg = self._message(
             run_id=run_id,
             seat=seat,
@@ -1627,12 +1627,43 @@ class CouncilRunner:
         msg.provider_metadata["conversation_policy"] = self.config.conversation_policy
         msg.provider_metadata["selector_phase"] = phase
         msg.provider_metadata["targeted_challenge"] = redact_council_text(targeted_challenge)
+        msg.provider_metadata["elapsed_s"] = round(float(elapsed_s), 6)
         msg.warnings.extend(self._repetition_warnings(msg, messages))
         self._update_compact_state(compact_state, msg)
         warnings.extend(msg.warnings)
         messages.append(msg)
         if logger:
             logger.write_message(msg)
+
+    def _run_parallel_memos(self, run_id, context_pack, seats, hats_by_seat, messages,
+                            compact_state, warnings, logger, turn_index: int) -> int:
+        """LPT-scheduled independent asks; record results in deterministic seat order."""
+        jobs = []
+        for offset, seat in enumerate(seats):
+            hats = hats_by_seat.get(seat.name, [])
+            prompt = self._build_selector_prompt(context_pack=context_pack, enabled_seats=seats, seat=seat,
+                temporary_hats=hats, messages=[], compact_state=compact_state, phase="independent_memo",
+                targeted_challenge="Write an independent memo: strongest claims, risks, missing data, and first-slice constraints. Do not respond to other seats yet.")
+            jobs.append((seat, prompt, hats, turn_index + offset))
+        # Previous observed elapsed time is the LPT key; cold starts use stable seat ordering.
+        jobs.sort(key=lambda j: (-float(getattr(self, "_seat_latency", {}).get(j[0].name, 1.0)), j[0].name))
+        results = {}
+        def ask(job):
+            seat, prompt, hats, index = job; started = time.perf_counter()
+            content = seat.ask(prompt, {"task": context_pack.original_task, "context_pack": context_pack.to_safe_dict(),
+                "temporary_hats": hats, "prompt_version": self.config.prompt_version, "run_id": run_id,
+                "turn_index": index, "selector_phase": "independent_memo", "targeted_challenge": "independent memo"})
+            return content, time.perf_counter() - started
+        with ThreadPoolExecutor(max_workers=min(self.config.max_parallel_seats, len(jobs))) as pool:
+            futures = {pool.submit(ask, job): job for job in jobs}
+            for future, job in [(f, futures[f]) for f in futures]:
+                results[job[3]] = future.result()
+        self._seat_latency = getattr(self, "_seat_latency", {})
+        for seat, prompt, hats, index in sorted(jobs, key=lambda j: j[3]):
+            content, elapsed = results[index]; self._seat_latency[seat.name] = elapsed
+            self._record_content(run_id, seat, index, content, hats, prompt, messages, compact_state,
+                                 warnings, logger, "independent_memo", "independent memo", elapsed)
+        return turn_index + len(jobs)
 
     def _build_seats(self) -> list[CouncilSeat]:
         if self.seats is not None:
