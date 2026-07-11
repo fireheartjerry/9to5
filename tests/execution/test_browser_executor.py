@@ -77,7 +77,7 @@ class TestSurfaceContractAndDispatch(unittest.TestCase):
         with mock.patch.object(config, "BROWSER_LAYER_ENABLED", True):
             self.assertIs(orch._selectExecutor({"surface": "terminal"}), sentinel)
         with mock.patch.object(config, "BROWSER_LAYER_ENABLED", False):
-            self.assertIs(orch._selectExecutor({"surface": "browser"}), sentinel)  # gated off
+            self.assertIs(orch._selectExecutor({"surface": "browser"}), browser_executor.unavailableBrowser)
 
 
 class TestGeminiRouting(unittest.TestCase):

@@ -336,7 +336,12 @@
       "purpose": "Browser execution backend -- Layer 1 (CDP) \"hands\" for 9TO5, plus the Gemini second-brain shim.",
       "exports": [
         "BrowserUnavailable",
+        "BrowserAction",
+        "BrowserEvidence",
+        "BrowserPolicy",
         "runBrowser",
+        "run_browser",
+        "unavailableBrowser",
         "get_session",
         "probe",
         "startConversation",
@@ -349,7 +354,8 @@
         "agents.executor",
         "agents.gemini_driver",
         "config",
-        "notifications.lane_feed"
+        "notifications.lane_feed",
+        "platform_core.core.contracts"
       ],
       "callers": [],
       "test": [
@@ -362,7 +368,8 @@
       "exports": [
         "ChatGptBrowserError",
         "ChatGptBrowserSession",
-        "send_prompt_to_project"
+        "send_prompt_to_project",
+        "close_project_session"
       ],
       "depends_on": [],
       "callers": [
@@ -972,6 +979,7 @@
         "planner_advisory_block"
       ],
       "depends_on": [
+        "agents.planning.council_policy",
         "agents.planning.pre_execution_council",
         "config"
       ],
@@ -5173,6 +5181,7 @@
         "tests/orchestration/test_pre_execution_council_seam.py",
         "tests/orchestration/test_work_profile.py",
         "tests/planning/test_pre_execution_council.py",
+        "tests/planning/test_pre_execution_council_live_only.py",
         "tests/planning/test_pre_execution_council_seam.py",
         "tests/platform/test_compress.py",
         "tests/platform/test_progress_reporter.py",
@@ -8115,6 +8124,7 @@
         "ElaboratedGoal",
         "SubtaskSpec",
         "VerificationResult",
+        "ExecutionSurfaceReceipt",
         "ControlCommand",
         "AgentDecision",
         "BlackboardEntry",
@@ -8123,6 +8133,7 @@
       ],
       "depends_on": [],
       "callers": [
+        "agents.execution.browser_executor",
         "platform_core.orchestration.workflows.registry",
         "src.workflow_registry"
       ],
@@ -9357,6 +9368,7 @@
         "tests/orchestration/test_bridge_execution_tiered.py",
         "tests/orchestration/test_pre_execution_council_seam.py",
         "tests/planning/test_pre_execution_council.py",
+        "tests/planning/test_pre_execution_council_live_only.py",
         "tests/planning/test_pre_execution_council_seam.py"
       ]
     },

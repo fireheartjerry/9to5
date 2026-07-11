@@ -1,0 +1,89 @@
+"""Provider-neutral council truth and narrow risk-gate policy."""
+from __future__ import annotations
+
+import hashlib
+from dataclasses import asdict, dataclass
+from typing import Any, Iterable
+
+
+@dataclass(frozen=True)
+class CouncilSeatReceipt:
+    seat_name: str
+    requested_mode: str = "mock"
+    actual_mode: str = "mock"  # live | mock | unavailable | degraded
+    provider: str = ""
+    model: str = ""
+    latency_ms: int = 0
+    continuity_status: str = "not_applicable"
+    response_digest: str = ""
+    fallback_reason: str = ""
+    artifact_ref: str = ""
+
+    @property
+    def live(self) -> bool:
+        return self.actual_mode == "live" and not self.fallback_reason
+
+    def toDict(self) -> dict[str, Any]:
+        return asdict(self) | {"live": self.live}
+
+
+@dataclass(frozen=True)
+class CouncilDecision:
+    status: str  # allow | pause | degraded
+    reason: str = ""
+    live_seat_count: int = 0
+
+    def toDict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class CouncilPolicy:
+    mode: str = "off"  # off | advisory | risk_gate
+
+    def evaluate(self, task: str, receipts: Iterable[CouncilSeatReceipt], *, risks: Iterable[str] = ()) -> CouncilDecision:
+        seats = tuple(receipts)
+        live = sum(item.live for item in seats)
+        if self.mode == "off":
+            return CouncilDecision("allow", "council policy off", live)
+        terms = " ".join([task, *risks]).lower()
+        gated = ("secret", "password", "token", "destructive", "delete ", "external side effect", "policy conflict")
+        high_risk = any(term in terms for term in gated)
+        if not live:
+            if self.mode == "risk_gate" and high_risk:
+                return CouncilDecision("pause", "high-risk work requires independently evidenced live council advice", live)
+            return CouncilDecision("degraded", "no independently evidenced live council seat", live)
+        if self.mode != "risk_gate":
+            return CouncilDecision("allow", "advisory council completed", live)
+        if high_risk:
+            return CouncilDecision("pause", "typed high-risk council gate requires human resolution", live)
+        return CouncilDecision("allow", "risk-gate found no typed high-risk condition", live)
+
+
+def receipts_from_brief(brief: Any, *, artifact_ref: str = "") -> tuple[CouncilSeatReceipt, ...]:
+    """Normalize existing provider summaries without trusting prose 'live' claims."""
+    receipts: list[CouncilSeatReceipt] = []
+    for raw in getattr(brief, "provider_run_summaries", []) or []:
+        if not isinstance(raw, dict):
+            continue
+        state = str(raw.get("last_provider_state") or raw.get("status") or "mock").lower()
+        requested = "live" if raw.get("requested_live") else "mock"
+        fallback_reasons = raw.get("fallback_reasons") or ()
+        fallback = str(raw.get("fallback_reason") or (fallback_reasons[0] if fallback_reasons else ""))
+        # Legacy summaries expose per-turn truth as ``actual_live_any`` rather
+        # than the newer ``actual_live`` field. Treat either explicit signal
+        # as live, but never upgrade a fallback-bearing response to live.
+        actual_live = raw.get("actual_live") is True or raw.get("actual_live_any") is True
+        actual = "live" if actual_live and not fallback else (
+            "degraded" if requested == "live" else "mock")
+        text = str(raw.get("last_response") or raw.get("summary") or "")
+        receipts.append(CouncilSeatReceipt(
+            seat_name=str(raw.get("seat_name") or raw.get("provider") or "unknown"),
+            requested_mode=requested, actual_mode=actual,
+            provider=str(raw.get("provider") or raw.get("seat_name") or ""), model=str(raw.get("model") or ""),
+            latency_ms=max(0, int(raw.get("latency_ms", 0) or 0)),
+            continuity_status=str(raw.get("continuity_status") or state),
+            response_digest=str(raw.get("response_digest") or (hashlib.sha256(text.encode("utf-8")).hexdigest()[:16] if text else "")),
+            fallback_reason=fallback, artifact_ref=artifact_ref,
+        ))
+    return tuple(receipts)

@@ -33,7 +33,7 @@ class AbortRun(Exception):
 
 
 # Approval gates the orchestrator may wait on (gated mode).
-GATES = ("plan", "pre_pr", "action_risk")
+GATES = ("plan", "pre_pr", "action_risk", "council_risk")
 
 _BOOL_FLAGS = ("abort", "pause", "kill_subprocess", "force_replan")
 

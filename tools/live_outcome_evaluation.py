@@ -1,0 +1,38 @@
+"""Run a supplied outcome suite through real 9TO5 providers in disposable worktrees.
+
+This command is intentionally opt-in: it can invoke the local planner and Claude
+Code, and therefore requires ``NINE_TO_FIVE_ALLOW_LIVE_OUTCOME_EVALUATION=1``.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from learning.outcome_evaluation import EvaluationSuite, run_disposable_evaluation, promote_candidate  # noqa: E402
+from platform_core.simulator.testing.outcome_runner import run_live_lifecycle  # noqa: E402
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--suite", required=True, help="directory containing versioned task JSON files")
+    parser.add_argument("--repo", required=True, help="git repository used as disposable-worktree source")
+    parser.add_argument("--candidate", required=True)
+    parser.add_argument("--artifacts", default="state/outcome_evaluations")
+    parser.add_argument("--champion", default="state/outcome_evaluations/champion.json")
+    args = parser.parse_args()
+    result = run_disposable_evaluation(args.candidate, EvaluationSuite.load(args.suite, held_out=True), args.repo,
+                                       run_live_lifecycle, artifact_dir=args.artifacts)
+    payload = result.toDict() | {"promotion": promote_candidate(result, args.champion)}
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0 if result.status == "scored" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

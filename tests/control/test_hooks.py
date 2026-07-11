@@ -185,6 +185,14 @@ def test_compose_run_settings_survives_missing_or_corrupt_base(tmp_path):
     assert settingsHasGuardHooks(composeRunSettingsDict(tmp_path / "missing.json"))
 
 
+def test_compose_run_settings_accepts_utf8_bom_base(tmp_path):
+    from agents.executor_env import composeRunSettingsDict
+
+    base = tmp_path / "settings.json"
+    base.write_text(json.dumps({"model": "bom-model", "hooks": {}}), encoding="utf-8-sig")
+    assert composeRunSettingsDict(base)["model"] == "bom-model"
+
+
 def test_compose_run_settings_does_not_duplicate_existing_registration():
     from agents.executor_env import composeRunSettingsDict
     merged = composeRunSettingsDict(REPO / ".claude" / "settings.json")

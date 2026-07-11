@@ -32,6 +32,7 @@ EXPORTS:
   ElaboratedGoal  -- The approved, clarified objective (``meta.goal_elaborated``)
   SubtaskSpec  -- One subtask (``state/task.py`` addSubtask)
   VerificationResult  -- ``agents/verifier.py`` runVerification() output -- the proof gate's verdict
+  ExecutionSurfaceReceipt  -- Truthful outcome for a terminal, browser, or native executor attempt.
   ControlCommand  -- A parsed human control command (``notifications/commands.py`` Command): name + arg.
   AgentDecision  -- Confidence/risk metadata an intelligence may attach so the orchestrator can escalate.
   BlackboardEntry  -- One append-only coordination artifact on the run blackboard.
@@ -77,6 +78,7 @@ class ExecutorResult(TypedDict, total=False):
     profile: str
     blocked: bool
     surface: str
+    surface_receipt: "ExecutionSurfaceReceipt"
 
 
 class Verdict(TypedDict, total=False):
@@ -228,6 +230,34 @@ class VerificationResult:
             stdout=d.get("stdout", ""),
             stderr=d.get("stderr", ""),
         )
+
+
+@dataclass(frozen=True)
+class ExecutionSurfaceReceipt:
+    """Truthful outcome for a terminal, browser, or native executor attempt.
+
+    ``requested_mode`` is intent; ``actual_mode`` is what really ran.  They are
+    deliberately separate so an unavailable or simulated surface can never be
+    reported as a live success.
+    """
+    surface: str
+    requested_mode: str = "live"
+    actual_mode: str = "unavailable"  # live | unavailable | degraded | simulated
+    status: str = "error"              # ok | error | unavailable | blocked
+    artifacts: tuple[str, ...] = ()
+    detail: str = ""
+
+    @property
+    def live(self) -> bool:
+        return self.actual_mode == "live" and self.status == "ok"
+
+    def toDict(self) -> dict[str, Any]:
+        return {
+            "surface": self.surface, "requested_mode": self.requested_mode,
+            "actual_mode": self.actual_mode, "status": self.status,
+            "artifacts": list(self.artifacts), "detail": self.detail,
+            "live": self.live,
+        }
 
 
 @dataclass(frozen=True)

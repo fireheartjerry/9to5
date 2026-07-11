@@ -22,6 +22,10 @@ state/compaction/
 state/blackboard/
 # Pre-execution council transcripts and context packs are generated runtime data.
 state/council_runs/
+# Browser canary and outcome-evaluation evidence is retained locally/runtime-side,
+# but never committed with source changes.
+state/browser_canaries/
+state/outcome_evaluations/
 # introspect ProjectModel disk cache (runtime, regenerable)
 state/project_models/
 # SIE Experience Ledger (runtime SQLite, accumulates per run)

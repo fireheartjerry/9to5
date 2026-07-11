@@ -533,70 +533,106 @@
           "kind": "class",
           "signature": "",
           "summary": "Raised when no browser backend (Playwright/Chromium) is installed.",
-          "lineno": 49
+          "lineno": 56
+        },
+        {
+          "name": "BrowserAction",
+          "kind": "class",
+          "signature": "",
+          "summary": "Validated, provider-neutral browser action request.",
+          "lineno": 61
+        },
+        {
+          "name": "BrowserEvidence",
+          "kind": "class",
+          "signature": "",
+          "summary": "Observed proof for one completed browser action.",
+          "lineno": 69
+        },
+        {
+          "name": "BrowserPolicy",
+          "kind": "class",
+          "signature": "",
+          "summary": "Bounded browser protocol",
+          "lineno": 80
         },
         {
           "name": "runBrowser",
           "kind": "function",
           "signature": "(spec_or_prompt, *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, resume_session: Optional[str]=None, **_kw) -> dict",
           "summary": "Execute a browser subtask",
-          "lineno": 141
+          "lineno": 237
+        },
+        {
+          "name": "run_browser",
+          "kind": "function",
+          "signature": "(*args, **kwargs) -> dict",
+          "summary": "PEP-8 public alias for the production browser executor.",
+          "lineno": 284
+        },
+        {
+          "name": "unavailableBrowser",
+          "kind": "function",
+          "signature": "(spec_or_prompt, **_kwargs) -> dict",
+          "summary": "Strict dispatcher target when the browser surface is disabled.",
+          "lineno": 289
         },
         {
           "name": "get_session",
           "kind": "function",
           "signature": "()",
           "summary": "Lazily build the process-wide GeminiSession (does NOT open a client yet).",
-          "lineno": 170
+          "lineno": 305
         },
         {
           "name": "probe",
           "kind": "function",
           "signature": "() -> bool",
           "summary": "Health-probe the Gemini session",
-          "lineno": 179
+          "lineno": 314
         },
         {
           "name": "startConversation",
           "kind": "function",
           "signature": "(goal: str, task_id: str) -> None",
           "summary": "Start the single run conversation.",
-          "lineno": 184
+          "lineno": 319
         },
         {
           "name": "closeSession",
           "kind": "function",
           "signature": "() -> None",
           "summary": "Close + tear down the Gemini session.",
-          "lineno": 189
+          "lineno": 324
         },
         {
           "name": "preflightLogin",
           "kind": "function",
           "signature": "(timeout_s: int=300, poll_s: int=3) -> bool",
           "summary": "Verify Gemini is reachable before a run relies on it",
-          "lineno": 195
+          "lineno": 330
         },
         {
           "name": "sessionAsk",
           "kind": "function",
           "signature": "(message: str, *, expect_json: bool=False) -> Optional[str]",
           "summary": "Ask Gemini one message through the run session",
-          "lineno": 203
+          "lineno": 338
         },
         {
           "name": "askGemini",
           "kind": "function",
           "signature": "(message: str, *, runner=None, expect_json: bool=False) -> Optional[str]",
           "summary": "Send one ``message`` to Gemini and return the reply text.",
-          "lineno": 210
+          "lineno": 345
         }
       ],
       "depends_on": [
         "agents.executor",
         "agents.gemini_driver",
         "config",
-        "notifications.lane_feed"
+        "notifications.lane_feed",
+        "platform_core.core.contracts"
       ],
       "side_effects": [
         "unannotated"
@@ -615,21 +651,28 @@
           "kind": "class",
           "signature": "",
           "summary": "Controlled failure for the experimental browser driver.",
-          "lineno": 76
+          "lineno": 78
         },
         {
           "name": "ChatGptBrowserSession",
           "kind": "class",
           "signature": "",
-          "summary": "One ChatGPT project chat thread for the life of a single council run.",
-          "lineno": 458
+          "summary": "A reused ChatGPT project chat thread that never opens duplicate tabs.",
+          "lineno": 483
         },
         {
           "name": "send_prompt_to_project",
           "kind": "function",
           "signature": "(project_url: str, model: str, reasoning: str, prompt: str) -> str",
-          "summary": "Send one prompt to the ChatGPT 9to5 project and return the latest assistant text.",
-          "lineno": 575
+          "summary": "Send a prompt through the reusable project chat, never a fresh tab/chat.",
+          "lineno": 593
+        },
+        {
+          "name": "close_project_session",
+          "kind": "function",
+          "signature": "(project_url: str, model: str, reasoning: str) -> None",
+          "summary": "Explicit cleanup only",
+          "lineno": 608
         }
       ],
       "depends_on": [],
@@ -682,7 +725,7 @@
           "kind": "function",
           "signature": "(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, system_prompt: Optional[str]=None, extra: Optional[str]=None, timeout: Optional[int]=None, resume_session: Optional[str]=None, cancel_check=None, feed=None, parent_trajectory_step_id: Optional[str]=None, environment=None, env_handle=None) -> dict",
           "summary": "Prepare the environment from the invocation spec, then fire one Claude run.",
-          "lineno": 232
+          "lineno": 239
         }
       ],
       "depends_on": [
@@ -745,14 +788,14 @@
           "kind": "function",
           "signature": "(base_settings_path=None, out_path=None) -> Path",
           "summary": "Write the per-run --settings file (see composeRunSettingsDict) and return its path.",
-          "lineno": 238
+          "lineno": 240
         },
         {
           "name": "buildHookCtxEnv",
           "kind": "function",
           "signature": "(boundaries=None) -> str",
           "summary": "JSON for the NINE_TO_FIVE_HOOK_CTX env var: ONE channel for hook context (boundaries +",
-          "lineno": 246
+          "lineno": 248
         }
       ],
       "depends_on": [
@@ -1739,38 +1782,39 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 40
+          "lineno": 41
         },
         {
           "name": "CouncilBriefReference",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 61
+          "lineno": 64
         },
         {
           "name": "maybe_prepare_council_brief",
           "kind": "function",
           "signature": "(*, state: Any, work_dir: str, elaborated: str, resume: bool, config_obj: CouncilSeamConfig | None=None, run_council: CouncilRunnerFn | None=None) -> CouncilBriefReference | None",
           "summary": "Optionally run the council and persist compact metadata.",
-          "lineno": 95
+          "lineno": 99
         },
         {
           "name": "architect_advisory_block",
           "kind": "function",
           "signature": "(reference: CouncilBriefReference, *, max_chars: int) -> str",
           "summary": "Build the bounded architect-only advisory block.",
-          "lineno": 212
+          "lineno": 225
         },
         {
           "name": "planner_advisory_block",
           "kind": "function",
           "signature": "(reference: CouncilBriefReference, *, max_chars: int) -> str",
           "summary": "Build the bounded planner-only advisory block.",
-          "lineno": 245
+          "lineno": 258
         }
       ],
       "depends_on": [
+        "agents.planning.council_policy",
         "agents.planning.pre_execution_council",
         "config"
       ],
@@ -2321,133 +2365,133 @@
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 69
+          "lineno": 70
         },
         {
           "name": "CouncilConfig",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 77
+          "lineno": 78
         },
         {
           "name": "CouncilQualityWarning",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 153
+          "lineno": 154
         },
         {
           "name": "CouncilMessage",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 161
+          "lineno": 162
         },
         {
           "name": "CouncilBrief",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 177
+          "lineno": 178
         },
         {
           "name": "RunCompositionSummary",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 288
+          "lineno": 289
         },
         {
           "name": "CouncilRunResult",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 346
+          "lineno": 347
         },
         {
           "name": "MockCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 359
+          "lineno": 360
         },
         {
           "name": "LiveGeminiCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 465
+          "lineno": 466
         },
         {
           "name": "LiveLocalCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 532
+          "lineno": 533
         },
         {
           "name": "LiveGroqCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 642
+          "lineno": 643
         },
         {
           "name": "LiveCloudflareCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 815
+          "lineno": 816
         },
         {
           "name": "LiveCerebrasCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 981
+          "lineno": 982
         },
         {
           "name": "LiveGPTBrowserCouncilSeat",
           "kind": "class",
           "signature": "",
           "summary": "Live GPT seat: one browser chat thread per council run + structured continuity checks.",
-          "lineno": 1151
+          "lineno": 1152
         },
         {
           "name": "is_enabled",
           "kind": "function",
           "signature": "(config_obj: CouncilConfig | None=None) -> bool",
           "summary": "",
-          "lineno": 1321
+          "lineno": 1322
         },
         {
           "name": "CouncilRunner",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 1326
+          "lineno": 1327
         },
         {
           "name": "evaluate_message_quality",
           "kind": "function",
           "signature": "(message: CouncilMessage) -> list[CouncilQualityWarning]",
           "summary": "",
-          "lineno": 2702
+          "lineno": 2707
         },
         {
           "name": "run_pre_execution_council",
           "kind": "function",
           "signature": "(task: str, *, work_dir: str | Path | None=None, council_config: CouncilConfig | None=None) -> CouncilRunResult",
           "summary": "",
-          "lineno": 2735
+          "lineno": 2740
         },
         {
           "name": "env_enabled",
           "kind": "function",
           "signature": "() -> bool",
           "summary": "",
-          "lineno": 2757
+          "lineno": 2762
         }
       ],
       "depends_on": [
@@ -9404,6 +9448,7 @@
         "tests/orchestration/test_pre_execution_council_seam.py",
         "tests/orchestration/test_work_profile.py",
         "tests/planning/test_pre_execution_council.py",
+        "tests/planning/test_pre_execution_council_live_only.py",
         "tests/planning/test_pre_execution_council_seam.py",
         "tests/platform/test_compress.py",
         "tests/platform/test_progress_reporter.py",
@@ -14438,21 +14483,21 @@
           "kind": "function",
           "signature": "() -> ClaudeCliCfg",
           "summary": "",
-          "lineno": 275
+          "lineno": 277
         },
         {
           "name": "SieCfg",
           "kind": "class",
           "signature": "",
           "summary": "SIE/learning + Obsidian service + adversary + orchestration/run-control knobs.",
-          "lineno": 281
+          "lineno": 283
         },
         {
           "name": "buildSieCfg",
           "kind": "function",
           "signature": "() -> SieCfg",
           "summary": "",
-          "lineno": 483
+          "lineno": 488
         }
       ],
       "depends_on": [
@@ -14947,119 +14992,126 @@
           "kind": "class",
           "signature": "",
           "summary": "The brain-authored spec the executor turns into a Claude Code CLI invocation.",
-          "lineno": 50
+          "lineno": 51
         },
         {
           "name": "ExecutorResult",
           "kind": "class",
           "signature": "",
           "summary": "The uniform result dict every executor surface returns (terminal/browser/native).",
-          "lineno": 66
+          "lineno": 67
         },
         {
           "name": "Verdict",
           "kind": "class",
           "signature": "",
           "summary": "The adversary/second-brain review verdict (rich contract",
-          "lineno": 82
+          "lineno": 84
         },
         {
           "name": "Verify",
           "kind": "class",
           "signature": "",
           "summary": "A brain-authored verification check run after the executor.",
-          "lineno": 99
+          "lineno": 101
         },
         {
           "name": "WorkflowAgent",
           "kind": "class",
           "signature": "",
           "summary": "One agent entry inside a WorkflowPhase.",
-          "lineno": 105
+          "lineno": 107
         },
         {
           "name": "WorkflowPhase",
           "kind": "class",
           "signature": "",
           "summary": "One phase inside a WorkflowDefinition.",
-          "lineno": 112
+          "lineno": 114
         },
         {
           "name": "WorkflowDefinition",
           "kind": "class",
           "signature": "",
           "summary": "Brain-authored dynamic workflow spec carried in InvocationSpec.workflow_definition.",
-          "lineno": 119
+          "lineno": 121
         },
         {
           "name": "Universe",
           "kind": "class",
           "signature": "",
           "summary": "``meta.universe`` -- surgical-precision scope",
-          "lineno": 143
+          "lineno": 145
         },
         {
           "name": "Goal",
           "kind": "class",
           "signature": "",
           "summary": "The raw human objective (``meta.goal_raw``) + its time horizon.",
-          "lineno": 163
+          "lineno": 165
         },
         {
           "name": "ElaboratedGoal",
           "kind": "class",
           "signature": "",
           "summary": "The approved, clarified objective (``meta.goal_elaborated``)",
-          "lineno": 170
+          "lineno": 172
         },
         {
           "name": "SubtaskSpec",
           "kind": "class",
           "signature": "",
           "summary": "One subtask (``state/task.py`` addSubtask)",
-          "lineno": 177
+          "lineno": 179
         },
         {
           "name": "VerificationResult",
           "kind": "class",
           "signature": "",
           "summary": "``agents/verifier.py`` runVerification() output -- the proof gate's verdict",
-          "lineno": 212
+          "lineno": 214
+        },
+        {
+          "name": "ExecutionSurfaceReceipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "Truthful outcome for a terminal, browser, or native executor attempt.",
+          "lineno": 236
         },
         {
           "name": "ControlCommand",
           "kind": "class",
           "signature": "",
           "summary": "A parsed human control command (``notifications/commands.py`` Command): name + arg.",
-          "lineno": 234
+          "lineno": 264
         },
         {
           "name": "AgentDecision",
           "kind": "class",
           "signature": "",
           "summary": "Confidence/risk metadata an intelligence may attach so the orchestrator can escalate.",
-          "lineno": 241
+          "lineno": 271
         },
         {
           "name": "BlackboardEntry",
           "kind": "class",
           "signature": "",
           "summary": "One append-only coordination artifact on the run blackboard.",
-          "lineno": 261
+          "lineno": 291
         },
         {
           "name": "WorkerMessage",
           "kind": "class",
           "signature": "",
           "summary": "The structured result a WorkerAgent.run() returns and posts to the board.",
-          "lineno": 275
+          "lineno": 305
         },
         {
           "name": "DebateVerdict",
           "kind": "class",
           "signature": "",
           "summary": "Advisory outcome of a structured debate",
-          "lineno": 286
+          "lineno": 316
         }
       ],
       "depends_on": [],
@@ -15070,6 +15122,7 @@
         "tests/platform/test_contracts.py"
       ],
       "callers": [
+        "agents.execution.browser_executor",
         "platform_core.orchestration.workflows.registry",
         "src.workflow_registry"
       ]
@@ -17523,6 +17576,7 @@
         "tests/orchestration/test_bridge_execution_tiered.py",
         "tests/orchestration/test_pre_execution_council_seam.py",
         "tests/planning/test_pre_execution_council.py",
+        "tests/planning/test_pre_execution_council_live_only.py",
         "tests/planning/test_pre_execution_council_seam.py"
       ],
       "callers": []

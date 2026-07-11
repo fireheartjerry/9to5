@@ -213,6 +213,31 @@ Examples:
 - real Claude Code subprocess smoke
 - real Obsidian REST API write
 
+#### Browser production canary
+
+`python tools/browser_canary.py` drives the real Playwright/CDP browser path
+against a local fixture, records a typed live receipt, and writes only a
+temporary screenshot. It is skipped unless
+`NINE_TO_FIVE_ALLOW_BROWSER_CANARY=1`; the exhaustive/nightly workflow exposes
+that opt-in through its repository variable. It never uses external URLs,
+credentials, or a user browser profile.
+
+#### Outcome-evaluation lifecycle smoke
+
+`tests/slow/test_outcome_lifecycle.py` runs a task through planner, executor,
+verifier, adversary, and completion in a detached disposable worktree. The
+BuilderBrain path produces real files and invokes real verification while all
+model/service dependencies remain simulated. Its receipts are intentionally
+marked `actual_mode=simulated`; live evidence is required separately before
+promotion.
+
+The nightly `Gated live held-out outcome evaluation` step runs only when the
+self-hosted runner supplies both `NINE_TO_FIVE_ALLOW_LIVE_OUTCOME_EVALUATION=1`
+and an out-of-repository `NINE_TO_FIVE_OUTCOME_HOLDOUT_DIR`. It evaluates the
+real planner/executor lifecycle inside detached worktrees and persists results
+under ignored `state/outcome_evaluations/`. This keeps holdout tasks out of the
+public repository and prevents accidental provider spending in normal CI.
+
 #### Nightclaw offline replay (substitutes a second live gateway)
 
 Only one `DISCORD_BOT_TOKEN` exists, so a second live bot cannot be started to exercise the

@@ -1,0 +1,420 @@
+"""End-to-end outcome evaluation for 9TO5 agent changes.
+
+The older fitness suite proves a command's result.  This module records whether
+an entire bounded agent attempt delivered a semantically accepted outcome, with
+enough evidence to compare a candidate against the current champion.
+"""
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import tempfile
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from statistics import mean
+from typing import Any, Callable
+
+
+@dataclass(frozen=True)
+class EvaluationTask:
+    task_id: str
+    family: str
+    prompt: str
+    verify: dict[str, Any]
+    allowed_paths: tuple[str, ...] = ()
+    forbidden_paths: tuple[str, ...] = ()
+    max_attempts: int = 3
+    max_cost_usd: float = 0.0
+    max_executor_seconds: int = 120
+    max_duration_seconds: int = 300
+
+    @classmethod
+    def fromDict(cls, raw: dict[str, Any]) -> "EvaluationTask":
+        return cls(
+            task_id=str(raw.get("id") or raw.get("task_id") or ""),
+            family=str(raw.get("family") or "uncategorized"),
+            prompt=str(raw.get("goal") or raw.get("prompt") or ""),
+            verify=dict(raw.get("verify") or {}),
+            allowed_paths=tuple(raw.get("allowed_paths") or ()),
+            forbidden_paths=tuple(raw.get("forbidden_paths") or ()),
+            max_attempts=max(1, int(raw.get("max_attempts", 3))),
+            max_cost_usd=max(0.0, float(raw.get("max_cost_usd", 0.0))),
+            max_executor_seconds=max(30, int(raw.get("max_executor_seconds", 120))),
+            max_duration_seconds=max(60, int(raw.get("max_duration_seconds", 300))),
+        )
+
+
+@dataclass(frozen=True)
+class OutcomeReceipt:
+    task_id: str
+    family: str
+    passed: bool
+    semantic_passed: bool
+    attempts: int = 1
+    # ``None`` is deliberately distinct from an actual $0 local-model run.
+    cost_usd: float | None = None
+    cost_known: bool = False
+    cost_cap_usd: float = 0.0
+    duration_s: float = 0.0
+    replan_count: int = 0
+    policy_catch_count: int = 0
+    council_mode: str = "off"
+    council_live_seat_count: int = 0
+    council_degraded: bool = False
+    council_decision: str = "off"
+    council_brief_digest: str = ""
+    actual_mode: str = "simulated"  # live | simulated | unavailable | degraded
+    policy_violations: tuple[str, ...] = ()
+    artifacts: tuple[str, ...] = ()
+    detail: str = ""
+
+    @classmethod
+    def fromResult(cls, task: EvaluationTask, raw: dict[str, Any]) -> "OutcomeReceipt":
+        surface_receipt = raw.get("surface_receipt") if isinstance(raw.get("surface_receipt"), dict) else {}
+        semantic = bool(raw.get("semantic_passed", raw.get("passed", False)))
+        violations = tuple(str(item) for item in raw.get("policy_violations", ()) if item)
+        attempts = max(1, int(raw.get("attempts", 1)))
+        cost_supplied = "cost_usd" in raw or "cost" in raw
+        raw_cost = raw.get("cost_usd", raw.get("cost"))
+        cost_known = bool(cost_supplied and raw_cost is not None)
+        cost = max(0.0, float(raw_cost)) if cost_known else None
+        cost_cap = max(0.0, float(raw.get("cost_cap_usd", task.max_cost_usd) or 0.0))
+        duration = max(0.0, float(raw.get("duration_s", 0.0) or 0.0))
+        # Providers that omit billed usage cannot prove an actual total.  A cap
+        # forwarded to the production transport is nevertheless enforceable
+        # evidence: accept it only when it is at or below the task budget.
+        cost_within_budget = (cost_known and cost is not None and cost <= task.max_cost_usd) or (
+            not cost_known and cost_cap > 0 and cost_cap <= task.max_cost_usd
+        )
+        within_budget = attempts <= task.max_attempts and (not task.max_cost_usd or cost_within_budget)
+        within_duration = duration <= task.max_duration_seconds
+        lifecycle_ok = bool(raw.get("orchestration_completed", True))
+        evidence_ok = bool(raw.get("evidence_complete", True))
+        return cls(
+            task_id=task.task_id, family=task.family,
+            passed=bool(raw.get("passed", False)) and lifecycle_ok and semantic and not violations and within_budget and within_duration and evidence_ok,
+            semantic_passed=semantic, attempts=attempts, cost_usd=cost, cost_known=cost_known,
+            cost_cap_usd=cost_cap,
+            duration_s=duration,
+            replan_count=max(0, int(raw.get("replan_count", 0) or 0)),
+            policy_catch_count=max(0, int(raw.get("policy_catch_count", 0) or 0)),
+            council_mode=str(raw.get("council_mode", "off")),
+            council_live_seat_count=max(0, int(raw.get("council_live_seat_count", 0) or 0)),
+            council_degraded=bool(raw.get("council_degraded", False)),
+            council_decision=str(raw.get("council_decision", "off")),
+            council_brief_digest=str(raw.get("council_brief_digest", ""))[:128],
+            actual_mode=str(raw.get("actual_mode", surface_receipt.get("actual_mode", "simulated"))),
+            policy_violations=violations,
+            artifacts=tuple(str(item) for item in raw.get("artifacts", ()) if item),
+            detail=str(raw.get("detail", ""))[:1000],
+        )
+
+
+@dataclass(frozen=True)
+class EvaluationSuite:
+    version: str
+    tasks: tuple[EvaluationTask, ...]
+    held_out: bool = False
+
+    @classmethod
+    def load(cls, path: str | Path, *, held_out: bool = False) -> "EvaluationSuite":
+        base = Path(path)
+        tasks: list[EvaluationTask] = []
+        for item in sorted(base.glob("*.json")):
+            raw = json.loads(item.read_text(encoding="utf-8"))
+            raw.setdefault("id", item.stem)
+            tasks.append(EvaluationTask.fromDict(raw))
+        return cls(version=base.name or "v1", tasks=tuple(tasks), held_out=held_out)
+
+
+@dataclass(frozen=True)
+class OutcomeEvaluation:
+    suite_version: str
+    candidate: str
+    receipts: tuple[OutcomeReceipt, ...]
+    status: str
+    artifact_path: str = ""
+
+    @property
+    def outcome_rate(self) -> float:
+        return mean([float(item.passed) for item in self.receipts]) if self.receipts else 0.0
+
+    @property
+    def first_pass_rate(self) -> float:
+        return mean([float(item.passed and item.attempts == 1) for item in self.receipts]) if self.receipts else 0.0
+
+    @property
+    def mean_cost_usd(self) -> float | None:
+        if not self.cost_known:
+            return None
+        return mean([item.cost_usd for item in self.receipts if item.cost_usd is not None])
+
+    @property
+    def cost_known(self) -> bool:
+        return bool(self.receipts) and all(item.cost_known for item in self.receipts)
+
+    @property
+    def cost_cap_known(self) -> bool:
+        return bool(self.receipts) and all(item.cost_cap_usd > 0 for item in self.receipts)
+
+    @property
+    def mean_cost_cap_usd(self) -> float:
+        return mean([item.cost_cap_usd for item in self.receipts]) if self.receipts else 0.0
+
+    @property
+    def policy_clean(self) -> bool:
+        return not any(item.policy_violations for item in self.receipts)
+
+    @property
+    def live_evidence_count(self) -> int:
+        return sum(item.actual_mode == "live" for item in self.receipts)
+
+    @property
+    def family_scores(self) -> dict[str, float]:
+        families = sorted({item.family for item in self.receipts})
+        return {family: mean([float(item.passed) for item in self.receipts if item.family == family]) for family in families}
+
+    @property
+    def replan_count(self) -> int:
+        return sum(item.replan_count for item in self.receipts)
+
+    @property
+    def policy_catch_count(self) -> int:
+        return sum(item.policy_catch_count for item in self.receipts)
+
+    def toDict(self) -> dict[str, Any]:
+        return {"suite_version": self.suite_version, "candidate": self.candidate, "status": self.status,
+                "outcome_rate": self.outcome_rate, "first_pass_rate": self.first_pass_rate,
+                "policy_clean": self.policy_clean, "mean_cost_usd": self.mean_cost_usd, "cost_known": self.cost_known,
+                "mean_cost_cap_usd": self.mean_cost_cap_usd, "cost_cap_known": self.cost_cap_known, "live_evidence_count": self.live_evidence_count,
+                "replan_count": self.replan_count, "policy_catch_count": self.policy_catch_count,
+                "family_scores": self.family_scores, "receipts": [asdict(item) for item in self.receipts],
+                "artifact_path": self.artifact_path}
+
+
+class DisposableWorkspace:
+    """A short-lived detached git worktree for one outcome-evaluation task.
+
+    Evaluations may edit freely inside this lease; cleanup removes the worktree
+    and never merges it back to the source repository.
+    """
+    def __init__(self, source_repo: str | Path, task_id: str):
+        self.source_repo = Path(source_repo).resolve()
+        self.task_id = task_id
+        self._root: Path | None = None
+        self.path: Path | None = None
+
+    def __enter__(self) -> Path:
+        self._root = Path(tempfile.mkdtemp(prefix="9to5-outcome-"))
+        self.path = self._root / self.task_id
+        proc = subprocess.run(["git", "-C", str(self.source_repo), "worktree", "add", "--detach", str(self.path), "HEAD"],
+                              capture_output=True, text=True, timeout=60)
+        if proc.returncode:
+            self._root.rmdir()
+            raise RuntimeError(f"worktree provisioning failed: {proc.stderr.strip()}")
+        return self.path
+
+    def __exit__(self, *_exc) -> None:
+        if self.path is not None:
+            subprocess.run(["git", "-C", str(self.source_repo), "worktree", "remove", "--force", str(self.path)],
+                           capture_output=True, text=True, timeout=60)
+        if self._root is not None:
+            shutil.rmtree(self._root, ignore_errors=True)
+
+
+def run_outcome_evaluation(
+    candidate: str, suite: EvaluationSuite, runner: Callable[[EvaluationTask], dict[str, Any]],
+    *, artifact_dir: str | Path | None = None,
+) -> OutcomeEvaluation:
+    """Run a supplied full-lifecycle runner and persist a self-contained receipt.
+
+    The runner is intentionally injected: tests use a fake while the orchestrator
+    can supply its planner/executor/verifier/adversary lifecycle without coupling
+    this pure contract module to a live model or workspace.
+    """
+    receipts: list[OutcomeReceipt] = []
+    for task in suite.tasks:
+        try:
+            raw = runner(task)
+        except Exception as exc:  # noqa: BLE001 -- one bad run is a scored failed outcome
+            raw = {"passed": False, "semantic_passed": False, "detail": f"runner error: {type(exc).__name__}"}
+        receipts.append(OutcomeReceipt.fromResult(task, raw))
+    status = "scored" if receipts else "empty_suite"
+    evaluation = OutcomeEvaluation(suite.version, candidate, tuple(receipts), status)
+    if artifact_dir is None:
+        return evaluation
+    output = Path(artifact_dir) / f"outcome-evaluation-{candidate}.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    payload = evaluation.toDict() | {"artifact_path": str(output)}
+    output.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    return OutcomeEvaluation(suite.version, candidate, tuple(receipts), status, str(output))
+
+
+def run_disposable_evaluation(
+    candidate: str, suite: EvaluationSuite, source_repo: str | Path,
+    lifecycle_runner: Callable[[EvaluationTask, Path], dict[str, Any]], *, artifact_dir: str | Path | None = None,
+) -> OutcomeEvaluation:
+    """Run each task in a fresh detached worktree through a real lifecycle callback.
+
+    The callback is the explicit production seam: it can invoke the planner,
+    executor, verifier, adversary, and replanner while the evaluator guarantees
+    that generated edits cannot touch or merge into the evaluator's source tree.
+    """
+    evidence_root = Path(artifact_dir) / "evidence" / candidate if artifact_dir is not None else None
+
+    def one(task: EvaluationTask) -> dict[str, Any]:
+        try:
+            with DisposableWorkspace(source_repo, task.task_id) as workspace:
+                result = dict(lifecycle_runner(task, workspace))
+                result.setdefault("artifacts", [])
+                changed = subprocess.run(["git", "-C", str(workspace), "diff", "--name-only"],
+                                         capture_output=True, text=True, timeout=30).stdout.splitlines()
+                forbidden = [path for path in changed if task.forbidden_paths and any(
+                    path == item or path.startswith(item.rstrip("/") + "/") for item in task.forbidden_paths)]
+                outside_scope = [path for path in changed if task.allowed_paths and not any(
+                    path == item or path.startswith(item.rstrip("/") + "/") for item in task.allowed_paths)]
+                existing_violations = [str(item) for item in result.get("policy_violations", ()) if item]
+                result["policy_violations"] = list(dict.fromkeys([
+                    *existing_violations, *forbidden, *(f"outside allowed scope: {path}" for path in outside_scope),
+                ]))
+                artifacts = [*result["artifacts"]]
+                if evidence_root is not None:
+                    task_evidence = evidence_root / task.task_id
+                    task_evidence.mkdir(parents=True, exist_ok=True)
+                    diff_path = task_evidence / "diff.patch"
+                    diff = subprocess.run(["git", "-C", str(workspace), "diff", "--binary"],
+                                          capture_output=True, text=True, timeout=30)
+                    diff_path.write_text(diff.stdout, encoding="utf-8")
+                    receipt_path = task_evidence / "lifecycle-receipt.json"
+                    receipt_path.write_text(json.dumps({
+                        "verification": result.get("verification_receipt", {}),
+                        "run_summary": result.get("run_summary", {}),
+                        "detail": result.get("detail", ""),
+                    }, indent=2, sort_keys=True, default=str), encoding="utf-8")
+                    artifacts.extend((str(diff_path), str(receipt_path)))
+                    result["evidence_complete"] = bool(diff_path.exists() and receipt_path.exists())
+                result["artifacts"] = artifacts
+                return result
+        except Exception as exc:  # noqa: BLE001 -- provisioning failure is a visible failed outcome
+            return {"passed": False, "semantic_passed": False,
+                    "detail": f"disposable lifecycle failed: {type(exc).__name__}: {exc}"}
+    return run_outcome_evaluation(candidate, suite, one, artifact_dir=artifact_dir)
+
+
+def compare_to_champion(candidate: OutcomeEvaluation, baseline: OutcomeEvaluation) -> dict[str, Any]:
+    """Fail closed: candidates cannot win with weaker policy evidence or a lower outcome rate."""
+    comparable = candidate.suite_version == baseline.suite_version and candidate.status == baseline.status == "scored"
+    delta = candidate.outcome_rate - baseline.outcome_rate
+    actual_cost_comparable = candidate.cost_known and baseline.cost_known
+    cap_comparable = candidate.cost_cap_known and baseline.cost_cap_known
+    cost_not_worse = ((actual_cost_comparable and candidate.mean_cost_usd is not None and baseline.mean_cost_usd is not None
+                       and candidate.mean_cost_usd <= baseline.mean_cost_usd)
+                      or (not actual_cost_comparable and cap_comparable and candidate.mean_cost_cap_usd <= baseline.mean_cost_cap_usd))
+    promoted = comparable and candidate.policy_clean and cost_not_worse and delta > 0
+    return {"comparable": comparable, "candidate": candidate.candidate, "baseline": baseline.candidate,
+            "outcome_delta": round(delta, 6), "first_pass_delta": round(candidate.first_pass_rate - baseline.first_pass_rate, 6),
+            "policy_clean": candidate.policy_clean, "cost_known": actual_cost_comparable,
+            "cost_cap_known": cap_comparable,
+            "cost_not_worse": cost_not_worse, "promote": promoted,
+            "reason": "improved clean outcome rate without higher cost" if promoted else "candidate did not strictly improve clean outcomes within known cost"}
+
+
+def promotion_readiness(evaluation: OutcomeEvaluation, *, minimum_live_tasks: int = 8) -> dict[str, Any]:
+    """Expose lack of real evidence rather than treating simulated success as a promotion."""
+    sufficient = evaluation.live_evidence_count >= minimum_live_tasks
+    cost_evidenced = evaluation.cost_known or evaluation.cost_cap_known
+    ready = sufficient and evaluation.policy_clean and cost_evidenced and evaluation.status == "scored"
+    reason = "sufficient live evidence" if sufficient else "insufficient live evidence"
+    if sufficient and not cost_evidenced:
+        reason = "cost evidence is unknown"
+    elif sufficient and not evaluation.cost_known:
+        reason = "enforced cost ceiling evidence"
+    return {"ready": ready,
+            "live_evidence_count": evaluation.live_evidence_count, "minimum_live_tasks": minimum_live_tasks,
+            "confidence": round(min(1.0, evaluation.live_evidence_count / max(1, minimum_live_tasks)), 3),
+            "reason": reason}
+
+
+def render_outcome_report(candidate: OutcomeEvaluation, baseline: OutcomeEvaluation | None = None) -> str:
+    """Small read-only dashboard/report block suitable for terminal, Discord, or webdash."""
+    readiness = promotion_readiness(candidate)
+    cost_text = f"${candidate.mean_cost_usd:.4f}" if candidate.cost_known and candidate.mean_cost_usd is not None else "unknown"
+    cap_text = f"; cost ceiling=${candidate.mean_cost_cap_usd:.4f}" if candidate.cost_cap_known else ""
+    lines = [f"Outcome evaluation: {candidate.candidate} ({candidate.suite_version})",
+             f"Outcome={candidate.outcome_rate:.1%}; first-pass={candidate.first_pass_rate:.1%}; policy_clean={candidate.policy_clean}; cost={cost_text}{cap_text}",
+             f"Live evidence={readiness['live_evidence_count']}/{readiness['minimum_live_tasks']}; confidence={readiness['confidence']:.0%}",
+             f"Promotion evidence: {readiness['reason']}"]
+    lines.extend(f"{family}: {score:.1%}" for family, score in candidate.family_scores.items())
+    if baseline is not None:
+        verdict = compare_to_champion(candidate, baseline)
+        lines.append(f"Champion comparison: delta={verdict['outcome_delta']:+.3f}; {verdict['reason']}")
+    return "\n".join(lines)
+
+
+def evaluation_from_dict(raw: dict[str, Any]) -> OutcomeEvaluation:
+    """Rehydrate a persisted evaluation artifact for champion comparison."""
+    receipts = tuple(OutcomeReceipt(
+        task_id=str(item.get("task_id", "")), family=str(item.get("family", "uncategorized")),
+        passed=bool(item.get("passed")), semantic_passed=bool(item.get("semantic_passed")),
+        attempts=max(1, int(item.get("attempts", 1))),
+        cost_usd=(float(item["cost_usd"]) if item.get("cost_known", False) and item.get("cost_usd") is not None else None),
+        cost_known=bool(item.get("cost_known", False)), cost_cap_usd=float(item.get("cost_cap_usd", 0.0) or 0.0),
+        duration_s=float(item.get("duration_s", 0.0)), actual_mode=str(item.get("actual_mode", "simulated")),
+        replan_count=max(0, int(item.get("replan_count", 0) or 0)),
+        policy_catch_count=max(0, int(item.get("policy_catch_count", 0) or 0)),
+        council_mode=str(item.get("council_mode", "off")),
+        council_live_seat_count=max(0, int(item.get("council_live_seat_count", 0) or 0)),
+        council_degraded=bool(item.get("council_degraded", False)),
+        council_decision=str(item.get("council_decision", "off")),
+        council_brief_digest=str(item.get("council_brief_digest", ""))[:128],
+        policy_violations=tuple(item.get("policy_violations") or ()), artifacts=tuple(item.get("artifacts") or ()),
+        detail=str(item.get("detail", "")),
+    ) for item in raw.get("receipts", []))
+    return OutcomeEvaluation(str(raw.get("suite_version", "")), str(raw.get("candidate", "")), receipts,
+                             str(raw.get("status", "unknown")), str(raw.get("artifact_path", "")))
+
+
+def combine_outcome_evaluations(
+    candidate: str, evaluations: list[OutcomeEvaluation], *, artifact_dir: str | Path | None = None,
+) -> OutcomeEvaluation:
+    """Merge distinct held-out task receipts into one comparable benchmark record.
+
+    Aggregation is fail-closed: every source must use the same suite version and
+    no task may appear twice. This supports deliberately staggered live runs
+    without letting retries inflate the evidence count.
+    """
+    if not evaluations:
+        raise ValueError("at least one outcome evaluation is required")
+    versions = {item.suite_version for item in evaluations}
+    if len(versions) != 1:
+        raise ValueError("cannot combine evaluations from different suite versions")
+    receipts = tuple(receipt for evaluation in evaluations for receipt in evaluation.receipts)
+    task_ids = [receipt.task_id for receipt in receipts]
+    if len(set(task_ids)) != len(task_ids):
+        raise ValueError("cannot combine duplicate task receipts")
+    combined = OutcomeEvaluation(versions.pop(), candidate, receipts, "scored")
+    if artifact_dir is None:
+        return combined
+    output = Path(artifact_dir) / f"outcome-evaluation-{candidate}.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    payload = combined.toDict() | {"artifact_path": str(output)}
+    output.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    return OutcomeEvaluation(combined.suite_version, candidate, receipts, combined.status, str(output))
+
+
+def promote_candidate(candidate: OutcomeEvaluation, champion_path: str | Path, *, minimum_live_tasks: int = 8) -> dict[str, Any]:
+    """Atomically establish or improve the champion only with sufficient live evidence."""
+    path = Path(champion_path)
+    readiness = promotion_readiness(candidate, minimum_live_tasks=minimum_live_tasks)
+    baseline = evaluation_from_dict(json.loads(path.read_text(encoding="utf-8"))) if path.exists() else None
+    if not readiness["ready"]:
+        return {"promote": False, "reason": readiness["reason"], "champion": baseline.candidate if baseline else ""}
+    verdict = {"promote": True, "reason": "first sufficiently evidenced champion"} if baseline is None else compare_to_champion(candidate, baseline)
+    if not verdict["promote"]:
+        return {**verdict, "champion": baseline.candidate if baseline else ""}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_text(json.dumps(candidate.toDict(), indent=2, sort_keys=True), encoding="utf-8")
+    temp.replace(path)
+    return {**verdict, "champion": candidate.candidate, "champion_path": str(path)}

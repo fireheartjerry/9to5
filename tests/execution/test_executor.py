@@ -127,6 +127,12 @@ def test_normal_spec_has_no_global_disallow():
     assert "Edit" not in cmd and "Write" not in cmd
 
 
+def test_spec_max_budget_is_forwarded_to_claude_cli():
+    cmd = _build({"max_budget_usd": 2.5})
+    index = cmd.index("--max-budget-usd")
+    assert cmd[index + 1] == "2.5"
+
+
 # ---------------------------------------------------------------------------
 # "The executor applies an environment's wrapLauncher; default None is
 # byte-for-byte identity."

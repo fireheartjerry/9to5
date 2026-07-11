@@ -31,8 +31,9 @@ RUN/TEST: python -m pytest tests/planning/test_pre_execution_council.py
 """
 from __future__ import annotations
 
-import os
 import json
+import hashlib
+import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -1668,8 +1669,6 @@ class CouncilRunner:
     def _build_seats(self) -> list[CouncilSeat]:
         if self.seats is not None:
             return self.seats
-        if not self.config.mock_seats_enabled:
-            raise RuntimeError("Pre-execution council v0 requires mock seats; live seats are not implemented.")
         seats: list[CouncilSeat] = []
         for spec in DEFAULT_SEAT_SPECS:
             if spec.name == "Groq" and not self.config.live_groq_enabled:
@@ -1710,8 +1709,10 @@ class CouncilRunner:
                 seats.append(LiveCloudflareCouncilSeat(spec, model=self.config.cloudflare_model))
             elif spec.name == "Cerebras" and self.config.live_cerebras_enabled:
                 seats.append(LiveCerebrasCouncilSeat(spec, model=self.config.cerebras_model))
-            else:
+            elif self.config.mock_seats_enabled:
                 seats.append(MockCouncilSeat(spec))
+        if not seats:
+            raise RuntimeError("Pre-execution council needs at least one enabled live or mock seat.")
         return seats
 
     def _build_prompt(
@@ -2366,6 +2367,8 @@ class CouncilRunner:
                 "rate_limit_seen": False,
                 "quota_limit_seen": False,
                 "continuity_status": "",
+                "latency_ms": 0,
+                "response_digest": "",
                 "last_provider_state": "never_requested_live",
                 "provider_timeline": [],
                 "_turn_count": 0,
@@ -2424,6 +2427,8 @@ class CouncilRunner:
             continuity = dict(meta.get("continuity") or {})
             if continuity:
                 state["continuity_status"] = str(continuity.get("status") or ("ok" if continuity.get("ok") else "degraded"))
+            state["latency_ms"] = int(round(float(meta.get("elapsed_s", 0.0) or 0.0) * 1000))
+            state["response_digest"] = hashlib.sha256(str(msg.content).encode("utf-8")).hexdigest()[:16]
             state["provider_timeline"].append(
                 self._provider_timeline_entry(
                     turn_index=msg.turn_index,

@@ -1,0 +1,9 @@
+{
+  "id": "refactor-compatibility",
+  "family": "refactor",
+  "goal": "Refactor an implementation while preserving its documented public API.",
+  "verify": {"expect": "exit_zero"},
+  "allowed_paths": ["src/", "tests/"],
+  "forbidden_paths": [".env", ".git"],
+  "max_attempts": 3
+}

@@ -180,6 +180,13 @@ class Orchestrator(
                 )
             if council_brief_ref is not None:
                 dashboard.post_council_transcript(state, council_brief_ref)
+                council_decision = (state.meta.get("pre_execution_council") or {}).get("decision") or {}
+                if council_decision.get("status") == "pause":
+                    # A risk-gated council is deliberately the one exception to the
+                    # normal advisory-only path: it pauses through the existing human
+                    # ControlBus gate instead of turning a provider warning into a crash.
+                    dashboard.update(state, "awaiting council risk", council_decision.get("reason", "council risk gate"))
+                    self._handleOtherGate("council_risk", state, bus, dashboard)
             if resume and state.subtasks:
                 architect_doc = self._resumeSetup(state, work_dir, bus, dashboard)
             else:

@@ -21,23 +21,22 @@ class TestChatGptBrowserDriver(unittest.TestCase):
                     line = driver._verify_profile_is_gitignored(profile)
         self.assertIn("state/chatgpt_profile_recon", line)
 
-    def test_new_spike_page_uses_fresh_page_not_existing_tab(self):
+    def test_reuse_project_page_prefers_existing_project_tab(self):
         existing_page = mock.Mock(name="existing_page")
-        fresh_page = mock.Mock(name="fresh_page")
+        existing_page.url = driver.DEFAULT_PROJECT_URL.replace("/project", "/c/chat-1")
         context = mock.Mock()
         context.pages = [existing_page]
-        context.new_page.return_value = fresh_page
 
         with mock.patch.object(driver, "_wait_for_initial_page_state", return_value=None):
-            page = driver._new_spike_page(context, driver.DEFAULT_PROJECT_URL, 12.0)
+            page = driver._reuse_project_page(context, driver.DEFAULT_PROJECT_URL, 12.0)
 
-        self.assertIs(page, fresh_page)
-        context.new_page.assert_called_once_with()
-        fresh_page.set_default_timeout.assert_called_once_with(12000)
-        fresh_page.goto.assert_called_once_with(driver.DEFAULT_PROJECT_URL, wait_until="domcontentloaded")
+        self.assertIs(page, existing_page)
+        context.new_page.assert_not_called()
+        existing_page.set_default_timeout.assert_called_once_with(12000)
         existing_page.goto.assert_not_called()
 
-    def test_send_prompt_to_project_closes_only_spike_page(self):
+    def test_send_prompt_to_project_reuses_session_without_closing_tab(self):
+        driver._SHARED_PROJECT_SESSIONS.clear()
         browser = mock.Mock()
         context = mock.Mock()
         page = mock.Mock()
@@ -70,9 +69,9 @@ class TestChatGptBrowserDriver(unittest.TestCase):
                                                         )
 
         self.assertEqual(response, "ok")
-        page.close.assert_called_once_with()
+        page.close.assert_not_called()
         browser.close.assert_not_called()
-        playwright_api.stop.assert_called_once_with()
+        playwright_api.stop.assert_not_called()
 
     def test_session_reuses_same_page_across_turns(self):
         browser = mock.Mock()
@@ -119,8 +118,22 @@ class TestChatGptBrowserDriver(unittest.TestCase):
         self.assertEqual(send.call_count, 2)
         context.new_page.assert_called_once_with()
         assert_home.assert_called_once()
-        page.close.assert_called_once_with()
+        page.close.assert_not_called()
         browser.close.assert_not_called()
+
+    def test_reusable_one_shot_helper_sends_multiple_prompts_to_same_session(self):
+        session = mock.Mock()
+        session._closed = False
+        session.ask.side_effect = ["first", "second"]
+        key = (driver.DEFAULT_PROJECT_URL, driver.DEFAULT_MODEL, driver.DEFAULT_REASONING)
+        driver._SHARED_PROJECT_SESSIONS.clear()
+        driver._SHARED_PROJECT_SESSIONS[key] = session
+
+        first = driver.send_prompt_to_project(*key, prompt="one")
+        second = driver.send_prompt_to_project(*key, prompt="two")
+
+        self.assertEqual((first, second), ("first", "second"))
+        self.assertEqual(session.ask.call_count, 2)
 
 
 def subprocess_result(returncode: int, stdout: str) -> mock.Mock:

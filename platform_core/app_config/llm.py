@@ -239,6 +239,8 @@ class ClaudeCliCfg:
         default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_INJECT_PLANNER_CONTEXT", False))
     PRE_EXECUTION_COUNCIL_MAX_INJECTED_CHARS: int = _F(
         default_factory=lambda: _envInt("PRE_EXECUTION_COUNCIL_MAX_INJECTED_CHARS", 2500))
+    PRE_EXECUTION_COUNCIL_POLICY_MODE: str = _F(
+        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_POLICY_MODE", "advisory"))
     # --- living Claude Code knowledge base (fetch + injection behaviour) ---
     # CLAUDE_DOC_FETCH's run-scoped live value lives in settings.runFlags().
     CLAUDE_DOC_FETCH: bool = _F(default_factory=lambda: _envBool("CLAUDE_DOC_FETCH", True))
@@ -397,6 +399,9 @@ class SieCfg:
     AUTONOMOUS_DESTRUCTIVE_ALLOWANCE_USD: float = _F(default_factory=lambda: _envFloat("AUTONOMOUS_DESTRUCTIVE_ALLOWANCE_USD", 0.0))
     # Decision-only cost HINT for the per-attempt PAID Claude subprocess call.
     CLAUDE_ATTEMPT_COST_HINT_USD: float = _F(default_factory=lambda: _envFloat("CLAUDE_ATTEMPT_COST_HINT_USD", 0.0))
+    # Hard provider-side ceiling forwarded as ``claude --max-budget-usd``. Zero
+    # means no CLI cap; it never stands in for metered spend.
+    CLAUDE_MAX_BUDGET_USD: float = _F(default_factory=lambda: _envFloat("CLAUDE_MAX_BUDGET_USD", 0.0))
     # --- compute / LoRA / self-play / bootstrap ---
     SIE_COMPUTE: str = _F(default_factory=lambda: os.getenv("SIE_COMPUTE", "auto"))
     # Hugging Face source model used only by the opt-in local LoRA trainer.  It

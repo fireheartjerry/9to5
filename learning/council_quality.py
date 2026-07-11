@@ -1,0 +1,69 @@
+"""Outcome-backed promotion gate for advisory council expansion."""
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from typing import Any
+
+from learning.outcome_evaluation import OutcomeEvaluation
+
+
+@dataclass(frozen=True)
+class CouncilQualityComparison:
+    comparable: bool
+    outcome_delta: float
+    first_pass_delta: float
+    replan_delta: int
+    policy_catch_delta: int
+    cost_delta_usd: float | None
+    cost_cap_delta_usd: float | None
+    safe: bool
+    promote: bool
+    reason: str
+
+    def toDict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def compare_council_impact(
+    baseline: OutcomeEvaluation, council_enabled: OutcomeEvaluation, *,
+    minimum_outcome_improvement: float = 0.02, minimum_live_tasks: int = 8,
+) -> CouncilQualityComparison:
+    """Decide whether advisory council evidence justifies broader enablement.
+
+    A council must improve outcomes by a preset margin without reducing first-pass
+    rate, increasing replans, losing policy catches, regressing safety, or raising
+    measured cost or an equivalently bounded, enforced provider-side ceiling.
+    Missing both remains a visible non-promotion outcome.
+    """
+    comparable = baseline.suite_version == council_enabled.suite_version and baseline.status == council_enabled.status == "scored"
+    outcome_delta = council_enabled.outcome_rate - baseline.outcome_rate
+    first_pass_delta = council_enabled.first_pass_rate - baseline.first_pass_rate
+    replan_delta = council_enabled.replan_count - baseline.replan_count
+    policy_catch_delta = council_enabled.policy_catch_count - baseline.policy_catch_count
+    cost_delta = (council_enabled.mean_cost_usd - baseline.mean_cost_usd
+                  if baseline.cost_known and council_enabled.cost_known else None)
+    cost_cap_delta = (council_enabled.mean_cost_cap_usd - baseline.mean_cost_cap_usd
+                      if baseline.cost_cap_known and council_enabled.cost_cap_known else None)
+    safe = baseline.policy_clean and council_enabled.policy_clean
+    enough_live = council_enabled.live_evidence_count >= minimum_live_tasks
+    cost_ok = ((cost_delta is not None and cost_delta <= 0)
+               or (cost_delta is None and cost_cap_delta is not None and cost_cap_delta <= 0))
+    promote = bool(comparable and enough_live and safe and cost_ok
+                   and outcome_delta >= minimum_outcome_improvement
+                   and first_pass_delta >= 0 and replan_delta <= 0 and policy_catch_delta >= 0)
+    if promote:
+        reason = "council improves outcomes without safety, cost, or planning regression"
+    elif not comparable:
+        reason = "baseline and council evaluations are not comparable"
+    elif not enough_live:
+        reason = "insufficient live council-enabled evidence"
+    elif not safe:
+        reason = "policy regression"
+    elif not cost_ok:
+        reason = "cost evidence is unknown"
+    else:
+        reason = "council did not meet the improvement threshold without regressions"
+    return CouncilQualityComparison(comparable, round(outcome_delta, 6), round(first_pass_delta, 6),
+                                   replan_delta, policy_catch_delta, None if cost_delta is None else round(cost_delta, 6),
+                                   None if cost_cap_delta is None else round(cost_cap_delta, 6),
+                                   safe, promote, reason)

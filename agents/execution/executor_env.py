@@ -210,7 +210,9 @@ def composeRunSettingsDict(base_settings_path=None) -> dict:
     base: dict = {}
     try:
         if path.exists():
-            loaded = json.loads(path.read_text(encoding="utf-8"))
+            # Windows editors may emit a UTF-8 BOM. It is still a valid settings
+            # file and must not trigger a fallback regeneration during a run.
+            loaded = json.loads(path.read_text(encoding="utf-8-sig"))
             if isinstance(loaded, dict):
                 base = loaded
     except Exception as e:  # noqa: BLE001

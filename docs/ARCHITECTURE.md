@@ -181,6 +181,32 @@ All live surfaces are fed by one process-global nervous system; nothing bypasses
 
 ## Verification gate
 
+## Capability truth and outcome evaluation
+
+Executor and council integrations record both requested and actual mode. A
+fallback, mock, or unavailable provider is never equivalent to a live result.
+The browser executor returns an explicit unavailable receipt when disabled;
+it is never silently rerouted to the terminal executor.
+
+`learning/outcome_evaluation.py` provides the promotion-grade complement to
+the command verifier: versioned tasks produce semantic/policy-aware outcome
+receipts, persist an evidence artifact, and compare a challenger to a champion
+only when both use the same scored suite. The checked-in smoke fixture suite is
+`learning/outcome_suite/`; richer real-lifecycle and hidden suites belong in
+the nightly evaluation environment.
+
+Promotion also requires cost evidence: a missing provider cost is rendered as
+`unknown`, never `$0`. When `claude --max-budget-usd` enforces a task ceiling,
+the receipt records the ceiling separately; it is never relabeled as measured
+spend. `learning/council_quality.py` compares a baseline and
+council-enabled suite on outcome/first-pass deltas, replan count, policy catches,
+safety, live evidence, and cost before advisory council scope can expand.
+
+The CI smoke runner at `platform_core/simulator/testing/outcome_runner.py`
+executes the entire simulated lifecycle in a disposable detached worktree. It
+is a regression proof for orchestration and semantic verification, not a claim
+of live model quality: its receipts remain explicitly `simulated`.
+
 Verifier executes a brain-authored `{cmd, expect}` (optionally `targets`) through the
 typed **Receipt pipeline** (`agents/verification.py`): `runReceipt` produces one frozen
 `Receipt` with a `Verdict` (`PASS`/`FAIL`/`ERROR`/`SKIPPED`), the exec'd arg vector, rc,
