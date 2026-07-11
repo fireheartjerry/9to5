@@ -13,12 +13,13 @@ EXPORTS:
   maybe_prepare_council_brief(*, state: Any, work_dir: str, elaborated: str, resume: bool, config_obj: CouncilSeamConfig | None=None, run_council: CouncilRunnerFn | None=None) -> CouncilBriefReference | None  -- Optionally run the council and persist compact metadata.
   architect_advisory_block(reference: CouncilBriefReference, *, max_chars: int) -> str  -- Build the bounded architect-only advisory block.
   planner_advisory_block(reference: CouncilBriefReference, *, max_chars: int) -> str  -- Build the bounded planner-only advisory block.
-DEPENDS-ON: agents.planning.pre_execution_council, config
+DEPENDS-ON: agents.planning.council_policy, agents.planning.pre_execution_council, config
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_pre_execution_council_seam.py tests/planning/test_pre_execution_council_seam.py
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +45,7 @@ class CouncilSeamConfig:
     inject_into_architect: bool = False
     inject_into_planner: bool = False
     max_injected_chars: int = 2500
+    policy_mode: str = "advisory"
 
     @classmethod
     def from_config(cls) -> "CouncilSeamConfig":
@@ -54,6 +56,7 @@ class CouncilSeamConfig:
             inject_into_architect=bool(config.PRE_EXECUTION_COUNCIL_INJECT_ARCHITECT_CONTEXT),
             inject_into_planner=bool(config.PRE_EXECUTION_COUNCIL_INJECT_PLANNER_CONTEXT),
             max_injected_chars=int(config.PRE_EXECUTION_COUNCIL_MAX_INJECTED_CHARS),
+            policy_mode=str(getattr(config, "PRE_EXECUTION_COUNCIL_POLICY_MODE", "advisory")),
         )
 
 
@@ -86,6 +89,7 @@ class CouncilBriefReference:
             "warnings": [_clean_text(item, 500) for item in self.warnings[:12]],
             "selected_first_slice": _clean_text(self.selected_first_slice, 1000),
             "codex_ready_prompt": _clean_text(self.codex_ready_prompt, 4000),
+            "brief_digest": hashlib.sha256(self.compact_summary.encode("utf-8")).hexdigest()[:16],
         }
 
 
@@ -155,7 +159,16 @@ def maybe_prepare_council_brief(
         )
         return None
 
-    _store_meta(state, reference.to_meta(run_mode=run_mode))
+    from agents.planning.council_policy import CouncilPolicy, receipts_from_brief
+    receipts = receipts_from_brief(result.brief, artifact_ref=reference.brief_path)
+    decision = CouncilPolicy(seam_config.policy_mode).evaluate(task, receipts, risks=reference.risks)
+    meta = reference.to_meta(run_mode=run_mode)
+    meta.update({"policy_mode": seam_config.policy_mode, "decision": decision.toDict(),
+                 "live_seat_count": decision.live_seat_count,
+                 "seat_receipts": [item.toDict() for item in receipts]})
+    _store_meta(state, meta)
+    if decision.status == "pause" and seam_config.strict_mode:
+        raise RuntimeError(decision.reason)
     return reference
 
 

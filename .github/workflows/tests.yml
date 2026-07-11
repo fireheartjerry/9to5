@@ -82,3 +82,13 @@ jobs:
         run: uv pip install --system -r requirements.txt -r requirements-dev.txt
       - name: Exhaustive compatibility suite
         run: python -m pytest -n auto --dist loadscope -q
+      - name: Gated browser canary
+        env:
+          NINE_TO_FIVE_ALLOW_BROWSER_CANARY: ${{ vars.NINE_TO_FIVE_ALLOW_BROWSER_CANARY }}
+        run: python tools/browser_canary.py
+      - name: Gated live held-out outcome evaluation
+        if: vars.NINE_TO_FIVE_ALLOW_LIVE_OUTCOME_EVALUATION == '1' && vars.NINE_TO_FIVE_OUTCOME_HOLDOUT_DIR != ''
+        env:
+          NINE_TO_FIVE_ALLOW_LIVE_OUTCOME_EVALUATION: ${{ vars.NINE_TO_FIVE_ALLOW_LIVE_OUTCOME_EVALUATION }}
+          NINE_TO_FIVE_BROWSER_CANARY_ARTIFACT_DIR: state/outcome_evaluations
+        run: python tools/live_outcome_evaluation.py --suite "${{ vars.NINE_TO_FIVE_OUTCOME_HOLDOUT_DIR }}" --repo . --candidate "main-${{ github.sha }}" --artifacts state/outcome_evaluations

@@ -139,6 +139,13 @@ def _buildRunConfig(spec: dict, task_state, subtask, resume_session: Optional[st
     # low→haiku, default/high→sonnet, xhigh/ultracode→opus. Overridable via MODEL_* env vars.
     model = config.MODEL_BY_EFFORT.get(effort, config.MODEL_BY_EFFORT.get("default", config.PRIMARY_MODEL))
     base_cmd += ["--model", model, "--fallback-model", config.FALLBACK_MODEL]
+    max_budget = spec.get("max_budget_usd") if isinstance(spec, dict) else None
+    max_budget = max_budget if max_budget is not None else getattr(config, "CLAUDE_MAX_BUDGET_USD", 0.0)
+    try:
+        if float(max_budget) > 0:
+            base_cmd += ["--max-budget-usd", str(float(max_budget))]
+    except (TypeError, ValueError):
+        LOG.warning("ignoring invalid Claude max budget: %r", max_budget)
     if flag:
         base_cmd += ["--effort", flag]
     base_cmd += ["--add-dir", str(config.PROJECT_ROOT)]   # make .claude discoverable from a sub-cwd

@@ -1,0 +1,165 @@
+"""Hermetic full-lifecycle runner for outcome-evaluation smoke suites.
+
+It uses the existing BuilderBrain/BuilderExecutor simulation: planning, execution,
+real filesystem writes, verification, adversary review, and completion all run,
+but no provider, Discord, or Obsidian service is contacted.  It is therefore the
+CI proof path; live runners can use the identical outcome-evaluation interface.
+"""
+from __future__ import annotations
+
+import tempfile
+import os
+import subprocess
+import time
+from pathlib import Path
+from typing import Any
+
+import config
+from learning.outcome_evaluation import EvaluationTask
+from state.task import TaskState
+
+
+def run_builder_lifecycle(task: EvaluationTask, workspace: Path) -> dict[str, Any]:
+    """Execute one evaluation task through the full simulated orchestration lifecycle."""
+    from platform_core.simulator import simulation
+    saved = {name: getattr(config, name) for name in ("STATE_DIR", "CONTROL_DIR", "HEARTBEAT_DIR", "LAUNCH_DIR", "IPC_DIR")}
+    with tempfile.TemporaryDirectory(prefix="9to5-outcome-state-") as raw:
+        root = Path(raw)
+        try:
+            for name, leaf in (("STATE_DIR", "tasks"), ("CONTROL_DIR", "control"), ("HEARTBEAT_DIR", "heartbeats"),
+                               ("LAUNCH_DIR", "launch"), ("IPC_DIR", "ipc")):
+                value = root / leaf
+                value.mkdir(parents=True, exist_ok=True)
+                setattr(config, name, value)
+            state = TaskState.create(task.prompt, 1.0)
+            state.setElaboratedGoal(task.prompt)
+            state.save()
+            orch = simulation.buildBuilderOrchestrator(str(workspace), n_subtasks=1)
+            summary = orch.runFull(state, work_dir=str(workspace), auto_pr=False, control_mode="autonomous", parallelism=1)
+            final = TaskState.loadSafe(state.task_id)
+            subtasks = list(getattr(final, "subtasks", []) or [])
+            verify_passed = bool(subtasks) and all(bool((item.get("verify_result") or {}).get("passed")) for item in subtasks)
+            artifacts = [str(path) for path in workspace.glob("feature_*.py")]
+            return {"passed": bool(final and final.meta.get("status") == "done" and verify_passed),
+                    "semantic_passed": bool(artifacts), "actual_mode": "simulated", "attempts": 1,
+                    "artifacts": artifacts, "detail": str(summary)[:1000]}
+        finally:
+            for name, value in saved.items():
+                setattr(config, name, value)
+
+
+def run_live_lifecycle(task: EvaluationTask, workspace: Path) -> dict[str, Any]:
+    """Run the real planner/executor/verifier/reviewer only after explicit opt-in.
+
+    This callback is designed for ``run_disposable_evaluation``: ``workspace`` is
+    already a detached worktree and is removed after the receipt is captured.
+    It intentionally has no fallback to simulation, because a promotion record
+    must be able to distinguish absent live evidence from a live failure.
+    """
+    if os.getenv("NINE_TO_FIVE_ALLOW_LIVE_OUTCOME_EVALUATION") != "1":
+        return {"passed": False, "semantic_passed": False, "actual_mode": "unavailable",
+                "detail": "set NINE_TO_FIVE_ALLOW_LIVE_OUTCOME_EVALUATION=1"}
+    council_mode = os.getenv("NINE_TO_FIVE_LIVE_OUTCOME_COUNCIL_MODE", "off").strip().lower()
+    if council_mode not in {"off", "advisory", "risk_gate"}:
+        return {"passed": False, "semantic_passed": False, "actual_mode": "unavailable",
+                "detail": "NINE_TO_FIVE_LIVE_OUTCOME_COUNCIL_MODE must be off, advisory, or risk_gate"}
+    from agents import verifier
+    from orchestrator import Orchestrator
+    saved = {name: getattr(config, name) for name in (
+        "STATE_DIR", "CONTROL_DIR", "HEARTBEAT_DIR", "LAUNCH_DIR", "IPC_DIR",
+        "CLAUDE_CLI_TIMEOUT_SECONDS", "CLAUDE_MAX_BUDGET_USD", "MAX_SUBTASK_ATTEMPTS", "MAX_SUBTASKS", "DUAL_LEDGER_PLANNER_ENABLED",
+        "SOCIETY_ENABLED", "INVENTOR_MODE_ENABLED", "INVENTOR_EXCELLENCE_ENABLED",
+        "PRE_EXECUTION_COUNCIL_SEAM_ENABLED", "PRE_EXECUTION_COUNCIL_POLICY_MODE",
+        "PRE_EXECUTION_COUNCIL_INJECT_ARCHITECT_CONTEXT", "PRE_EXECUTION_COUNCIL_INJECT_PLANNER_CONTEXT",
+        "PRE_EXECUTION_COUNCIL_STRICT_MODE",
+    )}
+    with tempfile.TemporaryDirectory(prefix="9to5-live-outcome-state-") as raw:
+        root = Path(raw)
+        try:
+            for name, leaf in (("STATE_DIR", "tasks"), ("CONTROL_DIR", "control"), ("HEARTBEAT_DIR", "heartbeats"),
+                               ("LAUNCH_DIR", "launch"), ("IPC_DIR", "ipc")):
+                value = root / leaf
+                value.mkdir(parents=True, exist_ok=True)
+                setattr(config, name, value)
+            # A benchmark must fail in bounded time; it is evidence collection,
+            # not an unattended production session. One contained Claude attempt
+            # gives the evaluator a crisp timeout receipt instead of a multi-hour hang.
+            configured_attempt_cap = int(os.getenv("NINE_TO_FIVE_LIVE_OUTCOME_CLAUDE_TIMEOUT_SECONDS", task.max_executor_seconds))
+            config.CLAUDE_CLI_TIMEOUT_SECONDS = max(30, min(task.max_executor_seconds, configured_attempt_cap))
+            config.CLAUDE_MAX_BUDGET_USD = task.max_cost_usd
+            config.MAX_SUBTASK_ATTEMPTS = 1
+            # A fixture represents one bounded deliverable. Without this cap a
+            # planner can turn inspection/checklist items into a horizon-filling
+            # pseudo-plan and make a semantically repaired task look unfinished.
+            config.MAX_SUBTASKS = 1
+            config.DUAL_LEDGER_PLANNER_ENABLED = False
+            config.SOCIETY_ENABLED = False
+            config.INVENTOR_MODE_ENABLED = False
+            config.INVENTOR_EXCELLENCE_ENABLED = False
+            # The same real lifecycle can produce a control baseline or a
+            # council-assisted challenger.  Explicit opt-in keeps ordinary
+            # live outcome runs council-free and makes the comparison auditable.
+            config.PRE_EXECUTION_COUNCIL_SEAM_ENABLED = council_mode != "off"
+            config.PRE_EXECUTION_COUNCIL_POLICY_MODE = council_mode
+            config.PRE_EXECUTION_COUNCIL_INJECT_ARCHITECT_CONTEXT = council_mode != "off"
+            config.PRE_EXECUTION_COUNCIL_INJECT_PLANNER_CONTEXT = council_mode != "off"
+            config.PRE_EXECUTION_COUNCIL_STRICT_MODE = council_mode == "risk_gate"
+            # End-to-end evaluation has an independent wall-clock horizon. The
+            # executor's cancel_check observes this state deadline, preventing a
+            # planning/retry sequence from outliving the benchmark harness.
+            configured_duration = float(os.getenv("NINE_TO_FIVE_LIVE_OUTCOME_HOURS", task.max_duration_seconds / 3600))
+            horizon_hours = max(0.005, min(task.max_duration_seconds / 3600, configured_duration))
+            state = TaskState.create(task.prompt, horizon_hours)
+            state.setElaboratedGoal(task.prompt)
+            state.setUniverse({"description": f"outcome evaluation {task.task_id}",
+                               "allowed_paths": list(task.allowed_paths), "allowed_to_expand_to": [],
+                               "hard_boundaries": list(task.forbidden_paths)})
+            state.meta["outcome_evaluation_verify"] = dict(task.verify)
+            state.save()
+            # Keep the real Ollama planner and Claude CLI executor, while preventing
+            # this benchmark from opening dashboards/tunnels, probing Gemini, posting
+            # to Discord, or launching SIE/self-play maintenance.
+            orch = Orchestrator(skip_pre_execution_council=(council_mode == "off"), offline_mode=True)
+            # Cost belongs to the lifecycle receipt, not an assumed zero. Capture
+            # every executor result that the real orchestrator produces and expose
+            # a total only when all observed calls returned a metered value.
+            observed_costs: list[float | None] = []
+            original_run_claude = orch._run_claude
+
+            def metered_run_claude(*args, **kwargs):
+                result = original_run_claude(*args, **kwargs)
+                raw_cost = result.get("cost_usd") if isinstance(result, dict) else None
+                observed_costs.append(float(raw_cost) if raw_cost is not None else None)
+                return result
+
+            orch._run_claude = metered_run_claude
+            started = time.monotonic()
+            summary = orch.runFull(state, work_dir=str(workspace), auto_pr=False, control_mode="autonomous", parallelism=1)
+            final_state = TaskState.loadSafe(state.task_id)
+            council = dict((getattr(final_state, "meta", {}) or {}).get("pre_execution_council") or {})
+            verification = verifier.runVerification(task.verify, str(workspace), {}) if task.verify.get("cmd") else {"passed": False}
+            changed = subprocess.run(["git", "-C", str(workspace), "diff", "--name-only"], capture_output=True, text=True, timeout=30).stdout.splitlines()
+            orchestration_completed = bool(isinstance(summary, dict) and summary.get("status") == "done")
+            notifications = list((getattr(state, "data", {}) or {}).get("notifications", []) or [])
+            replan_count = sum(1 for item in notifications if isinstance(item, dict) and item.get("kind") in {"replan", "root_cause_replan"})
+            return {"passed": bool(verification.get("passed")), "semantic_passed": bool(verification.get("passed")),
+                    "orchestration_completed": orchestration_completed,
+                    "actual_mode": "live", "policy_violations": [],
+                    "cost_usd": (sum(cost for cost in observed_costs if cost is not None)
+                                 if observed_costs and all(cost is not None for cost in observed_costs) else None),
+                    "cost_cap_usd": task.max_cost_usd,
+                    "council_mode": council_mode,
+                    "council_live_seat_count": council.get("live_seat_count", 0),
+                    "council_degraded": str((council.get("decision") or {}).get("status", "")) == "degraded",
+                    "council_decision": str((council.get("decision") or {}).get("status", "off")),
+                    "council_brief_digest": str(council.get("brief_digest", "")),
+                    "replan_count": replan_count,
+                    "artifacts": [*changed], "duration_s": time.monotonic() - started,
+                    "verification_receipt": verification, "run_summary": summary,
+                    "detail": str(summary)[:1000]}
+        except Exception as exc:  # noqa: BLE001 -- preserve a classified live failure
+            return {"passed": False, "semantic_passed": False, "actual_mode": "live",
+                    "detail": f"live lifecycle failed: {type(exc).__name__}: {exc}"}
+        finally:
+            for name, value in saved.items():
+                setattr(config, name, value)

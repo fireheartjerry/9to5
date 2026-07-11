@@ -43,14 +43,18 @@ class OrchestratorLlmMixin:
 
     def _selectExecutor(self, spec: dict):
         """Pick the hands layer for a spec's requested surface. Default: Claude CLI (L3).
-        Routes to the browser backend (L1) when the brain asks for it AND it's enabled;
-        falls back to Claude on any import problem so a run is never blocked by routing."""
-        if spec.get("surface") == "browser" and config.BROWSER_LAYER_ENABLED:
+        Routes to the browser backend whenever requested.  An unavailable browser
+        returns its own typed failed receipt; it must never become a hidden CLI run."""
+        if spec.get("surface") == "browser":
             try:
                 from agents import browser_executor
-                return browser_executor.runBrowser
+                return browser_executor.runBrowser if config.BROWSER_LAYER_ENABLED else browser_executor.unavailableBrowser
             except Exception:  # noqa: BLE001
-                LOG.warning("browser surface requested but backend unavailable; using terminal")
+                LOG.exception("browser surface requested but backend import failed")
+                def unavailable(*_args, **_kwargs):
+                    return {"ok": False, "returncode": 1, "is_error": True, "surface": "browser",
+                            "stderr": "browser backend import failed", "surface_receipt": {"surface": "browser", "requested_mode": "live", "actual_mode": "unavailable", "status": "unavailable", "artifacts": [], "live": False}}
+                return unavailable
         return self._run_claude
 
     def _evalGoal(self, goal: dict) -> dict:

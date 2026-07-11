@@ -194,7 +194,7 @@ def test_fresh_bus_load_is_blank_shape():
     d = ControlBus("t-blank").load()
     assert d["abort"] is False and d["pause"] is False
     assert d["kill_subprocess"] is False and d["force_replan"] is False
-    assert d["decisions"] == {"plan": None, "pre_pr": None, "action_risk": None}
+    assert d["decisions"] == {"plan": None, "pre_pr": None, "action_risk": None, "council_risk": None}
     assert d["plan_ops"] == [] and d["seen_discord_id"] is None
     assert d["pending_gate"] is None and d["autonomy_spent_usd"] == 0.0
 

@@ -1,0 +1,9 @@
+{
+  "id": "regression-repair",
+  "family": "regression",
+  "goal": "Add a regression test and repair the behavior it demonstrates.",
+  "verify": {"expect": "exit_zero"},
+  "allowed_paths": ["src/", "tests/"],
+  "forbidden_paths": [".env", ".git"],
+  "max_attempts": 3
+}

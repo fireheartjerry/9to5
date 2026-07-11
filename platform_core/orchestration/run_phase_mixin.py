@@ -242,6 +242,9 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
         from platform_core.orchestration.plan_concurrency import normalizePlanConcurrency
 
         capped = normalizePlanConcurrency([s for s in plan[:config.MAX_SUBTASKS] if isinstance(s, dict)])
+        evaluation_verify = (state.meta or {}).get("outcome_evaluation_verify")
+        if isinstance(evaluation_verify, dict) and evaluation_verify.get("cmd"):
+            capped = [{**item, "verify": dict(evaluation_verify)} for item in capped]
         dropped = len(plan) - len(capped)
         if dropped > 0:
             # The over-cap slice used to drop deliverables SILENTLY here (unlike the replan

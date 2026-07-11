@@ -1,0 +1,30 @@
+"""Render a persisted outcome-evaluation artifact as a compact quality report."""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import sys
+
+
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from learning.outcome_evaluation import evaluation_from_dict, render_outcome_report
+
+
+def render(path: str | Path, champion_path: str | Path | None = None) -> str:
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    champion = None
+    if champion_path is not None and Path(champion_path).exists():
+        champion = evaluation_from_dict(json.loads(Path(champion_path).read_text(encoding="utf-8")))
+    return render_outcome_report(evaluation_from_dict(raw), champion)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("artifact")
+    parser.add_argument("--champion", help="optional persisted champion record for regression comparison")
+    args = parser.parse_args()
+    print(render(args.artifact, args.champion))

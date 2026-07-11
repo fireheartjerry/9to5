@@ -1,0 +1,9 @@
+{
+  "id": "bugfix-expected-output",
+  "family": "bugfix",
+  "goal": "Repair a bounded defect and preserve the existing public contract.",
+  "verify": {"expect": "exit_zero"},
+  "allowed_paths": ["src/"],
+  "forbidden_paths": [".env", ".git"],
+  "max_attempts": 3
+}
