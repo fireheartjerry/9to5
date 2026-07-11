@@ -1,13 +1,13 @@
 # Dev/test-only dependencies (not needed at runtime). CI installs these alongside
 # requirements.txt for the pytest-based fast/slow lanes; runtime never imports them.
-pytest>=9
-pytest-xdist>=3.6
-pytest-timeout>=2.3
-pytest-cov>=6.0
+pytest>=9.1.1
+pytest-xdist>=3.8.0
+pytest-timeout>=2.4.0
+pytest-cov>=7.1.0
 # Optional: ANN backend for Layer-1 retrieval (memory/exp_index.py::ChromaIndex). Strictly
 # optional -- exp_index.getIndex() import-guards it and falls open to the O(n) cosine scan
 # when absent, so runtime never requires it. Installed only for the ChromaIndex test lane.
-chromadb>=0.5
+chromadb>=1.5.9
 # YAML frontmatter parsing in .claude/skills/skill-gap-analysis.py and its tests; declared
 # explicitly rather than relying on the transitive copy pulled in via chromadb.
-pyyaml>=6.0
+pyyaml>=6.0.3
