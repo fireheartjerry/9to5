@@ -4,7 +4,11 @@
 
 **Goal:** Make every mutating autonomous coding attempt transactional: each retry gets a fresh self-contained external clone, explicitly trusted Local or a credential-separated Docker plane executes only there, a native no-follow snapshot crosses into a pinned networkless object parser, and only its bounded canonical tree/blob manifest crosses back to a small memory-safe host object writer. The exact staged revision is verified in a fresh no-link clone inside the universal credentialless hardened verifier, and promotion uses a fenced Git ref/materialization protocol plus a crash-reconcilable journal. Preserve the execution-origin tier as receipt evidence, fail closed when isolation or credential separation cannot be honored, and leave durable linked recovery evidence on every rejection or crash.
 
-**Design source:** `docs/superpowers/specs/2026-07-13-aura-omega-revision-3-design.md`
+**Design sources:** `docs/superpowers/specs/2026-07-13-aura-omega-revision-3-design.md`
+and `docs/superpowers/specs/2026-07-13-aura-omega-r3-qualified-capability-topology.md`.
+This plan implements only the transactional prerequisite. Kernel completion does
+not mean the 108-node / 170-edge AURA core or disabled 111-node / 176-edge
+federation-ready target is implemented.
 
 **Non-negotiable cost boundary:** all implementation and verification use repository-local tools plus the user's existing local Claude, Codex, Git, and Ollama capability surfaces. No paid API, hosted metered inference, or recurring SaaS dependency is introduced.
 
@@ -44,13 +48,14 @@ If preparation, verification, compare-and-swap, promotion, or cleanup fails:
 
 ### Pre-implementation documentation gate
 
-This approved design and implementation plan are versioned before production code changes. Stage exactly these two known documentation files, inspect the staged diff, commit them, and require the tree to contain no other documentation change before Task 1:
+This approved design, qualified-topology addendum, and implementation plan are versioned before production code changes. Stage exactly these three known documentation files, inspect the staged diff, commit them, and require the tree to contain no other documentation change before Task 1:
 
 ```powershell
 git diff --cached --quiet
 if ($LASTEXITCODE -ne 0) { throw 'Pre-existing staged paths; preserve them and stop' }
 $stageAllowlist = @(
   'docs/superpowers/specs/2026-07-13-aura-omega-revision-3-design.md',
+  'docs/superpowers/specs/2026-07-13-aura-omega-r3-qualified-capability-topology.md',
   'docs/superpowers/plans/2026-07-13-aura-omega-r3-transactional-kernel.md'
 )
 $oldHead = (git rev-parse HEAD).Trim()
@@ -91,20 +96,20 @@ if ($LASTEXITCODE -ne 0) { throw 'Closed documentation commit failed' }
 $baselineSha = (git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $baselineSha) { throw 'Unable to resolve documentation commit' }
 $committedPaths = @(git diff-tree --no-commit-id --name-only -r $oldHead $baselineSha)
-if ($LASTEXITCODE -ne 0 -or @($committedPaths | Sort-Object).Count -ne $stageAllowlist.Count -or (Compare-Object ($stageAllowlist | Sort-Object) ($committedPaths | Sort-Object))) { throw 'Documentation commit tree differs from the exact two-path manifest; stop for reconciliation' }
+if ($LASTEXITCODE -ne 0 -or @($committedPaths | Sort-Object).Count -ne $stageAllowlist.Count -or (Compare-Object ($stageAllowlist | Sort-Object) ($committedPaths | Sort-Object))) { throw 'Documentation commit tree differs from the exact three-path manifest; stop for reconciliation' }
 foreach ($path in $stageAllowlist) {
   $committedBlob = (git rev-parse "$baselineSha`:$path").Trim()
   if ($LASTEXITCODE -ne 0 -or -not $committedBlob) { throw "Unable to resolve committed documentation blob: $path" }
   $worktreeBlob = (git hash-object --no-filters -- $path).Trim()
   if ($LASTEXITCODE -ne 0 -or -not $worktreeBlob -or $committedBlob -ne $worktreeBlob) { throw "Documentation commit bytes differ from reviewed worktree bytes: $path" }
 }
-git show-ref --verify --quiet refs/9to5/baselines/aura-omega-r3
+git show-ref --verify --quiet refs/9to5/baselines/aura-omega-r3-qualified
 if ($LASTEXITCODE -eq 0) { throw 'Baseline ref already exists; preserve it and stop for explicit reconciliation' }
 if ($LASTEXITCODE -ne 1) { throw 'Unable to prove baseline ref absence' }
 $zeroOid = "0" * $baselineSha.Length
-git update-ref refs/9to5/baselines/aura-omega-r3 $baselineSha $zeroOid
+git update-ref refs/9to5/baselines/aura-omega-r3-qualified $baselineSha $zeroOid
 if ($LASTEXITCODE -ne 0) { throw 'Create-only baseline ref installation failed' }
-$resolvedBaseline = (git rev-parse refs/9to5/baselines/aura-omega-r3).Trim()
+$resolvedBaseline = (git rev-parse refs/9to5/baselines/aura-omega-r3-qualified).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Unable to resolve installed baseline ref' }
 if ($resolvedBaseline -ne $baselineSha) { throw "Baseline mismatch: $resolvedBaseline != $baselineSha" }
 $resolvedBaseline
@@ -2447,7 +2452,7 @@ Invoke-AuraChunks $manifestProduction typecheck 'Task 5 complete Tasks 1-4 manif
 Run:
 
 ```powershell
-$auraBaseline = (git rev-parse refs/9to5/baselines/aura-omega-r3).Trim()
+$auraBaseline = (git rev-parse refs/9to5/baselines/aura-omega-r3-qualified).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Unable to resolve AURA baseline ref' }
 $auraChanged = @(git diff --name-only $auraBaseline)
 if ($LASTEXITCODE -ne 0) { throw 'Unable to enumerate AURA baseline diff' }
@@ -2853,6 +2858,11 @@ These are important but do not belong in the same high-risk kernel change:
 6. Risk-tiered, power-calculated outcome promotion rather than fixed sample counts.
 7. Dashboard visualization of the live AURA graph and current execution node.
 8. Transactional runner-up graft as a new independently verified candidate.
+9. Qualified topology manifest and static node/edge/count/authority linter.
+10. Spectrum charter registry, admission, ephemeral cells, contradiction exchange, convergence, advisory bundle, and post-terminal outcome resolution.
+11. Cortex query framing, integrity and phase gates, bounded epochs, selective broadcast, spill/recall, synthesis receipts, and Crucible counterfactual trials.
+12. Per-node and per-edge Graph Admission Trials with expiring workload-scoped warrants.
+13. Disabled Pneuma federation envelope validator, status-digest gate, shadow record, terminal feedback, kill switch, and forbidden-payload canaries.
 
 They are deferred because the staged attempt kernel is their prerequisite, not because they are lower ambition.
 
@@ -2861,6 +2871,11 @@ They are deferred because the staged attempt kernel is their prerequisite, not b
 ## 9. Completion definition
 
 This wave is complete only when all statements below are machine-supported:
+
+The statements below certify the transactional-kernel wave only. Full AURA
+Revision 3 completion additionally requires the qualified topology, graph
+admission, Spectrum, Cortex, Pneuma-boundary, and Constellation gates in the
+capability-topology design.
 
 - no accepted landing-required attempt can bypass staged preparation;
 - every current mutating Local/Docker/Society/parallel/solution-space attempt executes inside a fail-closed standalone `CloneLease`; the transactional kernel stages objects without linked worktrees;

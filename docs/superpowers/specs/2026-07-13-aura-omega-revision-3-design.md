@@ -17,8 +17,9 @@ AURA Ω Revision 3 replaces 9to5's aging “Ollama brain, Claude hands” hierar
 2. Claude and Codex become peer execution drivers with distinct, measured capability profiles. Neither is subordinate to the other, and neither owns truth.
 3. Ollama becomes the zero-cost reflex tier: classification, compression, retrieval shaping, low-risk drafting, and degraded planning. It may propose; it does not become an unquestioned sovereign.
 4. Every adaptive mechanism begins in shadow mode and earns production authority through matched experiments and independently resolved receipts.
-5. Rich graph, memory, society, innovation, and dashboard surfaces are projections over canonical facts. They do not create additional writers or parallel truth systems.
+5. Rich graph, memory, society, innovation, and dashboard surfaces may transform or project immutable advisory artifacts over canonical facts. They do not create additional writers or parallel truth systems.
 6. Repository-derived elaboration, discovery, planning context, validation, and review operate only on an immutable source snapshot through a credentialless read broker. Canonical is an attested object source and eventual promotion target, never a host execution or introspection working directory.
+7. The purpose-distinct capability target expands the audited 71-node / 95-edge base into a 108-node / 170-edge AURA core through provider-neutral Spectrum teams, Aegis admission boundaries, and a bounded Cortex workspace. A separately counted, disabled Pneuma boundary yields 111 nodes / 176 unique typed edges without widening mutation authority. These are exact target-topology counts, not manifest-qualified or runtime-enabled counts.
 
 This is not a cosmetic provider adapter. It changes the unit of autonomy from “a model session that probably succeeded” to **an isolated, leased, verified attempt whose effects and evidence are explicit**.
 
@@ -371,6 +372,27 @@ may inform a later pure lookup, but no archived or feedback edge carries a live 
 Every writer, model, judge, dashboard, memory learner and retry remains outside that spine.
 
 The dashboard requested by the user is the `AURA Constellation` projection of this flow. It will highlight the current node, active leases, causal parents, uncertainty, provider route, verification state, recovery edges, and evidence behind every displayed score. It is deliberately implemented after the kernel emits trustworthy events.
+
+### 6.1 Qualified Spectrum, Cortex, and federation overlay
+
+The Mermaid graph above is the audited 71-node / 95-edge R3 base. The exhaustive
+target and qualification contract is defined in
+[AURA Omega R3 Target and Qualification Topology](2026-07-13-aura-omega-r3-qualified-capability-topology.md):
+
+| Layer | Added nodes | Added unique typed edges | Cumulative |
+|---|---:|---:|---:|
+| Spectrum and Aegis admission | 16 | 31 | 87 / 126 |
+| Cortex | 21 | 44 | **108 / 170** |
+| Disabled Pneuma federation boundary | 3 | 6 | **111 / 176** |
+
+The core quota excludes Pneuma internals, ephemeral instances, retries, aliases,
+schema fields, and Chronicle/Constellation presentation. Every new overlay node
+and edge has an architecture contract, independent lifecycle or transformation,
+bounded failure behavior, authority class, measurable consumer effect, and
+knockout test. The base is structurally audited but the full graph must not be
+called manifest-qualified until its one machine-readable contract validates.
+Nothing here is runtime-enabled, and the overlay adds no ingress to the
+mutation-authority spine.
 
 ## 7. Canonical contracts
 
@@ -970,6 +992,9 @@ Revision 3 reuses patterns, not mythology:
 | OpenHands | permissive local reference | sandbox/artifact recovery and event-stream patterns |
 | AGX | MIT | typed DAG, event-sourced runtime, resume checks |
 | Code as Agent Harness survey repository | research index | Treat orchestration as executable, inspectable harness mechanisms |
+| Attention Is All You Need v7 | research paper | Paper evidence: Q/K/V attention, multi-head projections, decoder future masking, explicit positions, residual connections, and non-monotonic fixed-compute head ablation. AURA separately hypothesizes sparse typed routing, security masks, and an independent hard-constraint channel; not a claim that the orchestration graph is a neural network. |
+| Anthropic Global Workspace / J-space, 2026-07-06 | research paper | Paper evidence: a small, causally involved, workspace-like representational component with limited capacity and broadcast-like connectivity. AURA separately hypothesizes typed specialists/admission, targeted external broadcast, relational frames, and recurrent immutable epochs; not internal access to Claude/Codex or evidence of consciousness. |
+| Anthropic jacobian-lens commit 581d398 | Apache-2.0 reference, unmaintained | Optional digest-pinned experiments on license-compatible local open-weight Hugging Face models only; never a production monitor, verifier, or authority gate. Model weights and corpora retain separate licenses. |
 
 No proprietary Claude Code source is copied. Public CLI contracts and ideas are reimplemented.
 
@@ -999,6 +1024,10 @@ Recent community evidence is used only to generate hypotheses. Low-ranked or com
 | E7 | Forecast and causal credit | base rate, unpaired, no drift, no intervention | beat base-rate calibration; recover injected causes; stable under cohort reweighting |
 | E8 | Evidence-preserving memory | vector-only, recency-only, contradiction off | improved paired task success; zero poisoned trusted memories; rare failures retained |
 | E9 | Anytime-valid promotion and observatory | unpaired test, visible fixtures, provenance hidden | A/A false promotion within target; hidden canary inaccessible; every panel recomputable |
+| E10 | Qualified graph admission | incumbent, equal-budget incumbent, sham topology, real topology, every node and edge knockout | zero authority regression; non-inferior verified quality; material gain over both incumbent controls; expiring workload-scoped GraphWarrant |
+| E11 | Spectrum and Cortex mechanism trial | off/on factorial, 8/16/32 slots, 1/4/8 specialists, duplicated/shuffled charters, full context, no bypass, flat claim bags | higher paired verified wins per occupied provider-minute or equal quality with a material resource reduction |
+| E12 | Workspace integrity and causality | remove each mask, stale/injected/correlated evidence, pivotal-frame swaps, negative controls | unique seeded-fault catch signatures, causal mediation evidence, zero simple-task or authority regression |
+| E13 | Disabled Pneuma boundary | malformed, replayed, stale, oversized, forbidden-payload, unavailable, and terminal-feedback canaries | observational equivalence to absence for repository/canonical/provider/data/controller/evidence effects, with at most one bounded audit receipt; no replay while disabled and no raw data, training, RSI, host mutation, paid egress, direct import, or authority path |
 
 Security and scope suites are hard constraints, not terms in a scalar objective.
 
@@ -1170,6 +1199,8 @@ This kernel slice includes the minimum pinned safe-boot adapters and credential-
 - No graph growth whose nodes lack identity, lifecycle, or evidence.
 - No self-promotion by the proposing model or subsystem.
 - No replacement of TaskState, ControlBus, verifier receipts, or human authority with Chronicle.
+- No claim that AURA Cortex is Claude/Codex internal J-space, hidden chain of thought, or evidence of phenomenal consciousness.
+- No active Pneuma integration while its canonical status remains standalone, partially unimplemented, training-unauthorized, or RSI-non-operational.
 - No dashboard work before the event and receipt contracts are trustworthy.
 - No reduction of the test suite as part of this program; that is explicitly owned elsewhere.
 
