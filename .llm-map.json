@@ -403,6 +403,7 @@
         "runClaude"
       ],
       "depends_on": [
+        "agents.execution.executor_preflight",
         "agents.executor_env",
         "agents.executor_session",
         "agents.executor_stream",
@@ -434,6 +435,23 @@
         "platform_core.runtime.action_risk"
       ],
       "callers": [],
+      "test": [
+        "tests/execution/test_executor.py"
+      ]
+    },
+    "agents.execution.executor_preflight": {
+      "path": "agents/execution/executor_preflight.py",
+      "purpose": "Zero-cost launch preflight for the incumbent Claude subscription driver.",
+      "exports": [
+        "ClaudeLaunchPreflight",
+        "preflightClaudeLaunch"
+      ],
+      "depends_on": [
+        "platform_core.core.galaxy_evidence"
+      ],
+      "callers": [
+        "agents.execution.executor"
+      ],
       "test": [
         "tests/execution/test_executor.py"
       ]
@@ -5242,6 +5260,7 @@
         "tests/evolution/test_solution_cache_provenance.py",
         "tests/evolution/test_user_prefs.py",
         "tests/execution/test_external_project.py",
+        "tests/execution/test_galaxy_zero_cost_preflight.py",
         "tests/execution/test_github_pr_gate.py",
         "tests/execution/test_pr_feedback.py",
         "tests/execution/test_pr_feedback_async.py",
@@ -8298,6 +8317,7 @@
       ],
       "depends_on": [],
       "callers": [
+        "agents.execution.executor_preflight",
         "agents.planning.preplanning_clarification",
         "platform_core.core.galaxy_experiments"
       ],

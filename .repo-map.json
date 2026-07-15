@@ -727,10 +727,11 @@
           "kind": "function",
           "signature": "(spec_or_prompt: Union[dict, str], *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, system_prompt: Optional[str]=None, extra: Optional[str]=None, timeout: Optional[int]=None, resume_session: Optional[str]=None, cancel_check=None, feed=None, parent_trajectory_step_id: Optional[str]=None, environment=None, env_handle=None) -> dict",
           "summary": "Prepare the environment from the invocation spec, then fire one Claude run.",
-          "lineno": 239
+          "lineno": 248
         }
       ],
       "depends_on": [
+        "agents.execution.executor_preflight",
         "agents.executor_env",
         "agents.executor_session",
         "agents.executor_stream",
@@ -813,6 +814,38 @@
         "tests/execution/test_executor.py"
       ],
       "callers": []
+    },
+    "agents.execution.executor_preflight": {
+      "path": "agents/execution/executor_preflight.py",
+      "purpose": "Zero-cost launch preflight for the incumbent Claude subscription driver.",
+      "exports": [
+        {
+          "name": "ClaudeLaunchPreflight",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 48
+        },
+        {
+          "name": "preflightClaudeLaunch",
+          "kind": "function",
+          "signature": "(environ: Mapping[str, str], *, policy_enforced: bool) -> ClaudeLaunchPreflight",
+          "summary": "Evaluate billing, quota, and capacity before any target/workdir operation.",
+          "lineno": 82
+        }
+      ],
+      "depends_on": [
+        "platform_core.core.galaxy_evidence"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_executor.py"
+      ],
+      "callers": [
+        "agents.execution.executor"
+      ]
     },
     "agents.execution.executor_session": {
       "path": "agents/execution/executor_session.py",
@@ -9665,6 +9698,7 @@
         "tests/evolution/test_solution_cache_provenance.py",
         "tests/evolution/test_user_prefs.py",
         "tests/execution/test_external_project.py",
+        "tests/execution/test_galaxy_zero_cost_preflight.py",
         "tests/execution/test_github_pr_gate.py",
         "tests/execution/test_pr_feedback.py",
         "tests/execution/test_pr_feedback_async.py",
@@ -15670,6 +15704,7 @@
         "tests/platform/test_galaxy_evidence.py"
       ],
       "callers": [
+        "agents.execution.executor_preflight",
         "agents.planning.preplanning_clarification",
         "platform_core.core.galaxy_experiments"
       ]
