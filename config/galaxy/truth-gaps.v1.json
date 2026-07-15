@@ -65,10 +65,17 @@
     {
       "truth_gap": "UNENFORCED_ZERO_COST",
       "evidence_id": "galaxy.truth-gap.07.v1",
-      "state": "specified",
-      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
-      "source_paths": [{"path": "platform_core/runtime/action_risk.py", "sha256": "880d109199177b54e5dc35b48e9e32ed53743ee06e811ca022c96abfdddc8154"}],
-      "test_paths": [{"path": "tests/execution/test_action_risk.py", "sha256": "634476c1c37ad16c9d0b2af286938fe3ab3ef45c190c16e9e01ffdb0c96a2c8d"}],
+      "state": "implemented_dark",
+      "source_revision": "f80247a53ee1079dbec6ef9300407fb5fa98be58",
+      "source_paths": [
+        {"path": "platform_core/runtime/action_risk.py", "sha256": "880d109199177b54e5dc35b48e9e32ed53743ee06e811ca022c96abfdddc8154"},
+        {"path": "agents/execution/executor.py", "sha256": "d714bfe94961b6087289861de9268bdebe56fb599b6e2749e7bc69897e017a09"},
+        {"path": "agents/execution/executor_preflight.py", "sha256": "e07c708a3225a1536b576c1645c2c400bd4e123a384e2b0090087d86a8be114f"}
+      ],
+      "test_paths": [
+        {"path": "tests/execution/test_action_risk.py", "sha256": "634476c1c37ad16c9d0b2af286938fe3ab3ef45c190c16e9e01ffdb0c96a2c8d"},
+        {"path": "tests/execution/test_galaxy_zero_cost_preflight.py", "sha256": "66572cbc5551fc29d324169d17d1aaea6e8a60f6d6522fc373c21c919e295d14"}
+      ],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
     },
