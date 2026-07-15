@@ -1,0 +1,48 @@
+{
+  "schema_version": "galaxy.prerequisite-audit.v1",
+  "stage": 2,
+  "recorded_at": "2026-07-14T22:41:39.1115498-04:00",
+  "repository_head": "d209acf98c316784cffca8003e638260805bb16c",
+  "prerequisite": "offline-activation-artifact-closure",
+  "observations": {
+    "docker_client": {
+      "present": true,
+      "version": "29.5.2",
+      "context": "desktop-linux"
+    },
+    "docker_daemon": {
+      "reachable": false,
+      "endpoint": "npipe:////./pipe/dockerDesktopLinuxEngine",
+      "error_class": "pipe-not-found"
+    },
+    "alternate_local_engines": {
+      "podman": false,
+      "nerdctl": false,
+      "containerd": false,
+      "buildah": false
+    },
+    "reviewed_oci_archives": {
+      "declared_paths": [],
+      "tar_or_oci_candidates_in_downloads": [],
+      "repository_archive_lock": false,
+      "complete_verified_closure": false
+    },
+    "external_singularity_admin_client": {
+      "path": "C:/Users/fireh/AppData/Local/9to5/singularity/bin/singularity-admin-client.ps1",
+      "present": false
+    }
+  },
+  "decision": {
+    "type": "OfflineActivationArtifactsUnavailable",
+    "task_1_source_commit_allowed": false,
+    "tofu_allowed": false,
+    "cutover_allowed": false,
+    "production_authority_changed": false
+  },
+  "required_resolution": [
+    "Provide strict absolute local paths to the complete independently reviewed OCI archive set, or make an already-owned local engine available with all hash-pinned inputs cached locally and registry/network access disabled.",
+    "Run the pinned independent archive inspector and closed activation harness over that exact closure.",
+    "Complete the fresh exact-digest external TOFU ceremony and install the request-only Singularity admin client before the Task 1 source commit."
+  ],
+  "rollback_target": "d209acf98c316784cffca8003e638260805bb16c"
+}
