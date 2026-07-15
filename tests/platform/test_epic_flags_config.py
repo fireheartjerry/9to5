@@ -15,6 +15,7 @@ defaults (env keys scrubbed), while the facade exposure is asserted on the
 live values.
 """
 import config
+from platform_core.app_config import settings as config_settings
 from platform_core.app_config.settings import EpicFlags
 
 
@@ -32,6 +33,61 @@ def test_galaxy_shadow_policy_enforcement_ships_dark(monkeypatch):
     monkeypatch.delenv("GALAXY_R3_POLICY_ENFORCEMENT_ENABLED", raising=False)
     assert EpicFlags().GALAXY_R3_POLICY_ENFORCEMENT_ENABLED is False
     assert isinstance(config.GALAXY_R3_POLICY_ENFORCEMENT_ENABLED, bool)
+
+
+def test_galaxy_policy_enforcement_blocks_unwarranted_behavior_flags(monkeypatch):
+    with monkeypatch.context() as scoped:
+        scoped.setenv("FULL_STACK", "1")
+        scoped.setenv("GALAXY_R3_POLICY_ENFORCEMENT_ENABLED", "1")
+        for name in (
+            "HUMAN_NATURE_ENABLED",
+            "SOCIETY_ENABLED",
+            "SOLUTION_FORK_ENABLED",
+            "EXECUTION_FABRIC_ENABLED",
+            "SIE_AUTO_MAINTENANCE",
+            "SIE_FORCE_WEEKLY",
+            "SIE_AUTHORING_CONTEXT",
+            "ENABLE_PRE_EXECUTION_COUNCIL",
+            "PRE_EXECUTION_COUNCIL_LIVE_GPT_ENABLED",
+        ):
+            scoped.setenv(name, "1")
+        config.reload()
+        assert all(
+            config_settings.lookup(name) is False
+            for name in (
+                "HUMAN_NATURE_ENABLED",
+                "SOCIETY_ENABLED",
+                "SOLUTION_FORK_ENABLED",
+                "EXECUTION_FABRIC_ENABLED",
+                "SIE_AUTO_MAINTENANCE",
+                "SIE_FORCE_WEEKLY",
+                "SIE_AUTHORING_CONTEXT",
+                "ENABLE_PRE_EXECUTION_COUNCIL",
+                "PRE_EXECUTION_COUNCIL_LIVE_GPT_ENABLED",
+            )
+        )
+    config.reload()
+
+
+def test_galaxy_shadow_mode_preserves_incumbent_full_stack_flags(monkeypatch):
+    with monkeypatch.context() as scoped:
+        scoped.setenv("FULL_STACK", "1")
+        scoped.setenv("GALAXY_R3_POLICY_ENFORCEMENT_ENABLED", "0")
+        for name in (
+            "HUMAN_NATURE_ENABLED",
+            "SOCIETY_ENABLED",
+            "SOLUTION_FORK_ENABLED",
+            "EXECUTION_FABRIC_ENABLED",
+            "SIE_FORCE_WEEKLY",
+        ):
+            scoped.setenv(name, "1")
+        config.reload()
+        assert config_settings.lookup("HUMAN_NATURE_ENABLED") is True
+        assert config_settings.lookup("SOCIETY_ENABLED") is True
+        assert config_settings.lookup("SOLUTION_FORK_ENABLED") is True
+        assert config_settings.lookup("EXECUTION_FABRIC_ENABLED") is True
+        assert config_settings.lookup("SIE_FORCE_WEEKLY") is True
+    config.reload()
 
 def test_epic1_flag_defaults(monkeypatch):
     monkeypatch.setenv("FULL_STACK", "0")   # master off -> assert the conservative ship-dark fallback

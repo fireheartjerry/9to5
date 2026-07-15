@@ -75,6 +75,32 @@ class Settings:
 _DOMAINS: tuple[str, ...] = ("paths", "ollama", "claude_cli", "discord", "sie", "epic",
                              "inventor", "prompts")
 
+# These existing flags can change decisions or launch work.  Wave 0 leaves the
+# incumbent values untouched while enforcement is dark; once enforcement is enabled,
+# repository environment variables and FULL_STACK cannot grant them authority.
+_GALAXY_BEHAVIOR_FLAGS = frozenset({
+    "COST_BUDGET_ENABLED",
+    "STEP_RESUME_ENABLED",
+    "WORKTREE_ISOLATION_ENABLED",
+    "DUAL_LEDGER_PLANNER_ENABLED",
+    "SOCIETY_ENABLED",
+    "SOLUTION_FORK_ENABLED",
+    "SOLUTION_FORK_GRAFT_ENABLED",
+    "EXECUTION_FABRIC_ENABLED",
+    "HUMAN_NATURE_ENABLED",
+    "ENABLE_PRE_EXECUTION_COUNCIL",
+    "PRE_EXECUTION_COUNCIL_SEAM_ENABLED",
+    "PRE_EXECUTION_COUNCIL_INJECT_ARCHITECT_CONTEXT",
+    "PRE_EXECUTION_COUNCIL_INJECT_PLANNER_CONTEXT",
+    "SIE_AUTO_MAINTENANCE",
+    "SIE_FORCE_WEEKLY",
+    "SIE_AUTHORING_CONTEXT",
+    "SIE_REFLECTION_ENABLED",
+    "REFLECTION_CONSOLIDATE_ENABLED",
+    "EVOLUTION_ENABLED",
+    "CURRICULUM_AUTO_QUEUE_ENABLED",
+})
+
 
 def _withinBounds(bounds: dict, knob: str, value: Any) -> bool:
     lo, hi = bounds.get(knob, (float("-inf"), float("inf")))
@@ -160,7 +186,14 @@ def lookup(name: str) -> Any:
     dom = _nameMap().get(name)
     if dom is None:
         raise AttributeError(f"unknown config constant {name!r}")
-    return getattr(getattr(settings(), dom), name)
+    current = settings()
+    value = getattr(getattr(current, dom), name)
+    if current.epic.GALAXY_R3_POLICY_ENFORCEMENT_ENABLED and isinstance(value, bool):
+        is_human_nature_coupling = name.startswith("HN_")
+        is_external_council_seat = name.startswith("PRE_EXECUTION_COUNCIL_LIVE_")
+        if name in _GALAXY_BEHAVIOR_FLAGS or is_human_nature_coupling or is_external_council_seat:
+            return False
+    return value
 
 
 def lookupDomain(domains: tuple[str, ...], name: str) -> Any:
@@ -170,7 +203,7 @@ def lookupDomain(domains: tuple[str, ...], name: str) -> Any:
     dom = _nameMap().get(name)
     if dom is None or dom not in domains:
         raise AttributeError(f"no config constant {name!r} in domains {domains}")
-    return getattr(getattr(settings(), dom), name)
+    return lookup(name)
 
 
 # ---------------------------------------------------------------------------

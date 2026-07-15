@@ -14841,70 +14841,70 @@
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "Fresh registry: coded defaults < .env (loadEnvOnce) < sie_overrides.json.",
-          "lineno": 111
+          "lineno": 137
         },
         {
           "name": "settings",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "The process-wide registry singleton (lazy, thread-safe).",
-          "lineno": 126
+          "lineno": 152
         },
         {
           "name": "allNames",
           "kind": "function",
           "signature": "() -> list[str]",
           "summary": "Every legacy ALL_CAPS constant name the registry serves (for the facade __all__/__dir__…",
-          "lineno": 151
+          "lineno": 177
         },
         {
           "name": "lookup",
           "kind": "function",
           "signature": "(name: str) -> Any",
           "summary": "Constant by legacy name",
-          "lineno": 156
+          "lineno": 182
         },
         {
           "name": "lookupDomain",
           "kind": "function",
           "signature": "(domains: tuple[str, ...], name: str) -> Any",
           "summary": "lookup() restricted to the given domains (PEP 562 seam for the domain modules).",
-          "lineno": 166
+          "lineno": 199
         },
         {
           "name": "RunFlags",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 186
+          "lineno": 219
         },
         {
           "name": "runFlags",
           "kind": "function",
           "signature": "() -> RunFlags",
           "summary": "The run-scoped flag singleton, seeded from the registry's coded/env defaults.",
-          "lineno": 196
+          "lineno": 229
         },
         {
           "name": "reload",
           "kind": "function",
           "signature": "() -> Settings",
           "summary": "Rebuild the registry from the current env + overrides file and reseed run flags.",
-          "lineno": 210
+          "lineno": 243
         },
         {
           "name": "setOverride",
           "kind": "function",
           "signature": "(knob: str, value: Any) -> tuple[bool, bool]",
           "summary": "Live-apply + persist a whitelisted, bounds-checked SIE knob.",
-          "lineno": 224
+          "lineno": 257
         },
         {
           "name": "getLogger",
           "kind": "function",
           "signature": "(name: str='9to5') -> logging.Logger",
           "summary": "Return a child of the configured ``9to5`` logger.",
-          "lineno": 322
+          "lineno": 355
         }
       ],
       "depends_on": [
