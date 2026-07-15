@@ -93,9 +93,16 @@
       "truth_gap": "SYNTHETIC_METRICS",
       "evidence_id": "galaxy.truth-gap.09.v1",
       "state": "implemented_dark",
-      "source_revision": "ee0c7b9fbe9ad1e1a3c8f4331c7b18940471a9bb",
-      "source_paths": [{"path": "platform_core/orchestration/solution_space.py", "sha256": "322b231f992e9ae0e1fce89fa0aed7516bb8804ab6111115d378eaa24a0c29e5"}],
-      "test_paths": [{"path": "tests/orchestration/test_solution_space.py", "sha256": "03a9da37f83b397d775807cbe11aef2238d213023c816aefa9278ad9ccfaf877"}],
+      "source_revision": "68c094e461a8c5b760ea72fb4d5b195c28a4cc9c",
+      "source_paths": [
+        {"path": "platform_core/orchestration/solution_space.py", "sha256": "be23975e86352ca3ded5402e3c99bf9284e4b12e75a9ef23ae986541e6c7ff84"},
+        {"path": "platform_core/orchestration/qd_archive.py", "sha256": "eed884051b18974c8ef92e8bfd7bbc576d2aa2569961f444810c3afa1b21cfcc"}
+      ],
+      "test_paths": [
+        {"path": "tests/orchestration/test_solution_space.py", "sha256": "03a9da37f83b397d775807cbe11aef2238d213023c816aefa9278ad9ccfaf877"},
+        {"path": "tests/orchestration/test_qd_archive.py", "sha256": "82adf1cfab834b21c74002f94d21f5a242229b370b5d30a2231c83044ac348d8"},
+        {"path": "tests/orchestration/test_solution_space_generational.py", "sha256": "219f4d3cdbebe7be5c18220a31a828d3791ff2ddd28d4f262458deac14cbb39a"}
+      ],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
     },
