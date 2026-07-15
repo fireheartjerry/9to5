@@ -159,6 +159,9 @@ class QDElite:
     cell: QDCell = field(default_factory=QDCell)
     fitness: float = 0.0
     metrics: dict[str, Any] = field(default_factory=dict)
+    # Wave 0 truth freeze: an explicit unknown is never coerced to a neutral/zero
+    # value and cannot participate in archive selection.
+    unknown_metrics: tuple[str, ...] = ()
     lineage: dict[str, Any] = field(default_factory=dict)  # {parents[], emitter, generation, mutation_prompt_hash}
     evidence_refs: list[str] = field(default_factory=list)
     created_at: str = ""

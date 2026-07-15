@@ -226,14 +226,15 @@ def _branchElite(b, subtask):
         return None
     from platform_core.orchestration.invention_types import QDCell, QDElite
     angle = getattr(getattr(b, "seed", None), "angle_hint", "") or getattr(b, "branch_id", "b")
-    diff_lines = int(getattr(b, "diff_lines", 0) or 0)
-    cost = float(getattr(b, "cost_usd", 0.0) or 0.0)
-    metrics = {"verification_score": 1.0, "impact_score": 0.5,
-               "maintainability_score": max(0.0, 1.0 - diff_lines / 500.0), "adoption_score": 0.5,
-               "cost_efficiency_score": max(0.0, 1.0 - cost / 5.0), "reversibility_score": 0.7,
-               "measured_novelty": 0.5, "risk_inverse": 0.6}
+    metrics = {"verification_score": 1.0}
+    unknown_metrics = (
+        "impact_score", "maintainability_score", "adoption_score",
+        "cost_efficiency_score", "reversibility_score", "measured_novelty",
+        "risk_inverse",
+    )
     cell = QDCell(subsystem=str(angle)[:24] or "fork")
     return QDElite(id=b.branch_id, candidate_id=b.branch_id, cell=cell, metrics=metrics,
+                   unknown_metrics=unknown_metrics,
                    evidence_refs=[getattr(b, "headline", "VERIFIED")])
 
 

@@ -70,6 +70,8 @@ class QDArchive:
     def add(self, elite: QDElite) -> bool:
         """Insert an elite. HARD GATES: failing-verify or factless => rejected (returns False)."""
         m = elite.metrics or {}
+        if elite.unknown_metrics:
+            return False                                   # unknown is not zero and cannot steer
         if float(m.get("verification_score", 0.0)) <= 0.0:
             return False                                   # a failing-verify elite can never win
         if not elite.evidence_refs:

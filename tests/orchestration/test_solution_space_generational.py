@@ -66,3 +66,26 @@ def test_generational_falls_back_to_gen0_on_error(monkeypatch):
     _install_fakes(monkeypatch, [(_win("g0"), [], 1.0), RuntimeError("boom")])
     winner, _ = _run()
     assert winner.branch_id == "g0"                     # never worse than a single batch
+
+
+def test_branch_elite_marks_unmeasured_metrics_unknown():
+    branch = SimpleNamespace(
+        branch_id="b1",
+        passed=True,
+        seed=SimpleNamespace(angle_hint="minimal"),
+        diff_lines=12,
+        cost_usd=0.0,
+        headline="VERIFIED",
+    )
+    elite = ss._branchElite(branch, {})
+    assert elite is not None
+    assert elite.metrics == {"verification_score": 1.0}
+    assert set(elite.unknown_metrics) == {
+        "impact_score",
+        "maintainability_score",
+        "adoption_score",
+        "cost_efficiency_score",
+        "reversibility_score",
+        "measured_novelty",
+        "risk_inverse",
+    }

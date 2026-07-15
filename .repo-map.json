@@ -18488,21 +18488,21 @@
           "kind": "class",
           "signature": "",
           "summary": "One fact-backed innovation entry for the final report (Track C).",
-          "lineno": 180
+          "lineno": 183
         },
         {
           "name": "EmitterAllocation",
           "kind": "class",
           "signature": "",
           "summary": "One emitter's allocated generation budget for a target cell (Track B5/D2).",
-          "lineno": 200
+          "lineno": 203
         },
         {
           "name": "PortfolioSelection",
           "kind": "class",
           "signature": "",
           "summary": "Result of the max-closure candidate-portfolio optimizer (Track D1).",
-          "lineno": 223
+          "lineno": 226
         }
       ],
       "depends_on": [],

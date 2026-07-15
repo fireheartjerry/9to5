@@ -80,6 +80,14 @@ def test_factless_claim_cannot_win():
     assert a.coverage() == 0
 
 
+def test_explicitly_unknown_metrics_cannot_steer_archive():
+    elite = _elite(CELL_A, "synthetic")
+    elite.unknown_metrics = ("impact_score", "measured_novelty")
+    a = qd.QDArchive()
+    assert a.add(elite) is False
+    assert a.coverage() == 0
+
+
 def test_coverage_and_qd_score_are_deterministic():
     def build():
         a = qd.QDArchive()
