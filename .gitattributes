@@ -4,3 +4,8 @@
 .repo-map.json text eol=lf
 AGENTS.md text eol=lf
 **/AGENTS.md text eol=lf
+
+# Markdown uses two trailing spaces for an intentional hard line break.  Keep
+# frozen specification bytes on LF and do not report those breaks as whitespace
+# errors in the repository-wide `git diff --check` gate.
+*.md text eol=lf whitespace=-blank-at-eol

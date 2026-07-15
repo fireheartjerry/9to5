@@ -1,0 +1,62 @@
+{
+  "capture_date": "2026-07-14",
+  "configuration_closure": {
+    "entry_count": 8,
+    "sha256": "67b73f585eb46f960f40ece1562399e2a0adef1d4a062aa467e86c64c9700132"
+  },
+  "contract_version": "galaxy.incumbent-baseline/v1",
+  "external_spend_allowed": false,
+  "fixture_and_outcome_corpus_closure": {
+    "entry_count": 489,
+    "sha256": "d5ffe6621c19f57480ea54c1984ded9ab385b2c2cbbd4ac88709782db3babed2"
+  },
+  "resources": {
+    "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+    "host_os": "Microsoft Windows 11 Home build 26200",
+    "logical_processors": 24,
+    "pytest_workers": "auto",
+    "ram_bytes": 33752997888
+  },
+  "runtime": {
+    "available_launcher_runtimes": [
+      "3.11.15",
+      "3.14"
+    ],
+    "compatibility_python": "3.11.15",
+    "git": "2.54.0.windows.1",
+    "powershell": "5.1.26100.8655",
+    "production_python_available_at_capture": false,
+    "production_python_pinned": "3.12",
+    "pytest": "9.1.1"
+  },
+  "source_revision": "c16bbebe880a9fa0963c79f707278c920aab6798",
+  "source_tree": "1e713817804d040ff1c03075026f4bbe4a47a17f",
+  "subscription_mode": {
+    "claude_code": "existing_local_subscription_permitted",
+    "codex_chatgpt": "existing_local_subscription_permitted",
+    "ollama": "existing_local_compute_permitted",
+    "paid_api": "forbidden",
+    "recurring_saas": "forbidden"
+  },
+  "suite": {
+    "archive": "external controller staging: galaxy-r3/stage-0/baseline-py311-20260714-211339.{stdout,stderr}.log",
+    "command": "python -m pytest -n auto -q",
+    "duration_seconds": 238.5,
+    "exit_code": 1,
+    "failed": 7,
+    "known_failures": [
+      "tests/control/test_identity.py::TestPredicates::test_self_code_files_excludes_test_dirs",
+      "tests/evolution/test_selfmod_runner.py::test_size_audit_p7_files_not_must_split",
+      "tests/orchestration/test_society_off_invariance.py::test_handle_society_batch_delegates_to_coordinator",
+      "tests/platform/test_sync_competitive_skill.py::test_sync_copies_canonical_skill",
+      "tests/platform/test_config_bootstrap.py::test_subprocess_import_from_non_repo_cwd_resolves_repo_root",
+      "tests/platform/test_no_unittest_footgun.py::test_no_test_file_has_unittest_main_block",
+      "tests/platform/test_repo_map.py::TestRepoMapDrift::test_no_drift"
+    ],
+    "passed": 4935,
+    "skipped": 3,
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_sha256": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+    "subtests_passed": 222
+  }
+}

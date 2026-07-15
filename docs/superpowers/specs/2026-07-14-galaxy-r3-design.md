@@ -1,25 +1,27 @@
-# AURA Ω Revision 3: Evidence-Routed Autonomous Systems Architecture
+# GALAXY Revision 3: Evidence-Routed Autonomous Systems Architecture
 
-> **Date:** 2026-07-13
+> **Date:** 2026-07-14 (revision pass; supersedes the 2026-07-13 freeze)
 >
-> **Status:** preapproved design; implementation follows without another approval pause
+> **Status:** frozen target architecture with frozen companion plans; runtime implementation is not yet authorized
 >
 > **Branch:** `main`
 >
-> **Hard constraint:** essentially zero incremental external operating cost
+> **Hard constraint:** exactly zero incremental external operating cost — zero paid API calls, zero metered hosted inference, and zero recurring SaaS in the zero-cost profile. ("Essentially zero" elsewhere in prose is shorthand for this exact-zero measurable target, not a looser allowance; §2, §18, and §19 are the normative statements.)
 > **Capability boundary:** existing local Ollama, Claude Code subscription, and Codex/ChatGPT subscription are permitted; paid APIs, metered hosted inference, and recurring SaaS are not
+>
+> **Host platform:** the reference host is Windows-first (PowerShell 5.1 anchor, private ConPTY operator surface, NTFS 8.3/ADS/reparse handling, kernel-owned handle-relative materializer). POSIX equivalents (`TIOCEXCL` PTY, no-follow handles) are called out where they exist; any platform lacking a required fail-closed equivalent makes the affected capability `unavailable`, never silently degraded.
 
 ## 1. Executive decision
 
-AURA Ω Revision 3 replaces 9to5's aging “Ollama brain, Claude hands” hierarchy with an **evidence-routed autonomous systems kernel**:
+GALAXY Revision 3 replaces 9to5's aging “Ollama brain, Claude hands” hierarchy with an **evidence-routed autonomous systems kernel**:
 
-1. A small deterministic run kernel owns authority, state transitions, capability checks, isolation, merge, verification, and recovery. Its root of trust is an OS-installed **Omega Anchor** outside every target repository, with a protected pinned capsule/controller digest and monotone generation. The anchor verifies an immutable Omega Boot Capsule and last-known-good controller bundle; self-referential 9to5 work never imports the checkout being modified.
+1. A small deterministic run kernel owns authority, state transitions, capability checks, isolation, merge, verification, and recovery. Its root of trust is an OS-installed **Polaris Anchor** outside every target repository, with a protected pinned capsule/controller digest and monotone generation. The anchor verifies an immutable Singularity Boot Capsule and last-known-good controller bundle; self-referential 9to5 work never imports the checkout being modified.
 2. Claude and Codex become peer execution drivers with distinct, measured capability profiles. Neither is subordinate to the other, and neither owns truth.
 3. Ollama becomes the zero-cost reflex tier: classification, compression, retrieval shaping, low-risk drafting, and degraded planning. It may propose; it does not become an unquestioned sovereign.
 4. Every adaptive mechanism begins in shadow mode and earns production authority through matched experiments and independently resolved receipts.
 5. Rich graph, memory, society, innovation, and dashboard surfaces may transform or project immutable advisory artifacts over canonical facts. They do not create additional writers or parallel truth systems.
 6. Repository-derived elaboration, discovery, planning context, validation, and review operate only on an immutable source snapshot through a credentialless read broker. Canonical is an attested object source and eventual promotion target, never a host execution or introspection working directory.
-7. The purpose-distinct capability target expands the audited 71-node / 95-edge base into a 108-node / 170-edge AURA core through provider-neutral Spectrum teams, Aegis admission boundaries, and a bounded Cortex workspace. A separately counted, disabled Pneuma boundary yields 111 nodes / 176 unique typed edges without widening mutation authority. These are exact target-topology counts, not manifest-qualified or runtime-enabled counts.
+7. The purpose-distinct capability target expands the audited 71-node / 95-edge base through provider-neutral Flare teams, Magnetosphere admission, Nebula, [Pulsar R1](2026-07-14-galaxy-r3-pulsar-r1-qualified-topology.md), and [Quark Portfolio R2](2026-07-14-galaxy-r3-quark-portfolio-r2-qualified-topology.md) into a **131-node / 250-edge GALAXY core**. A separately counted, disabled Voyager boundary yields **134 nodes / 256 unique typed edges** without widening mutation authority. These are exact structural target counts, not manifest-qualified or runtime-enabled counts.
 
 This is not a cosmetic provider adapter. It changes the unit of autonomy from “a model session that probably succeeded” to **an isolated, leased, verified attempt whose effects and evidence are explicit**.
 
@@ -45,7 +47,7 @@ Revision 3 must not call itself world-class because it has more agents, nodes, m
 - exactly zero paid API or recurring SaaS calls in the zero-cost profile;
 - an evidence trail sufficient to reproduce, falsify, and roll back every promoted behavior change.
 
-RigorBench's five process pillars—planning fidelity, verification coverage, recovery efficiency, abstention quality, and atomic transition integrity—are useful external dimensions, but AURA will keep the dimensions separate instead of hiding failure behind one composite score. SecureVibeBench, MemoryAgentBench, MemSyco-Bench, scope-discipline fixtures, and repo-local outcome suites provide complementary failure surfaces.
+RigorBench's five process pillars—planning fidelity, verification coverage, recovery efficiency, abstention quality, and atomic transition integrity—are useful external dimensions, but GALAXY will keep the dimensions separate instead of hiding failure behind one composite score. SecureVibeBench, MemoryAgentBench, MemSyco-Bench, scope-discipline fixtures, and repo-local outcome suites provide complementary failure surfaces.
 
 ## 3. Brownfield truth: what exists now
 
@@ -53,7 +55,7 @@ RigorBench's five process pillars—planning fidelity, verification coverage, re
 
 The live codebase already contains unusually strong primitives:
 
-- Task JSON is the run-state authority and the run process is its intended single writer.
+- In the brownfield baseline, Task JSON is the run-state authority and the run process is its intended single writer. Pulsar may supersede only its scheduling fields after the externally anchored field-level cutover defined in the [Pulsar R1 annex](2026-07-14-galaxy-r3-pulsar-r1-qualified-topology.md#14-field-level-taskstate-cutover).
 - `control.db` provides SQLite/WAL serialization and stable command/spend deduplication seams.
 - Typed verifier receipts separate observed facts from annotations.
 - Worktree leases exist, and the parallel path already demonstrates merge-before-finalize ordering.
@@ -87,6 +89,31 @@ The live architecture currently permits several false claims:
 
 Revision 3 treats these as architectural blockers, not cleanup.
 
+### 3.3 Blocker-to-resolution traceability
+
+Each numbered blocker in §3.2 must be closeable against a named mechanism. An
+implementing agent should treat this as an acceptance checklist: no blocker is
+"resolved" until the cited section and the migration wave that lands it both
+have receipts.
+
+| # | Blocker | Primary resolving mechanism | Lands in |
+|---|---|---|---|
+| 1 | Completion before collection | Honest attempt transaction boundary (§8.1); collect/stage before completion | Wave 1 |
+| 2 | Silent failed winner merge | `PromotionReceipt` CAS + fenced promotion (§7.7) | Wave 1 |
+| 3 | Privilege-widening fallback | Fail-closed `CapabilityProfile` (§7.2), `CapabilityEnforcer` (§5.2); E2 escape matrix | Wave 1 |
+| 4 | Delete-before-apply commands | Durable command lifecycle (§8.4) | Command/effect wave |
+| 5 | Opaque effects | Non-goal on per-tool exactly-once (§19); attempt-level boundary (§8.1) | Wave 1 |
+| 6 | Provider monoculture | Lensing peer fabric (§5.2, §9) | Wave 2 |
+| 7 | Unenforced zero-cost policy | Zero-cost preflight (§9.1) | Wave 0 |
+| 8 | Confounded learning | `RoutingDecision` provenance (§7.4), causal credit (§11.5) | Wave 5 |
+| 9 | Synthetic metrics | Complexity-theatre kill list (§13) | Wave 0 |
+| 10 | All-on activation | GraphWarrant-gated admission (§6.1), graph admission (Wave 7) | Wave 7 |
+| 11 | Pre-execution host escape | Immutable source snapshot + credentialless broker (§5.1, §8.2) | Wave 1 (slice step 3) |
+| 12 | Canonical preamble mutation | External state root; no run rewrites tracked paths (§5.1) | Wave 1 (slice steps 11–12) |
+| 13 | Post-verification host escape | Exact-revision universal verifier (§8, slice step 12) | Wave 1 |
+| 14 | Post-seal rewrite | Deferred PR publication; typed effect deferral (§8.3–8.4) | Command/effect wave |
+| 15 | Import-before-admission bootstrap | OS-installed Polaris Anchor outside the checkout (§5.1, §18) | Wave 1 (slice step 1) |
+
 ## 4. Alternatives considered
 
 | Architecture | Description | Real gain | Fatal limitation | Decision |
@@ -99,9 +126,9 @@ Architecture C can invoke B when expected value justifies it: high-risk changes,
 
 ## 5. The three authoritative layers
 
-### 5.1 Omega Kernel: deterministic run authority
+### 5.1 Singularity Kernel: deterministic run authority
 
-The Omega Kernel owns:
+The Singularity Kernel owns:
 
 - goal/acceptance digests;
 - task and subtask status;
@@ -116,7 +143,7 @@ The Omega Kernel owns:
 - finalization;
 - abort/kill authority.
 
-The kernel executes from a last-known-good controller bundle verified by an OS-installed Omega
+The kernel executes from a last-known-good controller bundle verified by an OS-installed Singularity
 Anchor, never from the target checkout. On startup the Boot Capsule may invoke only that external
 bundle's minimal recovery entrypoint with a one-use `RecoveryAuthority`. Recovery can no-follow-read
 kernel metadata, quiesce registered resources, hash/type/identity-check only the exact journal-bound
@@ -138,7 +165,7 @@ input; target `.env`, overrides, `state/`, logs, and vault paths are inert snaps
 migration data and can never redirect controller I/O. Fenced promotion is the only target-worktree
 writer.
 
-The first root is established by a fresh, digest-specific trust-on-first-install ceremony rather than
+The first root is established by a fresh, digest-specific trust-on-first-install (TOFU) ceremony rather than
 by repository self-approval. `TrustOnFirstInstallReceipt` has two closed submanifests:
 `source_leaves`, whose policy-canonical bytes must equal the exact Task 1 proposal blobs, and
 `artifact_leaves`, whose interpreter/runtime/OCI/config/layer/SBOM bytes must equal the exact hashes
@@ -167,9 +194,9 @@ Models can propose plans, claims, commands, patches, reviews, and experiments. T
 - turn an unresolved memory into trusted knowledge;
 - mutate the authoritative graph.
 
-### 5.2 Prism Fabric: heterogeneous intelligence and execution
+### 5.2 Lensing Fabric: heterogeneous intelligence and execution
 
-Prism is a provider-neutral driver fabric.
+Lensing is a provider-neutral driver fabric.
 
 - **Claude driver:** planning, writing, repair, review, and long-context execution through the locally authenticated Claude Code CLI.
 - **Codex driver:** planning, writing, repair, review, and repository work through the locally authenticated Codex CLI.
@@ -242,9 +269,9 @@ closed broker into a separate credentialless hardened container; provider config
 the repository is inert data. If a real Claude or Codex subscription-auth canary cannot prove this
 separation, that provider is unavailable for hostile work rather than silently widened.
 
-### 5.3 Crucible: experimental control plane
+### 5.3 Supernova: experimental control plane
 
-Crucible owns no production state. It:
+Supernova owns no production state. It:
 
 - creates immutable experiment manifests;
 - assigns matched or randomized treatments;
@@ -260,8 +287,8 @@ Promotion remains a deterministic policy over receipts. The system being evaluat
 
 ~~~mermaid
 flowchart TD
-    H["Human goal and hard constraints"] --> OA["OS-installed Omega Anchor and protected generation"]
-    OA --> BC["External manifest-verified Omega Boot Capsule"]
+    H["Human goal and hard constraints"] --> OA["OS-installed Polaris Anchor and protected generation"]
+    OA --> BC["External manifest-verified Singularity Boot Capsule"]
     BC --> CB["Last-known-good external controller bundle"]
     CB --> RR["Recovery-only authority and immutable receipt"]
     RR --> CA["Post-recovery no-follow canonical attestation"]
@@ -278,7 +305,7 @@ flowchart TD
     P --> C
     C -->|"material unresolved choice"| Q["Clarification or blocked state"]
 
-    G --> K["Omega controller"]
+    G --> K["Singularity controller"]
     K --> M["Evidence-scoped memory retrieval"]
     K --> R["Capability and provider router"]
     K --> V["Value-of-information planner"]
@@ -348,12 +375,12 @@ flowchart TD
     JA --> F["Persist terminal done"]
 
     F --> E["Outcome and evidence graph"]
-    E --> CR["Crucible experiments and causal credit"]
+    E --> CR["Supernova experiments and causal credit"]
     CR --> PM{"Promotion gate"}
     PM -->|"earned"| RP["Routing, memory, or policy update"]
     PM -->|"not earned"| SH["Remain shadow or reject"]
 
-    E --> OB["AURA Constellation projection"]
+    E --> OB["GALAXY Orrery projection"]
     RP --> K
     SH --> K
 
@@ -371,22 +398,34 @@ monotone journal, closed terminal observation, atomic acknowledgement, then immu
 may inform a later pure lookup, but no archived or feedback edge carries a live mutation capability.
 Every writer, model, judge, dashboard, memory learner and retry remains outside that spine.
 
-The dashboard requested by the user is the `AURA Constellation` projection of this flow. It will highlight the current node, active leases, causal parents, uncertainty, provider route, verification state, recovery edges, and evidence behind every displayed score. It is deliberately implemented after the kernel emits trustworthy events.
+The dashboard requested by the user is the `GALAXY Orrery` projection of this flow. It will highlight the current node, active leases, causal parents, uncertainty, provider route, verification state, recovery edges, and evidence behind every displayed score. It is deliberately implemented after the kernel emits trustworthy events.
 
-### 6.1 Qualified Spectrum, Cortex, and federation overlay
+### 6.1 Qualified Flare, Nebula, and federation overlay
 
 The Mermaid graph above is the audited 71-node / 95-edge R3 base. The exhaustive
 target and qualification contract is defined in
-[AURA Omega R3 Target and Qualification Topology](2026-07-13-aura-omega-r3-qualified-capability-topology.md):
+[GALAXY R3 Target and Qualification Topology](2026-07-14-galaxy-r3-qualified-capability-topology.md),
+with the scheduler and solver ledgers defined in the Pulsar and Quark annexes:
 
 | Layer | Added nodes | Added unique typed edges | Cumulative |
 |---|---:|---:|---:|
-| Spectrum and Aegis admission | 16 | 31 | 87 / 126 |
-| Cortex | 21 | 44 | **108 / 170** |
-| Disabled Pneuma federation boundary | 3 | 6 | **111 / 176** |
+| Flare and Magnetosphere admission | 16 | 31 | 87 / 126 |
+| Nebula | 21 | 44 | **108 / 170** |
+| Pulsar R1 | 19 | 68 | **127 / 238** |
+| Quark Portfolio R2 | 4 | 12 | **131 / 250** |
+| Disabled Voyager federation boundary | 3 | 6 | **134 / 256** |
 
-The core quota excludes Pneuma internals, ephemeral instances, retries, aliases,
-schema fields, and Chronicle/Constellation presentation. Every new overlay node
+Count reconciliation (a linter must reproduce these exactly):
+nodes `71 + 16 + 21 + 19 + 4 = 131` core, `+ 3 = 134` federation-ready;
+edges `95 + 31 + 44 + 68 + 12 = 250` core, `+ 6 = 256` federation-ready;
+overlay-only `16 + 21 + 19 + 4 = 60` nodes and `31 + 44 + 68 + 12 = 155` edges.
+The base `71 / 95` layer is not yet materialized row-by-row anywhere in this
+package (only the `60 / 155` overlay is enumerated, across this file's annexes);
+producing the base ledger is a prerequisite of the single validated manifest and
+is tracked as an explicit open item, not an audited artifact.
+
+The core quota excludes Voyager internals, ephemeral instances, retries, aliases,
+schema fields, and Gaia/Orrery presentation. Every new overlay node
 and edge has an architecture contract, independent lifecycle or transformation,
 bounded failure behavior, authority class, measurable consumer effect, and
 knockout test. The base is structurally audited but the full graph must not be
@@ -767,13 +806,20 @@ slice. Until it lands, command mutation remains disabled or typed-deferred.
 received -> claimed -> decided -> applied/rejected -> acknowledged
 ~~~
 
-Claims have expirations and fencing tokens. Stable command IDs make replay safe. A command is never deleted before its applied/rejected result is durably recorded. Task JSON remains the run-state authority; `control.db` remains the operator-intent authority.
+Claims have expirations and fencing tokens. Stable command IDs make replay safe. A command is never deleted before its applied/rejected result is durably recorded. `control.db` remains the operator-intent authority. Task JSON remains authority for legacy command-application fields until their separately reviewed field-level cutover; scheduling fields follow the externally anchored Pulsar scheduler-cutover phase instead.
 
-Because applying a command spans both authorities, the stable command ID is persisted inside
-the same crash-safe TaskState save as the command mutation. Reapplication checks that ID and
-is a no-op when already present. After restart, a reconciler compares TaskState's applied-ID
-set with `control.db` and repairs missing acknowledgements. This turns the unavoidable dual
-write into an idempotent, convergent protocol rather than pretending it is one transaction.
+Before any Pulsar scheduler-field cutover, the stable command ID is persisted inside the same
+crash-safe TaskState save as the command mutation. After scheduler-field cutover, a legacy command
+writer must use its separate authority sidecar or the cutover receipt's sealed per-writer field
+matrix. A protected field-mask CAS binds the expected TaskState generation, that writer's exact
+allowed paths, and an unchanged KSJ-projection digest; unknown, aliased, nested-prefix-overlapping,
+or another owner's path is rejected. A whole-document legacy save and an "all non-KSJ fields"
+complement are forbidden. Presentation state lives in its own non-authoritative sidecar and cannot
+write TaskState. Reapplication checks the stable ID and is a no-op when already present. After restart, a reconciler compares the legacy
+applied-ID set with `control.db` and repairs missing acknowledgements. A later command/effect cutover
+must replace this with its own explicit authority matrix and phase receipt; it cannot infer ownership
+from the scheduler cutover. This keeps the unavoidable dual write idempotent and convergent rather
+than pretending it is one transaction.
 
 ## 9. Claude–Codex peer fabric
 
@@ -784,6 +830,13 @@ The current machine was verified to have:
 - Claude Code 2.1.197 authenticated through `claude.ai` Max;
 - Codex CLI 0.144.1 authenticated through ChatGPT;
 - no Anthropic/OpenAI API keys or Bedrock/Vertex/Foundry selectors in the process environment.
+
+These exact version strings are freeze-time observations, not a hard-coded
+equality gate. The authoritative check is the machine-readable preflight and the
+per-provider CLI-contract adapter, which validate auth/billing mode and command
+surface; a later CLI version that passes the same preflight is eligible, and an
+earlier or drifted version that fails it is not. Do not implement literal
+version-string equality as the eligibility predicate.
 
 Every production launch repeats a machine-readable preflight and persists the result. The zero-cost profile:
 
@@ -877,7 +930,7 @@ No search mechanism is promoted if it merely changes labels or produces larger d
 
 ### 11.1 Evidence graph
 
-The rich AURA graph contains:
+The rich GALAXY graph contains:
 
 - task, subtask, attempt, artifact, command, effect, verification, review, incident, forecast, claim, experiment, policy, memory, and promotion nodes;
 - caused-by, derived-from, contradicts, resolves, verifies, invalidates, attempted-by, reviewed-by, merged-as, compensated-by, and promoted-from edges.
@@ -946,7 +999,7 @@ Revision 3 includes the old features explicitly:
 |---|---|
 | Elaborator | Intent compiler and grounded acceptance-contract author; one pass by default, extra candidates earned by uncertainty |
 | Architect | Provider-neutral architecture/proposal role served by Claude, Codex, or both |
-| Innovator | Hypothesis emitter feeding Crucible; ideas need experiment, owner, lifecycle, and outcome |
+| Innovator | Hypothesis emitter feeding Supernova; ideas need experiment, owner, lifecycle, and outcome |
 | Discovery | Evidence and opportunity ingestion; never authoritative without attestation |
 | Council/Society | Selective value-of-information protocol, local Claude/Codex seats, not an always-on external-provider parliament |
 | Human Nature/Psyche | Shadow assessments and bounded priors until each coupling wins a real control-arm experiment |
@@ -956,7 +1009,7 @@ Revision 3 includes the old features explicitly:
 | Solution space/QD | Truthful measured branch search; synthetic metrics removed or marked unknown |
 | Self-evolution/SIE | Proposal and experiment generation; promotion remains external to the candidate |
 | Browser/native | Optional capability adapters with semantic postcondition receipts |
-| Dashboard | AURA Constellation, a read-only projection of canonical events |
+| Dashboard | GALAXY Orrery, a read-only projection of canonical events |
 
 ## 13. Complexity-theatre kill list
 
@@ -977,9 +1030,60 @@ Freeze or remove from production authority until proven:
 
 The code may remain available for experiments. It does not steer production.
 
+### 13.1 Distributed-SaaS scaling patterns, mapped honestly
+
+Classic web-backend scaling advice (stateless servers, load balancers,
+horizontal scale-out, API gateways, object-storage buckets, message brokers,
+CDNs, Redis caches, per-user rate limits) targets a multi-tenant distributed
+cloud service answering untrusted public traffic. GALAXY is the opposite class of
+system: one trusted operator, one local host, and a hard zero-cost,
+no-recurring-SaaS constraint. Each pattern therefore either already exists here
+in hardened form or is excluded on purpose; importing an excluded one would be
+exactly the complexity theatre this section forbids and would forfeit a core
+invariant.
+
+| Distributed-SaaS pattern | GALAXY posture | Where |
+|---|---|---|
+| Stateless compute, state in a decoupled store | Implemented, hardened: all mutable controller state is external to the target; the current-root pointer advances only by generation-bound CAS | §5.1, §7.5 |
+| "Data coupled to the machine = no scale/resilience" | Implemented: canonical is an attested object source, never a host working directory | §1, §5.1 |
+| Message broker / pub-sub, at-least-once, dead-letter queue | Implemented as a transactional outbox: DIO and the durable command lifecycle use idempotency keys, create-or-return, fencing tokens, and `launch_unknown`/quarantine terminals — stronger than fire-and-forget queueing | §8.4, Pulsar DIO |
+| Cache-aside (cache metadata, not blobs) | Implemented: validation cache, content-addressed caches, and Accretion treating the context window as a disposable cache over immutable state | §11.4, Accretion |
+| Backpressure / rate limiting | Implemented, different driver: capacity leases, provider circuits, and the Pulsar backpressure controller throttle scarce subscription capacity rather than defend against abusive tenants | §9, Pulsar BSC |
+| Health checks / sticky sessions / routing | Implemented as capability routing: driver `health()`, provider circuits, and session identity keyed by run+subtask+provider+role play the load balancer's role over providers, not a server fleet | §5.2, §7.4, §9.3 |
+| Single authenticated entry / private network (VPC) | Analog: the Singularity Kernel is the one authority entry and the effect gateway the one egress; ingress stays loopback-only or disabled. It gates capability, not multi-tenant HTTP auth | §5.1, §8.3 |
+| Horizontal scale-out across a server fleet + load balancer | N/A by design: one host; parallelism is within-host (tournaments, worktree clones), a concurrency axis, not machine scale-out. A fleet would breach the zero-cost/local-first constraint | §10 |
+| Object-storage buckets (S3/GCS, presigned upload URLs) | N/A as a cloud dependency; local analog only: large artifacts are local content-addressed blobs outside SQLite — the same "don't stream big blobs through the app or the relational DB" lesson with no recurring bill | §8.2, ReceiptStore |
+| CDN / edge geo-distribution, multi-region, autoscaling, serverless | N/A: one operator, one machine, no geo-distributed readers; excluded by the zero-cost, local-first boundary | — |
+
+This matches the source material's own warning against premature optimization:
+the patterns that fit GALAXY's problem are already present, and the rest are
+excluded deliberately. Adopting them would mean becoming a different product — a
+hosted, multi-tenant service — which forfeits the zero-cost and local-first
+invariants and is out of scope for R3.
+
 ## 14. Brownfield transfers
 
-Revision 3 reuses patterns, not mythology:
+Canonical external-source membership is owned by the
+[Brownfield and Frontier Evidence Registry R1](2026-07-14-galaxy-r3-brownfield-frontier-registry.md):
+exactly `BR01..BR50` repositories and `FR01..FR35` frontier papers. Foundational
+or historical citations elsewhere in this design remain useful but do not enter
+those counts. A new external repository or frontier paper cannot be introduced by
+an annex projection alone.
+
+Package-wide projections are intentionally small:
+
+| Projection | Canonical IDs | Design use |
+|---|---|---|
+| harness and provider contracts | BR11, BR13-BR18 | delegation lifecycle, traces, typed state/messages, MCP negotiation |
+| isolation | BR19-BR23 | disposable sandbox lifecycle, syscall/microVM boundaries, policy fixtures |
+| scheduler and durable execution | BR12, BR24-BR35; FR01-FR08 | deterministic replay, fair/critical ordering, work stealing, backpressure, timers, placement |
+| memory and context | BR01, BR07-BR09, BR36-BR37; FR09-FR16, FR30 | typed context, temporal/causal retrieval, workflow memory, memory leakage |
+| evaluation, provenance, and security | BR38-BR43; FR17-FR29 | executable tasks, traces, signatures, roots, attestations, telemetry, security oracles |
+| algorithm and verification quarries | BR02, BR04-BR06, BR10, BR33-BR34, BR44-BR50 | exact oracles, contest-grade implementations, generators, validators, and checkers |
+
+Revision 3 reuses patterns, not mythology. The legacy summary below is
+non-counting; where it names an external source, the registry record and pin
+govern:
 
 | Source | License/posture | Transfer |
 |---|---|---|
@@ -992,13 +1096,22 @@ Revision 3 reuses patterns, not mythology:
 | OpenHands | permissive local reference | sandbox/artifact recovery and event-stream patterns |
 | AGX | MIT | typed DAG, event-sourced runtime, resume checks |
 | Code as Agent Harness survey repository | research index | Treat orchestration as executable, inspectable harness mechanisms |
-| Attention Is All You Need v7 | research paper | Paper evidence: Q/K/V attention, multi-head projections, decoder future masking, explicit positions, residual connections, and non-monotonic fixed-compute head ablation. AURA separately hypothesizes sparse typed routing, security masks, and an independent hard-constraint channel; not a claim that the orchestration graph is a neural network. |
-| Anthropic Global Workspace / J-space, 2026-07-06 | research paper | Paper evidence: a small, causally involved, workspace-like representational component with limited capacity and broadcast-like connectivity. AURA separately hypothesizes typed specialists/admission, targeted external broadcast, relational frames, and recurrent immutable epochs; not internal access to Claude/Codex or evidence of consciousness. |
+| Attention Is All You Need v7 | research paper | Paper evidence: Q/K/V attention, multi-head projections, decoder future masking, explicit positions, residual connections, and non-monotonic fixed-compute head ablation. GALAXY separately hypothesizes sparse typed routing, security masks, and an independent hard-constraint channel; not a claim that the orchestration graph is a neural network. |
+| Anthropic Global Workspace / J-space, 2026-07-06 | research paper | Paper evidence: a small, causally involved, workspace-like representational component with limited capacity and broadcast-like connectivity. GALAXY separately hypothesizes typed specialists/admission, targeted external broadcast, relational frames, and recurrent immutable epochs; not internal access to Claude/Codex or evidence of consciousness. |
 | Anthropic jacobian-lens commit 581d398 | Apache-2.0 reference, unmaintained | Optional digest-pinned experiments on license-compatible local open-weight Hugging Face models only; never a production monitor, verifier, or authority gate. Model weights and corpora retain separate licenses. |
+| TigerBeetle VOPR / "Tiger Style" | Apache-2.0 reference | Deterministic simulation testing: injectable clock/disk/RNG, seed+commit reproducibility, time compression, systematic fault injection, assertions retained in production. Transferred as the §15.1 harness. GALAXY is single-host, so the simulated fault domain is host/storage/provider/CLI, **not** a consensus cluster; VSR/replication content is explicitly out of scope. |
+| Temporal / Cadence / DBOS durable execution; Restate semantics only | MIT / Apache-2.0 / MIT; Restate is BSL-1.1 | BR24-BR26 provide permissive source quarries for journaled control-flow replay, workflow-safe clock/RNG, retries, and idempotent activity boundaries. Restate corroborates public semantics only: its current BSL source is quarantined and cannot be copied. No engine is a dependency, and external side effects remain at-least-once plus idempotency rather than being relabeled exactly-once. |
+| Letta / MemGPT (`letta-ai/letta`) | Apache-2.0 reference | Prior art for Accretion: OS-style virtual context management, two-tier main/external context, paging and page-fault vocabulary. **Deliberately not transferred:** MemGPT's defining mechanism is *self-editing memory* — the model itself decides via tool calls what to page in and out, and compaction is recursive summarization. Accretion inverts this: compilation is mechanical and the model holds no memory authority, and eviction is publish-before-evict against an immutable record rather than summary-of-summary. The divergence is an authority requirement (AC-R01), not a preference. |
+| TUF, in-toto, SLSA | open specifications | Polaris Anchor root lifecycle: threshold (M-of-N) signing, role separation, key rotation, self-updating root metadata, and — most relevant to the fail-closed posture — *explicit and implicit revocation*, so a formerly valid root cannot be replayed as current. in-toto's attestation predicate shape informs receipt structure. Specifications only; no registry, transparency log, or hosted signing service is adopted. |
+| Varghese & Lauck timing wheels; Kafka request purgatory | paper / BR30 Apache-2.0 reference | O(1) start/stop/per-tick timer facility; the `ORBIT` candidate for Pulsar's wakeup path (Quark catalog §14). |
 
-No proprietary Claude Code source is copied. Public CLI contracts and ideas are reimplemented.
+No proprietary Claude Code source is copied. Public CLI contracts and ideas are
+reimplemented. Hermes, Guild, and AGX in the legacy summary describe already
+harvested local/historical seams; they are not floating additions to the canonical
+50-repository registry. Any renewed upstream source transfer requires a BR record.
 
-Primary recent evidence:
+Selected recent evidence (the complete 35-paper set, claim boundaries,
+experiments, and falsifiers are `FR01..FR35` in the registry):
 
 - [RigorBench](https://arxiv.org/abs/2606.22678)
 - [TraceLab paper](https://arxiv.org/abs/2606.30560) and [repository](https://github.com/uw-syfi/TraceLab)
@@ -1007,6 +1120,15 @@ Primary recent evidence:
 - [MemSyco-Bench](https://arxiv.org/abs/2607.01071)
 - [OpenAI Codex plugin for Claude Code](https://github.com/openai/codex-plugin-cc)
 - [Code as Agent Harness survey repository](https://github.com/YennNing/Awesome-Code-as-Agent-Harness-Papers)
+
+Systems and algorithms evidence adopted in R3:
+
+- [TigerBeetle VOPR internals](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/internals/vopr.md) and [safety model](https://docs.tigerbeetle.com/concepts/safety/) — deterministic simulation testing, seed+commit replay, time compression
+- [Jepsen analysis of TigerBeetle 0.16.11](https://jepsen.io/analyses/tigerbeetle-0.16.11) — independent audit of a DST-built system
+- [Demystifying Determinism in Durable Execution](https://jack-vanlightly.com/blog/2025/11/24/demystifying-determinism-in-durable-execution) — where determinism is and is not required; control flow vs. side effects
+- [Varghese & Lauck, Hashed and Hierarchical Timing Wheels (SOSP '87)](https://www.cs.columbia.edu/~nahum/w6998/papers/sosp87-timing-wheels.pdf) — O(1) timer facility
+- [MemGPT: Towards LLMs as Operating Systems](https://arxiv.org/abs/2310.08560) and [Letta](https://github.com/letta-ai/letta) — virtual context management; self-editing memory rejected per AC-R01
+- [The Update Framework](https://theupdateframework.io/) and [in-toto attestations](https://in-toto.io/) — root rotation, threshold signing, revocation
 
 Recent community evidence is used only to generate hypotheses. Low-ranked or comment-poor items from the last-30-days pass are not treated as proof.
 
@@ -1024,12 +1146,71 @@ Recent community evidence is used only to generate hypotheses. Low-ranked or com
 | E7 | Forecast and causal credit | base rate, unpaired, no drift, no intervention | beat base-rate calibration; recover injected causes; stable under cohort reweighting |
 | E8 | Evidence-preserving memory | vector-only, recency-only, contradiction off | improved paired task success; zero poisoned trusted memories; rare failures retained |
 | E9 | Anytime-valid promotion and observatory | unpaired test, visible fixtures, provenance hidden | A/A false promotion within target; hidden canary inaccessible; every panel recomputable |
-| E10 | Qualified graph admission | incumbent, equal-budget incumbent, sham topology, real topology, every node and edge knockout | zero authority regression; non-inferior verified quality; material gain over both incumbent controls; expiring workload-scoped GraphWarrant |
-| E11 | Spectrum and Cortex mechanism trial | off/on factorial, 8/16/32 slots, 1/4/8 specialists, duplicated/shuffled charters, full context, no bypass, flat claim bags | higher paired verified wins per occupied provider-minute or equal quality with a material resource reduction |
+| E10 | Qualified graph admission | incumbent, equal-budget incumbent, sham topology, real topology, every node and edge knockout | zero authority regression; non-inferior verified quality; material gain over both incumbent controls; externally issued expiring workload-scoped GraphWarrant with fresh revocation resolution |
+| E11 | Flare and Nebula mechanism trial | off/on factorial, 8/16/32 slots, 1/4/8 specialists, duplicated/shuffled charters, full context, no bypass, flat claim bags | higher paired verified wins per occupied provider-minute or equal quality with a material resource reduction |
 | E12 | Workspace integrity and causality | remove each mask, stale/injected/correlated evidence, pivotal-frame swaps, negative controls | unique seeded-fault catch signatures, causal mediation evidence, zero simple-task or authority regression |
-| E13 | Disabled Pneuma boundary | malformed, replayed, stale, oversized, forbidden-payload, unavailable, and terminal-feedback canaries | observational equivalence to absence for repository/canonical/provider/data/controller/evidence effects, with at most one bounded audit receipt; no replay while disabled and no raw data, training, RSI, host mutation, paid egress, direct import, or authority path |
+| E13 | Disabled Voyager boundary | malformed, replayed, stale, oversized, forbidden-payload, unavailable, and terminal-feedback canaries | observational equivalence to absence for repository/canonical/provider/data/controller/evidence effects, with at most one bounded audit receipt; no replay while disabled and no raw data, training, RSI, host mutation, paid egress, direct import, or authority path |
 
 Security and scope suites are hard constraints, not terms in a scalar objective.
+
+### 15.1 Deterministic simulation testing harness
+
+E1, E2, and the Pulsar/command-lifecycle crash matrices are seeded fault
+campaigns. Run as ordinary tests they explore a negligible fraction of the
+interleaving space and, worse, a failure found once may never reproduce. R3
+therefore specifies a deterministic simulation testing (DST) harness as the
+substrate those experiments run on. This is a **verification method, not a new
+authority**: it introduces no node, no edge, and no runtime capability, and it is
+excluded from the topology quota.
+
+The design transfer from TigerBeetle's VOPR is the discipline, not the domain.
+GALAXY has no consensus cluster to simulate; its fault domain is the single host.
+
+Requirements:
+
+1. **All non-determinism is injectable.** Wall clock, monotonic clock, RNG seeds,
+   filesystem, subprocess/CLI results, provider latency and failure, and SQLite
+   I/O are reached only through interfaces the harness can substitute. Any
+   component that reads ambient time or randomness directly is untestable here
+   and must be refactored before its wave lands.
+2. **Seed + revision reproduces exactly.** A failure is reported as a
+   `(seed, source_revision_digest, harness_digest)` triple that replays the exact
+   schedule. A failing seed that does not reproduce is itself a defect: it means
+   an uninjected non-determinism source survives.
+3. **Simulated time compresses.** Lease expiry, backoff, heartbeat loss,
+   `max_late_wakeup_ms`, and generation expiry are driven by virtual time, so
+   long-horizon schedules are exercised in seconds without wall-clock waits.
+4. **Faults are injected systematically, not incidentally**: process kill at every
+   transaction boundary, SQLite write failure and partial write, CLI non-zero
+   exit, hang, and malformed output, provider circuit trip, disk-full, clock jump
+   (forward and backward), and torn snapshot.
+5. **Properties are asserted, not eyeballed.** Every campaign checks the
+   invariants that already exist in this specification: no completion before
+   collection, no lost or duplicate canonical promotion, no privilege widening,
+   no effect without an authorizing command, monotonic phase order, and lease
+   non-overlap. The harness is a falsifier for the §3.2 blocker list.
+6. **The harness is not the product.** A DST pass is necessary, not sufficient:
+   it cannot observe real CLI contracts, real provider behaviour, or real host
+   semantics. It never substitutes for E3's zero-cost preflight or for live
+   qualification, and a green simulation authorizes nothing on its own.
+7. **Safety mode and liveness mode are separate campaigns.** Uniformly injecting
+   faults proves safety properties — nothing bad happens — but a system that
+   never dispatches also never violates one. Liveness mode therefore stops fault
+   injection at a declared point, restores a healthy host, and asserts that the
+   scheduler *makes progress*: every admitted contract eventually reaches a
+   terminal or an explicit blocked state with a reason, no eligible cohort spins
+   in recompute indefinitely, and no work is starved past its capped-aging
+   bound. This directly targets Pulsar's recompute paths (§12.3 of the Pulsar
+   annex), where every failure resolves to "recompute; no dispatch" and safety is
+   therefore trivially satisfiable by never running anything.
+
+Zero-cost posture: the harness runs local, deterministic, and offline; it calls
+no model and no paid service. Simulated provider responses are fixtures, and a
+DST campaign must never open a provider session.
+
+Standing exit criterion: before any wave lands, its invariants hold across a
+preregistered seed budget, and every discovered seed is retained as a permanent
+regression fixture with its triple recorded in the receipt chain.
 
 ## 16. Migration waves
 
@@ -1053,7 +1234,7 @@ Security and scope suites are hard constraints, not terms in a scalar objective.
 - Add local typed deferral receipts for externally visible operations; the brokered lifecycle follows in the command/effect wave.
 - Preserve partial branches and ambiguous outcomes.
 
-### Wave 2: Prism driver contract
+### Wave 2: Lensing driver contract
 
 - Introduce `ExecutionDriver`, `ProviderNeutralSpec`, `CapabilityProfile`, `RoutingDecision`,
   the immutable receipt types, and the recomputable `AttemptView`.
@@ -1082,19 +1263,25 @@ Security and scope suites are hard constraints, not terms in a scalar objective.
 - Successive halving, diversity, and restart policies.
 - Causal credit only after intervention tests pass.
 
-### Wave 6: AURA Constellation
+### Wave 6: GALAXY Orrery projection scaffolding (dark only)
 
-- Live graph position and transition animation.
+- Dark-only graph position and transition animation over fixture/canonical
+  projection DTOs.
 - Attempt/provider/clone lenses.
 - Recovery and incident replay.
 - Evidence and uncertainty inspection.
 - Budget/capacity view.
-- No dashboard-derived writes.
+- Dedicated GET/SSE-only routes; no dashboard-derived writes or control
+  callback.
+- No production endpoint or runtime activation before Wave 7 graph admission
+  and dependency-closed activation succeed.
 
-### Wave 7: benchmark campaign and world-class claim gate
+### Wave 7: benchmark campaign, graph admission, and world-class claim gate
 
 - Pinned repo-local, RigorBench-style, security, scope, memory, crash, and multi-project suites.
 - Same-resource comparison against the current baseline and representative open harnesses.
+- Admit only dependency-closed node/edge subsets under externally issued,
+  expiring, workload-scoped GraphWarrants; activation remains last.
 - Publish a reproducible evidence dossier.
 - Claim “world-class” only if the predefined gates pass.
 
@@ -1108,7 +1295,7 @@ to substitute a mock, pull from a registry, build from unpinned input, or weaken
 Task 1 cutover may reopen developer-only source-update ingress only after a persisted and re-read
 inactive-readiness receipt; production run admission and Discord listener ingress remain closed.
 
-1. install a tiny audited PowerShell Omega Anchor with protected source/OS-host digest, plus a standard-library-only self-hashing Boot Capsule, pinned interpreter/stdlib, full manifest-attested Python/native dependency and asset closure, and last-known-good controller bundle outside the target; official services enter through the external anchor, while the ignored machine-local `run.ps1` remains user-owned and untouched, tracked developer redirects and `main.py` remain untrusted conveniences, and none can obtain production authority;
+1. install a tiny audited PowerShell Polaris Anchor with protected source/OS-host digest, plus a standard-library-only self-hashing Boot Capsule, pinned interpreter/stdlib, full manifest-attested Python/native dependency and asset closure, and last-known-good controller bundle outside the target; official services enter through the external anchor, while the ignored machine-local `run.ps1` remains user-owned and untouched, tracked developer redirects and `main.py` remain untrusted conveniences, and none can obtain production authority;
 2. introduce typed preparation, universal credentialless verification, promotion, and finalization receipts;
 3. invoke a recovery-only entrypoint from the previously trusted external controller before snapshot creation, then re-attest canonical; make run admission the first normal-controller operation and create an attested immutable source snapshot before any repository-derived elaboration, discovery, council, planning, or path inspection;
 4. require every repository-capable Claude/Codex launch to carry registered clone authority;
@@ -1125,7 +1312,7 @@ inactive-readiness receipt; production run admission and Discord listener ingres
 15. install deepest-boundary typed deferral for Discord/Cast/bot responses, Obsidian/vault mutation, tunnels, Jerry/remote/SSH, browser/native artifacts, PR publication, and automatic maintenance until durable effect commands exist;
 16. preserve public facades only where they cannot retain an unsafe fallback.
 
-This kernel slice includes the minimum pinned safe-boot adapters and credential-separated broker canaries for both locally authenticated Claude and Codex; either provider may write only through the exact clone/broker/verification/promotion path after its real canary earns availability. The next Prism slice generalizes those adapters into the full provider-neutral routing, normalized telemetry, shadow experimentation, and adaptive authority surface. Durable command claim/apply/ack remains the next kernel slice.
+This kernel slice includes the minimum pinned safe-boot adapters and credential-separated broker canaries for both locally authenticated Claude and Codex; either provider may write only through the exact clone/broker/verification/promotion path after its real canary earns availability. The next Lensing slice generalizes those adapters into the full provider-neutral routing, normalized telemetry, shadow experimentation, and adaptive authority surface. Durable command claim/apply/ack remains the next kernel slice.
 
 ## 18. Acceptance gates
 
@@ -1198,15 +1385,15 @@ This kernel slice includes the minimum pinned safe-boot adapters and credential-
 - No external multi-provider council in the zero-cost profile.
 - No graph growth whose nodes lack identity, lifecycle, or evidence.
 - No self-promotion by the proposing model or subsystem.
-- No replacement of TaskState, ControlBus, verifier receipts, or human authority with Chronicle.
-- No claim that AURA Cortex is Claude/Codex internal J-space, hidden chain of thought, or evidence of phenomenal consciousness.
-- No active Pneuma integration while its canonical status remains standalone, partially unimplemented, training-unauthorized, or RSI-non-operational.
+- No replacement of TaskState, ControlBus, verifier receipts, or human authority with Gaia.
+- No claim that GALAXY Nebula is Claude/Codex internal J-space, hidden chain of thought, or evidence of phenomenal consciousness.
+- No active Voyager integration while its canonical status remains standalone, partially unimplemented, training-unauthorized, or RSI-non-operational.
 - No dashboard work before the event and receipt contracts are trustworthy.
 - No reduction of the test suite as part of this program; that is explicitly owned elsewhere.
 
 ## 20. Final architectural invariant
 
-AURA Ω Revision 3 may become extraordinarily complex in the **space of hypotheses, evidence, experiments, recovery paths, and projections**.
+GALAXY Revision 3 may become extraordinarily complex in the **space of hypotheses, evidence, experiments, recovery paths, and projections**.
 
 It remains deliberately simple in the **space of authority**:
 
@@ -1222,3 +1409,95 @@ human authority
 ~~~
 
 That ordering is the foundation for aggressive innovation without self-deception.
+
+## Appendix A. Astro naming migration (R3 rename)
+
+The R3 roster was renamed to a single astrophysical-object convention. Every name
+below is a real astronomical object or phenomenon chosen so the name *states the
+component's job*; no name is decorative. This appendix is normative: the old names
+are retired and must not appear in new work.
+
+### A.1 Subsystem and component map
+
+| Retired | Current | Object, and why it names this job |
+|---|---|---|
+| AURA / `aura.*` | **GALAXY** / `galaxy.*` | A gravitationally bound system of many bodies orbiting a central mass; it contains the objects below |
+| Omega Kernel | **Singularity Kernel** | The central point of ultimate density that everything orbits and nothing escapes — inescapable authority |
+| Omega Anchor | **Polaris Anchor** | The fixed navigational star: referenced by everything, moved by nothing; the out-of-tree trust root |
+| Prism Fabric | **Lensing Fabric** | Gravitational lensing bends one source into multiple images along different paths — one request, many provider paths |
+| Spectrum | **Flare** | Solar flares are the eruptive events that stress a magnetosphere — the adversarial teams |
+| Aegis | **Magnetosphere** | The field that deflects harmful particles and admits safe ones — admission and containment |
+| Cortex | **Nebula** | The bounded cloud in which structure condenses — the bounded working set |
+| Khronos | **Pulsar** | A neutron star's beamed emission: the most precise natural clock — the scheduler |
+| Daedalus | **Quark** | Fundamental confined constituents that never exist unbound — certified, proof-carrying primitives |
+| Mnemosyne | **Accretion** | Infalling matter accumulating in a disk — the append-only record state is reconstructed from |
+| Pneuma | **Voyager** | The probe that crossed the heliopause into interstellar space — the (disabled) federation boundary |
+| Crucible | **Supernova** | The extreme event that forges elements; only the strongest remnant survives — candidate trials |
+| Chronicle | **Gaia** | The mission cataloguing a billion objects' positions and history — the read-only temporal projection |
+| Constellation | **Orrery** | A model that displays orbital motion and drives nothing — a strictly read-only projection |
+| Lattice | **Filament** | The cosmic web's filaments linking structure across space — evidence and causal-relation projections |
+| Sentinel | **Goldstone** | The Deep Space Network complex that listens for spacecraft carrier signal and declares loss-of-signal — liveness detection |
+| Relay | **Odyssey** | Mars Odyssey, the orbiter that relays surface transmissions — selective typed broadcast |
+| Proteus | **Chamaeleon** | The southern constellation named for the colour-shifting animal — per-provider packet materialization |
+| Atlas | **Ephemeris** | A table of positions indexed by time — the capacity calendar |
+| Themis | **Lagrange** | Lagrange points: the provably stable positions in a gravitational system — the finite safety game |
+| Oracle / Oracle-0 | **Cepheid / Cepheid-0** | Cepheid variables are standard candles, the absolute ground-truth reference — the exact differential oracle |
+| Moirai | **Horizon** | An event horizon: an irreversible selection boundary — the complete-packet selector |
+| Janus | **Lightcone** | A past light cone is exactly the causally closed region of an event — the causally closed cut |
+| Kairos | **Transit** | A planet crossing its star: a precise, fleeting window — kinetic priority |
+| Argus | **Roche** | The Roche limit, where tidal forces tear a body apart — the adversarial event-order generator |
+| Ariadne | **Worldline** | An object's complete traced path through spacetime — replay and provenance |
+| Lethe | **Evaporation** | Hawking evaporation: a body radiating mass and information away — compaction and eviction |
+| Anamnesis | **Light-Echo** | Delayed light revealing a past event — bounded recall from the record |
+| Palimpsest | **Everett** | Everett branches: coexisting alternative histories — persistent counterfactual state |
+
+Retired prose aliases (must not reappear): `AURA`, `Omega`, `Khronos`, `Chronos`,
+`Daedalus`, `Mnemosyne`, `Pneuma`, `Cortex`, `Spectrum`, `Prism`, `Aegis`,
+`Crucible`, and the concept names listed above.
+
+### A.2 Identifier families renamed
+
+| Family | Retired | Current |
+|---|---|---|
+| Contract namespace | `aura.node.*`, `aura.payload.*` | `galaxy.node.*`, `galaxy.payload.*` |
+| Scheduler edges | `KH01`–`KH68` | `PU01`–`PU68` |
+| Solver edges | `DA01`–`DA12` | `QK01`–`QK12` |
+| Adversarial edges | `SP01`–`SP31` | `FL01`–`FL31` |
+| Workspace edges | `CT01`–`CT44` | `NB01`–`NB44` |
+| Federation edges | `PN01`–`PN06` | `VG01`–`VG06` |
+| Context requirements | `MN-R01`–`MN-R34` | `AC-R01`–`AC-R34` |
+
+### A.3 Deliberately **not** renamed
+
+1. **Three-letter node codes** (`KSJ`, `KHA`, `DIO`, `DSC`, `DSE`, `DOA`, `DPV`,
+   `CQC`, `BCW`, `SSP`, `LVS`, …) are opaque structural identifiers. They are
+   preserved verbatim to keep the manifest, `contract_version`, and
+   `ablation_key` surfaces stable across the rename. Their letters no longer
+   spell their subsystem, and **no meaning may be inferred from them**; the node
+   ledgers are the sole source of a node's purpose.
+2. **Inherited single-letter base symbols** (`OA`, `K`, `R`, `B`, `G`, `M`, `E`,
+   `V`, `EG`, `RA`, `PA`, `TR`) are unchanged. Note `OA` now reads "Polaris
+   Anchor" and `K` reads "Singularity controller": the letter is historical.
+3. **All structural counts and invariants** are unchanged: `131 / 250` core,
+   `134 / 256` federation-ready, the `>= 105 / 160` floor, `93 / 529` Cepheid-0
+   universe maxima, and every gate, threshold, and authority rule. This rename is
+   nomenclature-only and changes no behaviour.
+
+### A.4 Required follow-up outside this package
+
+The rename is complete for the original six specification documents. The new
+brownfield/frontier registry was authored directly under GALAXY naming. The companion plan
+and research artifacts are **not** in this package and still carry retired names
+in their paths; they must be renamed on disk to match before the readiness ledger
+can be re-asserted:
+
+| Retired path | Required path |
+|---|---|
+| `plans/2026-07-13-aura-omega-r3-transactional-kernel.md` | `plans/2026-07-13-galaxy-r3-transactional-kernel.md` |
+| `plans/2026-07-13-aura-omega-r3-khronos-r1-implementation-plan.md` | `plans/2026-07-13-galaxy-r3-pulsar-r1-implementation-plan.md` |
+| `plans/2026-07-13-aura-omega-r3-daedalus-r2-implementation-plan.md` | `plans/2026-07-13-galaxy-r3-quark-r2-implementation-plan.md` |
+| `plans/2026-07-13-aura-omega-r3-mnemosyne-r1-implementation-plan.md` | `plans/2026-07-13-galaxy-r3-accretion-r1-implementation-plan.md` |
+| `state/research/.../…-raw-khronos-r1-2026-07-13.md` | `state/research/.../…-raw-pulsar-r1-2026-07-13.md` |
+
+Those files' bodies must also be transformed with §A.1–A.2, after which their
+recorded SHA-256 values must be recomputed (see the readiness ledger §7.2).
