@@ -95,10 +95,13 @@
     {
       "truth_gap": "ALL_ON_ACTIVATION",
       "evidence_id": "galaxy.truth-gap.10.v1",
-      "state": "specified",
-      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
-      "source_paths": [{"path": "platform_core/app_config/epic_flags.py", "sha256": "6da1ad2362379758eec47d3042778487bdc3435c79fa3ee714e9e182326987f0"}],
-      "test_paths": [{"path": "tests/platform/test_epic_flags_config.py", "sha256": "71229aea1c930f538a2774371fc24778ed4ae69121f4545248f57bd647e22b83"}],
+      "state": "implemented_dark",
+      "source_revision": "e7382f1ec41b50f4e4898c327cadd43ec8ddd3f0",
+      "source_paths": [
+        {"path": "platform_core/app_config/epic_flags.py", "sha256": "6da1ad2362379758eec47d3042778487bdc3435c79fa3ee714e9e182326987f0"},
+        {"path": "platform_core/app_config/settings.py", "sha256": "84218754087bb865850f64b3f63c88608eb4c32bae7b0fb4e8814dbd451dccfa"}
+      ],
+      "test_paths": [{"path": "tests/platform/test_epic_flags_config.py", "sha256": "3d2be39473216591c1f73e325ae13ec6223fcaa80229a592692cc74c6460709d"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
     },

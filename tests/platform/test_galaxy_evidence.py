@@ -313,13 +313,16 @@ def test_repository_truth_gap_ledger_is_complete_and_fresh() -> None:
     report = verify_truth_gap_ledger(repo_root=repo_root, records=records)
     assert len(records) == 15
     assert {record.truth_gap for record in records} == set(TruthGap)
-    assert next(
-        record for record in records if record.truth_gap is TruthGap.SYNTHETIC_METRICS
-    ).state is EvidenceState.IMPLEMENTED_DARK
+    dark_gaps = {TruthGap.SYNTHETIC_METRICS, TruthGap.ALL_ON_ACTIVATION}
+    assert all(
+        next(record for record in records if record.truth_gap is gap).state
+        is EvidenceState.IMPLEMENTED_DARK
+        for gap in dark_gaps
+    )
     assert all(
         record.state is EvidenceState.SPECIFIED
         for record in records
-        if record.truth_gap is not TruthGap.SYNTHETIC_METRICS
+        if record.truth_gap not in dark_gaps
     )
     assert report.valid is True
     assert report.stale_evidence_ids == ()
