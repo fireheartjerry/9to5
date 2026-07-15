@@ -1,0 +1,156 @@
+{
+  "schema_version": "galaxy.truth-gaps.v1",
+  "external_spend_allowed": false,
+  "truth_gaps": [
+    {
+      "truth_gap": "COMPLETION_BEFORE_COLLECTION",
+      "evidence_id": "galaxy.truth-gap.01.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "platform_core/orchestration/execute_attempt_mixin.py", "sha256": "a9e5f96e861e3e169126d5a4df2638de3a86f5efb6000d5c602ef9cb2a827e48"}],
+      "test_paths": [{"path": "tests/orchestration/test_execute_attempt_mixin.py", "sha256": "675b196b4f8ccc494033afb775c0afd64b15f05e217e7ce7a279175790493817"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    },
+    {
+      "truth_gap": "SILENT_FAILED_WINNER_MERGE",
+      "evidence_id": "galaxy.truth-gap.02.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "platform_core/runtime/worktree.py", "sha256": "104ea8b6a843c4802e0f1b5fb1505a252af34ee64dc8f4fc01e9f84cbc9fb94c"}],
+      "test_paths": [{"path": "tests/execution/test_worktree.py", "sha256": "45dce98cfc80e0bc008633ce2154f609617d4a426a3f3b691ea725b487b04f90"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    },
+    {
+      "truth_gap": "PRIVILEGE_WIDENING_FALLBACK",
+      "evidence_id": "galaxy.truth-gap.03.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "platform_core/execution/environment.py", "sha256": "a92d57e68f8f3e085002f86a5d3c8037fb1f4885fbfe938abb8ead426ae1a7dd"}],
+      "test_paths": [{"path": "tests/execution/test_execution_router.py", "sha256": "6ff25f91bf448dc5136f726343ff171ff46949aae1980443d4f6ac91c543b10a"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    },
+    {
+      "truth_gap": "DELETE_BEFORE_APPLY_COMMANDS",
+      "evidence_id": "galaxy.truth-gap.04.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "platform_core/runtime/control_store.py", "sha256": "e05b4eb4636efcb5955cbfda37efb70976ab48b3b992e9c6c38a61a39d3b63c5"}],
+      "test_paths": [{"path": "tests/control/test_control_store.py", "sha256": "9cfe503a303f64d761d05c71c26eabfe5f9c0b84f8ae1f957656a028699aefba"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    },
+    {
+      "truth_gap": "OPAQUE_EFFECTS",
+      "evidence_id": "galaxy.truth-gap.05.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "platform_core/orchestration/llm_mixin.py", "sha256": "26be3ccc502e4d31d61e2310cfccb4692d71c07effe96bb33fc93d0f2408399a"}],
+      "test_paths": [{"path": "tests/evolution/test_experience_journal.py", "sha256": "db4db9601a65452855ef30a2ce35c981c5e62dcdbe75894767dc20eed7b4b26b"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    },
+    {
+      "truth_gap": "PROVIDER_MONOCULTURE",
+      "evidence_id": "galaxy.truth-gap.06.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "platform_core/orchestration/execute_attempt_mixin.py", "sha256": "a9e5f96e861e3e169126d5a4df2638de3a86f5efb6000d5c602ef9cb2a827e48"}],
+      "test_paths": [{"path": "tests/execution/test_external_project.py", "sha256": "fe80f6aa210b7122145c4dd89fd519fd5d02962607cb3e95ab6882ffbf3d6f72"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    },
+    {
+      "truth_gap": "UNENFORCED_ZERO_COST",
+      "evidence_id": "galaxy.truth-gap.07.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "platform_core/runtime/action_risk.py", "sha256": "880d109199177b54e5dc35b48e9e32ed53743ee06e811ca022c96abfdddc8154"}],
+      "test_paths": [{"path": "tests/execution/test_action_risk.py", "sha256": "634476c1c37ad16c9d0b2af286938fe3ab3ef45c190c16e9e01ffdb0c96a2c8d"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    },
+    {
+      "truth_gap": "CONFOUNDED_LEARNING",
+      "evidence_id": "galaxy.truth-gap.08.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "learning/outcome_evaluation.py", "sha256": "edbd7955b8672a2d8462923f62be57c00679c206038b7e797ace5bd035d540d3"}],
+      "test_paths": [{"path": "tests/evolution/test_outcome_evaluation.py", "sha256": "a2ebc2bbee9e1a65aa861f2a531f22c47943b03388d68e407d8d1235f8165563"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    },
+    {
+      "truth_gap": "SYNTHETIC_METRICS",
+      "evidence_id": "galaxy.truth-gap.09.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "platform_core/orchestration/solution_space.py", "sha256": "58beda0a1b4912058bd1a621b7992a5fbcb7715f6c0569d37fd910702547be57"}],
+      "test_paths": [{"path": "tests/orchestration/test_solution_space.py", "sha256": "03a9da37f83b397d775807cbe11aef2238d213023c816aefa9278ad9ccfaf877"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    },
+    {
+      "truth_gap": "ALL_ON_ACTIVATION",
+      "evidence_id": "galaxy.truth-gap.10.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "platform_core/app_config/epic_flags.py", "sha256": "6da1ad2362379758eec47d3042778487bdc3435c79fa3ee714e9e182326987f0"}],
+      "test_paths": [{"path": "tests/platform/test_epic_flags_config.py", "sha256": "71229aea1c930f538a2774371fc24778ed4ae69121f4545248f57bd647e22b83"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    },
+    {
+      "truth_gap": "PRE_EXECUTION_HOST_ESCAPE",
+      "evidence_id": "galaxy.truth-gap.11.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "platform_core/orchestration/plan_context.py", "sha256": "9c363cd7089b8ec5e9f6d4f165fb095c0fbf9bfc8a8352bd8e20952d8809fde5"}],
+      "test_paths": [{"path": "tests/orchestration/test_plan_project_context.py", "sha256": "eb5964cf4ede4e896eb8531a9492fd0a6b960c3cf3dd24d7245ba61b9db54899"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    },
+    {
+      "truth_gap": "CANONICAL_PREAMBLE_MUTATION",
+      "evidence_id": "galaxy.truth-gap.12.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "platform_core/orchestration/knowledge_refresh.py", "sha256": "f08e76c7197c736696f387e13c532cd4dddf0af110d8814496040d705b29fa1a"}],
+      "test_paths": [{"path": "tests/execution/test_resume_setup.py", "sha256": "93aa9f90774258c20bd4614976cda938dfce608370593e5441cb083f82cb89c0"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    },
+    {
+      "truth_gap": "POST_VERIFICATION_HOST_ESCAPE",
+      "evidence_id": "galaxy.truth-gap.13.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "platform_core/orchestration/review_mixin.py", "sha256": "ca5476f82d032ea319ea502e03c2184113045f11f0fbd27fee1aa3f593f72c9f"}],
+      "test_paths": [{"path": "tests/execution/test_github_pr_gate.py", "sha256": "094fad0515f10de150381ecb1281cf57f18053e38cb46db44452189773437e8d"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    },
+    {
+      "truth_gap": "POST_SEAL_REWRITE",
+      "evidence_id": "galaxy.truth-gap.14.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "platform_core/orchestration/github.py", "sha256": "83f7b0fd0910ecfb1830ead4fc994c5418eaa22e4fdd91d94a0f4884c0af5fba"}],
+      "test_paths": [{"path": "tests/execution/test_github_pr_gate.py", "sha256": "094fad0515f10de150381ecb1281cf57f18053e38cb46db44452189773437e8d"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    },
+    {
+      "truth_gap": "IMPORT_BEFORE_ADMISSION",
+      "evidence_id": "galaxy.truth-gap.15.v1",
+      "state": "specified",
+      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
+      "source_paths": [{"path": "main.py", "sha256": "cb0c51df2bbcf3c26474e9c00201d8db1eae3e6b2bccb7b741bf248c984f7963"}],
+      "test_paths": [{"path": "tests/platform/test_config_bootstrap.py", "sha256": "f5c5e89a318547c02c2980bc65ea19f584a593eda302990f814a2fc7cf5969bd"}],
+      "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+      "observed_at": "2026-07-14T12:00:00Z"
+    }
+  ]
+}

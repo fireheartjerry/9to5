@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError, replace
 from decimal import Decimal
+import json
+from pathlib import Path
 
 import pytest
 
@@ -21,8 +23,11 @@ from platform_core.core.galaxy_evidence import (
     RollbackReceipt,
     SyntheticMetric,
     TruthGap,
+    TruthGapLedgerError,
     ZeroCostRunPolicy,
     deterministic_seed,
+    load_truth_gap_ledger,
+    verify_truth_gap_ledger,
 )
 
 
@@ -300,3 +305,42 @@ def test_shadow_gate_preserves_the_pinned_incumbent_behavior() -> None:
     assert decision.allowed is True
     assert decision.reason == "incumbent-baseline"
     assert decision.shadow_observation is True
+
+
+def test_repository_truth_gap_ledger_is_complete_and_fresh() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    records = load_truth_gap_ledger(repo_root / "config/galaxy/truth-gaps.v1.json")
+    report = verify_truth_gap_ledger(repo_root=repo_root, records=records)
+    assert len(records) == 15
+    assert {record.truth_gap for record in records} == set(TruthGap)
+    assert all(record.state is EvidenceState.SPECIFIED for record in records)
+    assert report.valid is True
+    assert report.stale_evidence_ids == ()
+
+
+def test_truth_gap_ledger_detects_stale_source_hash(tmp_path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    source = repo_root / "config/galaxy/truth-gaps.v1.json"
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    payload["truth_gaps"][0]["source_paths"][0]["sha256"] = SHA_B
+    altered = tmp_path / "truth-gaps.v1.json"
+    altered.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = verify_truth_gap_ledger(
+        repo_root=repo_root,
+        records=load_truth_gap_ledger(altered),
+    )
+    assert report.valid is False
+    assert report.stale_evidence_ids == ("galaxy.truth-gap.01.v1",)
+
+
+def test_truth_gap_ledger_rejects_missing_gap(tmp_path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    source = repo_root / "config/galaxy/truth-gaps.v1.json"
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    payload["truth_gaps"].pop()
+    altered = tmp_path / "truth-gaps.v1.json"
+    altered.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(TruthGapLedgerError, match="exactly the 15"):
+        load_truth_gap_ledger(altered)

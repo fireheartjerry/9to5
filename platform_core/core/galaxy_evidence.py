@@ -10,12 +10,16 @@ EXPORTS:
   EvidenceState  -- Closed source/evidence maturity states
   BehaviorCapability  -- Behavior-changing descendants that require explicit evidence admission.
   TruthGap  -- The immutable blocker registry from GALAXY R3 design section 3.2.
+  TruthGapLedgerError
   CapacityTruth
   ProviderBillingMode
   canonical_digest(value: Any) -> str
   canonical_json_bytes(value: Any) -> bytes  -- Serialize an evidence value using the one receipt canonicalization.
   ArtifactDigest
   EvidenceFreshness
+  TruthGapLedgerVerification
+  load_truth_gap_ledger(path: str | Path) -> tuple[EvidenceFreshness, ...]  -- Load the closed fifteen-gap freshness ledger without applying defaults.
+  verify_truth_gap_ledger(*, repo_root: str | Path, records: tuple[EvidenceFreshness, ...], source_revision: str | None=None) -> TruthGapLedgerVerification  -- Rehash every source/test claim and report stale evidence IDs.
   PreflightDecision
   EvidenceGateDecision
   EvidenceGate  -- Compatibility gate that can observe first, then enforce without hidden fallback.
@@ -40,7 +44,7 @@ import re
 from dataclasses import dataclass, fields, is_dataclass
 from decimal import Decimal, InvalidOperation
 from enum import Enum
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
 
@@ -107,6 +111,10 @@ class TruthGap(Enum):
     @property
     def evidence_id(self) -> str:
         return f"galaxy.truth-gap.{self.number:02d}.v1"
+
+
+class TruthGapLedgerError(ValueError):
+    pass
 
 
 class CapacityTruth(str, Enum):
@@ -225,6 +233,90 @@ class EvidenceFreshness(_ContentAddressedReceipt):
             return False
         expected = {item.path: item.sha256 for item in self.source_paths + self.test_paths}
         return all(path_digests.get(path) == digest for path, digest in expected.items())
+
+
+@dataclass(frozen=True)
+class TruthGapLedgerVerification:
+    valid: bool
+    stale_evidence_ids: tuple[str, ...]
+
+
+def load_truth_gap_ledger(path: str | Path) -> tuple[EvidenceFreshness, ...]:
+    """Load the closed fifteen-gap freshness ledger without applying defaults."""
+
+    ledger_path = Path(path)
+    try:
+        payload = json.loads(ledger_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise TruthGapLedgerError(f"cannot read truth-gap ledger: {exc}") from exc
+    if not isinstance(payload, dict) or payload.get("schema_version") != "galaxy.truth-gaps.v1":
+        raise TruthGapLedgerError("truth-gap ledger has an unsupported schema_version")
+    if payload.get("external_spend_allowed") is not False:
+        raise TruthGapLedgerError("truth-gap ledger must freeze external_spend_allowed=false")
+    raw_records = payload.get("truth_gaps")
+    if not isinstance(raw_records, list):
+        raise TruthGapLedgerError("truth_gaps must be a list")
+    records: list[EvidenceFreshness] = []
+    seen: set[TruthGap] = set()
+    for raw in raw_records:
+        if not isinstance(raw, dict):
+            raise TruthGapLedgerError("truth-gap record must be an object")
+        try:
+            truth_gap = TruthGap[str(raw["truth_gap"])]
+            state = EvidenceState(str(raw["state"]))
+            source_paths = tuple(ArtifactDigest(**item) for item in raw["source_paths"])
+            test_paths = tuple(ArtifactDigest(**item) for item in raw["test_paths"])
+            record = EvidenceFreshness(
+                truth_gap=truth_gap,
+                state=state,
+                source_revision=str(raw["source_revision"]),
+                source_paths=source_paths,
+                test_paths=test_paths,
+                fixture_digest=str(raw["fixture_digest"]),
+                observed_at=str(raw["observed_at"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise TruthGapLedgerError(f"invalid truth-gap record: {exc}") from exc
+        if raw.get("evidence_id") != record.evidence_id:
+            raise TruthGapLedgerError(
+                f"evidence_id does not match {truth_gap.name}: {raw.get('evidence_id')!r}"
+            )
+        if truth_gap in seen:
+            raise TruthGapLedgerError(f"duplicate truth gap: {truth_gap.name}")
+        seen.add(truth_gap)
+        records.append(record)
+    if seen != set(TruthGap) or len(records) != len(TruthGap):
+        raise TruthGapLedgerError("truth-gap ledger must contain exactly the 15 closed gaps")
+    return tuple(sorted(records, key=lambda record: record.truth_gap.number))
+
+
+def verify_truth_gap_ledger(
+    *,
+    repo_root: str | Path,
+    records: tuple[EvidenceFreshness, ...],
+    source_revision: str | None = None,
+) -> TruthGapLedgerVerification:
+    """Rehash every source/test claim and report stale evidence IDs."""
+
+    root = Path(repo_root).resolve()
+    stale: list[str] = []
+    for record in records:
+        path_digests: dict[str, str] = {}
+        for artifact in record.source_paths + record.test_paths:
+            candidate = (root / artifact.path).resolve()
+            try:
+                candidate.relative_to(root)
+                path_digests[artifact.path] = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            except (OSError, ValueError):
+                path_digests[artifact.path] = ""
+        if not record.is_fresh(
+            source_revision=source_revision or record.source_revision,
+            path_digests=path_digests,
+            fixture_digest=record.fixture_digest,
+        ):
+            stale.append(record.evidence_id)
+    stale_ids = tuple(stale)
+    return TruthGapLedgerVerification(valid=not stale_ids, stale_evidence_ids=stale_ids)
 
 
 @dataclass(frozen=True)
@@ -611,8 +703,12 @@ __all__ = [
     "RollbackReceipt",
     "SyntheticMetric",
     "TruthGap",
+    "TruthGapLedgerError",
+    "TruthGapLedgerVerification",
     "ZeroCostRunPolicy",
     "canonical_digest",
     "canonical_json_bytes",
     "deterministic_seed",
+    "load_truth_gap_ledger",
+    "verify_truth_gap_ledger",
 ]

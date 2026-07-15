@@ -15491,147 +15491,175 @@
           "kind": "class",
           "signature": "",
           "summary": "Closed source/evidence maturity states",
-          "lineno": 51
+          "lineno": 55
         },
         {
           "name": "BehaviorCapability",
           "kind": "class",
           "signature": "",
           "summary": "Behavior-changing descendants that require explicit evidence admission.",
-          "lineno": 64
+          "lineno": 68
         },
         {
           "name": "TruthGap",
           "kind": "class",
           "signature": "",
           "summary": "The immutable blocker registry from GALAXY R3 design section 3.2.",
-          "lineno": 84
+          "lineno": 88
+        },
+        {
+          "name": "TruthGapLedgerError",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 116
         },
         {
           "name": "CapacityTruth",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 112
+          "lineno": 120
         },
         {
           "name": "ProviderBillingMode",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 118
+          "lineno": 126
         },
         {
           "name": "canonical_digest",
           "kind": "function",
           "signature": "(value: Any) -> str",
           "summary": "",
-          "lineno": 161
+          "lineno": 169
         },
         {
           "name": "canonical_json_bytes",
           "kind": "function",
           "signature": "(value: Any) -> bytes",
           "summary": "Serialize an evidence value using the one receipt canonicalization.",
-          "lineno": 165
+          "lineno": 173
         },
         {
           "name": "ArtifactDigest",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 180
+          "lineno": 188
         },
         {
           "name": "EvidenceFreshness",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 194
+          "lineno": 202
+        },
+        {
+          "name": "TruthGapLedgerVerification",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 239
+        },
+        {
+          "name": "load_truth_gap_ledger",
+          "kind": "function",
+          "signature": "(path: str | Path) -> tuple[EvidenceFreshness, ...]",
+          "summary": "Load the closed fifteen-gap freshness ledger without applying defaults.",
+          "lineno": 244
+        },
+        {
+          "name": "verify_truth_gap_ledger",
+          "kind": "function",
+          "signature": "(*, repo_root: str | Path, records: tuple[EvidenceFreshness, ...], source_revision: str | None=None) -> TruthGapLedgerVerification",
+          "summary": "Rehash every source/test claim and report stale evidence IDs.",
+          "lineno": 293
         },
         {
           "name": "PreflightDecision",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 231
+          "lineno": 323
         },
         {
           "name": "EvidenceGateDecision",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 238
+          "lineno": 330
         },
         {
           "name": "EvidenceGate",
           "kind": "class",
           "signature": "",
           "summary": "Compatibility gate that can observe first, then enforce without hidden fallback.",
-          "lineno": 247
+          "lineno": 339
         },
         {
           "name": "ZeroCostRunPolicy",
           "kind": "class",
           "signature": "",
           "summary": "Production launch policy for the fixed zero-recurring-spend profile.",
-          "lineno": 308
+          "lineno": 400
         },
         {
           "name": "deterministic_seed",
           "kind": "function",
           "signature": "(experiment_id: str, unit_id: str, draw_index: int) -> int",
           "summary": "Return a stable 64-bit seed, domain-separated by all assignment inputs.",
-          "lineno": 357
+          "lineno": 449
         },
         {
           "name": "ExperimentManifest",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 376
+          "lineno": 468
         },
         {
           "name": "AssignmentReceipt",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 402
+          "lineno": 494
         },
         {
           "name": "ObservationReceipt",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 436
+          "lineno": 528
         },
         {
           "name": "AnalysisReceipt",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 497
+          "lineno": 589
         },
         {
           "name": "PromotionRecommendation",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 526
+          "lineno": 618
         },
         {
           "name": "RollbackReceipt",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 547
+          "lineno": 639
         },
         {
           "name": "SyntheticMetric",
           "kind": "class",
           "signature": "",
           "summary": "A metric is unknown unless a positive measurement receipt is attached.",
-          "lineno": 566
+          "lineno": 658
         }
       ],
       "depends_on": [],
