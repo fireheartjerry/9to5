@@ -7,7 +7,7 @@ EXPORTS:
   opinionVote(state: Any, dashboard: Any=None) -> 'list[dict]'  -- Earned-authority VOTE coupling on the plan gate
 DEPENDS-ON: config, human_nature.conviction, human_nature.integration, human_nature.opinions, memory.conviction_ledger, memory.experience_adapters, memory.experience_solutions, platform_core.core.best_effort
 SIDE-EFFECTS: mutates state.meta["hn_opinions"] / state.meta["hn_votes"] when enabled
-RUN/TEST: python -m pytest tests/orchestration/test_bridge_planning_vote.py
+RUN/TEST: python -m pytest tests/orchestration/test_bridge_planning_vote.py tests/orchestration/test_preplanning_clarification.py
 """
 from __future__ import annotations
 

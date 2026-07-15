@@ -5244,6 +5244,7 @@
         "tests/orchestration/test_files_touched_propagation.py",
         "tests/orchestration/test_plan_project_context.py",
         "tests/orchestration/test_pre_execution_council_seam.py",
+        "tests/orchestration/test_preplanning_clarification.py",
         "tests/orchestration/test_work_profile.py",
         "tests/planning/test_pre_execution_council.py",
         "tests/planning/test_pre_execution_council_live_only.py",
@@ -8246,6 +8247,37 @@
         "tests/execution/test_fsio.py"
       ]
     },
+    "platform_core.core.galaxy_evidence": {
+      "path": "platform_core/core/galaxy_evidence.py",
+      "purpose": "Fail-closed GALAXY Wave-0 evidence and zero-cost contracts.",
+      "exports": [
+        "EvidenceState",
+        "BehaviorCapability",
+        "TruthGap",
+        "CapacityTruth",
+        "ProviderBillingMode",
+        "canonical_digest",
+        "ArtifactDigest",
+        "EvidenceFreshness",
+        "PreflightDecision",
+        "EvidenceGateDecision",
+        "EvidenceGate",
+        "ZeroCostRunPolicy",
+        "deterministic_seed",
+        "ExperimentManifest",
+        "AssignmentReceipt",
+        "ObservationReceipt",
+        "AnalysisReceipt",
+        "PromotionRecommendation",
+        "RollbackReceipt",
+        "SyntheticMetric"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/platform/test_galaxy_evidence.py"
+      ]
+    },
     "platform_core.core.galaxy_topology": {
       "path": "platform_core/core/galaxy_topology.py",
       "purpose": "Fail-closed validation for the frozen GALAXY R3 structural manifest.",
@@ -9536,7 +9568,8 @@
       ],
       "callers": [],
       "test": [
-        "tests/orchestration/test_bridge_planning_vote.py"
+        "tests/orchestration/test_bridge_planning_vote.py",
+        "tests/orchestration/test_preplanning_clarification.py"
       ]
     },
     "platform_core.orchestration.human_nature_bridge.society": {

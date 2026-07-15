@@ -148,6 +148,19 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
                        council_brief_ref=None) -> str:
         """Run the architect (Phase 1) and planner (Phase 2) for a new (non-resume) run.
         Returns the architect_doc string used by all downstream phases."""
+        # GALAXY Wave 0: ambiguity is assessed before discovery, architect, council
+        # injection, or planner work.  This is shadow-only and object-only: the probe is
+        # a capability-bounded proposal, not host execution, so incumbent decisions remain
+        # unchanged until the external kernel can admit a safe immutable snapshot.
+        from agents.planning import preplanning_clarification
+        assessment = preplanning_clarification.assessGoal(
+            str(state.meta.get("goal_raw") or elaborated)
+        )
+        shadow = state.meta.setdefault("galaxy_shadow", {})
+        if not isinstance(shadow, dict):
+            shadow = {}
+            state.meta["galaxy_shadow"] = shadow
+        shadow["preplanning_clarification"] = assessment.to_dict()
         state.setStatus("architecting")
         self._checkControl(state, bus, dashboard)
         discovery_report = self._runDiscoveryPhase(state, work_dir, elaborated, dashboard)
@@ -271,7 +284,7 @@ class OrchestratorRunPhaseMixin(OrchestratorRunPhaseSurfaceMixin):
 
     def _runPreamble(self, state: TaskState, work_dir: str, control_mode: "str | None",
                      resume: bool, bus: "ControlBus",
-                     dashboard: "DiscordDashboard") -> "tuple[str, str]":
+                     dashboard: "DiscordDashboard") -> "tuple[str | None, str]":
         """Finish run setup (knowledge refresh, bus config, icons, dashboard). Returns (web_url, elaborated)."""
         web_url = None
         resetDegradations()   # per-run degradation picture (the WARNING dedup stays per-process)

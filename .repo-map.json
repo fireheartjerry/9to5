@@ -9634,6 +9634,7 @@
         "tests/orchestration/test_files_touched_propagation.py",
         "tests/orchestration/test_plan_project_context.py",
         "tests/orchestration/test_pre_execution_council_seam.py",
+        "tests/orchestration/test_preplanning_clarification.py",
         "tests/orchestration/test_work_profile.py",
         "tests/planning/test_pre_execution_council.py",
         "tests/planning/test_pre_execution_council_live_only.py",
@@ -15429,6 +15430,160 @@
       ],
       "callers": []
     },
+    "platform_core.core.galaxy_evidence": {
+      "path": "platform_core/core/galaxy_evidence.py",
+      "purpose": "Fail-closed GALAXY Wave-0 evidence and zero-cost contracts.",
+      "exports": [
+        {
+          "name": "EvidenceState",
+          "kind": "class",
+          "signature": "",
+          "summary": "Closed source/evidence maturity states",
+          "lineno": 50
+        },
+        {
+          "name": "BehaviorCapability",
+          "kind": "class",
+          "signature": "",
+          "summary": "Behavior-changing descendants that require explicit evidence admission.",
+          "lineno": 63
+        },
+        {
+          "name": "TruthGap",
+          "kind": "class",
+          "signature": "",
+          "summary": "The immutable blocker registry from GALAXY R3 design section 3.2.",
+          "lineno": 83
+        },
+        {
+          "name": "CapacityTruth",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 111
+        },
+        {
+          "name": "ProviderBillingMode",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 117
+        },
+        {
+          "name": "canonical_digest",
+          "kind": "function",
+          "signature": "(value: Any) -> str",
+          "summary": "",
+          "lineno": 160
+        },
+        {
+          "name": "ArtifactDigest",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 174
+        },
+        {
+          "name": "EvidenceFreshness",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 188
+        },
+        {
+          "name": "PreflightDecision",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 225
+        },
+        {
+          "name": "EvidenceGateDecision",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 232
+        },
+        {
+          "name": "EvidenceGate",
+          "kind": "class",
+          "signature": "",
+          "summary": "Compatibility gate that can observe first, then enforce without hidden fallback.",
+          "lineno": 241
+        },
+        {
+          "name": "ZeroCostRunPolicy",
+          "kind": "class",
+          "signature": "",
+          "summary": "Production launch policy for the fixed zero-recurring-spend profile.",
+          "lineno": 302
+        },
+        {
+          "name": "deterministic_seed",
+          "kind": "function",
+          "signature": "(experiment_id: str, unit_id: str, draw_index: int) -> int",
+          "summary": "Return a stable 64-bit seed, domain-separated by all assignment inputs.",
+          "lineno": 351
+        },
+        {
+          "name": "ExperimentManifest",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 370
+        },
+        {
+          "name": "AssignmentReceipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 396
+        },
+        {
+          "name": "ObservationReceipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 430
+        },
+        {
+          "name": "AnalysisReceipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 491
+        },
+        {
+          "name": "PromotionRecommendation",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 520
+        },
+        {
+          "name": "RollbackReceipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 541
+        },
+        {
+          "name": "SyntheticMetric",
+          "kind": "class",
+          "signature": "",
+          "summary": "A metric is unknown unless a positive measurement receipt is attached.",
+          "lineno": 560
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/platform/test_galaxy_evidence.py"
+      ],
+      "callers": []
+    },
     "platform_core.core.galaxy_topology": {
       "path": "platform_core/core/galaxy_topology.py",
       "purpose": "Fail-closed validation for the frozen GALAXY R3 structural manifest.",
@@ -17961,7 +18116,8 @@
         "mutates state.meta[\"hn_opinions\"] / state.meta[\"hn_votes\"] when enabled"
       ],
       "test": [
-        "tests/orchestration/test_bridge_planning_vote.py"
+        "tests/orchestration/test_bridge_planning_vote.py",
+        "tests/orchestration/test_preplanning_clarification.py"
       ],
       "callers": []
     },

@@ -1,0 +1,175 @@
+"""Deterministic Wave-0 ambiguity assessment before architect and planner work.
+
+Wave 0 records only a shadow assessment and, when useful, an object-only probe
+proposal.  It never executes the probe and never grants the proposal authority.
+Later kernel stages may execute the same proposal through an attested immutable
+snapshot and credentialless read broker.
+"""
+from __future__ import annotations
+
+import hashlib
+import re
+from dataclasses import dataclass
+from enum import Enum
+
+from platform_core.core.galaxy_evidence import canonical_digest
+
+
+class PreplanningDecision(str, Enum):
+    RESOLVED = "resolved"
+    PROBE_PROPOSED = "probe-proposed"
+    BLOCKED = "blocked"
+
+
+@dataclass(frozen=True)
+class AmbiguitySignal:
+    name: str
+    delta: int
+    evidence: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ReadOnlyProbeProposal:
+    capability_profile_id: str
+    questions: tuple[str, ...]
+    read_only: bool = True
+    object_only: bool = True
+    allow_process: bool = False
+    allow_network: bool = False
+    allow_credentials: bool = False
+    authoritative: bool = False
+
+
+@dataclass(frozen=True)
+class PreplanningAssessment:
+    goal_digest: str
+    decision: PreplanningDecision
+    score: int
+    signals: tuple[AmbiguitySignal, ...]
+    probe: ReadOnlyProbeProposal | None
+    policy_version: str = "galaxy-r3-wave0-ambiguity-v1"
+    shadow_only: bool = True
+
+    @property
+    def receipt_id(self) -> str:
+        return canonical_digest(self)
+
+    def to_dict(self) -> dict:
+        return {
+            "receipt_id": self.receipt_id,
+            "goal_digest": self.goal_digest,
+            "decision": self.decision.value,
+            "score": self.score,
+            "signals": [
+                {"name": item.name, "delta": item.delta, "evidence": list(item.evidence)}
+                for item in self.signals
+            ],
+            "probe": None if self.probe is None else {
+                "capability_profile_id": self.probe.capability_profile_id,
+                "questions": list(self.probe.questions),
+                "read_only": self.probe.read_only,
+                "object_only": self.probe.object_only,
+                "allow_process": self.probe.allow_process,
+                "allow_network": self.probe.allow_network,
+                "allow_credentials": self.probe.allow_credentials,
+                "authoritative": self.probe.authoritative,
+            },
+            "policy_version": self.policy_version,
+            "shadow_only": self.shadow_only,
+        }
+
+
+_VAGUE_PATTERNS = (
+    r"\bimprove everything\b",
+    r"\bmake (?:it|this|things) better\b",
+    r"\bfix (?:it|this|everything)\b",
+    r"\bbest (?:approach|architecture|solution)\b",
+    r"\bdo the right thing\b",
+)
+_MATERIAL_CHOICE_PATTERNS = (
+    r"\beither\b.+\bor\b",
+    r"\bchoose (?:whichever|between|the best)\b",
+    r"\bwhich (?:approach|architecture|schema|provider|design)\b",
+    r"\bambiguous\b",
+)
+_HIGH_RISK_TERMS = (
+    "delete", "drop", "production", "database", "migration", "migrate",
+    "security", "auth", "permission", "secret", "token", "public api",
+    "breaking", "credential", "payment", "billing",
+)
+_ACCEPTANCE_TERMS = (
+    "acceptance", "must pass", "test", "verify", "expected", "returns",
+    "produces", "without", "no regression", "exit code",
+)
+
+
+def _hits(patterns: tuple[str, ...], text: str) -> tuple[str, ...]:
+    return tuple(pattern for pattern in patterns if re.search(pattern, text, re.DOTALL))
+
+
+def assessGoal(goal: str) -> PreplanningAssessment:
+    """Score only supplied goal text; perform no repository, process, or network I/O."""
+
+    normalized = " ".join(str(goal or "").split())
+    lowered = normalized.lower()
+    signals: list[AmbiguitySignal] = []
+
+    vague = _hits(_VAGUE_PATTERNS, lowered)
+    if not normalized or len(normalized) < 20:
+        signals.append(AmbiguitySignal("underspecified", 3, ("short-or-empty-goal",)))
+    if vague:
+        signals.append(AmbiguitySignal("vague-objective", 3, vague))
+
+    choices = _hits(_MATERIAL_CHOICE_PATTERNS, lowered)
+    if choices:
+        signals.append(AmbiguitySignal("material-choice", 3, choices))
+
+    risk_hits = tuple(term for term in _HIGH_RISK_TERMS if term in lowered)
+    if risk_hits:
+        signals.append(AmbiguitySignal("high-risk", 3, risk_hits))
+
+    if not any(term in lowered for term in _ACCEPTANCE_TERMS):
+        signals.append(AmbiguitySignal("missing-acceptance-check", 2, ("no-acceptance-term",)))
+
+    explicit_scope = bool(re.search(r"(?:^|\s)(?:in|only|under)\s+[\w./\\-]+", lowered))
+    if explicit_scope and any(term in lowered for term in _ACCEPTANCE_TERMS):
+        signals.append(AmbiguitySignal("explicit-scope-and-check", -3, ("bounded-goal",)))
+
+    score = sum(signal.delta for signal in signals)
+    names = {signal.name for signal in signals}
+    if {"material-choice", "high-risk"}.issubset(names):
+        decision = PreplanningDecision.BLOCKED
+    elif score >= 4:
+        decision = PreplanningDecision.PROBE_PROPOSED
+    else:
+        decision = PreplanningDecision.RESOLVED
+
+    probe = None
+    if decision is not PreplanningDecision.RESOLVED:
+        questions = [
+            "Which repository facts constrain the requested outcome?",
+            "Which deterministic acceptance checks distinguish the material choices?",
+        ]
+        if "high-risk" in names:
+            questions.append("Which existing safety or rollback contract applies?")
+        probe = ReadOnlyProbeProposal(
+            capability_profile_id="immutable-snapshot-object-read-v1",
+            questions=tuple(questions),
+        )
+
+    return PreplanningAssessment(
+        goal_digest=hashlib.sha256(normalized.encode("utf-8")).hexdigest(),
+        decision=decision,
+        score=score,
+        signals=tuple(signals),
+        probe=probe,
+    )
+
+
+__all__ = [
+    "AmbiguitySignal",
+    "PreplanningAssessment",
+    "PreplanningDecision",
+    "ReadOnlyProbeProposal",
+    "assessGoal",
+]
