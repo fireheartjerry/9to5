@@ -85,9 +85,9 @@
     {
       "truth_gap": "SYNTHETIC_METRICS",
       "evidence_id": "galaxy.truth-gap.09.v1",
-      "state": "specified",
-      "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
-      "source_paths": [{"path": "platform_core/orchestration/solution_space.py", "sha256": "58beda0a1b4912058bd1a621b7992a5fbcb7715f6c0569d37fd910702547be57"}],
+      "state": "implemented_dark",
+      "source_revision": "ee0c7b9fbe9ad1e1a3c8f4331c7b18940471a9bb",
+      "source_paths": [{"path": "platform_core/orchestration/solution_space.py", "sha256": "322b231f992e9ae0e1fce89fa0aed7516bb8804ab6111115d378eaa24a0c29e5"}],
       "test_paths": [{"path": "tests/orchestration/test_solution_space.py", "sha256": "03a9da37f83b397d775807cbe11aef2238d213023c816aefa9278ad9ccfaf877"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
