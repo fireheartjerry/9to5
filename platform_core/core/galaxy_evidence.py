@@ -13,6 +13,7 @@ EXPORTS:
   CapacityTruth
   ProviderBillingMode
   canonical_digest(value: Any) -> str
+  canonical_json_bytes(value: Any) -> bytes  -- Serialize an evidence value using the one receipt canonicalization.
   ArtifactDigest
   EvidenceFreshness
   PreflightDecision
@@ -158,10 +159,15 @@ def _canonical(value: Any) -> Any:
 
 
 def canonical_digest(value: Any) -> str:
-    encoded = json.dumps(
+    return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+
+
+def canonical_json_bytes(value: Any) -> bytes:
+    """Serialize an evidence value using the one receipt canonicalization."""
+
+    return json.dumps(
         _canonical(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False
     ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
 
 
 class _ContentAddressedReceipt:
@@ -607,5 +613,6 @@ __all__ = [
     "TruthGap",
     "ZeroCostRunPolicy",
     "canonical_digest",
+    "canonical_json_bytes",
     "deterministic_seed",
 ]

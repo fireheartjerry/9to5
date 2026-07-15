@@ -2564,6 +2564,57 @@
         "tools.pre_execution_council_smoke"
       ]
     },
+    "agents.planning.preplanning_clarification": {
+      "path": "agents/planning/preplanning_clarification.py",
+      "purpose": "Deterministic Wave-0 ambiguity assessment before architect and planner work.",
+      "exports": [
+        {
+          "name": "PreplanningDecision",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 29
+        },
+        {
+          "name": "AmbiguitySignal",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 36
+        },
+        {
+          "name": "ReadOnlyProbeProposal",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 43
+        },
+        {
+          "name": "PreplanningAssessment",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 55
+        },
+        {
+          "name": "assessGoal",
+          "kind": "function",
+          "signature": "(goal: str) -> PreplanningAssessment",
+          "summary": "Score only supplied goal text",
+          "lineno": 121
+        }
+      ],
+      "depends_on": [
+        "platform_core.core.galaxy_evidence"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/orchestration/test_preplanning_clarification.py"
+      ],
+      "callers": []
+    },
     "agents.planning.question_memory": {
       "path": "agents/planning/question_memory.py",
       "purpose": "QuestionMemory -- reuse prior clarification answers without exact wording loops.",
@@ -9459,7 +9510,8 @@
         "writes step_journal rows in experience.db"
       ],
       "test": [
-        "tests/evolution/test_experience_journal.py"
+        "tests/evolution/test_experience_journal.py",
+        "tests/platform/test_galaxy_experiment_journal.py"
       ],
       "callers": []
     },
@@ -15439,140 +15491,147 @@
           "kind": "class",
           "signature": "",
           "summary": "Closed source/evidence maturity states",
-          "lineno": 50
+          "lineno": 51
         },
         {
           "name": "BehaviorCapability",
           "kind": "class",
           "signature": "",
           "summary": "Behavior-changing descendants that require explicit evidence admission.",
-          "lineno": 63
+          "lineno": 64
         },
         {
           "name": "TruthGap",
           "kind": "class",
           "signature": "",
           "summary": "The immutable blocker registry from GALAXY R3 design section 3.2.",
-          "lineno": 83
+          "lineno": 84
         },
         {
           "name": "CapacityTruth",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 111
+          "lineno": 112
         },
         {
           "name": "ProviderBillingMode",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 117
+          "lineno": 118
         },
         {
           "name": "canonical_digest",
           "kind": "function",
           "signature": "(value: Any) -> str",
           "summary": "",
-          "lineno": 160
+          "lineno": 161
+        },
+        {
+          "name": "canonical_json_bytes",
+          "kind": "function",
+          "signature": "(value: Any) -> bytes",
+          "summary": "Serialize an evidence value using the one receipt canonicalization.",
+          "lineno": 165
         },
         {
           "name": "ArtifactDigest",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 174
+          "lineno": 180
         },
         {
           "name": "EvidenceFreshness",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 188
+          "lineno": 194
         },
         {
           "name": "PreflightDecision",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 225
+          "lineno": 231
         },
         {
           "name": "EvidenceGateDecision",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 232
+          "lineno": 238
         },
         {
           "name": "EvidenceGate",
           "kind": "class",
           "signature": "",
           "summary": "Compatibility gate that can observe first, then enforce without hidden fallback.",
-          "lineno": 241
+          "lineno": 247
         },
         {
           "name": "ZeroCostRunPolicy",
           "kind": "class",
           "signature": "",
           "summary": "Production launch policy for the fixed zero-recurring-spend profile.",
-          "lineno": 302
+          "lineno": 308
         },
         {
           "name": "deterministic_seed",
           "kind": "function",
           "signature": "(experiment_id: str, unit_id: str, draw_index: int) -> int",
           "summary": "Return a stable 64-bit seed, domain-separated by all assignment inputs.",
-          "lineno": 351
+          "lineno": 357
         },
         {
           "name": "ExperimentManifest",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 370
+          "lineno": 376
         },
         {
           "name": "AssignmentReceipt",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 396
+          "lineno": 402
         },
         {
           "name": "ObservationReceipt",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 430
+          "lineno": 436
         },
         {
           "name": "AnalysisReceipt",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 491
+          "lineno": 497
         },
         {
           "name": "PromotionRecommendation",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 520
+          "lineno": 526
         },
         {
           "name": "RollbackReceipt",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 541
+          "lineno": 547
         },
         {
           "name": "SyntheticMetric",
           "kind": "class",
           "signature": "",
           "summary": "A metric is unknown unless a positive measurement receipt is attached.",
-          "lineno": 560
+          "lineno": 566
         }
       ],
       "depends_on": [],
@@ -15582,6 +15641,65 @@
       "test": [
         "tests/platform/test_galaxy_evidence.py"
       ],
+      "callers": [
+        "agents.planning.preplanning_clarification",
+        "platform_core.core.galaxy_experiments"
+      ]
+    },
+    "platform_core.core.galaxy_experiments": {
+      "path": "platform_core/core/galaxy_experiments.py",
+      "purpose": "Durable append-only SQLite journal for GALAXY shadow experiment receipts.",
+      "exports": [
+        {
+          "name": "ShadowJournalError",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 58
+        },
+        {
+          "name": "ParentReceiptMissing",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 62
+        },
+        {
+          "name": "ReceiptCollision",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 66
+        },
+        {
+          "name": "ReceiptLineageMismatch",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 70
+        },
+        {
+          "name": "StoredReceipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 75
+        },
+        {
+          "name": "ShadowEvidenceJournal",
+          "kind": "class",
+          "signature": "",
+          "summary": "Create-only receipt journal with restart-safe WAL durability.",
+          "lineno": 82
+        }
+      ],
+      "depends_on": [
+        "platform_core.core.galaxy_evidence"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
       "callers": []
     },
     "platform_core.core.galaxy_topology": {

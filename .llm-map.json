@@ -1327,6 +1327,24 @@
         "tests/planning/test_pre_execution_council.py"
       ]
     },
+    "agents.planning.preplanning_clarification": {
+      "path": "agents/planning/preplanning_clarification.py",
+      "purpose": "Deterministic Wave-0 ambiguity assessment before architect and planner work.",
+      "exports": [
+        "PreplanningDecision",
+        "AmbiguitySignal",
+        "ReadOnlyProbeProposal",
+        "PreplanningAssessment",
+        "assessGoal"
+      ],
+      "depends_on": [
+        "platform_core.core.galaxy_evidence"
+      ],
+      "callers": [],
+      "test": [
+        "tests/orchestration/test_preplanning_clarification.py"
+      ]
+    },
     "agents.planning.question_memory": {
       "path": "agents/planning/question_memory.py",
       "purpose": "QuestionMemory -- reuse prior clarification answers without exact wording loops.",
@@ -5171,7 +5189,8 @@
       ],
       "callers": [],
       "test": [
-        "tests/evolution/test_experience_journal.py"
+        "tests/evolution/test_experience_journal.py",
+        "tests/platform/test_galaxy_experiment_journal.py"
       ]
     },
     "memory.ledger.policy": {
@@ -8257,6 +8276,7 @@
         "CapacityTruth",
         "ProviderBillingMode",
         "canonical_digest",
+        "canonical_json_bytes",
         "ArtifactDigest",
         "EvidenceFreshness",
         "PreflightDecision",
@@ -8273,10 +8293,30 @@
         "SyntheticMetric"
       ],
       "depends_on": [],
-      "callers": [],
+      "callers": [
+        "agents.planning.preplanning_clarification",
+        "platform_core.core.galaxy_experiments"
+      ],
       "test": [
         "tests/platform/test_galaxy_evidence.py"
       ]
+    },
+    "platform_core.core.galaxy_experiments": {
+      "path": "platform_core/core/galaxy_experiments.py",
+      "purpose": "Durable append-only SQLite journal for GALAXY shadow experiment receipts.",
+      "exports": [
+        "ShadowJournalError",
+        "ParentReceiptMissing",
+        "ReceiptCollision",
+        "ReceiptLineageMismatch",
+        "StoredReceipt",
+        "ShadowEvidenceJournal"
+      ],
+      "depends_on": [
+        "platform_core.core.galaxy_evidence"
+      ],
+      "callers": [],
+      "test": []
     },
     "platform_core.core.galaxy_topology": {
       "path": "platform_core/core/galaxy_topology.py",
