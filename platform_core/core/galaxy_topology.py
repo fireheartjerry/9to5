@@ -1,0 +1,278 @@
+"""Fail-closed validation for the frozen GALAXY R3 structural manifest.
+
+The source manifest describes bytes, never runtime authority.  Qualification,
+eligibility, and activation are deliberately absent and must be supplied by an
+externally anchored runtime overlay in later stages.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Mapping
+
+
+NODE_FIELDS = frozenset(
+    {
+        "node_id",
+        "semantic_name",
+        "contract_version",
+        "typed_input_schemas",
+        "typed_output_schemas",
+        "activation_lifecycle",
+        "terminal_lifecycle",
+        "state_owner_or_explicit_statelessness",
+        "authority_class",
+        "forbidden_effects",
+        "resource_ceiling",
+        "timeout",
+        "failure_terminal",
+        "observable_consumer_decision_effect",
+        "ablation_key",
+        "replacement_or_removal_path",
+        "source_implementation_maturity",
+        "layer",
+    }
+)
+
+EDGE_FIELDS = frozenset(
+    {
+        "edge_id",
+        "source_node_id",
+        "target_node_id",
+        "closed_payload_schema",
+        "source_and_target_contract_versions",
+        "activation_guard",
+        "causal_epoch_and_phase_rule",
+        "authority_and_security_class",
+        "provenance_binding",
+        "replay_and_deduplication_rule",
+        "expiry",
+        "timeout_and_failure_behavior",
+        "queue_and_backpressure_ceiling",
+        "edge_ablation_key",
+        "source_implementation_maturity",
+        "layer",
+    }
+)
+
+SOURCE_MATURITIES = frozenset(
+    {"specified", "implemented_dark", "retired", "unavailable"}
+)
+RUNTIME_AUTHORITY_FIELDS = frozenset(
+    {"qualified", "eligible", "active", "graph_warrant", "activation_generation"}
+)
+CORE_LAYERS = frozenset(
+    {"base", "flare_magnetosphere", "nebula", "pulsar", "quark"}
+)
+MUTATION_SPINE = frozenset({"RS", "RI", "TP", "GS", "BI", "OF", "MG", "RC", "TJ", "TO", "TA", "PA"})
+
+
+class ManifestValidationError(ValueError):
+    """The source topology is incomplete, ambiguous, or authority-widening."""
+
+
+@dataclass(frozen=True)
+class ManifestReport:
+    """Audited structural counts; runtime authority is intentionally excluded."""
+
+    base: tuple[int, int]
+    core: tuple[int, int]
+    federation_ready: tuple[int, int]
+    source_maturities: frozenset[str]
+
+
+def manifest_path() -> Path:
+    """Return the repository-local immutable source-manifest path."""
+
+    return Path(__file__).resolve().parents[2] / "config" / "galaxy" / "topology.v1.json"
+
+
+def load_manifest(path: Path) -> dict[str, Any]:
+    """Load a manifest without applying defaults or runtime inheritance."""
+
+    with path.open("r", encoding="utf-8") as handle:
+        value = json.load(handle)
+    if not isinstance(value, dict):
+        raise ManifestValidationError("manifest root must be an object")
+    return value
+
+
+def _require_exact_fields(
+    item: Mapping[str, Any], required: frozenset[str], label: str
+) -> None:
+    runtime = sorted(RUNTIME_AUTHORITY_FIELDS.intersection(item))
+    if runtime:
+        raise ManifestValidationError(
+            f"{label} contains runtime authority field(s): {', '.join(runtime)}"
+        )
+    missing = sorted(required.difference(item))
+    if missing:
+        raise ManifestValidationError(
+            f"{label} missing required field(s): {', '.join(missing)}"
+        )
+
+
+def _count(items: list[Mapping[str, Any]], layers: frozenset[str]) -> int:
+    return sum(item["layer"] in layers for item in items)
+
+
+def validate_manifest(manifest: Mapping[str, Any]) -> ManifestReport:
+    """Validate the frozen 134-node/256-edge target topology.
+
+    This validates structural qualification only.  It refuses source-level
+    runtime authority and new overlay ingress into the promotion spine.
+    """
+
+    nodes = manifest.get("nodes")
+    edges = manifest.get("edges")
+    schemas = manifest.get("payload_schemas")
+    if not isinstance(nodes, list) or not isinstance(edges, list):
+        raise ManifestValidationError("nodes and edges must be arrays")
+    if not isinstance(schemas, dict):
+        raise ManifestValidationError("payload_schemas must be an object")
+    for schema_name, schema in schemas.items():
+        if (
+            not isinstance(schema, dict)
+            or schema.get("type") != "object"
+            or schema.get("additionalProperties") is not False
+        ):
+            raise ManifestValidationError(f"schema is not closed: {schema_name}")
+
+    node_ids: set[str] = set()
+    maturities: set[str] = set()
+    contracts: dict[str, str] = {}
+    node_inputs: dict[str, frozenset[str]] = {}
+    node_outputs: dict[str, frozenset[str]] = {}
+    for index, node in enumerate(nodes):
+        if not isinstance(node, dict):
+            raise ManifestValidationError(f"node[{index}] must be an object")
+        label = f"node[{index}]"
+        _require_exact_fields(node, NODE_FIELDS, label)
+        node_id = node["node_id"]
+        if not isinstance(node_id, str) or not node_id:
+            raise ManifestValidationError(f"{label} has invalid node_id")
+        if node_id in node_ids:
+            raise ManifestValidationError(f"duplicate node ID: {node_id}")
+        node_ids.add(node_id)
+        contracts[node_id] = node["contract_version"]
+        node_inputs[node_id] = frozenset(node["typed_input_schemas"])
+        node_outputs[node_id] = frozenset(node["typed_output_schemas"])
+        maturity = node["source_implementation_maturity"]
+        if maturity not in SOURCE_MATURITIES:
+            raise ManifestValidationError(
+                f"{label} has invalid source implementation maturity: {maturity}"
+            )
+        maturities.add(maturity)
+        for schema in node["typed_input_schemas"] + node["typed_output_schemas"]:
+            if schema not in schemas:
+                raise ManifestValidationError(f"{label} references missing schema: {schema}")
+
+    edge_ids: set[str] = set()
+    ordered_pairs: set[tuple[str, str]] = set()
+    for index, edge in enumerate(edges):
+        if not isinstance(edge, dict):
+            raise ManifestValidationError(f"edge[{index}] must be an object")
+        label = f"edge[{index}]"
+        _require_exact_fields(edge, EDGE_FIELDS, label)
+        edge_id = edge["edge_id"]
+        if edge_id in edge_ids:
+            raise ManifestValidationError(f"duplicate edge ID: {edge_id}")
+        edge_ids.add(edge_id)
+        source = edge["source_node_id"]
+        target = edge["target_node_id"]
+        if source not in node_ids or target not in node_ids:
+            raise ManifestValidationError(
+                f"{label} has dangling endpoint: {source} -> {target}"
+            )
+        if source == target:
+            raise ManifestValidationError(f"{label} is a self-loop: {source}")
+        pair = (source, target)
+        if pair in ordered_pairs:
+            raise ManifestValidationError(
+                f"duplicate ordered edge: {source} -> {target}"
+            )
+        ordered_pairs.add(pair)
+        payload_schema = edge["closed_payload_schema"]
+        if payload_schema not in schemas:
+            raise ManifestValidationError(
+                f"{label} references missing schema: {payload_schema}"
+            )
+        if (
+            payload_schema not in node_outputs[source]
+            or payload_schema not in node_inputs[target]
+        ):
+            raise ManifestValidationError(
+                f"{label} has incompatible endpoint schemas: {source} -> {target}"
+            )
+        expected_versions = {
+            "source": contracts[source],
+            "target": contracts[target],
+        }
+        if edge["source_and_target_contract_versions"] != expected_versions:
+            raise ManifestValidationError(
+                f"{label} endpoint contract versions do not match"
+            )
+        maturity = edge["source_implementation_maturity"]
+        if maturity not in SOURCE_MATURITIES:
+            raise ManifestValidationError(
+                f"{label} has invalid source implementation maturity: {maturity}"
+            )
+        maturities.add(maturity)
+        if (
+            edge["layer"] != "base"
+            and edge["authority_and_security_class"] == "mutation_spine_authority"
+        ):
+            raise ManifestValidationError(
+                f"authority amplification on overlay edge: {edge_id}"
+            )
+        if edge["layer"] != "base" and target in MUTATION_SPINE:
+            raise ManifestValidationError(
+                f"authority ingress into mutation spine: {edge_id} -> {target}"
+            )
+
+    base = (
+        _count(nodes, frozenset({"base"})),
+        _count(edges, frozenset({"base"})),
+    )
+    core = (_count(nodes, CORE_LAYERS), _count(edges, CORE_LAYERS))
+    federation_ready = (len(nodes), len(edges))
+    expected = ((71, 95), (131, 250), (134, 256))
+    actual = (base, core, federation_ready)
+    if actual != expected:
+        raise ManifestValidationError(
+            f"count drift: expected {expected}, observed {actual}"
+        )
+
+    return ManifestReport(
+        base=base,
+        core=core,
+        federation_ready=federation_ready,
+        source_maturities=frozenset(maturities),
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the repository's static topology linter."""
+
+    args = list(sys.argv[1:] if argv is None else argv)
+    path = Path(args[0]) if args else manifest_path()
+    try:
+        report = validate_manifest(load_manifest(path))
+    except (OSError, json.JSONDecodeError, ManifestValidationError) as exc:
+        print(f"GALAXY topology invalid: {exc}", file=sys.stderr)
+        return 1
+    print(
+        "GALAXY topology valid: "
+        f"base={report.base[0]}/{report.base[1]} "
+        f"core={report.core[0]}/{report.core[1]} "
+        "federation_ready="
+        f"{report.federation_ready[0]}/{report.federation_ready[1]}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

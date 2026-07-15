@@ -640,7 +640,9 @@
       "test": [
         "tests/execution/test_browser_executor.py"
       ],
-      "callers": []
+      "callers": [
+        "tools.browser_canary"
+      ]
     },
     "agents.execution.chatgpt_browser_driver": {
       "path": "agents/execution/chatgpt_browser_driver.py",
@@ -1671,6 +1673,50 @@
       "test": [],
       "callers": [
         "agents.planning.pre_execution_council"
+      ]
+    },
+    "agents.planning.council_policy": {
+      "path": "agents/planning/council_policy.py",
+      "purpose": "Provider-neutral council truth and narrow risk-gate policy.",
+      "exports": [
+        {
+          "name": "CouncilSeatReceipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 21
+        },
+        {
+          "name": "CouncilDecision",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 42
+        },
+        {
+          "name": "CouncilPolicy",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 52
+        },
+        {
+          "name": "receipts_from_brief",
+          "kind": "function",
+          "signature": "(brief: Any, *, artifact_ref: str='') -> tuple[CouncilSeatReceipt, ...]",
+          "summary": "Normalize existing provider summaries without trusting prose 'live' claims.",
+          "lineno": 74
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/planning/test_council_policy.py"
+      ],
+      "callers": [
+        "agents.planning.council_seam"
       ]
     },
     "agents.planning.council_prompts": {
@@ -3377,7 +3423,8 @@
         "platform_core.orchestration.run_loop_replan_mixin",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.society.worker",
-        "platform_core.orchestration.subtask"
+        "platform_core.orchestration.subtask",
+        "platform_core.simulator.testing.outcome_runner"
       ]
     },
     "agents.verifier_runner": {
@@ -3870,6 +3917,7 @@
         "platform_core.simulator.chaos",
         "platform_core.simulator.simulation",
         "platform_core.simulator.testing.e2e",
+        "platform_core.simulator.testing.outcome_runner",
         "scripts.poc_any_project",
         "scripts.repo_health",
         "selfmod",
@@ -6335,6 +6383,36 @@
         "platform_core.orchestration.run_loop"
       ]
     },
+    "learning.council_quality": {
+      "path": "learning/council_quality.py",
+      "purpose": "Outcome-backed promotion gate for advisory council expansion.",
+      "exports": [
+        {
+          "name": "CouncilQualityComparison",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 20
+        },
+        {
+          "name": "compare_council_impact",
+          "kind": "function",
+          "signature": "(baseline: OutcomeEvaluation, council_enabled: OutcomeEvaluation, *, minimum_outcome_improvement: float=0.02, minimum_live_tasks: int=8) -> CouncilQualityComparison",
+          "summary": "Decide whether advisory council evidence justifies broader enablement.",
+          "lineno": 36
+        }
+      ],
+      "depends_on": [
+        "learning.outcome_evaluation"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/evolution/test_council_quality.py"
+      ],
+      "callers": []
+    },
     "learning.curriculum": {
       "path": "learning/curriculum.py",
       "purpose": "Compatibility alias for :mod:`learning.evolution.curriculum`.",
@@ -8062,6 +8140,116 @@
         "tests/evolution/test_finetune.py"
       ],
       "callers": []
+    },
+    "learning.outcome_evaluation": {
+      "path": "learning/outcome_evaluation.py",
+      "purpose": "End-to-end outcome evaluation for 9TO5 agent changes.",
+      "exports": [
+        {
+          "name": "EvaluationTask",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 39
+        },
+        {
+          "name": "OutcomeReceipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 68
+        },
+        {
+          "name": "EvaluationSuite",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 134
+        },
+        {
+          "name": "OutcomeEvaluation",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 151
+        },
+        {
+          "name": "DisposableWorkspace",
+          "kind": "class",
+          "signature": "",
+          "summary": "A short-lived detached git worktree for one outcome-evaluation task.",
+          "lineno": 215
+        },
+        {
+          "name": "run_outcome_evaluation",
+          "kind": "function",
+          "signature": "(candidate: str, suite: EvaluationSuite, runner: Callable[[EvaluationTask], dict[str, Any]], *, artifact_dir: str | Path | None=None) -> OutcomeEvaluation",
+          "summary": "Run a supplied full-lifecycle runner and persist a self-contained receipt.",
+          "lineno": 245
+        },
+        {
+          "name": "run_disposable_evaluation",
+          "kind": "function",
+          "signature": "(candidate: str, suite: EvaluationSuite, source_repo: str | Path, lifecycle_runner: Callable[[EvaluationTask, Path], dict[str, Any]], *, artifact_dir: str | Path | None=None) -> OutcomeEvaluation",
+          "summary": "Run each task in a fresh detached worktree through a real lifecycle callback.",
+          "lineno": 273
+        },
+        {
+          "name": "compare_to_champion",
+          "kind": "function",
+          "signature": "(candidate: OutcomeEvaluation, baseline: OutcomeEvaluation) -> dict[str, Any]",
+          "summary": "Fail closed: candidates cannot win with weaker policy evidence or a lower outcome rate.",
+          "lineno": 324
+        },
+        {
+          "name": "promotion_readiness",
+          "kind": "function",
+          "signature": "(evaluation: OutcomeEvaluation, *, minimum_live_tasks: int=8) -> dict[str, Any]",
+          "summary": "Expose lack of real evidence rather than treating simulated success as a promotion.",
+          "lineno": 342
+        },
+        {
+          "name": "render_outcome_report",
+          "kind": "function",
+          "signature": "(candidate: OutcomeEvaluation, baseline: OutcomeEvaluation | None=None) -> str",
+          "summary": "Small read-only dashboard/report block suitable for terminal, Discord, or webdash.",
+          "lineno": 358
+        },
+        {
+          "name": "evaluation_from_dict",
+          "kind": "function",
+          "signature": "(raw: dict[str, Any]) -> OutcomeEvaluation",
+          "summary": "Rehydrate a persisted evaluation artifact for champion comparison.",
+          "lineno": 374
+        },
+        {
+          "name": "combine_outcome_evaluations",
+          "kind": "function",
+          "signature": "(candidate: str, evaluations: list[OutcomeEvaluation], *, artifact_dir: str | Path | None=None) -> OutcomeEvaluation",
+          "summary": "Merge distinct held-out task receipts into one comparable benchmark record.",
+          "lineno": 397
+        },
+        {
+          "name": "promote_candidate",
+          "kind": "function",
+          "signature": "(candidate: OutcomeEvaluation, champion_path: str | Path, *, minimum_live_tasks: int=8) -> dict[str, Any]",
+          "summary": "Atomically establish or improve the champion only with sufficient live evidence.",
+          "lineno": 425
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/evolution/test_outcome_evaluation.py"
+      ],
+      "callers": [
+        "learning.council_quality",
+        "platform_core.simulator.testing.outcome_runner",
+        "tools.live_outcome_evaluation",
+        "tools.outcome_evaluation_report"
+      ]
     },
     "learning.policy": {
       "path": "learning/policy.py",
@@ -20211,7 +20399,8 @@
       ],
       "test": [],
       "callers": [
-        "platform_core.simulator.chaos"
+        "platform_core.simulator.chaos",
+        "platform_core.simulator.testing.outcome_runner"
       ]
     },
     "platform_core.simulator.bot_replay": {
@@ -20504,6 +20693,41 @@
       ],
       "callers": [
         "platform_core.simulator.testing.e2e"
+      ]
+    },
+    "platform_core.simulator.testing.outcome_runner": {
+      "path": "platform_core/simulator/testing/outcome_runner.py",
+      "purpose": "Hermetic full-lifecycle runner for outcome-evaluation smoke suites.",
+      "exports": [
+        {
+          "name": "run_builder_lifecycle",
+          "kind": "function",
+          "signature": "(task: EvaluationTask, workspace: Path) -> dict[str, Any]",
+          "summary": "Execute one evaluation task through the full simulated orchestration lifecycle.",
+          "lineno": 30
+        },
+        {
+          "name": "run_live_lifecycle",
+          "kind": "function",
+          "signature": "(task: EvaluationTask, workspace: Path) -> dict[str, Any]",
+          "summary": "Run the real planner/executor/verifier/reviewer only after explicit opt-in.",
+          "lineno": 59
+        }
+      ],
+      "depends_on": [
+        "agents.verifier",
+        "config",
+        "learning.outcome_evaluation",
+        "orchestrator.Orchestrator",
+        "platform_core.simulator",
+        "state.task"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "tools.live_outcome_evaluation"
       ]
     },
     "scripts.bug_triage": {
@@ -20875,6 +21099,7 @@
         "platform_core.simulator.bot_replay",
         "platform_core.simulator.testing.e2e",
         "platform_core.simulator.testing.operator",
+        "platform_core.simulator.testing.outcome_runner",
         "tools.elaborator_eval"
       ]
     },
@@ -21017,6 +21242,50 @@
         "unannotated"
       ],
       "test": [],
+      "callers": []
+    },
+    "tools.browser_canary": {
+      "path": "tools/browser_canary.py",
+      "purpose": "Gated live-CDP canary against a local, secret-free browser fixture.",
+      "exports": [
+        {
+          "name": "run",
+          "kind": "function",
+          "signature": "() -> dict",
+          "summary": "",
+          "lineno": 32
+        }
+      ],
+      "depends_on": [
+        "agents.execution.browser_executor"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/tools/test_browser_canary.py"
+      ],
+      "callers": []
+    },
+    "tools.browser_fixture": {
+      "path": "tools/browser_fixture.py",
+      "purpose": "Hermetic browser fixture application used by CDP tests and the live canary.",
+      "exports": [
+        {
+          "name": "write_browser_fixture",
+          "kind": "function",
+          "signature": "(root: str | Path) -> Path",
+          "summary": "Create deterministic form, navigation, retry, download, and timeout targets.",
+          "lineno": 15
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/tools/test_browser_fixture.py"
+      ],
       "callers": []
     },
     "tools.cerebras_probe": {
@@ -21727,6 +21996,28 @@
       ],
       "callers": []
     },
+    "tools.live_outcome_evaluation": {
+      "path": "tools/live_outcome_evaluation.py",
+      "purpose": "Run a supplied outcome suite through real 9TO5 providers in disposable worktrees.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "",
+          "lineno": 29
+        }
+      ],
+      "depends_on": [
+        "learning.outcome_evaluation",
+        "platform_core.simulator.testing.outcome_runner"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "tools.llm_navigation": {
       "path": "tools/llm_navigation.py",
       "purpose": "Compact, dependency-aware navigation projection and context packets for LLM agents.",
@@ -21752,6 +22043,57 @@
       ],
       "test": [
         "tests/platform/test_llm_navigation.py"
+      ],
+      "callers": []
+    },
+    "tools.outcome_evaluation_report": {
+      "path": "tools/outcome_evaluation_report.py",
+      "purpose": "Render a persisted outcome-evaluation artifact as a compact quality report.",
+      "exports": [
+        {
+          "name": "render",
+          "kind": "function",
+          "signature": "(path: str | Path, champion_path: str | Path | None=None) -> str",
+          "summary": "",
+          "lineno": 25
+        }
+      ],
+      "depends_on": [
+        "learning.outcome_evaluation"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/tools/test_outcome_evaluation_report.py"
+      ],
+      "callers": []
+    },
+    "tools.outcome_fixture": {
+      "path": "tools/outcome_fixture.py",
+      "purpose": "Create disposable, deterministic repositories for live outcome-evaluation canaries.",
+      "exports": [
+        {
+          "name": "create_bugfix_fixture",
+          "kind": "function",
+          "signature": "(root: str | Path) -> tuple[Path, Path]",
+          "summary": "Seed a git repo whose only valid repair is a small arithmetic bugfix.",
+          "lineno": 18
+        },
+        {
+          "name": "create_core_suite_fixture",
+          "kind": "function",
+          "signature": "(root: str | Path) -> tuple[Path, Path]",
+          "summary": "Create four independently repairable code-work tasks from one clean base repo.",
+          "lineno": 42
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/tools/test_outcome_fixture.py"
       ],
       "callers": []
     },

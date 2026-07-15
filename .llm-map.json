@@ -357,7 +357,9 @@
         "notifications.lane_feed",
         "platform_core.core.contracts"
       ],
-      "callers": [],
+      "callers": [
+        "tools.browser_canary"
+      ],
       "test": [
         "tests/execution/test_browser_executor.py"
       ]
@@ -933,6 +935,23 @@
         "agents.planning.pre_execution_council"
       ],
       "test": []
+    },
+    "agents.planning.council_policy": {
+      "path": "agents/planning/council_policy.py",
+      "purpose": "Provider-neutral council truth and narrow risk-gate policy.",
+      "exports": [
+        "CouncilSeatReceipt",
+        "CouncilDecision",
+        "CouncilPolicy",
+        "receipts_from_brief"
+      ],
+      "depends_on": [],
+      "callers": [
+        "agents.planning.council_seam"
+      ],
+      "test": [
+        "tests/planning/test_council_policy.py"
+      ]
     },
     "agents.planning.council_prompts": {
       "path": "agents/planning/council_prompts.py",
@@ -1826,7 +1845,8 @@
         "platform_core.orchestration.run_loop_replan_mixin",
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.society.worker",
-        "platform_core.orchestration.subtask"
+        "platform_core.orchestration.subtask",
+        "platform_core.simulator.testing.outcome_runner"
       ],
       "test": [
         "tests/execution/test_verifier.py"
@@ -2195,6 +2215,7 @@
         "platform_core.simulator.chaos",
         "platform_core.simulator.simulation",
         "platform_core.simulator.testing.e2e",
+        "platform_core.simulator.testing.outcome_runner",
         "scripts.poc_any_project",
         "scripts.repo_health",
         "selfmod",
@@ -3419,6 +3440,21 @@
         "tests/evolution/test_nextwave_batch1.py"
       ]
     },
+    "learning.council_quality": {
+      "path": "learning/council_quality.py",
+      "purpose": "Outcome-backed promotion gate for advisory council expansion.",
+      "exports": [
+        "CouncilQualityComparison",
+        "compare_council_impact"
+      ],
+      "depends_on": [
+        "learning.outcome_evaluation"
+      ],
+      "callers": [],
+      "test": [
+        "tests/evolution/test_council_quality.py"
+      ]
+    },
     "learning.curriculum": {
       "path": "learning/curriculum.py",
       "purpose": "Compatibility alias for :mod:`learning.evolution.curriculum`.",
@@ -4333,6 +4369,35 @@
       "callers": [],
       "test": [
         "tests/evolution/test_finetune.py"
+      ]
+    },
+    "learning.outcome_evaluation": {
+      "path": "learning/outcome_evaluation.py",
+      "purpose": "End-to-end outcome evaluation for 9TO5 agent changes.",
+      "exports": [
+        "EvaluationTask",
+        "OutcomeReceipt",
+        "EvaluationSuite",
+        "OutcomeEvaluation",
+        "DisposableWorkspace",
+        "run_outcome_evaluation",
+        "run_disposable_evaluation",
+        "compare_to_champion",
+        "promotion_readiness",
+        "render_outcome_report",
+        "evaluation_from_dict",
+        "combine_outcome_evaluations",
+        "promote_candidate"
+      ],
+      "depends_on": [],
+      "callers": [
+        "learning.council_quality",
+        "platform_core.simulator.testing.outcome_runner",
+        "tools.live_outcome_evaluation",
+        "tools.outcome_evaluation_report"
+      ],
+      "test": [
+        "tests/evolution/test_outcome_evaluation.py"
       ]
     },
     "learning.policy": {
@@ -10758,7 +10823,8 @@
       "exports": [],
       "depends_on": [],
       "callers": [
-        "platform_core.simulator.chaos"
+        "platform_core.simulator.chaos",
+        "platform_core.simulator.testing.outcome_runner"
       ],
       "test": []
     },
@@ -10891,6 +10957,26 @@
         "tests/human_nature/test_operator_authority.py",
         "tests/slow/test_e2e_operator.py"
       ]
+    },
+    "platform_core.simulator.testing.outcome_runner": {
+      "path": "platform_core/simulator/testing/outcome_runner.py",
+      "purpose": "Hermetic full-lifecycle runner for outcome-evaluation smoke suites.",
+      "exports": [
+        "run_builder_lifecycle",
+        "run_live_lifecycle"
+      ],
+      "depends_on": [
+        "agents.verifier",
+        "config",
+        "learning.outcome_evaluation",
+        "orchestrator.Orchestrator",
+        "platform_core.simulator",
+        "state.task"
+      ],
+      "callers": [
+        "tools.live_outcome_evaluation"
+      ],
+      "test": []
     },
     "scripts.bug_triage": {
       "path": "scripts/bug_triage.py",
@@ -11057,6 +11143,7 @@
         "platform_core.simulator.bot_replay",
         "platform_core.simulator.testing.e2e",
         "platform_core.simulator.testing.operator",
+        "platform_core.simulator.testing.outcome_runner",
         "tools.elaborator_eval"
       ],
       "test": [
@@ -11122,6 +11209,32 @@
       "depends_on": [],
       "callers": [],
       "test": []
+    },
+    "tools.browser_canary": {
+      "path": "tools/browser_canary.py",
+      "purpose": "Gated live-CDP canary against a local, secret-free browser fixture.",
+      "exports": [
+        "run"
+      ],
+      "depends_on": [
+        "agents.execution.browser_executor"
+      ],
+      "callers": [],
+      "test": [
+        "tests/tools/test_browser_canary.py"
+      ]
+    },
+    "tools.browser_fixture": {
+      "path": "tools/browser_fixture.py",
+      "purpose": "Hermetic browser fixture application used by CDP tests and the live canary.",
+      "exports": [
+        "write_browser_fixture"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/tools/test_browser_fixture.py"
+      ]
     },
     "tools.cerebras_probe": {
       "path": "tools/cerebras_probe.py",
@@ -11381,6 +11494,19 @@
         "tests/platform/test_dev_commands.py"
       ]
     },
+    "tools.live_outcome_evaluation": {
+      "path": "tools/live_outcome_evaluation.py",
+      "purpose": "Run a supplied outcome suite through real 9TO5 providers in disposable worktrees.",
+      "exports": [
+        "main"
+      ],
+      "depends_on": [
+        "learning.outcome_evaluation",
+        "platform_core.simulator.testing.outcome_runner"
+      ],
+      "callers": [],
+      "test": []
+    },
     "tools.llm_navigation": {
       "path": "tools/llm_navigation.py",
       "purpose": "Compact, dependency-aware navigation projection and context packets for LLM agents.",
@@ -11392,6 +11518,33 @@
       "callers": [],
       "test": [
         "tests/platform/test_llm_navigation.py"
+      ]
+    },
+    "tools.outcome_evaluation_report": {
+      "path": "tools/outcome_evaluation_report.py",
+      "purpose": "Render a persisted outcome-evaluation artifact as a compact quality report.",
+      "exports": [
+        "render"
+      ],
+      "depends_on": [
+        "learning.outcome_evaluation"
+      ],
+      "callers": [],
+      "test": [
+        "tests/tools/test_outcome_evaluation_report.py"
+      ]
+    },
+    "tools.outcome_fixture": {
+      "path": "tools/outcome_fixture.py",
+      "purpose": "Create disposable, deterministic repositories for live outcome-evaluation canaries.",
+      "exports": [
+        "create_bugfix_fixture",
+        "create_core_suite_fixture"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/tools/test_outcome_fixture.py"
       ]
     },
     "tools.pre_execution_council_compare": {
