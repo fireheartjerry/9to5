@@ -1,0 +1,76 @@
+{
+  "authority_state": {
+    "runtime_activation_overlay": null,
+    "source_implementation_maturities": [
+      "specified"
+    ],
+    "source_manifest_can_activate": false
+  },
+  "commits": {
+    "artifact_migration": "3bea8f788643064b1ef90829be7fde56ba6c7302",
+    "topology_manifest": "4884203771d16bdb7a0eb74271b31e569ea9ce36"
+  },
+  "contract_version": "galaxy.stage-receipt/v1",
+  "environment": {
+    "baseline_manifest": "config/galaxy/incumbent-baseline.v1.json",
+    "compatibility_python": "3.11.15",
+    "production_python_3_12_available": false,
+    "zero_cost_profile": true
+  },
+  "evidence": {
+    "baseline_stdout_sha256": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
+    "post_stage_stdout_sha256": "5de522fd1df73613f5be1a0ea8ce08400948e4225b7ac6e841692f9a34a03ec6",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "known_failures": {
+    "deterministic_incumbent": [
+      "tests/control/test_identity.py::TestPredicates::test_self_code_files_excludes_test_dirs",
+      "tests/evolution/test_selfmod_runner.py::test_size_audit_p7_files_not_must_split",
+      "tests/orchestration/test_society_off_invariance.py::test_handle_society_batch_delegates_to_coordinator",
+      "tests/platform/test_config_bootstrap.py::test_subprocess_import_from_non_repo_cwd_resolves_repo_root",
+      "tests/platform/test_sync_competitive_skill.py::test_sync_copies_canonical_skill",
+      "tests/platform/test_no_unittest_footgun.py::test_no_test_file_has_unittest_main_block"
+    ],
+    "parallel_load_only": [
+      "tests/orchestration/test_competitive_runtime.py::test_parallel_memos_record_in_stable_order (passed 3/3 serial reruns)",
+      "tests/slow/test_e2e_operator.py::TestE2EOperator::test_add_at_gate_adds_subtask (passed 2/2 serial reruns)"
+    ],
+    "resolved_by_stage": [
+      "tests/platform/test_repo_map.py::TestRepoMapDrift::test_no_drift"
+    ]
+  },
+  "rollback_point": "c16bbebe880a9fa0963c79f707278c920aab6798",
+  "stage": 0,
+  "tests": [
+    {
+      "command": "python -m pytest -q tests/platform/test_galaxy_artifacts.py tests/platform/test_galaxy_topology.py",
+      "exit_code": 0,
+      "result": "17 passed"
+    },
+    {
+      "command": "python tools/affected_tests.py <changed-files>; python -m pytest -q <targets>",
+      "exit_code": 0,
+      "result": "44 passed before split commits; 41 passed for topology commit"
+    },
+    {
+      "command": "python validate_workflows.py",
+      "exit_code": 0,
+      "result": "3/3 valid"
+    },
+    {
+      "command": "python tools/repo_map.py --check",
+      "exit_code": 0,
+      "result": "up to date"
+    },
+    {
+      "command": "python -m platform_core.core.galaxy_topology",
+      "exit_code": 0,
+      "result": "base=71/95 core=131/250 federation_ready=134/256"
+    },
+    {
+      "command": "python -m pytest -n auto -q",
+      "exit_code": 1,
+      "result": "4951 passed, 8 failed, 3 skipped, 222 subtests passed; two new failures passed all serial reruns"
+    }
+  ]
+}
