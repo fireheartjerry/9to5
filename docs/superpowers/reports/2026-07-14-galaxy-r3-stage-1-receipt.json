@@ -1,0 +1,144 @@
+{
+  "schema_version": "galaxy.stage-receipt.v1",
+  "stage": 1,
+  "stage_name": "truth-freeze-and-shadow-evidence",
+  "recorded_at": "2026-07-14T22:39:15.2537460-04:00",
+  "baseline_commit": "6ebfc7476a1403a645d35500c6436aa4272543f4",
+  "implementation_head": "b195296246c81651f70cae087a2b4fc38c6fc2f9",
+  "implementation_commits": [
+    "a063be9f446b5d77a8bab56bce901f63fc9447e7",
+    "ea1770aa35394b19d281e939c9da247bc37de488",
+    "12d66126ca4afaad1554db573549daa92bc7bce1",
+    "59d09ecb6752c77f281bb2bbfd0f6529bb96b6df",
+    "ee0c7b9fbe9ad1e1a3c8f4331c7b18940471a9bb",
+    "f81dce93277da94b16b8047adb150edc2684657c",
+    "e7382f1ec41b50f4e4898c327cadd43ec8ddd3f0",
+    "5aed242f76cd64858b8407ee5c7f7ddeab5851c9",
+    "f80247a53ee1079dbec6ef9300407fb5fa98be58",
+    "9a1b66e0082396892919354f5744742fc1557343",
+    "68c094e461a8c5b760ea72fb4d5b195c28a4cc9c",
+    "b195296246c81651f70cae087a2b4fc38c6fc2f9"
+  ],
+  "environment": {
+    "os": "windows",
+    "python_compatibility_lane": "3.11.15",
+    "python_production_lane": "3.12-unavailable",
+    "pytest": "9.1.1",
+    "external_spend_allowed": false,
+    "paid_provider_calls": 0,
+    "network_provider_calls": 0
+  },
+  "authority_state": {
+    "galaxy_policy_enforcement": "implemented-dark",
+    "galaxy_policy_enforcement_enabled": false,
+    "experiment_receipts": "shadow-only",
+    "preplanning_clarification": "shadow-only-object-only-proposal",
+    "synthetic_qd_metrics": "annotated-unknown-and-rejected-when-enforced",
+    "truth_gap_states": {
+      "specified": 12,
+      "implemented_dark": 3,
+      "qualified": 0,
+      "eligible": 0,
+      "active": 0
+    },
+    "active_overlays": [],
+    "graph_warrants": []
+  },
+  "capabilities": {
+    "zero_cost_preflight": {
+      "status": "implemented-dark",
+      "hard_denials": [
+        "api-key-billing",
+        "cloud-billing-mode"
+      ],
+      "enforced_denials": [
+        "unknown-price",
+        "unknown-quota",
+        "unknown-capacity",
+        "unavailable-quota",
+        "unavailable-capacity"
+      ]
+    },
+    "shadow_experiments": {
+      "status": "implemented-dark",
+      "journal": "sqlite-wal-full-sync-append-only",
+      "receipt_types": [
+        "ExperimentManifest",
+        "AssignmentReceipt",
+        "ObservationReceipt",
+        "AnalysisReceipt",
+        "PromotionRecommendation",
+        "RollbackReceipt"
+      ]
+    },
+    "truth_gap_freshness": {
+      "status": "valid",
+      "stable_evidence_ids": 15,
+      "stale_evidence_ids": []
+    }
+  },
+  "verification": {
+    "focused_acceptance": {
+      "command": "python -m pytest tests/platform/test_galaxy_artifacts.py tests/platform/test_galaxy_topology.py tests/platform/test_galaxy_evidence.py tests/platform/test_galaxy_experiment_journal.py tests/execution/test_galaxy_zero_cost_preflight.py tests/orchestration/test_preplanning_clarification.py tests/orchestration/test_qd_archive.py tests/orchestration/test_solution_space_generational.py tests/platform/test_epic_flags_config.py -q",
+      "exit_code": 0,
+      "passed": 101
+    },
+    "repository_map": {
+      "command": "python tools/repo_map.py --check",
+      "exit_code": 0
+    },
+    "workflow_validation": {
+      "command": "python validate_workflows.py",
+      "exit_code": 0,
+      "valid": 3,
+      "total": 3
+    },
+    "topology_validation": {
+      "command": "python -m platform_core.core.galaxy_topology",
+      "exit_code": 0,
+      "base": "71/95",
+      "core": "131/250",
+      "federation_ready": "134/256"
+    },
+    "truth_gap_validation": {
+      "exit_code": 0,
+      "valid": true,
+      "stale_evidence_ids": []
+    },
+    "full_suite": {
+      "command": "python -m pytest -n auto -q",
+      "exit_code": 1,
+      "passed": 5007,
+      "failed": 6,
+      "skipped": 3,
+      "subtests_passed": 222,
+      "duration_seconds": 330.32,
+      "baseline_failure_set_match": true,
+      "artifact": "C:/Users/fireh/.config/superpowers/evidence/9to5/galaxy-r3/stage-1/full-suite.txt",
+      "artifact_sha256": "1318cff66e7ff2e8efd977add1958d7753eb2ed7a1f5e7a3797b75633d29f245"
+    },
+    "git_diff_check": {
+      "command": "git diff --check",
+      "exit_code": 0
+    },
+    "source_tree_clean_before_receipt": true
+  },
+  "known_incumbent_failures": [
+    "tests/control/test_identity.py::TestPredicates::test_self_code_files_excludes_test_dirs",
+    "tests/evolution/test_selfmod_runner.py::test_size_audit_p7_files_not_must_split",
+    "tests/orchestration/test_society_off_invariance.py::test_handle_society_batch_delegates_to_coordinator",
+    "tests/platform/test_sync_competitive_skill.py::test_sync_copies_canonical_skill",
+    "tests/platform/test_config_bootstrap.py::test_subprocess_import_from_non_repo_cwd_resolves_repo_root",
+    "tests/platform/test_no_unittest_footgun.py::test_no_test_file_has_unittest_main_block"
+  ],
+  "baseline_invariance": {
+    "status": "pass",
+    "reason": "The full-suite deterministic failure set matches the pinned incumbent. GALAXY policy enforcement remains dark; ambiguity assessment and experiment evidence are additive shadow records; QD shadow selection retains incumbent metrics and behavior.",
+    "intentional_fixed-profile_guard": "API-key and cloud-billing launches are denied because the approved incumbent profile is subscription/local-only."
+  },
+  "rollback": {
+    "target": "6ebfc7476a1403a645d35500c6436aa4272543f4",
+    "activation_change_required": false
+  },
+  "exit_gate": "pass-with-pinned-incumbent-failures"
+}
