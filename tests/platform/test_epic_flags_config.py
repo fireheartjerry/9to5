@@ -22,6 +22,17 @@ from platform_core.app_config.settings import EpicFlags
 # Epic 1: durable-execution config flags (tests/test_durable_config.py)
 # ---------------------------------------------------------------------------
 
+def test_galaxy_zero_cost_policy_is_frozen_off_even_when_env_requests_spend(monkeypatch):
+    monkeypatch.setenv("EXTERNAL_SPEND_ALLOWED", "1")
+    flags = EpicFlags()
+    assert flags.EXTERNAL_SPEND_ALLOWED is False
+
+
+def test_galaxy_shadow_policy_enforcement_ships_dark(monkeypatch):
+    monkeypatch.delenv("GALAXY_R3_POLICY_ENFORCEMENT_ENABLED", raising=False)
+    assert EpicFlags().GALAXY_R3_POLICY_ENFORCEMENT_ENABLED is False
+    assert isinstance(config.GALAXY_R3_POLICY_ENFORCEMENT_ENABLED, bool)
+
 def test_epic1_flag_defaults(monkeypatch):
     monkeypatch.setenv("FULL_STACK", "0")   # master off -> assert the conservative ship-dark fallback
     for k in ("TRAJECTORY_ENABLED", "STEP_JOURNAL_ENABLED", "STEP_RESUME_ENABLED",

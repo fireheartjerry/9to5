@@ -1,0 +1,585 @@
+"""Fail-closed GALAXY Wave-0 evidence and zero-cost contracts.
+
+The types in this module are deliberately standard-library-only and immutable.  They
+describe shadow evidence; they do not grant runtime authority.  Receipt identifiers
+are SHA-256 digests of a canonical JSON representation, making replay and accidental
+mutation visible without relying on a database implementation.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from dataclasses import dataclass, fields, is_dataclass
+from decimal import Decimal, InvalidOperation
+from enum import Enum
+from pathlib import PurePosixPath
+from typing import Any, Mapping
+
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_REVISION_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
+
+
+class EvidenceState(str, Enum):
+    """Closed source/evidence maturity states; none imply runtime authority."""
+
+    SPECIFIED = "specified"
+    IMPLEMENTED_DARK = "implemented_dark"
+    QUALIFICATION_ONLY = "qualification_only"
+    QUALIFIED = "qualified"
+    ELIGIBLE = "eligible"
+    ACTIVE = "active"
+    RETIRED = "retired"
+    UNAVAILABLE = "unavailable"
+
+
+class BehaviorCapability(str, Enum):
+    """Behavior-changing descendants that require explicit evidence admission."""
+
+    COST_BUDGET = "cost-budget"
+    STEP_RESUME = "step-resume"
+    WORKTREE_ISOLATION = "worktree-isolation"
+    DUAL_LEDGER = "dual-ledger"
+    SOCIETY = "society"
+    SOLUTION_FORK = "solution-fork"
+    SOLUTION_GRAFT = "solution-graft"
+    EXECUTION_FABRIC = "execution-fabric"
+    HUMAN_NATURE_COUPLINGS = "human-nature-couplings"
+    EXTERNAL_COUNCIL_SEATS = "external-council-seats"
+    ADAPTIVE_EVOLUTION = "adaptive-evolution"
+
+    @property
+    def evidence_key(self) -> str:
+        return f"galaxy.behavior.{self.value}.v1"
+
+
+class TruthGap(Enum):
+    """The immutable blocker registry from GALAXY R3 design section 3.2."""
+
+    COMPLETION_BEFORE_COLLECTION = (1, "completion-before-collection")
+    SILENT_FAILED_WINNER_MERGE = (2, "silent-failed-winner-merge")
+    PRIVILEGE_WIDENING_FALLBACK = (3, "privilege-widening-fallback")
+    DELETE_BEFORE_APPLY_COMMANDS = (4, "delete-before-apply-commands")
+    OPAQUE_EFFECTS = (5, "opaque-effects")
+    PROVIDER_MONOCULTURE = (6, "provider-monoculture")
+    UNENFORCED_ZERO_COST = (7, "unenforced-zero-cost-policy")
+    CONFOUNDED_LEARNING = (8, "confounded-learning")
+    SYNTHETIC_METRICS = (9, "synthetic-metrics")
+    ALL_ON_ACTIVATION = (10, "all-on-activation")
+    PRE_EXECUTION_HOST_ESCAPE = (11, "pre-execution-host-escape")
+    CANONICAL_PREAMBLE_MUTATION = (12, "canonical-preamble-mutation")
+    POST_VERIFICATION_HOST_ESCAPE = (13, "post-verification-host-escape")
+    POST_SEAL_REWRITE = (14, "post-seal-rewrite")
+    IMPORT_BEFORE_ADMISSION = (15, "import-before-admission-bootstrap")
+
+    def __init__(self, number: int, slug: str) -> None:
+        self.number = number
+        self.slug = slug
+
+    @property
+    def evidence_id(self) -> str:
+        return f"galaxy.truth-gap.{self.number:02d}.v1"
+
+
+class CapacityTruth(str, Enum):
+    AVAILABLE = "available"
+    UNAVAILABLE = "unavailable"
+    UNKNOWN = "unknown"
+
+
+class ProviderBillingMode(str, Enum):
+    LOCAL = "local"
+    SUBSCRIPTION = "subscription"
+    API_KEY = "api-key"
+    UNKNOWN = "unknown"
+
+
+def _require_sha256(value: str, field_name: str) -> None:
+    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
+        raise ValueError(f"{field_name} must be a lowercase SHA-256 digest")
+
+
+def _require_revision(value: str) -> None:
+    if not isinstance(value, str) or _REVISION_RE.fullmatch(value) is None:
+        raise ValueError("source_revision must be a full lowercase Git object id")
+
+
+def _require_text(value: str, field_name: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must be non-empty")
+
+
+def _require_shadow(value: bool) -> None:
+    if value is not True:
+        raise ValueError("Wave-0 evidence must remain shadow_only")
+
+
+def _canonical(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, Decimal):
+        return format(value, "f")
+    if is_dataclass(value):
+        return {field.name: _canonical(getattr(value, field.name)) for field in fields(value)}
+    if isinstance(value, Mapping):
+        return {str(key): _canonical(value[key]) for key in sorted(value)}
+    if isinstance(value, (tuple, list)):
+        return [_canonical(item) for item in value]
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    raise TypeError(f"unsupported canonical receipt value: {type(value).__name__}")
+
+
+def canonical_digest(value: Any) -> str:
+    encoded = json.dumps(
+        _canonical(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+class _ContentAddressedReceipt:
+    @property
+    def receipt_id(self) -> str:
+        return canonical_digest(self)
+
+
+@dataclass(frozen=True)
+class ArtifactDigest:
+    path: str
+    sha256: str
+
+    def __post_init__(self) -> None:
+        _require_text(self.path, "path")
+        normalized = self.path.replace("\\", "/")
+        path = PurePosixPath(normalized)
+        if path.is_absolute() or ".." in path.parts or normalized != path.as_posix():
+            raise ValueError("artifact path must be a normalized repository-relative path")
+        _require_sha256(self.sha256, "sha256")
+
+
+@dataclass(frozen=True)
+class EvidenceFreshness(_ContentAddressedReceipt):
+    truth_gap: TruthGap
+    state: EvidenceState
+    source_revision: str
+    source_paths: tuple[ArtifactDigest, ...]
+    test_paths: tuple[ArtifactDigest, ...]
+    fixture_digest: str
+    observed_at: str
+
+    def __post_init__(self) -> None:
+        _require_revision(self.source_revision)
+        _require_sha256(self.fixture_digest, "fixture_digest")
+        _require_text(self.observed_at, "observed_at")
+        if not self.source_paths or not self.test_paths:
+            raise ValueError("freshness evidence requires source and test paths")
+        paths = tuple(item.path for item in self.source_paths + self.test_paths)
+        if len(paths) != len(set(paths)):
+            raise ValueError("freshness evidence contains duplicate paths")
+
+    @property
+    def evidence_id(self) -> str:
+        return self.truth_gap.evidence_id
+
+    def is_fresh(
+        self,
+        *,
+        source_revision: str,
+        path_digests: Mapping[str, str],
+        fixture_digest: str,
+    ) -> bool:
+        if source_revision != self.source_revision or fixture_digest != self.fixture_digest:
+            return False
+        expected = {item.path: item.sha256 for item in self.source_paths + self.test_paths}
+        return all(path_digests.get(path) == digest for path, digest in expected.items())
+
+
+@dataclass(frozen=True)
+class PreflightDecision(_ContentAddressedReceipt):
+    allowed: bool
+    reason: str
+    external_spend_allowed: bool
+
+
+@dataclass(frozen=True)
+class EvidenceGateDecision(_ContentAddressedReceipt):
+    capability: BehaviorCapability
+    allowed: bool
+    reason: str
+    evidence_state: EvidenceState
+    authority_receipt_id: str | None
+    shadow_observation: bool
+
+
+class EvidenceGate:
+    """Compatibility gate that can observe first, then enforce without hidden fallback."""
+
+    @staticmethod
+    def evaluate(
+        *,
+        capability: BehaviorCapability,
+        legacy_enabled: bool,
+        policy_enforced: bool,
+        evidence_state: EvidenceState,
+        activation_receipt_id: str | None,
+    ) -> EvidenceGateDecision:
+        if activation_receipt_id is not None:
+            _require_sha256(activation_receipt_id, "activation_receipt_id")
+        if not legacy_enabled:
+            return EvidenceGateDecision(
+                capability=capability,
+                allowed=False,
+                reason="legacy-disabled",
+                evidence_state=evidence_state,
+                authority_receipt_id=None,
+                shadow_observation=not policy_enforced,
+            )
+        if not policy_enforced:
+            return EvidenceGateDecision(
+                capability=capability,
+                allowed=True,
+                reason="incumbent-baseline",
+                evidence_state=evidence_state,
+                authority_receipt_id=None,
+                shadow_observation=True,
+            )
+        if activation_receipt_id is None:
+            return EvidenceGateDecision(
+                capability=capability,
+                allowed=False,
+                reason="activation-receipt-required",
+                evidence_state=evidence_state,
+                authority_receipt_id=None,
+                shadow_observation=False,
+            )
+        if evidence_state is not EvidenceState.ACTIVE:
+            return EvidenceGateDecision(
+                capability=capability,
+                allowed=False,
+                reason="evidence-not-active",
+                evidence_state=evidence_state,
+                authority_receipt_id=None,
+                shadow_observation=False,
+            )
+        return EvidenceGateDecision(
+            capability=capability,
+            allowed=True,
+            reason="externally-activated",
+            evidence_state=evidence_state,
+            authority_receipt_id=activation_receipt_id,
+            shadow_observation=False,
+        )
+
+
+@dataclass(frozen=True)
+class ZeroCostRunPolicy:
+    """Production launch policy for the fixed zero-recurring-spend profile."""
+
+    external_spend_allowed: bool = False
+
+    def __post_init__(self) -> None:
+        if self.external_spend_allowed is not False:
+            raise ValueError("external spend is frozen off by the GALAXY R3 zero-cost profile")
+
+    def preflight(
+        self,
+        *,
+        billing_mode: ProviderBillingMode,
+        price_usd: Decimal | None,
+        quota_state: CapacityTruth,
+        capacity_state: CapacityTruth,
+    ) -> PreflightDecision:
+        reason: str | None = None
+        if billing_mode is ProviderBillingMode.API_KEY:
+            reason = "external-spend-forbidden"
+        elif billing_mode is ProviderBillingMode.UNKNOWN:
+            reason = "billing-mode-unknown"
+        elif price_usd is None:
+            reason = "price-unknown"
+        else:
+            try:
+                price = Decimal(price_usd)
+            except (InvalidOperation, TypeError, ValueError):
+                reason = "price-invalid"
+            else:
+                if not price.is_finite() or price < 0:
+                    reason = "price-invalid"
+                elif price != 0:
+                    reason = "external-spend-forbidden"
+        if reason is None and quota_state is CapacityTruth.UNKNOWN:
+            reason = "quota-unknown"
+        if reason is None and quota_state is CapacityTruth.UNAVAILABLE:
+            reason = "quota-unavailable"
+        if reason is None and capacity_state is CapacityTruth.UNKNOWN:
+            reason = "capacity-unknown"
+        if reason is None and capacity_state is CapacityTruth.UNAVAILABLE:
+            reason = "capacity-unavailable"
+        return PreflightDecision(
+            allowed=reason is None,
+            reason=reason or "admitted-zero-cost",
+            external_spend_allowed=False,
+        )
+
+
+def deterministic_seed(experiment_id: str, unit_id: str, draw_index: int) -> int:
+    """Return a stable 64-bit seed, domain-separated by all assignment inputs."""
+
+    _require_text(experiment_id, "experiment_id")
+    _require_text(unit_id, "unit_id")
+    if not isinstance(draw_index, int) or isinstance(draw_index, bool) or draw_index < 0:
+        raise ValueError("draw_index must be a non-negative integer")
+    digest = hashlib.sha256(
+        b"galaxy-r3-seed-v1\0"
+        + experiment_id.encode("utf-8")
+        + b"\0"
+        + unit_id.encode("utf-8")
+        + b"\0"
+        + str(draw_index).encode("ascii")
+    ).digest()
+    return int.from_bytes(digest[:8], "big", signed=False)
+
+
+@dataclass(frozen=True)
+class ExperimentManifest(_ContentAddressedReceipt):
+    experiment_id: str
+    policy_version: str
+    provider_cohort: tuple[str, ...]
+    fixture_digest: str
+    primary_endpoint: str
+    seeds: tuple[int, ...]
+    created_at: str
+    shadow_only: bool = True
+
+    def __post_init__(self) -> None:
+        for name in ("experiment_id", "policy_version", "primary_endpoint", "created_at"):
+            _require_text(getattr(self, name), name)
+        _require_sha256(self.fixture_digest, "fixture_digest")
+        _require_shadow(self.shadow_only)
+        if not self.provider_cohort or any(not item.strip() for item in self.provider_cohort):
+            raise ValueError("provider_cohort must be non-empty")
+        if len(self.provider_cohort) != len(set(self.provider_cohort)):
+            raise ValueError("provider_cohort contains duplicates")
+        if not self.seeds or any(isinstance(seed, bool) or not isinstance(seed, int) or seed < 0 for seed in self.seeds):
+            raise ValueError("seeds must be non-empty non-negative integers")
+        if len(self.seeds) != len(set(self.seeds)):
+            raise ValueError("seeds contain duplicates")
+
+
+@dataclass(frozen=True)
+class AssignmentReceipt(_ContentAddressedReceipt):
+    manifest_id: str
+    unit_id: str
+    treatment: str
+    assignment_probability: Decimal
+    seed: int
+    policy_version: str
+    provider: str
+    capability_profile_id: str
+    quota_state: CapacityTruth
+    source_revision: str
+    fixture_digest: str
+    assigned_at: str
+    shadow_only: bool = True
+
+    def __post_init__(self) -> None:
+        _require_sha256(self.manifest_id, "manifest_id")
+        _require_sha256(self.fixture_digest, "fixture_digest")
+        _require_revision(self.source_revision)
+        _require_shadow(self.shadow_only)
+        for name in ("unit_id", "treatment", "policy_version", "provider", "capability_profile_id", "assigned_at"):
+            _require_text(getattr(self, name), name)
+        probability = Decimal(self.assignment_probability)
+        if not probability.is_finite() or probability <= 0 or probability > 1:
+            raise ValueError("assignment_probability must be in (0, 1]")
+        if isinstance(self.seed, bool) or not isinstance(self.seed, int) or self.seed < 0:
+            raise ValueError("seed must be a non-negative integer")
+
+    @property
+    def parent_receipt_ids(self) -> tuple[str, ...]:
+        return (self.manifest_id,)
+
+
+@dataclass(frozen=True)
+class ObservationReceipt(_ContentAddressedReceipt):
+    assignment_id: str
+    manifest_id: str
+    unit_id: str
+    treatment: str
+    assignment_probability: Decimal
+    seed: int
+    policy_version: str
+    provider: str
+    capability_profile_id: str
+    quota_state: CapacityTruth
+    source_revision: str
+    fixture_digest: str
+    outcome: tuple[tuple[str, Any], ...]
+    observed_at: str
+    shadow_only: bool = True
+
+    def __post_init__(self) -> None:
+        for name in ("assignment_id", "manifest_id", "fixture_digest"):
+            _require_sha256(getattr(self, name), name)
+        _require_revision(self.source_revision)
+        _require_shadow(self.shadow_only)
+        _require_text(self.observed_at, "observed_at")
+        keys = tuple(key for key, _ in self.outcome)
+        if not keys or any(not isinstance(key, str) or not key for key in keys):
+            raise ValueError("outcome must contain named facts")
+        if keys != tuple(sorted(keys)) or len(keys) != len(set(keys)):
+            raise ValueError("outcome facts must be unique and sorted")
+        _canonical(self.outcome)
+
+    @classmethod
+    def from_assignment(
+        cls,
+        assignment: AssignmentReceipt,
+        *,
+        outcome: tuple[tuple[str, Any], ...],
+        observed_at: str,
+    ) -> "ObservationReceipt":
+        return cls(
+            assignment_id=assignment.receipt_id,
+            manifest_id=assignment.manifest_id,
+            unit_id=assignment.unit_id,
+            treatment=assignment.treatment,
+            assignment_probability=assignment.assignment_probability,
+            seed=assignment.seed,
+            policy_version=assignment.policy_version,
+            provider=assignment.provider,
+            capability_profile_id=assignment.capability_profile_id,
+            quota_state=assignment.quota_state,
+            source_revision=assignment.source_revision,
+            fixture_digest=assignment.fixture_digest,
+            outcome=outcome,
+            observed_at=observed_at,
+        )
+
+    @property
+    def parent_receipt_ids(self) -> tuple[str, ...]:
+        return (self.assignment_id,)
+
+
+@dataclass(frozen=True)
+class AnalysisReceipt(_ContentAddressedReceipt):
+    manifest_id: str
+    observation_ids: tuple[str, ...]
+    analyst_identity: str
+    primary_endpoint: str
+    estimate: Decimal
+    confidence_interval: tuple[Decimal, Decimal]
+    analyzed_at: str
+    shadow_only: bool = True
+
+    def __post_init__(self) -> None:
+        _require_sha256(self.manifest_id, "manifest_id")
+        _require_shadow(self.shadow_only)
+        for name in ("analyst_identity", "primary_endpoint", "analyzed_at"):
+            _require_text(getattr(self, name), name)
+        if not self.observation_ids or len(self.observation_ids) != len(set(self.observation_ids)):
+            raise ValueError("observation_ids must be non-empty and unique")
+        for receipt_id in self.observation_ids:
+            _require_sha256(receipt_id, "observation_id")
+        low, high = self.confidence_interval
+        if low > high:
+            raise ValueError("confidence_interval lower bound exceeds upper bound")
+
+    @property
+    def parent_receipt_ids(self) -> tuple[str, ...]:
+        return self.observation_ids
+
+
+@dataclass(frozen=True)
+class PromotionRecommendation(_ContentAddressedReceipt):
+    analysis_id: str
+    recommendation: str
+    reason: str
+    recommended_at: str
+    shadow_only: bool = True
+
+    def __post_init__(self) -> None:
+        _require_sha256(self.analysis_id, "analysis_id")
+        _require_shadow(self.shadow_only)
+        if self.recommendation not in {"promote", "continue-shadow", "reject", "rollback"}:
+            raise ValueError("recommendation is not in the closed recommendation set")
+        _require_text(self.reason, "reason")
+        _require_text(self.recommended_at, "recommended_at")
+
+    @property
+    def parent_receipt_ids(self) -> tuple[str, ...]:
+        return (self.analysis_id,)
+
+
+@dataclass(frozen=True)
+class RollbackReceipt(_ContentAddressedReceipt):
+    recommendation_id: str
+    rollback_target: str
+    reason: str
+    rolled_back_at: str
+    shadow_only: bool = True
+
+    def __post_init__(self) -> None:
+        _require_sha256(self.recommendation_id, "recommendation_id")
+        _require_shadow(self.shadow_only)
+        for name in ("rollback_target", "reason", "rolled_back_at"):
+            _require_text(getattr(self, name), name)
+
+    @property
+    def parent_receipt_ids(self) -> tuple[str, ...]:
+        return (self.recommendation_id,)
+
+
+@dataclass(frozen=True)
+class SyntheticMetric:
+    """A metric is unknown unless a positive measurement receipt is attached."""
+
+    name: str
+    value: Decimal | None
+    measurement_receipt_id: str | None
+    unknown_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_text(self.name, "name")
+        if self.value is None:
+            _require_text(self.unknown_reason or "", "unknown_reason")
+            if self.measurement_receipt_id is not None:
+                raise ValueError("unknown metric cannot cite a measurement receipt")
+            return
+        if self.measurement_receipt_id is None:
+            raise ValueError("a metric value requires a verified measurement receipt")
+        _require_sha256(self.measurement_receipt_id, "measurement_receipt_id")
+        if not Decimal(self.value).is_finite():
+            raise ValueError("metric value must be finite")
+
+    @property
+    def known(self) -> bool:
+        return self.value is not None
+
+    @classmethod
+    def unknown(cls, name: str, *, reason: str) -> "SyntheticMetric":
+        return cls(name=name, value=None, measurement_receipt_id=None, unknown_reason=reason)
+
+
+__all__ = [
+    "AnalysisReceipt",
+    "ArtifactDigest",
+    "AssignmentReceipt",
+    "BehaviorCapability",
+    "CapacityTruth",
+    "EvidenceFreshness",
+    "EvidenceGate",
+    "EvidenceGateDecision",
+    "EvidenceState",
+    "ExperimentManifest",
+    "ObservationReceipt",
+    "PreflightDecision",
+    "PromotionRecommendation",
+    "ProviderBillingMode",
+    "RollbackReceipt",
+    "SyntheticMetric",
+    "TruthGap",
+    "ZeroCostRunPolicy",
+    "canonical_digest",
+    "deterministic_seed",
+]

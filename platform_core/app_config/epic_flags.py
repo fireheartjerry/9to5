@@ -24,6 +24,17 @@ _F = field
 class EpicFlags:
     """Epic 1/2/5/6/8 feature flags (formerly llm_epic_flags.py)."""
 
+    # --- GALAXY R3 Wave 0: immutable zero-cost posture + shadow policy seam ---
+    # This is intentionally not environment-backed.  No repository-local value may
+    # widen the approved zero-recurring-spend profile.
+    EXTERNAL_SPEND_ALLOWED: bool = False
+    # Shadow-only in Wave 0 so the pinned incumbent remains the behavior baseline.
+    # When enabled by a later, externally warranted activation, FULL_STACK descendants
+    # must pass the explicit evidence gate instead of inheriting authority.
+    GALAXY_R3_POLICY_ENFORCEMENT_ENABLED: bool = _F(
+        default_factory=lambda: _envBool("GALAXY_R3_POLICY_ENFORCEMENT_ENABLED", False)
+    )
+
     # --- Epic 1: durable execution -- additive observability ON, behavior-changers DARK ---
     TRAJECTORY_ENABLED: bool = _F(default_factory=lambda: _envBool("TRAJECTORY_ENABLED", True))
     COST_BUDGET_ENABLED: bool = _F(default_factory=lambda: _envBool("COST_BUDGET_ENABLED", _fullStack()))

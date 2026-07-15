@@ -8246,6 +8246,23 @@
         "tests/execution/test_fsio.py"
       ]
     },
+    "platform_core.core.galaxy_topology": {
+      "path": "platform_core/core/galaxy_topology.py",
+      "purpose": "Fail-closed validation for the frozen GALAXY R3 structural manifest.",
+      "exports": [
+        "ManifestValidationError",
+        "ManifestReport",
+        "manifest_path",
+        "load_manifest",
+        "validate_manifest",
+        "main"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/platform/test_galaxy_topology.py"
+      ]
+    },
     "platform_core.core.git_io": {
       "path": "platform_core/core/git_io.py",
       "purpose": "Safe subprocess kernel for git/gh/gate commands: no prompts, no stdin, always bounded.",

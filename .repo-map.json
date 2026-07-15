@@ -15429,6 +15429,62 @@
       ],
       "callers": []
     },
+    "platform_core.core.galaxy_topology": {
+      "path": "platform_core/core/galaxy_topology.py",
+      "purpose": "Fail-closed validation for the frozen GALAXY R3 structural manifest.",
+      "exports": [
+        {
+          "name": "ManifestValidationError",
+          "kind": "class",
+          "signature": "",
+          "summary": "The source topology is incomplete, ambiguous, or authority-widening.",
+          "lineno": 85
+        },
+        {
+          "name": "ManifestReport",
+          "kind": "class",
+          "signature": "",
+          "summary": "Audited structural counts",
+          "lineno": 90
+        },
+        {
+          "name": "manifest_path",
+          "kind": "function",
+          "signature": "() -> Path",
+          "summary": "Return the repository-local immutable source-manifest path.",
+          "lineno": 99
+        },
+        {
+          "name": "load_manifest",
+          "kind": "function",
+          "signature": "(path: Path) -> dict[str, Any]",
+          "summary": "Load a manifest without applying defaults or runtime inheritance.",
+          "lineno": 105
+        },
+        {
+          "name": "validate_manifest",
+          "kind": "function",
+          "signature": "(manifest: Mapping[str, Any]) -> ManifestReport",
+          "summary": "Validate the frozen 134-node/256-edge target topology.",
+          "lineno": 134
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "Run the repository's static topology linter.",
+          "lineno": 269
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/platform/test_galaxy_topology.py"
+      ],
+      "callers": []
+    },
     "platform_core.core.git_io": {
       "path": "platform_core/core/git_io.py",
       "purpose": "Safe subprocess kernel for git/gh/gate commands: no prompts, no stdin, always bounded.",
