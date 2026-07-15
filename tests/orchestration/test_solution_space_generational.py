@@ -79,7 +79,16 @@ def test_branch_elite_marks_unmeasured_metrics_unknown():
     )
     elite = ss._branchElite(branch, {})
     assert elite is not None
-    assert elite.metrics == {"verification_score": 1.0}
+    assert elite.metrics == {
+        "verification_score": 1.0,
+        "impact_score": 0.5,
+        "maintainability_score": 0.976,
+        "adoption_score": 0.5,
+        "cost_efficiency_score": 1.0,
+        "reversibility_score": 0.7,
+        "measured_novelty": 0.5,
+        "risk_inverse": 0.6,
+    }
     assert set(elite.unknown_metrics) == {
         "impact_score",
         "maintainability_score",

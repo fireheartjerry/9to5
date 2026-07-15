@@ -1,4 +1,5 @@
 """MAP-Elites QD archive: cell competition, Pareto frontier, hard gates, determinism."""
+import config
 from platform_core.orchestration.invention_types import QDCell, QDElite
 from platform_core.orchestration import qd_archive as qd
 
@@ -80,12 +81,22 @@ def test_factless_claim_cannot_win():
     assert a.coverage() == 0
 
 
-def test_explicitly_unknown_metrics_cannot_steer_archive():
+def test_explicitly_unknown_metrics_cannot_steer_enforced_archive(monkeypatch):
+    monkeypatch.setattr(config, "GALAXY_R3_POLICY_ENFORCEMENT_ENABLED", True, raising=False)
     elite = _elite(CELL_A, "synthetic")
     elite.unknown_metrics = ("impact_score", "measured_novelty")
     a = qd.QDArchive()
     assert a.add(elite) is False
     assert a.coverage() == 0
+
+
+def test_shadow_policy_preserves_incumbent_archive_selection(monkeypatch):
+    monkeypatch.setattr(config, "GALAXY_R3_POLICY_ENFORCEMENT_ENABLED", False, raising=False)
+    elite = _elite(CELL_A, "legacy")
+    elite.unknown_metrics = ("impact_score", "measured_novelty")
+    a = qd.QDArchive()
+    assert a.add(elite) is True
+    assert a.champion(CELL_A.key()).id == "legacy"
 
 
 def test_coverage_and_qd_score_are_deterministic():
