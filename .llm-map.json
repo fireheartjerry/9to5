@@ -5116,7 +5116,9 @@
       "path": "llm_io.py",
       "purpose": "ONE LLM seam: the memoized Ollama client, the single blessed retry/backoff chat,",
       "exports": [
+        "EmptyCompletionError",
         "getClient",
+        "resetClient",
         "chatAcceptsAct",
         "callChat",
         "chat",

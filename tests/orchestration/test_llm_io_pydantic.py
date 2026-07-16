@@ -7,6 +7,7 @@ NOT dict instances. llm_io.responseText/responseJson (and orchestrator._chatText
 delegate to them) must extract from them while still returning ''/None for malformed shapes.
 """
 import unittest
+from unittest import mock
 
 import llm_io
 from orchestrator import _chatText, _chatJson
@@ -66,6 +67,29 @@ class TestParseJsonLooseGolden(unittest.TestCase):
 
     def test_prose_wrapped_object(self):
         self.assertEqual(llm_io.parseJsonLoose('Here you go: {"x": 2} hope that helps'), {"x": 2})
+
+    def test_prose_wrapped_array_preserves_the_complete_array(self):
+        text = 'Here you go: [{"id": 1}, {"id": 2}] hope that helps'
+        self.assertEqual(llm_io.parseJsonLoose(text), [{"id": 1}, {"id": 2}])
+
+    def test_nested_mixed_containers_are_balanced_by_type(self):
+        text = 'prefix [{"rows": [1, {"deep": True}]}] suffix'.replace("True", "true")
+        self.assertEqual(llm_io.parseJsonLoose(text), [{"rows": [1, {"deep": True}]}])
+
+    def test_json_scalars_are_not_structured_completion_success(self):
+        for scalar in ('"text"', "17", "true", "null"):
+            self.assertIsNone(llm_io.parseJsonLoose(scalar))
+
+    def test_fenced_array_inside_prose_is_extracted(self):
+        text = 'Result follows:\n```json\n[{"id": 1}]\n```\nDone.'
+        self.assertEqual(llm_io.parseJsonLoose(text), [{"id": 1}])
+
+    def test_markdown_brackets_do_not_preempt_a_later_json_object(self):
+        text = 'See [the note] first, then use {"ok": 1}.'
+        self.assertEqual(llm_io.parseJsonLoose(text), {"ok": 1})
+
+    def test_markdown_brackets_alone_are_not_repaired_into_fabricated_json(self):
+        self.assertIsNone(llm_io.parseJsonLoose("See [the note] for details."))
 
     def test_trailing_braces_use_balanced_walker(self):
         # the naive greedy r"{.*}" spans to the LAST '}' and fails; the balanced walker wins
@@ -136,13 +160,33 @@ class TestBlessedChat(unittest.TestCase):
 
     def test_retry_then_success(self):
         cli = _ActAwareClient([ConnectionError("down"), {"message": {"content": "recovered"}}])
-        resp = llm_io.chat("s", "u", act="plan", retries=3, client=cli)
+        sleeps = []
+        resp = llm_io.chat(
+            "s",
+            "u",
+            act="plan",
+            retries=3,
+            client=cli,
+            sleep_fn=sleeps.append,
+            jitter_fn=lambda low, high: high,
+        )
         self.assertEqual(llm_io.responseText(resp), "recovered")
         self.assertEqual(len(cli.calls), 2)
+        self.assertEqual(sleeps, [2.4])
 
     def test_returns_none_after_retries_exhausted(self):
         cli = _ActAwareClient([ConnectionError("down")] * 3)
-        self.assertIsNone(llm_io.chat("s", "u", act="plan", retries=3, client=cli))
+        self.assertIsNone(
+            llm_io.chat(
+                "s",
+                "u",
+                act="plan",
+                retries=3,
+                client=cli,
+                sleep_fn=lambda _delay: None,
+                jitter_fn=lambda low, high: low,
+            )
+        )
 
     def test_empty_completion_salvaged_by_dropping_format_json(self):
         cli = _ActAwareClient([{"message": {"content": ""}},          # format=json dead-end
@@ -151,3 +195,74 @@ class TestBlessedChat(unittest.TestCase):
         self.assertEqual(llm_io.responseJson(resp), {"a": 1})
         self.assertEqual(cli.calls[0]["kwargs"].get("format"), "json")
         self.assertNotIn("format", cli.calls[1]["kwargs"])   # salvage drops format=json
+
+    def test_response_extraction_is_pure_and_chat_emits_telemetry_once(self):
+        cli = _ActAwareClient([{"message": {"content": '{"ok": 1}'}}])
+        with mock.patch.object(llm_io, "_tap_brain") as tap:
+            resp = llm_io.chat("system", "actual user prompt", act="plan", client=cli)
+            self.assertEqual(llm_io.responseText(resp), '{"ok": 1}')
+            self.assertEqual(llm_io.responseText(resp), '{"ok": 1}')
+            self.assertEqual(llm_io.responseJson(resp), {"ok": 1})
+        tap.assert_called_once_with("actual user prompt", '{"ok": 1}')
+
+    def test_telemetry_failure_never_blanks_an_accepted_completion(self):
+        cli = _ActAwareClient([{"message": {"content": "valid"}}])
+        with mock.patch.object(llm_io, "_tap_brain", side_effect=RuntimeError("tap down")):
+            resp = llm_io.chat("s", "u", act="plan", client=cli)
+        self.assertEqual(llm_io.responseText(resp), "valid")
+
+    def test_zero_retries_means_one_attempt_and_logs_one_of_one(self):
+        cli = _ActAwareClient([ConnectionError("down")])
+        with self.assertLogs(llm_io.LOG, level="WARNING") as captured:
+            result = llm_io.chat(
+                "s", "u", act="plan", retries=0, client=cli, sleep_fn=lambda _delay: None
+            )
+        self.assertIsNone(result)
+        self.assertEqual(len(cli.calls), 1)
+        self.assertIn("attempt 1/1", captured.output[0])
+
+    def test_empty_ordinary_completion_retries_instead_of_becoming_success(self):
+        cli = _ActAwareClient(
+            [{"message": {"content": ""}}, {"message": {"content": "recovered"}}]
+        )
+        sleeps = []
+        resp = llm_io.chat(
+            "s",
+            "u",
+            act="plan",
+            retries=2,
+            client=cli,
+            sleep_fn=sleeps.append,
+            jitter_fn=lambda low, high: 2.0,
+        )
+        self.assertEqual(llm_io.responseText(resp), "recovered")
+        self.assertEqual(sleeps, [2.0])
+
+    def test_client_contract_type_error_is_not_retried(self):
+        cli = _ActAwareClient([TypeError("bad client signature"), {"message": {"content": "no"}}])
+        with self.assertRaisesRegex(TypeError, "bad client signature"):
+            llm_io.chat(
+                "s", "u", act="plan", retries=3, client=cli, sleep_fn=lambda _delay: None
+            )
+        self.assertEqual(len(cli.calls), 1)
+
+    def test_invalid_generation_option_values_fail_before_calling_client(self):
+        for options in (
+            {"temperature": "hot"},
+            {"top_p": -0.1},
+            {"seed": []},
+        ):
+            cli = _ActAwareClient([{"message": {"content": "no"}}])
+            with self.assertRaises(ValueError):
+                llm_io.chat("s", "u", act="plan", client=cli, generation_options=options)
+            self.assertEqual(cli.calls, [])
+
+    def test_client_reset_is_explicit(self):
+        sentinel = object()
+        original = llm_io._CLIENT
+        try:
+            llm_io._CLIENT = sentinel
+            self.assertIsNone(llm_io.resetClient())
+            self.assertIsNone(llm_io._CLIENT)
+        finally:
+            llm_io._CLIENT = original

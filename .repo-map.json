@@ -9964,53 +9964,67 @@
       "purpose": "ONE LLM seam: the memoized Ollama client, the single blessed retry/backoff chat,",
       "exports": [
         {
+          "name": "EmptyCompletionError",
+          "kind": "class",
+          "signature": "",
+          "summary": "A provider call returned no usable completion text.",
+          "lineno": 63
+        },
+        {
           "name": "getClient",
           "kind": "function",
-          "signature": "()",
+          "signature": "() -> Any",
           "summary": "Lazily build (and memoize) THE Ollama client",
-          "lineno": 51
+          "lineno": 67
+        },
+        {
+          "name": "resetClient",
+          "kind": "function",
+          "signature": "() -> None",
+          "summary": "Forget the memoized client for explicit recovery, reconfiguration, or tests.",
+          "lineno": 84
         },
         {
           "name": "chatAcceptsAct",
           "kind": "function",
           "signature": "(chat_callable) -> bool",
           "summary": "True when ``chat_callable`` can receive the structured ``act`` tag (an explicit ``act``",
-          "lineno": 62
+          "lineno": 91
         },
         {
           "name": "callChat",
           "kind": "function",
           "signature": "(chat_fn, system: str, user: str, *, act: str, **kw)",
           "summary": "Invoke an INJECTED chat callable ``(system, user, ...)`` forwarding ``act`` only when t…",
-          "lineno": 75
+          "lineno": 104
         },
         {
           "name": "chat",
           "kind": "function",
-          "signature": "(system: str, user: str, *, act: str, model=None, want_json: bool=False, retries: int=3, client=None, generation_options: dict | None=None)",
+          "signature": "(system: str, user: str, *, act: str, model: str | None=None, want_json: bool=False, retries: int=3, client: Any | None=None, generation_options: Mapping[str, object] | None=None, sleep_fn: Callable[[float], None] | None=None, jitter_fn: Callable[[float, float], float] | None=None) -> Any | None",
           "summary": "The single blessed LLM call (R5): retry/backoff + empty-completion salvage.",
-          "lineno": 84
+          "lineno": 132
         },
         {
           "name": "responseText",
           "kind": "function",
           "signature": "(resp) -> str",
           "summary": "``resp['message']['content']`` as text",
-          "lineno": 155
+          "lineno": 240
         },
         {
           "name": "parseJsonLoose",
           "kind": "function",
-          "signature": "(text: str)",
+          "signature": "(text: str | None) -> JsonContainer | None",
           "summary": "THE tolerant JSON ladder (promoted from brain_io.parseJsonText",
-          "lineno": 224
+          "lineno": 350
         },
         {
           "name": "responseJson",
           "kind": "function",
-          "signature": "(resp)",
+          "signature": "(resp: Any) -> JsonContainer | None",
           "summary": "Parse the JSON body of a chat response via the ONE loose ladder",
-          "lineno": 247
+          "lineno": 378
         }
       ],
       "depends_on": [
