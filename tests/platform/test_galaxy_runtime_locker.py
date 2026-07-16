@@ -116,6 +116,32 @@ def test_powershell_wrapper_is_reproducibly_built_and_survives_empty_environment
         f"stderr={refused.stderr!r}"
     )
 
+    bootstrap = (
+        Path(__file__).resolve().parents[2]
+        / "bootstrap/galaxy_launcher/tofu_bootstrap.ps1"
+    )
+    missing_service = subprocess.run(
+        [
+            str(output),
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(bootstrap),
+            "-SelfTestMissingServiceQuery",
+        ],
+        cwd=tmp_path,
+        env={},
+        text=True,
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+    assert missing_service.returncode == 0, missing_service.stderr
+    assert missing_service.stdout.strip() == "missing-service-query:1060"
+
 
 def test_python_runtime_copy_excludes_mutable_bytecode_caches(tmp_path):
     mod = _mod()

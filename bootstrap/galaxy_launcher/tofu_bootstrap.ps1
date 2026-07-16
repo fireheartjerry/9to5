@@ -14,6 +14,8 @@ param(
     [switch] $SelfTestFinalActivationSnippet,
     [Parameter(ParameterSetName = 'Singleton', Mandatory = $true)]
     [switch] $SelfTestSingletonLeafSelection,
+    [Parameter(ParameterSetName = 'ServiceQuery', Mandatory = $true)]
+    [switch] $SelfTestMissingServiceQuery,
     [Parameter(ParameterSetName = 'Install', Mandatory = $true)]
     [string] $ProposalPath,
     [Parameter(ParameterSetName = 'Install', Mandatory = $true)]
@@ -450,9 +452,35 @@ function Copy-DeclaredClosure {
 function Invoke-ServiceControl {
     param([Parameter(Mandatory = $true)][string[]] $Arguments)
     $sc = [System.IO.Path]::Combine($env:SystemRoot, 'System32', 'sc.exe')
-    $output = & $sc @Arguments 2>&1 | Out-String
-    $exitCode = $LASTEXITCODE
-    return [pscustomobject]@{ ExitCode = $exitCode; Output = $output }
+    $start = New-Object System.Diagnostics.ProcessStartInfo
+    $start.FileName = $sc
+    $start.Arguments = (($Arguments | ForEach-Object {
+        ConvertTo-NativeArgument $_
+    }) -join ' ')
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardInput = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.EnvironmentVariables.Clear()
+    $start.EnvironmentVariables['SystemRoot'] = $env:SystemRoot
+    $start.EnvironmentVariables['WINDIR'] = $env:SystemRoot
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $start
+    if (-not $process.Start()) { throw 'service control process did not start' }
+    $process.StandardInput.Close()
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    if (-not $process.WaitForExit(30000)) {
+        $process.Kill()
+        throw 'service control process timed out'
+    }
+    $exitCode = $process.ExitCode
+    $process.Dispose()
+    return [pscustomobject]@{
+        ExitCode = $exitCode
+        Output = $stdout + $stderr
+    }
 }
 
 function Wait-ServiceState {
@@ -629,6 +657,15 @@ try {
             [pscustomobject]@{ logical_path = 'bootstrap/tofu_finalize.py' }
         ) -LogicalPath 'bootstrap/tofu_finalize.py'
         [System.Console]::Out.WriteLine([string]$leaf.logical_path)
+        exit 0
+    }
+    if ($PSCmdlet.ParameterSetName -eq 'ServiceQuery') {
+        $query = Invoke-ServiceControl @(
+            'query', '9to5Singularity__MissingServiceQuery__DoNotCreate')
+        if ($query.ExitCode -ne 1060 -or $query.Output -notmatch '1060') {
+            throw 'missing-service query did not fail closed with 1060'
+        }
+        [System.Console]::Out.WriteLine('missing-service-query:1060')
         exit 0
     }
     if ($PSCmdlet.ParameterSetName -eq 'Install' -and $InstallInactive) {
