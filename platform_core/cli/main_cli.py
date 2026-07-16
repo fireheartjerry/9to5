@@ -6,6 +6,10 @@ Extracted from main.py to keep that module ≤350 lines.
 EXPORTS:
   extendResumeDeadline(state: 'TaskState', extend_hours: 'float | None') -> None  -- A resumed task's deadline_at is loaded as-is from disk, so a run that already hit its
   retryFailedSubtasks(state: 'TaskState') -> int  -- Reset every 'failed' subtask back to 'pending' so the run loop's ready-set selector
+  interceptRefreshCommand(argv: list[str]) -> int | None  -- Handle a bare `/refresh` or `--refresh` token before argparse: manually rebuild the
+  interceptDoctorCommand(argv: list[str]) -> int | None  -- Handle a bare `/doctor` or `--doctor` token before argparse (which would reject it).
+  applyMentionShorthand(raw_args: list[str]) -> list[str]  -- `python main.py @9to5 <free-text goal> [--flags]` -> fire-and-forget launch.
+  parseArgs(argv: list[str]) -> argparse.Namespace  -- Parse CLI arguments and return the namespace.
 DEPENDS-ON: config, orchestrator, platform_core.ops.doctor, platform_core.orchestration.run_loop, state.task
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/platform/test_main_cli.py
@@ -57,7 +61,7 @@ def retryFailedSubtasks(state: "TaskState") -> int:
     return n
 
 
-def _interceptRefreshCommand(argv: list[str]) -> "int | None":
+def interceptRefreshCommand(argv: list[str]) -> int | None:
     """Handle a bare `/refresh` or `--refresh` token before argparse: manually rebuild the
     living Claude Code knowledge base (scrape latest docs + scan installed .claude +
     product-self-knowledge), overwrite claude_code.md, and recompute the injected CLAUDE
@@ -75,7 +79,7 @@ def _interceptRefreshCommand(argv: list[str]) -> "int | None":
     return 0
 
 
-def _interceptDoctorCommand(argv: list[str]) -> "int | None":
+def interceptDoctorCommand(argv: list[str]) -> int | None:
     """Handle a bare `/doctor` or `--doctor` token before argparse (which would reject it).
     Returns an exit code if intercepted, else None."""
     if not any(a.lstrip("-/").lower() == "doctor" for a in argv):
@@ -86,7 +90,7 @@ def _interceptDoctorCommand(argv: list[str]) -> "int | None":
     return 0 if report["ready"] else 1
 
 
-def _applyMentionShorthand(raw_args: list[str]) -> list[str]:
+def applyMentionShorthand(raw_args: list[str]) -> list[str]:
     """`python main.py @9to5 <free-text goal> [--flags]` -> fire-and-forget launch.
 
     Lowers the barrier from `--goal "..." --auto-approve` to a single chat-style line: the
@@ -117,7 +121,7 @@ def _applyMentionShorthand(raw_args: list[str]) -> list[str]:
     return new + passthrough
 
 
-def _parseArgs(argv: list[str]) -> "argparse.Namespace":
+def parseArgs(argv: list[str]) -> argparse.Namespace:
     """Parse CLI arguments and return the namespace."""
     parser = argparse.ArgumentParser(prog="9to5", description="Autonomous AI orchestrator.")
     parser.add_argument("--goal", help="Raw goal. If omitted you are prompted.")
@@ -166,3 +170,11 @@ def _parseArgs(argv: list[str]) -> "argparse.Namespace":
                         help="Run the virtual-operator end-to-end test suite (a scripted 'human' "
                              "drives full simulated runs through the real control surfaces) and exit.")
     return parser.parse_args(argv)
+
+
+# Compatibility aliases retained for existing imports while main.py and new callers use the
+# public boundary above. Remove only after the published facade deprecation window closes.
+_interceptRefreshCommand = interceptRefreshCommand
+_interceptDoctorCommand = interceptDoctorCommand
+_applyMentionShorthand = applyMentionShorthand
+_parseArgs = parseArgs

@@ -5260,6 +5260,7 @@
         "platform_core.runtime.perf",
         "platform_core.runtime.resilience",
         "platform_core.runtime.trajectory",
+        "platform_core.runtime.work_directory",
         "platform_core.runtime.worktree",
         "platform_core.simulator.bot_replay",
         "platform_core.simulator.chaos",
@@ -10072,7 +10073,7 @@
           "kind": "function",
           "signature": "() -> int",
           "summary": "",
-          "lineno": 410
+          "lineno": 319
         }
       ],
       "depends_on": [
@@ -10086,12 +10087,13 @@
         "platform_core.core.fsio",
         "platform_core.execution.launch_guard",
         "platform_core.ops.doctor",
-        "platform_core.ops.external_project",
         "platform_core.ops.health",
         "platform_core.orchestration.work_profile",
-        "platform_core.runtime.control",
         "platform_core.runtime.heartbeat",
         "platform_core.runtime.resilience",
+        "platform_core.runtime.run_lifecycle",
+        "platform_core.runtime.terminal_control",
+        "platform_core.runtime.work_directory",
         "platform_core.simulator.chaos",
         "platform_core.simulator.simulation",
         "platform_core.simulator.testing.e2e",
@@ -16371,14 +16373,42 @@
           "kind": "function",
           "signature": "(state: 'TaskState', extend_hours: 'float | None') -> None",
           "summary": "A resumed task's deadline_at is loaded as-is from disk, so a run that already hit its",
-          "lineno": 27
+          "lineno": 31
         },
         {
           "name": "retryFailedSubtasks",
           "kind": "function",
           "signature": "(state: 'TaskState') -> int",
           "summary": "Reset every 'failed' subtask back to 'pending' so the run loop's ready-set selector",
-          "lineno": 45
+          "lineno": 49
+        },
+        {
+          "name": "interceptRefreshCommand",
+          "kind": "function",
+          "signature": "(argv: list[str]) -> int | None",
+          "summary": "Handle a bare `/refresh` or `--refresh` token before argparse: manually rebuild the",
+          "lineno": 64
+        },
+        {
+          "name": "interceptDoctorCommand",
+          "kind": "function",
+          "signature": "(argv: list[str]) -> int | None",
+          "summary": "Handle a bare `/doctor` or `--doctor` token before argparse (which would reject it).",
+          "lineno": 82
+        },
+        {
+          "name": "applyMentionShorthand",
+          "kind": "function",
+          "signature": "(raw_args: list[str]) -> list[str]",
+          "summary": "`python main.py @9to5 <free-text goal> [--flags]` -> fire-and-forget launch.",
+          "lineno": 93
+        },
+        {
+          "name": "parseArgs",
+          "kind": "function",
+          "signature": "(argv: list[str]) -> argparse.Namespace",
+          "summary": "Parse CLI arguments and return the namespace.",
+          "lineno": 124
         }
       ],
       "depends_on": [
@@ -18397,8 +18427,8 @@
         "tests/execution/test_external_project.py"
       ],
       "callers": [
-        "main",
-        "notifications.runtime.work_launcher"
+        "notifications.runtime.work_launcher",
+        "platform_core.runtime.work_directory"
       ]
     },
     "platform_core.ops.health": {
@@ -21999,6 +22029,7 @@
         "tests/control/test_control_concurrency.py",
         "tests/control/test_control_store.py",
         "tests/control/test_granular_controls.py",
+        "tests/control/test_terminal_control.py",
         "tests/control/test_webdash_control.py",
         "tests/execution/test_controller_runtime_manifest.py",
         "tests/notifications/test_bot_control_auth.py",
@@ -22007,7 +22038,6 @@
         "tests/slow/test_fuzz_control.py"
       ],
       "callers": [
-        "main",
         "notifications.bot.cogs.ask_cog",
         "notifications.bot.cogs.control_cog",
         "notifications.bot.cogs.engagement_cog",
@@ -22031,6 +22061,7 @@
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.safety_mixin",
         "platform_core.runtime.resilience",
+        "platform_core.runtime.terminal_control",
         "platform_core.simulator.bot_replay",
         "platform_core.simulator.testing.operator"
       ]
@@ -22269,6 +22300,7 @@
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_phase_mixin",
+        "platform_core.runtime.run_lifecycle",
         "state.task_io"
       ]
     },
@@ -22484,6 +22516,64 @@
         "main"
       ]
     },
+    "platform_core.runtime.run_lifecycle": {
+      "path": "platform_core/runtime/run_lifecycle.py",
+      "purpose": "Shared run-liveness transitions used by fresh and resumed launches.",
+      "exports": [
+        {
+          "name": "markRunActive",
+          "kind": "function",
+          "signature": "(state: Any, *, pid: int | None=None) -> int",
+          "summary": "Persist the active PID before publishing its heartbeat and return that PID.",
+          "lineno": 18
+        }
+      ],
+      "depends_on": [
+        "platform_core.runtime.heartbeat"
+      ],
+      "side_effects": [
+        "persists task metadata and writes the task heartbeat"
+      ],
+      "test": [
+        "tests/control/test_run_lifecycle.py"
+      ],
+      "callers": [
+        "main"
+      ]
+    },
+    "platform_core.runtime.terminal_control": {
+      "path": "platform_core/runtime/terminal_control.py",
+      "purpose": "Terminal adapter for the shared run-control command model.",
+      "exports": [
+        {
+          "name": "TerminalController",
+          "kind": "class",
+          "signature": "",
+          "summary": "Parse one terminal stream and dispatch normalized commands to a ControlBus.",
+          "lineno": 31
+        },
+        {
+          "name": "startTerminalControl",
+          "kind": "function",
+          "signature": "(task_id: str) -> threading.Thread",
+          "summary": "Start the production terminal controller for ``task_id``.",
+          "lineno": 111
+        }
+      ],
+      "depends_on": [
+        "platform_core.runtime.control",
+        "state.task"
+      ],
+      "side_effects": [
+        "reads an injected terminal stream and writes ControlBus commands"
+      ],
+      "test": [
+        "tests/control/test_terminal_control.py"
+      ],
+      "callers": [
+        "main"
+      ]
+    },
     "platform_core.runtime.trajectory": {
       "path": "platform_core/runtime/trajectory.py",
       "purpose": "Eliza-style APPEND-ONLY JSONL span recorder (Epic 1, unit d).",
@@ -22516,6 +22606,46 @@
       ],
       "callers": [
         "platform_core.orchestration.execute_delegates_mixin"
+      ]
+    },
+    "platform_core.runtime.work_directory": {
+      "path": "platform_core/runtime/work_directory.py",
+      "purpose": "Resolve run work directories and own temporary simulation lifetimes.",
+      "exports": [
+        {
+          "name": "LaunchError",
+          "kind": "class",
+          "signature": "",
+          "summary": "A user-facing launch failure with an explicit process exit code.",
+          "lineno": 25
+        },
+        {
+          "name": "ResolvedWorkDir",
+          "kind": "class",
+          "signature": "",
+          "summary": "A resolved run directory plus optional ownership of its temporary lifetime.",
+          "lineno": 34
+        },
+        {
+          "name": "resolveWorkDir",
+          "kind": "function",
+          "signature": "(args: Any) -> ResolvedWorkDir",
+          "summary": "Resolve and own the run directory, including any temporary simulation fence.",
+          "lineno": 57
+        }
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.ops.external_project"
+      ],
+      "side_effects": [
+        "may clone a managed repository or create/delete a simulation temp directory"
+      ],
+      "test": [
+        "tests/platform/test_work_directory.py"
+      ],
+      "callers": [
+        "main"
       ]
     },
     "platform_core.runtime.worktree": {
@@ -23318,6 +23448,7 @@
         "platform_core.orchestration.society.worker",
         "platform_core.orchestration.solution_space",
         "platform_core.runtime.resilience",
+        "platform_core.runtime.terminal_control",
         "platform_core.simulator.bot_replay",
         "platform_core.simulator.testing.e2e",
         "platform_core.simulator.testing.operator",

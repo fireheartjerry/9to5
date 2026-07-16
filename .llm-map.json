@@ -2637,6 +2637,7 @@
         "platform_core.runtime.perf",
         "platform_core.runtime.resilience",
         "platform_core.runtime.trajectory",
+        "platform_core.runtime.work_directory",
         "platform_core.runtime.worktree",
         "platform_core.simulator.bot_replay",
         "platform_core.simulator.chaos",
@@ -5176,12 +5177,13 @@
         "platform_core.core.fsio",
         "platform_core.execution.launch_guard",
         "platform_core.ops.doctor",
-        "platform_core.ops.external_project",
         "platform_core.ops.health",
         "platform_core.orchestration.work_profile",
-        "platform_core.runtime.control",
         "platform_core.runtime.heartbeat",
         "platform_core.runtime.resilience",
+        "platform_core.runtime.run_lifecycle",
+        "platform_core.runtime.terminal_control",
+        "platform_core.runtime.work_directory",
         "platform_core.simulator.chaos",
         "platform_core.simulator.simulation",
         "platform_core.simulator.testing.e2e",
@@ -8566,7 +8568,11 @@
       "purpose": "CLI argument helpers for main.py.",
       "exports": [
         "extendResumeDeadline",
-        "retryFailedSubtasks"
+        "retryFailedSubtasks",
+        "interceptRefreshCommand",
+        "interceptDoctorCommand",
+        "applyMentionShorthand",
+        "parseArgs"
       ],
       "depends_on": [
         "config",
@@ -9386,8 +9392,8 @@
         "config"
       ],
       "callers": [
-        "main",
-        "notifications.runtime.work_launcher"
+        "notifications.runtime.work_launcher",
+        "platform_core.runtime.work_directory"
       ],
       "test": [
         "tests/execution/test_external_project.py"
@@ -11405,7 +11411,6 @@
         "platform_core.runtime.control_store"
       ],
       "callers": [
-        "main",
         "notifications.bot.cogs.ask_cog",
         "notifications.bot.cogs.control_cog",
         "notifications.bot.cogs.engagement_cog",
@@ -11429,6 +11434,7 @@
         "platform_core.orchestration.run_phase_mixin",
         "platform_core.orchestration.safety_mixin",
         "platform_core.runtime.resilience",
+        "platform_core.runtime.terminal_control",
         "platform_core.simulator.bot_replay",
         "platform_core.simulator.testing.operator"
       ],
@@ -11436,6 +11442,7 @@
         "tests/control/test_control_concurrency.py",
         "tests/control/test_control_store.py",
         "tests/control/test_granular_controls.py",
+        "tests/control/test_terminal_control.py",
         "tests/control/test_webdash_control.py",
         "tests/execution/test_controller_runtime_manifest.py",
         "tests/notifications/test_bot_control_auth.py",
@@ -11530,6 +11537,7 @@
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.run_loop_mixin",
         "platform_core.orchestration.run_phase_mixin",
+        "platform_core.runtime.run_lifecycle",
         "state.task_io"
       ],
       "test": [
@@ -11607,6 +11615,40 @@
         "tests/control/test_resilience.py"
       ]
     },
+    "platform_core.runtime.run_lifecycle": {
+      "path": "platform_core/runtime/run_lifecycle.py",
+      "purpose": "Shared run-liveness transitions used by fresh and resumed launches.",
+      "exports": [
+        "markRunActive"
+      ],
+      "depends_on": [
+        "platform_core.runtime.heartbeat"
+      ],
+      "callers": [
+        "main"
+      ],
+      "test": [
+        "tests/control/test_run_lifecycle.py"
+      ]
+    },
+    "platform_core.runtime.terminal_control": {
+      "path": "platform_core/runtime/terminal_control.py",
+      "purpose": "Terminal adapter for the shared run-control command model.",
+      "exports": [
+        "TerminalController",
+        "startTerminalControl"
+      ],
+      "depends_on": [
+        "platform_core.runtime.control",
+        "state.task"
+      ],
+      "callers": [
+        "main"
+      ],
+      "test": [
+        "tests/control/test_terminal_control.py"
+      ]
+    },
     "platform_core.runtime.trajectory": {
       "path": "platform_core/runtime/trajectory.py",
       "purpose": "Eliza-style APPEND-ONLY JSONL span recorder (Epic 1, unit d).",
@@ -11624,6 +11666,25 @@
       ],
       "test": [
         "tests/orchestration/test_trajectory.py"
+      ]
+    },
+    "platform_core.runtime.work_directory": {
+      "path": "platform_core/runtime/work_directory.py",
+      "purpose": "Resolve run work directories and own temporary simulation lifetimes.",
+      "exports": [
+        "LaunchError",
+        "ResolvedWorkDir",
+        "resolveWorkDir"
+      ],
+      "depends_on": [
+        "config",
+        "platform_core.ops.external_project"
+      ],
+      "callers": [
+        "main"
+      ],
+      "test": [
+        "tests/platform/test_work_directory.py"
       ]
     },
     "platform_core.runtime.worktree": {
@@ -11979,6 +12040,7 @@
         "platform_core.orchestration.society.worker",
         "platform_core.orchestration.solution_space",
         "platform_core.runtime.resilience",
+        "platform_core.runtime.terminal_control",
         "platform_core.simulator.bot_replay",
         "platform_core.simulator.testing.e2e",
         "platform_core.simulator.testing.operator",
