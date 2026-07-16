@@ -25,7 +25,7 @@ EXPORTS:
   historicalCases(records=None, *, limit: int=100) -> list[dict]  -- Read-only audit of completed task history for elaboration outcome evidence.
   report(results: list[dict]) -> str  -- Readable per-goal + aggregate table with the on-vs-off delta.
   main() -> None
-DEPENDS-ON: agents.planning, agents.planning.elaborator, agents.planning.elaborator.core, config, state.task
+DEPENDS-ON: agents.planning.elaborator, agents.planning.elaborator.core, agents.planning.elaborator.precedent, config, state.task
 SIDE-EFFECTS: creates a throwaway temp repo per battery item (auto-cleaned)
 RUN/TEST: python -m pytest tests/orchestration/test_elaborator.py
 """

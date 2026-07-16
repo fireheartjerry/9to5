@@ -8,7 +8,7 @@ methods (``_runSieAndReplan`` / ``_progressLedgerReplan``) so callers and tests 
 EXPORTS:
   runSieAndReplan(orch, state: TaskState, subtask: dict, spec: dict, combined: str, passed: bool, final: str, architect_doc: str, dashboard, adv_verdict, adv_stub: bool, result: dict | None=None) -> None  -- Capture SIE reflection, memoize passing spec, and trigger adaptive replan.
   progressLedgerReplan(orch, state: TaskState, subtask: dict, combined: str, architect_doc: str, dashboard) -> None  -- Dual-ledger replan driver: one tiny Progress Ledger call updates the stall counter
-DEPENDS-ON: config, learning.reflection, learning.solution_cache, memory.experience, notifications.run_arc, platform_core.orchestration, state.task
+DEPENDS-ON: config, learning.reflection, learning.solution_cache, memory.experience, notifications.run_arc, platform_core.orchestration.clarification_replan, platform_core.orchestration.dual_ledger_planner, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_stall_replan_trigger.py
 """

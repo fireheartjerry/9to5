@@ -137,14 +137,17 @@ def _writeHeadersOnly(*, check: bool, only: Optional[str]) -> int:
     if not paths:
         print("[repo_map] headers-only refused: prefix has no Python leaves", file=sys.stderr)
         return 2
-    roots = first_party_roots()
+    discovered = [path for path in iter_py_files() if not is_test_path(path)]
+    inventory_paths = sorted(set(discovered).union(paths))
+    roots = first_party_roots(inventory_paths)
+    known_modules = {module_dotted(path) for path in inventory_paths}
     drift: list[str] = []
     errors: list[str] = []
     for path in paths:
         rel = path.relative_to(REPO_ROOT).as_posix()
         try:
             source = _read_source(path)
-            record = parse_module(path, roots)
+            record = parse_module(path, roots, known_modules)
             spliced = splice_header(source, render_header(record))
         except (OSError, SyntaxError, UnicodeError) as exc:
             errors.append(f"{rel}: {exc}")

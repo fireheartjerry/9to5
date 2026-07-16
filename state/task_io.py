@@ -17,7 +17,7 @@ EXPORTS:
   loadLatest() -> 'Optional[TaskState]'  -- Prefer the most-recently-STARTED active (non-terminal) task.
   listRecent(n: int=10) -> list[dict[str, Any]]  -- Lightweight summaries of recent tasks, newest first
   reapDeadRun(task_id: str, *, reason: str='orchestrator process dead (no heartbeat, pid gone)') -> bool  -- Finalize a PROVABLY-DEAD, still-non-terminal run as ``aborted``.
-DEPENDS-ON: config, platform_core.core, platform_core.runtime.heartbeat, state.task_schema
+DEPENDS-ON: config, platform_core.core.fsio, platform_core.runtime.heartbeat, state.task_schema
 SIDE-EFFECTS: writes state/tasks/<id>.json (+ <id>.json.bak safeguard copy)
 RUN/TEST: python -m pytest tests/control/test_task.py
 """

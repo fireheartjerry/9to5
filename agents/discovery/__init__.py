@@ -7,7 +7,7 @@ impact-ranked report for the architect to consume.
 EXPORTS:
   shouldRunFullDiscovery(goal_raw: str) -> bool  -- True when goal is absent or matches a vague pattern.
   run_discovery(work_dir: str, goal_raw: str, work_profile=None, observer=None) -> Optional[DiscoveryReport]  -- Run the full discovery pipeline
-DEPENDS-ON: agents.discovery, agents.discovery.models, config, platform_core.orchestration
+DEPENDS-ON: agents.discovery.digest, agents.discovery.inventor, agents.discovery.lenses, agents.discovery.models, agents.discovery.synthesis, config, platform_core.orchestration.work_profile
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """

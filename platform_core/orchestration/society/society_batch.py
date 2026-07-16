@@ -10,7 +10,7 @@ byte-identically.
 EXPORTS:
   societyGate(ready: list) -> bool  -- True when the workforce should engage: flag ON and >=2 disjoint-ready subtasks.
   handleSocietyBatch(state, ready: list, work_dir: str, parallelism: int, state_lock, *, run_fn: Optional[Callable]=None) -> 'tuple[int, None]'  -- Delegate a ready batch to the society Coordinator (worktree-isolated workers).
-DEPENDS-ON: config, memory.experience, platform_core.app_config.paths, platform_core.core.best_effort, platform_core.orchestration, platform_core.orchestration.society.blackboard, platform_core.orchestration.society.coordinator
+DEPENDS-ON: config, memory.experience, platform_core.app_config.paths, platform_core.core.best_effort, platform_core.orchestration.parallel_safety, platform_core.orchestration.society.blackboard, platform_core.orchestration.society.coordinator
 SIDE-EFFECTS: runs society workers (claims/updates task JSON, appends to the blackboard)
 RUN/TEST: python -m pytest tests/orchestration/test_society_batch.py
 """

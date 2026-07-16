@@ -4,7 +4,7 @@
 EXPORTS:
   record(metric: str, elapsed_s: float, **fields: Any) -> None  -- Append one best-effort timing row
   summarize(limit: int=500) -> dict[str, float]  -- Aggregate recent telemetry by metric.
-DEPENDS-ON: config, platform_core.core
+DEPENDS-ON: config, platform_core.core.jsonl_io
 SIDE-EFFECTS: appends + size-rotates state/perf.jsonl
 RUN/TEST: python -m pytest tests/test_perf_telemetry.py
 """

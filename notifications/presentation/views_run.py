@@ -6,7 +6,7 @@ EXPORTS:
   WorkSetupView  -- Dropdowns + Launch/Cancel for the /work guided setup (used after WorkModal).
   WorkModal
   WorkProfileModal
-DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.commands, notifications.work_launcher, platform_core.orchestration
+DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.commands, notifications.work_launcher, platform_core.orchestration.work_profile
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_views.py
 """

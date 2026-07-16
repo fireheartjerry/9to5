@@ -13,7 +13,7 @@ EXPORTS:
   flushRest(timeout: Optional[float]=None) -> None  -- Wait for queued REST syncs to drain (used on shutdown / before resume reads).
   writeClaudioMd(task_state, subtask: Optional[dict], additional_context: str='', work_dir: Optional[str]=None, executor_playbook: str='') -> Path  -- Write a fresh per-subtask CLAUDE.md to the working directory.
   ObsidianClient
-DEPENDS-ON: config, platform_core.core, platform_core.core.best_effort
+DEPENDS-ON: config, platform_core.core.best_effort, platform_core.core.fsio
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_hooks_obsidian.py tests/notifications/test_obsidian_atomic_claude_md.py tests/notifications/test_obsidian_write.py
 """

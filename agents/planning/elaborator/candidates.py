@@ -10,7 +10,7 @@ EXPORTS:
   generate(goal: str, work_dir, *, n: int, gen_fn) -> list[dict]  -- Call gen_fn(goal, work_dir, stance) for the first n stances.
   meritWeight(candidate: dict, *, groundedness: float=0.0, precedent: float=0.0, predicted: float=0.0, elevated: int=0) -> float  -- §7 B weight: predicted_success + groundedness + precedent - 0.5*elevated.
   selectBest(candidates: list[dict], *, weight_fn, use_optimizer: bool=False) -> 'dict | None'  -- §7 B: return the winning candidate by weight_fn
-DEPENDS-ON: config, platform_core.orchestration
+DEPENDS-ON: config, platform_core.orchestration.portfolio_optimizer
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_elaborator_candidates.py
 """

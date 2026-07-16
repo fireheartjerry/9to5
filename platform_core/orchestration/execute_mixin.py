@@ -4,7 +4,7 @@
 EXPORTS:
   AttemptOutcome
   OrchestratorExecuteMixin  -- Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment.
-DEPENDS-ON: agents.adversary, agents.verifier, config, notifications.cast, notifications.dashboard, notifications.discord_bot, platform_core.core.best_effort, platform_core.core.surfaces, platform_core.execution, platform_core.execution.wiring, platform_core.orchestration, platform_core.orchestration.execute_attempt_mixin, platform_core.orchestration.execute_delegates_mixin, platform_core.orchestration.subtask, platform_core.runtime.control, state.task
+DEPENDS-ON: agents.adversary, agents.verifier, config, notifications.cast, notifications.dashboard, notifications.discord_bot, platform_core.core.best_effort, platform_core.core.surfaces, platform_core.execution.wiring, platform_core.orchestration.execute_attempt_mixin, platform_core.orchestration.execute_delegates_mixin, platform_core.orchestration.solution_space, platform_core.orchestration.subtask, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_execute_mixin_teardown.py tests/orchestration/test_execute_mixin_env.py tests/orchestration/test_execute_mixin_fork_wiring.py
 """

@@ -14,7 +14,7 @@ EXPORTS:
   record(review_type: str, verdict: dict, *, tier: Optional[str]=None, ollama_verdict: Optional[str]=None, upheld: Optional[bool]=None, task_id: Optional[str]=None) -> None  -- Append one consult row
   summary(task_id: Optional[str]=None) -> dict  -- Aggregate trust metrics (optionally for one task): consult counts by tier, challenge ra…
   dashboard_line(task_id: Optional[str]=None) -> str  -- One compact line for the live Discord dashboard / logs.
-DEPENDS-ON: config, platform_core.core
+DEPENDS-ON: config, platform_core.core.clock, platform_core.core.jsonl_io
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_adversary_trust.py
 """

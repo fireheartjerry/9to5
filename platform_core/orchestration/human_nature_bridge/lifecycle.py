@@ -4,7 +4,7 @@
 EXPORTS:
   runPreambleHooks(state: Any) -> None  -- Hook 1: lazily initialise self_state at run start
   runTeardownHooks(orch: Any, state: Any) -> None  -- Hook 6 (A/B recording) always fires
-DEPENDS-ON: config, human_nature.ab_harness, human_nature.continuity, human_nature.integration, human_nature.psyche_runtime, human_nature.psyche_store, human_nature.scar_graph, memory.experience_solutions, platform_core.core.best_effort, platform_core.orchestration.time_utils
+DEPENDS-ON: config, human_nature, memory.experience_solutions, platform_core.core.best_effort, platform_core.orchestration.human_nature_bridge._common, platform_core.orchestration.time_utils
 SIDE-EFFECTS: writes continuity letters + ab_runs.db rows; mutates state.meta when enabled
 RUN/TEST: python -m pytest tests/platform/test_lifecycle.py
 """

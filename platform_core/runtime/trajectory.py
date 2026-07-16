@@ -12,7 +12,7 @@ Recorder method swallows its own errors -- the recorder must never crash a run.
 EXPORTS:
   Recorder  -- Append-only JSONL span recorder for one run
   loadSpans(run_id: str, root: Optional[Path]=None) -> dict  -- Replay a run's event log into ``{"run_id": ..., "spans": [...]}``.
-DEPENDS-ON: config, platform_core.core
+DEPENDS-ON: config, platform_core.core.clock, platform_core.core.jsonl_io
 SIDE-EFFECTS: writes state/trajectories/<run_id>.jsonl
 RUN/TEST: python -m pytest tests/orchestration/test_trajectory.py
 """

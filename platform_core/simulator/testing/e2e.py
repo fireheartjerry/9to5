@@ -16,7 +16,7 @@ EXPORTS:
   buildSuite() -> list
   runSuite() -> list
   main() -> int
-DEPENDS-ON: config, knowledge, platform_core.app_config, platform_core.core.best_effort, platform_core.runtime, platform_core.simulator.simulation, platform_core.simulator.testing.operator, state.task
+DEPENDS-ON: config, knowledge, platform_core.app_config.settings, platform_core.core.best_effort, platform_core.runtime.control_store, platform_core.simulator.simulation, platform_core.simulator.testing.operator, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_elaborator_e2e.py tests/orchestration/test_inventor_e2e.py tests/slow/test_e2e_operator.py
 """

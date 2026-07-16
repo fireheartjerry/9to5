@@ -7,7 +7,7 @@ EXPORTS:
   NullWorktree  -- Fail-open backend: no isolation
   loadWorktreeBackend() -> 'WorktreeBackend'  -- Return the real Epic 1 worktree module if importable, else NullWorktree (never raises).
   ForkDeps  -- Everything the coordinator injects into the units (keeps them testable in isolation).
-DEPENDS-ON: platform_core.runtime
+DEPENDS-ON: platform_core.runtime.worktree
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_fork_seams.py
 """

@@ -9,7 +9,7 @@ the run-scoped live values main.py pokes live in ``settings.runFlags()``.
 EXPORTS:
   DiscordCfg
   buildDiscordCfg() -> DiscordCfg  -- Construct from env
-DEPENDS-ON: platform_core.app_config, platform_core.app_config._env
+DEPENDS-ON: platform_core.app_config._env, platform_core.app_config.settings
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/notifications/test_discord_channels.py tests/notifications/test_discord_embeds.py tests/notifications/test_discord_rest.py tests/notifications/test_discord_surfaces.py
 """

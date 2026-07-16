@@ -18,7 +18,7 @@ EXPORTS:
   route_pre_act(state: Any, domain: str, signals: dict[str, Any], *, chat: Optional[Callable]=None) -> str  -- Return the dual-process routing decision before an action is taken.
   maybe_run_instinct(state: Any, reflections: list[dict[str, Any]], failure_modes: list[dict[str, Any]], *, chat: Optional[Callable]=None, db_path: Optional[Path]=None) -> Optional[str]  -- Fire the instinct check if enabled
   at_teardown(state: Any, scored_judgments: list[dict[str, Any]], reflections: list[str], *, chat: Optional[Callable]=None) -> Optional[dict[str, Any]]  -- Run the consolidation cycle at run teardown
-DEPENDS-ON: config, human_nature.appraisal, human_nature.consolidation, human_nature.instinct, human_nature.intuition, human_nature.self_state
+DEPENDS-ON: config, human_nature
 SIDE-EFFECTS: mutates state["meta"] (or state.data["meta"]) when enabled
 RUN/TEST: python -m pytest tests/human_nature/test_integration_hn.py tests/slow/test_discovery_integration.py tests/slow/test_integration_loop.py
 """

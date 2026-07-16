@@ -6,7 +6,7 @@ EXPORTS:
   preActRouting(state: Any, domain: str, signals: 'dict | None'=None) -> str  -- Hook 2: best-effort thin wrapper over ``integration.route_pre_act``
   biasEffort(current_effort: str, routing: str) -> str  -- Pure ADVISORY bias: when *routing* == "fast", drop *current_effort* ONE tier on
   biasEffortTiered(current_effort: str, routing: str, tier: str) -> str  -- Soft-tier BIDIRECTIONAL effort bias, gated on ``config.HN_EXEC_AUTHORITY``
-DEPENDS-ON: config, human_nature.integration, memory.retrieval
+DEPENDS-ON: config, human_nature, memory.retrieval, platform_core.orchestration.human_nature_bridge._common
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/control/test_execution_trust_authority.py tests/execution/test_execution_docker.py tests/execution/test_execution_environment.py tests/execution/test_execution_local.py tests/execution/test_execution_remote.py tests/execution/test_execution_router.py tests/execution/test_execution_security.py tests/execution/test_execution_trust.py tests/execution/test_execution_worktree.py tests/orchestration/test_bridge_execution_tiered.py tests/orchestration/test_pre_execution_council_seam.py tests/planning/test_pre_execution_council.py tests/planning/test_pre_execution_council_live_only.py tests/planning/test_pre_execution_council_seam.py
 """

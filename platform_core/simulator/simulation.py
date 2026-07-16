@@ -22,7 +22,7 @@ EXPORTS:
   BuilderBrain  -- Plans N subtasks, each producing a real file under ``work_dir`` with a REAL
   builderRunClaude(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, _project_root=None, **_kw)  -- Fake hands that ACTUALLY write the target file parsed from the subtask's verify cmd,
   buildBuilderOrchestrator(work_dir: str, n_subtasks: int=3)  -- An Orchestrator that produces real artifacts under work_dir and verifies them for real.
-DEPENDS-ON: config, orchestrator.Orchestrator
+DEPENDS-ON: config, orchestrator
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/slow/test_simulation_advanced.py tests/slow/test_simulation_core.py
 """

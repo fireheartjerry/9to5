@@ -10,7 +10,7 @@ EXPORTS:
   verbalized_p_true(statement: str, *, chat: Optional[Callable]=None) -> float  -- Ask HN_FAST_MODEL for P(True) of *statement*
   self_consistency(sampler: Callable, n: int=5) -> float  -- Run *sampler* n times
   cross_cast_agreement(votes: list) -> float  -- Fraction of *votes* equal to the modal vote
-DEPENDS-ON: config, human_nature.conviction, llm_io
+DEPENDS-ON: config, human_nature, llm_io
 SIDE-EFFECTS: calls Ollama (HN_FAST_MODEL) when chat=None
 RUN/TEST: python -m pytest tests/human_nature/test_momentary.py
 """

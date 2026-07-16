@@ -8,7 +8,7 @@ EXPORTS:
   validateQuestions(questions: list[dict]) -> tuple[list[dict], list[str]]
   resolveQuestions(chat: Callable, goal: str, subtask: dict, questions: list[dict], memory: dict | None=None) -> dict
   buildResumeFeedback(resolved: dict) -> str
-DEPENDS-ON: agents.planning, config, llm_io
+DEPENDS-ON: agents.planning.question_memory, config, llm_io
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/orchestration/test_assumption_resolver.py
 """

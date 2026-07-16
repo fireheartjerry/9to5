@@ -15,8 +15,8 @@ EXPORTS:
   validate_header_prefix(value: Optional[str]) -> str  -- Return one canonical, narrow, repository-relative directory prefix.
   iter_header_files(prefix: str) -> list[Path]  -- Python leaves under one validated prefix, including reviewed untracked leaves.
   module_dotted(path: Path) -> str  -- agents/adversary.py -> 'agents.adversary'
-  first_party_roots() -> set[str]  -- Top-level importable names: every top-level .py stem + every dir holding an __init__.py.
-  parse_module(path: Path, roots: set[str]) -> dict  -- Extract the per-module record (sans callers, which are computed globally).
+  first_party_roots(paths: Optional[Iterable[Path]]=None) -> set[str]  -- Top-level importable names from the same discovered file universe used by the map.
+  parse_module(path: Path, roots: set[str], known_modules: Optional[set[str]]=None) -> dict  -- Extract the per-module record (sans callers, which are computed globally).
   find_tests(dotted: str, name: str) -> list[str]  -- Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> prefix exact -> glob -> …
   build_map(only: Optional[str]=None) -> dict  -- Full-repo machine index
   toplevel_import_graph() -> dict[str, list[str]]  -- {dotted-module: [first-party modules imported at LOAD time]}
@@ -34,6 +34,8 @@ from __future__ import annotations
 # ==== IMPORTS ====
 import argparse
 import ast
+from collections.abc import Iterable
+from importlib.util import resolve_name
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath
@@ -109,7 +111,7 @@ def _git_tracked_py_files() -> Optional[list[Path]]:
             text=True,
             timeout=30,
         )
-    except Exception:  # noqa: BLE001 -- git missing / not installed
+    except (OSError, subprocess.SubprocessError):
         return None
     if proc.returncode != 0:
         return None
@@ -137,7 +139,6 @@ def iter_py_files(only: Optional[str] = None) -> list[Path]:
         except ValueError:
             continue
         if any(part in EXCLUDE_DIRS for part in rel.parts):
-            continue
             continue
         if prefixes and rel.parts[0] not in prefixes:
             continue
@@ -195,14 +196,18 @@ def module_dotted(path: Path) -> str:
     return ".".join(parts) if parts else rel.parts[0]
 
 
-def first_party_roots() -> set[str]:
-    """Top-level importable names: every top-level .py stem + every dir holding an __init__.py."""
+def first_party_roots(paths: Optional[Iterable[Path]] = None) -> set[str]:
+    """Top-level importable names from the same discovered file universe used by the map."""
     roots: set[str] = set()
-    for child in REPO_ROOT.iterdir():
-        if child.is_file() and child.suffix == ".py":
-            roots.add(child.stem)
-        elif child.is_dir() and child.name not in EXCLUDE_DIRS and (child / "__init__.py").exists():
-            roots.add(child.name)
+    candidates = iter_py_files() if paths is None else list(paths)
+    for path in candidates:
+        if is_test_path(path):
+            continue
+        rel = path.relative_to(REPO_ROOT)
+        if len(rel.parts) == 1 and path.suffix == ".py":
+            roots.add(path.stem)
+        elif rel.name == "__init__.py" and rel.parts[0] not in EXCLUDE_DIRS:
+            roots.add(rel.parts[0])
     return roots
 
 
@@ -239,14 +244,23 @@ def _existing_side_effects(tree: ast.Module) -> Optional[str]:
 def _public_names(tree: ast.Module) -> Optional[set[str]]:
     """Members of __all__ if the module defines it, else None (=> default '_'-prefix rule)."""
     for node in tree.body:
-        if isinstance(node, ast.Assign):
-            for t in node.targets:
-                if isinstance(t, ast.Name) and t.id == "__all__":
-                    try:
-                        val = ast.literal_eval(node.value)
-                        return {str(x) for x in val}
-                    except Exception:  # noqa: BLE001
-                        return None
+        value: Optional[ast.expr] = None
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets
+        ):
+            value = node.value
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "__all__"
+        ):
+            value = node.value
+        if value is not None:
+            try:
+                val = ast.literal_eval(value)
+                return {str(item) for item in val}
+            except (SyntaxError, TypeError, ValueError):
+                return None
     return None
 
 
@@ -289,28 +303,57 @@ def _exports(tree: ast.Module) -> list[dict]:
     return out
 
 
-def _depends_on(tree: ast.Module, roots: set[str], *, toplevel_only: bool = False) -> list[str]:
-    """First-party modules imported, sorted+deduped. ``toplevel_only`` = load-time graph only."""
+def _known_module(name: str, known_modules: set[str]) -> Optional[str]:
+    """Return the longest real module prefix of an import target, if one exists."""
+    candidate = name
+    while candidate:
+        if candidate in known_modules:
+            return candidate
+        candidate = candidate.rpartition(".")[0]
+    return None
+
+
+def _depends_on(
+    tree: ast.Module,
+    roots: set[str],
+    *,
+    current_module: str = "",
+    is_package: bool = False,
+    known_modules: Optional[set[str]] = None,
+    toplevel_only: bool = False,
+) -> list[str]:
+    """Resolve direct first-party module imports against the discovered module inventory."""
     deps: set[str] = set()
+    known = set(roots) if known_modules is None else known_modules
     nodes = tree.body if toplevel_only else list(ast.walk(tree))
     for node in nodes:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 top = alias.name.split(".")[0]
                 if top in roots:
-                    deps.add(alias.name)
+                    target = _known_module(alias.name, known)
+                    if target is not None and target != current_module:
+                        deps.add(target)
         elif isinstance(node, ast.ImportFrom):
-            if node.level:  # relative import
+            if node.level:
+                package = current_module if is_package else current_module.rpartition(".")[0]
+                if not package:
+                    continue
+                relative = "." * node.level + (node.module or "")
+                try:
+                    base = resolve_name(relative, package)
+                except (ImportError, ValueError):
+                    continue
+            else:
+                base = node.module or ""
+            if not base or base.split(".")[0] not in roots:
                 continue
-            mod = node.module or ""
-            top = mod.split(".")[0]
-            if top in roots:
-                # `from agents import executor` -> agents.executor; `from config import X` -> config
-                if mod in roots:
-                    for alias in node.names:
-                        deps.add(f"{mod}.{alias.name}")
-                else:
-                    deps.add(mod)
+            base_target = _known_module(base, known)
+            for alias in node.names:
+                candidate = f"{base}.{alias.name}" if alias.name != "*" else ""
+                target = candidate if candidate in known else base_target
+                if target is not None and target != current_module:
+                    deps.add(target)
     return sorted(deps)
 
 
@@ -319,7 +362,9 @@ def _read_source(path: Path) -> str:
     return path.read_text(encoding="utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
 
 
-def parse_module(path: Path, roots: set[str]) -> dict:
+def parse_module(
+    path: Path, roots: set[str], known_modules: Optional[set[str]] = None
+) -> dict:
     """Extract the per-module record (sans callers, which are computed globally)."""
     src = _read_source(path)
     tree = ast.parse(src)
@@ -329,7 +374,13 @@ def parse_module(path: Path, roots: set[str]) -> dict:
         "path": str(path.relative_to(REPO_ROOT)).replace("\\", "/"),
         "purpose": _module_purpose(tree),
         "exports": _exports(tree),
-        "depends_on": _depends_on(tree, roots),
+        "depends_on": _depends_on(
+            tree,
+            roots,
+            current_module=dotted,
+            is_package=path.name == "__init__.py",
+            known_modules=known_modules,
+        ),
         "side_effects": [s.strip() for s in se.split(";")] if se else [SIDE_EFFECTS_PLACEHOLDER],
         "test": find_tests(dotted, path.stem),
         "callers": [],  # filled by build_map
@@ -362,15 +413,14 @@ def find_tests(dotted: str, name: str) -> list[str]:
 def build_map(only: Optional[str] = None) -> dict:
     """Full-repo machine index. ``only`` is ignored for the map (always full) -- it only scopes
     header splicing in write_outputs."""
-    roots = first_party_roots()
+    paths = [path for path in iter_py_files() if not is_test_path(path)]
+    roots = first_party_roots(paths)
+    known_modules = {module_dotted(path) for path in paths}
     modules: dict[str, dict] = {}
     skipped: list[str] = []
-    for path in iter_py_files():
-        # Tests excluded: reached via RUN/TEST lines; excluding keeps callers = production consumers.
-        if is_test_path(path):
-            continue
+    for path in paths:
         try:
-            modules[module_dotted(path)] = parse_module(path, roots)
+            modules[module_dotted(path)] = parse_module(path, roots, known_modules)
         except SyntaxError as e:  # a single unparseable file must not break the whole map
             skipped.append(f"{path.relative_to(REPO_ROOT)} ({e.msg})")
     if skipped:
@@ -380,9 +430,13 @@ def build_map(only: Optional[str] = None) -> dict:
             + ("..." if len(skipped) > 6 else ""),
             file=sys.stderr,
         )
+    callers_by_module: dict[str, set[str]] = {name: set() for name in modules}
+    for caller, rec in modules.items():
+        for dependency in rec["depends_on"]:
+            if dependency in callers_by_module:
+                callers_by_module[dependency].add(caller)
     for dotted, rec in modules.items():
-        callers = sorted(m for m, r in modules.items() if dotted in r["depends_on"])
-        rec["callers"] = callers
+        rec["callers"] = sorted(callers_by_module[dotted])
     return {
         "schema": SCHEMA,
         "generated_by": "tools/repo_map.py",
@@ -395,14 +449,24 @@ def build_map(only: Optional[str] = None) -> dict:
 def toplevel_import_graph() -> dict[str, list[str]]:
     """{dotted-module: [first-party modules imported at LOAD time]} -- the load-time dependency
     graph used by the layering/cycle guard test. Excludes lazy in-function imports by design."""
-    roots = first_party_roots()
+    paths = [path for path in iter_py_files() if not is_test_path(path)]
+    roots = first_party_roots(paths)
+    known_modules = {module_dotted(path) for path in paths}
     graph: dict[str, list[str]] = {}
-    for path in iter_py_files():
+    for path in paths:
         try:
             tree = ast.parse(_read_source(path))
         except SyntaxError:
             continue
-        graph[module_dotted(path)] = _depends_on(tree, roots, toplevel_only=True)
+        dotted = module_dotted(path)
+        graph[dotted] = _depends_on(
+            tree,
+            roots,
+            current_module=dotted,
+            is_package=path.name == "__init__.py",
+            known_modules=known_modules,
+            toplevel_only=True,
+        )
     return graph
 
 
@@ -435,6 +499,19 @@ def _char_offset(lines: list[str], lineno: int, col_bytes: int) -> int:
     return prefix + len(line.encode("utf-8")[:col_bytes].decode("utf-8"))
 
 
+def _encode_docstring_literal(value: str) -> str:
+    """Encode one value-preserving Python docstring literal with a safe delimiter."""
+    if any(ord(char) < 32 and char not in {"\n", "\t"} for char in value):
+        return repr(value)
+    body = value.replace("\\", "\\\\")
+    if '"""' not in value:
+        return f'"""{body}"""'
+    if "'''" not in value:
+        return f"'''{body}'''"
+    body = body.replace('"""', '\\"\\"\\"')
+    return f'"""{body}"""'
+
+
 def splice_header(src: str, header: str) -> Optional[str]:
     """Return ``src`` with ``header`` placed inside the module docstring (below the prose,
     replacing any prior @AI-MAP block). None if the module has no docstring (caller flags it).
@@ -460,12 +537,9 @@ def splice_header(src: str, header: str) -> Optional[str]:
     lines = src.splitlines(keepends=True)
     start = _char_offset(lines, node.lineno, node.col_offset)
     end = _char_offset(lines, node.end_lineno, node.end_col_offset)
-    # Escape backslashes so Windows paths in prose/RUN-TEST lines (e.g. venv\Scripts, C:\9to5)
-    # do not become invalid escape sequences (W605) in the emitted non-raw docstring. This is
-    # value-preserving: ast.get_docstring unescapes them back to single backslashes on re-read,
-    # so header extraction and the drift check stay byte-stable across regenerations.
-    literal_body = new_content.replace("\\", "\\\\")
-    new_literal = '"""' + literal_body + '"""'
+    # Re-encode the value rather than reusing the original literal form: raw prefixes, Windows
+    # paths, control escapes, and either triple-quote delimiter must all remain parseable.
+    new_literal = _encode_docstring_literal(new_content)
     out = src[:start] + new_literal + src[end:]
     ast.parse(out)  # hard guarantee: raise loudly instead of writing a corrupt file
     return out

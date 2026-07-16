@@ -14,7 +14,7 @@ EXPORTS:
   gitDiffFacts(work_dir: str) -> dict  -- Best-effort, re-derivable git facts for the receipt: head sha, working-tree diff text, …
   runEvidenceGate(orch, state, subtask: dict, result: dict, exec_cwd: str, vresult: dict, sid: str) -> 'tuple[dict, bool]'  -- For a code-change subtask that PASSED the deterministic gate: run the independent verif…
   persistReceipt(orch, state, sid: str, receipt: dict) -> None  -- Write the Evidence Receipt as a per-subtask Obsidian note (durable audit artifact).
-DEPENDS-ON: agents.completion_envelope, agents.evidence_receipt, agents.independent_verifier, agents.verification, agents.verifier, config, platform_core.core.best_effort, platform_core.orchestration
+DEPENDS-ON: agents.completion_envelope, agents.evidence_receipt, agents.independent_verifier, agents.verification, agents.verifier, config, platform_core.core.best_effort, platform_core.orchestration.work_profile
 SIDE-EFFECTS: spawns a read-only Claude subprocess; writes an Obsidian note; mutates state notifications
 RUN/TEST: python -m pytest tests/execution/test_evidence_gate.py
 """

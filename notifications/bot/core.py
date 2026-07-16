@@ -16,7 +16,7 @@ EXPORTS:
   handleCommand(content: str, source_msg_id: 'str | None'=None) -> str  -- Parse + apply a '!' command against the latest task
   buildBot()  -- Construct (but do not run) the NightclawBot
   runBot() -> None
-DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, notifications.views_feedback, notifications.views_terminal, platform_core.runtime, platform_core.runtime.control
+DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, notifications.views_feedback, notifications.views_terminal, platform_core.runtime.control, platform_core.runtime.heartbeat
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_orch_core_bugs.py tests/slow/test_simulation_core.py
 """

@@ -18,7 +18,7 @@ EXPORTS:
   removeWorktree(path: str) -> None  -- Path-scoped safe-remove: refuse any path outside state/.sc-worktrees/
   gcOrphans(state) -> None  -- Remove leftover worktrees for THIS task (TTL/whitelist cleanup)
   isIsolated(path: str) -> bool  -- True only when ``path`` lives under state/.sc-worktrees/ (an isolated worktree).
-DEPENDS-ON: config, platform_core.core
+DEPENDS-ON: config, platform_core.core.git_io
 SIDE-EFFECTS: creates/removes git worktrees under state/.sc-worktrees/
 RUN/TEST: python -m pytest tests/execution/test_worktree.py
 """

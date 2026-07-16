@@ -9,7 +9,7 @@ CI proof path; live runners can use the identical outcome-evaluation interface.
 EXPORTS:
   run_builder_lifecycle(task: EvaluationTask, workspace: Path) -> dict[str, Any]  -- Execute one evaluation task through the full simulated orchestration lifecycle.
   run_live_lifecycle(task: EvaluationTask, workspace: Path) -> dict[str, Any]  -- Run the real planner/executor/verifier/reviewer only after explicit opt-in.
-DEPENDS-ON: agents.verifier, config, learning.outcome_evaluation, orchestrator.Orchestrator, platform_core.simulator, state.task
+DEPENDS-ON: agents.verifier, config, learning.outcome_evaluation, orchestrator, platform_core.simulator.simulation, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """

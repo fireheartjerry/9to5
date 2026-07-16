@@ -11,7 +11,7 @@ F6: this cycle only PROPOSES. It never ratifies amendments or modifies the chart
 EXPORTS:
   run_cycle(self_state: dict[str, Any], scored_judgments: list[dict[str, Any]], reflections: list[str], *, chat: Optional[Callable]=None) -> dict[str, Any]  -- Run the consolidation cycle (the 'sleep' phase).
   propose_updates(evidence: dict[str, Any]) -> list[dict[str, Any]]  -- From run evidence, produce PROPOSED (never applied) psyche updates.
-DEPENDS-ON: config, human_nature.charter, human_nature.self_state, llm_io
+DEPENDS-ON: config, human_nature, llm_io
 SIDE-EFFECTS: mutates self_state in place (competence update); no I/O otherwise
 RUN/TEST: python -m pytest tests/human_nature/test_consolidation.py
 """

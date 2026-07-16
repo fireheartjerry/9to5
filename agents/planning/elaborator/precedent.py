@@ -7,7 +7,7 @@ on cold start / any error so grounding degrades cleanly.
 EXPORTS:
   precedentEvidence(goal: str, *, k: int=3, retrieve_fn=None, fail_fn=None) -> dict  -- Return a compact evidence block plus factual hit counts for downstream scoring.
   precedentBlock(goal: str, *, k: int=3, retrieve_fn=None, fail_fn=None) -> str  -- Compatibility wrapper returning only the prompt block.
-DEPENDS-ON: config, memory.retrievals, platform_core.core.best_effort
+DEPENDS-ON: config, memory.retrievals.core, platform_core.core.best_effort
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_elaborator_precedent.py
 """

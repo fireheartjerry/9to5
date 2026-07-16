@@ -16,7 +16,7 @@ EXPORTS:
   applyPrefer(text: str, path: Optional[Path]=None) -> str
   applyBriefSet(text: str, path: Optional[Path]=None) -> str
   formatPrefs(prefs: dict) -> str
-DEPENDS-ON: config, platform_core.core
+DEPENDS-ON: config, platform_core.core.fsio
 SIDE-EFFECTS: writes user_prefs.json
 RUN/TEST: python -m pytest tests/evolution/test_user_prefs.py
 """

@@ -9,7 +9,7 @@ a thin ``_remediate`` delegate so callers are unchanged.
 EXPORTS:
   runReview(orch, state, subtask: dict, combined: str, final: str, exec_cwd: str, bus, dashboard, heartbeat_ordinal: int, attempt: int, architect_doc: str)  -- Trigger adversary review if warranted; run remediation if challenged
   remediate(orch, state, subtask: dict, architect_doc: str, exec_cwd: str, concerns: list, cancel_check=None) -> dict  -- Bounded remediation LOOP (up to ADVERSARY_REMEDIATION_MAX_ATTEMPTS) on a subtask that
-DEPENDS-ON: agents.adversary, agents.second_brain, agents.verifier, config, notifications.cast, notifications.discord_bot, platform_core.runtime
+DEPENDS-ON: agents.adversary, agents.second_brain, agents.verifier, config, notifications.cast, notifications.discord_bot, platform_core.runtime.worktree
 SIDE-EFFECTS: spawns Claude subprocesses; snapshots/restores the git tree; mutates state verify + notifications
 RUN/TEST: python -m pytest tests/orchestration/test_adversary.py
 """

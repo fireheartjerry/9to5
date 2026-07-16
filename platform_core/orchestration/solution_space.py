@@ -8,7 +8,7 @@ EXPORTS:
   cleanupForkStates(state: TaskState) -> int  -- Best-effort removal of throwaway branch state files for this run.
   runSubtaskAttempts(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec, env_ctx=None) -> tuple  -- Fork into parallel branches when the subtask is flagged + eligible
   runForked(orch, state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec) -> tuple  -- Fork N branches, judge, merge the winner, reclaim losers
-DEPENDS-ON: config, platform_core.orchestration, platform_core.orchestration.invention_types, platform_core.orchestration.qd_archive, state.task
+DEPENDS-ON: config, platform_core.orchestration.branch_runner, platform_core.orchestration.fork_policy, platform_core.orchestration.fork_seams, platform_core.orchestration.generational, platform_core.orchestration.invention_types, platform_core.orchestration.judge_panel, platform_core.orchestration.qd_archive, platform_core.orchestration.winner_merge, state.task
 SIDE-EFFECTS: writes/removes state/<task_id>__fork_<branch>.json (throwaway branch states)
 RUN/TEST: python -m pytest tests/orchestration/test_solution_space.py
 """

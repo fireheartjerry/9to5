@@ -38,7 +38,7 @@ EXPORTS:
   EvidenceReplayGuard  -- One-use evidence admission, optionally durable across validator processes.
   validate_external_report(raw_report: Mapping[str, Any], *, acceptance: ClosedAcceptance, independent_observation: Mapping[str, Any], replay_guard: EvidenceReplayGuard | None=None) -> ValidatedExternalReport  -- Validate every signed result against independent parent observation.
   main(argv: Sequence[str] | None=None) -> int
-DEPENDS-ON: (stdlib only)
+DEPENDS-ON: bootstrap.galaxy_launcher.activation_crypto
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_activation_harness.py
 """

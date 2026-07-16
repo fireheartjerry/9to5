@@ -16,7 +16,7 @@ EXPORTS:
   available() -> dict[str, Any]  -- Everything the executor can reach right now, grouped by surface kind.
   catalog_block() -> str  -- A compact, injectable catalog + directive so the brain composes across surfaces.
   surfaces_used(spec: dict[str, Any]) -> list[str]  -- Which surfaces a spec actually invokes -> tags stored for SIE learning.
-DEPENDS-ON: config, knowledge, platform_core.orchestration
+DEPENDS-ON: config, knowledge, platform_core.orchestration.work_profile
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/platform/test_surfaces.py
 """

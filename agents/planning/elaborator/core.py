@@ -13,7 +13,7 @@ dry-runs drive elaboration offline. The old raw ``resp.get('message')`` extracti
 EXPORTS:
   elaborate(goal_raw: str, work_dir: str | None=None, chat=None, out_meta=None) -> str  -- Return the elaborated specification for ``goal_raw`` (never raises
   extractUniverse(goal_raw: str, goal_elaborated: str, work_dir: str, chat=None) -> dict  -- Extract the operating universe (scope boundary) from the goal (with safe defaults).
-DEPENDS-ON: config, knowledge, llm_io
+DEPENDS-ON: agents.planning.elaborator.candidates, agents.planning.elaborator.defer, agents.planning.elaborator.escalate, agents.planning.elaborator.grounding, agents.planning.elaborator.judge, agents.planning.elaborator.path_verify, agents.planning.elaborator.precedent, agents.planning.elaborator.predict, agents.planning.elaborator.schema, agents.planning.elaborator.self_review, agents.planning.elaborator.uncertainty, config, knowledge, llm_io
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_orch_core_bugs.py tests/slow/test_simulation_core.py
 """

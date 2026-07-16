@@ -29,7 +29,7 @@ EXPORTS:
   backfill_embeddings(db_path: Optional[Path]=None) -> dict[str, int]  -- Embed every verify-passing subtask that lacks an embedding (run off the hot path,
   rebuild_retrieval_index(db_path: Optional[Path]=None, include_failures: bool=True) -> dict[str, int]  -- Rebuild the derived ANN index from SQLite embeddings
   lessons_block(goal: str, title: str='', *, db_path: Optional[Path]=None) -> str  -- Orchestrator-facing one-call helper: retrieve + render, fully best-effort.
-DEPENDS-ON: config, memory.exp_index, memory.experience, memory.experience_content, memory.retrieval_rank, memory.retrieval_render, platform_core.runtime
+DEPENDS-ON: config, memory.exp_index, memory.experience, memory.experience_content, memory.retrieval_rank, memory.retrieval_render, platform_core.runtime.perf
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_orch_core_bugs.py tests/slow/test_simulation_core.py
 """

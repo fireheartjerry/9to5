@@ -16,7 +16,7 @@ EXPORTS:
   ChaosBrain  -- Seeded wrapper around ``SimBrain``: on a fraction of calls returns malformed JSON,
   chaosBrain(seed: int, n_subtasks: int=3) -> 'ChaosBrain'  -- Seeded ``SimBrain`` wrapper that sometimes emits malformed / empty completions.
   buildChaosOrchestrator(work_dir: str, seed: int=0, n_subtasks: int=3)  -- An Orchestrator wired entirely with chaos doubles (no external services)
-DEPENDS-ON: config, orchestrator.Orchestrator, platform_core.simulator
+DEPENDS-ON: config, orchestrator, platform_core.simulator.simulation
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/slow/test_chaos_sim.py
 """

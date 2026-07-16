@@ -18,7 +18,7 @@ EXPORTS:
   johari(ss: dict[str, Any], ood: bool, surprise: float) -> dict[str, Any]  -- Johari-window blind-spot analysis.
   dissonance(felt: float, demonstrated: float, self_report: float, observed: float) -> dict[str, Any]  -- Two dissonance channels (spec § self-awareness, F3).
   honest_phenomenology() -> str  -- Return the fixed, honest access-vs-phenomenal paragraph.
-DEPENDS-ON: human_nature.self_state
+DEPENDS-ON: human_nature
 SIDE-EFFECTS: none (pure)
 RUN/TEST: python -m pytest tests/human_nature/test_self_model.py
 """

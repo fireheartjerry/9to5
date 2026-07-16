@@ -8,7 +8,7 @@ EXPORTS:
   ValidationResult
   diff_fingerprint(work_dir: str) -> str  -- Stable hash for the tracked code state relative to HEAD.
   run_validation_suite(suite_id: str, work_dir: str, *, cache: bool=True, changed_files: Optional[list[str]]=None) -> ValidationResult  -- Run a named validation suite through the DAG cache.
-DEPENDS-ON: config, platform_core.core, platform_core.runtime
+DEPENDS-ON: config, platform_core.core.epoch, platform_core.runtime.perf
 SIDE-EFFECTS: writes state/validation_cache.db derived cache
 RUN/TEST: python -m pytest tests/test_validation_cache.py
 """

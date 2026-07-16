@@ -12,15 +12,18 @@
 
 Runs under pytest (the pytest-only conftest sandbox). Skips only if the tool can't be imported.
 """
+import ast
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
+repo_map: Any
 try:
     import repo_map  # noqa: E402  (path injected above)
 except Exception:  # noqa: BLE001 -- old/partial checkout: skip rather than error
@@ -69,6 +72,7 @@ class TestSpliceSafety(unittest.TestCase):
         compile(src, "<synthetic-in>", "exec")  # precondition: input compiles
         out = repo_map.splice_header(src, self._HEADER)
         self.assertIsNotNone(out, "splice returned None for a module that HAS a docstring")
+        assert out is not None
         compile(out, "<synthetic-out>", "exec")  # the whole point: output still compiles
         self.assertIn("@AI-MAP v1", out)
         return out
@@ -90,6 +94,19 @@ class TestSpliceSafety(unittest.TestCase):
         out = self._assert_round_trips(src)
         self.assertEqual(out.count("@AI-MAP v1"), 1, "a re-splice must not stack headers")
         self.assertIn("import os", out)
+
+    def test_docstring_containing_triple_double_quotes_uses_safe_literal(self):
+        src = "'''Prose contains \"\"\" as data.\n'''\nVALUE = 1\n"
+        out = self._assert_round_trips(src)
+        self.assertTrue(out.startswith("'''"))
+        self.assertIn('Prose contains """ as data.', ast.get_docstring(ast.parse(out), clean=False))
+
+    def test_docstring_containing_both_triple_delimiters_round_trips(self):
+        src = "\"\"\"Prose contains ''' and \\\"\\\"\\\" as data.\n\"\"\"\nVALUE = 1\n"
+        out = self._assert_round_trips(src)
+        doc = ast.get_docstring(ast.parse(out), clean=False)
+        self.assertIn("Prose contains ''' and \"\"\" as data.", doc)
+        self.assertIn("VALUE = 1", out)
 
     def test_no_docstring_returns_none(self):
         self.assertIsNone(repo_map.splice_header("import sys\n", self._HEADER))
@@ -187,3 +204,108 @@ class TestFindTestsRecursive:
         assert repo_map.find_tests("agents.hooks_destructive", "hooks_destructive") == [
             "tests/control/test_hooks.py",
         ]
+
+
+@pytest.mark.skipif(repo_map is None, reason="tools/repo_map.py not importable")
+class TestImportResolution:
+    def test_relative_imports_resolve_in_module_and_package_contexts(self):
+        known = {
+            "pkg",
+            "pkg.config",
+            "pkg.sub",
+            "pkg.sub.executor",
+            "pkg.sub.scheduler",
+            "pkg.sub.worker",
+        }
+        tree = ast.parse(
+            "from .executor import run\n"
+            "from ..config import Settings\n"
+            "from . import scheduler\n"
+        )
+
+        assert repo_map._depends_on(
+            tree,
+            {"pkg"},
+            current_module="pkg.sub.worker",
+            is_package=False,
+            known_modules=known,
+        ) == ["pkg.config", "pkg.sub.executor", "pkg.sub.scheduler"]
+
+        package_tree = ast.parse("from . import scheduler\n")
+        assert repo_map._depends_on(
+            package_tree,
+            {"pkg"},
+            current_module="pkg.sub",
+            is_package=True,
+            known_modules=known,
+        ) == ["pkg.sub.scheduler"]
+
+    def test_from_import_distinguishes_submodules_from_symbols(self):
+        tree = ast.parse(
+            "from config import SETTINGS\n"
+            "from models import User\n"
+            "from agents import executor, run\n"
+            "from agents import *\n"
+        )
+
+        assert repo_map._depends_on(
+            tree,
+            {"agents", "config", "models"},
+            current_module="orchestrator",
+            is_package=False,
+            known_modules={"agents", "agents.executor", "config", "models", "orchestrator"},
+        ) == ["agents", "agents.executor", "config", "models"]
+
+    def test_first_party_roots_use_only_the_supplied_discovery_universe(
+        self, tmp_path, monkeypatch
+    ):
+        tracked_module = tmp_path / "main.py"
+        tracked_package = tmp_path / "tracked/__init__.py"
+        untracked_package = tmp_path / "scratch/__init__.py"
+        for path in (tracked_module, tracked_package, untracked_package):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("", encoding="utf-8")
+        monkeypatch.setattr(repo_map, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(
+            repo_map,
+            "iter_py_files",
+            lambda only=None: [tracked_module, tracked_package],
+        )
+
+        assert repo_map.first_party_roots() == {"main", "tracked"}
+
+    def test_load_time_graph_excludes_test_modules(self, tmp_path, monkeypatch):
+        production = tmp_path / "pkg/worker.py"
+        package = tmp_path / "pkg/__init__.py"
+        test_module = tmp_path / "tests/test_worker.py"
+        for path, source in (
+            (package, ""),
+            (production, "from . import helper\n"),
+            (test_module, "import pkg.worker\n"),
+        ):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source, encoding="utf-8")
+        helper = tmp_path / "pkg/helper.py"
+        helper.write_text("", encoding="utf-8")
+        monkeypatch.setattr(repo_map, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(
+            repo_map,
+            "iter_py_files",
+            lambda only=None: [package, helper, production, test_module],
+        )
+
+        graph = repo_map.toplevel_import_graph()
+
+        assert set(graph) == {"pkg", "pkg.helper", "pkg.worker"}
+        assert graph["pkg.worker"] == ["pkg.helper"]
+
+
+@pytest.mark.skipif(repo_map is None, reason="tools/repo_map.py not importable")
+def test_annotated_all_limits_exports():
+    tree = ast.parse(
+        "__all__: list[str] = ['public']\n"
+        "def public(): pass\n"
+        "def accidental(): pass\n"
+    )
+
+    assert [record["name"] for record in repo_map._exports(tree)] == ["public"]

@@ -10,7 +10,7 @@ EXPORTS:
   prepare_runtime(*, output_root: Path, final_root: Path, python_root: Path, image_root: Path, checkout_root: Path, generation: int) -> Path
   verify_proposal(path: Path) -> dict[str, Any]
   main(argv: Sequence[str] | None=None) -> int
-DEPENDS-ON: bootstrap.galaxy_launcher
+DEPENDS-ON: bootstrap.galaxy_launcher.activation_crypto, bootstrap.galaxy_launcher.activation_dpapi
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """

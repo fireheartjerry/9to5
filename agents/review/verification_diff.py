@@ -8,7 +8,7 @@ Split from agents/verification.py to hold the module size budget.
 EXPORTS:
   changedFiles(work_dir: str) -> 'Optional[set[str]]'  -- Changed + untracked files per ``git status --porcelain`` (paths normalized to
   checkDeclaredTargets(work_dir: str, declared: 'tuple[str, ...]', cmd: Optional[str], changed: 'Optional[set[str]]') -> 'tuple[bool, str]'  -- Diff-grounded evaluation (R10c): the diff must intersect the declared target files,
-DEPENDS-ON: config, platform_core.core
+DEPENDS-ON: config, platform_core.core.git_io
 SIDE-EFFECTS: reads git status
 RUN/TEST: python -m pytest tests/execution/test_verification_diff.py
 """

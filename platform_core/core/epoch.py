@@ -9,7 +9,7 @@ EXPORTS:
   Epoch
   snapshot(*, universe: Optional[dict]=None, brain_tag: Optional[str]=None) -> Epoch  -- Freeze governing state at process/run start
   diverged(pinned: Epoch) -> bool  -- True iff the on-disk self.code differs from what was pinned at snapshot time.
-DEPENDS-ON: config, platform_core.core.identity, platform_core.runtime
+DEPENDS-ON: config, platform_core.core.identity, platform_core.runtime.perf
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_epoch.py
 """

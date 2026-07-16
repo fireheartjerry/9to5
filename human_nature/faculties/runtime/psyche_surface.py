@@ -9,7 +9,7 @@ All keys are read defensively — missing keys produce sensible placeholders.
 EXPORTS:
   render_discord(self_state: dict[str, Any], *, surface: str='psyche', autonomy: dict[str, str] | None=None) -> dict[str, Any] | None  -- Return an embed-shaped dict of the interior, or None if PRISM-gated.
   render_web(self_state: dict[str, Any], *, autonomy: dict[str, str] | None=None) -> str  -- Return an HTML fragment of the interior (no external dependencies).
-DEPENDS-ON: human_nature.gating
+DEPENDS-ON: human_nature
 SIDE-EFFECTS: none (pure render)
 RUN/TEST: python -m pytest tests/human_nature/test_psyche_surface.py
 """

@@ -17,7 +17,7 @@ EXPORTS:
   ensure_psyche(ss: dict[str, Any], personality: dict | None=None) -> dict[str, Any]  -- Populate any missing psyche sub-state on `ss`
   tick(ss: dict[str, Any], appraisal: dict[str, Any], scars: dict | None=None, prev_label: str | None=None) -> dict[str, Any]  -- Advance the interior one workspace tick
   integrate_outcome(ss: dict[str, Any], run_valence: float, run_arousal: float, outcome_features: dict[str, Any]) -> dict[str, Any]  -- Teardown: fold this run's outcome into mood and drives
-DEPENDS-ON: config, human_nature.affect_manifold, human_nature.drives, human_nature.mood, human_nature.personality, human_nature.prototypes
+DEPENDS-ON: config, human_nature
 SIDE-EFFECTS: mutates the passed-in self_state dict in place
 RUN/TEST: python -m pytest tests/human_nature/test_psyche_runtime.py
 """

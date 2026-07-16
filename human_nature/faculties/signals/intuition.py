@@ -22,7 +22,7 @@ Supported numeric signal keys (others ignored):
 EXPORTS:
   snap(domain: str, signals: dict, *, chat: Optional[Callable]=None) -> dict  -- Fuse available signals into a pre-verbal confidence snapshot.
   route(snap_result: dict, *, shortcut_enabled: Optional[bool]=None) -> str  -- Dual-process routing: return "fast" or "deliberate".
-DEPENDS-ON: config, human_nature.conviction
+DEPENDS-ON: config, human_nature
 SIDE-EFFECTS: none in current implementation (chat param reserved for future use)
 RUN/TEST: python -m pytest tests/human_nature/test_intuition.py
 """

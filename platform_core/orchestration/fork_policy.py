@@ -6,7 +6,7 @@ EXPORTS:
   BranchSeed  -- One branch's diversity seed: effort (also picks the model) + an angle hint.
   ForkPlan
   forkPlan(subtask: dict, *, n: int, angles: tuple=DIVERSITY_ANGLES, work_profile=None, work_dir: str | None=None) -> ForkPlan  -- Build N diversity seeds spanning effort x angle
-DEPENDS-ON: config, developer_tools.exploration, developer_tools.introspection, platform_core.orchestration, platform_core.orchestration.subtask
+DEPENDS-ON: config, developer_tools.exploration, developer_tools.introspection, platform_core.orchestration.subtask, platform_core.orchestration.work_profile
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_fork_policy.py
 """

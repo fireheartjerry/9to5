@@ -4,7 +4,7 @@
 EXPORTS:
   emotionNudge(behavior_intent: 'str | None') -> int  -- Pure helper: map a coupled behavior intent to a BOUNDED retry-budget delta in
   emotionAdvisory(state: Any, dashboard: Any=None) -> dict  -- Wire the Human-Nature emotion faculty as an ADVISORY behavior coupling
-DEPENDS-ON: config, human_nature.emotions, human_nature.prototypes, platform_core.core.best_effort
+DEPENDS-ON: config, human_nature, platform_core.core.best_effort, platform_core.orchestration.human_nature_bridge._common
 SIDE-EFFECTS: mutates state.meta["hn_behavior"] when enabled
 RUN/TEST: python -m pytest tests/human_nature/eval/test_affect_to_action_monotonicity.py tests/human_nature/test_affect_manifold.py tests/orchestration/test_bridge_affect_manifold.py tests/platform/test_ci_affected.py
 """

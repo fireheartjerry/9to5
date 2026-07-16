@@ -24,7 +24,6 @@
     "selfmod",
     "src",
     "state",
-    "tests",
     "validate_workflows"
   ],
   "modules": {
@@ -44,7 +43,7 @@
       "purpose": "Compatibility alias for :mod:`agents.review.adversary`.",
       "exports": [],
       "depends_on": [
-        "agents.review"
+        "agents.review.adversary"
       ],
       "side_effects": [
         "unannotated"
@@ -65,7 +64,7 @@
       "purpose": "Compatibility alias for :mod:`agents.review.adversary_browser`.",
       "exports": [],
       "depends_on": [
-        "agents.review"
+        "agents.review.adversary_browser"
       ],
       "side_effects": [
         "unannotated"
@@ -82,7 +81,7 @@
       "purpose": "Compatibility alias for :mod:`agents.review.adversary_review`.",
       "exports": [],
       "depends_on": [
-        "agents.review"
+        "agents.review.adversary_review"
       ],
       "side_effects": [
         "unannotated"
@@ -99,7 +98,7 @@
       "purpose": "Compatibility alias for :mod:`agents.review.architect`.",
       "exports": [],
       "depends_on": [
-        "agents.review"
+        "agents.review.architect"
       ],
       "side_effects": [
         "unannotated"
@@ -116,7 +115,7 @@
       "purpose": "Compatibility alias for :mod:`agents.execution.browser_executor`.",
       "exports": [],
       "depends_on": [
-        "agents.execution"
+        "agents.execution.browser_executor"
       ],
       "side_effects": [
         "unannotated"
@@ -138,7 +137,7 @@
       "purpose": "Compatibility alias for :mod:`agents.planning.clarifier`.",
       "exports": [],
       "depends_on": [
-        "agents.planning"
+        "agents.planning.clarifier"
       ],
       "side_effects": [
         "unannotated"
@@ -155,7 +154,7 @@
       "purpose": "Compatibility alias for :mod:`agents.planning.completion_envelope`.",
       "exports": [],
       "depends_on": [
-        "agents.planning"
+        "agents.planning.completion_envelope"
       ],
       "side_effects": [
         "unannotated"
@@ -174,7 +173,7 @@
       "purpose": "Compatibility alias for :mod:`agents.planning.debugging_workflow`.",
       "exports": [],
       "depends_on": [
-        "agents.planning"
+        "agents.planning.debugging_workflow"
       ],
       "side_effects": [
         "unannotated"
@@ -204,21 +203,20 @@
         }
       ],
       "depends_on": [
-        "agents.discovery",
+        "agents.discovery.digest",
+        "agents.discovery.inventor",
+        "agents.discovery.lenses",
         "agents.discovery.models",
+        "agents.discovery.synthesis",
         "config",
-        "platform_core.orchestration"
+        "platform_core.orchestration.work_profile"
       ],
       "side_effects": [
         "unannotated"
       ],
       "test": [],
       "callers": [
-        "agents.discovery",
-        "agents.discovery.inventor",
-        "agents.discovery.lenses",
-        "platform_core.orchestration.run_phase_mixin",
-        "tools.innovator_eval"
+        "platform_core.orchestration.run_phase_mixin"
       ]
     },
     "agents.discovery.corpus": {
@@ -271,7 +269,10 @@
       "test": [
         "tests/orchestration/test_invention_corpus.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.discovery.inventor",
+        "agents.discovery.lenses"
+      ]
     },
     "agents.discovery.digest": {
       "path": "agents/discovery/digest.py",
@@ -296,7 +297,9 @@
       "test": [
         "tests/orchestration/test_discovery_digest.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.discovery"
+      ]
     },
     "agents.discovery.inventor": {
       "path": "agents/discovery/inventor.py",
@@ -318,7 +321,7 @@
         }
       ],
       "depends_on": [
-        "agents.discovery",
+        "agents.discovery.corpus",
         "agents.discovery.models",
         "config",
         "llm_io",
@@ -332,7 +335,10 @@
         "tests/orchestration/test_inventor_e2e.py",
         "tests/platform/test_inventor_flags_config.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.discovery",
+        "tools.innovator_eval"
+      ]
     },
     "agents.discovery.ledger_bridge": {
       "path": "agents/discovery/ledger_bridge.py",
@@ -364,7 +370,7 @@
         "config",
         "memory.experience_evolution",
         "memory.novelty_index",
-        "platform_core.orchestration",
+        "platform_core.orchestration.invention_seeding",
         "platform_core.orchestration.invention_types"
       ],
       "side_effects": [
@@ -373,7 +379,9 @@
       "test": [
         "tests/orchestration/test_ledger_bridge.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.run_phase_mixin"
+      ]
     },
     "agents.discovery.lenses": {
       "path": "agents/discovery/lenses.py",
@@ -388,7 +396,7 @@
         }
       ],
       "depends_on": [
-        "agents.discovery",
+        "agents.discovery.corpus",
         "agents.discovery.models",
         "config",
         "llm_io"
@@ -400,7 +408,10 @@
         "tests/orchestration/test_discovery_feature_lenses.py",
         "tests/orchestration/test_discovery_lenses.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.discovery",
+        "tools.innovator_eval"
+      ]
     },
     "agents.discovery.models": {
       "path": "agents/discovery/models.py",
@@ -466,14 +477,16 @@
       "test": [
         "tests/orchestration/test_discovery_synthesis.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.discovery"
+      ]
     },
     "agents.elaborator": {
       "path": "agents/elaborator.py",
       "purpose": "Compatibility alias for :mod:`agents.planning.elaborator`.",
       "exports": [],
       "depends_on": [
-        "agents.planning"
+        "agents.planning.elaborator"
       ],
       "side_effects": [
         "unannotated"
@@ -490,7 +503,7 @@
       "purpose": "Compatibility alias for :mod:`agents.planning.evidence_receipt`.",
       "exports": [],
       "depends_on": [
-        "agents.planning"
+        "agents.planning.evidence_receipt"
       ],
       "side_effects": [
         "unannotated"
@@ -511,20 +524,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "agents.browser_executor",
-        "agents.execution.executor_stream_results",
-        "agents.executor",
-        "agents.executor_env",
-        "agents.executor_session",
-        "agents.executor_stream",
-        "agents.executor_stream_results",
-        "agents.gemini_driver",
-        "agents.native_executor",
-        "agents.timing_harness",
-        "agents.workflow_resolver",
-        "tools.chatgpt_browser_spike"
-      ]
+      "callers": []
     },
     "agents.execution.browser_executor": {
       "path": "agents/execution/browser_executor.py",
@@ -643,6 +643,7 @@
         "tests/execution/test_browser_executor.py"
       ],
       "callers": [
+        "agents.browser_executor",
         "tools.browser_canary"
       ]
     },
@@ -687,7 +688,8 @@
         "tests/execution/test_chatgpt_browser_driver.py"
       ],
       "callers": [
-        "agents.planning.pre_execution_council"
+        "agents.planning.pre_execution_council",
+        "tools.chatgpt_browser_spike"
       ]
     },
     "agents.execution.claude_sdk_bridge": {
@@ -711,7 +713,6 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.execution",
         "platform_core.execution.provider_probe"
       ],
       "side_effects": [
@@ -750,7 +751,9 @@
       "test": [
         "tests/execution/test_executor.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.executor"
+      ]
     },
     "agents.execution.executor_env": {
       "path": "agents/execution/executor_env.py",
@@ -818,7 +821,9 @@
       "test": [
         "tests/execution/test_executor.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.executor_env"
+      ]
     },
     "agents.execution.executor_preflight": {
       "path": "agents/execution/executor_preflight.py",
@@ -866,7 +871,9 @@
       "test": [
         "tests/execution/test_executor.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.executor_session"
+      ]
     },
     "agents.execution.executor_stream": {
       "path": "agents/execution/executor_stream.py",
@@ -891,14 +898,17 @@
       "test": [
         "tests/execution/test_executor_stream.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.execution.executor_stream_results",
+        "agents.executor_stream"
+      ]
     },
     "agents.execution.executor_stream_results": {
       "path": "agents/execution/executor_stream_results.py",
       "purpose": "Result/metric building for the Claude executor subprocess (split out of executor_stream.py",
       "exports": [],
       "depends_on": [
-        "agents.execution",
+        "agents.execution.executor_stream",
         "agents.executor_env",
         "config"
       ],
@@ -908,7 +918,9 @@
       "test": [
         "tests/execution/test_executor_stream.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.executor_stream_results"
+      ]
     },
     "agents.execution.gemini_driver": {
       "path": "agents/execution/gemini_driver.py",
@@ -967,6 +979,7 @@
         "tests/orchestration/test_gemini_driver.py"
       ],
       "callers": [
+        "agents.gemini_driver",
         "agents.planning.pre_execution_council"
       ]
     },
@@ -1014,7 +1027,9 @@
       "test": [
         "tests/orchestration/test_native_executor_cleanup.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.native_executor"
+      ]
     },
     "agents.execution.timing_harness": {
       "path": "agents/execution/timing_harness.py",
@@ -1049,7 +1064,9 @@
       "test": [
         "tests/orchestration/test_timing_harness.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.timing_harness"
+      ]
     },
     "agents.execution.workflow_resolver": {
       "path": "agents/execution/workflow_resolver.py",
@@ -1075,14 +1092,16 @@
         "tests/workflows/test_staging_validation.py",
         "tests/workflows/test_workflow_registry.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.workflow_resolver"
+      ]
     },
     "agents.executor": {
       "path": "agents/executor.py",
       "purpose": "Compatibility alias for :mod:`agents.execution.executor`.",
       "exports": [],
       "depends_on": [
-        "agents.execution"
+        "agents.execution.executor"
       ],
       "side_effects": [
         "unannotated"
@@ -1104,7 +1123,7 @@
       "purpose": "Compatibility alias for :mod:`agents.execution.executor_env`.",
       "exports": [],
       "depends_on": [
-        "agents.execution"
+        "agents.execution.executor_env"
       ],
       "side_effects": [
         "unannotated"
@@ -1123,7 +1142,7 @@
       "purpose": "Compatibility alias for :mod:`agents.execution.executor_session`.",
       "exports": [],
       "depends_on": [
-        "agents.execution"
+        "agents.execution.executor_session"
       ],
       "side_effects": [
         "unannotated"
@@ -1140,7 +1159,7 @@
       "purpose": "Compatibility alias for :mod:`agents.execution.executor_stream`.",
       "exports": [],
       "depends_on": [
-        "agents.execution"
+        "agents.execution.executor_stream"
       ],
       "side_effects": [
         "unannotated"
@@ -1157,7 +1176,7 @@
       "purpose": "Compatibility alias for :mod:`agents.execution.executor_stream_results`.",
       "exports": [],
       "depends_on": [
-        "agents.execution"
+        "agents.execution.executor_stream_results"
       ],
       "side_effects": [
         "unannotated"
@@ -1174,7 +1193,7 @@
       "purpose": "Compatibility alias for :mod:`agents.execution.gemini_driver`.",
       "exports": [],
       "depends_on": [
-        "agents.execution"
+        "agents.execution.gemini_driver"
       ],
       "side_effects": [
         "unannotated"
@@ -1196,12 +1215,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "agents.hooks",
-        "agents.hooks_destructive",
-        "agents.hooks_obsidian",
-        "agents.hooks_selfmod"
-      ]
+      "callers": []
     },
     "agents.hook_handlers.core": {
       "path": "agents/hook_handlers/core.py",
@@ -1250,7 +1264,9 @@
         "tests/orchestration/test_orch_core_bugs.py",
         "tests/slow/test_simulation_core.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.hooks"
+      ]
     },
     "agents.hook_handlers.destructive": {
       "path": "agents/hook_handlers/destructive.py",
@@ -1287,7 +1303,9 @@
       "test": [
         "tests/control/test_hooks.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.hooks_destructive"
+      ]
     },
     "agents.hook_handlers.obsidian": {
       "path": "agents/hook_handlers/obsidian.py",
@@ -1314,7 +1332,9 @@
         "tests/notifications/test_obsidian_atomic_claude_md.py",
         "tests/notifications/test_obsidian_write.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.hooks_obsidian"
+      ]
     },
     "agents.hook_handlers.selfmod": {
       "path": "agents/hook_handlers/selfmod.py",
@@ -1340,7 +1360,9 @@
       "test": [
         "tests/evolution/test_selfmod.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.hooks_selfmod"
+      ]
     },
     "agents.hooks": {
       "path": "agents/hooks.py",
@@ -1355,7 +1377,7 @@
         }
       ],
       "depends_on": [
-        "agents.hook_handlers"
+        "agents.hook_handlers.core"
       ],
       "side_effects": [
         "unannotated"
@@ -1370,7 +1392,7 @@
       "purpose": "Compatibility alias for :mod:`agents.hooks.destructive`.",
       "exports": [],
       "depends_on": [
-        "agents.hook_handlers"
+        "agents.hook_handlers.destructive"
       ],
       "side_effects": [
         "unannotated"
@@ -1388,7 +1410,7 @@
       "purpose": "Compatibility alias for :mod:`agents.hooks.obsidian`.",
       "exports": [],
       "depends_on": [
-        "agents.hook_handlers"
+        "agents.hook_handlers.obsidian"
       ],
       "side_effects": [
         "unannotated"
@@ -1405,7 +1427,7 @@
       "purpose": "Compatibility alias for :mod:`agents.hooks.selfmod`.",
       "exports": [],
       "depends_on": [
-        "agents.hook_handlers"
+        "agents.hook_handlers.selfmod"
       ],
       "side_effects": [
         "unannotated"
@@ -1423,7 +1445,7 @@
       "purpose": "Compatibility alias for :mod:`agents.review.independent_verifier`.",
       "exports": [],
       "depends_on": [
-        "agents.review"
+        "agents.review.independent_verifier"
       ],
       "side_effects": [
         "unannotated"
@@ -1440,7 +1462,7 @@
       "purpose": "Compatibility alias for :mod:`agents.execution.native_executor`.",
       "exports": [],
       "depends_on": [
-        "agents.execution"
+        "agents.execution.native_executor"
       ],
       "side_effects": [
         "unannotated"
@@ -1459,22 +1481,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "agents.clarifier",
-        "agents.completion_envelope",
-        "agents.debugging_workflow",
-        "agents.elaborator",
-        "agents.evidence_receipt",
-        "agents.planning.assumption_resolver",
-        "agents.playbook",
-        "agents.replanner",
-        "agents.second_brain",
-        "orchestrator",
-        "platform_core.orchestration.execute_attempt_mixin",
-        "platform_core.orchestration.plan_mixin",
-        "platform_core.orchestration.run_phase_mixin",
-        "tools.elaborator_eval"
-      ]
+      "callers": []
     },
     "agents.planning.assumption_resolver": {
       "path": "agents/planning/assumption_resolver.py",
@@ -1524,7 +1531,7 @@
         }
       ],
       "depends_on": [
-        "agents.planning",
+        "agents.planning.question_memory",
         "config",
         "llm_io"
       ],
@@ -1534,7 +1541,9 @@
       "test": [
         "tests/orchestration/test_assumption_resolver.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.execute_attempt_mixin"
+      ]
     },
     "agents.planning.clarification_gate": {
       "path": "agents/planning/clarification_gate.py",
@@ -1564,7 +1573,9 @@
       "test": [
         "tests/orchestration/test_clarification_gate.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.plan_mixin"
+      ]
     },
     "agents.planning.clarifier": {
       "path": "agents/planning/clarifier.py",
@@ -1595,7 +1606,9 @@
       "test": [
         "tests/orchestration/test_clarifier.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.clarifier"
+      ]
     },
     "agents.planning.completion_envelope": {
       "path": "agents/planning/completion_envelope.py",
@@ -1644,7 +1657,9 @@
       "test": [
         "tests/execution/test_completion_envelope.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.completion_envelope"
+      ]
     },
     "agents.planning.council_context": {
       "path": "agents/planning/council_context.py",
@@ -1910,7 +1925,10 @@
         "tests/orchestration/test_pre_execution_council_seam.py",
         "tests/planning/test_pre_execution_council_seam.py"
       ],
-      "callers": []
+      "callers": [
+        "orchestrator",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
     },
     "agents.planning.debugging_workflow": {
       "path": "agents/planning/debugging_workflow.py",
@@ -1968,19 +1986,23 @@
       "test": [
         "tests/workflows/test_debugging_workflow.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.debugging_workflow"
+      ]
     },
     "agents.planning.elaborator": {
       "path": "agents/planning/elaborator/__init__.py",
       "purpose": "Elaborator (Step 0.5) -- thin re-export facade for the elaborator package.",
       "exports": [],
-      "depends_on": [],
+      "depends_on": [
+        "agents.planning.elaborator.core"
+      ],
       "side_effects": [
         "unannotated"
       ],
       "test": [],
       "callers": [
-        "platform_core.orchestration.run_phase_mixin",
+        "agents.elaborator",
         "tools.elaborator_eval"
       ]
     },
@@ -2019,7 +2041,7 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.orchestration"
+        "platform_core.orchestration.portfolio_optimizer"
       ],
       "side_effects": [
         "unannotated"
@@ -2027,7 +2049,9 @@
       "test": [
         "tests/orchestration/test_elaborator_candidates.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.elaborator.core"
+      ]
     },
     "agents.planning.elaborator.core": {
       "path": "agents/planning/elaborator/core.py",
@@ -2049,6 +2073,17 @@
         }
       ],
       "depends_on": [
+        "agents.planning.elaborator.candidates",
+        "agents.planning.elaborator.defer",
+        "agents.planning.elaborator.escalate",
+        "agents.planning.elaborator.grounding",
+        "agents.planning.elaborator.judge",
+        "agents.planning.elaborator.path_verify",
+        "agents.planning.elaborator.precedent",
+        "agents.planning.elaborator.predict",
+        "agents.planning.elaborator.schema",
+        "agents.planning.elaborator.self_review",
+        "agents.planning.elaborator.uncertainty",
         "config",
         "knowledge",
         "llm_io"
@@ -2061,6 +2096,8 @@
         "tests/slow/test_simulation_core.py"
       ],
       "callers": [
+        "agents.planning.elaborator",
+        "agents.planning.elaborator.escalate",
         "tools.elaborator_eval"
       ]
     },
@@ -2085,7 +2122,9 @@
       "test": [
         "tests/orchestration/test_elaborator_defer.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.elaborator.core"
+      ]
     },
     "agents.planning.elaborator.escalate": {
       "path": "agents/planning/elaborator/escalate.py",
@@ -2100,6 +2139,7 @@
         }
       ],
       "depends_on": [
+        "agents.planning.elaborator.core",
         "config",
         "knowledge",
         "llm_io"
@@ -2110,7 +2150,9 @@
       "test": [
         "tests/orchestration/test_elaborator_escalate.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.elaborator.core"
+      ]
     },
     "agents.planning.elaborator.evolve": {
       "path": "agents/planning/elaborator/evolve.py",
@@ -2127,8 +2169,8 @@
       "depends_on": [
         "config",
         "memory.experience_content",
-        "memory.ledger",
-        "memory.retrievals"
+        "memory.ledger.subtasks",
+        "memory.retrievals.core"
       ],
       "side_effects": [
         "writes to experience ledger (best-effort) via store_fn"
@@ -2138,7 +2180,9 @@
         "tests/evolution/test_evolver_prompts.py",
         "tests/orchestration/test_elaborator_evolve.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.run_phase_mixin"
+      ]
     },
     "agents.planning.elaborator.grounding": {
       "path": "agents/planning/elaborator/grounding.py",
@@ -2175,7 +2219,9 @@
       "test": [
         "tests/orchestration/test_elaborator_grounding.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.elaborator.core"
+      ]
     },
     "agents.planning.elaborator.judge": {
       "path": "agents/planning/elaborator/judge.py",
@@ -2190,7 +2236,7 @@
         }
       ],
       "depends_on": [
-        "agents.review",
+        "agents.review.adversary_review",
         "config"
       ],
       "side_effects": [
@@ -2200,7 +2246,9 @@
         "tests/orchestration/test_elaborator_judge.py",
         "tests/orchestration/test_judge_panel.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.elaborator.core"
+      ]
     },
     "agents.planning.elaborator.path_verify": {
       "path": "agents/planning/elaborator/path_verify.py",
@@ -2221,7 +2269,9 @@
       "test": [
         "tests/orchestration/test_elaborator_grounding.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.elaborator.core"
+      ]
     },
     "agents.planning.elaborator.precedent": {
       "path": "agents/planning/elaborator/precedent.py",
@@ -2244,7 +2294,7 @@
       ],
       "depends_on": [
         "config",
-        "memory.retrievals",
+        "memory.retrievals.core",
         "platform_core.core.best_effort"
       ],
       "side_effects": [
@@ -2253,7 +2303,10 @@
       "test": [
         "tests/orchestration/test_elaborator_precedent.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.elaborator.core",
+        "tools.elaborator_eval"
+      ]
     },
     "agents.planning.elaborator.predict": {
       "path": "agents/planning/elaborator/predict.py",
@@ -2279,7 +2332,9 @@
       "test": [
         "tests/orchestration/test_elaborator_predict.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.elaborator.core"
+      ]
     },
     "agents.planning.elaborator.schema": {
       "path": "agents/planning/elaborator/schema.py",
@@ -2327,7 +2382,9 @@
         "tests/notifications/test_notification_schema.py",
         "tests/orchestration/test_elaborator_schema.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.elaborator.core"
+      ]
     },
     "agents.planning.elaborator.self_review": {
       "path": "agents/planning/elaborator/self_review.py",
@@ -2352,7 +2409,9 @@
       "test": [
         "tests/orchestration/test_elaborator_selfreview.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.elaborator.core"
+      ]
     },
     "agents.planning.elaborator.uncertainty": {
       "path": "agents/planning/elaborator/uncertainty.py",
@@ -2380,7 +2439,9 @@
       "test": [
         "tests/orchestration/test_elaborator_uncertainty.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.elaborator.core"
+      ]
     },
     "agents.planning.evidence_receipt": {
       "path": "agents/planning/evidence_receipt.py",
@@ -2401,7 +2462,9 @@
       "test": [
         "tests/execution/test_evidence_receipt.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.evidence_receipt"
+      ]
     },
     "agents.planning.playbook": {
       "path": "agents/planning/playbook.py",
@@ -2431,7 +2494,7 @@
       ],
       "depends_on": [
         "config",
-        "learning.evolution"
+        "learning.evolution.candidate"
       ],
       "side_effects": [
         "unannotated"
@@ -2439,7 +2502,9 @@
       "test": [
         "tests/evolution/test_playbook.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.playbook"
+      ]
     },
     "agents.planning.pre_execution_council": {
       "path": "agents/planning/pre_execution_council.py",
@@ -2652,7 +2717,9 @@
       "test": [
         "tests/orchestration/test_preplanning_clarification.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.run_phase_mixin"
+      ]
     },
     "agents.planning.question_memory": {
       "path": "agents/planning/question_memory.py",
@@ -2689,7 +2756,10 @@
       "test": [
         "tests/orchestration/test_question_memory.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.assumption_resolver",
+        "platform_core.orchestration.execute_attempt_mixin"
+      ]
     },
     "agents.planning.replanner": {
       "path": "agents/planning/replanner.py",
@@ -2707,7 +2777,7 @@
         "config",
         "knowledge",
         "llm_io",
-        "platform_core.orchestration"
+        "platform_core.orchestration.work_profile"
       ],
       "side_effects": [
         "unannotated"
@@ -2716,7 +2786,9 @@
         "tests/evolution/test_living_knowledge.py",
         "tests/orchestration/test_module_globals.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.replanner"
+      ]
     },
     "agents.planning.second_brain": {
       "path": "agents/planning/second_brain.py",
@@ -2748,14 +2820,16 @@
       "test": [
         "tests/slow/test_phase2_second_brain.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.second_brain"
+      ]
     },
     "agents.playbook": {
       "path": "agents/playbook.py",
       "purpose": "Compatibility alias for :mod:`agents.planning.playbook`.",
       "exports": [],
       "depends_on": [
-        "agents.planning"
+        "agents.planning.playbook"
       ],
       "side_effects": [
         "unannotated"
@@ -2774,7 +2848,7 @@
       "purpose": "Compatibility alias for :mod:`agents.planning.replanner`.",
       "exports": [],
       "depends_on": [
-        "agents.planning"
+        "agents.planning.replanner"
       ],
       "side_effects": [
         "unannotated"
@@ -2796,19 +2870,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "agents.adversary",
-        "agents.adversary_browser",
-        "agents.adversary_review",
-        "agents.architect",
-        "agents.independent_verifier",
-        "agents.planning.elaborator.judge",
-        "agents.verification",
-        "agents.verification_diff",
-        "agents.verifier",
-        "agents.verifier_runner",
-        "agents.verifier_sanitize"
-      ]
+      "callers": []
     },
     "agents.review.adversary": {
       "path": "agents/review/adversary.py",
@@ -2834,7 +2896,9 @@
       "test": [
         "tests/orchestration/test_adversary.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.adversary"
+      ]
     },
     "agents.review.adversary_browser": {
       "path": "agents/review/adversary_browser.py",
@@ -2847,7 +2911,9 @@
       "test": [
         "tests/orchestration/test_adversary.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.adversary_browser"
+      ]
     },
     "agents.review.adversary_review": {
       "path": "agents/review/adversary_review.py",
@@ -2892,7 +2958,10 @@
       "test": [
         "tests/orchestration/test_adversary.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.adversary_review",
+        "agents.planning.elaborator.judge"
+      ]
     },
     "agents.review.architect": {
       "path": "agents/review/architect.py",
@@ -2910,7 +2979,7 @@
         "config",
         "knowledge",
         "llm_io",
-        "platform_core.orchestration"
+        "platform_core.orchestration.work_profile"
       ],
       "side_effects": [
         "unannotated"
@@ -2918,7 +2987,9 @@
       "test": [
         "tests/slow/test_phase_3_architecture.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.architect"
+      ]
     },
     "agents.review.independent_verifier": {
       "path": "agents/review/independent_verifier.py",
@@ -2969,7 +3040,9 @@
       "test": [
         "tests/execution/test_independent_verifier.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.independent_verifier"
+      ]
     },
     "agents.review.verification": {
       "path": "agents/review/verification.py",
@@ -3046,7 +3119,9 @@
       "test": [
         "tests/review/test_verification.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.verification"
+      ]
     },
     "agents.review.verification_diff": {
       "path": "agents/review/verification_diff.py",
@@ -3069,7 +3144,7 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core"
+        "platform_core.core.git_io"
       ],
       "side_effects": [
         "reads git status"
@@ -3077,7 +3152,9 @@
       "test": [
         "tests/execution/test_verification_diff.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.verification_diff"
+      ]
     },
     "agents.review.verifier": {
       "path": "agents/review/verifier.py",
@@ -3117,7 +3194,9 @@
       "test": [
         "tests/execution/test_verifier.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.verifier"
+      ]
     },
     "agents.review.verifier_runner": {
       "path": "agents/review/verifier_runner.py",
@@ -3142,7 +3221,9 @@
       "test": [
         "tests/execution/test_verifier_runner.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.verifier_runner"
+      ]
     },
     "agents.review.verifier_sanitize": {
       "path": "agents/review/verifier_sanitize.py",
@@ -3165,14 +3246,16 @@
       "test": [
         "tests/execution/test_verifier.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.verifier_sanitize"
+      ]
     },
     "agents.second_brain": {
       "path": "agents/second_brain.py",
       "purpose": "Compatibility alias for :mod:`agents.planning.second_brain`.",
       "exports": [],
       "depends_on": [
-        "agents.planning"
+        "agents.planning.second_brain"
       ],
       "side_effects": [
         "unannotated"
@@ -3192,7 +3275,7 @@
       "purpose": "Compatibility alias for :mod:`agents.execution.timing_harness`.",
       "exports": [],
       "depends_on": [
-        "agents.execution"
+        "agents.execution.timing_harness"
       ],
       "side_effects": [
         "unannotated"
@@ -3211,13 +3294,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "agents.trace_replay",
-        "agents.trace_replay_cli",
-        "agents.trace_replay_events",
-        "agents.trace_replay_output",
-        "agents.trace_replay_selftest"
-      ]
+      "callers": []
     },
     "agents.trace.replay": {
       "path": "agents/trace/replay.py",
@@ -3269,7 +3346,9 @@
         "tests/execution/test_trace_replay_workflow.py",
         "tests/notifications/test_bot_replay.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.trace_replay"
+      ]
     },
     "agents.trace.replay_cli": {
       "path": "agents/trace/replay_cli.py",
@@ -3311,7 +3390,9 @@
         "tests/execution/test_trace_replay.py",
         "tests/execution/test_trace_replay_subagent.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.trace_replay_cli"
+      ]
     },
     "agents.trace.replay_events": {
       "path": "agents/trace/replay_events.py",
@@ -3327,7 +3408,9 @@
       "test": [
         "tests/execution/test_trace_replay.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.trace_replay_events"
+      ]
     },
     "agents.trace.replay_output": {
       "path": "agents/trace/replay_output.py",
@@ -3350,7 +3433,9 @@
       "test": [
         "tests/execution/test_trace_replay.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.trace_replay_output"
+      ]
     },
     "agents.trace.replay_selftest": {
       "path": "agents/trace/replay_selftest.py",
@@ -3365,14 +3450,16 @@
       "test": [
         "tests/execution/test_trace_replay.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.trace_replay_selftest"
+      ]
     },
     "agents.trace_replay": {
       "path": "agents/trace_replay.py",
       "purpose": "Compatibility alias for :mod:`agents.trace.replay`.",
       "exports": [],
       "depends_on": [
-        "agents.trace"
+        "agents.trace.replay"
       ],
       "side_effects": [
         "unannotated"
@@ -3389,7 +3476,7 @@
       "purpose": "Compatibility alias for :mod:`agents.trace.replay_cli`.",
       "exports": [],
       "depends_on": [
-        "agents.trace"
+        "agents.trace.replay_cli"
       ],
       "side_effects": [
         "unannotated"
@@ -3404,7 +3491,7 @@
       "purpose": "Compatibility alias for :mod:`agents.trace.replay_events`.",
       "exports": [],
       "depends_on": [
-        "agents.trace"
+        "agents.trace.replay_events"
       ],
       "side_effects": [
         "unannotated"
@@ -3424,7 +3511,7 @@
       "purpose": "Compatibility alias for :mod:`agents.trace.replay_output`.",
       "exports": [],
       "depends_on": [
-        "agents.trace"
+        "agents.trace.replay_output"
       ],
       "side_effects": [
         "unannotated"
@@ -3441,7 +3528,7 @@
       "purpose": "Compatibility alias for :mod:`agents.trace.replay_selftest`.",
       "exports": [],
       "depends_on": [
-        "agents.trace"
+        "agents.trace.replay_selftest"
       ],
       "side_effects": [
         "unannotated"
@@ -3458,7 +3545,7 @@
       "purpose": "Compatibility alias for :mod:`agents.review.verification`.",
       "exports": [],
       "depends_on": [
-        "agents.review"
+        "agents.review.verification"
       ],
       "side_effects": [
         "unannotated"
@@ -3477,7 +3564,7 @@
       "purpose": "Compatibility alias for :mod:`agents.review.verification_diff`.",
       "exports": [],
       "depends_on": [
-        "agents.review"
+        "agents.review.verification_diff"
       ],
       "side_effects": [
         "unannotated"
@@ -3494,7 +3581,7 @@
       "purpose": "Compatibility alias for :mod:`agents.review.verifier`.",
       "exports": [],
       "depends_on": [
-        "agents.review"
+        "agents.review.verifier"
       ],
       "side_effects": [
         "unannotated"
@@ -3523,7 +3610,7 @@
       "purpose": "Compatibility alias for :mod:`agents.review.verifier_runner`.",
       "exports": [],
       "depends_on": [
-        "agents.review"
+        "agents.review.verifier_runner"
       ],
       "side_effects": [
         "unannotated"
@@ -3540,7 +3627,7 @@
       "purpose": "Compatibility alias for :mod:`agents.review.verifier_sanitize`.",
       "exports": [],
       "depends_on": [
-        "agents.review"
+        "agents.review.verifier_sanitize"
       ],
       "side_effects": [
         "unannotated"
@@ -3558,7 +3645,7 @@
       "purpose": "Compatibility alias for :mod:`agents.execution.workflow_resolver`.",
       "exports": [],
       "depends_on": [
-        "agents.execution"
+        "agents.execution.workflow_resolver"
       ],
       "side_effects": [
         "unannotated"
@@ -3593,9 +3680,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "tools.lock_galaxy_runtime"
-      ]
+      "callers": []
     },
     "bootstrap.galaxy_launcher.__main__": {
       "path": "bootstrap/galaxy_launcher/__main__.py",
@@ -3675,7 +3760,10 @@
       "test": [
         "tests/execution/test_activation_crypto.py"
       ],
-      "callers": []
+      "callers": [
+        "bootstrap.galaxy_launcher.activation_harness",
+        "tools.lock_galaxy_runtime"
+      ]
     },
     "bootstrap.galaxy_launcher.activation_dpapi": {
       "path": "bootstrap/galaxy_launcher/activation_dpapi.py",
@@ -3710,7 +3798,9 @@
       "test": [
         "tests/execution/test_activation_dpapi.py"
       ],
-      "callers": []
+      "callers": [
+        "tools.lock_galaxy_runtime"
+      ]
     },
     "bootstrap.galaxy_launcher.activation_harness": {
       "path": "bootstrap/galaxy_launcher/activation_harness.py",
@@ -3934,7 +4024,9 @@
           "lineno": 3110
         }
       ],
-      "depends_on": [],
+      "depends_on": [
+        "bootstrap.galaxy_launcher.activation_crypto"
+      ],
       "side_effects": [
         "unannotated"
       ],
@@ -4893,7 +4985,6 @@
         }
       ],
       "depends_on": [
-        "platform_core.app_config",
         "platform_core.app_config._env",
         "platform_core.app_config.paths",
         "platform_core.app_config.settings"
@@ -5999,7 +6090,26 @@
         "none"
       ],
       "test": [],
-      "callers": []
+      "callers": [
+        "human_nature.faculties.identity.self_model",
+        "human_nature.faculties.runtime.consolidation",
+        "human_nature.faculties.runtime.integration",
+        "human_nature.faculties.runtime.psyche_commands",
+        "human_nature.faculties.runtime.psyche_runtime",
+        "human_nature.faculties.runtime.psyche_surface",
+        "human_nature.faculties.signals.intuition",
+        "human_nature.faculties.signals.momentary",
+        "notifications.psyche_cog",
+        "platform_core.orchestration.execute_attempt_mixin",
+        "platform_core.orchestration.human_nature_bridge.affect",
+        "platform_core.orchestration.human_nature_bridge.authority_gate",
+        "platform_core.orchestration.human_nature_bridge.execution",
+        "platform_core.orchestration.human_nature_bridge.instinct",
+        "platform_core.orchestration.human_nature_bridge.inventor",
+        "platform_core.orchestration.human_nature_bridge.lifecycle",
+        "platform_core.orchestration.human_nature_bridge.planning",
+        "platform_core.orchestration.human_nature_bridge.society"
+      ]
     },
     "human_nature.faculties": {
       "path": "human_nature/faculties/__init__.py",
@@ -6681,7 +6791,7 @@
         }
       ],
       "depends_on": [
-        "human_nature.self_state"
+        "human_nature"
       ],
       "side_effects": [
         "none (pure)"
@@ -6868,8 +6978,7 @@
       ],
       "depends_on": [
         "config",
-        "human_nature.charter",
-        "human_nature.self_state",
+        "human_nature",
         "llm_io"
       ],
       "side_effects": [
@@ -6972,11 +7081,7 @@
       ],
       "depends_on": [
         "config",
-        "human_nature.appraisal",
-        "human_nature.consolidation",
-        "human_nature.instinct",
-        "human_nature.intuition",
-        "human_nature.self_state"
+        "human_nature"
       ],
       "side_effects": [
         "mutates state[\"meta\"] (or state.data[\"meta\"]) when enabled"
@@ -7029,9 +7134,7 @@
         }
       ],
       "depends_on": [
-        "human_nature.character_vector",
-        "human_nature.charter",
-        "human_nature.user_model"
+        "human_nature"
       ],
       "side_effects": [
         "none (pure)"
@@ -7069,11 +7172,7 @@
       ],
       "depends_on": [
         "config",
-        "human_nature.affect_manifold",
-        "human_nature.drives",
-        "human_nature.mood",
-        "human_nature.personality",
-        "human_nature.prototypes"
+        "human_nature"
       ],
       "side_effects": [
         "mutates the passed-in self_state dict in place"
@@ -7154,7 +7253,7 @@
         }
       ],
       "depends_on": [
-        "human_nature.gating"
+        "human_nature"
       ],
       "side_effects": [
         "none (pure render)"
@@ -7335,7 +7434,7 @@
       ],
       "depends_on": [
         "config",
-        "human_nature.conviction"
+        "human_nature"
       ],
       "side_effects": [
         "none in current implementation (chat param reserved for future use)"
@@ -7373,7 +7472,7 @@
       ],
       "depends_on": [
         "config",
-        "human_nature.conviction",
+        "human_nature",
         "llm_io"
       ],
       "side_effects": [
@@ -7556,7 +7655,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.adapter_promotion`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.adapter_promotion"
       ],
       "side_effects": [
         "unannotated"
@@ -7573,7 +7672,7 @@
       "purpose": "Compatibility alias for :mod:`learning.feedback.adversary_trust`.",
       "exports": [],
       "depends_on": [
-        "learning.feedback"
+        "learning.feedback.adversary_trust"
       ],
       "side_effects": [
         "unannotated"
@@ -7591,7 +7690,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.bootstrap`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.bootstrap"
       ],
       "side_effects": [
         "unannotated"
@@ -7609,7 +7708,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.compute`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.compute"
       ],
       "side_effects": [
         "unannotated"
@@ -7629,7 +7728,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.confidence`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.confidence"
       ],
       "side_effects": [
         "unannotated"
@@ -7676,7 +7775,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.curriculum`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.curriculum"
       ],
       "side_effects": [
         "unannotated"
@@ -7695,7 +7794,7 @@
       "purpose": "Compatibility alias for :mod:`learning.model.dataset`.",
       "exports": [],
       "depends_on": [
-        "learning.model"
+        "learning.model.dataset"
       ],
       "side_effects": [
         "unannotated"
@@ -7713,7 +7812,7 @@
       "purpose": "Compatibility alias for :mod:`learning.model.distill`.",
       "exports": [],
       "depends_on": [
-        "learning.model"
+        "learning.model.distill"
       ],
       "side_effects": [
         "unannotated"
@@ -7730,7 +7829,7 @@
       "purpose": "Compatibility alias for :mod:`learning.model.eval_harness`.",
       "exports": [],
       "depends_on": [
-        "learning.model"
+        "learning.model.eval_harness"
       ],
       "side_effects": [
         "unannotated"
@@ -7750,7 +7849,7 @@
       "purpose": "Compatibility alias for :mod:`learning.model.eval_runner`.",
       "exports": [],
       "depends_on": [
-        "learning.model"
+        "learning.model.eval_runner"
       ],
       "side_effects": [
         "unannotated"
@@ -7774,28 +7873,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "agents.planning.playbook",
-        "learning.adapter_promotion",
-        "learning.bootstrap",
-        "learning.compute",
-        "learning.confidence",
-        "learning.curriculum",
-        "learning.evolution.sie",
-        "learning.knowledge_graph",
-        "learning.meta_opt",
-        "learning.policy",
-        "learning.promotion",
-        "learning.release",
-        "learning.safety",
-        "learning.selfplay",
-        "learning.sie",
-        "learning.sie_curriculum",
-        "learning.sie_steps",
-        "learning.solution_cache",
-        "learning.toolsmith",
-        "platform_core.orchestration.evolution_hook"
-      ]
+      "callers": []
     },
     "learning.evolution.adapter_promotion": {
       "path": "learning/evolution/adapter_promotion.py",
@@ -7821,7 +7899,9 @@
       "test": [
         "tests/execution/test_eval_runner.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.adapter_promotion"
+      ]
     },
     "learning.evolution.bootstrap": {
       "path": "learning/evolution/bootstrap.py",
@@ -7860,7 +7940,9 @@
         "tests/execution/test_tofu_bootstrap.py",
         "tests/platform/test_config_bootstrap.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.bootstrap"
+      ]
     },
     "learning.evolution.candidate": {
       "path": "learning/evolution/candidate.py",
@@ -7895,6 +7977,7 @@
         "tests/orchestration/test_elaborator_candidates.py"
       ],
       "callers": [
+        "agents.planning.playbook",
         "learning.evolution.validate"
       ]
     },
@@ -7961,7 +8044,9 @@
       "test": [
         "tests/execution/test_compute.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.compute"
+      ]
     },
     "learning.evolution.confidence": {
       "path": "learning/evolution/confidence.py",
@@ -7993,7 +8078,9 @@
       "test": [
         "tests/evolution/test_nextwave_batch1.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.confidence"
+      ]
     },
     "learning.evolution.curator": {
       "path": "learning/evolution/curator.py",
@@ -8025,7 +8112,9 @@
       "test": [
         "tests/evolution/test_evolution_curator.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.evolution.sie"
+      ]
     },
     "learning.evolution.curriculum": {
       "path": "learning/evolution/curriculum.py",
@@ -8064,7 +8153,9 @@
       "test": [
         "tests/evolution/test_curriculum.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.curriculum"
+      ]
     },
     "learning.evolution.evolver": {
       "path": "learning/evolution/evolver.py",
@@ -8093,7 +8184,10 @@
         "tests/evolution/test_evolution_evolver.py",
         "tests/evolution/test_evolver_prompts.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.evolution.sie",
+        "platform_core.orchestration.evolution_hook"
+      ]
     },
     "learning.evolution.evolver_prompts": {
       "path": "learning/evolution/evolver_prompts.py",
@@ -8140,7 +8234,9 @@
       "test": [
         "tests/evolution/test_knowledge.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.knowledge_graph"
+      ]
     },
     "learning.evolution.meta_opt": {
       "path": "learning/evolution/meta_opt.py",
@@ -8173,7 +8269,9 @@
         "tests/evolution/test_nextwave_batch2.py",
         "tests/slow/test_full_autonomy.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.meta_opt"
+      ]
     },
     "learning.evolution.policy": {
       "path": "learning/evolution/policy.py",
@@ -8233,7 +8331,9 @@
       "test": [
         "tests/evolution/test_policy.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.policy"
+      ]
     },
     "learning.evolution.promote": {
       "path": "learning/evolution/promote.py",
@@ -8268,7 +8368,9 @@
       "test": [
         "tests/evolution/test_evolution_promote.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.evolution.sie"
+      ]
     },
     "learning.evolution.promotion": {
       "path": "learning/evolution/promotion.py",
@@ -8314,7 +8416,9 @@
       "test": [
         "tests/evolution/test_promotion.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.promotion"
+      ]
     },
     "learning.evolution.release": {
       "path": "learning/evolution/release.py",
@@ -8361,7 +8465,9 @@
       "test": [
         "tests/evolution/test_curriculum.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.release"
+      ]
     },
     "learning.evolution.safety": {
       "path": "learning/evolution/safety.py",
@@ -8417,7 +8523,9 @@
         "tests/control/test_safety_mixin.py",
         "tests/evolution/test_evolution_safety.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.safety"
+      ]
     },
     "learning.evolution.selfplay": {
       "path": "learning/evolution/selfplay.py",
@@ -8441,7 +8549,7 @@
       "depends_on": [
         "config",
         "learning.curriculum",
-        "platform_core.core"
+        "platform_core.core.fsio"
       ],
       "side_effects": [
         "unannotated"
@@ -8449,7 +8557,9 @@
       "test": [
         "tests/slow/test_full_autonomy.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.selfplay"
+      ]
     },
     "learning.evolution.sie": {
       "path": "learning/evolution/sie.py",
@@ -8475,7 +8585,9 @@
         "learning.adapter_promotion",
         "learning.bootstrap",
         "learning.eval_runner",
-        "learning.evolution",
+        "learning.evolution.curator",
+        "learning.evolution.evolver",
+        "learning.evolution.promote",
         "learning.finetune",
         "learning.meta_opt",
         "learning.promotion",
@@ -8484,7 +8596,7 @@
         "learning.sie_steps",
         "memory.experience",
         "notifications.work_launcher",
-        "platform_core.core"
+        "platform_core.core.fsio"
       ],
       "side_effects": [
         "unannotated"
@@ -8492,7 +8604,9 @@
       "test": [
         "tests/evolution/test_sie.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.sie"
+      ]
     },
     "learning.evolution.sie_curriculum": {
       "path": "learning/evolution/sie_curriculum.py",
@@ -8511,7 +8625,9 @@
         "tests/evolution/test_curriculum.py",
         "tests/evolution/test_sie.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.sie_curriculum"
+      ]
     },
     "learning.evolution.sie_steps": {
       "path": "learning/evolution/sie_steps.py",
@@ -8536,7 +8652,9 @@
       "test": [
         "tests/evolution/test_sie.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.sie_steps"
+      ]
     },
     "learning.evolution.solution_cache": {
       "path": "learning/evolution/solution_cache.py",
@@ -8575,7 +8693,9 @@
       "test": [
         "tests/evolution/test_solution_cache_provenance.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.solution_cache"
+      ]
     },
     "learning.evolution.toolsmith": {
       "path": "learning/evolution/toolsmith.py",
@@ -8606,7 +8726,9 @@
       "test": [
         "tests/evolution/test_nextwave_batch2.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.toolsmith"
+      ]
     },
     "learning.evolution.validate": {
       "path": "learning/evolution/validate.py",
@@ -8647,16 +8769,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "learning.adversary_trust",
-        "learning.human_feedback",
-        "learning.insight",
-        "learning.lessons",
-        "learning.postmortem",
-        "learning.preferences",
-        "learning.reflection",
-        "learning.wisdom"
-      ]
+      "callers": []
     },
     "learning.feedback.adversary_trust": {
       "path": "learning/feedback/adversary_trust.py",
@@ -8686,7 +8799,8 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core"
+        "platform_core.core.clock",
+        "platform_core.core.jsonl_io"
       ],
       "side_effects": [
         "unannotated"
@@ -8694,7 +8808,9 @@
       "test": [
         "tests/orchestration/test_adversary_trust.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.adversary_trust"
+      ]
     },
     "learning.feedback.human_feedback": {
       "path": "learning/feedback/human_feedback.py",
@@ -8733,7 +8849,9 @@
         "tests/evolution/test_nextwave_batch1.py",
         "tests/notifications/test_feedback_view.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.human_feedback"
+      ]
     },
     "learning.feedback.insight": {
       "path": "learning/feedback/insight.py",
@@ -8779,7 +8897,9 @@
       "test": [
         "tests/evolution/test_insight.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.insight"
+      ]
     },
     "learning.feedback.lessons": {
       "path": "learning/feedback/lessons.py",
@@ -8811,7 +8931,9 @@
       "test": [
         "tests/evolution/test_lessons.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.lessons"
+      ]
     },
     "learning.feedback.postmortem": {
       "path": "learning/feedback/postmortem.py",
@@ -8850,7 +8972,9 @@
       "test": [
         "tests/evolution/test_nextwave_batch2.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.postmortem"
+      ]
     },
     "learning.feedback.preferences": {
       "path": "learning/feedback/preferences.py",
@@ -8890,7 +9014,9 @@
       "test": [
         "tests/evolution/test_preferences.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.preferences"
+      ]
     },
     "learning.feedback.reflection": {
       "path": "learning/feedback/reflection.py",
@@ -8937,7 +9063,9 @@
         "tests/notifications/test_reflection_innovations.py",
         "tests/notifications/test_reflection_post.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.reflection"
+      ]
     },
     "learning.feedback.wisdom": {
       "path": "learning/feedback/wisdom.py",
@@ -8968,14 +9096,16 @@
       "test": [
         "tests/evolution/test_wisdom.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.wisdom"
+      ]
     },
     "learning.finetune": {
       "path": "learning/finetune.py",
       "purpose": "Compatibility alias for :mod:`learning.model.finetune`.",
       "exports": [],
       "depends_on": [
-        "learning.model"
+        "learning.model.finetune"
       ],
       "side_effects": [
         "unannotated"
@@ -8994,7 +9124,7 @@
       "purpose": "Compatibility alias for :mod:`learning.feedback.human_feedback`.",
       "exports": [],
       "depends_on": [
-        "learning.feedback"
+        "learning.feedback.human_feedback"
       ],
       "side_effects": [
         "unannotated"
@@ -9013,7 +9143,7 @@
       "purpose": "Compatibility alias for :mod:`learning.feedback.insight`.",
       "exports": [],
       "depends_on": [
-        "learning.feedback"
+        "learning.feedback.insight"
       ],
       "side_effects": [
         "unannotated"
@@ -9030,7 +9160,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.knowledge_graph`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.knowledge_graph"
       ],
       "side_effects": [
         "unannotated"
@@ -9048,7 +9178,7 @@
       "purpose": "Compatibility alias for :mod:`learning.feedback.lessons`.",
       "exports": [],
       "depends_on": [
-        "learning.feedback"
+        "learning.feedback.lessons"
       ],
       "side_effects": [
         "unannotated"
@@ -9072,7 +9202,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.meta_opt`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.meta_opt"
       ],
       "side_effects": [
         "unannotated"
@@ -9094,13 +9224,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "learning.dataset",
-        "learning.distill",
-        "learning.eval_harness",
-        "learning.eval_runner",
-        "learning.finetune"
-      ]
+      "callers": []
     },
     "learning.model.dataset": {
       "path": "learning/model/dataset.py",
@@ -9159,7 +9283,9 @@
       "test": [
         "tests/evolution/test_dataset_gate.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.dataset"
+      ]
     },
     "learning.model.distill": {
       "path": "learning/model/distill.py",
@@ -9198,7 +9324,9 @@
       "test": [
         "tests/evolution/test_finetune.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.distill"
+      ]
     },
     "learning.model.eval_harness": {
       "path": "learning/model/eval_harness.py",
@@ -9257,7 +9385,9 @@
       "test": [
         "tests/evolution/test_eval_harness.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.eval_harness"
+      ]
     },
     "learning.model.eval_runner": {
       "path": "learning/model/eval_runner.py",
@@ -9309,7 +9439,9 @@
       "test": [
         "tests/execution/test_eval_runner.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.eval_runner"
+      ]
     },
     "learning.model.finetune": {
       "path": "learning/model/finetune.py",
@@ -9399,7 +9531,9 @@
       "test": [
         "tests/evolution/test_finetune.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.finetune"
+      ]
     },
     "learning.outcome_evaluation": {
       "path": "learning/outcome_evaluation.py",
@@ -9516,7 +9650,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.policy`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.policy"
       ],
       "side_effects": [
         "unannotated"
@@ -9534,7 +9668,7 @@
       "purpose": "Compatibility alias for :mod:`learning.feedback.postmortem`.",
       "exports": [],
       "depends_on": [
-        "learning.feedback"
+        "learning.feedback.postmortem"
       ],
       "side_effects": [
         "unannotated"
@@ -9553,7 +9687,7 @@
       "purpose": "Compatibility alias for :mod:`learning.feedback.preferences`.",
       "exports": [],
       "depends_on": [
-        "learning.feedback"
+        "learning.feedback.preferences"
       ],
       "side_effects": [
         "unannotated"
@@ -9570,7 +9704,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.promotion`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.promotion"
       ],
       "side_effects": [
         "unannotated"
@@ -9648,7 +9782,7 @@
       "purpose": "Compatibility alias for :mod:`learning.feedback.reflection`.",
       "exports": [],
       "depends_on": [
-        "learning.feedback"
+        "learning.feedback.reflection"
       ],
       "side_effects": [
         "unannotated"
@@ -9668,7 +9802,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.release`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.release"
       ],
       "side_effects": [
         "unannotated"
@@ -9685,7 +9819,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.safety`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.safety"
       ],
       "side_effects": [
         "unannotated"
@@ -9707,7 +9841,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.selfplay`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.selfplay"
       ],
       "side_effects": [
         "unannotated"
@@ -9724,7 +9858,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.sie`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.sie"
       ],
       "side_effects": [
         "unannotated"
@@ -9741,7 +9875,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.sie_curriculum`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.sie_curriculum"
       ],
       "side_effects": [
         "unannotated"
@@ -9759,7 +9893,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.sie_steps`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.sie_steps"
       ],
       "side_effects": [
         "unannotated"
@@ -9776,7 +9910,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.solution_cache`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.solution_cache"
       ],
       "side_effects": [
         "unannotated"
@@ -9795,7 +9929,7 @@
       "purpose": "Compatibility alias for :mod:`learning.evolution.toolsmith`.",
       "exports": [],
       "depends_on": [
-        "learning.evolution"
+        "learning.evolution.toolsmith"
       ],
       "side_effects": [
         "unannotated"
@@ -9812,7 +9946,7 @@
       "purpose": "Compatibility alias for :mod:`learning.feedback.wisdom`.",
       "exports": [],
       "depends_on": [
-        "learning.feedback"
+        "learning.feedback.wisdom"
       ],
       "side_effects": [
         "unannotated"
@@ -9931,19 +10065,16 @@
         "agents.elaborator",
         "config",
         "memory.obsidian",
-        "orchestrator.Orchestrator",
-        "orchestrator.refreshClaudeKnowledge",
-        "platform_core.app_config",
-        "platform_core.cli",
+        "orchestrator",
+        "platform_core.app_config.settings",
         "platform_core.cli.main_cli",
-        "platform_core.core",
         "platform_core.core.best_effort",
+        "platform_core.core.fsio",
         "platform_core.execution.launch_guard",
         "platform_core.ops.doctor",
         "platform_core.ops.external_project",
         "platform_core.ops.health",
-        "platform_core.orchestration",
-        "platform_core.runtime",
+        "platform_core.orchestration.work_profile",
         "platform_core.runtime.control",
         "platform_core.runtime.heartbeat",
         "platform_core.runtime.resilience",
@@ -10017,7 +10148,7 @@
       "purpose": "Compatibility alias for :mod:`memory.experience.index`.",
       "exports": [],
       "depends_on": [
-        "memory.ledger"
+        "memory.ledger.index"
       ],
       "side_effects": [
         "unannotated"
@@ -10034,7 +10165,7 @@
       "purpose": "Compatibility alias for :mod:`memory.experience.core`.",
       "exports": [],
       "depends_on": [
-        "memory.ledger"
+        "memory.ledger.core"
       ],
       "side_effects": [
         "unannotated"
@@ -10099,7 +10230,7 @@
       "purpose": "Compatibility alias for :mod:`memory.experience.adapters`.",
       "exports": [],
       "depends_on": [
-        "memory.ledger"
+        "memory.ledger.adapters"
       ],
       "side_effects": [
         "unannotated"
@@ -10120,7 +10251,7 @@
       "purpose": "Compatibility alias for :mod:`memory.experience.content`.",
       "exports": [],
       "depends_on": [
-        "memory.ledger"
+        "memory.ledger.content"
       ],
       "side_effects": [
         "unannotated"
@@ -10139,7 +10270,7 @@
       "purpose": "Compatibility alias for :mod:`memory.experience.ddl`.",
       "exports": [],
       "depends_on": [
-        "memory.ledger"
+        "memory.ledger.ddl"
       ],
       "side_effects": [
         "unannotated"
@@ -10157,7 +10288,7 @@
       "purpose": "Compatibility alias for :mod:`memory.experience.evolution`.",
       "exports": [],
       "depends_on": [
-        "memory.ledger"
+        "memory.ledger.evolution"
       ],
       "side_effects": [
         "unannotated"
@@ -10176,7 +10307,7 @@
       "purpose": "Compatibility alias for :mod:`memory.experience.journal`.",
       "exports": [],
       "depends_on": [
-        "memory.ledger"
+        "memory.ledger.journal"
       ],
       "side_effects": [
         "unannotated"
@@ -10193,7 +10324,7 @@
       "purpose": "Compatibility alias for :mod:`memory.experience.policy`.",
       "exports": [],
       "depends_on": [
-        "memory.ledger"
+        "memory.ledger.policy"
       ],
       "side_effects": [
         "unannotated"
@@ -10211,7 +10342,7 @@
       "purpose": "Compatibility alias for :mod:`memory.experience.pr`.",
       "exports": [],
       "depends_on": [
-        "memory.ledger"
+        "memory.ledger.pr"
       ],
       "side_effects": [
         "unannotated"
@@ -10230,7 +10361,7 @@
       "purpose": "Compatibility alias for :mod:`memory.experience.runs`.",
       "exports": [],
       "depends_on": [
-        "memory.ledger"
+        "memory.ledger.runs"
       ],
       "side_effects": [
         "unannotated"
@@ -10247,7 +10378,7 @@
       "purpose": "Compatibility alias for :mod:`memory.experience.schema`.",
       "exports": [],
       "depends_on": [
-        "memory.ledger"
+        "memory.ledger.schema"
       ],
       "side_effects": [
         "unannotated"
@@ -10274,7 +10405,7 @@
       "purpose": "Compatibility alias for :mod:`memory.experience.solutions`.",
       "exports": [],
       "depends_on": [
-        "memory.ledger"
+        "memory.ledger.solutions"
       ],
       "side_effects": [
         "unannotated"
@@ -10293,7 +10424,7 @@
       "purpose": "Compatibility alias for :mod:`memory.experience.subtasks`.",
       "exports": [],
       "depends_on": [
-        "memory.ledger"
+        "memory.ledger.subtasks"
       ],
       "side_effects": [
         "unannotated"
@@ -10315,22 +10446,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "agents.planning.elaborator.evolve",
-        "memory.exp_index",
-        "memory.experience",
-        "memory.experience_adapters",
-        "memory.experience_content",
-        "memory.experience_ddl",
-        "memory.experience_evolution",
-        "memory.experience_journal",
-        "memory.experience_policy",
-        "memory.experience_pr",
-        "memory.experience_runs",
-        "memory.experience_schema",
-        "memory.experience_solutions",
-        "memory.experience_subtasks"
-      ]
+      "callers": []
     },
     "memory.ledger.adapters": {
       "path": "memory/ledger/adapters.py",
@@ -10412,7 +10528,9 @@
         "tests/evolution/test_nextwave_batch1.py",
         "tests/execution/test_eval_runner.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.experience_adapters"
+      ]
     },
     "memory.ledger.content": {
       "path": "memory/ledger/content.py",
@@ -10471,7 +10589,9 @@
       "test": [
         "tests/evolution/test_experience_content.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.experience_content"
+      ]
     },
     "memory.ledger.core": {
       "path": "memory/ledger/core.py",
@@ -10495,7 +10615,9 @@
         "tests/orchestration/test_orch_core_bugs.py",
         "tests/slow/test_simulation_core.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.experience"
+      ]
     },
     "memory.ledger.ddl": {
       "path": "memory/ledger/ddl.py",
@@ -10509,7 +10631,9 @@
         "tests/evolution/test_experience_ledger.py",
         "tests/evolution/test_experience_schema.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.experience_ddl"
+      ]
     },
     "memory.ledger.evolution": {
       "path": "memory/ledger/evolution.py",
@@ -10617,7 +10741,9 @@
         "tests/evolution/test_evolution_validate.py",
         "tests/evolution/test_experience_evolution.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.experience_evolution"
+      ]
     },
     "memory.ledger.index": {
       "path": "memory/ledger/index.py",
@@ -10669,7 +10795,9 @@
         "tests/evolution/test_exp_index.py",
         "tests/evolution/test_novelty_index.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.exp_index"
+      ]
     },
     "memory.ledger.journal": {
       "path": "memory/ledger/journal.py",
@@ -10723,7 +10851,9 @@
         "tests/evolution/test_experience_journal.py",
         "tests/platform/test_galaxy_experiment_journal.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.experience_journal"
+      ]
     },
     "memory.ledger.policy": {
       "path": "memory/ledger/policy.py",
@@ -10837,7 +10967,9 @@
       "test": [
         "tests/evolution/test_policy.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.experience_policy"
+      ]
     },
     "memory.ledger.pr": {
       "path": "memory/ledger/pr.py",
@@ -10908,7 +11040,9 @@
         "tests/platform/test_protocols.py",
         "tests/platform/test_provenance.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.experience_pr"
+      ]
     },
     "memory.ledger.runs": {
       "path": "memory/ledger/runs.py",
@@ -10991,7 +11125,9 @@
       "test": [
         "tests/notifications/test_runs_cog.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.experience_runs"
+      ]
     },
     "memory.ledger.schema": {
       "path": "memory/ledger/schema.py",
@@ -11034,7 +11170,9 @@
         "tests/notifications/test_notification_schema.py",
         "tests/orchestration/test_elaborator_schema.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.experience_schema"
+      ]
     },
     "memory.ledger.solutions": {
       "path": "memory/ledger/solutions.py",
@@ -11092,7 +11230,9 @@
       "test": [
         "tests/evolution/test_solution_cache_provenance.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.experience_solutions"
+      ]
     },
     "memory.ledger.subtasks": {
       "path": "memory/ledger/subtasks.py",
@@ -11153,7 +11293,10 @@
       "test": [
         "tests/evolution/test_insight.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.elaborator.evolve",
+        "memory.experience_subtasks"
+      ]
     },
     "memory.memory_sanitizer": {
       "path": "memory/memory_sanitizer.py",
@@ -11188,10 +11331,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "memory.novelty_index",
-        "memory.novelty_store"
-      ]
+      "callers": []
     },
     "memory.novelty.index": {
       "path": "memory/novelty/index.py",
@@ -11273,7 +11413,9 @@
         "tests/evolution/test_exp_index.py",
         "tests/evolution/test_novelty_index.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.novelty_index"
+      ]
     },
     "memory.novelty.store": {
       "path": "memory/novelty/store.py",
@@ -11326,14 +11468,16 @@
         "tests/control/test_control_store.py",
         "tests/human_nature/test_psyche_store.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.novelty_store"
+      ]
     },
     "memory.novelty_index": {
       "path": "memory/novelty_index.py",
       "purpose": "Compatibility alias for :mod:`memory.novelty.index`.",
       "exports": [],
       "depends_on": [
-        "memory.novelty"
+        "memory.novelty.index"
       ],
       "side_effects": [
         "unannotated"
@@ -11353,7 +11497,7 @@
       "purpose": "Compatibility alias for :mod:`memory.novelty.store`.",
       "exports": [],
       "depends_on": [
-        "memory.novelty"
+        "memory.novelty.store"
       ],
       "side_effects": [
         "unannotated"
@@ -11372,7 +11516,7 @@
       "purpose": "Compatibility alias for :mod:`memory.stores.obsidian`.",
       "exports": [],
       "depends_on": [
-        "memory.stores"
+        "memory.stores.obsidian"
       ],
       "side_effects": [
         "unannotated"
@@ -11395,7 +11539,7 @@
       "purpose": "Compatibility alias for :mod:`memory.retrieval.core`.",
       "exports": [],
       "depends_on": [
-        "memory.retrievals"
+        "memory.retrievals.core"
       ],
       "side_effects": [
         "unannotated"
@@ -11417,7 +11561,7 @@
       "purpose": "Compatibility alias for :mod:`memory.retrieval.rank`.",
       "exports": [],
       "depends_on": [
-        "memory.retrievals"
+        "memory.retrievals.rank"
       ],
       "side_effects": [
         "unannotated"
@@ -11434,7 +11578,7 @@
       "purpose": "Compatibility alias for :mod:`memory.retrieval.render`.",
       "exports": [],
       "depends_on": [
-        "memory.retrievals"
+        "memory.retrievals.render"
       ],
       "side_effects": [
         "unannotated"
@@ -11455,13 +11599,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "agents.planning.elaborator.evolve",
-        "agents.planning.elaborator.precedent",
-        "memory.retrieval",
-        "memory.retrieval_rank",
-        "memory.retrieval_render"
-      ]
+      "callers": []
     },
     "memory.retrievals.core": {
       "path": "memory/retrievals/core.py",
@@ -11580,7 +11718,7 @@
         "memory.experience_content",
         "memory.retrieval_rank",
         "memory.retrieval_render",
-        "platform_core.runtime"
+        "platform_core.runtime.perf"
       ],
       "side_effects": [
         "unannotated"
@@ -11589,7 +11727,11 @@
         "tests/orchestration/test_orch_core_bugs.py",
         "tests/slow/test_simulation_core.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.elaborator.evolve",
+        "agents.planning.elaborator.precedent",
+        "memory.retrieval"
+      ]
     },
     "memory.retrievals.rank": {
       "path": "memory/retrievals/rank.py",
@@ -11612,7 +11754,9 @@
       "test": [
         "tests/evolution/test_retrieval_rank.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.retrieval_rank"
+      ]
     },
     "memory.retrievals.render": {
       "path": "memory/retrievals/render.py",
@@ -11665,7 +11809,9 @@
         "tests/execution/test_trace_replay_parallel_render.py",
         "tests/notifications/test_terminal_render.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.retrieval_render"
+      ]
     },
     "memory.stores": {
       "path": "memory/stores/__init__.py",
@@ -11676,10 +11822,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "memory.obsidian",
-        "memory.user_prefs"
-      ]
+      "callers": []
     },
     "memory.stores.obsidian": {
       "path": "memory/stores/obsidian.py",
@@ -11709,8 +11852,8 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core",
-        "platform_core.core.best_effort"
+        "platform_core.core.best_effort",
+        "platform_core.core.fsio"
       ],
       "side_effects": [
         "unannotated"
@@ -11720,7 +11863,9 @@
         "tests/notifications/test_obsidian_atomic_claude_md.py",
         "tests/notifications/test_obsidian_write.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.obsidian"
+      ]
     },
     "memory.stores.user_prefs": {
       "path": "memory/stores/user_prefs.py",
@@ -11799,7 +11944,7 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core"
+        "platform_core.core.fsio"
       ],
       "side_effects": [
         "writes user_prefs.json"
@@ -11807,14 +11952,16 @@
       "test": [
         "tests/evolution/test_user_prefs.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.user_prefs"
+      ]
     },
     "memory.user_prefs": {
       "path": "memory/user_prefs.py",
       "purpose": "Compatibility alias for :mod:`memory.stores.user_prefs`.",
       "exports": [],
       "depends_on": [
-        "memory.stores"
+        "memory.stores.user_prefs"
       ],
       "side_effects": [
         "unannotated"
@@ -11915,7 +12062,8 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core"
+        "platform_core.core.clock",
+        "platform_core.core.jsonl_io"
       ],
       "side_effects": [
         "unannotated"
@@ -12338,8 +12486,8 @@
         "notifications.slash",
         "notifications.views",
         "notifications.work_launcher",
-        "orchestrator.Orchestrator",
-        "platform_core.orchestration",
+        "orchestrator",
+        "platform_core.orchestration.work_profile",
         "state.task"
       ],
       "side_effects": [
@@ -12384,8 +12532,8 @@
         "notifications.views",
         "notifications.views_feedback",
         "notifications.views_terminal",
-        "platform_core.runtime",
-        "platform_core.runtime.control"
+        "platform_core.runtime.control",
+        "platform_core.runtime.heartbeat"
       ],
       "side_effects": [
         "unannotated"
@@ -12490,7 +12638,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.presentation.branding`.",
       "exports": [],
       "depends_on": [
-        "notifications.presentation"
+        "notifications.presentation.branding"
       ],
       "side_effects": [
         "unannotated"
@@ -12720,7 +12868,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.surfaces.console_hud`.",
       "exports": [],
       "depends_on": [
-        "notifications.surfaces"
+        "notifications.surfaces.console_hud"
       ],
       "side_effects": [
         "unannotated"
@@ -12782,7 +12930,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.surfaces.cv2`.",
       "exports": [],
       "depends_on": [
-        "notifications.surfaces"
+        "notifications.surfaces.cv2"
       ],
       "side_effects": [
         "unannotated"
@@ -12801,7 +12949,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.surfaces.dashboard`.",
       "exports": [],
       "depends_on": [
-        "notifications.surfaces"
+        "notifications.surfaces.dashboard"
       ],
       "side_effects": [
         "unannotated"
@@ -12832,11 +12980,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "notifications.discord_channels",
-        "notifications.discord_client",
-        "notifications.discord_embeds"
-      ]
+      "callers": []
     },
     "notifications.discord.channels": {
       "path": "notifications/discord/channels.py",
@@ -12987,7 +13131,9 @@
       "test": [
         "tests/notifications/test_discord_channels.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.discord_channels"
+      ]
     },
     "notifications.discord.client": {
       "path": "notifications/discord/client.py",
@@ -13010,7 +13156,9 @@
       "test": [
         "tests/notifications/test_jerry_client.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.discord_client"
+      ]
     },
     "notifications.discord.embeds": {
       "path": "notifications/discord/embeds.py",
@@ -13168,7 +13316,9 @@
       "test": [
         "tests/notifications/test_discord_embeds.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.discord_embeds"
+      ]
     },
     "notifications.discord_bot": {
       "path": "notifications/discord_bot.py",
@@ -13221,7 +13371,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.discord.channels`.",
       "exports": [],
       "depends_on": [
-        "notifications.discord"
+        "notifications.discord.channels"
       ],
       "side_effects": [
         "unannotated"
@@ -13238,7 +13388,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.discord.client`.",
       "exports": [],
       "depends_on": [
-        "notifications.discord"
+        "notifications.discord.client"
       ],
       "side_effects": [
         "unannotated"
@@ -13259,7 +13409,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.discord.embeds`.",
       "exports": [],
       "depends_on": [
-        "notifications.discord"
+        "notifications.discord.embeds"
       ],
       "side_effects": [
         "unannotated"
@@ -13354,7 +13504,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.runtime.event_bus`.",
       "exports": [],
       "depends_on": [
-        "notifications.runtime"
+        "notifications.runtime.event_bus"
       ],
       "side_effects": [
         "unannotated"
@@ -13383,7 +13533,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.surfaces.health_aura`.",
       "exports": [],
       "depends_on": [
-        "notifications.surfaces"
+        "notifications.surfaces.health_aura"
       ],
       "side_effects": [
         "unannotated"
@@ -13402,7 +13552,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.presentation.icons`.",
       "exports": [],
       "depends_on": [
-        "notifications.presentation"
+        "notifications.presentation.icons"
       ],
       "side_effects": [
         "unannotated"
@@ -13425,7 +13575,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.presentation.iconset`.",
       "exports": [],
       "depends_on": [
-        "notifications.presentation"
+        "notifications.presentation.iconset"
       ],
       "side_effects": [
         "unannotated"
@@ -13516,7 +13666,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.runtime.lane_feed`.",
       "exports": [],
       "depends_on": [
-        "notifications.runtime"
+        "notifications.runtime.lane_feed"
       ],
       "side_effects": [
         "unannotated"
@@ -13642,7 +13792,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.presentation.personas`.",
       "exports": [],
       "depends_on": [
-        "notifications.presentation"
+        "notifications.presentation.personas"
       ],
       "side_effects": [
         "unannotated"
@@ -13663,22 +13813,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "notifications.branding",
-        "notifications.icons",
-        "notifications.iconset",
-        "notifications.personas",
-        "notifications.theme",
-        "notifications.views",
-        "notifications.views_control",
-        "notifications.views_feedback",
-        "notifications.views_run",
-        "notifications.views_subtask",
-        "notifications.views_terminal",
-        "notifications.visuals",
-        "notifications.visuals_cards",
-        "notifications.visuals_components"
-      ]
+      "callers": []
     },
     "notifications.presentation.branding": {
       "path": "notifications/presentation/branding.py",
@@ -13774,7 +13909,9 @@
       "test": [
         "tests/notifications/test_branding.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.branding"
+      ]
     },
     "notifications.presentation.icons": {
       "path": "notifications/presentation/icons.py",
@@ -13827,7 +13964,9 @@
       "test": [
         "tests/notifications/test_icons.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.icons"
+      ]
     },
     "notifications.presentation.iconset": {
       "path": "notifications/presentation/iconset.py",
@@ -13851,7 +13990,9 @@
       "test": [
         "tests/notifications/test_iconset.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.iconset"
+      ]
     },
     "notifications.presentation.personas": {
       "path": "notifications/presentation/personas.py",
@@ -13881,7 +14022,9 @@
       "test": [
         "tests/notifications/test_personas_archetypes.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.personas"
+      ]
     },
     "notifications.presentation.theme": {
       "path": "notifications/presentation/theme.py",
@@ -13981,7 +14124,9 @@
       "test": [
         "tests/notifications/test_theme.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.theme"
+      ]
     },
     "notifications.presentation.views": {
       "path": "notifications/presentation/views.py",
@@ -13999,7 +14144,9 @@
       "test": [
         "tests/control/test_views.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.views"
+      ]
     },
     "notifications.presentation.views_control": {
       "path": "notifications/presentation/views_control.py",
@@ -14040,7 +14187,9 @@
       "test": [
         "tests/control/test_views.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.views_control"
+      ]
     },
     "notifications.presentation.views_feedback": {
       "path": "notifications/presentation/views_feedback.py",
@@ -14065,7 +14214,9 @@
       "test": [
         "tests/control/test_views.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.views_feedback"
+      ]
     },
     "notifications.presentation.views_run": {
       "path": "notifications/presentation/views_run.py",
@@ -14106,7 +14257,7 @@
         "notifications.audit",
         "notifications.commands",
         "notifications.work_launcher",
-        "platform_core.orchestration"
+        "platform_core.orchestration.work_profile"
       ],
       "side_effects": [
         "unannotated"
@@ -14114,7 +14265,9 @@
       "test": [
         "tests/control/test_views.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.views_run"
+      ]
     },
     "notifications.presentation.views_subtask": {
       "path": "notifications/presentation/views_subtask.py",
@@ -14152,7 +14305,9 @@
       "test": [
         "tests/control/test_views.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.views_subtask"
+      ]
     },
     "notifications.presentation.views_terminal": {
       "path": "notifications/presentation/views_terminal.py",
@@ -14178,7 +14333,9 @@
       "test": [
         "tests/control/test_views_terminal.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.views_terminal"
+      ]
     },
     "notifications.presentation.visuals": {
       "path": "notifications/presentation/visuals.py",
@@ -14194,7 +14351,9 @@
       "test": [
         "tests/notifications/test_visuals.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.visuals"
+      ]
     },
     "notifications.presentation.visuals_cards": {
       "path": "notifications/presentation/visuals_cards.py",
@@ -14240,7 +14399,9 @@
       "test": [
         "tests/notifications/test_visuals.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.visuals_cards"
+      ]
     },
     "notifications.presentation.visuals_components": {
       "path": "notifications/presentation/visuals_components.py",
@@ -14264,7 +14425,9 @@
       "test": [
         "tests/notifications/test_visuals.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.visuals_components"
+      ]
     },
     "notifications.psyche_cog": {
       "path": "notifications/psyche_cog.py",
@@ -14329,10 +14492,7 @@
       ],
       "depends_on": [
         "config",
-        "human_nature.character_vector",
-        "human_nature.charter",
-        "human_nature.psyche_commands",
-        "human_nature.self_state",
+        "human_nature",
         "notifications.commands",
         "notifications.slash"
       ],
@@ -14349,7 +14509,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.runtime.reflection_post`.",
       "exports": [],
       "depends_on": [
-        "notifications.runtime"
+        "notifications.runtime.reflection_post"
       ],
       "side_effects": [
         "unannotated"
@@ -14367,7 +14527,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.runtime.run_arc`.",
       "exports": [],
       "depends_on": [
-        "notifications.runtime"
+        "notifications.runtime.run_arc"
       ],
       "side_effects": [
         "unannotated"
@@ -14391,17 +14551,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "notifications.event_bus",
-        "notifications.lane_feed",
-        "notifications.reflection_post",
-        "notifications.run_arc",
-        "notifications.subprocess_feed",
-        "notifications.tunnel",
-        "notifications.tunnel_providers",
-        "notifications.work_launcher",
-        "notifications.work_launcher_readiness"
-      ]
+      "callers": []
     },
     "notifications.runtime.event_bus": {
       "path": "notifications/runtime/event_bus.py",
@@ -14457,7 +14607,9 @@
       "test": [
         "tests/notifications/test_event_bus.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.event_bus"
+      ]
     },
     "notifications.runtime.lane_feed": {
       "path": "notifications/runtime/lane_feed.py",
@@ -14487,7 +14639,9 @@
       "test": [
         "tests/notifications/test_lane_feed.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.lane_feed"
+      ]
     },
     "notifications.runtime.reflection_post": {
       "path": "notifications/runtime/reflection_post.py",
@@ -14518,7 +14672,7 @@
       "depends_on": [
         "config",
         "notifications.discord_bot",
-        "platform_core.orchestration"
+        "platform_core.orchestration.innovation_report"
       ],
       "side_effects": [
         "unannotated"
@@ -14526,7 +14680,9 @@
       "test": [
         "tests/notifications/test_reflection_post.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.reflection_post"
+      ]
     },
     "notifications.runtime.run_arc": {
       "path": "notifications/runtime/run_arc.py",
@@ -14589,7 +14745,9 @@
       "test": [
         "tests/control/test_run_arc.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.run_arc"
+      ]
     },
     "notifications.runtime.subprocess_feed": {
       "path": "notifications/runtime/subprocess_feed.py",
@@ -14612,7 +14770,9 @@
       "test": [
         "tests/notifications/test_subprocess_feed.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.subprocess_feed"
+      ]
     },
     "notifications.runtime.tunnel": {
       "path": "notifications/runtime/tunnel.py",
@@ -14636,7 +14796,9 @@
       "test": [
         "tests/notifications/test_tunnel.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.tunnel"
+      ]
     },
     "notifications.runtime.tunnel_providers": {
       "path": "notifications/runtime/tunnel_providers.py",
@@ -14694,7 +14856,9 @@
       "test": [
         "tests/notifications/test_tunnel.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.tunnel_providers"
+      ]
     },
     "notifications.runtime.work_launcher": {
       "path": "notifications/runtime/work_launcher.py",
@@ -14803,9 +14967,9 @@
         "config",
         "notifications.commands",
         "notifications.work_launcher_readiness",
-        "platform_core.core",
+        "platform_core.core.fsio",
         "platform_core.ops.external_project",
-        "platform_core.orchestration",
+        "platform_core.orchestration.work_profile",
         "platform_core.runtime.control",
         "platform_core.runtime.heartbeat",
         "state.task",
@@ -14817,7 +14981,9 @@
       "test": [
         "tests/execution/test_work_launcher.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.work_launcher"
+      ]
     },
     "notifications.runtime.work_launcher_readiness": {
       "path": "notifications/runtime/work_launcher_readiness.py",
@@ -14840,7 +15006,9 @@
       "test": [
         "tests/execution/test_work_launcher.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.work_launcher_readiness"
+      ]
     },
     "notifications.slash": {
       "path": "notifications/slash.py",
@@ -14873,7 +15041,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.runtime.subprocess_feed`.",
       "exports": [],
       "depends_on": [
-        "notifications.runtime"
+        "notifications.runtime.subprocess_feed"
       ],
       "side_effects": [
         "unannotated"
@@ -14895,20 +15063,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "notifications.console_hud",
-        "notifications.cv2",
-        "notifications.dashboard",
-        "notifications.health_aura",
-        "notifications.terminal_ipc",
-        "notifications.terminal_render",
-        "notifications.terminal_surface",
-        "notifications.webdash",
-        "notifications.webdash_markup",
-        "notifications.webdash_page",
-        "notifications.webdash_script",
-        "notifications.webdash_styles"
-      ]
+      "callers": []
     },
     "notifications.surfaces.console_hud": {
       "path": "notifications/surfaces/console_hud.py",
@@ -14932,7 +15087,9 @@
       "test": [
         "tests/notifications/test_console_hud.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.console_hud"
+      ]
     },
     "notifications.surfaces.cv2": {
       "path": "notifications/surfaces/cv2.py",
@@ -14989,7 +15146,9 @@
       "test": [
         "tests/notifications/test_cv2.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.cv2"
+      ]
     },
     "notifications.surfaces.dashboard": {
       "path": "notifications/surfaces/dashboard.py",
@@ -15013,8 +15172,8 @@
         "notifications.event_bus",
         "notifications.health_aura",
         "notifications.visuals",
-        "platform_core.core",
         "platform_core.core.best_effort",
+        "platform_core.core.clock",
         "state.task"
       ],
       "side_effects": [
@@ -15023,7 +15182,9 @@
       "test": [
         "tests/notifications/test_dashboard.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.dashboard"
+      ]
     },
     "notifications.surfaces.health_aura": {
       "path": "notifications/surfaces/health_aura.py",
@@ -15051,7 +15212,9 @@
       "test": [
         "tests/notifications/test_health_aura.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.health_aura"
+      ]
     },
     "notifications.surfaces.terminal_ipc": {
       "path": "notifications/surfaces/terminal_ipc.py",
@@ -15102,7 +15265,7 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core"
+        "platform_core.core.fsio"
       ],
       "side_effects": [
         "writes state/ipc/terminal_nav.json + state/ipc/terminal_mirror.json"
@@ -15110,7 +15273,9 @@
       "test": [
         "tests/control/test_terminal_ipc.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.terminal_ipc"
+      ]
     },
     "notifications.surfaces.terminal_render": {
       "path": "notifications/surfaces/terminal_render.py",
@@ -15138,7 +15303,9 @@
       "test": [
         "tests/notifications/test_terminal_render.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.terminal_render"
+      ]
     },
     "notifications.surfaces.terminal_surface": {
       "path": "notifications/surfaces/terminal_surface.py",
@@ -15193,7 +15360,9 @@
       "test": [
         "tests/notifications/test_terminal_surface.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.terminal_surface"
+      ]
     },
     "notifications.surfaces.webdash": {
       "path": "notifications/surfaces/webdash.py",
@@ -15222,8 +15391,8 @@
         "notifications.health_aura",
         "notifications.webdash_page",
         "platform_core.core.best_effort",
-        "platform_core.runtime",
         "platform_core.runtime.control",
+        "platform_core.runtime.perf",
         "state.task"
       ],
       "side_effects": [
@@ -15234,7 +15403,9 @@
         "tests/notifications/test_bloomberg_webdash.py",
         "tests/notifications/test_webdash_page_split.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.webdash"
+      ]
     },
     "notifications.surfaces.webdash_markup": {
       "path": "notifications/surfaces/webdash_markup.py",
@@ -15247,7 +15418,9 @@
       "test": [
         "tests/notifications/test_webdash_page_split.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.webdash_markup"
+      ]
     },
     "notifications.surfaces.webdash_page": {
       "path": "notifications/surfaces/webdash_page.py",
@@ -15265,7 +15438,9 @@
       "test": [
         "tests/notifications/test_webdash_page_split.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.webdash_page"
+      ]
     },
     "notifications.surfaces.webdash_script": {
       "path": "notifications/surfaces/webdash_script.py",
@@ -15278,7 +15453,9 @@
       "test": [
         "tests/notifications/test_webdash_page_split.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.webdash_script"
+      ]
     },
     "notifications.surfaces.webdash_styles": {
       "path": "notifications/surfaces/webdash_styles.py",
@@ -15291,14 +15468,16 @@
       "test": [
         "tests/notifications/test_webdash_page_split.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.webdash_styles"
+      ]
     },
     "notifications.terminal_ipc": {
       "path": "notifications/terminal_ipc.py",
       "purpose": "Compatibility alias for :mod:`notifications.surfaces.terminal_ipc`.",
       "exports": [],
       "depends_on": [
-        "notifications.surfaces"
+        "notifications.surfaces.terminal_ipc"
       ],
       "side_effects": [
         "unannotated"
@@ -15317,7 +15496,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.surfaces.terminal_render`.",
       "exports": [],
       "depends_on": [
-        "notifications.surfaces"
+        "notifications.surfaces.terminal_render"
       ],
       "side_effects": [
         "unannotated"
@@ -15334,7 +15513,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.surfaces.terminal_surface`.",
       "exports": [],
       "depends_on": [
-        "notifications.surfaces"
+        "notifications.surfaces.terminal_surface"
       ],
       "side_effects": [
         "unannotated"
@@ -15351,7 +15530,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.presentation.theme`.",
       "exports": [],
       "depends_on": [
-        "notifications.presentation"
+        "notifications.presentation.theme"
       ],
       "side_effects": [
         "unannotated"
@@ -15372,7 +15551,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.runtime.tunnel`.",
       "exports": [],
       "depends_on": [
-        "notifications.runtime"
+        "notifications.runtime.tunnel"
       ],
       "side_effects": [
         "unannotated"
@@ -15389,7 +15568,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.runtime.tunnel_providers`.",
       "exports": [],
       "depends_on": [
-        "notifications.runtime"
+        "notifications.runtime.tunnel_providers"
       ],
       "side_effects": [
         "unannotated"
@@ -15406,7 +15585,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.presentation.views`.",
       "exports": [],
       "depends_on": [
-        "notifications.presentation"
+        "notifications.presentation.views"
       ],
       "side_effects": [
         "unannotated"
@@ -15428,7 +15607,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.presentation.views_control`.",
       "exports": [],
       "depends_on": [
-        "notifications.presentation"
+        "notifications.presentation.views_control"
       ],
       "side_effects": [
         "unannotated"
@@ -15447,7 +15626,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.presentation.views_feedback`.",
       "exports": [],
       "depends_on": [
-        "notifications.presentation"
+        "notifications.presentation.views_feedback"
       ],
       "side_effects": [
         "unannotated"
@@ -15465,7 +15644,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.presentation.views_run`.",
       "exports": [],
       "depends_on": [
-        "notifications.presentation"
+        "notifications.presentation.views_run"
       ],
       "side_effects": [
         "unannotated"
@@ -15482,7 +15661,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.presentation.views_subtask`.",
       "exports": [],
       "depends_on": [
-        "notifications.presentation"
+        "notifications.presentation.views_subtask"
       ],
       "side_effects": [
         "unannotated"
@@ -15499,7 +15678,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.presentation.views_terminal`.",
       "exports": [],
       "depends_on": [
-        "notifications.presentation"
+        "notifications.presentation.views_terminal"
       ],
       "side_effects": [
         "unannotated"
@@ -15516,7 +15695,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.presentation.visuals`.",
       "exports": [],
       "depends_on": [
-        "notifications.presentation"
+        "notifications.presentation.visuals"
       ],
       "side_effects": [
         "unannotated"
@@ -15535,7 +15714,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.presentation.visuals_cards`.",
       "exports": [],
       "depends_on": [
-        "notifications.presentation"
+        "notifications.presentation.visuals_cards"
       ],
       "side_effects": [
         "unannotated"
@@ -15552,7 +15731,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.presentation.visuals_components`.",
       "exports": [],
       "depends_on": [
-        "notifications.presentation"
+        "notifications.presentation.visuals_components"
       ],
       "side_effects": [
         "unannotated"
@@ -15570,7 +15749,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.surfaces.webdash`.",
       "exports": [],
       "depends_on": [
-        "notifications.surfaces"
+        "notifications.surfaces.webdash"
       ],
       "side_effects": [
         "unannotated"
@@ -15591,7 +15770,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.surfaces.webdash_markup`.",
       "exports": [],
       "depends_on": [
-        "notifications.surfaces"
+        "notifications.surfaces.webdash_markup"
       ],
       "side_effects": [
         "unannotated"
@@ -15608,7 +15787,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.surfaces.webdash_page`.",
       "exports": [],
       "depends_on": [
-        "notifications.surfaces"
+        "notifications.surfaces.webdash_page"
       ],
       "side_effects": [
         "unannotated"
@@ -15625,7 +15804,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.surfaces.webdash_script`.",
       "exports": [],
       "depends_on": [
-        "notifications.surfaces"
+        "notifications.surfaces.webdash_script"
       ],
       "side_effects": [
         "unannotated"
@@ -15642,7 +15821,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.surfaces.webdash_styles`.",
       "exports": [],
       "depends_on": [
-        "notifications.surfaces"
+        "notifications.surfaces.webdash_styles"
       ],
       "side_effects": [
         "unannotated"
@@ -15659,7 +15838,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.runtime.work_launcher`.",
       "exports": [],
       "depends_on": [
-        "notifications.runtime"
+        "notifications.runtime.work_launcher"
       ],
       "side_effects": [
         "unannotated"
@@ -15680,7 +15859,7 @@
       "purpose": "Compatibility alias for :mod:`notifications.runtime.work_launcher_readiness`.",
       "exports": [],
       "depends_on": [
-        "notifications.runtime"
+        "notifications.runtime.work_launcher_readiness"
       ],
       "side_effects": [
         "unannotated"
@@ -15707,7 +15886,7 @@
       "depends_on": [
         "agents.adversary",
         "agents.executor",
-        "agents.planning",
+        "agents.planning.council_seam",
         "agents.replanner",
         "agents.verifier",
         "config",
@@ -15740,7 +15919,13 @@
         "tests/orchestration/test_orchestrator_with_registry.py"
       ],
       "callers": [
-        "platform_core.orchestration.run_phase_mixin"
+        "main",
+        "notifications.bot.cogs.runs_cog",
+        "platform_core.cli.main_cli",
+        "platform_core.orchestration.run_phase_mixin",
+        "platform_core.simulator.chaos",
+        "platform_core.simulator.simulation",
+        "platform_core.simulator.testing.outcome_runner"
       ]
     },
     "platform_core": {
@@ -15764,16 +15949,10 @@
       ],
       "test": [],
       "callers": [
-        "config",
-        "main",
-        "platform_core.app_config.discord",
-        "platform_core.app_config.llm",
-        "platform_core.app_config.paths",
         "platform_core.knowledge_base.builder",
         "platform_core.knowledge_base.compress",
         "platform_core.knowledge_base.scraper",
-        "platform_core.orchestration.knowledge_refresh",
-        "platform_core.simulator.testing.e2e"
+        "platform_core.orchestration.knowledge_refresh"
       ]
     },
     "platform_core.app_config._env": {
@@ -15848,8 +16027,8 @@
         }
       ],
       "depends_on": [
-        "platform_core.app_config",
-        "platform_core.app_config._env"
+        "platform_core.app_config._env",
+        "platform_core.app_config.settings"
       ],
       "side_effects": [
         "none"
@@ -15963,8 +16142,8 @@
         }
       ],
       "depends_on": [
-        "platform_core.app_config",
-        "platform_core.app_config._env"
+        "platform_core.app_config._env",
+        "platform_core.app_config.settings"
       ],
       "side_effects": [
         "none"
@@ -16005,8 +16184,8 @@
         }
       ],
       "depends_on": [
-        "platform_core.app_config",
-        "platform_core.app_config._env"
+        "platform_core.app_config._env",
+        "platform_core.app_config.settings"
       ],
       "side_effects": [
         "ensureDirs creates the runtime directory tree"
@@ -16136,7 +16315,7 @@
         "platform_core.app_config.llm",
         "platform_core.app_config.paths",
         "platform_core.app_config.prompts",
-        "platform_core.core"
+        "platform_core.core.fsio"
       ],
       "side_effects": [
         "setOverride writes sie_overrides.json",
@@ -16150,7 +16329,12 @@
         "tests/platform/test_epic_flags_config.py"
       ],
       "callers": [
-        "config"
+        "config",
+        "main",
+        "platform_core.app_config.discord",
+        "platform_core.app_config.llm",
+        "platform_core.app_config.paths",
+        "platform_core.simulator.testing.e2e"
       ]
     },
     "platform_core.cli": {
@@ -16162,9 +16346,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "main"
-      ]
+      "callers": []
     },
     "platform_core.cli.main_cli": {
       "path": "platform_core/cli/main_cli.py",
@@ -16187,7 +16369,7 @@
       ],
       "depends_on": [
         "config",
-        "orchestrator.refreshClaudeKnowledge",
+        "orchestrator",
         "platform_core.ops.doctor",
         "platform_core.orchestration.run_loop",
         "state.task"
@@ -16211,29 +16393,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "agents.review.verification_diff",
-        "learning.evolution.selfplay",
-        "learning.evolution.sie",
-        "learning.feedback.adversary_trust",
-        "main",
-        "memory.stores.obsidian",
-        "memory.stores.user_prefs",
-        "notifications.audit",
-        "notifications.runtime.work_launcher",
-        "notifications.surfaces.dashboard",
-        "notifications.surfaces.terminal_ipc",
-        "platform_core.app_config.settings",
-        "platform_core.orchestration.github",
-        "platform_core.orchestration.pr_feedback",
-        "platform_core.orchestration.run_loop",
-        "platform_core.orchestration.validation_cache",
-        "platform_core.runtime.heartbeat",
-        "platform_core.runtime.perf",
-        "platform_core.runtime.trajectory",
-        "platform_core.runtime.worktree",
-        "state.task_io"
-      ]
+      "callers": []
     },
     "platform_core.core.best_effort": {
       "path": "platform_core/core/best_effort.py",
@@ -16384,12 +16544,16 @@
         "tests/platform/test_clock.py"
       ],
       "callers": [
+        "learning.feedback.adversary_trust",
+        "notifications.audit",
         "notifications.surfaces.cv2",
+        "notifications.surfaces.dashboard",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.time_utils",
         "platform_core.runtime.control_store",
         "platform_core.runtime.heartbeat",
-        "platform_core.runtime.resilience"
+        "platform_core.runtime.resilience",
+        "platform_core.runtime.trajectory"
       ]
     },
     "platform_core.core.concurrency": {
@@ -16625,7 +16789,7 @@
       "depends_on": [
         "config",
         "platform_core.core.identity",
-        "platform_core.runtime"
+        "platform_core.runtime.perf"
       ],
       "side_effects": [
         "unannotated"
@@ -16635,7 +16799,8 @@
       ],
       "callers": [
         "orchestrator",
-        "platform_core.orchestration.subtask"
+        "platform_core.orchestration.subtask",
+        "platform_core.orchestration.validation_cache"
       ]
     },
     "platform_core.core.fsio": {
@@ -16701,7 +16866,18 @@
       "test": [
         "tests/execution/test_fsio.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.evolution.selfplay",
+        "learning.evolution.sie",
+        "main",
+        "memory.stores.obsidian",
+        "memory.stores.user_prefs",
+        "notifications.runtime.work_launcher",
+        "notifications.surfaces.terminal_ipc",
+        "platform_core.app_config.settings",
+        "platform_core.runtime.heartbeat",
+        "state.task_io"
+      ]
     },
     "platform_core.core.galaxy_evidence": {
       "path": "platform_core/core/galaxy_evidence.py",
@@ -17049,8 +17225,13 @@
         "tests/platform/test_git_io.py"
       ],
       "callers": [
+        "agents.review.verification_diff",
         "platform_core.ops.doctor",
-        "platform_core.ops.health"
+        "platform_core.ops.health",
+        "platform_core.orchestration.github",
+        "platform_core.orchestration.pr_feedback",
+        "platform_core.orchestration.run_loop",
+        "platform_core.runtime.worktree"
       ]
     },
     "platform_core.core.identity": {
@@ -17148,7 +17329,12 @@
       "test": [
         "tests/platform/test_jsonl_io.py"
       ],
-      "callers": []
+      "callers": [
+        "learning.feedback.adversary_trust",
+        "notifications.audit",
+        "platform_core.runtime.perf",
+        "platform_core.runtime.trajectory"
+      ]
     },
     "platform_core.core.lifecycle": {
       "path": "platform_core/core/lifecycle.py",
@@ -17337,7 +17523,7 @@
       "depends_on": [
         "config",
         "knowledge",
-        "platform_core.orchestration"
+        "platform_core.orchestration.work_profile"
       ],
       "side_effects": [
         "unannotated"
@@ -17412,12 +17598,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "agents.execution.claude_sdk_bridge",
-        "platform_core.execution.wiring",
-        "platform_core.ops.health",
-        "platform_core.orchestration.execute_mixin"
-      ]
+      "callers": []
     },
     "platform_core.execution.backends": {
       "path": "platform_core/execution/backends/__init__.py",
@@ -17525,7 +17706,7 @@
       "depends_on": [
         "config",
         "platform_core.execution.environment",
-        "platform_core.runtime"
+        "platform_core.runtime.worktree"
       ],
       "side_effects": [
         "runs git via platform_core.runtime.worktree",
@@ -17753,7 +17934,8 @@
         "tests/execution/test_execution_router.py"
       ],
       "callers": [
-        "platform_core.execution"
+        "platform_core.execution",
+        "platform_core.execution.wiring"
       ]
     },
     "platform_core.execution.security": {
@@ -17886,9 +18068,9 @@
         }
       ],
       "depends_on": [
-        "platform_core.execution",
         "platform_core.execution.launch_guard",
-        "platform_core.orchestration"
+        "platform_core.execution.router",
+        "platform_core.orchestration.work_profile"
       ],
       "side_effects": [
         "emits env_* events via router (best-effort)"
@@ -18069,10 +18251,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "platform_core.orchestration.run_phase_mixin",
-        "state.task_schema"
-      ]
+      "callers": []
     },
     "platform_core.ops.codenames": {
       "path": "platform_core/ops/codenames.py",
@@ -18093,7 +18272,9 @@
       "test": [
         "tests/platform/test_codenames.py"
       ],
-      "callers": []
+      "callers": [
+        "state.task_schema"
+      ]
     },
     "platform_core.ops.doctor": {
       "path": "platform_core/ops/doctor.py",
@@ -18230,7 +18411,6 @@
         "config",
         "platform_core.core.concurrency",
         "platform_core.core.git_io",
-        "platform_core.execution",
         "platform_core.execution.provider_probe"
       ],
       "side_effects": [
@@ -18304,7 +18484,9 @@
       "test": [
         "tests/platform/test_retention.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.run_phase_mixin"
+      ]
     },
     "platform_core.ops.staging_validator": {
       "path": "platform_core/ops/staging_validator.py",
@@ -18416,44 +18598,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "agents.discovery",
-        "agents.discovery.ledger_bridge",
-        "agents.planning.elaborator.candidates",
-        "agents.planning.replanner",
-        "agents.review.architect",
-        "main",
-        "notifications.bot.cogs.runs_cog",
-        "notifications.presentation.views_run",
-        "notifications.runtime.reflection_post",
-        "notifications.runtime.work_launcher",
-        "platform_core.core.surfaces",
-        "platform_core.execution.wiring",
-        "platform_core.orchestration.branch_runner",
-        "platform_core.orchestration.control_mixin",
-        "platform_core.orchestration.control_review_mixin",
-        "platform_core.orchestration.dual_ledger_planner",
-        "platform_core.orchestration.dual_ledger_replan",
-        "platform_core.orchestration.evidence_gate",
-        "platform_core.orchestration.execute_delegates_mixin",
-        "platform_core.orchestration.execute_mixin",
-        "platform_core.orchestration.fork_policy",
-        "platform_core.orchestration.generational",
-        "platform_core.orchestration.innovation_report",
-        "platform_core.orchestration.invention_seeding",
-        "platform_core.orchestration.judge_panel",
-        "platform_core.orchestration.llm_mixin",
-        "platform_core.orchestration.plan_mixin",
-        "platform_core.orchestration.review_mixin",
-        "platform_core.orchestration.run_loop",
-        "platform_core.orchestration.run_loop_mixin",
-        "platform_core.orchestration.run_loop_replan_mixin",
-        "platform_core.orchestration.run_phase_mixin",
-        "platform_core.orchestration.run_phase_outcome",
-        "platform_core.orchestration.society.roles",
-        "platform_core.orchestration.society.society_batch",
-        "platform_core.orchestration.solution_space"
-      ]
+      "callers": []
     },
     "platform_core.orchestration.adversary_loop": {
       "path": "platform_core/orchestration/adversary_loop.py",
@@ -18481,7 +18626,7 @@
         "config",
         "notifications.cast",
         "notifications.discord_bot",
-        "platform_core.runtime"
+        "platform_core.runtime.worktree"
       ],
       "side_effects": [
         "spawns Claude subprocesses",
@@ -18491,7 +18636,9 @@
       "test": [
         "tests/orchestration/test_adversary.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.execute_delegates_mixin"
+      ]
     },
     "platform_core.orchestration.brain_io": {
       "path": "platform_core/orchestration/brain_io.py",
@@ -18573,7 +18720,7 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.orchestration"
+        "platform_core.orchestration.fork_seams"
       ],
       "side_effects": [
         "unannotated"
@@ -18581,7 +18728,9 @@
       "test": [
         "tests/orchestration/test_branch_runner.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.solution_space"
+      ]
     },
     "platform_core.orchestration.clarification_replan": {
       "path": "platform_core/orchestration/clarification_replan.py",
@@ -18604,7 +18753,9 @@
       "test": [
         "tests/orchestration/test_clarification_replan.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.dual_ledger_replan"
+      ]
     },
     "platform_core.orchestration.code_graph": {
       "path": "platform_core/orchestration/code_graph.py",
@@ -18663,7 +18814,9 @@
       "test": [
         "tests/orchestration/test_code_graph.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.invention_seeding"
+      ]
     },
     "platform_core.orchestration.compaction": {
       "path": "platform_core/orchestration/compaction.py",
@@ -18701,7 +18854,9 @@
       "test": [
         "tests/orchestration/test_compaction.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.llm_mixin"
+      ]
     },
     "platform_core.orchestration.conflict_sim": {
       "path": "platform_core/orchestration/conflict_sim.py",
@@ -18745,7 +18900,9 @@
       "test": [
         "tests/orchestration/test_conflict_sim.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.invention_seeding"
+      ]
     },
     "platform_core.orchestration.control_mixin": {
       "path": "platform_core/orchestration/control_mixin.py",
@@ -18768,14 +18925,15 @@
         "notifications.engagement",
         "notifications.jerry_client",
         "platform_core.core.best_effort",
-        "platform_core.orchestration",
         "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.control_ops",
         "platform_core.orchestration.control_review_mixin",
         "platform_core.orchestration.github",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.subtask",
-        "platform_core.runtime",
+        "platform_core.orchestration.work_profile",
         "platform_core.runtime.control",
+        "platform_core.runtime.heartbeat",
         "selfmod",
         "state.task"
       ],
@@ -18812,7 +18970,9 @@
       "test": [
         "tests/orchestration/test_control_ops.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.control_mixin"
+      ]
     },
     "platform_core.orchestration.control_review_mixin": {
       "path": "platform_core/orchestration/control_review_mixin.py",
@@ -18830,8 +18990,8 @@
         "agents.second_brain",
         "config",
         "notifications.dashboard",
-        "platform_core.orchestration",
         "platform_core.orchestration.run_loop",
+        "platform_core.orchestration.work_profile",
         "state.task"
       ],
       "side_effects": [
@@ -18900,8 +19060,9 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.orchestration",
-        "platform_core.orchestration.brain_json"
+        "platform_core.orchestration.brain_json",
+        "platform_core.orchestration.task_ledger",
+        "platform_core.orchestration.work_profile"
       ],
       "side_effects": [
         "unannotated"
@@ -18909,7 +19070,12 @@
       "test": [
         "tests/orchestration/test_dual_ledger_planner.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.dual_ledger_replan",
+        "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.run_loop_replan_mixin",
+        "platform_core.orchestration.run_phase_mixin"
+      ]
     },
     "platform_core.orchestration.dual_ledger_replan": {
       "path": "platform_core/orchestration/dual_ledger_replan.py",
@@ -18936,7 +19102,8 @@
         "learning.solution_cache",
         "memory.experience",
         "notifications.run_arc",
-        "platform_core.orchestration",
+        "platform_core.orchestration.clarification_replan",
+        "platform_core.orchestration.dual_ledger_planner",
         "state.task"
       ],
       "side_effects": [
@@ -18945,7 +19112,9 @@
       "test": [
         "tests/orchestration/test_stall_replan_trigger.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.execute_delegates_mixin"
+      ]
     },
     "platform_core.orchestration.emitter_scheduler": {
       "path": "platform_core/orchestration/emitter_scheduler.py",
@@ -18983,7 +19152,9 @@
       "test": [
         "tests/orchestration/test_emitter_scheduler.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.invention_seeding"
+      ]
     },
     "platform_core.orchestration.evidence_extract": {
       "path": "platform_core/orchestration/evidence_extract.py",
@@ -19027,7 +19198,10 @@
       "test": [
         "tests/orchestration/test_evidence_extract.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.innovation_report",
+        "platform_core.orchestration.invention_seeding"
+      ]
     },
     "platform_core.orchestration.evidence_gate": {
       "path": "platform_core/orchestration/evidence_gate.py",
@@ -19070,7 +19244,7 @@
         "agents.verifier",
         "config",
         "platform_core.core.best_effort",
-        "platform_core.orchestration"
+        "platform_core.orchestration.work_profile"
       ],
       "side_effects": [
         "spawns a read-only Claude subprocess",
@@ -19080,7 +19254,9 @@
       "test": [
         "tests/execution/test_evidence_gate.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.execute_delegates_mixin"
+      ]
     },
     "platform_core.orchestration.evolution_hook": {
       "path": "platform_core/orchestration/evolution_hook.py",
@@ -19096,7 +19272,7 @@
       ],
       "depends_on": [
         "config",
-        "learning.evolution",
+        "learning.evolution.evolver",
         "learning.safety"
       ],
       "side_effects": [
@@ -19120,9 +19296,10 @@
         }
       ],
       "depends_on": [
-        "agents.planning",
+        "agents.planning.assumption_resolver",
+        "agents.planning.question_memory",
         "config",
-        "human_nature.run_events",
+        "human_nature",
         "notifications.dashboard",
         "notifications.event_bus",
         "notifications.subprocess_feed",
@@ -19133,7 +19310,7 @@
         "platform_core.orchestration.human_nature_bridge.authority_gate",
         "platform_core.orchestration.step_resume",
         "platform_core.orchestration.step_sink",
-        "platform_core.runtime",
+        "platform_core.runtime.autonomy_allowance",
         "platform_core.runtime.control",
         "state.task"
       ],
@@ -19162,7 +19339,9 @@
       "depends_on": [
         "config",
         "notifications.dashboard",
-        "platform_core.orchestration",
+        "platform_core.orchestration.adversary_loop",
+        "platform_core.orchestration.dual_ledger_replan",
+        "platform_core.orchestration.evidence_gate",
         "platform_core.orchestration.self_ref_gate",
         "platform_core.runtime.control",
         "platform_core.runtime.cost_budget",
@@ -19209,11 +19388,10 @@
         "notifications.discord_bot",
         "platform_core.core.best_effort",
         "platform_core.core.surfaces",
-        "platform_core.execution",
         "platform_core.execution.wiring",
-        "platform_core.orchestration",
         "platform_core.orchestration.execute_attempt_mixin",
         "platform_core.orchestration.execute_delegates_mixin",
+        "platform_core.orchestration.solution_space",
         "platform_core.orchestration.subtask",
         "platform_core.runtime.control",
         "state.task"
@@ -19267,8 +19445,8 @@
         "config",
         "developer_tools.exploration",
         "developer_tools.introspection",
-        "platform_core.orchestration",
-        "platform_core.orchestration.subtask"
+        "platform_core.orchestration.subtask",
+        "platform_core.orchestration.work_profile"
       ],
       "side_effects": [
         "unannotated"
@@ -19276,7 +19454,9 @@
       "test": [
         "tests/orchestration/test_fork_policy.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.solution_space"
+      ]
     },
     "platform_core.orchestration.fork_seams": {
       "path": "platform_core/orchestration/fork_seams.py",
@@ -19319,7 +19499,7 @@
         }
       ],
       "depends_on": [
-        "platform_core.runtime"
+        "platform_core.runtime.worktree"
       ],
       "side_effects": [
         "unannotated"
@@ -19327,7 +19507,11 @@
       "test": [
         "tests/orchestration/test_fork_seams.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.branch_runner",
+        "platform_core.orchestration.judge_panel",
+        "platform_core.orchestration.solution_space"
+      ]
     },
     "platform_core.orchestration.generational": {
       "path": "platform_core/orchestration/generational.py",
@@ -19357,8 +19541,8 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.orchestration",
-        "platform_core.orchestration.qd_archive"
+        "platform_core.orchestration.qd_archive",
+        "platform_core.orchestration.qd_emitters"
       ],
       "side_effects": [
         "none (run_gen callback is caller-supplied)"
@@ -19366,7 +19550,9 @@
       "test": [
         "tests/orchestration/test_generational.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.solution_space"
+      ]
     },
     "platform_core.orchestration.github": {
       "path": "platform_core/orchestration/github.py",
@@ -19382,7 +19568,7 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core",
+        "platform_core.core.git_io",
         "platform_core.orchestration.validation_cache"
       ],
       "side_effects": [
@@ -19400,7 +19586,17 @@
       "path": "platform_core/orchestration/human_nature_bridge/__init__.py",
       "purpose": "Human-Nature layer bridge -- wires human_nature.integration into run-loop boundary hooks.",
       "exports": [],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.orchestration.human_nature_bridge._common",
+        "platform_core.orchestration.human_nature_bridge.affect",
+        "platform_core.orchestration.human_nature_bridge.execution",
+        "platform_core.orchestration.human_nature_bridge.instinct",
+        "platform_core.orchestration.human_nature_bridge.inventor",
+        "platform_core.orchestration.human_nature_bridge.lifecycle",
+        "platform_core.orchestration.human_nature_bridge.planning",
+        "platform_core.orchestration.human_nature_bridge.society",
+        "platform_core.orchestration.human_nature_bridge.verification"
+      ],
       "side_effects": [
         "mutates state.meta when enabled",
         "writes continuity letters + ab_runs.db rows"
@@ -19430,7 +19626,17 @@
         "none"
       ],
       "test": [],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge",
+        "platform_core.orchestration.human_nature_bridge.affect",
+        "platform_core.orchestration.human_nature_bridge.execution",
+        "platform_core.orchestration.human_nature_bridge.instinct",
+        "platform_core.orchestration.human_nature_bridge.inventor",
+        "platform_core.orchestration.human_nature_bridge.lifecycle",
+        "platform_core.orchestration.human_nature_bridge.planning",
+        "platform_core.orchestration.human_nature_bridge.society",
+        "platform_core.orchestration.human_nature_bridge.verification"
+      ]
     },
     "platform_core.orchestration.human_nature_bridge.affect": {
       "path": "platform_core/orchestration/human_nature_bridge/affect.py",
@@ -19453,9 +19659,9 @@
       ],
       "depends_on": [
         "config",
-        "human_nature.emotions",
-        "human_nature.prototypes",
-        "platform_core.core.best_effort"
+        "human_nature",
+        "platform_core.core.best_effort",
+        "platform_core.orchestration.human_nature_bridge._common"
       ],
       "side_effects": [
         "mutates state.meta[\"hn_behavior\"] when enabled"
@@ -19466,7 +19672,9 @@
         "tests/orchestration/test_bridge_affect_manifold.py",
         "tests/platform/test_ci_affected.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge"
+      ]
     },
     "platform_core.orchestration.human_nature_bridge.authority_gate": {
       "path": "platform_core/orchestration/human_nature_bridge/authority_gate.py",
@@ -19481,8 +19689,7 @@
         }
       ],
       "depends_on": [
-        "human_nature.authority",
-        "human_nature.operator_authority"
+        "human_nature"
       ],
       "side_effects": [
         "none"
@@ -19491,7 +19698,10 @@
         "tests/orchestration/test_authority_gate.py"
       ],
       "callers": [
-        "platform_core.orchestration.execute_attempt_mixin"
+        "platform_core.orchestration.execute_attempt_mixin",
+        "platform_core.orchestration.human_nature_bridge.instinct",
+        "platform_core.orchestration.human_nature_bridge.planning",
+        "platform_core.orchestration.human_nature_bridge.verification"
       ]
     },
     "platform_core.orchestration.human_nature_bridge.execution": {
@@ -19529,8 +19739,9 @@
       ],
       "depends_on": [
         "config",
-        "human_nature.integration",
-        "memory.retrieval"
+        "human_nature",
+        "memory.retrieval",
+        "platform_core.orchestration.human_nature_bridge._common"
       ],
       "side_effects": [
         "none"
@@ -19551,7 +19762,9 @@
         "tests/planning/test_pre_execution_council_live_only.py",
         "tests/planning/test_pre_execution_council_seam.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge"
+      ]
     },
     "platform_core.orchestration.human_nature_bridge.instinct": {
       "path": "platform_core/orchestration/human_nature_bridge/instinct.py",
@@ -19567,11 +19780,10 @@
       ],
       "depends_on": [
         "config",
-        "human_nature.instinct_signal",
-        "human_nature.instinct_stream",
-        "human_nature.run_events",
-        "human_nature.scar_graph",
-        "platform_core.core.best_effort"
+        "human_nature",
+        "platform_core.core.best_effort",
+        "platform_core.orchestration.human_nature_bridge._common",
+        "platform_core.orchestration.human_nature_bridge.authority_gate"
       ],
       "side_effects": [
         "mutates state.meta[\"hn_instinct\"] when enabled and a motif matches"
@@ -19579,7 +19791,9 @@
       "test": [
         "tests/notifications/test_instinct.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge"
+      ]
     },
     "platform_core.orchestration.human_nature_bridge.inventor": {
       "path": "platform_core/orchestration/human_nature_bridge/inventor.py",
@@ -19595,9 +19809,9 @@
       ],
       "depends_on": [
         "config",
-        "human_nature.drives",
-        "human_nature.personality",
-        "platform_core.core.best_effort"
+        "human_nature",
+        "platform_core.core.best_effort",
+        "platform_core.orchestration.human_nature_bridge._common"
       ],
       "side_effects": [
         "mutates state.meta[\"hn_inventor\"] when active"
@@ -19607,7 +19821,9 @@
         "tests/orchestration/test_inventor_e2e.py",
         "tests/platform/test_inventor_flags_config.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge"
+      ]
     },
     "platform_core.orchestration.human_nature_bridge.lifecycle": {
       "path": "platform_core/orchestration/human_nature_bridge/lifecycle.py",
@@ -19630,14 +19846,10 @@
       ],
       "depends_on": [
         "config",
-        "human_nature.ab_harness",
-        "human_nature.continuity",
-        "human_nature.integration",
-        "human_nature.psyche_runtime",
-        "human_nature.psyche_store",
-        "human_nature.scar_graph",
+        "human_nature",
         "memory.experience_solutions",
         "platform_core.core.best_effort",
+        "platform_core.orchestration.human_nature_bridge._common",
         "platform_core.orchestration.time_utils"
       ],
       "side_effects": [
@@ -19647,7 +19859,9 @@
       "test": [
         "tests/platform/test_lifecycle.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge"
+      ]
     },
     "platform_core.orchestration.human_nature_bridge.planning": {
       "path": "platform_core/orchestration/human_nature_bridge/planning.py",
@@ -19677,13 +19891,13 @@
       ],
       "depends_on": [
         "config",
-        "human_nature.conviction",
-        "human_nature.integration",
-        "human_nature.opinions",
+        "human_nature",
         "memory.conviction_ledger",
         "memory.experience_adapters",
         "memory.experience_solutions",
-        "platform_core.core.best_effort"
+        "platform_core.core.best_effort",
+        "platform_core.orchestration.human_nature_bridge._common",
+        "platform_core.orchestration.human_nature_bridge.authority_gate"
       ],
       "side_effects": [
         "mutates state.meta[\"hn_opinions\"] / state.meta[\"hn_votes\"] when enabled"
@@ -19692,7 +19906,9 @@
         "tests/orchestration/test_bridge_planning_vote.py",
         "tests/orchestration/test_preplanning_clarification.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge"
+      ]
     },
     "platform_core.orchestration.human_nature_bridge.society": {
       "path": "platform_core/orchestration/human_nature_bridge/society.py",
@@ -19708,8 +19924,9 @@
       ],
       "depends_on": [
         "config",
-        "human_nature.conflict",
-        "platform_core.core.best_effort"
+        "human_nature",
+        "platform_core.core.best_effort",
+        "platform_core.orchestration.human_nature_bridge._common"
       ],
       "side_effects": [
         "mutates state.meta[\"hn_debate\"] when enabled",
@@ -19727,7 +19944,9 @@
         "tests/orchestration/test_society_roles.py",
         "tests/orchestration/test_society_worker.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge"
+      ]
     },
     "platform_core.orchestration.human_nature_bridge.verification": {
       "path": "platform_core/orchestration/human_nature_bridge/verification.py",
@@ -19743,7 +19962,9 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core.best_effort"
+        "platform_core.core.best_effort",
+        "platform_core.orchestration.human_nature_bridge._common",
+        "platform_core.orchestration.human_nature_bridge.authority_gate"
       ],
       "side_effects": [
         "mutates state.meta[\"hn_verify_deepen\"] when enabled and authority clears \"hold\""
@@ -19751,7 +19972,9 @@
       "test": [
         "tests/review/test_verification.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.human_nature_bridge"
+      ]
     },
     "platform_core.orchestration.innovation_report": {
       "path": "platform_core/orchestration/innovation_report.py",
@@ -19789,7 +20012,7 @@
       "depends_on": [
         "config",
         "memory.experience_evolution",
-        "platform_core.orchestration",
+        "platform_core.orchestration.evidence_extract",
         "platform_core.orchestration.invention_types"
       ],
       "side_effects": [
@@ -19798,7 +20021,10 @@
       "test": [
         "tests/orchestration/test_innovation_report.py"
       ],
-      "callers": []
+      "callers": [
+        "notifications.runtime.reflection_post",
+        "platform_core.orchestration.run_phase_outcome"
+      ]
     },
     "platform_core.orchestration.invention_gate": {
       "path": "platform_core/orchestration/invention_gate.py",
@@ -19845,8 +20071,13 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.orchestration",
-        "platform_core.orchestration.invention_types"
+        "platform_core.orchestration.code_graph",
+        "platform_core.orchestration.conflict_sim",
+        "platform_core.orchestration.emitter_scheduler",
+        "platform_core.orchestration.evidence_extract",
+        "platform_core.orchestration.invention_types",
+        "platform_core.orchestration.portfolio_optimizer",
+        "platform_core.orchestration.qd_emitters"
       ],
       "side_effects": [
         "reads the project import graph best-effort",
@@ -19855,7 +20086,9 @@
       "test": [
         "tests/orchestration/test_invention_seeding.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.discovery.ledger_bridge"
+      ]
     },
     "platform_core.orchestration.invention_types": {
       "path": "platform_core/orchestration/invention_types.py",
@@ -19999,7 +20232,8 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.orchestration"
+        "platform_core.orchestration.fork_seams",
+        "platform_core.orchestration.work_profile"
       ],
       "side_effects": [
         "unannotated"
@@ -20007,7 +20241,9 @@
       "test": [
         "tests/orchestration/test_judge_panel.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.solution_space"
+      ]
     },
     "platform_core.orchestration.knowledge_refresh": {
       "path": "platform_core/orchestration/knowledge_refresh.py",
@@ -20061,8 +20297,8 @@
         "llm_io",
         "notifications.dashboard",
         "notifications.discord_bot",
-        "platform_core.orchestration",
         "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.compaction",
         "platform_core.orchestration.knowledge_refresh",
         "state.task"
       ],
@@ -20163,7 +20399,11 @@
       "test": [
         "tests/control/test_parallel_safety.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.run_loop",
+        "platform_core.orchestration.run_loop_mixin",
+        "platform_core.orchestration.society.society_batch"
+      ]
     },
     "platform_core.orchestration.plan_concurrency": {
       "path": "platform_core/orchestration/plan_concurrency.py",
@@ -20219,6 +20459,7 @@
         "tests/orchestration/test_plan_project_context.py"
       ],
       "callers": [
+        "platform_core.orchestration.plan_mixin",
         "platform_core.orchestration.run_phase_mixin"
       ]
     },
@@ -20236,7 +20477,7 @@
       ],
       "depends_on": [
         "agents.completion_envelope",
-        "agents.planning",
+        "agents.planning.clarification_gate",
         "agents.verifier",
         "config",
         "learning.knowledge_graph",
@@ -20249,11 +20490,14 @@
         "memory.retrieval",
         "notifications.discord_bot",
         "platform_core.core.surfaces",
-        "platform_core.orchestration",
         "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.dual_ledger_planner",
+        "platform_core.orchestration.plan_context",
         "platform_core.orchestration.plan_prompts",
+        "platform_core.orchestration.plan_shape_check",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.subtask",
+        "platform_core.orchestration.work_profile",
         "state.task"
       ],
       "side_effects": [
@@ -20319,7 +20563,9 @@
       "test": [
         "tests/orchestration/test_plan_shape_check.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.plan_mixin"
+      ]
     },
     "platform_core.orchestration.portfolio_optimizer": {
       "path": "platform_core/orchestration/portfolio_optimizer.py",
@@ -20357,7 +20603,10 @@
       "test": [
         "tests/orchestration/test_portfolio_optimizer.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.planning.elaborator.candidates",
+        "platform_core.orchestration.invention_seeding"
+      ]
     },
     "platform_core.orchestration.pr_feedback": {
       "path": "platform_core/orchestration/pr_feedback.py",
@@ -20375,7 +20624,7 @@
         "config",
         "memory.experience",
         "memory.experience_pr",
-        "platform_core.core"
+        "platform_core.core.git_io"
       ],
       "side_effects": [
         "writes to experience ledger (record_feedback, record_reflection)"
@@ -20511,7 +20760,10 @@
       "test": [
         "tests/orchestration/test_qd_emitters.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.generational",
+        "platform_core.orchestration.invention_seeding"
+      ]
     },
     "platform_core.orchestration.review_mixin": {
       "path": "platform_core/orchestration/review_mixin.py",
@@ -20533,10 +20785,10 @@
         "learning.adversary_trust",
         "notifications.cast",
         "notifications.discord_bot",
-        "platform_core.orchestration",
         "platform_core.orchestration.github",
         "platform_core.orchestration.pr_feedback",
-        "platform_core.runtime",
+        "platform_core.orchestration.work_profile",
+        "platform_core.runtime.worktree",
         "state.task"
       ],
       "side_effects": [
@@ -20559,10 +20811,10 @@
         "learning.solution_cache",
         "notifications.discord_bot",
         "notifications.lane_feed",
-        "platform_core.core",
         "platform_core.core.clock",
         "platform_core.core.concurrency",
-        "platform_core.orchestration",
+        "platform_core.core.git_io",
+        "platform_core.orchestration.parallel_safety",
         "platform_core.runtime.control",
         "state.task"
       ],
@@ -20601,13 +20853,14 @@
         "memory.experience",
         "notifications.dashboard",
         "notifications.discord_bot",
-        "platform_core.orchestration",
+        "platform_core.orchestration.parallel_safety",
         "platform_core.orchestration.run_loop",
         "platform_core.orchestration.run_loop_replan_mixin",
         "platform_core.orchestration.society.society_batch",
         "platform_core.orchestration.subtask",
-        "platform_core.runtime",
         "platform_core.runtime.control",
+        "platform_core.runtime.heartbeat",
+        "platform_core.runtime.worktree",
         "state.task"
       ],
       "side_effects": [
@@ -20639,8 +20892,9 @@
         "agents.verifier",
         "config",
         "notifications.dashboard",
-        "platform_core.orchestration",
+        "platform_core.orchestration.dual_ledger_planner",
         "platform_core.orchestration.subtask",
+        "platform_core.orchestration.task_ledger",
         "state.task"
       ],
       "side_effects": [
@@ -20668,8 +20922,10 @@
       "depends_on": [
         "agents.architect",
         "agents.discovery",
-        "agents.planning",
-        "agents.planning.elaborator",
+        "agents.discovery.ledger_bridge",
+        "agents.planning.council_seam",
+        "agents.planning.elaborator.evolve",
+        "agents.planning.preplanning_clarification",
         "agents.verifier",
         "config",
         "learning.adversary_trust",
@@ -20686,18 +20942,19 @@
         "notifications.webdash",
         "orchestrator",
         "platform_core.core.best_effort",
-        "platform_core.ops",
-        "platform_core.orchestration",
+        "platform_core.ops.retention",
         "platform_core.orchestration.brain_io",
+        "platform_core.orchestration.dual_ledger_planner",
         "platform_core.orchestration.human_nature_bridge",
         "platform_core.orchestration.knowledge_refresh",
         "platform_core.orchestration.plan_concurrency",
         "platform_core.orchestration.plan_context",
+        "platform_core.orchestration.run_phase_outcome",
         "platform_core.orchestration.run_phase_surface_mixin",
         "platform_core.orchestration.step_resume",
         "platform_core.orchestration.time_utils",
-        "platform_core.runtime",
         "platform_core.runtime.control",
+        "platform_core.runtime.heartbeat",
         "state.task"
       ],
       "side_effects": [
@@ -20779,7 +21036,7 @@
         "notifications.reflection_post",
         "notifications.run_arc",
         "platform_core.core.best_effort",
-        "platform_core.orchestration",
+        "platform_core.orchestration.innovation_report",
         "platform_core.orchestration.pr_feedback",
         "platform_core.orchestration.time_utils"
       ],
@@ -20791,7 +21048,9 @@
       "test": [
         "tests/control/test_run_phase_outcome.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.run_phase_mixin"
+      ]
     },
     "platform_core.orchestration.run_phase_surface_mixin": {
       "path": "platform_core/orchestration/run_phase_surface_mixin.py",
@@ -20845,8 +21104,8 @@
         "agents.executor",
         "config",
         "notifications.dashboard",
-        "platform_core.runtime",
         "platform_core.runtime.action_risk",
+        "platform_core.runtime.autonomy_allowance",
         "platform_core.runtime.control",
         "state.task"
       ],
@@ -21043,7 +21302,7 @@
       "depends_on": [
         "agents.playbook",
         "config",
-        "platform_core.orchestration"
+        "platform_core.orchestration.work_profile"
       ],
       "side_effects": [
         "none"
@@ -21080,7 +21339,7 @@
         "memory.experience",
         "platform_core.app_config.paths",
         "platform_core.core.best_effort",
-        "platform_core.orchestration",
+        "platform_core.orchestration.parallel_safety",
         "platform_core.orchestration.society.blackboard",
         "platform_core.orchestration.society.coordinator"
       ],
@@ -21173,9 +21432,14 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.orchestration",
+        "platform_core.orchestration.branch_runner",
+        "platform_core.orchestration.fork_policy",
+        "platform_core.orchestration.fork_seams",
+        "platform_core.orchestration.generational",
         "platform_core.orchestration.invention_types",
+        "platform_core.orchestration.judge_panel",
         "platform_core.orchestration.qd_archive",
+        "platform_core.orchestration.winner_merge",
         "state.task"
       ],
       "side_effects": [
@@ -21184,7 +21448,9 @@
       "test": [
         "tests/orchestration/test_solution_space.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.execute_mixin"
+      ]
     },
     "platform_core.orchestration.step_resume": {
       "path": "platform_core/orchestration/step_resume.py",
@@ -21323,7 +21589,10 @@
       "test": [
         "tests/control/test_task_ledger.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.dual_ledger_planner",
+        "platform_core.orchestration.run_loop_replan_mixin"
+      ]
     },
     "platform_core.orchestration.time_utils": {
       "path": "platform_core/orchestration/time_utils.py",
@@ -21372,8 +21641,8 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core",
-        "platform_core.runtime"
+        "platform_core.core.epoch",
+        "platform_core.runtime.perf"
       ],
       "side_effects": [
         "writes state/validation_cache.db derived cache"
@@ -21421,7 +21690,9 @@
       "test": [
         "tests/orchestration/test_winner_merge.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.solution_space"
+      ]
     },
     "platform_core.orchestration.work_profile": {
       "path": "platform_core/orchestration/work_profile.py",
@@ -21505,7 +21776,26 @@
       "test": [
         "tests/orchestration/test_work_profile.py"
       ],
-      "callers": []
+      "callers": [
+        "agents.discovery",
+        "agents.planning.replanner",
+        "agents.review.architect",
+        "main",
+        "notifications.bot.cogs.runs_cog",
+        "notifications.presentation.views_run",
+        "notifications.runtime.work_launcher",
+        "platform_core.core.surfaces",
+        "platform_core.execution.wiring",
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.control_review_mixin",
+        "platform_core.orchestration.dual_ledger_planner",
+        "platform_core.orchestration.evidence_gate",
+        "platform_core.orchestration.fork_policy",
+        "platform_core.orchestration.judge_panel",
+        "platform_core.orchestration.plan_mixin",
+        "platform_core.orchestration.review_mixin",
+        "platform_core.orchestration.society.roles"
+      ]
     },
     "platform_core.orchestration.workflows": {
       "path": "platform_core/orchestration/workflows/__init__.py",
@@ -21554,26 +21844,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "main",
-        "memory.retrievals.core",
-        "notifications.bot.core",
-        "notifications.surfaces.webdash",
-        "platform_core.core.epoch",
-        "platform_core.execution.backends.worktree",
-        "platform_core.orchestration.adversary_loop",
-        "platform_core.orchestration.control_mixin",
-        "platform_core.orchestration.execute_attempt_mixin",
-        "platform_core.orchestration.fork_seams",
-        "platform_core.orchestration.review_mixin",
-        "platform_core.orchestration.run_loop_mixin",
-        "platform_core.orchestration.run_phase_mixin",
-        "platform_core.orchestration.safety_mixin",
-        "platform_core.orchestration.validation_cache",
-        "platform_core.runtime.autonomy_allowance",
-        "platform_core.runtime.control",
-        "platform_core.simulator.testing.e2e"
-      ]
+      "callers": []
     },
     "platform_core.runtime.action_risk": {
       "path": "platform_core/runtime/action_risk.py",
@@ -21671,7 +21942,7 @@
         }
       ],
       "depends_on": [
-        "platform_core.runtime"
+        "platform_core.runtime.control_store"
       ],
       "side_effects": [
         "writes the control_store ledger table"
@@ -21679,7 +21950,10 @@
       "test": [
         "tests/orchestration/test_autonomy_allowance.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.orchestration.execute_attempt_mixin",
+        "platform_core.orchestration.safety_mixin"
+      ]
     },
     "platform_core.runtime.control": {
       "path": "platform_core/runtime/control.py",
@@ -21702,7 +21976,7 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.runtime"
+        "platform_core.runtime.control_store"
       ],
       "side_effects": [
         "reads/writes state/control.db via control_store"
@@ -21847,7 +22121,11 @@
       "test": [
         "tests/control/test_control_store.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.runtime.autonomy_allowance",
+        "platform_core.runtime.control",
+        "platform_core.simulator.testing.e2e"
+      ]
     },
     "platform_core.runtime.cost_budget": {
       "path": "platform_core/runtime/cost_budget.py",
@@ -21961,8 +22239,8 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core",
-        "platform_core.core.clock"
+        "platform_core.core.clock",
+        "platform_core.core.fsio"
       ],
       "side_effects": [
         "writes/removes state/heartbeats/<name>.json"
@@ -21972,7 +22250,11 @@
       ],
       "callers": [
         "main",
+        "notifications.bot.core",
         "notifications.runtime.work_launcher",
+        "platform_core.orchestration.control_mixin",
+        "platform_core.orchestration.run_loop_mixin",
+        "platform_core.orchestration.run_phase_mixin",
         "state.task_io"
       ]
     },
@@ -22102,7 +22384,7 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core"
+        "platform_core.core.jsonl_io"
       ],
       "side_effects": [
         "appends + size-rotates state/perf.jsonl"
@@ -22110,7 +22392,12 @@
       "test": [
         "tests/test_perf_telemetry.py"
       ],
-      "callers": []
+      "callers": [
+        "memory.retrievals.core",
+        "notifications.surfaces.webdash",
+        "platform_core.core.epoch",
+        "platform_core.orchestration.validation_cache"
+      ]
     },
     "platform_core.runtime.resilience": {
       "path": "platform_core/runtime/resilience.py",
@@ -22204,7 +22491,8 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core"
+        "platform_core.core.clock",
+        "platform_core.core.jsonl_io"
       ],
       "side_effects": [
         "writes state/trajectories/<run_id>.jsonl"
@@ -22293,7 +22581,7 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core"
+        "platform_core.core.git_io"
       ],
       "side_effects": [
         "creates/removes git worktrees under state/.sc-worktrees/"
@@ -22301,7 +22589,13 @@
       "test": [
         "tests/execution/test_worktree.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.execution.backends.worktree",
+        "platform_core.orchestration.adversary_loop",
+        "platform_core.orchestration.fork_seams",
+        "platform_core.orchestration.review_mixin",
+        "platform_core.orchestration.run_loop_mixin"
+      ]
     },
     "platform_core.simulator": {
       "path": "platform_core/simulator/__init__.py",
@@ -22312,10 +22606,7 @@
         "unannotated"
       ],
       "test": [],
-      "callers": [
-        "platform_core.simulator.chaos",
-        "platform_core.simulator.testing.outcome_runner"
-      ]
+      "callers": []
     },
     "platform_core.simulator.bot_replay": {
       "path": "platform_core/simulator/bot_replay.py",
@@ -22402,8 +22693,8 @@
       ],
       "depends_on": [
         "config",
-        "orchestrator.Orchestrator",
-        "platform_core.simulator"
+        "orchestrator",
+        "platform_core.simulator.simulation"
       ],
       "side_effects": [
         "none"
@@ -22485,7 +22776,7 @@
       ],
       "depends_on": [
         "config",
-        "orchestrator.Orchestrator"
+        "orchestrator"
       ],
       "side_effects": [
         "unannotated"
@@ -22496,7 +22787,9 @@
       ],
       "callers": [
         "main",
-        "platform_core.simulator.testing.e2e"
+        "platform_core.simulator.chaos",
+        "platform_core.simulator.testing.e2e",
+        "platform_core.simulator.testing.outcome_runner"
       ]
     },
     "platform_core.simulator.testing": {
@@ -22553,9 +22846,9 @@
       "depends_on": [
         "config",
         "knowledge",
-        "platform_core.app_config",
+        "platform_core.app_config.settings",
         "platform_core.core.best_effort",
-        "platform_core.runtime",
+        "platform_core.runtime.control_store",
         "platform_core.simulator.simulation",
         "platform_core.simulator.testing.operator",
         "state.task"
@@ -22633,8 +22926,8 @@
         "agents.verifier",
         "config",
         "learning.outcome_evaluation",
-        "orchestrator.Orchestrator",
-        "platform_core.simulator",
+        "orchestrator",
+        "platform_core.simulator.simulation",
         "state.task"
       ],
       "side_effects": [
@@ -23081,7 +23374,7 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core",
+        "platform_core.core.fsio",
         "platform_core.runtime.heartbeat",
         "state.task_schema"
       ],
@@ -23119,7 +23412,7 @@
         "config",
         "memory.experience",
         "notifications.entry",
-        "platform_core.ops",
+        "platform_core.ops.codenames",
         "state.task_io"
       ],
       "side_effects": [
@@ -23383,7 +23676,7 @@
         }
       ],
       "depends_on": [
-        "agents.execution"
+        "agents.execution.chatgpt_browser_driver"
       ],
       "side_effects": [
         "unannotated"
@@ -23957,9 +24250,9 @@
         }
       ],
       "depends_on": [
-        "agents.planning",
         "agents.planning.elaborator",
         "agents.planning.elaborator.core",
+        "agents.planning.elaborator.precedent",
         "config",
         "state.task"
       ],
@@ -24062,7 +24355,8 @@
         }
       ],
       "depends_on": [
-        "agents.discovery",
+        "agents.discovery.inventor",
+        "agents.discovery.lenses",
         "config"
       ],
       "side_effects": [
@@ -24176,7 +24470,8 @@
         }
       ],
       "depends_on": [
-        "bootstrap.galaxy_launcher"
+        "bootstrap.galaxy_launcher.activation_crypto",
+        "bootstrap.galaxy_launcher.activation_dpapi"
       ],
       "side_effects": [
         "unannotated"
@@ -24339,98 +24634,98 @@
           "kind": "function",
           "signature": "(path: Path) -> bool",
           "summary": "True for files under the test trees (see TEST_TOP_DIRS): never mapped, never spliced.",
-          "lineno": 119
+          "lineno": 121
         },
         {
           "name": "iter_py_files",
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> list[Path]",
           "summary": "All first-party .py files (sorted, deterministic), skipping EXCLUDE_DIRS",
-          "lineno": 124
+          "lineno": 126
         },
         {
           "name": "validate_header_prefix",
           "kind": "function",
           "signature": "(value: Optional[str]) -> str",
           "summary": "Return one canonical, narrow, repository-relative directory prefix.",
-          "lineno": 150
+          "lineno": 151
         },
         {
           "name": "iter_header_files",
           "kind": "function",
           "signature": "(prefix: str) -> list[Path]",
           "summary": "Python leaves under one validated prefix, including reviewed untracked leaves.",
-          "lineno": 176
+          "lineno": 177
         },
         {
           "name": "module_dotted",
           "kind": "function",
           "signature": "(path: Path) -> str",
           "summary": "agents/adversary.py -> 'agents.adversary'",
-          "lineno": 191
+          "lineno": 192
         },
         {
           "name": "first_party_roots",
           "kind": "function",
-          "signature": "() -> set[str]",
-          "summary": "Top-level importable names: every top-level .py stem + every dir holding an __init__.py.",
-          "lineno": 198
+          "signature": "(paths: Optional[Iterable[Path]]=None) -> set[str]",
+          "summary": "Top-level importable names from the same discovered file universe used by the map.",
+          "lineno": 199
         },
         {
           "name": "parse_module",
           "kind": "function",
-          "signature": "(path: Path, roots: set[str]) -> dict",
+          "signature": "(path: Path, roots: set[str], known_modules: Optional[set[str]]=None) -> dict",
           "summary": "Extract the per-module record (sans callers, which are computed globally).",
-          "lineno": 322
+          "lineno": 365
         },
         {
           "name": "find_tests",
           "kind": "function",
           "signature": "(dotted: str, name: str) -> list[str]",
           "summary": "Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> prefix exact -> glob -> …",
-          "lineno": 340
+          "lineno": 391
         },
         {
           "name": "build_map",
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> dict",
           "summary": "Full-repo machine index",
-          "lineno": 362
+          "lineno": 413
         },
         {
           "name": "toplevel_import_graph",
           "kind": "function",
           "signature": "() -> dict[str, list[str]]",
           "summary": "{dotted-module: [first-party modules imported at LOAD time]}",
-          "lineno": 395
+          "lineno": 449
         },
         {
           "name": "render_header",
           "kind": "function",
           "signature": "(rec: dict) -> str",
           "summary": "Render the @AI-MAP block (text only, no surrounding quotes).",
-          "lineno": 410
+          "lineno": 474
         },
         {
           "name": "splice_header",
           "kind": "function",
           "signature": "(src: str, header: str) -> Optional[str]",
           "summary": "Return ``src`` with ``header`` placed inside the module docstring (below the prose,",
-          "lineno": 438
+          "lineno": 515
         },
         {
           "name": "write_outputs",
           "kind": "function",
           "signature": "(*, check: bool, only: Optional[str], no_headers: bool, headers_only: bool=False) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 475
+          "lineno": 549
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: Optional[list[str]]=None) -> int",
           "summary": "",
-          "lineno": 493
+          "lineno": 567
         }
       ],
       "depends_on": [],
@@ -24451,7 +24746,7 @@
           "kind": "function",
           "signature": "(*, check: bool, only: Optional[str], no_headers: bool, headers_only: bool=False) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 176
+          "lineno": 179
         }
       ],
       "depends_on": [],

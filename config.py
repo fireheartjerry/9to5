@@ -26,7 +26,7 @@ EXPORTS:
   set_override_detailed(knob: str, value) -> tuple[bool, bool]  -- Persist + live-apply a meta-optimizer knob change
   set_override(knob: str, value) -> bool  -- Persist + live-apply a meta-optimizer knob change (whitelisted knobs only).
   validateEnv() -> list[str]  -- Return the names of required-but-missing environment values.
-DEPENDS-ON: platform_core.app_config, platform_core.app_config._env, platform_core.app_config.paths, platform_core.app_config.settings
+DEPENDS-ON: platform_core.app_config._env, platform_core.app_config.paths, platform_core.app_config.settings
 SIDE-EFFECTS: reconfigures stdout/stderr to UTF-8; set_override writes state/sie_overrides.json
 RUN/TEST: python -m pytest tests/human_nature/test_hn_config.py tests/notifications/test_notification_config.py tests/orchestration/test_society_config.py tests/platform/test_config_bootstrap.py tests/platform/test_config_logging_lock.py tests/platform/test_epic_flags_config.py tests/platform/test_inventor_flags_config.py
 """

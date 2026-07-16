@@ -7,7 +7,7 @@ or `python health.py`. Exits 0 only if every check passes.
 EXPORTS:
   collectHealth() -> list[dict]  -- Run independent checks concurrently while preserving the public result order.
   runHealthChecks() -> bool
-DEPENDS-ON: agents.executor_env, config, platform_core.core.concurrency, platform_core.core.git_io, platform_core.execution, platform_core.execution.provider_probe
+DEPENDS-ON: agents.executor_env, config, platform_core.core.concurrency, platform_core.core.git_io, platform_core.execution.provider_probe
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_health_aura.py tests/platform/test_health_collect.py tests/platform/test_repo_health.py
 """

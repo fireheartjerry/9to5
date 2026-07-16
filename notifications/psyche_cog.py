@@ -28,7 +28,7 @@ EXPORTS:
   dispatchPsyche(content: str, *, state: Any) -> Optional[str]  -- Route a psyche bang command to its render core
   PsycheCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: config, human_nature.character_vector, human_nature.charter, human_nature.psyche_commands, human_nature.self_state, notifications.commands, notifications.slash
+DEPENDS-ON: config, human_nature, notifications.commands, notifications.slash
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_psyche_cog.py
 """

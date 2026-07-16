@@ -14,7 +14,7 @@ EXPORTS:
   cmd_charter(charter: dict[str, Any]) -> str  -- Render the active tenets and charter version for the ``!charter`` command.
   cmd_whatyouknow(user_model: dict[str, Any]) -> str  -- Render the user-model snapshot for the ``!whatyouknow`` command.
   cmd_why_i_feel(self_state: dict[str, Any], appraisal_vars: dict[str, Any]) -> str  -- Return a functional-label trace of the current affect.
-DEPENDS-ON: human_nature.character_vector, human_nature.charter, human_nature.user_model
+DEPENDS-ON: human_nature
 SIDE-EFFECTS: none (pure)
 RUN/TEST: python -m pytest tests/human_nature/test_psyche_commands.py
 """

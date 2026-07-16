@@ -8,7 +8,7 @@ EXPORTS:
   factsGate(branches: list) -> list  -- Keep only non-crashed branches whose Epic 2 receipt headline is eligible.
   scoreBranches(eligible: list, *, goal: str, score_with_brain: Optional[Callable]=None, weights: Optional[JudgeWeights]=None, work_profile=None) -> list[BranchScore]  -- Composite score per eligible branch
   pickWinner(scores: list[BranchScore]) -> Optional[str]  -- Winning branch_id
-DEPENDS-ON: config, platform_core.orchestration
+DEPENDS-ON: config, platform_core.orchestration.fork_seams, platform_core.orchestration.work_profile
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_judge_panel.py
 """

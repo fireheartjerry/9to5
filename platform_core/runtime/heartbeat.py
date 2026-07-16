@@ -18,7 +18,7 @@ EXPORTS:
   isRunAlive(task_id: str, *, grace_s: float=RUN_GRACE_SECONDS) -> bool  -- True while the orchestrator process behind ``task_id`` may still be running.
   writeBotHeartbeat() -> None  -- Gateway-bot heartbeat
   isBotAlive(*, grace_s: float=BOT_GRACE_SECONDS) -> bool  -- True while the gateway bot process may still be running (heartbeat fresh or pid alive).
-DEPENDS-ON: config, platform_core.core, platform_core.core.clock
+DEPENDS-ON: config, platform_core.core.clock, platform_core.core.fsio
 SIDE-EFFECTS: writes/removes state/heartbeats/<name>.json
 RUN/TEST: python -m pytest tests/control/test_heartbeat.py
 """

@@ -7,7 +7,7 @@ local Ollama seam with ``config.INVENTOR_MODEL``; it has no cloud/provider fallb
 EXPORTS:
   InnovatorEvent
   run_excellence(digest: dict, observer: Callable[[InnovatorEvent], None] | None=None, chat_fn=None) -> DiscoveryReport  -- Generate a local-only, observable six-idea transformative portfolio.
-DEPENDS-ON: agents.discovery, agents.discovery.models, config, llm_io, memory.novelty_index
+DEPENDS-ON: agents.discovery.corpus, agents.discovery.models, config, llm_io, memory.novelty_index
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_bridge_inventor.py tests/orchestration/test_inventor_e2e.py tests/platform/test_inventor_flags_config.py
 """

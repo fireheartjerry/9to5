@@ -11,7 +11,7 @@ EXPORTS:
   read_mirror() -> dict
   write_mirror(body: str, page_count: int, lanes: list) -> None
   clear() -> None
-DEPENDS-ON: config, platform_core.core
+DEPENDS-ON: config, platform_core.core.fsio
 SIDE-EFFECTS: writes state/ipc/terminal_nav.json + state/ipc/terminal_mirror.json
 RUN/TEST: python -m pytest tests/control/test_terminal_ipc.py
 """

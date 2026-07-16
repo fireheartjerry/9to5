@@ -6,7 +6,7 @@ Extracted from main.py to keep that module ≤350 lines.
 EXPORTS:
   extendResumeDeadline(state: 'TaskState', extend_hours: 'float | None') -> None  -- A resumed task's deadline_at is loaded as-is from disk, so a run that already hit its
   retryFailedSubtasks(state: 'TaskState') -> int  -- Reset every 'failed' subtask back to 'pending' so the run loop's ready-set selector
-DEPENDS-ON: config, orchestrator.refreshClaudeKnowledge, platform_core.ops.doctor, platform_core.orchestration.run_loop, state.task
+DEPENDS-ON: config, orchestrator, platform_core.ops.doctor, platform_core.orchestration.run_loop, state.task
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/platform/test_main_cli.py
 """

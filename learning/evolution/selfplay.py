@@ -14,7 +14,7 @@ See the spec (subsystem C + meta-loop).
 EXPORTS:
   in_work_window(now: Optional[datetime]=None) -> bool  -- Self-play only fires inside the configured work window (default 9-17, the 9-to-5).
   run(*, launch_fn: Optional[LaunchFn]=None, is_busy: Optional[Callable[[], bool]]=None, db_path: Optional[Path]=None, now: Optional[datetime]=None) -> dict[str, Any]  -- Maybe launch one self-play run
-DEPENDS-ON: config, learning.curriculum, platform_core.core
+DEPENDS-ON: config, learning.curriculum, platform_core.core.fsio
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/slow/test_full_autonomy.py
 """

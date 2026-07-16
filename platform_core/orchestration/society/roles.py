@@ -9,7 +9,7 @@ keyword + brain-hint classifier -- no heavy LLM call.
 EXPORTS:
   RoleSpec  -- A specialized worker role: scoped playbook profile + model/effort + toolkit.
   classifyRole(subtask: dict, hint: str='', work_profile=None) -> RoleSpec  -- Pick the best-fit role
-DEPENDS-ON: agents.playbook, config, platform_core.orchestration
+DEPENDS-ON: agents.playbook, config, platform_core.orchestration.work_profile
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/orchestration/test_society_roles.py
 """

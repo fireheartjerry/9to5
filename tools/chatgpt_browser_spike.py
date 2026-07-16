@@ -10,7 +10,7 @@ EXPORTS:
   run_spike(args: argparse.Namespace) -> int
   parse_args(argv: list[str]) -> argparse.Namespace
   main(argv: list[str] | None=None) -> int
-DEPENDS-ON: agents.execution
+DEPENDS-ON: agents.execution.chatgpt_browser_driver
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/tools/test_chatgpt_browser_spike.py
 """

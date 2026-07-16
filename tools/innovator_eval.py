@@ -7,7 +7,7 @@ offline deterministic contract check; default mode sends both sides to local Oll
 EXPORTS:
   run(scripted: bool=False) -> list[dict]
   main() -> None
-DEPENDS-ON: agents.discovery, config
+DEPENDS-ON: agents.discovery.inventor, agents.discovery.lenses, config
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """

@@ -12,7 +12,7 @@ EXPORTS:
   PathsCfg  -- Every 9TO5 path constant (plus the audit rotation size that rides with them).
   buildPathsCfg() -> PathsCfg  -- Compute every path from env (after loadEnvOnce) + the repo-root bootstrap.
   ensureDirs() -> None  -- Create every directory 9TO5 needs (idempotent)
-DEPENDS-ON: platform_core.app_config, platform_core.app_config._env
+DEPENDS-ON: platform_core.app_config._env, platform_core.app_config.settings
 SIDE-EFFECTS: ensureDirs creates the runtime directory tree
 RUN/TEST: python -m pytest tests/orchestration/test_society_coordinator.py tests/orchestration/test_society_off_invariance.py tests/platform/test_config_bootstrap.py tests/slow/test_epic_flags_combined.py
 """

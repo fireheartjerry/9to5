@@ -13,7 +13,7 @@ EXPORTS:
   buildClaudeCliCfg() -> ClaudeCliCfg
   SieCfg  -- SIE/learning + Obsidian service + adversary + orchestration/run-control knobs.
   buildSieCfg() -> SieCfg
-DEPENDS-ON: platform_core.app_config, platform_core.app_config._env
+DEPENDS-ON: platform_core.app_config._env, platform_core.app_config.settings
 SIDE-EFFECTS: none
 RUN/TEST: python -m pytest tests/orchestration/test_llm_compaction_numctx.py tests/orchestration/test_llm_io_pydantic.py tests/platform/test_llm_navigation.py
 """

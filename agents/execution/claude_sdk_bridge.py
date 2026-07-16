@@ -4,7 +4,7 @@
 EXPORTS:
   sdkCapabilitySnapshot(permission_mode=None, tools=None) -> dict
   buildAskUserQuestionAllow(input_data: dict, answers: dict)  -- Return the SDK PermissionResultAllow shape, or a dict fallback when SDK is absent.
-DEPENDS-ON: config, platform_core.execution, platform_core.execution.provider_probe
+DEPENDS-ON: config, platform_core.execution.provider_probe
 SIDE-EFFECTS: optional import of claude_agent_sdk
 RUN/TEST: python -m pytest tests/execution/test_claude_sdk_bridge.py
 """

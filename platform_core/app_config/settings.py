@@ -26,7 +26,7 @@ EXPORTS:
   reload() -> Settings  -- Rebuild the registry from the current env + overrides file and reseed run flags.
   setOverride(knob: str, value: Any) -> tuple[bool, bool]  -- Live-apply + persist a whitelisted, bounds-checked SIE knob.
   getLogger(name: str='9to5') -> logging.Logger  -- Return a child of the configured ``9to5`` logger.
-DEPENDS-ON: platform_core.app_config._env, platform_core.app_config.discord, platform_core.app_config.epic_flags, platform_core.app_config.inventor_flags, platform_core.app_config.llm, platform_core.app_config.paths, platform_core.app_config.prompts, platform_core.core
+DEPENDS-ON: platform_core.app_config._env, platform_core.app_config.discord, platform_core.app_config.epic_flags, platform_core.app_config.inventor_flags, platform_core.app_config.llm, platform_core.app_config.paths, platform_core.app_config.prompts, platform_core.core.fsio
 SIDE-EFFECTS: setOverride writes sie_overrides.json; getLogger creates LOG_PATH + 9to5.log
 RUN/TEST: python -m pytest tests/execution/test_execution_router.py tests/orchestration/test_society_config.py tests/platform/test_config_bootstrap.py tests/platform/test_config_logging_lock.py tests/platform/test_epic_flags_config.py
 """

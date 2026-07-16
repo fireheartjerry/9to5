@@ -10,7 +10,7 @@ ever zero the money (the cap-bypass guard the old JSON schema only promised).
 EXPORTS:
   spent(bus) -> float  -- Current run-scoped autonomy spend (0.0 on a fresh/unreadable ledger).
   meterSpend(bus, amount_usd: 'float | None', *, attempt_id: Optional[str]=None) -> float  -- Add a committed (post-runClaude) cost to the running total, monotonically and idempoten…
-DEPENDS-ON: platform_core.runtime
+DEPENDS-ON: platform_core.runtime.control_store
 SIDE-EFFECTS: writes the control_store ledger table
 RUN/TEST: python -m pytest tests/orchestration/test_autonomy_allowance.py
 """

@@ -12,7 +12,7 @@ EXPORTS:
   finding_to_candidate(f: Any, run_id: str='') -> FindingCandidate  -- Adapt a discovery Finding (or dict) into a normalized FindingCandidate.
   route_candidate(fc: FindingCandidate, *, novelty_floor: float, novelty_hi: float, conf_hi: float) -> str  -- Pure routing decision (no I/O)
   bridge_report(report: Any, *, run_id: str='', db_path=None, embed_fn=None, store=None, record: bool=True) -> dict  -- Route + register every finding in a DiscoveryReport
-DEPENDS-ON: config, memory.experience_evolution, memory.novelty_index, platform_core.orchestration, platform_core.orchestration.invention_types
+DEPENDS-ON: config, memory.experience_evolution, memory.novelty_index, platform_core.orchestration.invention_seeding, platform_core.orchestration.invention_types
 SIDE-EFFECTS: registers candidates in the evolution ledger + records findings to novelty history
 RUN/TEST: python -m pytest tests/orchestration/test_ledger_bridge.py
 """

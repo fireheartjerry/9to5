@@ -4,7 +4,7 @@
 EXPORTS:
   BranchResult
   runBranches(fork_plan, *, run_one_branch: Callable, max_concurrency: int) -> list  -- Submit each seed to a bounded pool
-DEPENDS-ON: config, platform_core.orchestration
+DEPENDS-ON: config, platform_core.orchestration.fork_seams
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_branch_runner.py
 """

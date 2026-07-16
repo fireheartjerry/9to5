@@ -17,7 +17,7 @@ EXPORTS:
   progressLedgerStep(ollama_chat: Callable, goal: str, recent: str) -> Optional[dict]  -- One tiny per-step Progress Ledger call (autogen ORCHESTRATOR_PROGRESS_LEDGER_PROMPT, mi…
   updateStallCount(progress: dict, current: int) -> int  -- autogen n_stalls: +1 when in a loop OR no progress
   rootCauseReplan(ollama_chat: Callable, goal: str, ledger: 'tl.TaskLedger', failure_summary: str) -> 'Optional[tl.TaskLedger]'  -- autogen TASK_LEDGER_FACTS_UPDATE then ..._PLAN_UPDATE: explain the root cause, rewrite …
-DEPENDS-ON: config, platform_core.orchestration, platform_core.orchestration.brain_json
+DEPENDS-ON: config, platform_core.orchestration.brain_json, platform_core.orchestration.task_ledger, platform_core.orchestration.work_profile
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_dual_ledger_planner.py
 """

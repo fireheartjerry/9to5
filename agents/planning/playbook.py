@@ -22,7 +22,7 @@ EXPORTS:
   classifyProfile(spec: Optional[dict], subtask: Optional[dict], task_state=None) -> str  -- Deterministically pick the executor profile from the spec + subtask.
   buildCharter(profile: str) -> str  -- Compact system-level charter for ``--append-system-prompt`` (always injected).
   buildPlaybook(profile: str) -> str  -- Richer role playbook rendered as a CLAUDE.md section (auto-read by Claude Code).
-DEPENDS-ON: config, learning.evolution
+DEPENDS-ON: config, learning.evolution.candidate
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_playbook.py
 """

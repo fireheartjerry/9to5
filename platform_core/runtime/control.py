@@ -13,7 +13,7 @@ The public API is unchanged from the JSON-file era; only the backing store moved
 EXPORTS:
   AbortRun  -- Raised inside the orchestrator when an abort has been requested.
   ControlBus
-DEPENDS-ON: config, platform_core.runtime
+DEPENDS-ON: config, platform_core.runtime.control_store
 SIDE-EFFECTS: reads/writes state/control.db via control_store
 RUN/TEST: python -m pytest tests/control/test_control_concurrency.py tests/control/test_control_store.py tests/control/test_granular_controls.py tests/control/test_webdash_control.py tests/execution/test_controller_runtime_manifest.py tests/notifications/test_bot_control_auth.py tests/orchestration/test_control_ops.py tests/orchestration/test_control_review_mixin.py tests/slow/test_fuzz_control.py
 """

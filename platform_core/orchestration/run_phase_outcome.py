@@ -15,7 +15,7 @@ EXPORTS:
   postGrowth(orch) -> None  -- Spec B: post a short '!growth' learning summary to Discord at teardown (best-effort).
   maybeInstinct(orch, state, bus) -> None  -- Throttled trigger for the periodic instinct call
   runInstinct(orch, state) -> None
-DEPENDS-ON: config, learning.wisdom, memory.experience, memory.user_prefs, notifications.discord_bot, notifications.instinct, notifications.reflection_post, notifications.run_arc, platform_core.core.best_effort, platform_core.orchestration, platform_core.orchestration.pr_feedback, platform_core.orchestration.time_utils
+DEPENDS-ON: config, learning.wisdom, memory.experience, memory.user_prefs, notifications.discord_bot, notifications.instinct, notifications.reflection_post, notifications.run_arc, platform_core.core.best_effort, platform_core.orchestration.innovation_report, platform_core.orchestration.pr_feedback, platform_core.orchestration.time_utils
 SIDE-EFFECTS: posts Discord embeds; spawns the instinct thread; mutates run state status/notifications
 RUN/TEST: python -m pytest tests/control/test_run_phase_outcome.py
 """

@@ -5,7 +5,7 @@ config.AUDIT_LOG_PATH, size-rotated. Best-effort -- never raises into a command.
 EXPORTS:
   record(user_id, action: str, task_id: Optional[str]=None, detail: str='') -> None  -- Append one audit entry
   recent(n: int=20) -> list[dict]  -- The last n audit entries (oldest-first within the window)
-DEPENDS-ON: config, platform_core.core
+DEPENDS-ON: config, platform_core.core.clock, platform_core.core.jsonl_io
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_audit.py
 """

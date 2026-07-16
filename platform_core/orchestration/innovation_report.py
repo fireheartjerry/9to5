@@ -12,7 +12,7 @@ EXPORTS:
   persist(state: Any, entries: list, *, db_path=None) -> int  -- Write entries to the run_innovations ledger (best-effort)
   render_markdown(entries: list) -> str  -- Human-readable 'Innovative Changes' section ('' when there is nothing to report).
   render_discord_fields(entries: list) -> list[tuple[str, str]]  -- (name, value) embed fields for the 'Innovative Changes' Discord post (<=5 items).
-DEPENDS-ON: config, memory.experience_evolution, platform_core.orchestration, platform_core.orchestration.invention_types
+DEPENDS-ON: config, memory.experience_evolution, platform_core.orchestration.evidence_extract, platform_core.orchestration.invention_types
 SIDE-EFFECTS: persist() writes the run_innovations ledger
 RUN/TEST: python -m pytest tests/orchestration/test_innovation_report.py
 """

@@ -28,6 +28,13 @@ def test_headers_only_prefix_isolated_check_is_idempotent():
     assert first.returncode == 0, first.stderr
     check = subprocess.run([*command, "--check"], cwd=ROOT, text=True, capture_output=True)
     assert check.returncode == 0, check.stderr
+    global_check = subprocess.run(
+        [sys.executable, "tools/repo_map.py", "--check"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+    assert global_check.returncode == 0, global_check.stderr
     first_trust = {path: path.read_bytes() for path in
                    (ROOT / "bootstrap" / "galaxy_launcher").rglob("*") if path.is_file()}
     second = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)

@@ -13,7 +13,7 @@ EXPORTS:
   qd_plateaued(history: list[float], patience: int) -> bool  -- True when the last ``patience`` generations produced no qd_score improvement.
   next_generation_seeds(archive: QDArchive, base_angles: list, *, n: int=3) -> list[str]  -- Seed the next generation from diverse elites + a recombination graft (not greedy-top).
   run_generational(*, generations: int, run_gen: Callable[[int, list], list], base_angles: list, cost_ceiling: float=0.0, wallclock_ceiling: float=0.0, patience: Optional[int]=None, now_fn: Optional[Callable[[], float]]=None, cost_fn: Optional[Callable[[], float]]=None, archive: Optional[QDArchive]=None) -> dict  -- Run up to ``generations`` batches, seeding each from the QD archive
-DEPENDS-ON: config, platform_core.orchestration, platform_core.orchestration.qd_archive
+DEPENDS-ON: config, platform_core.orchestration.qd_archive, platform_core.orchestration.qd_emitters
 SIDE-EFFECTS: none (run_gen callback is caller-supplied)
 RUN/TEST: python -m pytest tests/orchestration/test_generational.py
 """

@@ -18,7 +18,7 @@ EXPORTS:
   spawnResume(task_id: str, retry_failed: bool=False) -> int
   launchOrError(req: WorkRequest) -> str  -- Validate -> lock -> block-if-active -> spawn -> handshake-confirm
   resumeOrError(task_id: str, retry_failed: bool=False) -> str  -- Resume an existing task by id (block if a run is active)
-DEPENDS-ON: config, notifications.commands, notifications.work_launcher_readiness, platform_core.core, platform_core.ops.external_project, platform_core.orchestration, platform_core.runtime.control, platform_core.runtime.heartbeat, state.task, state.task_io
+DEPENDS-ON: config, notifications.commands, notifications.work_launcher_readiness, platform_core.core.fsio, platform_core.ops.external_project, platform_core.orchestration.work_profile, platform_core.runtime.control, platform_core.runtime.heartbeat, state.task, state.task_io
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_work_launcher.py
 """
