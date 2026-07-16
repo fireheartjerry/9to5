@@ -26,3 +26,21 @@ def test_build_ask_user_question_allow_fallback_shape():
         assert out["updated_input"]["answers"] == {"Q?": "A"}
     else:
         assert out.updated_input["answers"] == {"Q?": "A"}
+def test_claude_version_uses_only_shared_neutral_probe(monkeypatch):
+    from platform_core.execution import provider_probe
+    calls = []
+    monkeypatch.setattr(provider_probe, "runProviderProbe", lambda kind: (
+        calls.append(kind), type("R", (), {"stdout": "Claude 9.9"})())[1])
+    assert claude_sdk_bridge._claudeVersion() == "Claude 9.9"
+    assert calls == [provider_probe.ProviderProbe.CLAUDE_VERSION]
+
+
+def test_claude_version_real_delegation_runs_shared_probe_process(tmp_path):
+    import json
+    import sys
+    probe = tmp_path / "provider.py"
+    probe.write_text("import json,os,sys; print(json.dumps({'cwd':os.getcwd(),'argv':sys.argv[1:]}))", encoding="utf-8")
+    result = claude_sdk_bridge._claudeVersion(probe_executable=[sys.executable, str(probe)])
+    observed = json.loads(result)
+    assert observed["argv"] == ["--version"]
+    assert observed["cwd"] != str(tmp_path)

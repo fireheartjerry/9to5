@@ -28,3 +28,9 @@ def test_collect_and_teardown_are_noops():
     assert summary["backend"] == "local" and summary["merged"] is False
     assert env.teardown(h) is None
     assert env.healthCheck() is True
+
+
+def test_local_handle_is_explicitly_non_landing():
+    env = LocalEnvironment()
+    h = env.provision(task_state=None, subtask=None, base_dir="/repo", policy=None)
+    assert h.requires_canonical_landing is False

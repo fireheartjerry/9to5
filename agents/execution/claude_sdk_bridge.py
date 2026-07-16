@@ -4,17 +4,16 @@
 EXPORTS:
   sdkCapabilitySnapshot(permission_mode=None, tools=None) -> dict
   buildAskUserQuestionAllow(input_data: dict, answers: dict)  -- Return the SDK PermissionResultAllow shape, or a dict fallback when SDK is absent.
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.execution, platform_core.execution.provider_probe
 SIDE-EFFECTS: optional import of claude_agent_sdk
 RUN/TEST: python -m pytest tests/execution/test_claude_sdk_bridge.py
 """
 from __future__ import annotations
 
 import importlib.metadata
-import shutil
-import subprocess
 
 import config
+from platform_core.execution.provider_probe import ProviderProbe
 
 LOG = config.getLogger("executor.sdk_bridge")
 
@@ -26,13 +25,17 @@ def _version(dist: str) -> str:
         return ""
 
 
-def _claudeVersion() -> str:
-    exe = shutil.which("claude")
-    if not exe:
-        return ""
+def _claudeVersion(*, probe_executable=None) -> str:
+    from platform_core.execution import provider_probe
     try:
-        cp = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=10)
-        return (cp.stdout or cp.stderr or "").strip().splitlines()[0]
+        if probe_executable is None:
+            result = provider_probe.runProviderProbe(ProviderProbe.CLAUDE_VERSION)
+        else:
+            result = provider_probe.runProviderProbe(
+                ProviderProbe.CLAUDE_VERSION, executable=probe_executable
+            )
+        output = (result.stdout or result.stderr or "").strip().splitlines()
+        return output[0] if output else ""
     except Exception:  # noqa: BLE001
         return ""
 

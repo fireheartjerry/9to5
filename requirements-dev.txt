@@ -4,6 +4,7 @@ pytest>=9.1.1
 pytest-xdist>=3.8.0
 pytest-timeout>=2.4.0
 pytest-cov>=7.1.0
+mypy==2.3.0
 # Optional: ANN backend for Layer-1 retrieval (memory/exp_index.py::ChromaIndex). Strictly
 # optional -- exp_index.getIndex() import-guards it and falls open to the O(n) cosine scan
 # when absent, so runtime never requires it. Installed only for the ChromaIndex test lane.

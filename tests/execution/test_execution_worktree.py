@@ -20,7 +20,8 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not ins
 
 
 def _git(args, cwd):
-    subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
+    subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True,
+                   check=True, timeout=20)
 
 
 @pytest.fixture()
@@ -95,3 +96,13 @@ def test_collect_with_no_changes_is_clean(repo):
     assert summary["backend"] == "worktree"
     assert summary.get("merged") in (True, False)   # nothing to merge is not a failure
     env.teardown(h)
+
+
+def test_worktree_handle_requires_staged_canonical_landing(repo):
+    env = WorktreeEnvironment()
+    h = env.provision(task_state=_TS(), subtask={"subtask_id": "st-landing"},
+                      base_dir=repo, policy=None)
+    try:
+        assert h.requires_canonical_landing is True
+    finally:
+        env.teardown(h)

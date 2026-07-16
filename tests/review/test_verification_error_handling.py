@@ -430,6 +430,14 @@ class TestRunReceiptSkippedPath(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestRunReceiptErrorPaths(unittest.TestCase):
+    def setUp(self):
+        self._kernel_mechanics = patch(
+            "platform_core.execution.launch_guard.requireTransactionalKernelActive",
+            return_value=None,
+        )
+        self._kernel_mechanics.start()
+        self.addCleanup(self._kernel_mechanics.stop)
+
     def test_spawn_error_returns_error_receipt(self):
         """Unresolvable command => ERROR receipt, no uncaught exception."""
         with tempfile.TemporaryDirectory() as tmp:

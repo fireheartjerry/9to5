@@ -36,3 +36,18 @@ class TestCollectHealth(unittest.TestCase):
         with mock.patch.object(health, "CHECKS", [("first", lambda: slow("first")), ("second", lambda: slow("second"))]):
             checks = health.collectHealth()
         self.assertEqual([check["name"] for check in checks], ["first", "second"])
+def test_health_claude_diagnostic_uses_neutral_probe_not_an_inference_process(monkeypatch):
+    from platform_core.execution import provider_probe
+    calls = []
+    monkeypatch.setattr(provider_probe, "runProviderProbe", lambda kind: (
+        calls.append(kind), type("R", (), {"ok": True, "stdout": "ok", "stderr": ""})())[1])
+    assert health._claudeCli()[0] is True
+    assert calls and all(kind in provider_probe.ProviderProbe for kind in calls)
+
+
+def test_health_real_delegation_uses_neutral_auth_probe_process(tmp_path):
+    import sys
+    probe = tmp_path / "provider.py"
+    probe.write_text("import sys; print('AUTH_OK' if sys.argv[1:] else 'BAD')", encoding="utf-8")
+    ok, detail, _fix = health._claudeCli(probe_executable=[sys.executable, str(probe)])
+    assert ok and "AUTH_OK" in detail

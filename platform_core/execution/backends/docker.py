@@ -64,7 +64,8 @@ class DockerEnvironment(ExecutionEnvironment):
         return EnvHandle(work_dir=base_dir, backend=self.NAME,
                          meta={"cid": cid, "container_work": _CONTAINER_WORK,
                                "network": network_mode},
-                         capabilities=self.CAPABILITIES)
+                         capabilities=self.CAPABILITIES,
+                         requires_canonical_landing=True)
 
     def wrapLauncher(self, run_cmd: list, handle: EnvHandle) -> "tuple[list, str]":
         cid = handle.meta["cid"]

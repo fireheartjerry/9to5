@@ -172,7 +172,7 @@ def selfCodeFiles() -> list[str]:
         # holds no .py, so skipping it is free and behaviour-preserving.
         kept = []
         for d in dirnames:
-            if d == "__pycache__":
+            if d in {"__pycache__", "tests", "testing"}:
                 continue
             if _canonical(os.path.join(dirpath, d)) in pruned_roots:
                 continue

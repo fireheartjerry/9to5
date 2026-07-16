@@ -27,7 +27,7 @@ EXPORTS:
   VerifyCancelled  -- cancel_check fired while the acceptance command was running.
   runReceipt(verify: Optional[dict], work_dir: str, executor_result: dict, *, declared_targets=None, cancel_check=None, timeout_seconds: Optional[int]=None) -> Receipt  -- THE verification pipeline (single owner)
   receiptToVResult(receipt: Receipt) -> VResult  -- The legacy vresult dict shape from a Receipt (compat shim, one release).
-DEPENDS-ON: agents.executor, agents.verification_diff, agents.verifier_sanitize, config
+DEPENDS-ON: agents.executor, agents.verification_diff, agents.verifier_sanitize, config, platform_core.execution.launch_guard
 SIDE-EFFECTS: runs the acceptance subprocess; reads git status
 RUN/TEST: python -m pytest tests/review/test_verification.py
 """
@@ -194,6 +194,8 @@ def _runVector(argv: "list[str]", work_dir: str, cancel_check=None,
     orphan fix the executor uses (f57855b): a plain kill leaves a python.exe grandchild
     holding a file lock on the artifact the next retry must rewrite. ``cancel_check`` is
     polled every 0.5s so an operator kill / deadline breaks a long verify promptly."""
+    from platform_core.execution.launch_guard import requireTransactionalKernelActive
+    requireTransactionalKernelActive()
     # A bare ``python``/``python3`` resolves from PATH, which on CI can be a DIFFERENT
     # interpreter than the one running this suite (uv install) -- module mismatches.
     # Pin it to sys.executable; copy first so the caller's argv stays authored-as-is.

@@ -12,6 +12,10 @@ from memory import experience
 class TestEvalRunner(unittest.TestCase):
     def setUp(self):
         eval_runner.clear()   # an Orchestrator built by another test may have registered one
+        mock.patch(
+            "platform_core.execution.launch_guard.requireTransactionalKernelActive",
+            return_value=None,
+        ).start()
 
     def tearDown(self):
         eval_runner.clear()

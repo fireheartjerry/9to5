@@ -10,13 +10,35 @@ RUN/TEST: (no mapped test)
 from __future__ import annotations
 
 from platform_core.execution.environment import (  # noqa: F401
-    Capability, EnvHandle, ExecutionEnvironment,
+    Capability,
+    EnvHandle,
+    EnvironmentUnavailable,
+    ExecutionContext,
+    ExecutionEnvironment,
+    FinalizationOutcome,
+    FinalizationReceipt,
+    PreparedFinalization,
 )
 from platform_core.execution.router import (  # noqa: F401
-    finalize, provision, selectEnvironment,
+    complete,
+    finalize,
+    prepare,
+    provision,
+    selectEnvironment,
 )
 
 __all__ = [
-    "Capability", "EnvHandle", "ExecutionEnvironment",
-    "selectEnvironment", "provision", "finalize",
+    "Capability",
+    "EnvHandle",
+    "EnvironmentUnavailable",
+    "ExecutionContext",
+    "ExecutionEnvironment",
+    "FinalizationOutcome",
+    "FinalizationReceipt",
+    "PreparedFinalization",
+    "complete",
+    "finalize",
+    "prepare",
+    "provision",
+    "selectEnvironment",
 ]

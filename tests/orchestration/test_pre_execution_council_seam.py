@@ -66,10 +66,14 @@ def _state(goal="build a calculator"):
 
 
 def _patch_common_flags(monkeypatch, tmp_path, **flags):
-    monkeypatch.setattr(config, "STATE_DIR", tmp_path / "tasks", raising=False)
-    monkeypatch.setattr(config, "CONTROL_DIR", tmp_path / "control", raising=False)
-    monkeypatch.setattr(config, "WEB_DASHBOARD", False, raising=False)
-    monkeypatch.setattr(config, "DISCORD_DASHBOARD", False, raising=False)
+    # Patch the real module dictionary so pytest records these facade shadows as
+    # absent and removes them on teardown.  ``config.__getattr__`` makes a plain
+    # monkeypatch.setattr see registry-backed names as pre-existing, which would
+    # otherwise restore stale concrete values over the live facade.
+    monkeypatch.setitem(vars(config), "STATE_DIR", tmp_path / "tasks")
+    monkeypatch.setitem(vars(config), "CONTROL_DIR", tmp_path / "control")
+    monkeypatch.setitem(vars(config), "WEB_DASHBOARD", False)
+    monkeypatch.setitem(vars(config), "DISCORD_DASHBOARD", False)
     (tmp_path / "tasks").mkdir(exist_ok=True)
     (tmp_path / "control").mkdir(exist_ok=True)
     defaults = {
@@ -81,7 +85,7 @@ def _patch_common_flags(monkeypatch, tmp_path, **flags):
     }
     defaults.update(flags)
     for name, value in defaults.items():
-        monkeypatch.setattr(config, name, value, raising=False)
+        monkeypatch.setitem(vars(config), name, value)
 
 
 def test_disabled_orchestration_path_does_not_call_council_runner(monkeypatch, tmp_path):

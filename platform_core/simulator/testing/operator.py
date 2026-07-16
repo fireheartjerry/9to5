@@ -16,7 +16,7 @@ EXPORTS:
   VirtualOperator
 DEPENDS-ON: notifications.commands, notifications.webdash, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/human_nature/eval/test_operator_sovereignty.py tests/human_nature/test_operator_authority.py tests/slow/test_e2e_operator.py
+RUN/TEST: python -m pytest tests/control/test_operator_launch.py tests/human_nature/eval/test_operator_sovereignty.py tests/human_nature/test_operator_authority.py tests/slow/test_e2e_operator.py
 """
 from __future__ import annotations
 

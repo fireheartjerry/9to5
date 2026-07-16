@@ -44,7 +44,7 @@ def test_local_scan() -> None:
 def test_unified_idempotent() -> None:
     print("[buildUnifiedDoc idempotency]")
     local = knowledge.scanLocalClaude()
-    empty = {"pages": {}, "ok": [], "failed": []}
+    empty: dict[str, object] = {"pages": {}, "ok": [], "failed": []}
     psk = {"found": False, "text": "", "path": None}
     recs = {"found": True, "text": "## Executive Recommendations — Top 20\n1. do x\n", "path": "r"}
     authored = "## Authored\nbody\n"
@@ -60,7 +60,7 @@ def test_unified_idempotent() -> None:
 def test_compress_injection() -> None:
     print("[compressForInjection]")
     local = knowledge.scanLocalClaude()
-    empty = {"pages": {}, "ok": [], "failed": []}
+    empty: dict[str, object] = {"pages": {}, "ok": [], "failed": []}
     # Fixture must carry a provenance header (human-authored) so injectableDoc gate
     # allows injection -- matching real-world requirements for recommendations.md.
     recs = {"found": True, "text": '<!-- provenance: {"origin": "human"} -->\n## Executive Recommendations — Top 20\n1. always inject exact paths\n', "path": "r"}
@@ -141,7 +141,7 @@ def test_part_d_preserved() -> None:
     # build a doc WITH a fresh Part D, then refresh OFFLINE (no pages) -> Part D must survive
     d_full = knowledge.buildUnifiedDoc("## A\nb\n", full, local, psk, refreshed_at="t1", sources=["s"])
     check("fresh scrape emits Part D", "# Part D —" in d_full)
-    empty = {"pages": {}, "ok": [], "failed": []}
+    empty: dict[str, object] = {"pages": {}, "ok": [], "failed": []}
     d_off = knowledge.buildUnifiedDoc(d_full, empty, local, psk, refreshed_at="t2", sources=["s"])
     check("offline refresh PRESERVES prior Part D (no erase)", "# Part D —" in d_off)
     check("preserved Part D keeps the live pages", d_off.count("## https://d/") >= 10)
@@ -187,7 +187,9 @@ def test_verifier_runs() -> None:
     print("[verifier Popen rewrite still verifies]")
     import tempfile
     from agents import verifier
-    with tempfile.TemporaryDirectory() as td:
+    from unittest.mock import patch
+    with patch("platform_core.execution.launch_guard.requireTransactionalKernelActive",
+               return_value=None), tempfile.TemporaryDirectory() as td:
         r = verifier.runVerification({"cmd": 'python -c "print(42)"', "expect": "stdout_contains:42"}, td, {})
         check("stdout_contains passes via Popen path", r["passed"] is True)
         r2 = verifier.runVerification({"cmd": "python -c \"import sys; sys.exit(3)\"", "expect": "exit_zero"}, td, {})
@@ -223,9 +225,12 @@ def test_executor_io() -> None:
     try:
         import types as _t
         st = _t.SimpleNamespace(task_id="T1", meta={})
-        r = executor.runClaude({"prompt": "x", "effort_level": "high"}, work_dir=tempfile.gettempdir(),
-                               task_state=st, subtask={"subtask_id": "st-007", "title": "t", "description": "implement"},
-                               resume_session="SESS42")
+        from unittest.mock import patch
+        with patch("platform_core.execution.launch_guard.requireTransactionalKernelActive",
+                   return_value=None):
+            r = executor.runClaude({"prompt": "x", "effort_level": "high"}, work_dir=tempfile.gettempdir(),
+                                   task_state=st, subtask={"subtask_id": "st-007", "title": "t", "description": "implement"},
+                                   resume_session="SESS42")
     finally:
         executor.subprocess.Popen = orig_popen
         executor._resolveClaudeLauncher = orig_launch
@@ -274,10 +279,13 @@ def test_executor_resume() -> None:
     executor.subprocess.Popen = _SP
     try:
         st = T.SimpleNamespace(task_id="T", meta={})
-        r = executor.runClaude({"prompt": "fix the bug", "claude_md_inject": "IMPORTANT CONTEXT", "effort_level": "high"},
-                               work_dir=tempfile.gettempdir(), task_state=st,
-                               subtask={"subtask_id": "st-1", "title": "t", "description": "implement"},
-                               resume_session="OLD")
+        from unittest.mock import patch
+        with patch("platform_core.execution.launch_guard.requireTransactionalKernelActive",
+                   return_value=None):
+            r = executor.runClaude({"prompt": "fix the bug", "claude_md_inject": "IMPORTANT CONTEXT", "effort_level": "high"},
+                                   work_dir=tempfile.gettempdir(), task_state=st,
+                                   subtask={"subtask_id": "st-1", "title": "t", "description": "implement"},
+                                   resume_session="OLD")
     finally:
         executor.subprocess.Popen = op
         executor._resolveClaudeLauncher = ol
@@ -297,16 +305,19 @@ def test_block_destructive_scans_resume_inject() -> None:
     from agents import executor
     st = T.SimpleNamespace(task_id="T", meta={})
     # destructive command lives ONLY in claude_md_inject; on resume it is folded into the prompt
-    r = executor.runClaude(
-        {"prompt": "do the thing", "claude_md_inject": "rm -rf /tmp/data", "pre_tool_hooks": ["block_destructive"]},
-        work_dir=tempfile.gettempdir(), task_state=st,
-        subtask={"subtask_id": "st-1", "title": "t", "description": "implement"}, resume_session="OLD")
+    from unittest.mock import patch
+    with patch("platform_core.execution.launch_guard.requireTransactionalKernelActive",
+               return_value=None):
+        r = executor.runClaude(
+            {"prompt": "do the thing", "claude_md_inject": "rm -rf /tmp/data", "pre_tool_hooks": ["block_destructive"]},
+            work_dir=tempfile.gettempdir(), task_state=st,
+            subtask={"subtask_id": "st-1", "title": "t", "description": "implement"}, resume_session="OLD")
+        r2 = executor.runClaude(
+            {"prompt": "rm -rf /tmp/data", "pre_tool_hooks": ["block_destructive"]},
+            work_dir=tempfile.gettempdir(), task_state=st,
+            subtask={"subtask_id": "st-1", "title": "t", "description": "implement"})
     check("resume-folded inject is scanned + blocked", r.get("blocked") is True and r["ok"] is False)
     # sanity: same destructive inject is ALSO blocked on a fresh (non-resume) run via full_prompt path
-    r2 = executor.runClaude(
-        {"prompt": "rm -rf /tmp/data", "pre_tool_hooks": ["block_destructive"]},
-        work_dir=tempfile.gettempdir(), task_state=st,
-        subtask={"subtask_id": "st-1", "title": "t", "description": "implement"})
     check("fresh run still blocks destructive prompt", r2.get("blocked") is True)
 
 

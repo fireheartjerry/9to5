@@ -48,6 +48,10 @@ class TestExecutionLoop(unittest.TestCase):
         self._patches = [
             mock.patch.object(config, "STATE_DIR", self.state_dir),
             mock.patch.object(config, "CONTROL_DIR", self.ctrl_dir),
+            mock.patch(
+                "platform_core.execution.launch_guard.requireTransactionalKernelActive",
+                return_value=None,
+            ),
         ]
         for p in self._patches:
             p.start()
@@ -74,9 +78,10 @@ class TestExecutionLoop(unittest.TestCase):
         # dual-brain reviewer sees the FakeBrain's junk output as garbled -> CHALLENGED
         # (R10 fail-closed) and remediation re-runs every 3rd subtask.
         kw.setdefault("review", lambda *a, **k: {"verdict": "approved", "concerns": [],
-                                                 "notes": "test stub", "stub": True})
+                                                  "notes": "test stub", "stub": True})
+        replan = kw.pop("replan", lambda *a, **k: {"action": "keep", "add": [], "remove": []})
         return Orchestrator(brain=FakeBrain(), obs=self._obs(), run_claude=self._fake_run_claude,
-                            replan=lambda *a, **k: {"action": "keep", "add": [], "remove": []},
+                            replan=replan,
                             **kw)
 
     def _state(self, verifies):
@@ -115,8 +120,7 @@ class TestExecutionLoop(unittest.TestCase):
                 return {"action": "mutate", "add": [{"title": f"x{adds['n']}", "description": "x"}], "remove": []}
             return {"action": "keep"}
 
-        orch = Orchestrator(brain=FakeBrain(), obs=self._obs(),
-                            run_claude=self._fake_run_claude, replan=replan)
+        orch = self._orch(replan=replan)
         bus = ControlBus(st.task_id)
         orch.runExecutionLoop(st, "doc", str(self.dir), bus, mock.Mock(), parallelism=4)
         self.assertTrue(all(s["status"] in ("done", "removed") for s in st.subtasks))
@@ -161,8 +165,7 @@ class TestExecutionLoop(unittest.TestCase):
         def boom(*a, **k):
             raise RuntimeError("replan exploded")
 
-        orch = Orchestrator(brain=FakeBrain(), obs=self._obs(),
-                            run_claude=self._fake_run_claude, replan=boom)
+        orch = self._orch(replan=boom)
         bus = ControlBus(st.task_id)
         orch.runExecutionLoop(st, "doc", str(self.dir), bus, mock.Mock(), parallelism=1)
         self.assertEqual(st.getSubtask("st-001")["status"], "done")

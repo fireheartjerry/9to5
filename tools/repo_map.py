@@ -12,6 +12,8 @@ Usage:
 EXPORTS:
   is_test_path(path: Path) -> bool  -- True for files under the test trees (see TEST_TOP_DIRS): never mapped, never spliced.
   iter_py_files(only: Optional[str]=None) -> list[Path]  -- All first-party .py files (sorted, deterministic), skipping EXCLUDE_DIRS
+  validate_header_prefix(value: Optional[str]) -> str  -- Return one canonical, narrow, repository-relative directory prefix.
+  iter_header_files(prefix: str) -> list[Path]  -- Python leaves under one validated prefix, including reviewed untracked leaves.
   module_dotted(path: Path) -> str  -- agents/adversary.py -> 'agents.adversary'
   first_party_roots() -> set[str]  -- Top-level importable names: every top-level .py stem + every dir holding an __init__.py.
   parse_module(path: Path, roots: set[str]) -> dict  -- Extract the per-module record (sans callers, which are computed globally).
@@ -20,7 +22,7 @@ EXPORTS:
   toplevel_import_graph() -> dict[str, list[str]]  -- {dotted-module: [first-party modules imported at LOAD time]}
   render_header(rec: dict) -> str  -- Render the @AI-MAP block (text only, no surrounding quotes).
   splice_header(src: str, header: str) -> Optional[str]  -- Return ``src`` with ``header`` placed inside the module docstring (below the prose,
-  write_outputs(*, check: bool, only: Optional[str], no_headers: bool) -> int  -- Write (or --check) all artifacts
+  write_outputs(*, check: bool, only: Optional[str], no_headers: bool, headers_only: bool=False) -> int  -- Write (or --check) all artifacts
   main(argv: Optional[list[str]]=None) -> int
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
@@ -34,8 +36,12 @@ import argparse
 import ast
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Optional
+
+# Header-only closure generation promises not to mutate anything outside the
+# requested source prefix.  Import caches would violate that promise.
+sys.dont_write_bytecode = True
 
 # Rendering helpers live in repo_map_render (no import of repo_map there -> no circular).
 # Re-exported here so callers can do `from repo_map import render_root_agents_md`.
@@ -139,6 +145,47 @@ def iter_py_files(only: Optional[str] = None) -> list[Path]:
             continue
         out.append(p)
     return sorted(out)
+
+
+def validate_header_prefix(value: Optional[str]) -> str:
+    """Return one canonical, narrow, repository-relative directory prefix."""
+    if not value or value.strip() != value or "\\" in value or "," in value:
+        raise ValueError("--headers-only requires one canonical repository-relative prefix")
+    prefix = PurePosixPath(value)
+    if (prefix.is_absolute() or value in {".", ".."} or value.startswith("//")
+            or ":" in prefix.parts[0]
+            or any(part in {"", ".", ".."} for part in prefix.parts)
+            or prefix.as_posix() != value.rstrip("/")):
+        raise ValueError("--headers-only prefix is absolute, broad, or contains traversal")
+    target = REPO_ROOT.joinpath(*prefix.parts)
+    try:
+        resolved = target.resolve(strict=True)
+        resolved.relative_to(REPO_ROOT.resolve(strict=True))
+    except (OSError, ValueError) as exc:
+        raise ValueError("--headers-only prefix must name a repository directory") from exc
+    if not resolved.is_dir() or resolved == REPO_ROOT.resolve(strict=True):
+        raise ValueError("--headers-only prefix must be a narrow repository directory")
+    for component in (target, *target.parents):
+        if component == REPO_ROOT.parent:
+            break
+        if component.exists() and component.is_symlink():
+            raise ValueError("--headers-only prefix may not traverse a symlink")
+    return prefix.as_posix()
+
+
+def iter_header_files(prefix: str) -> list[Path]:
+    """Python leaves under one validated prefix, including reviewed untracked leaves."""
+    normalized = validate_header_prefix(prefix)
+    target = REPO_ROOT.joinpath(*PurePosixPath(normalized).parts)
+    result: list[Path] = []
+    for path in target.rglob("*.py"):
+        rel = path.relative_to(REPO_ROOT)
+        if any(part in EXCLUDE_DIRS for part in rel.parts) or is_test_path(path):
+            continue
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"header source leaf is not a regular no-follow file: {rel.as_posix()}")
+        result.append(path)
+    return sorted(result)
 
 
 def module_dotted(path: Path) -> str:
@@ -402,6 +449,10 @@ def splice_header(src: str, header: str) -> Optional[str]:
     ):
         return None
     node = tree.body[0].value
+    assert isinstance(node, ast.Constant)
+    assert isinstance(node.value, str)
+    assert node.end_lineno is not None
+    assert node.end_col_offset is not None
     content = node.value  # the docstring's string value (unescaped)
     prose = content.split(HEADER_SENTINEL, 1)[0].rstrip()
     new_content = f"{prose}\n\n{header}\n"
@@ -421,7 +472,9 @@ def splice_header(src: str, header: str) -> Optional[str]:
 
 
 # ==== WRITE / CHECK (implementation: tools/repo_map_outputs.py) ====
-def write_outputs(*, check: bool, only: Optional[str], no_headers: bool) -> int:
+def write_outputs(
+    *, check: bool, only: Optional[str], no_headers: bool, headers_only: bool = False
+) -> int:
     """Write (or --check) all artifacts. Thin wrapper; implementation in repo_map_outputs.
 
     The wrapper exists to break the circular import: repo_map_outputs imports build_map,
@@ -431,7 +484,9 @@ def write_outputs(*, check: bool, only: Optional[str], no_headers: bool) -> int:
     is defined). Lazy import here avoids that."""
     import repo_map_outputs as _ro  # noqa: PLC0415 (lazy: breaks circular when __main__)
 
-    return _ro.write_outputs(check=check, only=only, no_headers=no_headers)
+    return _ro.write_outputs(
+        check=check, only=only, no_headers=no_headers, headers_only=headers_only
+    )
 
 
 # ==== CLI ====
@@ -440,8 +495,24 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--check", action="store_true", help="dry-run; exit 1 on drift")
     ap.add_argument("--only", default=None, help="splice headers only under this path prefix (e.g. agents)")
     ap.add_argument("--no-headers", action="store_true", help="write index only, skip header splicing")
+    ap.add_argument(
+        "--headers-only", action="store_true",
+        help="splice/check only one narrow --only prefix; never touch maps or AGENTS files",
+    )
     args = ap.parse_args(argv)
-    return write_outputs(check=args.check, only=args.only, no_headers=args.no_headers)
+    if args.headers_only:
+        if args.no_headers:
+            ap.error("--headers-only cannot be combined with --no-headers")
+        try:
+            args.only = validate_header_prefix(args.only)
+        except ValueError as exc:
+            ap.error(str(exc))
+    return write_outputs(
+        check=args.check,
+        only=args.only,
+        no_headers=args.no_headers,
+        headers_only=args.headers_only,
+    )
 
 
 if __name__ == "__main__":

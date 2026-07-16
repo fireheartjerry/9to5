@@ -54,7 +54,9 @@ class WorktreeEnvironment(ExecutionEnvironment):
         return EnvHandle(
             work_dir=work_dir, backend=self.NAME,
             meta={"branch": branch, "base_dir": base_dir, "sid": sid, "isolated": isolated},
-            capabilities=self.CAPABILITIES if isolated else _SHARED_CAPS)
+            capabilities=self.CAPABILITIES if isolated else _SHARED_CAPS,
+            requires_canonical_landing=True,
+        )
 
     def wrapLauncher(self, run_cmd: list, handle: EnvHandle) -> "tuple[list, str]":
         return run_cmd, handle.work_dir     # native process, isolated cwd

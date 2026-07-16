@@ -42,6 +42,8 @@ def test_ollama_path_proposes_without_spawn(db, monkeypatch):
 
 
 def test_escalation_uses_spawn_only_for_repeated_failures(db, monkeypatch):
+    from platform_core.execution import launch_guard
+    monkeypatch.setattr(launch_guard, "requireTransactionalKernelActive", lambda: None)
     monkeypatch.setattr(evolver.config, "EVOLUTION_ENABLED", True, raising=False)
     monkeypatch.setattr(evolver.config, "EVOLUTION_ESCALATE", True, raising=False)
     monkeypatch.setattr(evolver.config, "EVOLUTION_ESCALATE_MIN_FAILS", 1, raising=False)
@@ -58,3 +60,12 @@ def test_escalation_uses_spawn_only_for_repeated_failures(db, monkeypatch):
     out = evolver.propose_candidates(spawn=fake_spawn, db_path=db)
     assert spawned["n"] >= 1
     assert out.get("proposed")
+def test_evolution_spawn_callback_is_behind_transactional_embargo(monkeypatch, tmp_path):
+    import importlib
+    guard = importlib.import_module("platform_core.execution.launch_guard")
+    monkeypatch.setattr("config.EVOLUTION_CANDIDATE_DIR", tmp_path / "goldstone", raising=False)
+    calls = []
+    with pytest.raises(guard.TransactionalKernelInactive):
+        evolver._claude_body({"kind": "skill", "target": "x"}, [],
+                             lambda argv: calls.append(argv))
+    assert calls == [] and not (tmp_path / "goldstone").exists()

@@ -8,8 +8,6 @@ import json
 import threading
 import time
 
-import pytest
-
 import config
 from platform_core.runtime import control_store
 from platform_core.runtime import autonomy_allowance as al
@@ -201,7 +199,8 @@ def test_fresh_bus_load_is_blank_shape():
 
 def test_clear_task_resets_everything():
     bus = ControlBus("t-clear")
-    bus.requestAbort(); bus.decide("plan", "approve")
+    bus.requestAbort()
+    bus.decide("plan", "approve")
     bus.pushOp({"op": "retry"}, source_msg_id="9")
     bus.clear()
     d = bus.load()
@@ -254,3 +253,9 @@ def test_waitdecision_decision_beats_timeout_on_same_tick():
     bus = ControlBus("t-wd6")
     bus.decide("plan", "reject")
     assert bus.waitDecision("plan", timeout=0.0, poll=0.01) == "reject"
+
+
+def test_control_store_rows_are_never_a_live_trust_grant_factory():
+    for name in ("issueWorkloadGrant", "loadWorkloadGrant", "restoreWorkloadGrant",
+                 "mintOperatorAuthority"):
+        assert not hasattr(control_store, name)

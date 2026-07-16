@@ -5,7 +5,7 @@ EXPORTS:
   (no public exports)
 DEPENDS-ON: learning.evolution
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/platform/test_config_bootstrap.py
+RUN/TEST: python -m pytest tests/execution/test_tofu_bootstrap.py tests/platform/test_config_bootstrap.py
 """
 
 import sys as _sys

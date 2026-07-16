@@ -9,13 +9,14 @@ EXPORTS:
   envHandsKw(hands, run_claude_fn, environment, env_handle) -> dict  -- Executor kwargs that route the run INTO the provisioned environment.
   provisionForSubtask(state, subtask, exec_cwd: str)  -- Select + provision the per-subtask environment (default local)
   finalizeQuietly(env, handle, state, subtask, sid, log) -> None  -- Bring the env's work back to the canonical tree + tear it down
-DEPENDS-ON: platform_core.execution, platform_core.orchestration
+DEPENDS-ON: platform_core.execution, platform_core.execution.launch_guard, platform_core.orchestration
 SIDE-EFFECTS: emits env_* events via router (best-effort)
 RUN/TEST: python -m pytest tests/execution/test_resume_wiring.py tests/orchestration/test_dual_ledger_wiring.py tests/orchestration/test_execute_mixin_fork_wiring.py
 """
 from __future__ import annotations
 
 from platform_core.execution import router as _env_router
+from platform_core.execution.launch_guard import requireTransactionalKernelActive
 
 
 def envHandsKw(hands, run_claude_fn, environment, env_handle) -> dict:
@@ -30,6 +31,7 @@ def envHandsKw(hands, run_claude_fn, environment, env_handle) -> dict:
 def provisionForSubtask(state, subtask, exec_cwd: str):
     """Select + provision the per-subtask environment (default local). Returns
     (env, handle, env_ctx, work_dir); the loop + verify run against work_dir."""
+    requireTransactionalKernelActive()
     spec = subtask.get("session", {}) or {}
     try:
         from platform_core.orchestration import work_profile

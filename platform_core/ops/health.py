@@ -7,15 +7,13 @@ or `python health.py`. Exits 0 only if every check passes.
 EXPORTS:
   collectHealth() -> list[dict]  -- Run independent checks concurrently while preserving the public result order.
   runHealthChecks() -> bool
-DEPENDS-ON: agents.executor, agents.executor_env, config, platform_core.core.concurrency
+DEPENDS-ON: agents.executor_env, config, platform_core.core.concurrency, platform_core.core.git_io, platform_core.execution, platform_core.execution.provider_probe
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_health_aura.py tests/platform/test_health_collect.py tests/platform/test_repo_health.py
 """
 from __future__ import annotations
 
-import os
 import shutil
-import subprocess
 import time
 
 import requests
@@ -23,6 +21,8 @@ import urllib3
 
 import config
 from platform_core.core.concurrency import boundedWorkerBudget, runBounded
+from platform_core.core.git_io import runGit, runTool
+from platform_core.execution.provider_probe import ProviderProbe
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -63,33 +63,19 @@ def _ollama() -> tuple[bool, str, str]:
             "start Ollama (ollama serve) and ensure it listens on 11434"
 
 
-def _claudeCli() -> tuple[bool, str, str]:
-    exe = shutil.which("claude")
-    if not exe:
-        return False, "claude not on PATH", "install Claude Code CLI and ensure `claude` is on PATH"
+def _claudeCli(*, probe_executable=None) -> tuple[bool, str, str]:
+    from platform_core.execution import provider_probe
     try:
-        from agents.executor import _killProcessTree
-        launcher = ["cmd", "/c", exe] if exe.lower().endswith((".cmd", ".bat")) else [exe]
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-        # Popen + tree-kill on timeout: subprocess.run's timeout kills only the cmd.exe/claude
-        # launcher, leaking the node.exe grandchildren that do the real work (the same Windows orphan
-        # bug the executor fixes). A 40s /health check shouldn't strand a multi-process claude agent.
-        proc = subprocess.Popen(launcher + ["--print", "--dangerously-skip-permissions"],
-                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, encoding="utf-8", errors="replace",
-                                creationflags=creationflags, start_new_session=(os.name != "nt"))
-        try:
-            out, err = proc.communicate(input="Reply with exactly: OK", timeout=40)
-        except subprocess.TimeoutExpired:
-            _killProcessTree(proc.pid)
-            try:
-                proc.communicate(timeout=10)
-            except Exception:  # noqa: BLE001
-                pass
-            return False, "timed out (40s)", "check Claude Code auth / network"
-        if proc.returncode == 0 and (out or "").strip():
-            return True, f"authenticated; replied {out.strip()[:20]!r}", ""
-        return False, f"ran but no output (rc={proc.returncode}): {(err or '')[:120]}", \
+        if probe_executable is None:
+            result = provider_probe.runProviderProbe(ProviderProbe.CLAUDE_AUTH_STATUS)
+        else:
+            result = provider_probe.runProviderProbe(
+                ProviderProbe.CLAUDE_AUTH_STATUS, executable=probe_executable
+            )
+        output = (result.stdout or result.stderr or "").strip()
+        if result.ok and output:
+            return True, f"authenticated; status {output[:80]!r}", ""
+        return False, f"diagnostic failed (rc={result.returncode}): {output[:120]}", \
             "run `claude` once interactively to authenticate"
     except Exception as e:  # noqa: BLE001
         return False, str(e), "run `claude` interactively to authenticate"
@@ -99,7 +85,7 @@ def _gh() -> tuple[bool, str, str]:
     if not shutil.which("gh"):
         return False, "gh not on PATH", "install GitHub CLI (https://cli.github.com)"
     try:
-        proc = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, timeout=15)
+        proc = runTool(["gh", "auth", "status"], timeout=15)
         ok = proc.returncode == 0
         msg = (proc.stderr or proc.stdout or "").strip().splitlines()
         return ok, (msg[-1] if msg else "ok"), ("" if ok else "run: gh auth login")
@@ -147,10 +133,8 @@ def _git() -> tuple[bool, str, str]:
         # timeout + no terminal prompt: a hung git (network remote, credential prompt, locked index)
         # must never wedge /health and the gateway thread that calls collectHealth. Matches the
         # bounded sibling checks (_claudeCli=40s, _gh=15s). TimeoutExpired is caught below.
-        proc = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"],
-                              cwd=config.PROJECT_ROOT, capture_output=True, text=True,
-                              timeout=15, stdin=subprocess.DEVNULL,
-                              env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+        proc = runGit("rev-parse", "--is-inside-work-tree",
+                      cwd=config.PROJECT_ROOT, timeout=15)
         ok = proc.returncode == 0 and "true" in (proc.stdout or "").lower()
         return ok, ("initialized" if ok else "not a git repo"), \
             ("" if ok else f"run: git -C {config.PROJECT_ROOT} init")

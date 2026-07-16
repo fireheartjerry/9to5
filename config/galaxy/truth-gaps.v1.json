@@ -27,8 +27,8 @@
       "evidence_id": "galaxy.truth-gap.03.v1",
       "state": "specified",
       "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
-      "source_paths": [{"path": "platform_core/execution/environment.py", "sha256": "a92d57e68f8f3e085002f86a5d3c8037fb1f4885fbfe938abb8ead426ae1a7dd"}],
-      "test_paths": [{"path": "tests/execution/test_execution_router.py", "sha256": "6ff25f91bf448dc5136f726343ff171ff46949aae1980443d4f6ac91c543b10a"}],
+      "source_paths": [{"path": "platform_core/execution/environment.py", "sha256": "30b75bd89af1f6c294fe4a30acad8d22f281adb180ac7dde030e271d7d214174"}],
+      "test_paths": [{"path": "tests/execution/test_execution_router.py", "sha256": "ed5168a9387949304eb1ec0e1b44949313665a0a298b230e2252f71a510fb51c"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
     },
@@ -38,7 +38,7 @@
       "state": "specified",
       "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
       "source_paths": [{"path": "platform_core/runtime/control_store.py", "sha256": "e05b4eb4636efcb5955cbfda37efb70976ab48b3b992e9c6c38a61a39d3b63c5"}],
-      "test_paths": [{"path": "tests/control/test_control_store.py", "sha256": "9cfe503a303f64d761d05c71c26eabfe5f9c0b84f8ae1f957656a028699aefba"}],
+      "test_paths": [{"path": "tests/control/test_control_store.py", "sha256": "d3a1703b9b28aad287199d8d4e8b52f6c9b9b038f36a5bc1c3fed228bd068538"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
     },
@@ -69,7 +69,7 @@
       "source_revision": "f80247a53ee1079dbec6ef9300407fb5fa98be58",
       "source_paths": [
         {"path": "platform_core/runtime/action_risk.py", "sha256": "880d109199177b54e5dc35b48e9e32ed53743ee06e811ca022c96abfdddc8154"},
-        {"path": "agents/execution/executor.py", "sha256": "d714bfe94961b6087289861de9268bdebe56fb599b6e2749e7bc69897e017a09"},
+        {"path": "agents/execution/executor.py", "sha256": "eef3273cd7dab55479b853e1d6b63d6bbfd3e9bc7771efced70453cf59781047"},
         {"path": "agents/execution/executor_preflight.py", "sha256": "e07c708a3225a1536b576c1645c2c400bd4e123a384e2b0090087d86a8be114f"}
       ],
       "test_paths": [
@@ -164,7 +164,7 @@
       "evidence_id": "galaxy.truth-gap.15.v1",
       "state": "specified",
       "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
-      "source_paths": [{"path": "main.py", "sha256": "cb0c51df2bbcf3c26474e9c00201d8db1eae3e6b2bccb7b741bf248c984f7963"}],
+      "source_paths": [{"path": "main.py", "sha256": "c252e89e7700dac9f23e7b647602d97a9372220e430e87b90450b7470eea08b4"}],
       "test_paths": [{"path": "tests/platform/test_config_bootstrap.py", "sha256": "f5c5e89a318547c02c2980bc65ea19f584a593eda302990f814a2fc7cf5969bd"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"

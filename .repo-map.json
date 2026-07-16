@@ -4,6 +4,7 @@
   "root": "9to5",
   "first_party_roots": [
     "agents",
+    "bootstrap",
     "check_bugs",
     "check_code_changes",
     "check_workflow",
@@ -512,6 +513,7 @@
       "test": [],
       "callers": [
         "agents.browser_executor",
+        "agents.execution.executor_stream_results",
         "agents.executor",
         "agents.executor_env",
         "agents.executor_session",
@@ -697,18 +699,20 @@
           "kind": "function",
           "signature": "(permission_mode=None, tools=None) -> dict",
           "summary": "",
-          "lineno": 40
+          "lineno": 43
         },
         {
           "name": "buildAskUserQuestionAllow",
           "kind": "function",
           "signature": "(input_data: dict, answers: dict)",
           "summary": "Return the SDK PermissionResultAllow shape, or a dict fallback when SDK is absent.",
-          "lineno": 66
+          "lineno": 69
         }
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution",
+        "platform_core.execution.provider_probe"
       ],
       "side_effects": [
         "optional import of claude_agent_sdk"
@@ -737,7 +741,8 @@
         "agents.executor_stream",
         "agents.playbook",
         "config",
-        "memory.obsidian"
+        "memory.obsidian",
+        "platform_core.execution.launch_guard"
       ],
       "side_effects": [
         "unannotated"
@@ -872,12 +877,13 @@
           "kind": "function",
           "signature": "(run_cmd: list, run_prompt: str, *, work: str, timeout: int, env: dict, creationflags: int, spec: dict, effort: str, flag, profile, playbook_md: str, claude_md_path, model: str, feed=None, cancel_check=None) -> dict",
           "summary": "Execute one Claude subprocess and return a normalised result dict.",
-          "lineno": 359
+          "lineno": 363
         }
       ],
       "depends_on": [
         "agents.executor_stream_results",
-        "config"
+        "config",
+        "platform_core.execution.launch_guard"
       ],
       "side_effects": [
         "unannotated"
@@ -892,6 +898,7 @@
       "purpose": "Result/metric building for the Claude executor subprocess (split out of executor_stream.py",
       "exports": [],
       "depends_on": [
+        "agents.execution",
         "agents.executor_env",
         "config"
       ],
@@ -1088,7 +1095,6 @@
         "agents.execution.native_executor",
         "agents.review.verification",
         "orchestrator",
-        "platform_core.ops.health",
         "platform_core.orchestration.safety_mixin",
         "platform_core.orchestration.society.worker"
       ]
@@ -3016,21 +3022,22 @@
           "kind": "function",
           "signature": "(verify: Optional[dict], work_dir: str, executor_result: dict, *, declared_targets=None, cancel_check=None, timeout_seconds: Optional[int]=None) -> Receipt",
           "summary": "THE verification pipeline (single owner)",
-          "lineno": 340
+          "lineno": 342
         },
         {
           "name": "receiptToVResult",
           "kind": "function",
           "signature": "(receipt: Receipt) -> VResult",
           "summary": "The legacy vresult dict shape from a Receipt (compat shim, one release).",
-          "lineno": 417
+          "lineno": 419
         }
       ],
       "depends_on": [
         "agents.executor",
         "agents.verification_diff",
         "agents.verifier_sanitize",
-        "config"
+        "config",
+        "platform_core.execution.launch_guard"
       ],
       "side_effects": [
         "runs the acceptance subprocess",
@@ -3565,6 +3572,1172 @@
       "callers": [
         "agents.execution.executor_env"
       ]
+    },
+    "bootstrap": {
+      "path": "bootstrap/__init__.py",
+      "purpose": "Installed-controller bootstrap sources; never a target-repository authority surface.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "bootstrap.galaxy_launcher": {
+      "path": "bootstrap/galaxy_launcher/__init__.py",
+      "purpose": "Inactive GALAXY Singularity bootstrap capsule.",
+      "exports": [],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": [
+        "tools.lock_galaxy_runtime"
+      ]
+    },
+    "bootstrap.galaxy_launcher.__main__": {
+      "path": "bootstrap/galaxy_launcher/__main__.py",
+      "purpose": "Standard-library-only inactive Singularity capsule entrypoint.",
+      "exports": [
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: list[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 36
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "bootstrap.galaxy_launcher.activation_adapter": {
+      "path": "bootstrap/galaxy_launcher/activation_adapter.py",
+      "purpose": "Expectation-blind adapter surface used by the sealed activation harness.",
+      "exports": [
+        {
+          "name": "OperationBroker",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 16
+        },
+        {
+          "name": "dispatch_activation_operation",
+          "kind": "function",
+          "signature": "(api: str, args: dict[str, Any], fault: dict[str, Any], broker: OperationBroker) -> Any",
+          "summary": "Dispatch only through the supplied capability broker.",
+          "lineno": 20
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "bootstrap.galaxy_launcher.activation_crypto": {
+      "path": "bootstrap/galaxy_launcher/activation_crypto.py",
+      "purpose": "Small standard-library-only Ed25519 receipt primitive.",
+      "exports": [
+        {
+          "name": "public_key_from_seed",
+          "kind": "function",
+          "signature": "(seed: bytes) -> bytes",
+          "summary": "Return the RFC 8032 public key for a 32-byte private seed.",
+          "lineno": 148
+        },
+        {
+          "name": "sign",
+          "kind": "function",
+          "signature": "(seed: bytes, message: bytes) -> bytes",
+          "summary": "Return a deterministic 64-byte Ed25519 signature.",
+          "lineno": 154
+        },
+        {
+          "name": "verify",
+          "kind": "function",
+          "signature": "(public_key: bytes, message: bytes, signature: bytes) -> bool",
+          "summary": "Verify a canonical, prime-subgroup Ed25519 signature.",
+          "lineno": 165
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_activation_crypto.py"
+      ],
+      "callers": []
+    },
+    "bootstrap.galaxy_launcher.activation_dpapi": {
+      "path": "bootstrap/galaxy_launcher/activation_dpapi.py",
+      "purpose": "User-bound Windows DPAPI wrapper for sealed activation receipt keys.",
+      "exports": [
+        {
+          "name": "DpapiRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "DPAPI could not protect or release the exact trust material.",
+          "lineno": 22
+        },
+        {
+          "name": "protect_for_current_user",
+          "kind": "function",
+          "signature": "(secret: bytes, *, entropy: bytes) -> bytes",
+          "summary": "Protect bytes for the current Windows identity, never machine-wide.",
+          "lineno": 81
+        },
+        {
+          "name": "unprotect_for_current_user",
+          "kind": "function",
+          "signature": "(protected: bytes, *, entropy: bytes) -> bytes",
+          "summary": "Release bytes only for the installing Windows identity and entropy.",
+          "lineno": 101
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_activation_dpapi.py"
+      ],
+      "callers": []
+    },
+    "bootstrap.galaxy_launcher.activation_harness": {
+      "path": "bootstrap/galaxy_launcher/activation_harness.py",
+      "purpose": "Sealed, fail-closed GALAXY activation acceptance harness.",
+      "exports": [
+        {
+          "name": "ActivationInvariantFailed",
+          "kind": "class",
+          "signature": "",
+          "summary": "Externally observed evidence did not prove the closed invariant.",
+          "lineno": 71
+        },
+        {
+          "name": "ActivationAcceptanceRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "The closed acceptance input was not byte- and schema-exact.",
+          "lineno": 75
+        },
+        {
+          "name": "StepSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 148
+        },
+        {
+          "name": "OperationSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 158
+        },
+        {
+          "name": "BrokerCallSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 168
+        },
+        {
+          "name": "FaultSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 179
+        },
+        {
+          "name": "ExpectedOutcomeSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 190
+        },
+        {
+          "name": "SubcaseSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 201
+        },
+        {
+          "name": "ProbeSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 219
+        },
+        {
+          "name": "ReceiptSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 237
+        },
+        {
+          "name": "ScenarioSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 243
+        },
+        {
+          "name": "RuntimeProfileSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 265
+        },
+        {
+          "name": "RuntimeProfileLedger",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 283
+        },
+        {
+          "name": "MountSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 291
+        },
+        {
+          "name": "ContainerSecurityProfile",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 301
+        },
+        {
+          "name": "SealedHarnessRuntime",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 320
+        },
+        {
+          "name": "ClosedAcceptance",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 353
+        },
+        {
+          "name": "parse_closed_acceptance",
+          "kind": "function",
+          "signature": "(raw: bytes, *, expected_ledger_digest: str, requirements_digest: str) -> ClosedAcceptance",
+          "summary": "Parse only the immutable 192-invariant canonical acceptance ledger.",
+          "lineno": 417
+        },
+        {
+          "name": "parse_runtime_profile_ledger",
+          "kind": "function",
+          "signature": "(raw: bytes, *, expected_ledger_digest: str, acceptance_ledger_digest: str) -> RuntimeProfileLedger",
+          "summary": "Parse the exact role-to-runtime-profile assignment ledger.",
+          "lineno": 613
+        },
+        {
+          "name": "verify_acceptance_candidate",
+          "kind": "function",
+          "signature": "(candidate: Path, *, requirements_digest: str, acceptance_ledger_digest: str, runtime_profile_ledger_digest: str) -> ClosedAcceptance",
+          "summary": "Verify a proposed ledger without granting installation or activation.",
+          "lineno": 700
+        },
+        {
+          "name": "load_sealed_acceptance",
+          "kind": "function",
+          "signature": "() -> ClosedAcceptance",
+          "summary": "Load acceptance only through the installed inactive runtime lock.",
+          "lineno": 1247
+        },
+        {
+          "name": "resolve_sealed_harness_runtime",
+          "kind": "function",
+          "signature": "(acceptance: ClosedAcceptance) -> SealedHarnessRuntime",
+          "summary": "Resolve and revalidate the exact external runtime bound to acceptance.",
+          "lineno": 1252
+        },
+        {
+          "name": "BrokerEvidence",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1271
+        },
+        {
+          "name": "RequiredReceiptBinding",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1284
+        },
+        {
+          "name": "VerifiedObservationReceipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1292
+        },
+        {
+          "name": "SubcaseResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1308
+        },
+        {
+          "name": "ProbeResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1328
+        },
+        {
+          "name": "ValidatedExternalReport",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1348
+        },
+        {
+          "name": "EvidenceReplayGuard",
+          "kind": "class",
+          "signature": "",
+          "summary": "One-use evidence admission, optionally durable across validator processes.",
+          "lineno": 1627
+        },
+        {
+          "name": "validate_external_report",
+          "kind": "function",
+          "signature": "(raw_report: Mapping[str, Any], *, acceptance: ClosedAcceptance, independent_observation: Mapping[str, Any], replay_guard: EvidenceReplayGuard | None=None) -> ValidatedExternalReport",
+          "summary": "Validate every signed result against independent parent observation.",
+          "lineno": 1661
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: Sequence[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 3110
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_activation_harness.py"
+      ],
+      "callers": []
+    },
+    "bootstrap.galaxy_launcher.activation_image_entrypoint": {
+      "path": "bootstrap/galaxy_launcher/activation_image_entrypoint.py",
+      "purpose": "Generic fail-closed entrypoint sealed into every GALAXY activation image.",
+      "exports": [
+        {
+          "name": "ActivationImageRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "The sealed image refused an ambiguous or unbound request.",
+          "lineno": 55
+        },
+        {
+          "name": "BoundRuntime",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 60
+        },
+        {
+          "name": "verify_bound_runtime",
+          "kind": "function",
+          "signature": "(*, manifest_path: Path, runtime_root: Path, expected_manifest_sha256: str, sealed_role: str) -> BoundRuntime",
+          "summary": "Verify a canonical, role-bound, fully enumerated runtime projection.",
+          "lineno": 137
+        },
+        {
+          "name": "build_image_canary",
+          "kind": "function",
+          "signature": "(*, sealed_role: str, requested_role: str, cwd: Path, environment: Mapping[str, str], uid: int, gid: int) -> dict[str, object]",
+          "summary": "Return an authority-free receipt proving the sealed boot boundary.",
+          "lineno": 243
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: Sequence[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 289
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_activation_image_entrypoint.py"
+      ],
+      "callers": []
+    },
+    "bootstrap.galaxy_launcher.activation_verifier": {
+      "path": "bootstrap/galaxy_launcher/activation_verifier.py",
+      "purpose": "Credentialless activation probe worker for Win32 and container profiles.",
+      "exports": [
+        {
+          "name": "ProbeRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "A sealed probe request or broker response was not exact.",
+          "lineno": 26
+        },
+        {
+          "name": "run_probe",
+          "kind": "function",
+          "signature": "(specification: Path) -> dict[str, object]",
+          "summary": "",
+          "lineno": 113
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: Sequence[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 275
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_activation_verifier.py"
+      ],
+      "callers": []
+    },
+    "bootstrap.galaxy_launcher.activation_windows": {
+      "path": "bootstrap/galaxy_launcher/activation_windows.py",
+      "purpose": "Minimal Win32 restricted-token process launcher for activation probes.",
+      "exports": [
+        {
+          "name": "RestrictedProcessError",
+          "kind": "class",
+          "signature": "",
+          "summary": "The requested OS-native containment boundary could not be created.",
+          "lineno": 33
+        },
+        {
+          "name": "RestrictedProcess",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 88
+        },
+        {
+          "name": "create_restricted_process",
+          "kind": "function",
+          "signature": "(command: Sequence[str], *, cwd: Path, environment: Mapping[str, str], suspended: bool) -> RestrictedProcess",
+          "summary": "Create a non-elevated restricted descendant with no inherited handles.",
+          "lineno": 187
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_activation_windows.py"
+      ],
+      "callers": []
+    },
+    "bootstrap.galaxy_launcher.anchor": {
+      "path": "bootstrap/galaxy_launcher/anchor.py",
+      "purpose": "Protected-anchor, cutover, and repository-normalization primitives.",
+      "exports": [
+        {
+          "name": "AnchorIntegrityRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 100
+        },
+        {
+          "name": "TransactionalKernelInactive",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 104
+        },
+        {
+          "name": "PreAnchorGenerationRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 108
+        },
+        {
+          "name": "FreshExactApprovalRequired",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 112
+        },
+        {
+          "name": "SourceNormalizationRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 116
+        },
+        {
+          "name": "ActiveHookRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 120
+        },
+        {
+          "name": "GitIndexRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 124
+        },
+        {
+          "name": "RefNormalizationRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 128
+        },
+        {
+          "name": "RepositoryMaterializationRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 132
+        },
+        {
+          "name": "InjectedTransitionCrash",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 136
+        },
+        {
+          "name": "LiveOwnerConflict",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 140
+        },
+        {
+          "name": "StaleTransitionOwner",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 144
+        },
+        {
+          "name": "PurposeMismatch",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 148
+        },
+        {
+          "name": "EpochMismatch",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 152
+        },
+        {
+          "name": "LivenessUnknown",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 156
+        },
+        {
+          "name": "GlobalTransitionMutexHeld",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 160
+        },
+        {
+          "name": "AmbiguousArchivedPurpose",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 164
+        },
+        {
+          "name": "StaleObservation",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 168
+        },
+        {
+          "name": "TofuApprovalRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 172
+        },
+        {
+          "name": "AmbiguousTask5Recovery",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 176
+        },
+        {
+          "name": "Task5InputDrift",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 180
+        },
+        {
+          "name": "BegunReservationCannotCancel",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 184
+        },
+        {
+          "name": "ProtectedAnchorRecord",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 234
+        },
+        {
+          "name": "ServiceLaunchPlan",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 354
+        },
+        {
+          "name": "PreAnchorLegacyReadiness",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 365
+        },
+        {
+          "name": "SingularityAnchor",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 370
+        },
+        {
+          "name": "MaintenanceFence",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 414
+        },
+        {
+          "name": "QuiescenceReceipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 420
+        },
+        {
+          "name": "CutoverResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 429
+        },
+        {
+          "name": "ExactApprovalChallenge",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 437
+        },
+        {
+          "name": "ExactCutoverApproval",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 443
+        },
+        {
+          "name": "CutoverSupervisor",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 448
+        },
+        {
+          "name": "canonicalize_source_bytes",
+          "kind": "function",
+          "signature": "(raw: bytes, *, parent: bytes, textual: bool) -> bytes",
+          "summary": "",
+          "lineno": 549
+        },
+        {
+          "name": "git_blob_oid",
+          "kind": "function",
+          "signature": "(raw: bytes) -> str",
+          "summary": "",
+          "lineno": 572
+        },
+        {
+          "name": "GitConfigNormalization",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 597
+        },
+        {
+          "name": "normalize_git_config",
+          "kind": "function",
+          "signature": "(repo: Path, *, prove_hook_inactive: Callable[[str], bool]) -> GitConfigNormalization",
+          "summary": "",
+          "lineno": 601
+        },
+        {
+          "name": "GitIndexEntry",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 628
+        },
+        {
+          "name": "GitIndexExtension",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 636
+        },
+        {
+          "name": "ParsedGitIndex",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 642
+        },
+        {
+          "name": "parse_git_index",
+          "kind": "function",
+          "signature": "(raw: bytes) -> ParsedGitIndex",
+          "summary": "",
+          "lineno": 731
+        },
+        {
+          "name": "materialize_index_from_tree",
+          "kind": "function",
+          "signature": "(repo: Path, tree: str, *, omit_extensions: set[str]) -> bytes",
+          "summary": "",
+          "lineno": 773
+        },
+        {
+          "name": "corrupt_extension",
+          "kind": "function",
+          "signature": "(raw: bytes, signature: str) -> bytes",
+          "summary": "",
+          "lineno": 786
+        },
+        {
+          "name": "add_required_extension",
+          "kind": "function",
+          "signature": "(raw: bytes, signature: str, data: bytes) -> bytes",
+          "summary": "",
+          "lineno": 799
+        },
+        {
+          "name": "build_dirc_v2_fixture",
+          "kind": "function",
+          "signature": "(*, entries: Mapping[str, bytes], tree_extension: bytes | None=None) -> bytes",
+          "summary": "",
+          "lineno": 806
+        },
+        {
+          "name": "RepositoryNormalization",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 828
+        },
+        {
+          "name": "snapshot_repository_bytes",
+          "kind": "function",
+          "signature": "(repo: Path) -> Mapping[str, bytes]",
+          "summary": "",
+          "lineno": 879
+        },
+        {
+          "name": "normalize_repository",
+          "kind": "function",
+          "signature": "(repo: Path, *, before_ref_recheck: Callable[[], None] | None=None, failpoint: str | None=None) -> RepositoryNormalization",
+          "summary": "",
+          "lineno": 892
+        },
+        {
+          "name": "TransitionPurpose",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 964
+        },
+        {
+          "name": "TransitionIntent",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 979
+        },
+        {
+          "name": "TransitionOwnerToken",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 985
+        },
+        {
+          "name": "TransitionBegin",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 992
+        },
+        {
+          "name": "TransitionObservation",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1003
+        },
+        {
+          "name": "TransitionState",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1010
+        },
+        {
+          "name": "DurableTransitionCoordinator",
+          "kind": "class",
+          "signature": "",
+          "summary": "Create-or-return transition state with one host-global logical owner.",
+          "lineno": 1084
+        },
+        {
+          "name": "TofuProposal",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1573
+        },
+        {
+          "name": "TofuInstallReceipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1584
+        },
+        {
+          "name": "build_tofu_proposal",
+          "kind": "function",
+          "signature": "(*, source_leaves: Mapping[str, bytes], artifact_leaves: Mapping[str, bytes], policy: str) -> TofuProposal",
+          "summary": "",
+          "lineno": 1612
+        },
+        {
+          "name": "install_tofu",
+          "kind": "function",
+          "signature": "(proposal: TofuProposal, *, response: str, external_root: Path) -> TofuInstallReceipt",
+          "summary": "",
+          "lineno": 1640
+        },
+        {
+          "name": "Task5Invocation",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1688
+        },
+        {
+          "name": "Task5RecoveryResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1696
+        },
+        {
+          "name": "Task5Reservation",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1705
+        },
+        {
+          "name": "Task5Cancellation",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1712
+        },
+        {
+          "name": "CanonicalBatchRecord",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1718
+        },
+        {
+          "name": "Task5NormalizationReceipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 1725
+        },
+        {
+          "name": "digest_raw_snapshot",
+          "kind": "function",
+          "signature": "(raw_snapshot: Mapping[str, bytes]) -> str",
+          "summary": "",
+          "lineno": 1731
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_anchor_host_isolation.py"
+      ],
+      "callers": []
+    },
+    "bootstrap.galaxy_launcher.capsule": {
+      "path": "bootstrap/galaxy_launcher/capsule.py",
+      "purpose": "Canonical request-envelope primitives for the installed launch capsule.",
+      "exports": [
+        {
+          "name": "RequestEnvelopeRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "A launch request was not exact canonical bounded base64url JSON.",
+          "lineno": 28
+        },
+        {
+          "name": "encode_path_manifest",
+          "kind": "function",
+          "signature": "(payload: Mapping[str, Any]) -> str",
+          "summary": "",
+          "lineno": 64
+        },
+        {
+          "name": "decode_path_manifest_bytes",
+          "kind": "function",
+          "signature": "(encoded: str) -> bytes",
+          "summary": "",
+          "lineno": 72
+        },
+        {
+          "name": "decode_path_manifest",
+          "kind": "function",
+          "signature": "(encoded: str) -> dict[str, Any]",
+          "summary": "",
+          "lineno": 107
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
+    "bootstrap.galaxy_launcher.runtime_manifest": {
+      "path": "bootstrap/galaxy_launcher/runtime_manifest.py",
+      "purpose": "Fail-closed verification for the sealed controller and activation images.",
+      "exports": [
+        {
+          "name": "RuntimeClosureUnavailable",
+          "kind": "class",
+          "signature": "",
+          "summary": "The declared controller runtime is incomplete or cannot be trusted.",
+          "lineno": 67
+        },
+        {
+          "name": "OfflineActivationArtifactsUnavailable",
+          "kind": "class",
+          "signature": "",
+          "summary": "A digest-closed offline activation artifact could not be verified.",
+          "lineno": 71
+        },
+        {
+          "name": "RuntimeLeaf",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 76
+        },
+        {
+          "name": "ControllerRuntimeManifest",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 82
+        },
+        {
+          "name": "VerifiedControllerRuntime",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 92
+        },
+        {
+          "name": "ActivationImageRecord",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 145
+        },
+        {
+          "name": "ActivationImageVerificationReport",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 164
+        },
+        {
+          "name": "OciLayoutInspection",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 170
+        },
+        {
+          "name": "select_verified_runtime",
+          "kind": "function",
+          "signature": "(manifest: ControllerRuntimeManifest, *, no_follow: bool=True) -> VerifiedControllerRuntime",
+          "summary": "Verify and select a fully declared, isolated controller runtime.",
+          "lineno": 249
+        },
+        {
+          "name": "require_offline_activation_artifacts",
+          "kind": "function",
+          "signature": "(records: Sequence[ActivationImageRecord], *, builder: Callable[[], object] | None=None, puller: Callable[[], object] | None=None) -> Sequence[ActivationImageRecord]",
+          "summary": "Require artifacts without ever invoking a build or network fallback.",
+          "lineno": 306
+        },
+        {
+          "name": "verify_activation_images",
+          "kind": "function",
+          "signature": "(records: Sequence[ActivationImageRecord], *, network_allowed: bool=False, allow_engine_build: bool=False, allow_pull: bool=False, builder: Callable[[], object] | None=None, puller: Callable[[], object] | None=None) -> ActivationImageVerificationReport",
+          "summary": "Verify preseeded image archives",
+          "lineno": 330
+        },
+        {
+          "name": "inspect_oci_layout",
+          "kind": "function",
+          "signature": "(layout: Path) -> OciLayoutInspection",
+          "summary": "Open every descriptor reachable from one minimal OCI image layout.",
+          "lineno": 759
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_controller_runtime_manifest.py"
+      ],
+      "callers": [
+        "tools.build_galaxy_launcher"
+      ]
+    },
+    "bootstrap.galaxy_launcher.singularity_service": {
+      "path": "bootstrap/galaxy_launcher/singularity_service.py",
+      "purpose": "Inactive Windows service host for the installed Singularity anchor.",
+      "exports": [
+        {
+          "name": "run_service_dispatcher",
+          "kind": "function",
+          "signature": "() -> int",
+          "summary": "Enter the SCM dispatcher and remain authority-free until stopped.",
+          "lineno": 155
+        },
+        {
+          "name": "self_test",
+          "kind": "function",
+          "signature": "() -> dict[str, object]",
+          "summary": "",
+          "lineno": 168
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: Sequence[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 177
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_singularity_service.py"
+      ],
+      "callers": []
+    },
+    "bootstrap.galaxy_launcher.tofu_finalize": {
+      "path": "bootstrap/galaxy_launcher/tofu_finalize.py",
+      "purpose": "Create canonical records for an already copied, inactive TOFU closure.",
+      "exports": [
+        {
+          "name": "TofuFinalizationRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "The installed bytes or exact operator response did not match the proposal.",
+          "lineno": 73
+        },
+        {
+          "name": "finalize_inactive_install",
+          "kind": "function",
+          "signature": "(*, proposal_path: Path, response_path: Path, dacl_sddl: str) -> dict[str, Any]",
+          "summary": "Verify installed leaves and create the first inactive protected records.",
+          "lineno": 246
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: Sequence[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 458
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
     },
     "check_bugs": {
       "path": "check_bugs.py",
@@ -6424,6 +7597,7 @@
         "unannotated"
       ],
       "test": [
+        "tests/execution/test_tofu_bootstrap.py",
         "tests/platform/test_config_bootstrap.py"
       ],
       "callers": [
@@ -6683,6 +7857,7 @@
         "unannotated"
       ],
       "test": [
+        "tests/execution/test_tofu_bootstrap.py",
         "tests/platform/test_config_bootstrap.py"
       ],
       "callers": []
@@ -6900,7 +8075,7 @@
           "kind": "function",
           "signature": "(*, brain: Optional[Callable[[str], str]]=None, spawn: Optional[Callable[[list[str]], dict]]=None, db_path: Optional[Path]=None) -> dict[str, Any]",
           "summary": "Propose capability candidates (hybrid)",
-          "lineno": 101
+          "lineno": 103
         }
       ],
       "depends_on": [
@@ -6908,7 +8083,8 @@
         "learning.evolution.evolver_prompts",
         "learning.safety",
         "learning.toolsmith",
-        "memory.experience"
+        "memory.experience",
+        "platform_core.execution.launch_guard"
       ],
       "side_effects": [
         "writes candidate rows + candidate files under state/evolution/candidates/"
@@ -8748,7 +9924,7 @@
           "kind": "function",
           "signature": "() -> int",
           "summary": "",
-          "lineno": 409
+          "lineno": 410
         }
       ],
       "depends_on": [
@@ -8762,6 +9938,7 @@
         "platform_core.cli.main_cli",
         "platform_core.core",
         "platform_core.core.best_effort",
+        "platform_core.execution.launch_guard",
         "platform_core.ops.doctor",
         "platform_core.ops.external_project",
         "platform_core.ops.health",
@@ -9702,6 +10879,7 @@
         "tests/execution/test_github_pr_gate.py",
         "tests/execution/test_pr_feedback.py",
         "tests/execution/test_pr_feedback_async.py",
+        "tests/execution/test_provider_probe.py",
         "tests/explore/test_approach_gen.py",
         "tests/explore/test_approach_synthesis.py",
         "tests/explore/test_approach_tradeoffs.py",
@@ -12163,6 +13341,7 @@
         "unannotated"
       ],
       "test": [
+        "tests/execution/test_activation_image_entrypoint.py",
         "tests/notifications/test_entry_creation.py",
         "tests/notifications/test_notification_entry.py"
       ],
@@ -13522,95 +14701,102 @@
       "purpose": "Pure launcher core for the Discord /work command. No discord import -> unit-testable.",
       "exports": [
         {
+          "name": "SingularityLaunchUnavailable",
+          "kind": "class",
+          "signature": "",
+          "summary": "The installed request-only Singularity launcher is absent or refused.",
+          "lineno": 65
+        },
+        {
           "name": "WorkRequest",
           "kind": "class",
           "signature": "",
           "summary": "",
-          "lineno": 82
+          "lineno": 89
         },
         {
           "name": "parseHours",
           "kind": "function",
           "signature": "(raw) -> float",
           "summary": "Tolerant parse ('2', '2h', '1.5')",
-          "lineno": 97
+          "lineno": 104
         },
         {
           "name": "validate",
           "kind": "function",
           "signature": "(req: WorkRequest) -> list[str]",
           "summary": "",
-          "lineno": 114
+          "lineno": 121
         },
         {
           "name": "buildArgv",
           "kind": "function",
           "signature": "(req: WorkRequest) -> list[str]",
           "summary": "",
-          "lineno": 154
+          "lineno": 161
         },
         {
           "name": "prepareExternalRepo",
           "kind": "function",
           "signature": "(req: WorkRequest) -> None",
           "summary": "Clone repo_url into a managed workspace and mutate req.work_dir for this launch.",
-          "lineno": 189
+          "lineno": 196
         },
         {
           "name": "activeRun",
           "kind": "function",
           "signature": "() -> Optional[TaskState]",
           "summary": "The latest task iff it's still active",
-          "lineno": 200
+          "lineno": 207
         },
         {
           "name": "waitForLaunch",
           "kind": "function",
           "signature": "(launch_id: str, *, timeout_s: float=10.0, poll_s: float=0.5) -> Optional[str]",
           "summary": "Launch handshake: poll state/launch/<launch_id>.json (written by main.py --launch-id)",
-          "lineno": 242
+          "lineno": 249
         },
         {
           "name": "spawn",
           "kind": "function",
           "signature": "(req: WorkRequest) -> int",
           "summary": "",
-          "lineno": 286
+          "lineno": 370
         },
         {
           "name": "buildResumeArgv",
           "kind": "function",
           "signature": "(task_id: str, retry_failed: bool=False) -> list[str]",
           "summary": "",
-          "lineno": 290
+          "lineno": 376
         },
         {
           "name": "taskExists",
           "kind": "function",
           "signature": "(task_id: str) -> bool",
           "summary": "False for a non-UUID task_id, not just a missing file",
-          "lineno": 297
+          "lineno": 383
         },
         {
           "name": "spawnResume",
           "kind": "function",
           "signature": "(task_id: str, retry_failed: bool=False) -> int",
           "summary": "",
-          "lineno": 311
+          "lineno": 397
         },
         {
           "name": "launchOrError",
           "kind": "function",
           "signature": "(req: WorkRequest) -> str",
           "summary": "Validate -> lock -> block-if-active -> spawn -> handshake-confirm",
-          "lineno": 360
+          "lineno": 450
         },
         {
           "name": "resumeOrError",
           "kind": "function",
           "signature": "(task_id: str, retry_failed: bool=False) -> str",
           "summary": "Resume an existing task by id (block if a run is active)",
-          "lineno": 404
+          "lineno": 494
         }
       ],
       "depends_on": [
@@ -14515,7 +15701,7 @@
           "kind": "class",
           "signature": "",
           "summary": "Brain + autonomous loop",
-          "lineno": 91
+          "lineno": 92
         }
       ],
       "depends_on": [
@@ -14530,6 +15716,7 @@
         "notifications.dashboard",
         "notifications.webdash",
         "platform_core.core.epoch",
+        "platform_core.execution.launch_guard",
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.execute_mixin",
@@ -15861,7 +17048,10 @@
       "test": [
         "tests/platform/test_git_io.py"
       ],
-      "callers": []
+      "callers": [
+        "platform_core.ops.doctor",
+        "platform_core.ops.health"
+      ]
     },
     "platform_core.core.identity": {
       "path": "platform_core/core/identity.py",
@@ -16223,7 +17413,9 @@
       ],
       "test": [],
       "callers": [
+        "agents.execution.claude_sdk_bridge",
         "platform_core.execution.wiring",
+        "platform_core.ops.health",
         "platform_core.orchestration.execute_mixin"
       ]
     },
@@ -16351,25 +17543,60 @@
       "purpose": "ExecutionEnvironment ABC + Capability flags + EnvHandle for the cloud execution fabric.",
       "exports": [
         {
+          "name": "EnvironmentUnavailable",
+          "kind": "class",
+          "signature": "",
+          "summary": "Typed refusal for an unavailable or unauthorized execution backend.",
+          "lineno": 29
+        },
+        {
           "name": "Capability",
           "kind": "class",
           "signature": "",
           "summary": "What a backend's provisioned environment can do (bernstein frozenset[SandboxCapability]…",
-          "lineno": 23
+          "lineno": 46
         },
         {
           "name": "EnvHandle",
           "kind": "class",
           "signature": "",
           "summary": "Opaque per-subtask provision result reused across a subtask's attempts.",
-          "lineno": 33
+          "lineno": 56
+        },
+        {
+          "name": "FinalizationOutcome",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 79
+        },
+        {
+          "name": "PreparedFinalization",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 104
+        },
+        {
+          "name": "FinalizationReceipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 129
+        },
+        {
+          "name": "ExecutionContext",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 191
         },
         {
           "name": "ExecutionEnvironment",
           "kind": "class",
           "signature": "",
           "summary": "Where a subtask's Claude CLI process runs and which tree it touches.",
-          "lineno": 41
+          "lineno": 203
         }
       ],
       "depends_on": [],
@@ -16388,30 +17615,125 @@
         "platform_core.execution.router"
       ]
     },
+    "platform_core.execution.launch_guard": {
+      "path": "platform_core/execution/launch_guard.py",
+      "purpose": "Task 1/2 zero-inference embargo.",
+      "exports": [
+        {
+          "name": "TransactionalKernelInactive",
+          "kind": "class",
+          "signature": "",
+          "summary": "Production inference is unavailable until atomic kernel activation.",
+          "lineno": 18
+        },
+        {
+          "name": "requireTransactionalKernelActive",
+          "kind": "function",
+          "signature": "(**_untrusted_context: object) -> None",
+          "summary": "Refuse every autonomous or repository-capable inference launch.",
+          "lineno": 22
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_launch_guard.py"
+      ],
+      "callers": [
+        "agents.execution.executor",
+        "agents.execution.executor_stream",
+        "agents.review.verification",
+        "learning.evolution.evolver",
+        "main",
+        "orchestrator",
+        "platform_core.execution.wiring"
+      ]
+    },
+    "platform_core.execution.provider_probe": {
+      "path": "platform_core/execution/provider_probe.py",
+      "purpose": "Sole neutral subprocess boundary for provider diagnostics.",
+      "exports": [
+        {
+          "name": "InvalidProviderProbe",
+          "kind": "class",
+          "signature": "",
+          "summary": "The requested operation is outside the closed diagnostic protocol.",
+          "lineno": 33
+        },
+        {
+          "name": "ProviderProbe",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 37
+        },
+        {
+          "name": "ProviderProbeResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 43
+        },
+        {
+          "name": "runProviderProbe",
+          "kind": "function",
+          "signature": "(probe: ProviderProbe, *, executable: Sequence[str] | None=None, inherited_env: Mapping[str, str] | None=None, runner: Callable[..., object] | None=None) -> ProviderProbeResult",
+          "summary": "Run one bounded diagnostic from an empty directory and closed environment.",
+          "lineno": 101
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_provider_probe.py"
+      ],
+      "callers": [
+        "agents.execution.claude_sdk_bridge",
+        "platform_core.ops.health"
+      ]
+    },
     "platform_core.execution.router": {
       "path": "platform_core/execution/router.py",
-      "purpose": "EnvironmentRouter -- pick a backend per subtask and run its lifecycle with local fallback.",
+      "purpose": "Fail-closed execution-environment selection and finalization.",
       "exports": [
         {
           "name": "selectEnvironment",
           "kind": "function",
-          "signature": "(spec: dict, subtask: dict, task_state) -> ExecutionEnvironment",
-          "summary": "Pick the backend for a subtask",
-          "lineno": 59
+          "signature": "(spec: dict, subtask: dict, task_state, *, trust_grant: object=None, trust_scope: dict | None=None, trust_authority: object=None) -> ExecutionEnvironment",
+          "summary": "Select exactly one eligible backend",
+          "lineno": 117
         },
         {
           "name": "provision",
           "kind": "function",
           "signature": "(env: ExecutionEnvironment, *, task_state, subtask, base_dir: str, policy=None) -> 'tuple[ExecutionEnvironment, EnvHandle]'",
-          "summary": "Provision with local fallback: any exception -> notify + emit env_fallback + LocalEnvir…",
-          "lineno": 82
+          "summary": "Provision the selected backend without hidden substitution.",
+          "lineno": 201
+        },
+        {
+          "name": "prepare",
+          "kind": "function",
+          "signature": "(env: ExecutionEnvironment, handle: EnvHandle, task_state, subtask, *, accepted: bool) -> PreparedFinalization",
+          "summary": "Prepare an immutable candidate or a durable rejection checkpoint.",
+          "lineno": 224
+        },
+        {
+          "name": "complete",
+          "kind": "function",
+          "signature": "(env: ExecutionEnvironment, handle: EnvHandle, prepared: PreparedFinalization, *, authorization: object, landing_authority: object) -> FinalizationReceipt",
+          "summary": "Complete a prepared landing only when both evidence authorities exist.",
+          "lineno": 301
         },
         {
           "name": "finalize",
           "kind": "function",
-          "signature": "(env: ExecutionEnvironment, handle: EnvHandle, task_state, subtask) -> dict",
-          "summary": "collectChanges then teardown; both best-effort",
-          "lineno": 105
+          "signature": "(env: ExecutionEnvironment, handle: EnvHandle, task_state, subtask, *, accepted: bool=True)",
+          "summary": "Compatibility lifecycle for environments that do not require landing.",
+          "lineno": 357
         }
       ],
       "depends_on": [
@@ -16421,7 +17743,8 @@
         "platform_core.execution.backends.local",
         "platform_core.execution.backends.remote",
         "platform_core.execution.backends.worktree",
-        "platform_core.execution.environment"
+        "platform_core.execution.environment",
+        "platform_core.execution.trust"
       ],
       "side_effects": [
         "emits env_* events on notifications.event_bus (best-effort)"
@@ -16474,6 +17797,68 @@
         "platform_core.execution.backends.remote"
       ]
     },
+    "platform_core.execution.trust": {
+      "path": "platform_core/execution/trust.py",
+      "purpose": "Fail-closed workload trust contracts.",
+      "exports": [
+        {
+          "name": "WorkloadTrustReceipt",
+          "kind": "class",
+          "signature": "",
+          "summary": "Immutable evidence describing one exact-scope grant issuance.",
+          "lineno": 59
+        },
+        {
+          "name": "WorkloadTrustGrant",
+          "kind": "class",
+          "signature": "",
+          "summary": "Non-serializable process-local authority paired with a receipt.",
+          "lineno": 149
+        },
+        {
+          "name": "ResolvedWorkloadTrust",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 163
+        },
+        {
+          "name": "unknownTrust",
+          "kind": "function",
+          "signature": "(reason: str) -> ResolvedWorkloadTrust",
+          "summary": "",
+          "lineno": 178
+        },
+        {
+          "name": "resolveWorkloadTrust",
+          "kind": "function",
+          "signature": "(*, operator_grant: object, model_fields: Mapping[str, object] | None=None, deterministic_probe: object=None) -> ResolvedWorkloadTrust",
+          "summary": "Resolve untrusted inputs conservatively.",
+          "lineno": 187
+        },
+        {
+          "name": "tightenWorkloadTrust",
+          "kind": "function",
+          "signature": "(resolved: ResolvedWorkloadTrust, *, model_fields: Mapping[str, object] | None) -> ResolvedWorkloadTrust",
+          "summary": "Permit untrusted policy fields to reduce, never increase, authority.",
+          "lineno": 205
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/control/test_execution_trust_authority.py",
+        "tests/evolution/test_reflection_trust.py",
+        "tests/execution/test_execution_trust.py",
+        "tests/orchestration/test_adversary_trust.py"
+      ],
+      "callers": [
+        "platform_core.execution.router",
+        "platform_core.runtime.execution_trust"
+      ]
+    },
     "platform_core.execution.wiring": {
       "path": "platform_core/execution/wiring.py",
       "purpose": "Orchestration glue that wraps a subtask's attempt loop in an ExecutionEnvironment lifecycle.",
@@ -16483,25 +17868,26 @@
           "kind": "function",
           "signature": "(hands, run_claude_fn, environment, env_handle) -> dict",
           "summary": "Executor kwargs that route the run INTO the provisioned environment.",
-          "lineno": 21
+          "lineno": 22
         },
         {
           "name": "provisionForSubtask",
           "kind": "function",
           "signature": "(state, subtask, exec_cwd: str)",
           "summary": "Select + provision the per-subtask environment (default local)",
-          "lineno": 30
+          "lineno": 31
         },
         {
           "name": "finalizeQuietly",
           "kind": "function",
           "signature": "(env, handle, state, subtask, sid, log) -> None",
           "summary": "Bring the env's work back to the canonical tree + tear it down",
-          "lineno": 48
+          "lineno": 50
         }
       ],
       "depends_on": [
         "platform_core.execution",
+        "platform_core.execution.launch_guard",
         "platform_core.orchestration"
       ],
       "side_effects": [
@@ -16555,7 +17941,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/execution/test_builder_sim.py"
+        "tests/execution/test_builder_sim.py",
+        "tests/platform/test_galaxy_image_builder.py"
       ],
       "callers": [
         "knowledge",
@@ -16717,69 +18104,70 @@
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "The local brain",
-          "lineno": 40
+          "lineno": 39
         },
         {
           "name": "check_claude_cli",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "The Claude Code hands",
-          "lineno": 68
+          "lineno": 67
         },
         {
           "name": "check_embedder",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "Local embedder for retrieval (degraded feature: no retrieval until present).",
-          "lineno": 82
+          "lineno": 81
         },
         {
           "name": "check_git",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "Git repo",
-          "lineno": 116
+          "lineno": 107
         },
         {
           "name": "check_gh",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "GitHub CLI",
-          "lineno": 141
+          "lineno": 132
         },
         {
           "name": "check_gpu",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "GPU",
-          "lineno": 154
+          "lineno": 146
         },
         {
           "name": "check_degradations",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "Surfaces swallowed best_effort failures recorded this process (structured",
-          "lineno": 167
+          "lineno": 159
         },
         {
           "name": "run",
           "kind": "function",
           "signature": "() -> dict[str, Any]",
           "summary": "Run every preflight check",
-          "lineno": 184
+          "lineno": 176
         },
         {
           "name": "render",
           "kind": "function",
           "signature": "(report: dict[str, Any]) -> str",
           "summary": "",
-          "lineno": 199
+          "lineno": 191
         }
       ],
       "depends_on": [
         "config",
         "learning.compute",
-        "platform_core.core.best_effort"
+        "platform_core.core.best_effort",
+        "platform_core.core.git_io"
       ],
       "side_effects": [
         "unannotated"
@@ -16827,21 +18215,23 @@
           "kind": "function",
           "signature": "() -> list[dict]",
           "summary": "Run independent checks concurrently while preserving the public result order.",
-          "lineno": 203
+          "lineno": 187
         },
         {
           "name": "runHealthChecks",
           "kind": "function",
           "signature": "() -> bool",
           "summary": "",
-          "lineno": 235
+          "lineno": 219
         }
       ],
       "depends_on": [
-        "agents.executor",
         "agents.executor_env",
         "config",
-        "platform_core.core.concurrency"
+        "platform_core.core.concurrency",
+        "platform_core.core.git_io",
+        "platform_core.execution",
+        "platform_core.execution.provider_probe"
       ],
       "side_effects": [
         "unannotated"
@@ -18146,12 +19536,14 @@
         "none"
       ],
       "test": [
+        "tests/control/test_execution_trust_authority.py",
         "tests/execution/test_execution_docker.py",
         "tests/execution/test_execution_environment.py",
         "tests/execution/test_execution_local.py",
         "tests/execution/test_execution_remote.py",
         "tests/execution/test_execution_router.py",
         "tests/execution/test_execution_security.py",
+        "tests/execution/test_execution_trust.py",
         "tests/execution/test_execution_worktree.py",
         "tests/orchestration/test_bridge_execution_tiered.py",
         "tests/orchestration/test_pre_execution_council_seam.py",
@@ -20320,6 +21712,7 @@
         "tests/control/test_control_store.py",
         "tests/control/test_granular_controls.py",
         "tests/control/test_webdash_control.py",
+        "tests/execution/test_controller_runtime_manifest.py",
         "tests/notifications/test_bot_control_auth.py",
         "tests/orchestration/test_control_ops.py",
         "tests/orchestration/test_control_review_mixin.py",
@@ -20482,6 +21875,29 @@
         "platform_core.orchestration.execute_delegates_mixin"
       ]
     },
+    "platform_core.runtime.execution_trust": {
+      "path": "platform_core/runtime/execution_trust.py",
+      "purpose": "Process-local operator authority for exact-scope workload trust grants.",
+      "exports": [
+        {
+          "name": "OperatorTrustAuthority",
+          "kind": "class",
+          "signature": "",
+          "summary": "Issue and resolve grants that cannot survive process replacement.",
+          "lineno": 43
+        }
+      ],
+      "depends_on": [
+        "platform_core.execution.trust"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/execution/test_execution_trust.py"
+      ],
+      "callers": []
+    },
     "platform_core.runtime.heartbeat": {
       "path": "platform_core/runtime/heartbeat.py",
       "purpose": "One cross-process liveness primitive: heartbeat files under ``state/heartbeats/``.",
@@ -20559,6 +21975,111 @@
         "notifications.runtime.work_launcher",
         "state.task_io"
       ]
+    },
+    "platform_core.runtime.operator_launch": {
+      "path": "platform_core/runtime/operator_launch.py",
+      "purpose": "Outer operator-owned launch and acceptance-spec capability boundary.",
+      "exports": [
+        {
+          "name": "OperatorLaunchRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "The current process is not an eligible outer operator launcher.",
+          "lineno": 70
+        },
+        {
+          "name": "OperatorApprovalRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "The proposed spec or fresh operator approval was invalid.",
+          "lineno": 74
+        },
+        {
+          "name": "OperatorCapabilityRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "Transferred execution capabilities were missing, corrupt, or replayed.",
+          "lineno": 78
+        },
+        {
+          "name": "OperatorCapabilityPidMismatch",
+          "kind": "class",
+          "signature": "",
+          "summary": "A capability was presented by a process other than its bound child.",
+          "lineno": 82
+        },
+        {
+          "name": "PreSpecAnalysisAuthority",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 87
+        },
+        {
+          "name": "SpecProposal",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 96
+        },
+        {
+          "name": "OperatorApprovalFrame",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 103
+        },
+        {
+          "name": "OperatorLaunchCapability",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 110
+        },
+        {
+          "name": "OperatorSpecApprovalCapability",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 116
+        },
+        {
+          "name": "AuthorizedOuterCapabilities",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 123
+        },
+        {
+          "name": "OperatorSpawnResult",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 132
+        },
+        {
+          "name": "consume_outer_capabilities",
+          "kind": "function",
+          "signature": "(*, argv: Sequence[str], capability_handles: Sequence[int]) -> AuthorizedOuterCapabilities",
+          "summary": "Consume the two PID-bound anonymous capabilities exactly once.",
+          "lineno": 402
+        },
+        {
+          "name": "OperatorLauncher",
+          "kind": "class",
+          "signature": "",
+          "summary": "Own the model-free gap between spec proposal and execution child.",
+          "lineno": 464
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/control/test_operator_launch.py"
+      ],
+      "callers": []
     },
     "platform_core.runtime.perf": {
       "path": "platform_core/runtime/perf.py",
@@ -20903,63 +22424,63 @@
           "kind": "class",
           "signature": "",
           "summary": "Stand-in for ``ollama.Client``",
-          "lineno": 99
+          "lineno": 108
         },
         {
           "name": "simRunClaude",
           "kind": "function",
           "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, **_kw)",
           "summary": "Fake executor",
-          "lineno": 126
+          "lineno": 135
         },
         {
           "name": "simReplan",
           "kind": "function",
           "signature": "(*args, **kwargs)",
           "summary": "",
-          "lineno": 138
+          "lineno": 147
         },
         {
           "name": "simReview",
           "kind": "function",
           "signature": "(subtask_title, trigger_reason, executor_output, *, ollama_chat=None, goal='')",
           "summary": "",
-          "lineno": 142
+          "lineno": 151
         },
         {
           "name": "SimObs",
           "kind": "class",
           "signature": "",
           "summary": "In-memory Obsidian double: records writes, never touches disk or REST.",
-          "lineno": 147
+          "lineno": 156
         },
         {
           "name": "buildOrchestrator",
           "kind": "function",
           "signature": "(n_subtasks: int=3, *, offline: bool=True)",
           "summary": "An Orchestrator wired with simulation doubles.",
-          "lineno": 170
+          "lineno": 179
         },
         {
           "name": "BuilderBrain",
           "kind": "class",
           "signature": "",
           "summary": "Plans N subtasks, each producing a real file under ``work_dir`` with a REAL",
-          "lineno": 196
+          "lineno": 205
         },
         {
           "name": "builderRunClaude",
           "kind": "function",
           "signature": "(spec, *, work_dir=None, task_state=None, subtask=None, system_prompt=None, extra=None, timeout=None, resume_session=None, _project_root=None, **_kw)",
           "summary": "Fake hands that ACTUALLY write the target file parsed from the subtask's verify cmd,",
-          "lineno": 225
+          "lineno": 238
         },
         {
           "name": "buildBuilderOrchestrator",
           "kind": "function",
           "signature": "(work_dir: str, n_subtasks: int=3)",
           "summary": "An Orchestrator that produces real artifacts under work_dir and verifies them for real.",
-          "lineno": 261
+          "lineno": 307
         }
       ],
       "depends_on": [
@@ -21080,6 +22601,7 @@
         "unannotated"
       ],
       "test": [
+        "tests/control/test_operator_launch.py",
         "tests/human_nature/eval/test_operator_sovereignty.py",
         "tests/human_nature/test_operator_authority.py",
         "tests/slow/test_e2e_operator.py"
@@ -21637,6 +23159,32 @@
       "test": [],
       "callers": []
     },
+    "tools.bootstrap_galaxy_dev_tools": {
+      "path": "tools/bootstrap_galaxy_dev_tools.py",
+      "purpose": "Install the exact external GALAXY mypy closure without network or pip.",
+      "exports": [
+        {
+          "name": "DevToolBootstrapRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "The offline developer-tool closure or destination is not exact.",
+          "lineno": 43
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: Iterable[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 298
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
+      "callers": []
+    },
     "tools.browser_canary": {
       "path": "tools/browser_canary.py",
       "purpose": "Gated live-CDP canary against a local, secret-free browser fixture.",
@@ -21679,6 +23227,111 @@
       "test": [
         "tests/tools/test_browser_fixture.py"
       ],
+      "callers": []
+    },
+    "tools.build_galaxy_launcher": {
+      "path": "tools/build_galaxy_launcher.py",
+      "purpose": "Build and independently seal GALAXY's inactive OCI image closure.",
+      "exports": [
+        {
+          "name": "ImageBuildRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "An image proposal or offline build input was not exactly closed.",
+          "lineno": 76
+        },
+        {
+          "name": "SealedOciFacts",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 81
+        },
+        {
+          "name": "DockerfileAudit",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 89
+        },
+        {
+          "name": "BaseSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 97
+        },
+        {
+          "name": "ImageSpec",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 107
+        },
+        {
+          "name": "PhysicalBuild",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 115
+        },
+        {
+          "name": "seal_oci_layout",
+          "kind": "function",
+          "signature": "(layout: Path, closure_documents: Mapping[str, bytes]) -> SealedOciFacts",
+          "summary": "Attach six canonical closure documents to one minimal OCI layout.",
+          "lineno": 255
+        },
+        {
+          "name": "write_deterministic_oci_archive",
+          "kind": "function",
+          "signature": "(layout: Path, destination: Path) -> None",
+          "summary": "Write a stable uncompressed tar while refusing links and special files.",
+          "lineno": 360
+        },
+        {
+          "name": "audit_dockerfile",
+          "kind": "function",
+          "signature": "(path: Path, *, expected_base_digest: str, expected_roles: Sequence[str] | None=None) -> DockerfileAudit",
+          "summary": "Require a one-stage, download-free, digest-pinned generic image source.",
+          "lineno": 402
+        },
+        {
+          "name": "require_docker_desktop_network_closed",
+          "kind": "function",
+          "signature": "() -> dict[str, object]",
+          "summary": "Prove the Docker Desktop VM has no default route during final work.",
+          "lineno": 516
+        },
+        {
+          "name": "build_offline_closure",
+          "kind": "function",
+          "signature": "(*, output_root: Path, lock_output: Path) -> dict[str, object]",
+          "summary": "Build twice, compare, reopen, canary, and lock all nine inactive roles.",
+          "lineno": 1052
+        },
+        {
+          "name": "load_activation_image_lock",
+          "kind": "function",
+          "signature": "(lock_path: Path, *, archive_root: Path) -> tuple[ActivationImageRecord, ...]",
+          "summary": "Load a canonical exact-nine-role lock without trusting archive contents.",
+          "lineno": 1229
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: Sequence[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 1382
+        }
+      ],
+      "depends_on": [
+        "bootstrap.galaxy_launcher.runtime_manifest"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
       "callers": []
     },
     "tools.cerebras_probe": {
@@ -22065,35 +23718,35 @@
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 139
+          "lineno": 140
         },
         {
           "name": "cmd_dryrun",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 143
+          "lineno": 144
         },
         {
           "name": "cmd_e2e",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 148
+          "lineno": 149
         },
         {
           "name": "cmd_codemod",
           "kind": "function",
           "signature": "(args: list[str]) -> int",
           "summary": "",
-          "lineno": 152
+          "lineno": 153
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: list[str]) -> int",
           "summary": "",
-          "lineno": 173
+          "lineno": 174
         }
       ],
       "depends_on": [],
@@ -22101,7 +23754,8 @@
         "unannotated"
       ],
       "test": [
-        "tests/platform/test_dev_commands.py"
+        "tests/platform/test_dev_commands.py",
+        "tests/platform/test_galaxy_dev_tools.py"
       ],
       "callers": []
     },
@@ -22317,6 +23971,55 @@
       ],
       "callers": []
     },
+    "tools.galaxy_plan_manifest": {
+      "path": "tools/galaxy_plan_manifest.py",
+      "purpose": "Emit deterministic file manifests from approved implementation-plan tasks.",
+      "exports": [
+        {
+          "name": "PlanManifestError",
+          "kind": "class",
+          "signature": "",
+          "summary": "The plan cannot produce an exact file selection.",
+          "lineno": 39
+        },
+        {
+          "name": "FileRow",
+          "kind": "class",
+          "signature": "",
+          "summary": "",
+          "lineno": 44
+        },
+        {
+          "name": "parse_plan",
+          "kind": "function",
+          "signature": "(text: str, *, through: int | None=None) -> dict[int, tuple[FileRow, ...]]",
+          "summary": "Parse exact ``**Files**`` blocks from task headings.",
+          "lineno": 65
+        },
+        {
+          "name": "select_paths",
+          "kind": "function",
+          "signature": "(tasks: dict[int, tuple[FileRow, ...]], requested: Sequence[int], kind: str) -> tuple[str, ...]",
+          "summary": "",
+          "lineno": 158
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: Iterable[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 191
+        }
+      ],
+      "depends_on": [],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [
+        "tests/platform/test_galaxy_plan_manifest.py"
+      ],
+      "callers": []
+    },
     "tools.groq_probe": {
       "path": "tools/groq_probe.py",
       "purpose": "Safe Groq model-access probe.",
@@ -22437,6 +24140,48 @@
       "test": [
         "tests/platform/test_llm_navigation.py"
       ],
+      "callers": []
+    },
+    "tools.lock_galaxy_runtime": {
+      "path": "tools/lock_galaxy_runtime.py",
+      "purpose": "Prepare and verify an inactive, exact-challenge GALAXY runtime closure.",
+      "exports": [
+        {
+          "name": "RuntimeLockRefused",
+          "kind": "class",
+          "signature": "",
+          "summary": "The proposed runtime closure was incomplete, ambiguous, or drifted.",
+          "lineno": 111
+        },
+        {
+          "name": "prepare_runtime",
+          "kind": "function",
+          "signature": "(*, output_root: Path, final_root: Path, python_root: Path, image_root: Path, checkout_root: Path, generation: int) -> Path",
+          "summary": "",
+          "lineno": 444
+        },
+        {
+          "name": "verify_proposal",
+          "kind": "function",
+          "signature": "(path: Path) -> dict[str, Any]",
+          "summary": "",
+          "lineno": 827
+        },
+        {
+          "name": "main",
+          "kind": "function",
+          "signature": "(argv: Sequence[str] | None=None) -> int",
+          "summary": "",
+          "lineno": 996
+        }
+      ],
+      "depends_on": [
+        "bootstrap.galaxy_launcher"
+      ],
+      "side_effects": [
+        "unannotated"
+      ],
+      "test": [],
       "callers": []
     },
     "tools.outcome_evaluation_report": {
@@ -22594,84 +24339,98 @@
           "kind": "function",
           "signature": "(path: Path) -> bool",
           "summary": "True for files under the test trees (see TEST_TOP_DIRS): never mapped, never spliced.",
-          "lineno": 113
+          "lineno": 119
         },
         {
           "name": "iter_py_files",
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> list[Path]",
           "summary": "All first-party .py files (sorted, deterministic), skipping EXCLUDE_DIRS",
-          "lineno": 118
+          "lineno": 124
+        },
+        {
+          "name": "validate_header_prefix",
+          "kind": "function",
+          "signature": "(value: Optional[str]) -> str",
+          "summary": "Return one canonical, narrow, repository-relative directory prefix.",
+          "lineno": 150
+        },
+        {
+          "name": "iter_header_files",
+          "kind": "function",
+          "signature": "(prefix: str) -> list[Path]",
+          "summary": "Python leaves under one validated prefix, including reviewed untracked leaves.",
+          "lineno": 176
         },
         {
           "name": "module_dotted",
           "kind": "function",
           "signature": "(path: Path) -> str",
           "summary": "agents/adversary.py -> 'agents.adversary'",
-          "lineno": 144
+          "lineno": 191
         },
         {
           "name": "first_party_roots",
           "kind": "function",
           "signature": "() -> set[str]",
           "summary": "Top-level importable names: every top-level .py stem + every dir holding an __init__.py.",
-          "lineno": 151
+          "lineno": 198
         },
         {
           "name": "parse_module",
           "kind": "function",
           "signature": "(path: Path, roots: set[str]) -> dict",
           "summary": "Extract the per-module record (sans callers, which are computed globally).",
-          "lineno": 275
+          "lineno": 322
         },
         {
           "name": "find_tests",
           "kind": "function",
           "signature": "(dotted: str, name: str) -> list[str]",
           "summary": "Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> prefix exact -> glob -> …",
-          "lineno": 293
+          "lineno": 340
         },
         {
           "name": "build_map",
           "kind": "function",
           "signature": "(only: Optional[str]=None) -> dict",
           "summary": "Full-repo machine index",
-          "lineno": 315
+          "lineno": 362
         },
         {
           "name": "toplevel_import_graph",
           "kind": "function",
           "signature": "() -> dict[str, list[str]]",
           "summary": "{dotted-module: [first-party modules imported at LOAD time]}",
-          "lineno": 348
+          "lineno": 395
         },
         {
           "name": "render_header",
           "kind": "function",
           "signature": "(rec: dict) -> str",
           "summary": "Render the @AI-MAP block (text only, no surrounding quotes).",
-          "lineno": 363
+          "lineno": 410
         },
         {
           "name": "splice_header",
           "kind": "function",
           "signature": "(src: str, header: str) -> Optional[str]",
           "summary": "Return ``src`` with ``header`` placed inside the module docstring (below the prose,",
-          "lineno": 391
+          "lineno": 438
         },
         {
           "name": "write_outputs",
           "kind": "function",
-          "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
+          "signature": "(*, check: bool, only: Optional[str], no_headers: bool, headers_only: bool=False) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 424
+          "lineno": 475
         },
         {
           "name": "main",
           "kind": "function",
           "signature": "(argv: Optional[list[str]]=None) -> int",
           "summary": "",
-          "lineno": 438
+          "lineno": 493
         }
       ],
       "depends_on": [],
@@ -22690,9 +24449,9 @@
         {
           "name": "write_outputs",
           "kind": "function",
-          "signature": "(*, check: bool, only: Optional[str], no_headers: bool) -> int",
+          "signature": "(*, check: bool, only: Optional[str], no_headers: bool, headers_only: bool=False) -> int",
           "summary": "Write (or --check) all artifacts",
-          "lineno": 130
+          "lineno": 176
         }
       ],
       "depends_on": [],

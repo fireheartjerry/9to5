@@ -318,6 +318,7 @@
       "depends_on": [],
       "callers": [
         "agents.browser_executor",
+        "agents.execution.executor_stream_results",
         "agents.executor",
         "agents.executor_env",
         "agents.executor_session",
@@ -389,7 +390,9 @@
         "buildAskUserQuestionAllow"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution",
+        "platform_core.execution.provider_probe"
       ],
       "callers": [],
       "test": [
@@ -409,7 +412,8 @@
         "agents.executor_stream",
         "agents.playbook",
         "config",
-        "memory.obsidian"
+        "memory.obsidian",
+        "platform_core.execution.launch_guard"
       ],
       "callers": [],
       "test": [
@@ -477,7 +481,8 @@
       ],
       "depends_on": [
         "agents.executor_stream_results",
-        "config"
+        "config",
+        "platform_core.execution.launch_guard"
       ],
       "callers": [],
       "test": [
@@ -489,6 +494,7 @@
       "purpose": "Result/metric building for the Claude executor subprocess (split out of executor_stream.py",
       "exports": [],
       "depends_on": [
+        "agents.execution",
         "agents.executor_env",
         "config"
       ],
@@ -580,7 +586,6 @@
         "agents.execution.native_executor",
         "agents.review.verification",
         "orchestrator",
-        "platform_core.ops.health",
         "platform_core.orchestration.safety_mixin",
         "platform_core.orchestration.society.worker"
       ],
@@ -1562,7 +1567,8 @@
         "agents.executor",
         "agents.verification_diff",
         "agents.verifier_sanitize",
-        "config"
+        "config",
+        "platform_core.execution.launch_guard"
       ],
       "callers": [],
       "test": [
@@ -1933,6 +1939,299 @@
         "tests/workflows/test_staging_validation.py",
         "tests/workflows/test_workflow_registry.py"
       ]
+    },
+    "bootstrap": {
+      "path": "bootstrap/__init__.py",
+      "purpose": "Installed-controller bootstrap sources; never a target-repository authority surface.",
+      "exports": [],
+      "depends_on": [],
+      "callers": [],
+      "test": []
+    },
+    "bootstrap.galaxy_launcher": {
+      "path": "bootstrap/galaxy_launcher/__init__.py",
+      "purpose": "Inactive GALAXY Singularity bootstrap capsule.",
+      "exports": [],
+      "depends_on": [],
+      "callers": [
+        "tools.lock_galaxy_runtime"
+      ],
+      "test": []
+    },
+    "bootstrap.galaxy_launcher.__main__": {
+      "path": "bootstrap/galaxy_launcher/__main__.py",
+      "purpose": "Standard-library-only inactive Singularity capsule entrypoint.",
+      "exports": [
+        "main"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": []
+    },
+    "bootstrap.galaxy_launcher.activation_adapter": {
+      "path": "bootstrap/galaxy_launcher/activation_adapter.py",
+      "purpose": "Expectation-blind adapter surface used by the sealed activation harness.",
+      "exports": [
+        "OperationBroker",
+        "dispatch_activation_operation"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": []
+    },
+    "bootstrap.galaxy_launcher.activation_crypto": {
+      "path": "bootstrap/galaxy_launcher/activation_crypto.py",
+      "purpose": "Small standard-library-only Ed25519 receipt primitive.",
+      "exports": [
+        "public_key_from_seed",
+        "sign",
+        "verify"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/execution/test_activation_crypto.py"
+      ]
+    },
+    "bootstrap.galaxy_launcher.activation_dpapi": {
+      "path": "bootstrap/galaxy_launcher/activation_dpapi.py",
+      "purpose": "User-bound Windows DPAPI wrapper for sealed activation receipt keys.",
+      "exports": [
+        "DpapiRefused",
+        "protect_for_current_user",
+        "unprotect_for_current_user"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/execution/test_activation_dpapi.py"
+      ]
+    },
+    "bootstrap.galaxy_launcher.activation_harness": {
+      "path": "bootstrap/galaxy_launcher/activation_harness.py",
+      "purpose": "Sealed, fail-closed GALAXY activation acceptance harness.",
+      "exports": [
+        "ActivationInvariantFailed",
+        "ActivationAcceptanceRefused",
+        "StepSpec",
+        "OperationSpec",
+        "BrokerCallSpec",
+        "FaultSpec",
+        "ExpectedOutcomeSpec",
+        "SubcaseSpec",
+        "ProbeSpec",
+        "ReceiptSpec",
+        "ScenarioSpec",
+        "RuntimeProfileSpec",
+        "RuntimeProfileLedger",
+        "MountSpec",
+        "ContainerSecurityProfile",
+        "SealedHarnessRuntime",
+        "ClosedAcceptance",
+        "parse_closed_acceptance",
+        "parse_runtime_profile_ledger",
+        "verify_acceptance_candidate",
+        "load_sealed_acceptance",
+        "resolve_sealed_harness_runtime",
+        "BrokerEvidence",
+        "RequiredReceiptBinding",
+        "VerifiedObservationReceipt",
+        "SubcaseResult",
+        "ProbeResult",
+        "ValidatedExternalReport",
+        "EvidenceReplayGuard",
+        "validate_external_report",
+        "main"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/execution/test_activation_harness.py"
+      ]
+    },
+    "bootstrap.galaxy_launcher.activation_image_entrypoint": {
+      "path": "bootstrap/galaxy_launcher/activation_image_entrypoint.py",
+      "purpose": "Generic fail-closed entrypoint sealed into every GALAXY activation image.",
+      "exports": [
+        "ActivationImageRefused",
+        "BoundRuntime",
+        "verify_bound_runtime",
+        "build_image_canary",
+        "main"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/execution/test_activation_image_entrypoint.py"
+      ]
+    },
+    "bootstrap.galaxy_launcher.activation_verifier": {
+      "path": "bootstrap/galaxy_launcher/activation_verifier.py",
+      "purpose": "Credentialless activation probe worker for Win32 and container profiles.",
+      "exports": [
+        "ProbeRefused",
+        "run_probe",
+        "main"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/execution/test_activation_verifier.py"
+      ]
+    },
+    "bootstrap.galaxy_launcher.activation_windows": {
+      "path": "bootstrap/galaxy_launcher/activation_windows.py",
+      "purpose": "Minimal Win32 restricted-token process launcher for activation probes.",
+      "exports": [
+        "RestrictedProcessError",
+        "RestrictedProcess",
+        "create_restricted_process"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/execution/test_activation_windows.py"
+      ]
+    },
+    "bootstrap.galaxy_launcher.anchor": {
+      "path": "bootstrap/galaxy_launcher/anchor.py",
+      "purpose": "Protected-anchor, cutover, and repository-normalization primitives.",
+      "exports": [
+        "AnchorIntegrityRefused",
+        "TransactionalKernelInactive",
+        "PreAnchorGenerationRefused",
+        "FreshExactApprovalRequired",
+        "SourceNormalizationRefused",
+        "ActiveHookRefused",
+        "GitIndexRefused",
+        "RefNormalizationRefused",
+        "RepositoryMaterializationRefused",
+        "InjectedTransitionCrash",
+        "LiveOwnerConflict",
+        "StaleTransitionOwner",
+        "PurposeMismatch",
+        "EpochMismatch",
+        "LivenessUnknown",
+        "GlobalTransitionMutexHeld",
+        "AmbiguousArchivedPurpose",
+        "StaleObservation",
+        "TofuApprovalRefused",
+        "AmbiguousTask5Recovery",
+        "Task5InputDrift",
+        "BegunReservationCannotCancel",
+        "ProtectedAnchorRecord",
+        "ServiceLaunchPlan",
+        "PreAnchorLegacyReadiness",
+        "SingularityAnchor",
+        "MaintenanceFence",
+        "QuiescenceReceipt",
+        "CutoverResult",
+        "ExactApprovalChallenge",
+        "ExactCutoverApproval",
+        "CutoverSupervisor",
+        "canonicalize_source_bytes",
+        "git_blob_oid",
+        "GitConfigNormalization",
+        "normalize_git_config",
+        "GitIndexEntry",
+        "GitIndexExtension",
+        "ParsedGitIndex",
+        "parse_git_index",
+        "materialize_index_from_tree",
+        "corrupt_extension",
+        "add_required_extension",
+        "build_dirc_v2_fixture",
+        "RepositoryNormalization",
+        "snapshot_repository_bytes",
+        "normalize_repository",
+        "TransitionPurpose",
+        "TransitionIntent",
+        "TransitionOwnerToken",
+        "TransitionBegin",
+        "TransitionObservation",
+        "TransitionState",
+        "DurableTransitionCoordinator",
+        "TofuProposal",
+        "TofuInstallReceipt",
+        "build_tofu_proposal",
+        "install_tofu",
+        "Task5Invocation",
+        "Task5RecoveryResult",
+        "Task5Reservation",
+        "Task5Cancellation",
+        "CanonicalBatchRecord",
+        "Task5NormalizationReceipt",
+        "digest_raw_snapshot"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/execution/test_anchor_host_isolation.py"
+      ]
+    },
+    "bootstrap.galaxy_launcher.capsule": {
+      "path": "bootstrap/galaxy_launcher/capsule.py",
+      "purpose": "Canonical request-envelope primitives for the installed launch capsule.",
+      "exports": [
+        "RequestEnvelopeRefused",
+        "encode_path_manifest",
+        "decode_path_manifest_bytes",
+        "decode_path_manifest"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": []
+    },
+    "bootstrap.galaxy_launcher.runtime_manifest": {
+      "path": "bootstrap/galaxy_launcher/runtime_manifest.py",
+      "purpose": "Fail-closed verification for the sealed controller and activation images.",
+      "exports": [
+        "RuntimeClosureUnavailable",
+        "OfflineActivationArtifactsUnavailable",
+        "RuntimeLeaf",
+        "ControllerRuntimeManifest",
+        "VerifiedControllerRuntime",
+        "ActivationImageRecord",
+        "ActivationImageVerificationReport",
+        "OciLayoutInspection",
+        "select_verified_runtime",
+        "require_offline_activation_artifacts",
+        "verify_activation_images",
+        "inspect_oci_layout"
+      ],
+      "depends_on": [],
+      "callers": [
+        "tools.build_galaxy_launcher"
+      ],
+      "test": [
+        "tests/execution/test_controller_runtime_manifest.py"
+      ]
+    },
+    "bootstrap.galaxy_launcher.singularity_service": {
+      "path": "bootstrap/galaxy_launcher/singularity_service.py",
+      "purpose": "Inactive Windows service host for the installed Singularity anchor.",
+      "exports": [
+        "run_service_dispatcher",
+        "self_test",
+        "main"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/execution/test_singularity_service.py"
+      ]
+    },
+    "bootstrap.galaxy_launcher.tofu_finalize": {
+      "path": "bootstrap/galaxy_launcher/tofu_finalize.py",
+      "purpose": "Create canonical records for an already copied, inactive TOFU closure.",
+      "exports": [
+        "TofuFinalizationRefused",
+        "finalize_inactive_install",
+        "main"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": []
     },
     "check_bugs": {
       "path": "check_bugs.py",
@@ -3442,6 +3741,7 @@
         "learning.evolution.sie"
       ],
       "test": [
+        "tests/execution/test_tofu_bootstrap.py",
         "tests/platform/test_config_bootstrap.py"
       ]
     },
@@ -3630,6 +3930,7 @@
       ],
       "callers": [],
       "test": [
+        "tests/execution/test_tofu_bootstrap.py",
         "tests/platform/test_config_bootstrap.py"
       ]
     },
@@ -3736,7 +4037,8 @@
         "learning.evolution.evolver_prompts",
         "learning.safety",
         "learning.toolsmith",
-        "memory.experience"
+        "memory.experience",
+        "platform_core.execution.launch_guard"
       ],
       "callers": [],
       "test": [
@@ -4737,6 +5039,7 @@
         "platform_core.cli.main_cli",
         "platform_core.core",
         "platform_core.core.best_effort",
+        "platform_core.execution.launch_guard",
         "platform_core.ops.doctor",
         "platform_core.ops.external_project",
         "platform_core.ops.health",
@@ -5264,6 +5567,7 @@
         "tests/execution/test_github_pr_gate.py",
         "tests/execution/test_pr_feedback.py",
         "tests/execution/test_pr_feedback_async.py",
+        "tests/execution/test_provider_probe.py",
         "tests/explore/test_approach_gen.py",
         "tests/explore/test_approach_synthesis.py",
         "tests/explore/test_approach_tradeoffs.py",
@@ -6494,6 +6798,7 @@
         "state.task_schema"
       ],
       "test": [
+        "tests/execution/test_activation_image_entrypoint.py",
         "tests/notifications/test_entry_creation.py",
         "tests/notifications/test_notification_entry.py"
       ]
@@ -7173,6 +7478,7 @@
       "path": "notifications/runtime/work_launcher.py",
       "purpose": "Pure launcher core for the Discord /work command. No discord import -> unit-testable.",
       "exports": [
+        "SingularityLaunchUnavailable",
         "WorkRequest",
         "parseHours",
         "validate",
@@ -7831,6 +8137,7 @@
         "notifications.dashboard",
         "notifications.webdash",
         "platform_core.core.epoch",
+        "platform_core.execution.launch_guard",
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.control_mixin",
         "platform_core.orchestration.execute_mixin",
@@ -8369,7 +8676,10 @@
         "gateCommands"
       ],
       "depends_on": [],
-      "callers": [],
+      "callers": [
+        "platform_core.ops.doctor",
+        "platform_core.ops.health"
+      ],
       "test": [
         "tests/platform/test_git_io.py"
       ]
@@ -8515,7 +8825,9 @@
         "platform_core.execution.router"
       ],
       "callers": [
+        "agents.execution.claude_sdk_bridge",
         "platform_core.execution.wiring",
+        "platform_core.ops.health",
         "platform_core.orchestration.execute_mixin"
       ],
       "test": []
@@ -8602,8 +8914,13 @@
       "path": "platform_core/execution/environment.py",
       "purpose": "ExecutionEnvironment ABC + Capability flags + EnvHandle for the cloud execution fabric.",
       "exports": [
+        "EnvironmentUnavailable",
         "Capability",
         "EnvHandle",
+        "FinalizationOutcome",
+        "PreparedFinalization",
+        "FinalizationReceipt",
+        "ExecutionContext",
         "ExecutionEnvironment"
       ],
       "depends_on": [],
@@ -8619,12 +8936,53 @@
         "tests/execution/test_execution_environment.py"
       ]
     },
+    "platform_core.execution.launch_guard": {
+      "path": "platform_core/execution/launch_guard.py",
+      "purpose": "Task 1/2 zero-inference embargo.",
+      "exports": [
+        "TransactionalKernelInactive",
+        "requireTransactionalKernelActive"
+      ],
+      "depends_on": [],
+      "callers": [
+        "agents.execution.executor",
+        "agents.execution.executor_stream",
+        "agents.review.verification",
+        "learning.evolution.evolver",
+        "main",
+        "orchestrator",
+        "platform_core.execution.wiring"
+      ],
+      "test": [
+        "tests/execution/test_launch_guard.py"
+      ]
+    },
+    "platform_core.execution.provider_probe": {
+      "path": "platform_core/execution/provider_probe.py",
+      "purpose": "Sole neutral subprocess boundary for provider diagnostics.",
+      "exports": [
+        "InvalidProviderProbe",
+        "ProviderProbe",
+        "ProviderProbeResult",
+        "runProviderProbe"
+      ],
+      "depends_on": [],
+      "callers": [
+        "agents.execution.claude_sdk_bridge",
+        "platform_core.ops.health"
+      ],
+      "test": [
+        "tests/execution/test_provider_probe.py"
+      ]
+    },
     "platform_core.execution.router": {
       "path": "platform_core/execution/router.py",
-      "purpose": "EnvironmentRouter -- pick a backend per subtask and run its lifecycle with local fallback.",
+      "purpose": "Fail-closed execution-environment selection and finalization.",
       "exports": [
         "selectEnvironment",
         "provision",
+        "prepare",
+        "complete",
         "finalize"
       ],
       "depends_on": [
@@ -8634,7 +8992,8 @@
         "platform_core.execution.backends.local",
         "platform_core.execution.backends.remote",
         "platform_core.execution.backends.worktree",
-        "platform_core.execution.environment"
+        "platform_core.execution.environment",
+        "platform_core.execution.trust"
       ],
       "callers": [
         "platform_core.execution"
@@ -8663,6 +9022,29 @@
         "tests/execution/test_execution_security.py"
       ]
     },
+    "platform_core.execution.trust": {
+      "path": "platform_core/execution/trust.py",
+      "purpose": "Fail-closed workload trust contracts.",
+      "exports": [
+        "WorkloadTrustReceipt",
+        "WorkloadTrustGrant",
+        "ResolvedWorkloadTrust",
+        "unknownTrust",
+        "resolveWorkloadTrust",
+        "tightenWorkloadTrust"
+      ],
+      "depends_on": [],
+      "callers": [
+        "platform_core.execution.router",
+        "platform_core.runtime.execution_trust"
+      ],
+      "test": [
+        "tests/control/test_execution_trust_authority.py",
+        "tests/evolution/test_reflection_trust.py",
+        "tests/execution/test_execution_trust.py",
+        "tests/orchestration/test_adversary_trust.py"
+      ]
+    },
     "platform_core.execution.wiring": {
       "path": "platform_core/execution/wiring.py",
       "purpose": "Orchestration glue that wraps a subtask's attempt loop in an ExecutionEnvironment lifecycle.",
@@ -8673,6 +9055,7 @@
       ],
       "depends_on": [
         "platform_core.execution",
+        "platform_core.execution.launch_guard",
         "platform_core.orchestration"
       ],
       "callers": [
@@ -8709,7 +9092,8 @@
         "platform_core.knowledge_base.compress"
       ],
       "test": [
-        "tests/execution/test_builder_sim.py"
+        "tests/execution/test_builder_sim.py",
+        "tests/platform/test_galaxy_image_builder.py"
       ]
     },
     "platform_core.knowledge_base.compress": {
@@ -8797,7 +9181,8 @@
       "depends_on": [
         "config",
         "learning.compute",
-        "platform_core.core.best_effort"
+        "platform_core.core.best_effort",
+        "platform_core.core.git_io"
       ],
       "callers": [
         "main",
@@ -8832,10 +9217,12 @@
         "runHealthChecks"
       ],
       "depends_on": [
-        "agents.executor",
         "agents.executor_env",
         "config",
-        "platform_core.core.concurrency"
+        "platform_core.core.concurrency",
+        "platform_core.core.git_io",
+        "platform_core.execution",
+        "platform_core.execution.provider_probe"
       ],
       "callers": [
         "main",
@@ -9536,12 +9923,14 @@
       ],
       "callers": [],
       "test": [
+        "tests/control/test_execution_trust_authority.py",
         "tests/execution/test_execution_docker.py",
         "tests/execution/test_execution_environment.py",
         "tests/execution/test_execution_local.py",
         "tests/execution/test_execution_remote.py",
         "tests/execution/test_execution_router.py",
         "tests/execution/test_execution_security.py",
+        "tests/execution/test_execution_trust.py",
         "tests/execution/test_execution_worktree.py",
         "tests/orchestration/test_bridge_execution_tiered.py",
         "tests/orchestration/test_pre_execution_council_seam.py",
@@ -10771,6 +11160,7 @@
         "tests/control/test_control_store.py",
         "tests/control/test_granular_controls.py",
         "tests/control/test_webdash_control.py",
+        "tests/execution/test_controller_runtime_manifest.py",
         "tests/notifications/test_bot_control_auth.py",
         "tests/orchestration/test_control_ops.py",
         "tests/orchestration/test_control_review_mixin.py",
@@ -10820,6 +11210,20 @@
         "tests/execution/test_cost_budget.py"
       ]
     },
+    "platform_core.runtime.execution_trust": {
+      "path": "platform_core/runtime/execution_trust.py",
+      "purpose": "Process-local operator authority for exact-scope workload trust grants.",
+      "exports": [
+        "OperatorTrustAuthority"
+      ],
+      "depends_on": [
+        "platform_core.execution.trust"
+      ],
+      "callers": [],
+      "test": [
+        "tests/execution/test_execution_trust.py"
+      ]
+    },
     "platform_core.runtime.heartbeat": {
       "path": "platform_core/runtime/heartbeat.py",
       "purpose": "One cross-process liveness primitive: heartbeat files under ``state/heartbeats/``.",
@@ -10845,6 +11249,30 @@
       ],
       "test": [
         "tests/control/test_heartbeat.py"
+      ]
+    },
+    "platform_core.runtime.operator_launch": {
+      "path": "platform_core/runtime/operator_launch.py",
+      "purpose": "Outer operator-owned launch and acceptance-spec capability boundary.",
+      "exports": [
+        "OperatorLaunchRefused",
+        "OperatorApprovalRefused",
+        "OperatorCapabilityRefused",
+        "OperatorCapabilityPidMismatch",
+        "PreSpecAnalysisAuthority",
+        "SpecProposal",
+        "OperatorApprovalFrame",
+        "OperatorLaunchCapability",
+        "OperatorSpecApprovalCapability",
+        "AuthorizedOuterCapabilities",
+        "OperatorSpawnResult",
+        "consume_outer_capabilities",
+        "OperatorLauncher"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/control/test_operator_launch.py"
       ]
     },
     "platform_core.runtime.perf": {
@@ -11067,6 +11495,7 @@
         "platform_core.simulator.testing.e2e"
       ],
       "test": [
+        "tests/control/test_operator_launch.py",
         "tests/human_nature/eval/test_operator_sovereignty.py",
         "tests/human_nature/test_operator_authority.py",
         "tests/slow/test_e2e_operator.py"
@@ -11324,6 +11753,17 @@
       "callers": [],
       "test": []
     },
+    "tools.bootstrap_galaxy_dev_tools": {
+      "path": "tools/bootstrap_galaxy_dev_tools.py",
+      "purpose": "Install the exact external GALAXY mypy closure without network or pip.",
+      "exports": [
+        "DevToolBootstrapRefused",
+        "main"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": []
+    },
     "tools.browser_canary": {
       "path": "tools/browser_canary.py",
       "purpose": "Gated live-CDP canary against a local, secret-free browser fixture.",
@@ -11349,6 +11789,30 @@
       "test": [
         "tests/tools/test_browser_fixture.py"
       ]
+    },
+    "tools.build_galaxy_launcher": {
+      "path": "tools/build_galaxy_launcher.py",
+      "purpose": "Build and independently seal GALAXY's inactive OCI image closure.",
+      "exports": [
+        "ImageBuildRefused",
+        "SealedOciFacts",
+        "DockerfileAudit",
+        "BaseSpec",
+        "ImageSpec",
+        "PhysicalBuild",
+        "seal_oci_layout",
+        "write_deterministic_oci_archive",
+        "audit_dockerfile",
+        "require_docker_desktop_network_closed",
+        "build_offline_closure",
+        "load_activation_image_lock",
+        "main"
+      ],
+      "depends_on": [
+        "bootstrap.galaxy_launcher.runtime_manifest"
+      ],
+      "callers": [],
+      "test": []
     },
     "tools.cerebras_probe": {
       "path": "tools/cerebras_probe.py",
@@ -11501,7 +11965,8 @@
       "depends_on": [],
       "callers": [],
       "test": [
-        "tests/platform/test_dev_commands.py"
+        "tests/platform/test_dev_commands.py",
+        "tests/platform/test_galaxy_dev_tools.py"
       ]
     },
     "tools.dev_checks": {
@@ -11569,6 +12034,22 @@
         "tests/orchestration/test_elaborator.py"
       ]
     },
+    "tools.galaxy_plan_manifest": {
+      "path": "tools/galaxy_plan_manifest.py",
+      "purpose": "Emit deterministic file manifests from approved implementation-plan tasks.",
+      "exports": [
+        "PlanManifestError",
+        "FileRow",
+        "parse_plan",
+        "select_paths",
+        "main"
+      ],
+      "depends_on": [],
+      "callers": [],
+      "test": [
+        "tests/platform/test_galaxy_plan_manifest.py"
+      ]
+    },
     "tools.groq_probe": {
       "path": "tools/groq_probe.py",
       "purpose": "Safe Groq model-access probe.",
@@ -11633,6 +12114,21 @@
       "test": [
         "tests/platform/test_llm_navigation.py"
       ]
+    },
+    "tools.lock_galaxy_runtime": {
+      "path": "tools/lock_galaxy_runtime.py",
+      "purpose": "Prepare and verify an inactive, exact-challenge GALAXY runtime closure.",
+      "exports": [
+        "RuntimeLockRefused",
+        "prepare_runtime",
+        "verify_proposal",
+        "main"
+      ],
+      "depends_on": [
+        "bootstrap.galaxy_launcher"
+      ],
+      "callers": [],
+      "test": []
     },
     "tools.outcome_evaluation_report": {
       "path": "tools/outcome_evaluation_report.py",
@@ -11711,6 +12207,8 @@
       "exports": [
         "is_test_path",
         "iter_py_files",
+        "validate_header_prefix",
+        "iter_header_files",
         "module_dotted",
         "first_party_roots",
         "parse_module",

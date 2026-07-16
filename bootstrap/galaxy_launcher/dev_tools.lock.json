@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "mypy_version": "2.3.0",
+  "python_version": "3.12.13",
+  "implementation": "cpython",
+  "platform": "win_amd64",
+  "artifact_set": "mypy-2.3.0-py312-pure",
+  "wheels": [
+    {
+      "name": "ast_serialize",
+      "version": "0.6.0",
+      "filename": "ast_serialize-0.6.0-cp39-abi3-win_amd64.whl",
+      "size": 1101444,
+      "sha256": "113b58346f9ceb664352032770caca817d4a3c86f611c6088e6ef65ddaa70f0e",
+      "license": "MIT",
+      "compatibility": ["cp39-abi3-win_amd64"],
+      "source_url": "https://pypi.org/project/ast-serialize/0.6.0/"
+    },
+    {
+      "name": "librt",
+      "version": "0.13.0",
+      "filename": "librt-0.13.0-cp312-cp312-win_amd64.whl",
+      "size": 126934,
+      "sha256": "e54a315caf843c8d77e388cadc56ea9ded569935ee2d2347d7ea94992e5aa6fa",
+      "license": "MIT",
+      "compatibility": ["cp312-cp312-win_amd64"],
+      "source_url": "https://pypi.org/project/librt/0.13.0/"
+    },
+    {
+      "name": "mypy_extensions",
+      "version": "1.1.0",
+      "filename": "mypy_extensions-1.1.0-py3-none-any.whl",
+      "size": 4963,
+      "sha256": "1be4cccdb0f2482337c4743e60421de3a356cd97508abadd57d47403e94f5505",
+      "license": "MIT",
+      "compatibility": ["py3-none-any"],
+      "source_url": "https://pypi.org/project/mypy-extensions/1.1.0/"
+    },
+    {
+      "name": "mypy",
+      "version": "2.3.0",
+      "filename": "mypy-2.3.0-py3-none-any.whl",
+      "size": 2753292,
+      "sha256": "6b1cdb579446b60432432b2b2403a6201b4b475a004d7f488511c9ba177c9e88",
+      "license": "MIT",
+      "compatibility": ["py3-none-any"],
+      "source_url": "https://pypi.org/project/mypy/2.3.0/"
+    },
+    {
+      "name": "pathspec",
+      "version": "1.1.1",
+      "filename": "pathspec-1.1.1-py3-none-any.whl",
+      "size": 57328,
+      "sha256": "a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189",
+      "license": "MPL-2.0",
+      "compatibility": ["py3-none-any"],
+      "source_url": "https://pypi.org/project/pathspec/1.1.1/"
+    },
+    {
+      "name": "typing_extensions",
+      "version": "4.16.0",
+      "filename": "typing_extensions-4.16.0-py3-none-any.whl",
+      "size": 45571,
+      "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "license": "PSF-2.0",
+      "compatibility": ["py3-none-any"],
+      "source_url": "https://pypi.org/project/typing-extensions/4.16.0/"
+    }
+  ]
+}

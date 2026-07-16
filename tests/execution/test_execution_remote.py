@@ -31,6 +31,7 @@ def test_provision_records_host_and_ephemeral_caps():
     assert h.meta["host"] == "box.example"
     assert h.backend == "remote"
     assert Capability.PERSISTENT not in h.capabilities
+    assert h.requires_canonical_landing is True
 
 
 def test_wraplauncher_prefixes_ssh():
@@ -112,3 +113,17 @@ def test_unknown_kind_degrades_healthcheck_false():
          mock.patch.object(config, "EXECUTION_REMOTE_KIND", "modal"), \
          mock.patch.object(rm, "_run_remote", side_effect=RuntimeError("SDK not installed")):
         assert rm.RemoteEnvironment().healthCheck() is False
+
+
+def test_remote_handle_always_requires_canonical_landing():
+    from platform_core.execution.environment import EnvHandle
+    with mock.patch.object(config, "EXECUTION_REMOTE_HOST", "box.example"), \
+         mock.patch.object(config, "EXECUTION_REMOTE_KIND", "ssh"), \
+         mock.patch.object(rm, "_run_remote",
+                           return_value=SimpleNamespace(returncode=0, stdout="/remote/work", stderr="")):
+        environment = rm.RemoteEnvironment()
+        handle = environment.provision(task_state=None, subtask={"subtask_id": "landing"},
+                                       base_dir="/repo", policy=None)
+    assert isinstance(handle, EnvHandle)
+    assert handle.backend == environment.NAME == "remote"
+    assert handle.requires_canonical_landing is True

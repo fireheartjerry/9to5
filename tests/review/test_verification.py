@@ -15,7 +15,6 @@ from agents.review.verification import (
     Receipt,
     VResult,
     Verdict,
-    VerifyCancelled,
     annotate,
     receiptToVResult,
     runReceipt,
@@ -27,12 +26,27 @@ from agents.review.verification import (
 # helpers
 # ---------------------------------------------------------------------------
 
-def _receipt(**kw) -> Receipt:
-    defaults = dict(verdict=Verdict.PASS, cmd=(), rc=0, expect_mode="exit_zero",
-                    matched=(), missing=(), diff_files=(), duration_s=0.0,
-                    failure_feedback="", annotations={})
-    defaults.update(kw)
-    return Receipt(**defaults)
+def _receipt(*, verdict: Verdict = Verdict.PASS, cmd: tuple[str, ...] = (),
+             rc: int | None = 0, expect_mode: str = "exit_zero",
+             matched: tuple[str, ...] = (), missing: tuple[str, ...] = (),
+             diff_files: tuple[str, ...] = (), duration_s: float = 0.0,
+             failure_feedback: str = "", annotations: dict | None = None) -> Receipt:
+    return Receipt(verdict=verdict, cmd=cmd, rc=rc, expect_mode=expect_mode,
+                   matched=matched, missing=missing, diff_files=diff_files,
+                   duration_s=duration_s, failure_feedback=failure_feedback,
+                   annotations={} if annotations is None else annotations)
+
+
+class _KernelImplementationTestCase:
+    """Exercise dormant receipt mechanics without weakening the production gate."""
+
+    def setUp(self):
+        bypass = patch(
+            "platform_core.execution.launch_guard.requireTransactionalKernelActive",
+            return_value=None,
+        )
+        bypass.start()
+        self.addCleanup(bypass.stop)
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +272,7 @@ class TestRunReceiptSkipped(unittest.TestCase):
 # runReceipt -- happy path
 # ---------------------------------------------------------------------------
 
-class TestRunReceiptHappyPath(unittest.TestCase):
+class TestRunReceiptHappyPath(_KernelImplementationTestCase, unittest.TestCase):
     def test_exit_zero_pass(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = Path(tmp) / "ok.py"
@@ -307,7 +321,7 @@ class TestRunReceiptHappyPath(unittest.TestCase):
 # runReceipt -- error handling (new guards)
 # ---------------------------------------------------------------------------
 
-class TestRunReceiptErrorHandling(unittest.TestCase):
+class TestRunReceiptErrorHandling(_KernelImplementationTestCase, unittest.TestCase):
     def test_spawn_error_returns_error_verdict(self):
         with tempfile.TemporaryDirectory() as tmp:
             r = runReceipt({"cmd": "no_such_binary_xyz123 --flag", "expect": "exit_zero"},
@@ -365,6 +379,16 @@ class TestRunReceiptErrorHandling(unittest.TestCase):
             self.assertIs(r.verdict, Verdict.ERROR)
             self.assertIn("cancel", r.failure_feedback.lower())
 
-
-if __name__ == "__main__":
-    unittest.main()
+def test_all_acceptance_vectors_are_embargoed_before_directory_or_process_side_effects():
+    import importlib
+    import pytest
+    from agents.review import verification
+    guard = importlib.import_module("platform_core.execution.launch_guard")
+    vectors = [["cmd", "/c", "claude"], ["powershell", "-Command", "claude"],
+               ["wrapper.bat"], ["python", "-c", "print(1)"], ["renamed.exe"]]
+    for argv in vectors:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(verification.subprocess, "Popen", lambda *a, **k: (_ for _ in ()).throw(
+                AssertionError("Popen reached")))
+            with pytest.raises(guard.TransactionalKernelInactive):
+                verification._runVector(argv, "missing-dir")

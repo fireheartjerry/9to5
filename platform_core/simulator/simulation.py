@@ -30,12 +30,21 @@ from __future__ import annotations
 
 import functools as _functools
 import json
+import os as _os
 import re as _re
+import subprocess as _subprocess
+import sys as _sys
 from pathlib import Path as _Path
 
 import config
 
 LOG = config.getLogger("simulation")
+
+# This token deliberately makes the planner-authored command structurally invalid for
+# the production verifier.  ``sanitizeVerify`` drops angle-bracket placeholders, so a
+# builder fixture can never cross the sealed launch boundary by accident.  The
+# credentialless simulation executor extracts and runs the path itself below.
+_BUILDER_VERIFY_OWNER = "<SIMULATION_EXECUTOR_OWNS_VERIFY>"
 
 # Every act the sim doubles know how to fake. Dispatch is EXACT: anything else raises,
 # so a rerouted/reworded prompt can never silently exercise the wrong payload shape.
@@ -206,9 +215,13 @@ class BuilderBrain:
         subs = []
         for i in range(1, self.n + 1):
             target = str(_Path(self.work) / f"feature_{i}.py")
-            subs.append({"title": f"build feature {i}", "description": f"create {target}",
+            subs.append({"title": f"build feature {i}",
+                         "description": f"create deterministic feature artifact {i}",
                          "layer": 3, "effort_level": "default",
-                         "verify": {"cmd": f'python "{target}"', "expect": "exit_zero"},
+                         "verify": {
+                             "cmd": f'python "{target}" {_BUILDER_VERIFY_OWNER}',
+                             "expect": "exit_zero",
+                         },
                          # Each subtask touches only its own file -- mutually disjoint, so Epic 1's
                          # safeParallelSet/Epic 5's selectDisjointBatch can schedule them together
                          # instead of collapsing to one-at-a-time (unknown file-sets conflict).
@@ -233,7 +246,7 @@ def builderRunClaude(spec, *, work_dir=None, task_state=None, subtask=None,
     for backward compatibility, but under worktree isolation ``work_dir`` becomes a
     per-attempt worktree copy while BuilderBrain's verify commands always reference the
     ORIGINAL project root -- so the boundary must stay pinned to that root, not drift with
-    whichever worktree the attempt happens to execute in."""
+    the particular worktree where an attempt happens to execute."""
     if system_prompt is not None:
         return {"ok": True, "returncode": 0, "stdout": "# design\n" + "doc " * 60,
                 "is_error": False, "session_id": None}
@@ -241,21 +254,54 @@ def builderRunClaude(spec, *, work_dir=None, task_state=None, subtask=None,
     m = _re.search(r'python\s+"([^"]+)"', cmd)
     sid = (subtask or {}).get("subtask_id", "?")
     boundary = _project_root or work_dir
-    if m:
+    target = m.group(1) if m else None
+    if target is None and boundary:
+        touched = (subtask or {}).get("files_touched") or []
+        if touched:
+            target = str(_Path(boundary) / str(touched[0]))
+    if target:
         try:
-            p = _Path(m.group(1)).resolve()
-            if boundary and not str(p).startswith(str(_Path(boundary).resolve())):
-                return {"ok": False, "returncode": 1,
-                        "stdout": f"path traversal blocked: {p} outside {boundary}",
-                        "is_error": True, "session_id": None}
+            p = _Path(target).resolve()
+            root = _Path(boundary).resolve() if boundary else None
+            if root is not None:
+                try:
+                    p.relative_to(root)
+                except ValueError:
+                    return {"ok": False, "returncode": 1,
+                            "stdout": f"path traversal blocked: {p} outside {root}",
+                            "stderr": "", "is_error": True, "session_id": None}
+            if root is None:
+                root = p.parent
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(f'"""Built by 9to5 builder-sim for {sid}."""\nprint("{sid} ok")\n',
                          encoding="utf-8")
+            sterile_env = {
+                key: value for key, value in _os.environ.items()
+                if key.upper() in {"SYSTEMROOT", "WINDIR", "TEMP", "TMP"}
+            }
+            proc = _subprocess.run(
+                [_sys.executable, "-I", "-S", "-B", str(p)],
+                cwd=str(root), env=sterile_env, capture_output=True, text=True,
+                timeout=30, check=False,
+            )
+            output = (proc.stdout or "").strip()
+            error = (proc.stderr or "").strip()
+            if proc.returncode != 0:
+                return {"ok": False, "returncode": 1,
+                        "stdout": output, "stderr": error,
+                        "is_error": True, "session_id": None,
+                        "simulation_verification": "failed"}
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "returncode": 1, "stdout": f"write failed: {e}",
-                    "is_error": True, "session_id": None}
-    return {"ok": True, "returncode": 0, "stdout": f"[builder] wrote artifact for {sid}",
-            "is_error": False, "session_id": None}
+                    "stderr": "", "is_error": True, "session_id": None,
+                    "simulation_verification": "error"}
+        return {"ok": True, "returncode": 0,
+                "stdout": f"[builder] wrote and ran artifact for {sid}\n{output}",
+                "stderr": error, "is_error": False, "session_id": None,
+                "simulation_verification": "passed"}
+    return {"ok": True, "returncode": 0, "stdout": f"[builder] no artifact for {sid}",
+            "stderr": "", "is_error": False, "session_id": None,
+            "simulation_verification": "not_applicable"}
 
 
 def buildBuilderOrchestrator(work_dir: str, n_subtasks: int = 3):

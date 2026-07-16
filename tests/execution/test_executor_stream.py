@@ -65,6 +65,10 @@ def test_cancel_watcher_kills_fake_proc_within_3s(monkeypatch):
     """Cancel flips True after 0.1s -> tree-killed and returned in <3s (not the 30s timeout),
     with subtype='operator_killed' distinct from the timeout path."""
     monkeypatch.setattr(executor_stream, "_recordIterationMetric", lambda entry: None)
+    monkeypatch.setattr(
+        "platform_core.execution.launch_guard.requireTransactionalKernelActive",
+        lambda: None,
+    )
     monkeypatch.setattr(config, "CANCEL_POLL_SECONDS", 2.0, raising=False)
     monkeypatch.setattr(subprocess, "Popen", _FakePopen)
 
@@ -88,6 +92,10 @@ def test_cancel_watcher_kills_fake_proc_within_3s(monkeypatch):
 def test_cancel_watcher_kills_real_streaming_subprocess(monkeypatch):
     """Streaming (feed) path: the watcher tree-kills a real sleeping child within seconds."""
     monkeypatch.setattr(executor_stream, "_recordIterationMetric", lambda entry: None)
+    monkeypatch.setattr(
+        "platform_core.execution.launch_guard.requireTransactionalKernelActive",
+        lambda: None,
+    )
     monkeypatch.setattr(config, "CANCEL_POLL_SECONDS", 0.2, raising=False)
     monkeypatch.setattr(config, "EXECUTOR_OUTPUT_JSON", False, raising=False)
     feed = _FeedDouble()
@@ -107,6 +115,10 @@ def test_stderr_1mb_no_deadlock(monkeypatch):
     buffer and deadlock the sequential drain until the full timeout. The concurrent stderr
     reader must let it complete in <5s with all output captured."""
     monkeypatch.setattr(executor_stream, "_recordIterationMetric", lambda entry: None)
+    monkeypatch.setattr(
+        "platform_core.execution.launch_guard.requireTransactionalKernelActive",
+        lambda: None,
+    )
     monkeypatch.setattr(config, "EXECUTOR_OUTPUT_JSON", False, raising=False)
     script = ("import sys\n"
               "sys.stderr.write('x' * 1048576)\n"
@@ -128,6 +140,10 @@ def test_stderr_1mb_no_deadlock(monkeypatch):
 def test_never_firing_cancel_check_leaves_run_unchanged(monkeypatch):
     """A cancel_check that never fires must not disturb a normal communicate()-path run."""
     monkeypatch.setattr(executor_stream, "_recordIterationMetric", lambda entry: None)
+    monkeypatch.setattr(
+        "platform_core.execution.launch_guard.requireTransactionalKernelActive",
+        lambda: None,
+    )
     monkeypatch.setattr(config, "EXECUTOR_OUTPUT_JSON", False, raising=False)
     result = executor_stream.runSubprocess(
         [sys.executable, "-c", "print('hello')"], "unused prompt",
@@ -167,11 +183,47 @@ def test_streaming_drains_large_stderr_without_deadlock():
         box["out"], box["err"] = executor_stream._drainStreaming(proc, "", feed, 60)
 
     worker = threading.Thread(target=_run, daemon=True)
-    worker.start()
-    worker.join(timeout=30)
+    try:
+        worker.start()
+        worker.join(timeout=30)
+        assert not worker.is_alive(), "streaming drain deadlocked on a full stderr pipe"
+        stdout_lines = [ln for ln in box["out"].splitlines() if ln.startswith("line")]
+        assert len(stdout_lines) == 5
+        assert len(box["err"]) >= 200000
+        assert len(feed.lines) == 5
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=5)
+        for stream in (proc.stdin, proc.stdout, proc.stderr):
+            if stream is not None:
+                stream.close()
+def test_low_level_launch_seam_checks_embargo_before_popen(monkeypatch):
+    import importlib
+    import pytest
+    from agents.execution import executor_stream
 
-    assert not worker.is_alive(), "streaming drain deadlocked on a full stderr pipe"
-    stdout_lines = [ln for ln in box["out"].splitlines() if ln.startswith("line")]
-    assert len(stdout_lines) == 5
-    assert len(box["err"]) >= 200000
-    assert len(feed.lines) == 5
+    guard = importlib.import_module("platform_core.execution.launch_guard")
+    popen = __import__("unittest").mock.Mock(side_effect=AssertionError("Popen reached"))
+    monkeypatch.setattr(executor_stream.subprocess, "Popen", popen)
+    with pytest.raises(guard.TransactionalKernelInactive):
+        executor_stream._launchClaude(["claude", "--print"], ".", {}, 0)
+    popen.assert_not_called()
+
+
+def test_runclaude_and_provision_wiring_guard_before_any_input_or_backend_work():
+    import importlib
+    import pytest
+    from agents.execution import executor
+    from platform_core.execution import wiring
+    guard = importlib.import_module("platform_core.execution.launch_guard")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(executor, "normalizeSpec", lambda value: (_ for _ in ()).throw(
+            AssertionError("normalization reached")))
+        with pytest.raises(guard.TransactionalKernelInactive):
+            executor.runClaude({"prompt": "poison"})
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(wiring._env_router, "selectEnvironment", lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("selection reached")))
+        with pytest.raises(guard.TransactionalKernelInactive):
+            wiring.provisionForSubtask(None, {}, "poison")

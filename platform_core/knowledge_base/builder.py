@@ -6,7 +6,7 @@ EXPORTS:
   diffHeadings(prior_doc: str, new_doc: str) -> dict  -- Naive 'what changed' delta on top-level headings (for the refresh log).
 DEPENDS-ON: platform_core.app_config, platform_core.knowledge_base.scraper
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/execution/test_builder_sim.py
+RUN/TEST: python -m pytest tests/execution/test_builder_sim.py tests/platform/test_galaxy_image_builder.py
 """
 from __future__ import annotations
 

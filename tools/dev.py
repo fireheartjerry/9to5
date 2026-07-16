@@ -52,7 +52,7 @@ EXPORTS:
   main(argv: list[str]) -> int
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
-RUN/TEST: python -m pytest tests/platform/test_dev_commands.py
+RUN/TEST: python -m pytest tests/platform/test_dev_commands.py tests/platform/test_galaxy_dev_tools.py
 """
 from __future__ import annotations
 
@@ -126,7 +126,8 @@ def cmd_strategy(args: list[str]) -> int:
 
 
 def cmd_context(args: list[str]) -> int:
-    import argparse, json
+    import argparse
+    import json
     parser = argparse.ArgumentParser(description="Build a compact LLM navigation context packet.")
     parser.add_argument("query")
     parser.add_argument("--budget", type=int, default=12000)

@@ -100,7 +100,8 @@ class RemoteEnvironment(ExecutionEnvironment):
         return EnvHandle(work_dir=base_dir, backend=self.NAME,
                          meta={"host": host, "kind": config.EXECUTION_REMOTE_KIND,
                                "remote_work": remote_work, "base_dir": base_dir},
-                         capabilities=self.CAPABILITIES)
+                         capabilities=self.CAPABILITIES,
+                         requires_canonical_landing=True)
 
     def wrapLauncher(self, run_cmd: list, handle: EnvHandle) -> "tuple[list, str]":
         host = handle.meta["host"]

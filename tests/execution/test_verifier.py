@@ -33,27 +33,44 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from agents import verification, verifier
 
 
+class _KernelImplementationTestCase:
+    """Exercise dormant verifier mechanics without weakening the production gate."""
+
+    def setUp(self):
+        bypass = patch(
+            "platform_core.execution.launch_guard.requireTransactionalKernelActive",
+            return_value=None,
+        )
+        bypass.start()
+        self.addCleanup(bypass.stop)
+
+
 def _initRepo(tmp: str) -> None:
     def git(*args):
-        subprocess.run(["git", "-C", tmp, *args], check=True, capture_output=True, text=True)
+        subprocess.run(["git", "-C", tmp, *args], check=True, capture_output=True,
+                       text=True, timeout=20)
 
-    subprocess.run(["git", "init", tmp], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "init", tmp], check=True, capture_output=True,
+                   text=True, timeout=20)
     git("config", "user.email", "t@example.com")
     git("config", "user.name", "9TO5-tests")
 
 
 def _commitAll(tmp: str, msg: str = "snap") -> None:
-    subprocess.run(["git", "-C", tmp, "add", "-A"], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", tmp, "add", "-A"], check=True, capture_output=True,
+                   text=True, timeout=20)
     subprocess.run(
-        ["git", "-C", tmp, "commit", "-m", msg, "--no-verify"], check=True, capture_output=True, text=True
+        ["git", "-C", tmp, "commit", "-m", msg, "--no-verify"], check=True,
+        capture_output=True, text=True, timeout=20
     )
 
 
-class TestStrictExpectNoTestRunnerOverride(unittest.TestCase):
+class TestStrictExpectNoTestRunnerOverride(_KernelImplementationTestCase, unittest.TestCase):
     """(1) A green test-runner with a WRONG stdout needle FAILS -- expect is authoritative."""
 
     def test_green_test_script_with_missing_needle_fails(self):
@@ -81,7 +98,7 @@ class TestStrictExpectNoTestRunnerOverride(unittest.TestCase):
         )
 
 
-class TestDiffGroundedTargets(unittest.TestCase):
+class TestDiffGroundedTargets(_KernelImplementationTestCase, unittest.TestCase):
     """(2)+(3) declared targets are judged by the DIFF, never by token content."""
 
     def test_goal_words_in_a_comment_do_not_pass_an_unchanged_target(self):
@@ -142,7 +159,7 @@ class TestDiffGroundedTargets(unittest.TestCase):
             self.assertIn("feature.py", res.receipt.failure_feedback)
 
 
-class TestPureVerdict(unittest.TestCase):
+class TestPureVerdict(_KernelImplementationTestCase, unittest.TestCase):
     """Receipt.verdict derives from (rc, output, expect) ONLY."""
 
     CASES = [
@@ -322,3 +339,13 @@ class TestDeclaredTargets(unittest.TestCase):
         ]
         out = _strengthenPlanVerifies(_MULTI_REQ_GOAL, subs)
         self.assertIsNone((out[0]["verify"] or {}).get("targets"))
+def test_verifier_production_runner_hits_global_embargo_before_process_creation():
+    import importlib
+    import pytest
+    from agents.review import verification
+    guard = importlib.import_module("platform_core.execution.launch_guard")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(verification.subprocess, "Popen", lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("Popen reached")))
+        with pytest.raises(guard.TransactionalKernelInactive):
+            verification._runVector(["python", "-V"], ".")

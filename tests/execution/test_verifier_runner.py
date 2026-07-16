@@ -15,13 +15,22 @@ from __future__ import annotations
 
 import tempfile
 import unittest
-from pathlib import Path
 from unittest import mock
 
 import config
+import pytest
 from agents import verification, verifier
 from agents.verification import Receipt, Verdict, VResult
 from agents.verifier_runner import _verifyTimeoutSeconds
+
+
+@pytest.fixture(autouse=True)
+def _exercise_dormant_kernel_mechanics(monkeypatch):
+    """Unit-test receipt mechanics without opening the production launch boundary."""
+    monkeypatch.setattr(
+        "platform_core.execution.launch_guard.requireTransactionalKernelActive",
+        lambda **_context: None,
+    )
 
 
 class TestArgVectorExecution(unittest.TestCase):

@@ -16,19 +16,18 @@ EXPORTS:
   check_degradations() -> dict[str, Any]  -- Surfaces swallowed best_effort failures recorded this process (structured
   run() -> dict[str, Any]  -- Run every preflight check
   render(report: dict[str, Any]) -> str
-DEPENDS-ON: config, learning.compute, platform_core.core.best_effort
+DEPENDS-ON: config, learning.compute, platform_core.core.best_effort, platform_core.core.git_io
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/platform/test_doctor.py
 """
 
 from __future__ import annotations
 
-import os
 import shutil
-import subprocess
 from typing import Any
 
 import config
+from platform_core.core.git_io import runGit
 
 LOG = config.getLogger("doctor")
 
@@ -100,17 +99,9 @@ def check_embedder() -> dict[str, Any]:
         return _check("Embedder (retrieval)", False, hard=False, detail="ollama unreachable")
 
 
-def _git(*args: str) -> subprocess.CompletedProcess:
+def _git(*args: str):
     # A hung git (credential/terminal prompt) must never wedge the startup hot path.
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(config.PROJECT_ROOT),
-        capture_output=True,
-        text=True,
-        timeout=15,
-        stdin=subprocess.DEVNULL,
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-    )
+    return runGit(*args, cwd=str(config.PROJECT_ROOT), timeout=15)
 
 
 def check_git() -> dict[str, Any]:
@@ -140,7 +131,8 @@ def check_git() -> dict[str, Any]:
 
 def check_gh() -> dict[str, Any]:
     """GitHub CLI -- needed only for auto-PR output (fully optional)."""
-    if not shutil.which("gh"):
+    gh = shutil.which("gh")
+    if not gh:
         return _check(
             "GitHub CLI (PRs)",
             False,
@@ -148,7 +140,7 @@ def check_gh() -> dict[str, Any]:
             detail="gh not installed",
             fix="install gh + `gh auth login` (run still completes without PRs)",
         )
-    return _check("GitHub CLI (PRs)", True, hard=False, detail=shutil.which("gh"))
+    return _check("GitHub CLI (PRs)", True, hard=False, detail=gh)
 
 
 def check_gpu() -> dict[str, Any]:

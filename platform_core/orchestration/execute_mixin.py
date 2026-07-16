@@ -347,7 +347,10 @@ class OrchestratorExecuteMixin(OrchestratorExecuteAttemptMixin, OrchestratorExec
             return self._finalizeAttemptOutcome(state, subtask, architect_doc, bus, dashboard, outcome)
 
         finally:
-            _env_wiring.finalizeQuietly(env, handle, state, subtask, sid, LOG)  # Epic 8: collect+teardown
+            if env is not None and handle is not None:
+                _env_wiring.finalizeQuietly(
+                    env, handle, state, subtask, sid, LOG
+                )  # Epic 8: collect+teardown
 
     def _finalizeAttemptOutcome(
         self, state: TaskState, subtask: dict, architect_doc: str, bus: "ControlBus",
@@ -366,6 +369,12 @@ class OrchestratorExecuteMixin(OrchestratorExecuteAttemptMixin, OrchestratorExec
     def _prepareSubtaskEnv(self, state: TaskState, subtask: dict, exec_cwd: str) -> tuple:
         """Boundary divergence check (#12, observe-only) + Epic 8 per-subtask env provisioning.
         Returns (exec_cwd, env, handle, env_ctx)."""
+        # A fully injected credentialless harness has no environment adapter to
+        # provision or finalize.  Its supplied executor writes only to the test
+        # fixture and cannot reach the built-in backend registry/launcher.
+        if getattr(self, "_fully_injected", False):
+            return exec_cwd, None, None, None
+
         # Under _state_lock: it mutates state.meta + saves, and EVERY other meta mutation in this
         # parallel execution path is guarded by _state_lock -- an unguarded save here races a peer
         # worker's save (lost/torn meta update).

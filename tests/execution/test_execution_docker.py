@@ -69,3 +69,11 @@ def test_wraplauncher_prefixes_docker_exec():
     assert out_cmd == ["docker", "exec", "-w", h.meta["container_work"],
                        "cid-xyz", "claude", "--print"]
     assert out_work == h.work_dir
+
+
+def test_docker_handle_requires_staged_canonical_landing():
+    pol = CapabilityPolicy.resolve(None, None)
+    with mock.patch.object(dk, "_run_docker", return_value=_ok("cid-stage\n")):
+        h = dk.DockerEnvironment().provision(task_state=None, subtask=None,
+                                             base_dir="/project/repo", policy=pol)
+    assert h.requires_canonical_landing is True

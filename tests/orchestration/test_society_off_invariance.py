@@ -29,8 +29,8 @@ def test_handle_society_batch_delegates_to_coordinator(monkeypatch, tmp_path):
     monkeypatch.setattr(paths, "BLACKBOARD_DIR", tmp_path / "blackboard")
     from state.task import TaskState
     state = TaskState.create("multi", 1.0)
-    state.addSubtask("Implement a", "edit a.py")
-    state.addSubtask("Test a", "pytest a")
+    state.addSubtask("Implement a", "edit a.py", files_touched=["a.py"])
+    state.addSubtask("Test a", "pytest a", files_touched=["test_a.py"])
     s = _Stub()
     s._state_lock = __import__("threading").Lock()
     s._parallelism = 2

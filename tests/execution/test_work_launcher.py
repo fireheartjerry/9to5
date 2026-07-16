@@ -146,7 +146,7 @@ class TestSpawn(unittest.TestCase):
             mock.patch.object(subprocess, "Popen", return_value=fake) as p,
             mock.patch("builtins.open", mock.mock_open()),
         ):
-            pid = wl.spawn(wl.WorkRequest(goal="do x"))
+            pid = wl._spawnArgv(wl.buildArgv(wl.WorkRequest(goal="do x")), "work")
         self.assertEqual(pid, 4321)
         args, kwargs = p.call_args
         self.assertEqual(args[0], wl.buildArgv(wl.WorkRequest(goal="do x")))
@@ -202,7 +202,7 @@ class TestResume(unittest.TestCase):
             mock.patch.object(subprocess, "Popen", return_value=fake) as p,
             mock.patch("builtins.open", mock.mock_open()),
         ):
-            pid = wl.spawnResume("abc-123")
+            pid = wl._spawnArgv(wl.buildResumeArgv("abc-123"), "resume")
         self.assertEqual(pid, 99)
         self.assertEqual(p.call_args.args[0], wl.buildResumeArgv("abc-123"))
 
@@ -371,7 +371,8 @@ class TestWorkDirLauncherValidation(unittest.TestCase):
 
     def test_external_readiness_warns_for_git_repo_without_origin(self):
         with tempfile.TemporaryDirectory() as d:
-            subprocess.run(["git", "init", d], check=True, capture_output=True, text=True)
+            subprocess.run(["git", "init", d], check=True, capture_output=True,
+                           text=True, timeout=20)
             warnings = wl.externalReadiness(wl.WorkRequest(goal="x", work_dir=d))
             self.assertTrue(any("no `origin` remote" in w for w in warnings))
 
@@ -480,3 +481,31 @@ class TestStaleReap(unittest.TestCase):
         with mock.patch.object(wl.commands, "resolveTargetTask", return_value=st):
             self.assertIs(wl.activeRun(), st)
         self.assertEqual(TaskState.load(st.task_id).meta["status"], "executing")
+def test_production_fresh_resume_and_discord_requests_route_only_through_anchor(monkeypatch):
+    calls = []
+    monkeypatch.setattr(wl, "_requestSingularity", lambda operation, payload: (
+        calls.append((operation, payload)), 4242)[1])
+    monkeypatch.setattr(wl, "_spawnBlocked", lambda: False)
+    req = wl.WorkRequest(goal="safe", hours=1, mode="day", parallel=1)
+    assert wl.spawn(req) == 4242
+    assert wl.spawnResume("a" * 32) == 4242
+    assert [c[0] for c in calls] == ["fresh", "resume"]
+
+
+def test_actual_discord_work_command_delegates_to_anchor_backed_launcher(monkeypatch):
+    import asyncio
+    from notifications.bot.cogs import runs_cog
+    calls = []
+    monkeypatch.setattr(runs_cog.slash, "_ownerOk", lambda interaction: True)
+    monkeypatch.setattr(runs_cog.audit, "record", lambda *a: None)
+    monkeypatch.setattr(wl, "launchOrError", lambda req: calls.append(req) or "started")
+    async def immediate(fn, *args): return fn(*args)
+    monkeypatch.setattr(runs_cog.asyncio, "to_thread", immediate)
+    class Surface:
+        async def defer(self, **kwargs): pass
+        async def send(self, *args, **kwargs): pass
+    interaction = type("I", (), {"response": Surface(), "followup": Surface(),
+                                  "user": type("U", (), {"id": 1})()})()
+    cog = object.__new__(runs_cog.RunsCog)
+    asyncio.run(runs_cog.RunsCog.work.callback(cog, interaction, goal="safe"))
+    assert len(calls) == 1
