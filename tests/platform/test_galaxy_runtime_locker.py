@@ -95,6 +95,27 @@ def test_powershell_wrapper_is_reproducibly_built_and_survives_empty_environment
     assert poisoned.returncode == 0, poisoned.stderr
     assert poisoned.stdout == ""
 
+    refused = subprocess.run(
+        [
+            str(output),
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "exit 42",
+        ],
+        cwd=tmp_path,
+        env={},
+        text=True,
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+    assert refused.returncode == 42, (
+        "native wrapper must preserve the exact PowerShell failure status; "
+        f"stderr={refused.stderr!r}"
+    )
+
 
 def test_python_runtime_copy_excludes_mutable_bytecode_caches(tmp_path):
     mod = _mod()

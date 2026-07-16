@@ -46,6 +46,7 @@ static int clear_environment(void) {
 
 int wmain(int argc, wchar_t **argv) {
     wchar_t **child_argv;
+    intptr_t child_status;
     int index;
     if (argc < 1 || !clear_environment() ||
         !SetEnvironmentVariableW(L"SystemRoot", L"C:\\Windows") ||
@@ -61,7 +62,11 @@ int wmain(int argc, wchar_t **argv) {
         child_argv[index] = argv[index];
     }
     child_argv[argc] = NULL;
-    _wexecv(POWERSHELL, (const wchar_t *const *)child_argv);
+    child_status = _wspawnv(
+        _P_WAIT, POWERSHELL, (const wchar_t *const *)child_argv);
     free(child_argv);
-    return errno == 0 ? 78 : errno;
+    if (child_status == -1) {
+        return errno == 0 ? 78 : errno;
+    }
+    return (int)child_status;
 }
