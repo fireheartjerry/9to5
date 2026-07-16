@@ -401,6 +401,7 @@ Defaults fail closed. A backend may not claim staged landing support merely beca
 - Add: `containers/galaxy/object_parser.Dockerfile`
 - Add: `containers/galaxy/state_store.Dockerfile`
 - Add: `bootstrap/galaxy_launcher/tofu_bootstrap.ps1`
+- Add: `bootstrap/galaxy_launcher/tofu_finalize.py`
 - Add: `tools/build_galaxy_launcher.py`
 - Add: `tools/lock_galaxy_runtime.py`
 - Add: `tools/bootstrap_galaxy_dev_tools.py`
@@ -459,11 +460,13 @@ Defaults fail closed. A backend may not claim staged landing support merely beca
 - Add: `tests/execution/test_tofu_bootstrap.py`
 - Add: `tests/execution/test_activation_harness.py`
 - Add: `tests/execution/test_activation_images.py`
+- Modify: `tests/execution/test_activation_verifier.py`
 - Add: `tests/execution/test_cutover_normalization.py`
 - Add: `tests/execution/test_anchor_host_isolation.py`
 - Add: `tests/platform/test_galaxy_dev_tools.py`
 - Add: `tests/platform/test_galaxy_plan_manifest.py`
 - Add: `tests/platform/test_galaxy_repo_map_headers.py`
+- Add: `tests/platform/test_galaxy_runtime_locker.py`
 - Test: `tests/platform/test_repo_map.py`
 - Test: `tests/execution/test_work_launcher.py`
 
