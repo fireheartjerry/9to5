@@ -908,6 +908,14 @@ if ($terminalOutcome -ne "archived_achieved|$transitionPurpose") { throw 'Task 1
 
 **Files**
 
+- Modify: `bootstrap/galaxy_launcher/activation_images.lock.json`
+- Modify: `bootstrap/galaxy_launcher/runtime_manifest.py`
+- Add: `bootstrap/galaxy_launcher/sha1dc_source.lock.json`
+- Add: `bootstrap/galaxy_launcher/sha1dc_source_passport.json`
+- Modify: `config/galaxy/artifacts.v1.json`
+- Modify: `containers/galaxy/object_parser.Dockerfile`
+- Add: `containers/galaxy/sha1dc_object_oracle.c`
+- Modify: `platform_core/execution/environment.py`
 - Modify: `platform_core/runtime/worktree.py`
 - Add: `platform_core/runtime/candidate.py`
 - Add: `platform_core/runtime/attempt_journal.py`
@@ -917,7 +925,9 @@ if ($terminalOutcome -ne "archived_achieved|$transitionPurpose") { throw 'Task 1
 - Add: `platform_core/runtime/git_object_writer.py`
 - Add: `platform_core/runtime/git_index.py`
 - Add: `platform_core/runtime/canonical_repo.py`
+- Add: `platform_core/runtime/kernel_artifacts.py`
 - Add: `platform_core/runtime/loose_refs.py`
+- Add: `platform_core/runtime/sha1dc.py`
 - Add: `platform_core/execution/object_parser.py`
 - Add: `containers/galaxy/object_parser_entrypoint.py`
 - Modify: `platform_core/core/fsio.py`
@@ -926,6 +936,7 @@ if ($terminalOutcome -ne "archived_achieved|$transitionPurpose") { throw 'Task 1
 - Test: `tests/execution/test_worktree.py`
 - Test: `tests/execution/test_execution_worktree.py`
 - Test: `tests/execution/test_fsio.py`
+- Modify: `tests/execution/test_activation_images.py`
 - Add: `tests/execution/test_candidate.py`
 - Add: `tests/execution/test_execution_clone.py`
 - Add: `tests/execution/test_sterile_git.py`
@@ -934,11 +945,19 @@ if ($terminalOutcome -ne "archived_achieved|$transitionPurpose") { throw 'Task 1
 - Add: `tests/execution/test_git_index.py`
 - Add: `tests/execution/test_canonical_repo.py`
 - Add: `tests/execution/test_loose_refs.py`
+- Add: `tests/execution/test_kernel_artifacts.py`
+- Add: `tests/execution/test_object_manifest.py`
+- Add: `tests/execution/test_sha1dc.py`
+- Add: `tests/execution/test_sha1dc_oracle_build.py`
 - Add: `tests/execution/test_staged_revision.py`
 - Add: `tests/execution/test_attempt_journal.py`
 - Add: `tests/execution/test_attempt_crash_matrix.py`
 - Add: `tests/execution/test_receipts.py`
 - Add: `tests/execution/test_promotion_authorization.py`
+- Add: `tests/execution/test_transactional_clone_canary.py`
+- Modify: `tests/platform/test_galaxy_image_builder.py`
+- Modify: `tools/build_galaxy_launcher.py`
+- Add: `tools/build_sha1dc_oracle.py`
 
 ### Step 1: Add real-repository failing tests
 
