@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import importlib
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -31,6 +33,128 @@ def _leaf(mod, logical_path, path):
         "size": path.stat().st_size,
         "sha256": mod._sha_file(path),
     }
+
+
+def _partial_recovery_fixture(tmp_path: Path) -> tuple[Path, Path, list[dict[str, object]]]:
+    root = tmp_path / "installed"
+    controller = root / "generations/00000001/controller"
+    bootstrap = root / "generations/00000001/bootstrap"
+    controller.mkdir(parents=True)
+    bootstrap.mkdir(parents=True)
+    service_host = controller / "singularity_service.py"
+    bootstrap_script = bootstrap / "tofu_bootstrap.ps1"
+    service_host.write_bytes(b"# inert service host\n")
+    bootstrap_script.write_bytes(b"# proposal-bound bootstrap\n")
+    leaves: list[dict[str, object]] = []
+    for logical_path, installed in (
+        ("bootstrap/tofu_bootstrap.ps1", bootstrap_script),
+        ("controller/singularity_service.py", service_host),
+    ):
+        leaves.append(
+            {
+                "logical_path": logical_path,
+                "staging_path": str(tmp_path / "payload" / logical_path),
+                "installed_path": str(installed),
+                "size": installed.stat().st_size,
+                "sha256": hashlib.sha256(installed.read_bytes()).hexdigest(),
+            }
+        )
+    proposal = {
+        "schema": "galaxy.trust-on-first-install-proposal/v1",
+        "status": "ready_for_exact_approval",
+        "generation": 1,
+        "external_root": str(root),
+        "service_name": "9to5Singularity",
+        "service_host_path": str(service_host),
+        "tofu_receipt_path": str(root / "tofu/receipt-00000001.json"),
+        "source_leaves": leaves[:1],
+        "artifact_leaves": leaves[1:],
+    }
+    proposal_path = tmp_path / "tofu-proposal.json"
+    proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
+    return proposal_path, root, leaves
+
+
+def _audit_partial_install(proposal_path: Path) -> subprocess.CompletedProcess[str]:
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "tools/recover_galaxy_partial_tofu.ps1"
+    )
+    powershell = (
+        Path(os.environ["SystemRoot"])
+        / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    )
+    return subprocess.run(
+        [
+            str(powershell),
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+            "-AuditIncompleteFirstInstall",
+            "-ProposalPath",
+            str(proposal_path),
+        ],
+        cwd=proposal_path.parent,
+        env={"SystemRoot": os.environ["SystemRoot"], "WINDIR": os.environ["SystemRoot"]},
+        text=True,
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+
+
+def _invoke_recovery_functions(
+    body: str, *, env: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
+    """Load only function definitions from the recovery script, then run a pure probe."""
+    script = Path(__file__).resolve().parents[2] / "tools/recover_galaxy_partial_tofu.ps1"
+    powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    source = f"""
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = 'Stop'
+$tokens = $null
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+    $env:RECOVERY_SCRIPT, [ref]$tokens, [ref]$errors)
+if ($errors.Count -ne 0) {{ throw 'recovery script parse failed' }}
+$definitions = $ast.FindAll({{
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst]
+}}, $true)
+foreach ($definition in $definitions) {{
+    . ([scriptblock]::Create($definition.Extent.Text))
+}}
+{body}
+"""
+    encoded = base64.b64encode(source.encode("utf-16le")).decode("ascii")
+    child_env = {
+        "SystemRoot": os.environ["SystemRoot"],
+        "WINDIR": os.environ["SystemRoot"],
+        "RECOVERY_SCRIPT": str(script),
+        **env,
+    }
+    return subprocess.run(
+        [
+            str(powershell),
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-EncodedCommand",
+            encoded,
+        ],
+        cwd=script.parent,
+        env=child_env,
+        text=True,
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
 
 
 @pytest.mark.skipif(os.name != "nt", reason="the production boundary is Windows-only")
@@ -141,6 +265,187 @@ def test_powershell_wrapper_is_reproducibly_built_and_survives_empty_environment
     )
     assert missing_service.returncode == 0, missing_service.stderr
     assert missing_service.stdout.strip() == "missing-service-query:1060"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the TOFU recovery boundary is Windows-only")
+def test_partial_tofu_recovery_audit_accepts_only_the_exact_declared_inactive_tree(tmp_path):
+    proposal_path, root, leaves = _partial_recovery_fixture(tmp_path)
+
+    completed = _audit_partial_install(proposal_path)
+
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    inventory = "".join(
+        f"{leaf['logical_path']}\0{Path(str(leaf['installed_path'])).resolve()}\0"
+        f"{leaf['size']}\0{leaf['sha256']}\n"
+        for leaf in sorted(leaves, key=lambda item: str(item["logical_path"]))
+    ).encode("utf-8")
+    assert result == {
+        "schema": "galaxy.partial-tofu-recovery-audit/v1",
+        "status": "verified_incomplete_first_install",
+        "external_root": str(root.resolve()),
+        "installed_leaf_count": 2,
+        "installed_inventory_sha256": hashlib.sha256(inventory).hexdigest(),
+        "service_absent": True,
+        "authority_records_absent": True,
+        "activation_authority": False,
+    }
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the TOFU recovery boundary is Windows-only")
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("extra_file", "undeclared file"),
+        ("leaf_drift", "digest or size drift"),
+        ("authority_record", "authority record exists"),
+    ],
+)
+def test_partial_tofu_recovery_audit_refuses_ambiguous_or_authoritative_roots(
+    tmp_path, mutation, message
+):
+    proposal_path, root, leaves = _partial_recovery_fixture(tmp_path)
+    if mutation == "extra_file":
+        (root / "unexpected.txt").write_text("ambiguous", encoding="utf-8")
+    elif mutation == "leaf_drift":
+        Path(str(leaves[0]["installed_path"])).write_bytes(b"changed\n")
+    else:
+        (root / "activation-runtime.json").write_text("{}", encoding="utf-8")
+
+    completed = _audit_partial_install(proposal_path)
+
+    assert completed.returncode == 2
+    assert message in completed.stderr
+    assert root.is_dir()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the TOFU recovery boundary is Windows-only")
+@pytest.mark.parametrize("logical_path", ["bootstrap/bad\nname", "bootstrap/bad\x00name"])
+def test_partial_tofu_recovery_audit_refuses_inventory_delimiter_injection(
+    tmp_path, logical_path
+):
+    proposal_path, root, _leaves = _partial_recovery_fixture(tmp_path)
+    proposal = json.loads(proposal_path.read_text(encoding="utf-8"))
+    proposal["source_leaves"][0]["logical_path"] = logical_path
+    proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
+
+    completed = _audit_partial_install(proposal_path)
+
+    assert completed.returncode == 2
+    assert "proposal leaf schema is malformed" in completed.stderr
+    assert root.is_dir()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the TOFU recovery boundary is Windows-only")
+def test_partial_tofu_recovery_audit_refuses_duplicate_logical_paths(tmp_path):
+    proposal_path, root, leaves = _partial_recovery_fixture(tmp_path)
+    duplicate = root / "generations/00000001/controller/duplicate.py"
+    duplicate.write_bytes(b"# another declared leaf\n")
+    proposal = json.loads(proposal_path.read_text(encoding="utf-8"))
+    proposal["artifact_leaves"].append(
+        {
+            "logical_path": leaves[0]["logical_path"],
+            "staging_path": str(tmp_path / "payload/duplicate.py"),
+            "installed_path": str(duplicate),
+            "size": duplicate.stat().st_size,
+            "sha256": hashlib.sha256(duplicate.read_bytes()).hexdigest(),
+        }
+    )
+    proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
+
+    completed = _audit_partial_install(proposal_path)
+
+    assert completed.returncode == 2
+    assert "duplicate logical proposal path" in completed.stderr
+    assert root.is_dir()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the TOFU recovery boundary is Windows-only")
+def test_partial_tofu_recovery_refuses_journal_equal_to_external_root(tmp_path):
+    root = tmp_path / "installed"
+    root.mkdir()
+    proposal = tmp_path / "proposal.json"
+    response = tmp_path / "response.txt"
+    proposal.write_text("{}", encoding="utf-8")
+    response.write_text("approval", encoding="ascii")
+
+    completed = _invoke_recovery_functions(
+        """
+try {
+    Assert-RecoveryEvidencePaths -ProposalFile $env:TEST_PROPOSAL `
+        -ResponseFile $env:TEST_RESPONSE -JournalDirectory $env:TEST_ROOT `
+        -Root $env:TEST_ROOT
+    [Console]::Out.WriteLine('unexpected-success')
+    exit 0
+}
+catch {
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 2
+}
+""",
+        env={
+            "TEST_PROPOSAL": str(proposal),
+            "TEST_RESPONSE": str(response),
+            "TEST_ROOT": str(root),
+        },
+    )
+
+    assert completed.returncode == 2
+    assert "recovery journal must be an existing directory outside the external root" in completed.stderr
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the TOFU recovery boundary is Windows-only")
+def test_partial_tofu_recovery_preflights_conflicting_receipt_before_deletion(tmp_path):
+    receipt = tmp_path / "receipt.json"
+    receipt.write_bytes(b"conflicting")
+    completed = _invoke_recovery_functions(
+        """
+try {
+    $expected = [System.Text.Encoding]::ASCII.GetBytes('expected')
+    Assert-RecoveryReceiptPrecondition -Path $env:TEST_RECEIPT `
+        -ExpectedBytes $expected -RootExists $true
+    [Console]::Out.WriteLine('unexpected-success')
+    exit 0
+}
+catch {
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 2
+}
+""",
+        env={"TEST_RECEIPT": str(receipt)},
+    )
+
+    assert completed.returncode == 2
+    assert "recovery receipt replay bytes differ" in completed.stderr
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the TOFU recovery boundary is Windows-only")
+def test_partial_tofu_recovery_allows_vacant_receipt_path_before_deletion(tmp_path):
+    receipt = tmp_path / "receipt.json"
+    completed = _invoke_recovery_functions(
+        """
+$expected = [System.Text.Encoding]::ASCII.GetBytes('expected')
+Assert-RecoveryReceiptPrecondition -Path $env:TEST_RECEIPT `
+    -ExpectedBytes $expected -RootExists $true
+[Console]::Out.WriteLine('vacant')
+""",
+        env={"TEST_RECEIPT": str(receipt)},
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "vacant"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the TOFU recovery boundary is Windows-only")
+def test_partial_tofu_recovery_canonical_drive_root_remains_absolute():
+    drive_root = str(Path(os.environ["SystemRoot"]).anchor)
+    completed = _invoke_recovery_functions(
+        "[Console]::Out.WriteLine((ConvertTo-CanonicalDrivePath $env:TEST_DRIVE_ROOT))",
+        env={"TEST_DRIVE_ROOT": drive_root},
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == drive_root
 
 
 def test_python_runtime_copy_excludes_mutable_bytecode_caches(tmp_path):
