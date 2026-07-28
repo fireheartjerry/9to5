@@ -12,7 +12,7 @@ Recorder method swallows its own errors -- the recorder must never crash a run.
 EXPORTS:
   Recorder  -- Append-only JSONL span recorder for one run
   loadSpans(run_id: str, root: Optional[Path]=None) -> dict  -- Replay a run's event log into ``{"run_id": ..., "spans": [...]}``.
-DEPENDS-ON: config, platform_core.core.clock, platform_core.core.jsonl_io
+DEPENDS-ON: config, platform_core.core.clock, platform_core.core.jsonl_io, platform_core.execution
 SIDE-EFFECTS: writes state/trajectories/<run_id>.jsonl
 RUN/TEST: python -m pytest tests/orchestration/test_trajectory.py
 """
@@ -26,6 +26,10 @@ from typing import Any, Optional
 
 import config
 from platform_core.core import clock, jsonl_io
+from platform_core.execution.pre_execution import (
+    observeLegacyPath,
+    readLegacyText,
+)
 
 LOG = config.getLogger("runtime.trajectory")
 
@@ -98,15 +102,15 @@ def loadSpans(run_id: str, root: Optional[Path] = None) -> dict:
     degrade to an empty span list."""
     base = Path(root) if root is not None else (config.STATE_DIR / "trajectories")
     jsonl_path = base / f"{run_id}.jsonl"
-    if jsonl_path.exists():
+    if observeLegacyPath(jsonl_path.exists):
         events, skipped = jsonl_io.iterRecords(jsonl_path)
         if skipped:
             LOG.warning("trajectory %s: skipped %d unreadable event line(s)", run_id, skipped)
         return {"run_id": run_id, "spans": _replayEvents(events)}
     legacy = base / f"{run_id}.json"   # pre-JSONL format (one-release compat)
-    if legacy.exists():
+    if observeLegacyPath(legacy.exists):
         try:
-            data = json.loads(legacy.read_text(encoding="utf-8"))
+            data = json.loads(readLegacyText(legacy, encoding="utf-8"))
             if isinstance(data, dict):
                 return {"run_id": data.get("run_id", run_id), "spans": data.get("spans", [])}
         except Exception as e:  # noqa: BLE001

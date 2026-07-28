@@ -1,4 +1,5 @@
 """Tests for the live eval runner registry + automatic adapter promotion."""
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,10 +13,41 @@ from memory import experience
 class TestEvalRunner(unittest.TestCase):
     def setUp(self):
         eval_runner.clear()   # an Orchestrator built by another test may have registered one
-        mock.patch(
-            "platform_core.execution.launch_guard.requireTransactionalKernelActive",
-            return_value=None,
-        ).start()
+        self.verify_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.verify_temp.cleanup)
+
+    def _authority(self):
+        from agents.review.verification import issueDiagnosticVerificationCommandAuthority
+
+        def contained(request):
+            return subprocess.run(
+                list(request.argv),
+                cwd=request.work_dir,
+                capture_output=True,
+                text=True,
+                timeout=request.timeout_seconds,
+                check=False,
+            )
+
+        return issueDiagnosticVerificationCommandAuthority(
+            transaction_id="tx_eval_runner_test",
+            proposed_revision="1" * 40,
+            resource_id="eval_verifier_test",
+            work_dir=self.verify_temp.name,
+            image_digest="2" * 64,
+            security_profile_digest="3" * 64,
+            command_policy_digest="4" * 64,
+            watchdog_generation=1,
+            deadline="2099-01-01T00:00:00+00:00",
+            runner=contained,
+        )
+
+    def _verify(self, goal):
+        return eval_runner.verify_runner(
+            goal,
+            verification_authority=self._authority(),
+            work_dir=self.verify_temp.name,
+        )
 
     def tearDown(self):
         eval_runner.clear()
@@ -33,12 +65,19 @@ class TestEvalRunner(unittest.TestCase):
 
     def test_verify_runner_runs_real_check(self):
         # A trivially-true verify passes; a failing one fails.
-        ok = eval_runner.verify_runner({"verify": {"cmd": "python -c \"assert True\"",
-                                                    "expect": "exit_zero"}})
-        bad = eval_runner.verify_runner({"verify": {"cmd": "python -c \"assert False\"",
-                                                    "expect": "exit_zero"}})
+        ok = self._verify({"verify": {"cmd": "python -c \"assert True\"",
+                                      "expect": "exit_zero"}})
+        bad = self._verify({"verify": {"cmd": "python -c \"assert False\"",
+                                       "expect": "exit_zero"}})
         self.assertTrue(ok["passed"])
         self.assertFalse(bad["passed"])
+
+    def test_verify_runner_without_exact_authority_fails_closed(self):
+        result = eval_runner.verify_runner(
+            {"verify": {"cmd": "python -c \"assert True\"", "expect": "exit_zero"}}
+        )
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["reason"], "verification_authority_unavailable")
 
     def test_run_suite_with_verify_runner_makes_real_fitness(self):
         d = Path(tempfile.mkdtemp())
@@ -48,7 +87,7 @@ class TestEvalRunner(unittest.TestCase):
                 {"id": "g", "verify": {"cmd": "python -c \"assert True\"", "expect": "exit_zero"}}),
                 encoding="utf-8")
             db = d / "x.db"
-            out = eval_harness.run_suite(runner=eval_runner.verify_runner, suite_dir=d, db_path=db)
+            out = eval_harness.run_suite(runner=self._verify, suite_dir=d, db_path=db)
             self.assertEqual(out["status"], "scored")
             self.assertGreater(out["fitness"], 0.0)   # real, not a no_runner marker
         finally:

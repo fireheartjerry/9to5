@@ -73,6 +73,11 @@ _VERIFY_DESTRUCTIVE_CALLS = {
     "execve",
 }
 _VERIFY_DESTRUCTIVE_NAMES = {"eval", "exec", "compile", "__import__"}
+_PROVIDER_EXECUTABLE_NAMES = frozenset(
+    f"{provider}{suffix}"
+    for provider in ("claude", "codex", "ollama")
+    for suffix in ("", ".exe", ".com", ".cmd", ".bat", ".ps1")
+)
 
 
 # ==== SUB-CHECKS ====
@@ -86,6 +91,32 @@ def _checkAngleBrackets(cmd: str) -> bool:
     if os.name == "nt" and (re.search(r"\.sh\b", cmd.lower()) or re.match(r"(?:bash|sh)\s", cmd.lower())):
         LOG.info("sanitizeVerify: dropping non-Windows shell verify: %s", cmd)
         return True
+    return False
+
+
+def _hasProviderExecutable(cmd: str) -> bool:
+    """Recognize obvious provider executables as lexical defense-in-depth.
+
+    The transactional launch guard remains the authority boundary and rejects every
+    verification subprocess during Tasks 1/2.  This narrower check prevents the plain
+    provider names from becoming acceptance commands after that embargo is replaced,
+    without treating filenames such as ``test_claude_sdk_bridge.py`` as executables.
+    """
+    try:
+        lex = shlex.shlex(cmd, posix=False)
+        lex.whitespace_split = True
+        lex.commenters = ""
+        tokens = list(lex)
+    except ValueError:
+        return True
+    for token in tokens:
+        # Wrapper commands can place their payload in one quoted token, e.g.
+        # ``powershell -Command "codex --version"``. Split that payload once,
+        # then compare only exact executable basenames rather than raw prose.
+        for part in token.strip("'\"").split():
+            leaf = part.strip("'\"").replace("\\", "/").rsplit("/", 1)[-1]
+            if leaf.casefold() in _PROVIDER_EXECUTABLE_NAMES:
+                return True
     return False
 
 
@@ -164,6 +195,9 @@ def sanitizeVerify(verify: Optional[dict]) -> Optional[dict]:
     if not cmd:
         return _targetsOnly(verify)
     if _checkAngleBrackets(cmd):
+        return _targetsOnly(verify)
+    if _hasProviderExecutable(cmd):
+        LOG.info("sanitizeVerify: dropping provider-shaped verify command: %s", cmd)
         return _targetsOnly(verify)
     expect = verify.get("expect")
     if not (isinstance(expect, str) and expect.strip()):

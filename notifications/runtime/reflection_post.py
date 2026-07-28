@@ -10,7 +10,7 @@ EXPORTS:
   write_reflection(state: Any, *, chat: Callable[..., Any], comparative: Optional[dict]=None, obs: Any=None, innovative_changes: Optional[list]=None) -> Optional[str]  -- Generate the reflection paragraph, persist it to disk + Obsidian, and return it.
   post_reflection(state: Any, text: str, comparative: Optional[dict]=None) -> None  -- Post the reflection to Discord as ``CODENAME — text`` with a comparative footer
   post_innovations(state: Any, entries: list) -> None  -- Post a dedicated 'Innovative Changes' Discord embed (fact-backed entries)
-DEPENDS-ON: config, notifications.discord_bot, platform_core.orchestration.innovation_report
+DEPENDS-ON: config, notifications.discord_bot, platform_core.execution, platform_core.orchestration.innovation_report
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_reflection_post.py
 """
@@ -20,6 +20,9 @@ import hashlib
 from typing import Any, Callable, Optional
 
 import config
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+)
 
 LOG = config.getLogger("reflection")
 
@@ -80,8 +83,8 @@ def _save_to_disk(state: Any, text: str) -> None:
         if not task_id:
             return
         dest = config.STATE_DIR / str(task_id) / "reflection.md"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(text + "\n", encoding="utf-8")
+        mutateLegacyPath(dest.parent.mkdir,parents=True, exist_ok=True)
+        mutateLegacyPath(dest.write_text,text + "\n", encoding="utf-8")
     except Exception as e:  # noqa: BLE001
         LOG.warning("reflection disk save failed: %s", e)
 

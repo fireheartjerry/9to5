@@ -13,7 +13,7 @@ EXPORTS:
   dispatchBang(content: str, *, state, prefs: dict, chat: Optional[Callable[[str, str], str]]=None) -> Optional[str]  -- Route a Spec B Ollama-backed bang command to its pure core
   LogCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: config, learning.wisdom, memory.user_prefs, notifications.brain_dialogue, notifications.briefing, notifications.commands, notifications.slash
+DEPENDS-ON: config, learning.wisdom, memory.user_prefs, notifications.brain_dialogue, notifications.briefing, notifications.commands, notifications.slash, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_log_cog.py
 """
@@ -26,12 +26,11 @@ from discord import app_commands
 from discord.ext import commands as dpy_commands
 
 import config
-from notifications import briefing
-from notifications import brain_dialogue
 from learning import wisdom
 from memory import user_prefs
+from notifications import brain_dialogue, briefing, slash
 from notifications import commands as spine
-from notifications import slash
+from platform_core.runtime.effect_guard import legacyDiagnosticDiscordSend
 
 LOG = config.getLogger("cog.log")
 _DEPTHS = ("one-line", "standard", "deep", "raw")
@@ -110,11 +109,11 @@ class LogCog(dpy_commands.Cog):
         await interaction.response.defer(thinking=True)
         state = await asyncio.to_thread(spine.resolveTargetTask)
         if state is None:
-            return await interaction.followup.send(spine.NO_TASK)
+            return await legacyDiagnosticDiscordSend(interaction.followup.send, spine.NO_TASK)
         prefs = await asyncio.to_thread(user_prefs.load)
         out = await asyncio.to_thread(lambda: dispatchBang(bang, state=state, prefs=prefs,
                                                            chat=_gatewayChat))
-        await interaction.followup.send((out or spine.NO_TASK)[:slash.MAX_REPLY])
+        await legacyDiagnosticDiscordSend(interaction.followup.send, (out or spine.NO_TASK)[:slash.MAX_REPLY])
 
     @dpy_commands.Cog.listener("on_message")
     async def _bang_listener(self, message) -> None:  # noqa: ANN001  # pragma: no cover
@@ -138,7 +137,7 @@ class LogCog(dpy_commands.Cog):
         out = await asyncio.to_thread(lambda: dispatchBang(message.content, state=state,
                                                           prefs=prefs, chat=_gatewayChat))
         if out:
-            await message.channel.send(out[:slash.MAX_REPLY])
+            await legacyDiagnosticDiscordSend(message.channel.send, out[:slash.MAX_REPLY])
 
 
 def _gatewayChat(system: str, user: str) -> str:  # pragma: no cover -- needs live Ollama

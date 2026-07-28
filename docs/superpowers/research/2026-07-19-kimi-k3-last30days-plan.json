@@ -1,0 +1,59 @@
+{
+  "intent": "breaking_news",
+  "freshness_mode": "strict_recent",
+  "cluster_mode": "story",
+  "subqueries": [
+    {
+      "label": "primary",
+      "search_query": "Kimi K3 Moonshot AI",
+      "ranking_query": "What credible evidence explains the Kimi K3 release, capabilities, limitations, and reception?",
+      "sources": [
+        "reddit",
+        "x",
+        "youtube",
+        "tiktok",
+        "instagram",
+        "hackernews",
+        "polymarket"
+      ],
+      "weight": 1.0
+    },
+    {
+      "label": "weights",
+      "search_query": "Kimi K3 open weights license release",
+      "ranking_query": "Are Kimi K3 weights, license terms, inference code, and reproducible technical artifacts actually available?",
+      "sources": [
+        "reddit",
+        "x",
+        "youtube",
+        "hackernews"
+      ],
+      "weight": 0.8
+    },
+    {
+      "label": "benchmarks",
+      "search_query": "Kimi K3 benchmark Frontend Code Arena",
+      "ranking_query": "Which Kimi K3 benchmark claims are independently reproduced, and which remain first-party or harness-sensitive?",
+      "sources": [
+        "reddit",
+        "x",
+        "youtube",
+        "hackernews",
+        "polymarket"
+      ],
+      "weight": 0.8
+    },
+    {
+      "label": "architecture",
+      "search_query": "Kimi K3 KDA Attention Residuals agent limitations",
+      "ranking_query": "Which Kimi K3 architecture, long-context, tool-use, and safety ideas are concrete enough for a controlled research transfer?",
+      "sources": [
+        "reddit",
+        "x",
+        "youtube",
+        "hackernews"
+      ],
+      "weight": 0.7
+    }
+  ]
+}

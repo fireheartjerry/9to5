@@ -9,17 +9,23 @@ not hidden state. This is the anti-drift narrative anchor (F3).
 EXPORTS:
   write_letter(task_id: str, body_state: dict[str, Any], *, letters_dir: Optional[Any]=None, stamp: Optional[str]=None) -> dict[str, Any]  -- Compose and save a letter to the future self for *task_id*.
   read_letters(task_id: str, *, letters_dir: Optional[Any]=None) -> list[str]  -- Read all letters for *task_id*, in filename-sorted (chronological) order.
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.execution
 SIDE-EFFECTS: writes markdown files under STATE_DIR/task_id/letters/ (or letters_dir)
 RUN/TEST: python -m pytest tests/human_nature/test_continuity.py
 """
 from __future__ import annotations
 
-from pathlib import Path
 import re
+from pathlib import Path
 from typing import Any, Optional
 
 import config
+from platform_core.execution.pre_execution import (
+    globLegacy,
+    mutateLegacyPath,
+    observeLegacyPath,
+    readLegacyText,
+)
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -86,7 +92,7 @@ def _keep_section(body_state: dict[str, Any]) -> str:
 
 def _next_filename(letters_dir: Path) -> str:
     """Return a zero-padded monotonic counter filename (e.g. '0001.md')."""
-    existing = sorted(letters_dir.glob("*.md"))
+    existing = sorted(globLegacy(letters_dir, "*.md"))
     next_idx = max((int(f.stem) for f in existing if f.stem.isdigit()), default=0) + 1
     return f"{next_idx:04d}.md"
 
@@ -128,13 +134,13 @@ def write_letter(
           "text" — full text content of the letter
     """
     d = Path(letters_dir) if letters_dir is not None else _default_letters_dir(task_id)
-    d.mkdir(parents=True, exist_ok=True)
+    mutateLegacyPath(d.mkdir,parents=True, exist_ok=True)
 
     fname = f"{_safe_component(stamp, 'stamp')}.md" if stamp is not None else _next_filename(d)
     fpath = d / fname
 
     text = _compose_letter(task_id, body_state)
-    fpath.write_text(text, encoding="utf-8")
+    mutateLegacyPath(fpath.write_text,text, encoding="utf-8")
     return {"path": str(fpath), "text": text}
 
 
@@ -154,7 +160,7 @@ def read_letters(
         Empty list if the directory does not exist or contains no .md files.
     """
     d = Path(letters_dir) if letters_dir is not None else _default_letters_dir(task_id)
-    if not d.exists():
+    if not observeLegacyPath(d.exists):
         return []
-    files = sorted(d.glob("*.md"))
-    return [f.read_text(encoding="utf-8") for f in files]
+    files = sorted(globLegacy(d, "*.md"))
+    return [readLegacyText(f, encoding="utf-8") for f in files]

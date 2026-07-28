@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import importlib
 import json
-from pathlib import Path
+import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -394,6 +395,11 @@ def test_real_ps51_request_client_rejects_noncanonical_and_roundtrips_near_caps(
     assert 4050 <= len(payload) <= 4096
     payload_b64url = base64.urlsafe_b64encode(payload).decode().rstrip("=")
     request = {
+        "arguments": {
+            "manifest_id": "manifest_" + "a" * 64,
+            "scope": "source_" + "b" * 64,
+            "sequence": 0,
+        },
         "operation": "append-path-manifest",
         "payload_base64url": payload_b64url,
         "request_id": "r" * 500,
@@ -402,7 +408,7 @@ def test_real_ps51_request_client_rejects_noncanonical_and_roundtrips_near_caps(
                                separators=(",", ":")).encode()
     encoded = base64.urlsafe_b64encode(request_bytes).decode().rstrip("=")
     assert "=" not in encoded
-    assert 8000 <= len(encoded) <= 8192
+    assert 8000 <= len(encoded) <= 10923
     accepted = subprocess.run([powershell, "-NoLogo", "-NoProfile", "-NonInteractive",
         "-File", str(client), "-SelfTestRequestEnvelope", encoded],
         text=True, capture_output=True, timeout=30)
@@ -413,9 +419,46 @@ def test_real_ps51_request_client_rejects_noncanonical_and_roundtrips_near_caps(
     forbidden = encoded.replace("-", "+") if "-" in encoded else "+" + encoded[1:]
     attacks = [encoded + "=", forbidden, "AB",
                base64.b64encode(b"\xff").decode(),
-               "A" * 8193]
+               "A" * 10924]
     for attack in attacks:
         cp = subprocess.run([powershell, "-NoLogo", "-NoProfile", "-NonInteractive",
             "-File", str(client), "-SelfTestRequestEnvelope", attack], text=True,
             capture_output=True, timeout=30)
         assert cp.returncode != 0, f"attack unexpectedly accepted: {attack!r}\nstdout={cp.stdout}"
+
+
+def test_tofu_registers_an_inactive_fresh_native_anchor_task_contract(tmp_path):
+    powershell = shutil.which("powershell.exe")
+    assert powershell
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "bootstrap/galaxy_launcher/tofu_bootstrap.ps1"
+    )
+    source = script.read_text(encoding="utf-8")
+    assert "Register-InactiveAnchorTask" in source
+    result = subprocess.run(
+        [
+            powershell,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(script),
+            "-SelfTestAnchorTaskContract",
+        ],
+        cwd=tmp_path,
+        env={"SystemRoot": os.environ["SystemRoot"], "WINDIR": os.environ["WINDIR"]},
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert json.loads(result.stdout) == {
+        "activation_authority": False,
+        "anchor_source": "singularity_anchor.ps1",
+        "fresh_host_flags": ["-NoLogo", "-NoProfile", "-NonInteractive"],
+        "operator_service_rights": "query-status+start-only",
+        "registration_state": "on_demand_inactive",
+        "schema": "galaxy.singularity-anchor-task/v1",
+        "service_host_role": "restricted-sid-lifecycle-only",
+    }

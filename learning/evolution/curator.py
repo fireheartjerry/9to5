@@ -9,7 +9,7 @@ DEFAULT_CONSOLIDATE=False) -- opt in via EVOLUTION_CONSOLIDATE. Dry-run previews
 EXPORTS:
   run_curator(*, now: Optional[datetime]=None, dry_run: bool=False, db_path: Optional[Path]=None) -> dict[str, Any]  -- Deterministic age-out over champion skills + opt-in umbrella consolidation.
   restore_skill(target: str, *, db_path: Optional[Path]=None) -> bool  -- Recover an archived/stale skill back to champion (archive is never a delete).
-DEPENDS-ON: config, memory.experience
+DEPENDS-ON: config, memory.experience, platform_core.execution
 SIDE-EFFECTS: flips candidate states; writes state/evolution/reports
 RUN/TEST: python -m pytest tests/evolution/test_evolution_curator.py
 """
@@ -21,6 +21,10 @@ from typing import Any, Optional
 
 import config
 from memory import experience
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+    openLegacyFile,
+)
 
 LOG = config.getLogger("sie.evolution.curator")
 
@@ -39,8 +43,8 @@ def _write_report(report: dict[str, Any]) -> None:
         # Derive from STATE_DIR (state/tasks) so per-test isolation redirects this too --
         # the PROJECT_ROOT form appended to the COMMITTED CURATOR.md on every test run.
         rep_dir = Path(config.STATE_DIR).parent / "evolution" / "reports"
-        rep_dir.mkdir(parents=True, exist_ok=True)
-        with (rep_dir / "CURATOR.md").open("a", encoding="utf-8") as fh:
+        mutateLegacyPath(rep_dir.mkdir,parents=True, exist_ok=True)
+        with openLegacyFile(rep_dir / "CURATOR.md", "a", encoding="utf-8") as fh:
             fh.write(f"- curator run dry={report['dry_run']} archived={report['archived']} "
                      f"stale={report['stale']} pinned_skipped={report['pinned_skipped']}\n")
     except Exception as e:  # noqa: BLE001

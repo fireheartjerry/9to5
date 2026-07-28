@@ -5,7 +5,7 @@ EXPORTS:
   repoContext(work_dir: str | None) -> str  -- Compact, REAL repository grounding for the brain so it stops inventing
   isVagueGoal(goal: str) -> bool  -- A goal is vague if it is short, uses a generic verb, and names no path/module.
   vagueGoalBundle(work_dir: str | None) -> str  -- A compact state-of-repo bundle (real module names + size violations) so a vague
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_elaborator_grounding.py
 """
@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 
 import config
+from platform_core.execution.pre_execution import openLegacyBuiltin
+from platform_core.execution.sandbox_broker import runLegacyProcess
 
 LOG = config.getLogger("elaborator.grounding")
 # (mtime, context) keyed by work_dir. AGENTS.md's mtime is the staleness signal: a self-
@@ -35,9 +36,9 @@ def _repoFingerprint(work_dir: str) -> tuple[float, str]:
     """A cheap freshness key for both generated navigation and Git-history context."""
     head = ""
     try:
-        proc = subprocess.run(["git", "-C", work_dir, "rev-parse", "HEAD"],
-                              capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=2)
+        proc = runLegacyProcess(["git", "-C", work_dir, "rev-parse", "HEAD"],
+                                capture_output=True, text=True, encoding="utf-8",
+                                errors="replace", timeout=2)
         if proc.returncode == 0:
             head = (proc.stdout or "").strip()
     except Exception as exc:  # noqa: BLE001 -- a non-repository simply has no Git fingerprint
@@ -64,7 +65,7 @@ def repoContext(work_dir: str | None) -> str:
         return cached[1]
     parts: list[str] = []
     try:
-        with open(os.path.join(key, "AGENTS.md"), encoding="utf-8") as fh:
+        with openLegacyBuiltin(os.path.join(key, "AGENTS.md"), encoding="utf-8") as fh:
             agents_md = fh.read().strip()
         if agents_md:
             parts.append("Package & directory map (AGENTS.md):\n" + agents_md)
@@ -72,7 +73,7 @@ def repoContext(work_dir: str | None) -> str:
         pass
     try:
         # encoding-safe: git output can contain bytes that are not valid cp1252 on Windows.
-        proc = subprocess.run(
+        proc = runLegacyProcess(
             ["git", "-C", key, "log", "--oneline", "-10", "--name-only"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=10,
@@ -106,7 +107,7 @@ def isVagueGoal(goal: str) -> bool:
 
 def _repoMapModules(work_dir: str, limit: int = 15) -> list[str]:
     try:
-        with open(os.path.join(work_dir, ".repo-map.json"), encoding="utf-8") as fh:
+        with openLegacyBuiltin(os.path.join(work_dir, ".repo-map.json"), encoding="utf-8") as fh:
             data = json.load(fh)
         mods = [m.get("path", "") for m in data.get("modules", []) if m.get("path")]
         return mods[:limit]

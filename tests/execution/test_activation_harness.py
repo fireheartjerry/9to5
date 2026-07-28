@@ -10,13 +10,11 @@ from __future__ import annotations
 import ast
 import base64
 import ctypes
-from ctypes import wintypes
 import dataclasses
 import hashlib
 import hmac
 import importlib
 import json
-from pathlib import Path
 import re
 import secrets
 import shutil
@@ -25,15 +23,473 @@ import sqlite3
 import subprocess
 import threading
 import time
+from ctypes import wintypes
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 import psutil
 import pytest
-
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 CAMPAIGN_TIMEOUT_SECONDS = 1800
+
+
+def test_docker_command_uses_a_fresh_empty_cli_configuration(tmp_path, monkeypatch):
+    mod = importlib.import_module("bootstrap.galaxy_launcher.activation_harness")
+    ambient = tmp_path / "ambient-docker-config"
+    ambient.mkdir()
+    (ambient / "config.json").write_text('{"credsStore":"poison"}', encoding="utf-8")
+    monkeypatch.setenv("DOCKER_CONFIG", str(ambient))
+    observed: dict[str, object] = {}
+
+    def fake_run(argv, **kwargs):
+        environment = kwargs["env"]
+        config_root = Path(environment["DOCKER_CONFIG"])
+        observed["config_root"] = config_root
+        observed["environment"] = dict(environment)
+        assert config_root.is_dir()
+        assert not any(config_root.iterdir())
+        kwargs["stdout"].write(b"[]")
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    runtime = SimpleNamespace(
+        docker_path=tmp_path / "docker.exe",
+        external_root=tmp_path,
+    )
+
+    completed = mod._docker_command(runtime, ["image", "inspect", "sha256:" + "a" * 64], timeout=3)
+
+    assert completed.returncode == 0
+    assert observed["config_root"] != ambient
+    assert not Path(observed["config_root"]).exists()
+    assert observed["environment"]["DOCKER_HOST"] == "npipe:////./pipe/dockerDesktopLinuxEngine"
+
+
+def test_docker_command_spools_and_refuses_output_above_quota(tmp_path, monkeypatch):
+    mod = importlib.import_module("bootstrap.galaxy_launcher.activation_harness")
+    monkeypatch.setattr(mod, "_MAX_DOCKER_COMMAND_OUTPUT_BYTES", 32)
+
+    def fake_run(argv, **kwargs):
+        kwargs["stdout"].write(b"x" * 33)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    runtime = SimpleNamespace(
+        docker_path=tmp_path / "docker.exe",
+        external_root=tmp_path,
+    )
+
+    with pytest.raises(mod.ActivationInvariantFailed, match="output exceeds quota"):
+        mod._docker_command(runtime, ["logs", "container"], timeout=3)
+
+
+def test_inert_role_runner_uses_digest_only_offline_container_boundary(tmp_path):
+    mod = importlib.import_module("bootstrap.galaxy_launcher.activation_harness")
+    external = tmp_path / "installed"
+    controller = external / "generations" / "00000007" / "controller"
+    images = external / "generations" / "00000007" / "images"
+    admin = external / "admin" / "repo"
+    input_root = admin / "input"
+    output_root = admin / "output"
+    for directory in (controller, images, input_root, output_root):
+        directory.mkdir(parents=True)
+    entrypoint = controller / "object_parser_entrypoint.py"
+    entrypoint.write_bytes(b"print('sealed')\n")
+    docker = controller / "docker.exe"
+    docker.write_bytes(b"sealed-docker")
+    archive = images / "object-parser.oci.tar"
+    archive.write_bytes(b"offline-image")
+    image_digest = "a" * 64
+    runtime = SimpleNamespace(
+        external_root=external.resolve(),
+        docker_path=docker.resolve(),
+        docker_digest=hashlib.sha256(docker.read_bytes()).hexdigest(),
+        object_parser_entrypoint_path=entrypoint.resolve(),
+        object_parser_entrypoint_digest=hashlib.sha256(
+            entrypoint.read_bytes()
+        ).hexdigest(),
+        reviewer_entrypoint=(controller / "activation_reviewer.py").resolve(),
+        reviewer_digest="b" * 64,
+        image_digests={"object_parser": image_digest, "reviewer": "c" * 64},
+        image_archive_paths={
+            "object_parser": archive.resolve(),
+            "reviewer": archive.resolve(),
+        },
+        runtime_digest="d" * 64,
+    )
+    calls: list[tuple[str, ...]] = []
+    observed_control: dict[str, object] = {}
+    container_id = "e" * 64
+    result_body = b'{"network_allowed":false,"schema":"example/v1"}\n'
+
+    def command_runner(actual_runtime, arguments, *, timeout):
+        assert actual_runtime is runtime
+        assert timeout > 0
+        argv = tuple(arguments)
+        calls.append(argv)
+        if argv[:2] == ("image", "inspect"):
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                json.dumps([{"Id": "sha256:" + image_digest}]),
+                "",
+            )
+        if argv[0] == "create":
+            control_mount = next(
+                argv[index + 1]
+                for index, value in enumerate(argv[:-1])
+                if value == "--mount" and "target=/galaxy-control" in argv[index + 1]
+            )
+            control_source = control_mount.removeprefix("type=bind,source=").split(
+                ",target=/galaxy-control", 1
+            )[0]
+            observed_control.update(
+                json.loads((Path(control_source) / "activation.json").read_bytes())
+            )
+            return subprocess.CompletedProcess(argv, 0, container_id + "\n", "")
+        if argv[:2] == ("wait", container_id):
+            return subprocess.CompletedProcess(argv, 0, "0\n", "")
+        if argv[:2] == ("logs", container_id):
+            return subprocess.CompletedProcess(
+                argv, 0, result_body.decode("ascii"), ""
+            )
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    result = mod.run_inert_role(
+        runtime,
+        role="object_parser",
+        runtime_argv=(
+            "source-object-closure",
+            "--request",
+            "/galaxy-input/request.json",
+        ),
+        input_mounts=((input_root, "/galaxy-input"),),
+        writable_mounts=((output_root, "/galaxy-output"),),
+        invocation_root=admin / "contained-runtime",
+        command_runner=command_runner,
+    )
+
+    assert result.stdout == result_body
+    assert result.stderr == b""
+    assert result.image_digest == image_digest
+    create = next(call for call in calls if call[0] == "create")
+    assert "--pull=never" in create
+    assert "--network=none" in create
+    assert "--read-only" in create
+    assert "--cap-drop=ALL" in create
+    assert "--security-opt=no-new-privileges:true" in create
+    assert "--user=65532:65532" in create
+    assert "sha256:" + image_digest in create
+    assert not any("latest" in value for value in create)
+    assert observed_control["argv"] == [
+        "source-object-closure",
+        "--request",
+        "/galaxy-input/request.json",
+    ]
+    assert "source-object-closure" not in create
+    assert "--request" not in create
+    assert "/galaxy-input/request.json" not in create
+    input_mount = next(
+        create[index + 1]
+        for index, value in enumerate(create[:-1])
+        if value == "--mount" and "target=/galaxy-input" in create[index + 1]
+    )
+    output_mount = next(
+        create[index + 1]
+        for index, value in enumerate(create[:-1])
+        if value == "--mount" and "target=/galaxy-output" in create[index + 1]
+    )
+    assert input_mount.endswith(",readonly")
+    assert not output_mount.endswith(",readonly")
+    assert ("rm", "-f", container_id) in calls
+
+
+def test_inert_role_runner_refuses_mount_outside_installed_root(tmp_path):
+    mod = importlib.import_module("bootstrap.galaxy_launcher.activation_harness")
+    external = tmp_path / "installed"
+    controller = external / "controller"
+    controller.mkdir(parents=True)
+    entrypoint = controller / "object_parser_entrypoint.py"
+    entrypoint.write_bytes(b"pass\n")
+    docker = controller / "docker.exe"
+    docker.write_bytes(b"sealed-docker")
+    archive = controller / "object-parser.oci.tar"
+    archive.write_bytes(b"offline")
+    runtime = SimpleNamespace(
+        external_root=external.resolve(),
+        docker_path=docker,
+        docker_digest=hashlib.sha256(docker.read_bytes()).hexdigest(),
+        object_parser_entrypoint_path=entrypoint,
+        object_parser_entrypoint_digest=hashlib.sha256(
+            entrypoint.read_bytes()
+        ).hexdigest(),
+        reviewer_entrypoint=controller / "activation_reviewer.py",
+        reviewer_digest="b" * 64,
+        image_digests={"object_parser": "a" * 64, "reviewer": "c" * 64},
+        image_archive_paths={"object_parser": archive, "reviewer": archive},
+        runtime_digest="d" * 64,
+    )
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    with pytest.raises(mod.ActivationInvariantFailed, match="outside installed root"):
+        mod.run_inert_role(
+            runtime,
+            role="object_parser",
+            runtime_argv=(),
+            input_mounts=((outside, "/galaxy-input"),),
+            writable_mounts=(),
+            invocation_root=external / "admin",
+            command_runner=lambda *_args, **_kwargs: None,
+        )
+
+
+def test_kernel_artifact_qualification_payload_is_staging_only_and_closed(tmp_path):
+    mod = importlib.import_module("bootstrap.galaxy_launcher.activation_harness")
+    generation = tmp_path / "generations" / "00000007"
+    controller = generation / "controller"
+    images = generation / "images"
+    controller.mkdir(parents=True)
+    images.mkdir()
+    runtime_lock = controller / "runtime.lock.json"
+    runtime_lock.write_bytes(b"sealed-runtime-lock")
+    docker = controller / "docker.exe"
+    docker.write_bytes(b"sealed-docker")
+    parser_source = controller / "object_parser_entrypoint.py"
+    parser_source.write_bytes(b"sealed parser\n")
+    writer_source = controller / "git_object_writer.py"
+    writer_source.write_bytes(b"sealed writer\n")
+    archive = images / "object-parser.oci.tar"
+    archive.write_bytes(b"sealed oci")
+    runtime = SimpleNamespace(
+        generation=7,
+        runtime_digest="1" * 64,
+        runtime_lock_path=runtime_lock,
+        docker_path=docker,
+        docker_digest=hashlib.sha256(docker.read_bytes()).hexdigest(),
+        object_parser_entrypoint_path=parser_source,
+        object_parser_entrypoint_digest=hashlib.sha256(
+            parser_source.read_bytes()
+        ).hexdigest(),
+        git_object_writer_source_path=writer_source,
+        git_object_writer_source_digest=hashlib.sha256(
+            writer_source.read_bytes()
+        ).hexdigest(),
+    )
+    sha1dc_binding = {"schema": "galaxy.sha1dc-runtime-binding/v1"}
+    inspection = SimpleNamespace(
+        manifest_digest="2" * 64,
+        config_digest="3" * 64,
+        closure_digests={
+            "toolchain": "4" * 64,
+            "runtime": "5" * 64,
+            "security_profile": "6" * 64,
+        },
+        closure_documents={"runtime": {"sha1dc_oracle": sha1dc_binding}},
+    )
+    image_record = {
+        "role": "object_parser",
+        "manifest_digest": inspection.manifest_digest,
+        "config_digest": inspection.config_digest,
+        "toolchain_digest": inspection.closure_digests["toolchain"],
+        "runtime_digest": inspection.closure_digests["runtime"],
+        "security_profile_digest": inspection.closure_digests["security_profile"],
+        "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+    }
+    host_sha1dc = {
+        "schema": "galaxy.sha1dc-standalone-evidence/v1",
+        "executable_path": str(controller / "galaxy-sha1dc.exe"),
+        "executable_sha256": "7" * 64,
+        "executable_link_count": 1,
+        "runtime_attestation_digest": "8" * 64,
+        "build_evidence_path": str(
+            generation / "build-evidence" / "sha1dc-build-evidence.json"
+        ),
+        "build_evidence_sha256": "9" * 64,
+        "source_revision": "855827c583bc30645ba427885caa40c5b81764d2",
+        "protocol": "galaxy.sha1dc-object-oracle/v1",
+        "collision_detection": "SHA1_DC",
+        "network_allowed": False,
+    }
+
+    payload = mod._kernel_artifact_qualification_payload(
+        runtime=runtime,
+        controller_source_revision="a" * 40,
+        issued_at="2026-07-16T18:00:00Z",
+        expires_at="2026-07-17T18:00:00Z",
+        revocation_generation=3,
+        docker_server_identity_digest="b" * 64,
+        object_parser_record=image_record,
+        object_parser_archive=archive,
+        inspection=inspection,
+        host_sha1dc=host_sha1dc,
+    )
+
+    assert payload["status"] == "qualified_staging_only"
+    assert payload["authority_ceiling"] == "staging_only"
+    assert "activation" not in payload
+    assert payload["writer"] == {
+        "source_path": str(writer_source),
+        "source_sha256": runtime.git_object_writer_source_digest,
+        "version_digest": runtime.git_object_writer_source_digest,
+        "host_sha1dc": host_sha1dc,
+    }
+    identity = dict(payload)
+    qualification_id = identity.pop("qualification_id")
+    assert qualification_id == hashlib.sha256(_canonical_json(identity)).hexdigest()
+
+
+def test_kernel_artifact_qualification_is_signed_durable_and_idempotent(
+    tmp_path, monkeypatch
+):
+    mod = importlib.import_module("bootstrap.galaxy_launcher.activation_harness")
+    external_root = tmp_path / "installed"
+    generation_root = external_root / "generations" / "00000007"
+    controller = generation_root / "controller"
+    controller.mkdir(parents=True)
+    runtime_lock = controller / "runtime.lock.json"
+    runtime_lock.write_bytes(b"sealed-runtime-lock")
+    runtime = SimpleNamespace(
+        external_root=external_root,
+        generation=7,
+        runtime_lock_path=runtime_lock,
+    )
+    seed = bytes(range(32))
+    payload = {
+        "schema": "galaxy.kernel-artifact-qualification/v1",
+        "status": "qualified_staging_only",
+        "authority_ceiling": "staging_only",
+        "qualification_id": "",
+    }
+    identity = dict(payload)
+    identity.pop("qualification_id")
+    payload["qualification_id"] = hashlib.sha256(_canonical_json(identity)).hexdigest()
+    monkeypatch.setattr(mod, "load_sealed_acceptance", lambda: object())
+    monkeypatch.setattr(
+        mod, "resolve_sealed_harness_runtime", lambda _acceptance: runtime
+    )
+    monkeypatch.setattr(mod, "_receipt_seed", lambda _runtime: seed)
+    monkeypatch.setattr(
+        mod,
+        "_load_kernel_artifact_inputs",
+        lambda _runtime: (object(), tmp_path / "object-parser.oci.tar", object()),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        mod,
+        "_docker_server_identity_digest",
+        lambda _runtime: "b" * 64,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        mod,
+        "_attest_standalone_sha1dc",
+        lambda _runtime: {"schema": "galaxy.sha1dc-standalone-evidence/v1"},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        mod,
+        "_kernel_artifact_qualification_payload",
+        lambda **_kwargs: dict(payload),
+    )
+
+    pointer = mod.issueKernelArtifactQualification(
+        controller_source_revision="c" * 40,
+        issued_at="2026-07-16T18:00:00Z",
+        expires_at="2026-07-17T18:00:00Z",
+        revocation_generation=3,
+    )
+    pointer_path = external_root / "kernel-artifacts.current.json"
+    qualification_path = Path(pointer["qualification_path"])
+    before = (pointer_path.read_bytes(), qualification_path.read_bytes())
+    receipt = json.loads(before[1])
+
+    assert json.loads(before[0]) == pointer
+    assert receipt["signed_payload"] == payload
+    signature = base64.urlsafe_b64decode(receipt["signature_base64url"] + "==")
+    assert mod._crypto_module().verify(
+        mod._crypto_module().public_key_from_seed(seed),
+        _canonical_json(payload),
+        signature,
+    )
+    assert pointer["status"] == "qualified_staging_only"
+    assert pointer["qualification_sha256"] == hashlib.sha256(before[1]).hexdigest()
+
+    assert mod.issueKernelArtifactQualification(
+        controller_source_revision="c" * 40,
+        issued_at="2026-07-16T18:00:00Z",
+        expires_at="2026-07-17T18:00:00Z",
+        revocation_generation=3,
+    ) == pointer
+    assert (pointer_path.read_bytes(), qualification_path.read_bytes()) == before
+
+
+def test_installed_harness_attests_sha1dc_through_the_sealed_runtime_source(
+    tmp_path, monkeypatch
+):
+    mod = importlib.import_module("bootstrap.galaxy_launcher.activation_harness")
+    source = tmp_path / "controller" / "sha1dc.py"
+    executable = tmp_path / "controller" / "galaxy-sha1dc.exe"
+    build_evidence = tmp_path / "build-evidence" / "sha1dc-build-evidence.json"
+    source.parent.mkdir(parents=True)
+    build_evidence.parent.mkdir()
+    source.write_bytes(b"sealed sha1dc module")
+    executable.write_bytes(b"sealed sha1dc executable")
+    build_evidence.write_bytes(b"sealed build evidence")
+    runtime = SimpleNamespace(
+        sha1dc_runtime_source_path=source,
+        sha1dc_runtime_source_digest=hashlib.sha256(source.read_bytes()).hexdigest(),
+        sha1dc_oracle_path=executable,
+        sha1dc_oracle_digest=hashlib.sha256(executable.read_bytes()).hexdigest(),
+        sha1dc_build_evidence_path=build_evidence,
+        sha1dc_build_evidence_digest=hashlib.sha256(
+            build_evidence.read_bytes()
+        ).hexdigest(),
+    )
+    expected = {
+        "schema": "galaxy.sha1dc-standalone-evidence/v1",
+        "executable_path": str(executable),
+        "executable_sha256": runtime.sha1dc_oracle_digest,
+        "executable_link_count": 1,
+        "runtime_attestation_digest": "1" * 64,
+        "build_evidence_path": str(build_evidence),
+        "build_evidence_sha256": runtime.sha1dc_build_evidence_digest,
+        "source_revision": "855827c583bc30645ba427885caa40c5b81764d2",
+        "protocol": "galaxy.sha1dc-object-oracle/v1",
+        "collision_detection": "SHA1_DC",
+        "network_allowed": False,
+    }
+    calls: list[dict[str, object]] = []
+
+    class Oracle:
+        def revalidate(self):
+            calls.append({"revalidated": True})
+
+    class Evidence:
+        def toDict(self):
+            return dict(expected)
+
+    class SealedModule:
+        @staticmethod
+        def qualifyStandaloneSha1dc(**kwargs):
+            calls.append(kwargs)
+            return Evidence(), Oracle()
+
+    monkeypatch.setattr(
+        mod,
+        "_load_adjacent_module",
+        lambda name, path: (
+            calls.append({"module": name, "path": path}) or SealedModule
+        ),
+    )
+
+    assert mod._attest_standalone_sha1dc(runtime) == expected
+    assert calls[1]["executable"] == executable
+    assert calls[1]["build_evidence"] == build_evidence
+    assert calls[2] == {"revalidated": True}
 
 
 class _JobBasicLimits(ctypes.Structure):
@@ -1963,6 +2419,29 @@ def _assert_report_matches_parent_broker(raw_report, observer) -> None:
             results[observation_id]["completion_event_hmac"],
             completion["event_hmac"],
         )
+
+
+def test_reviewed_source_lock_does_not_shadow_installed_runtime_pointer(
+    tmp_path, monkeypatch
+):
+    mod = _mod()
+    local = tmp_path / "local"
+    root = local / "9to5" / "singularity"
+    installed_lock = root / "generations" / "00000001" / "activation-runtime.lock.json"
+    installed_lock.parent.mkdir(parents=True)
+    installed_lock.write_bytes(b"{}")
+    pointer = {
+        "generation": 1,
+        "runtime_lock_path": str(installed_lock),
+        "runtime_lock_sha256": hashlib.sha256(installed_lock.read_bytes()).hexdigest(),
+        "schema": "galaxy.activation.runtime-pointer/v1",
+        "status": "installed_inactive",
+    }
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "activation-runtime.json").write_bytes(_canonical_json(pointer))
+    monkeypatch.setenv("LOCALAPPDATA", str(local))
+
+    assert mod._runtime_pointer_path() == installed_lock.resolve(strict=True)
 
 
 @pytest.fixture(scope="module")

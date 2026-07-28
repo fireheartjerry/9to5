@@ -65,12 +65,7 @@ _OLLAMA: Any = None
 def _getOllama():  # pragma: no cover — real Ollama blocked in tests
     global _OLLAMA
     if _OLLAMA is None:
-        import ollama
-        import config
-        _OLLAMA = ollama.Client(
-            host=config.OLLAMA_HOST,
-            timeout=config.OLLAMA_TIMEOUT_SECONDS,
-        )
+        _OLLAMA = llm_io.getClient()
     return _OLLAMA
 
 

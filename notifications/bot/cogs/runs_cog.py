@@ -5,10 +5,11 @@ Thin shells over work_launcher + branding (see notifications.slash helpers).
 EXPORTS:
   RunsCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.branding, notifications.discord_bot, notifications.slash, notifications.views, notifications.work_launcher, orchestrator, platform_core.orchestration.work_profile, state.task
+DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.branding, notifications.discord_bot, notifications.slash, notifications.views, notifications.work_launcher, orchestrator, platform_core.orchestration.work_profile, platform_core.runtime, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_runs_cog.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,9 +18,9 @@ from discord import app_commands
 from discord.ext import commands as dpy_commands
 
 import config
-from notifications import audit, branding, work_launcher
-from notifications import slash
+from notifications import audit, branding, slash, work_launcher
 from platform_core.orchestration import work_profile as work_profile_mod
+from platform_core.runtime.effect_guard import legacyDiagnosticDiscordSend
 from state.task import TaskState
 
 
@@ -30,20 +31,27 @@ async def _validatePrContext(interaction, task_id: str) -> "TaskState | None":
     loaded TaskState on success.
     """
     if not work_launcher.taskExists(task_id):
-        await interaction.followup.send(
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send,
             f"❌ Task `{task_id}` not found. Use autocomplete to pick from recent runs.",
-            ephemeral=True)
+            ephemeral=True,
+        )
         return None
     state = TaskState.loadSafe(task_id)
     if state is None:
-        await interaction.followup.send(
-            f"❌ Task `{task_id}` state file is corrupt (unreadable JSON).", ephemeral=True)
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send,
+            f"❌ Task `{task_id}` state file is corrupt (unreadable JSON).",
+            ephemeral=True,
+        )
         return None
     status = state.meta.get("status", "unknown")
     if status not in ("done", "partial"):
-        await interaction.followup.send(
-            f"❌ Task `{task_id}` is not done yet (status: `{status}`). "
-            f"Only completed runs can create PRs.", ephemeral=True)
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send,
+            f"❌ Task `{task_id}` is not done yet (status: `{status}`). Only completed runs can create PRs.",
+            ephemeral=True,
+        )
         return None
     return state
 
@@ -52,13 +60,17 @@ async def _buildPrAndReport(interaction, state: "TaskState", task_id: str) -> No
     """Send a progress message, create the PR in a thread, then post the result embed."""
     goal = state.meta.get("goal_elaborated") or state.meta.get("goal_raw", "(unknown goal)")
     done, total = state.progress()
-    await interaction.followup.send(
-        f"🔄 Creating PR for `{task_id}` ({done}/{total} subtasks)…", ephemeral=True)
+    await legacyDiagnosticDiscordSend(
+        interaction.followup.send,
+        f"🔄 Creating PR for `{task_id}` ({done}/{total} subtasks)…",
+        ephemeral=True,
+    )
     audit.record(interaction.user.id, "create_pr", task_id, "slash")
 
     def _sync() -> "tuple[bool, str, str]":
-        from orchestrator import Orchestrator
         from notifications import discord_bot as discord_notify
+        from orchestrator import Orchestrator
+
         try:
             orch = Orchestrator()
             work_dir = state.meta.get("work_dir") or config.PROJECT_ROOT
@@ -67,8 +79,8 @@ async def _buildPrAndReport(interaction, state: "TaskState", task_id: str) -> No
                 pr_url = pr["url"]
                 try:
                     embed = discord_notify.noticeEmbed(
-                        f"Manual PR created: {pr_url}\n\n**Goal:** {goal[:200]}",
-                        "✅ PR Created (Manual)")
+                        f"Manual PR created: {pr_url}\n\n**Goal:** {goal[:200]}", "✅ PR Created (Manual)"
+                    )
                     discord_notify.sendEmbed(embed)
                 except Exception:  # noqa: BLE001
                     pass
@@ -81,16 +93,20 @@ async def _buildPrAndReport(interaction, state: "TaskState", task_id: str) -> No
 
     ok, pr_url, error = await asyncio.to_thread(_sync)
     if ok:
-        await interaction.followup.send(
-            f"✅ **PR created successfully!**\n{pr_url}", ephemeral=True)
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send, f"✅ **PR created successfully!**\n{pr_url}", ephemeral=True
+        )
     else:
-        await interaction.followup.send(
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send,
             f"❌ **PR creation failed:**\n```\n{error[:500]}\n```\n\n"
             f"Common causes:\n"
             f"• No tracked changes on branch\n"
             f"• Branch deleted or force-pushed\n"
             f"• Git auth issue (check credentials)\n"
-            f"• Network error (check connection)", ephemeral=True)
+            f"• Network error (check connection)",
+            ephemeral=True,
+        )
 
 
 class RunsCog(dpy_commands.Cog):
@@ -98,68 +114,104 @@ class RunsCog(dpy_commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="work", description="Start a 9TO5 run (blank = guided setup)")
-    @app_commands.describe(goal="What to work on (blank opens guided setup)",
-                           hours="Time horizon in hours", mode="watch or gated",
-                           parallel="Concurrent subtasks", work_dir="Working directory",
-                           repo_url="Clone this repo into a managed workspace",
-                           repo_ref="Branch, tag, or ref to check out with repo_url",
-                           night_mode="Zero human interaction — no pings, no holds, auto-resume pauses",
-                           sim="Token-light: simulated run over the live surfaces (zero API cost)",
-                           profile_preset="Nightclaw work-profile preset",
-                           work_profile="Custom axes, e.g. stability=80,evidence=90")
-    @app_commands.choices(mode=[app_commands.Choice(name="watch", value="watch"),
-                                app_commands.Choice(name="gated", value="gated")],
-                          profile_preset=[
-                              app_commands.Choice(name=name, value=name)
-                              for name in work_profile_mod.PRESETS
-                          ])
+    @app_commands.describe(
+        goal="What to work on (blank opens guided setup)",
+        hours="Time horizon in hours",
+        mode="watch or gated",
+        parallel="Concurrent subtasks",
+        work_dir="Working directory",
+        repo_url="Clone this repo into a managed workspace",
+        repo_ref="Branch, tag, or ref to check out with repo_url",
+        night_mode="Zero human interaction — no pings, no holds, auto-resume pauses",
+        sim="Token-light: simulated run over the live surfaces (zero API cost)",
+        profile_preset="Nightclaw work-profile preset",
+        work_profile="Custom axes, e.g. stability=80,evidence=90",
+    )
+    @app_commands.choices(
+        mode=[
+            app_commands.Choice(name="watch", value="watch"),
+            app_commands.Choice(name="gated", value="gated"),
+        ],
+        profile_preset=[app_commands.Choice(name=name, value=name) for name in work_profile_mod.PRESETS],
+    )
     @slash.COOLDOWN
-    async def work(self, interaction, goal: "str | None" = None, hours: "float | None" = None,
-                   mode: "app_commands.Choice[str] | None" = None, parallel: "int | None" = None,
-                   work_dir: "str | None" = None, repo_url: "str | None" = None,
-                   repo_ref: "str | None" = None,
-                   night_mode: "bool | None" = None,
-                   sim: "bool | None" = None,
-                   profile_preset: "app_commands.Choice[str] | None" = None,
-                   work_profile: "str | None" = None) -> None:  # noqa: ANN001
+    async def work(
+        self,
+        interaction,
+        goal: "str | None" = None,
+        hours: "float | None" = None,
+        mode: "app_commands.Choice[str] | None" = None,
+        parallel: "int | None" = None,
+        work_dir: "str | None" = None,
+        repo_url: "str | None" = None,
+        repo_ref: "str | None" = None,
+        night_mode: "bool | None" = None,
+        sim: "bool | None" = None,
+        profile_preset: "app_commands.Choice[str] | None" = None,
+        work_profile: "str | None" = None,
+    ) -> None:  # noqa: ANN001
         if not slash._ownerOk(interaction):
-            return await interaction.response.send_message("Not authorized to launch runs.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "Not authorized to launch runs.", ephemeral=True
+            )
         if not goal:
             from notifications.views import WorkModal
+
             return await interaction.response.send_modal(WorkModal())
         await interaction.response.defer(ephemeral=False)
 
         if config.GEMINI_ENABLED and not sim:
             from agents import browser_executor
-            await interaction.followup.send("Checking Gemini reachability…", ephemeral=False)
+
+            await legacyDiagnosticDiscordSend(
+                interaction.followup.send, "Checking Gemini reachability…", ephemeral=False
+            )
             reachable = await asyncio.to_thread(browser_executor.preflightLogin, 300, 3)
             if not reachable:
-                await interaction.followup.send(
-                    "Gemini unreachable (check GEMINI_API_KEY / quota). Starting with the Ollama "
-                    "brain only.", ephemeral=False)
+                await legacyDiagnosticDiscordSend(
+                    interaction.followup.send,
+                    "Gemini unreachable (check GEMINI_API_KEY / quota). Starting with the Ollama brain only.",
+                    ephemeral=False,
+                )
             else:
-                await interaction.followup.send("Gemini reachable. Starting run…", ephemeral=False)
+                await legacyDiagnosticDiscordSend(
+                    interaction.followup.send, "Gemini reachable. Starting run…", ephemeral=False
+                )
 
         req = work_launcher.WorkRequest(
-            goal=goal, hours=work_launcher.parseHours(hours),
-            mode=(mode.value if mode else "watch"), parallel=parallel or 1,
-            work_dir=work_dir or None, repo_url=repo_url or None, repo_ref=repo_ref or None,
-            night_mode=bool(night_mode), sim=bool(sim),
-            work_profile=(work_profile or (profile_preset.value if profile_preset else None)))
+            goal=goal,
+            hours=work_launcher.parseHours(hours),
+            mode=(mode.value if mode else "watch"),
+            parallel=parallel or 1,
+            work_dir=work_dir or None,
+            repo_url=repo_url or None,
+            repo_ref=repo_ref or None,
+            night_mode=bool(night_mode),
+            sim=bool(sim),
+            work_profile=(work_profile or (profile_preset.value if profile_preset else None)),
+        )
         audit.record(interaction.user.id, "work", None, "slash")
         reply = await asyncio.to_thread(work_launcher.launchOrError, req)
-        await interaction.followup.send(reply[:slash.MAX_REPLY], ephemeral=False)
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send, reply[: slash.MAX_REPLY], ephemeral=False
+        )
 
     @app_commands.command(name="wipe", description="Factory reset — granular wipe of state, vault, and logs")
     @slash.COOLDOWN
     async def wipe(self, interaction) -> None:  # noqa: ANN001
         if not slash._ownerOk(interaction):
-            return await interaction.response.send_message("Not authorized.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "Not authorized.", ephemeral=True
+            )
         from notifications.views import WipeSetupView
+
         audit.record(interaction.user.id, "wipe", None, "slash")
-        await interaction.response.send_message(
+        await legacyDiagnosticDiscordSend(
+            interaction.response.send_message,
             "**Memory Wipe** — select categories and backup preference, then proceed:",
-            view=WipeSetupView(interaction.user.id), ephemeral=True)
+            view=WipeSetupView(interaction.user.id),
+            ephemeral=True,
+        )
 
     @app_commands.command(name="runs", description="List recent runs")
     async def runs(self, interaction) -> None:  # noqa: ANN001
@@ -168,11 +220,16 @@ class RunsCog(dpy_commands.Cog):
         _, total = branding.runsEmbed(summaries, 0)
         pages = [slash._embed(branding.runsEmbed(summaries, p)[0]) for p in range(total)]
         from notifications.views import Paginator
+
         if total > 1:
-            await interaction.followup.send(embed=pages[0],
-                                            view=Paginator(interaction.user.id, pages), ephemeral=False)
+            await legacyDiagnosticDiscordSend(
+                interaction.followup.send,
+                embed=pages[0],
+                view=Paginator(interaction.user.id, pages),
+                ephemeral=False,
+            )
         else:
-            await interaction.followup.send(embed=pages[0], ephemeral=False)
+            await legacyDiagnosticDiscordSend(interaction.followup.send, embed=pages[0], ephemeral=False)
 
     @app_commands.command(name="run", description="Inspect a run by id")
     @app_commands.describe(task_id="Task id")
@@ -180,36 +237,52 @@ class RunsCog(dpy_commands.Cog):
     async def run(self, interaction, task_id: str) -> None:  # noqa: ANN001
         await interaction.response.defer(ephemeral=False)
         if not work_launcher.taskExists(task_id):
-            return await interaction.followup.send(f" No such task `{task_id}`.", ephemeral=False)
+            return await legacyDiagnosticDiscordSend(
+                interaction.followup.send, f" No such task `{task_id}`.", ephemeral=False
+            )
         state = TaskState.loadSafe(task_id)
         if state is None:
-            return await interaction.followup.send(
-                f" Task `{task_id}` exists but its state file is unreadable (corrupt JSON).", ephemeral=False)
-        await interaction.followup.send(embed=slash._embed(branding.runEmbed(state)), ephemeral=False)
+            return await legacyDiagnosticDiscordSend(
+                interaction.followup.send,
+                f" Task `{task_id}` exists but its state file is unreadable (corrupt JSON).",
+                ephemeral=False,
+            )
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send, embed=slash._embed(branding.runEmbed(state)), ephemeral=False
+        )
 
     @app_commands.command(name="resume", description="Resume a paused run, or resume a prior run by id")
-    @app_commands.describe(task_id="(optional) prior task id to resume; omit to unpause the current run",
-                           retry_failed="Also retry subtasks that failed (default: only pending ones continue)")
+    @app_commands.describe(
+        task_id="(optional) prior task id to resume; omit to unpause the current run",
+        retry_failed="Also retry subtasks that failed (default: only pending ones continue)",
+    )
     @app_commands.autocomplete(task_id=slash._taskAutocomplete)
     @slash.COOLDOWN
-    async def resume(self, interaction, task_id: "str | None" = None,
-                     retry_failed: bool = False) -> None:  # noqa: ANN001
+    async def resume(self, interaction, task_id: "str | None" = None, retry_failed: bool = False) -> None:  # noqa: ANN001
         if not slash._ownerOk(interaction):
-            return await interaction.response.send_message("Not authorized.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "Not authorized.", ephemeral=True
+            )
         if not task_id:
             return await slash._runControl(interaction, "resume")
         await interaction.response.defer(ephemeral=False)
         audit.record(interaction.user.id, "resume", task_id, "slash")
         reply = await asyncio.to_thread(work_launcher.resumeOrError, task_id, retry_failed)
-        await interaction.followup.send(reply[:slash.MAX_REPLY], ephemeral=False)
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send, reply[: slash.MAX_REPLY], ephemeral=False
+        )
 
-    @app_commands.command(name="create-pr", description="Manually create a PR for any completed run (bypasses test gate)")
+    @app_commands.command(
+        name="create-pr", description="Manually create a PR for any completed run (bypasses test gate)"
+    )
     @app_commands.describe(task_id="Task id or name to create PR for (required)")
     @app_commands.autocomplete(task_id=slash._taskAutocomplete)
     @slash.COOLDOWN
     async def create_pr(self, interaction, task_id: str) -> None:  # noqa: ANN001
         if not slash._ownerOk(interaction):
-            return await interaction.response.send_message("Not authorized.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "Not authorized.", ephemeral=True
+            )
         await interaction.response.defer(ephemeral=True)
         state = await _validatePrContext(interaction, task_id)
         if state is None:

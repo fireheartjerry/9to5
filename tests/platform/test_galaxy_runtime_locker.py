@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import base64
-import importlib
 import hashlib
+import importlib
 import json
 import os
-from pathlib import Path
 import subprocess
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _mod():
@@ -23,6 +26,192 @@ def _finalizer():
 
 def _harness():
     return importlib.import_module("bootstrap.galaxy_launcher.activation_harness")
+
+
+def test_reviewed_build_source_inventory_is_dependency_closed() -> None:
+    mod = _mod()
+    inventory = set(getattr(mod, "_REVIEWED_BUILD_SOURCE_PATHS", ()))
+    required = {
+        "bootstrap/galaxy_launcher/activation_image_entrypoint.py",
+        "bootstrap/galaxy_launcher/activation_images.lock.json",
+        "bootstrap/galaxy_launcher/runtime_manifest.py",
+        "bootstrap/galaxy_launcher/sha1dc_source.lock.json",
+        "bootstrap/galaxy_launcher/sha1dc_source_passport.json",
+        "containers/galaxy/object_parser.Dockerfile",
+        "containers/galaxy/sha1dc_object_oracle.c",
+        "tools/build_galaxy_launcher.py",
+        "tools/build_sha1dc_oracle.py",
+        "tools/lock_galaxy_runtime.py",
+    }
+
+    assert required <= inventory
+    assert all((ROOT / path).is_file() for path in inventory)
+    logical_paths = {
+        f"reviewed-build-source/{path}": {"logical_path": path}
+        for path in inventory
+    }
+    mod._requireReviewedBuildSourceClosure(logical_paths)
+    logical_paths.pop("reviewed-build-source/tools/build_sha1dc_oracle.py")
+    with pytest.raises(mod.RuntimeLockRefused, match="reviewed build source"):
+        mod._requireReviewedBuildSourceClosure(logical_paths)
+
+
+def test_installed_runtime_closes_transactional_kernel_executables_and_sources() -> None:
+    mod = _mod()
+    harness = _harness()
+    controller_sources = dict(
+        getattr(mod, "_TRANSACTIONAL_KERNEL_CONTROLLER_SOURCES", ())
+    )
+
+    assert harness._RUNTIME_FILE_KEYS >= {
+        "git_object_writer_source",
+        "object_parser_entrypoint",
+        "sha1dc_build_evidence",
+        "sha1dc_oracle",
+        "sha1dc_runtime_source",
+    }
+    assert controller_sources == {
+        "git_object_writer_source": "platform_core/runtime/git_object_writer.py",
+        "object_parser_entrypoint": "containers/galaxy/object_parser_entrypoint.py",
+        "sha1dc_runtime_source": "platform_core/runtime/sha1dc.py",
+    }
+    logical_paths = {
+        "controller/git_object_writer.py": {"logical_path": "writer"},
+        "controller/object_parser_entrypoint.py": {"logical_path": "entrypoint"},
+        "controller/sha1dc.py": {"logical_path": "sha1dc"},
+    }
+    mod._requireTransactionalKernelRuntimeSources(logical_paths)
+    with pytest.raises(mod.RuntimeLockRefused, match="transactional kernel runtime source"):
+        mod._requireTransactionalKernelRuntimeSources(
+            {"controller/object_parser_entrypoint.py": {"logical_path": "entrypoint"}}
+        )
+
+
+def test_sha1dc_windows_host_admission_rejects_linux_elf(tmp_path) -> None:
+    mod = _mod()
+    executable = tmp_path / "galaxy-sha1dc"
+    executable.write_bytes(b"\x7fELF" + b"\0" * 256)
+
+    with pytest.raises(mod.RuntimeLockRefused, match="Windows PE"):
+        mod._assert_windows_pe(executable)
+
+
+@pytest.mark.skipif(
+    os.name != "nt"
+    or not Path(
+        r"C:\Users\fireh\AppData\Local\9to5\galaxy-dev-tools\sources\sha1collisiondetection-855827c583bc30645ba427885caa40c5b81764d2.tar.gz"
+    ).is_file(),
+    reason="the exact cached SHA1DC source and Windows toolchain are required",
+)
+def test_windows_sha1dc_oracle_is_double_built_and_runtime_verified(tmp_path) -> None:
+    mod = _mod()
+    archive = Path(
+        r"C:\Users\fireh\AppData\Local\9to5\galaxy-dev-tools\sources\sha1collisiondetection-855827c583bc30645ba427885caa40c5b81764d2.tar.gz"
+    )
+    output = tmp_path / "galaxy-sha1dc.exe"
+    evidence_path = tmp_path / "sha1dc-build-evidence.json"
+
+    evidence = mod._compile_windows_sha1dc(
+        source_archive=archive,
+        output=output,
+        evidence_path=evidence_path,
+    )
+
+    assert output.read_bytes().startswith(b"MZ")
+    assert evidence_path.read_bytes() == mod._canonical(evidence)
+    assert evidence["schema"] == "galaxy.sha1dc-windows-build-evidence/v1"
+    assert evidence["authority"] == "inactive"
+    assert evidence["network_allowed"] is False
+    assert evidence["reproducibility_runs"] == 2
+    assert evidence["normal_object_corpus_count"] == 4
+    assert evidence["first_output_sha256"] == evidence["second_output_sha256"]
+    assert evidence["output_sha256"] == mod._sha_file(output)
+    assert mod._probeSha1dc(output, ("--version",)) == (
+        0,
+        mod._SHA1DC_VERSION,
+        b"",
+    )
+    runtime_sha1dc = importlib.import_module("platform_core.runtime.sha1dc")
+    qualified, oracle = runtime_sha1dc.qualifyStandaloneSha1dc(
+        executable=output,
+        build_evidence=evidence_path,
+        sterile_root=tmp_path / "sterile",
+    )
+    assert qualified.source_revision == mod._SHA1DC_UPSTREAM_REVISION
+    assert oracle.hashObject("blob", b"hello\n") == hashlib.sha1(
+        b"blob 6\0hello\n",
+        usedforsecurity=False,
+    ).hexdigest()
+
+
+def test_transactional_kernel_runtime_artifact_closure_is_closed() -> None:
+    mod = _mod()
+    leaves = {
+        "controller/galaxy-sha1dc.exe": {"sha256": "1" * 64},
+        "build-evidence/sha1dc-build-evidence.json": {"sha256": "2" * 64},
+    }
+
+    assert mod._requireTransactionalKernelRuntimeArtifacts(leaves) == {
+        "sha1dc_build_evidence": leaves[
+            "build-evidence/sha1dc-build-evidence.json"
+        ],
+        "sha1dc_oracle": leaves["controller/galaxy-sha1dc.exe"],
+    }
+    leaves.pop("controller/galaxy-sha1dc.exe")
+    with pytest.raises(mod.RuntimeLockRefused, match="kernel runtime artifact"):
+        mod._requireTransactionalKernelRuntimeArtifacts(leaves)
+
+
+def test_proposal_builder_requires_semantically_verified_exact_nine_role_images(
+    tmp_path,
+):
+    mod = _mod()
+    roles = {
+        "credentialed_driver",
+        "command_sandbox",
+        "source_fetcher",
+        "source_parser",
+        "candidate_parser",
+        "object_parser",
+        "verifier",
+        "reviewer",
+        "state_store",
+    }
+    records = tuple(SimpleNamespace(role=role) for role in sorted(roles))
+    calls: list[tuple[object, ...]] = []
+    loader = lambda lock_path, *, archive_root: (  # noqa: E731
+        calls.append(("load", lock_path, archive_root)) or records
+    )
+    verifier = lambda values, **kwargs: (  # noqa: E731
+        calls.append(("verify", values, kwargs))
+        or SimpleNamespace(roles=frozenset(roles), every_byte_verified=True)
+    )
+
+    observed = mod._verifiedActivationImageRecords(
+        tmp_path / "lock.json",
+        tmp_path,
+        loader=loader,
+        verifier=verifier,
+    )
+
+    assert observed == records
+    assert calls[1][2] == {
+        "network_allowed": False,
+        "allow_engine_build": False,
+        "allow_pull": False,
+    }
+
+    incomplete = lambda values, **kwargs: SimpleNamespace(  # noqa: E731
+        roles=frozenset(roles - {"object_parser"}),
+        every_byte_verified=True,
+    )
+    with pytest.raises(mod.RuntimeLockRefused, match="nine-role"):
+        mod._verifiedActivationImageRecords(
+            tmp_path / "lock.json",
+            tmp_path,
+            loader=loader,
+            verifier=incomplete,
+        )
 
 
 def _leaf(mod, logical_path, path):
@@ -468,6 +657,92 @@ def test_python_runtime_copy_excludes_mutable_bytecode_caches(tmp_path):
     assert not list(staging.rglob("*.pyc"))
 
 
+def test_reviewed_source_manifest_and_platform_lock_close_every_declared_byte(tmp_path):
+    mod = _mod()
+    source_a = tmp_path / "singularity_anchor.ps1"
+    source_b = tmp_path / "activation_reviewer.py"
+    source_a.write_bytes(b"anchor\n")
+    source_b.write_bytes(b"reviewer\n")
+    python_root = tmp_path / "python"
+    (python_root / "Lib").mkdir(parents=True)
+    (python_root / "python.exe").write_bytes(b"python")
+    (python_root / "python312.dll").write_bytes(b"dll")
+    (python_root / "Lib/os.py").write_bytes(b"stdlib\n")
+    (python_root / "Lib/stale.pyc").write_bytes(b"mutable")
+    powershell = tmp_path / "powershell.exe"
+    json_assembly = tmp_path / "System.Web.Extensions.dll"
+    image_lock = tmp_path / "activation_images.lock.json"
+    powershell.write_bytes(b"host")
+    json_assembly.write_bytes(b"parser")
+    image_lock.write_bytes(b'{"schema":"galaxy.activation-images/v1"}')
+    manifest_path = tmp_path / "manifest.json"
+    lock_path = tmp_path / "runtime.lock.json"
+
+    manifest, lock = mod.write_reviewed_source_lock(
+        manifest_path=manifest_path,
+        lock_path=lock_path,
+        python_root=python_root,
+        powershell=powershell,
+        json_assembly=json_assembly,
+        image_lock=image_lock,
+        source_paths={
+            "bootstrap/galaxy_launcher/activation_reviewer.py": source_b,
+            "bootstrap/galaxy_launcher/singularity_anchor.ps1": source_a,
+        },
+    )
+
+    assert manifest_path.read_bytes() == mod._canonical(manifest)
+    assert lock_path.read_bytes() == mod._canonical(lock)
+    assert manifest["authority"] == "inactive"
+    assert [leaf["path"] for leaf in manifest["source_leaves"]] == [
+        "bootstrap/galaxy_launcher/activation_reviewer.py",
+        "bootstrap/galaxy_launcher/singularity_anchor.ps1",
+    ]
+    assert {leaf["path"] for leaf in lock["python_leaves"]} == {
+        "Lib/os.py",
+        "python.exe",
+        "python312.dll",
+    }
+    assert lock["source_manifest_sha256"] == mod._sha_file(manifest_path)
+    assert mod.verify_reviewed_source_lock(
+        manifest_path=manifest_path,
+        lock_path=lock_path,
+        source_paths={
+            "bootstrap/galaxy_launcher/activation_reviewer.py": source_b,
+            "bootstrap/galaxy_launcher/singularity_anchor.ps1": source_a,
+        },
+    ) == lock
+
+    source_a.write_bytes(b"drift\n")
+    with pytest.raises(mod.RuntimeLockRefused, match="source leaf drift"):
+        mod.verify_reviewed_source_lock(
+            manifest_path=manifest_path,
+            lock_path=lock_path,
+            source_paths={
+                "bootstrap/galaxy_launcher/activation_reviewer.py": source_b,
+                "bootstrap/galaxy_launcher/singularity_anchor.ps1": source_a,
+            },
+        )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the pinned host is Windows PowerShell")
+def test_powershell_signature_record_is_valid_os_owned_and_digest_bound():
+    mod = _mod()
+    powershell = (
+        Path(os.environ["SystemRoot"])
+        / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    )
+
+    record = mod._powershell_signature_record(powershell)
+
+    assert record["status"] == "Valid"
+    assert record["is_os_binary"] is True
+    assert record["signature_type"] in {"Catalog", "Authenticode"}
+    assert record["signer_subject"].startswith("CN=Microsoft Windows")
+    assert len(record["signer_thumbprint"]) == 40
+    assert record == mod._powershell_signature_record(powershell)
+
+
 @pytest.mark.skipif(os.name != "nt", reason="the TOFU bootstrap is Windows-only")
 def test_ps51_tofu_singleton_leaf_selection_is_array_safe_under_strict_mode():
     script = (
@@ -509,6 +784,23 @@ def test_finalizer_creates_only_canonical_inactive_receipt_pointer_and_checkout_
         directory.mkdir(parents=True, exist_ok=True)
     capsule = bootstrap / "capsule.py"
     capsule.write_bytes(b"ACTIVATION_STATE = 'inactive'\n")
+    anchor_source = bootstrap / "singularity_anchor.ps1"
+    developer_client = bootstrap / "developer_redirect.ps1"
+    request_client = root / "bin/singularity-admin-client.ps1"
+    source_manifest = bootstrap / "manifest.json"
+    source_runtime_lock = bootstrap / "runtime.lock.json"
+    anchor_source.write_bytes(b"# inert native anchor\n")
+    developer_client.write_bytes(b"# request-only redirect\n")
+    request_client.parent.mkdir(parents=True)
+    request_client.write_bytes(b"# installed request client\n")
+    source_manifest.write_bytes(b'{"authority":"inactive"}')
+    source_runtime_lock.write_bytes(b'{"authority":"inactive"}')
+    host = root / "system/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+    json_assembly = root / "system/Windows/Microsoft.NET/Framework64/v4.0.30319/System.Web.Extensions.dll"
+    host.parent.mkdir(parents=True)
+    json_assembly.parent.mkdir(parents=True)
+    host.write_bytes(b"host")
+    json_assembly.write_bytes(b"json-parser")
     public_key = keys / "activation-receipt-public.bin"
     public_key.write_bytes(bytes(range(32)))
     adapter = controller / "activation_adapter.py"
@@ -535,12 +827,23 @@ def test_finalizer_creates_only_canonical_inactive_receipt_pointer_and_checkout_
         "tofu_receipt_path": str(receipt_path),
     }
     lock_path.write_bytes(locker._canonical(lock))
-    source_leaves = [_leaf(locker, "bootstrap/capsule.py", capsule)]
+    source_leaves = [
+        _leaf(locker, "bootstrap/capsule.py", capsule),
+        _leaf(locker, "bootstrap/developer_redirect.ps1", developer_client),
+        _leaf(locker, "bootstrap/manifest.json", source_manifest),
+        _leaf(locker, "bootstrap/runtime.lock.json", source_runtime_lock),
+        _leaf(locker, "bootstrap/singularity_admin_client.ps1", request_client),
+        _leaf(locker, "bootstrap/singularity_anchor.ps1", anchor_source),
+    ]
+    source_leaves.sort(key=lambda leaf: leaf["logical_path"])
     artifact_leaves = [
         _leaf(locker, "controller/activation_adapter.py", adapter),
         _leaf(locker, "keys/activation-receipt-public.bin", public_key),
         _leaf(locker, "runtime/runtime.lock.json", lock_path),
+        _leaf(locker, "system/System.Web.Extensions.dll", json_assembly),
+        _leaf(locker, "system/powershell.exe", host),
     ]
+    artifact_leaves.sort(key=lambda leaf: leaf["logical_path"])
     source_root = locker._leaf_root("source", source_leaves)
     artifact_root = locker._leaf_root("artifact", artifact_leaves)
     merkle_root = __import__("hashlib").sha256(
@@ -555,6 +858,87 @@ def test_finalizer_creates_only_canonical_inactive_receipt_pointer_and_checkout_
     repository_identity = __import__("hashlib").sha256(
         os.path.normcase(str(checkout.resolve())).encode("utf-8")
     ).hexdigest()
+    record_root = root / "repositories" / repository_identity
+    anchor_record_path = record_root / "anchor-record.json"
+    launch_record_path = record_root / "anchor-launch-record.json"
+    runtime_manifest_record = {
+        "activation_state": "inactive",
+        "closed": True,
+        "generation": 1,
+        "runtime_digest": runtime_digest,
+        "runtime_lock_path": str(lock_path),
+        "runtime_lock_sha256": locker._sha_file(lock_path),
+        "schema": 1,
+    }
+    anchor_record = {
+        "activation_state": "inactive",
+        "capsule_path": str(record_root / "capsule.py"),
+        "capsule_sha256": locker._sha_file(capsule),
+        "generation": 1,
+        "generation_path": str(record_root / "generation.txt"),
+        "runtime_manifest_path": str(record_root / "runtime-manifest.json"),
+        "runtime_manifest_sha256": hashlib.sha256(
+            locker._canonical(runtime_manifest_record)
+        ).hexdigest(),
+        "schema": 1,
+    }
+    anchor_record_sha256 = hashlib.sha256(locker._canonical(anchor_record)).hexdigest()
+    host_signature = {
+        "is_os_binary": True,
+        "signature_type": "Catalog",
+        "signer_subject": "CN=Microsoft Windows, O=Microsoft Corporation",
+        "signer_thumbprint": "8" * 40,
+        "status": "Valid",
+    }
+    host_signature_sha256 = hashlib.sha256(
+        locker._canonical(host_signature)
+    ).hexdigest()
+    anchor_arguments = [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        str(anchor_source),
+        "-ProtectedRecordPath",
+        str(anchor_record_path),
+        "-Operation",
+        "diagnostic",
+        "-ExpectedRecordSha256",
+        anchor_record_sha256,
+        "-ExpectedHostPath",
+        str(host),
+        "-ExpectedHostSha256",
+        locker._sha_file(host),
+        "-ExpectedHostSignatureSha256",
+        host_signature_sha256,
+        "-ExpectedAnchorSha256",
+        locker._sha_file(anchor_source),
+        "-JsonAssemblyPath",
+        str(json_assembly),
+        "-ExpectedJsonAssemblySha256",
+        locker._sha_file(json_assembly),
+    ]
+    anchor_launch_record = {
+        "activation_state": "inactive",
+        "anchor_path": str(anchor_source),
+        "anchor_sha256": locker._sha_file(anchor_source),
+        "arguments": anchor_arguments,
+        "control_pipe": r"\\.\pipe\9to5-singularity-v1",
+        "environment": {
+            "PATH": "",
+            "PSModulePath": "",
+            "SystemRoot": str(host.parents[3]),
+            "WINDIR": str(host.parents[3]),
+        },
+        "host_path": str(host),
+        "host_sha256": locker._sha_file(host),
+        "host_signature": host_signature,
+        "host_signature_sha256": host_signature_sha256,
+        "schema": "galaxy.singularity-anchor-launch/v1",
+        "service_name": "9to5Singularity",
+        "stdio": {"stderr": "null", "stdin": "null", "stdout": "null"},
+        "working_directory": str(record_root / "empty-cwd"),
+    }
     proposal = {
         "schema": "galaxy.trust-on-first-install-proposal/v1",
         "status": "ready_for_exact_approval",
@@ -587,6 +971,28 @@ def test_finalizer_creates_only_canonical_inactive_receipt_pointer_and_checkout_
         "checkout_path": str(checkout.resolve()),
         "repository_identity": repository_identity,
         "service_host_path": str(adapter),
+        "anchor_source_path": str(anchor_source),
+        "anchor_source_sha256": locker._sha_file(anchor_source),
+        "developer_client_source_path": str(developer_client),
+        "developer_client_source_sha256": locker._sha_file(developer_client),
+        "request_client_path": str(request_client),
+        "request_client_sha256": locker._sha_file(request_client),
+        "host_path": str(host),
+        "host_sha256": locker._sha_file(host),
+        "host_signature": host_signature,
+        "host_signature_sha256": host_signature_sha256,
+        "json_assembly_path": str(json_assembly),
+        "json_assembly_sha256": locker._sha_file(json_assembly),
+        "anchor_record_path": str(anchor_record_path),
+        "anchor_record_sha256": anchor_record_sha256,
+        "anchor_launch_record_path": str(launch_record_path),
+        "anchor_launch_record_sha256": hashlib.sha256(
+            locker._canonical(anchor_launch_record)
+        ).hexdigest(),
+        "anchor_launch_record": anchor_launch_record,
+        "anchor_task_name": "9to5SingularityAnchor",
+        "source_manifest_sha256": locker._sha_file(source_manifest),
+        "source_runtime_lock_sha256": locker._sha_file(source_runtime_lock),
         "interpreter_path": str(adapter),
         "interpreter_staging_path": str(adapter),
         "proposal_verifier_staging_path": str(adapter),
@@ -623,6 +1029,18 @@ def test_finalizer_creates_only_canonical_inactive_receipt_pointer_and_checkout_
     assert anchor_path.read_bytes() == locker._canonical(anchor)
     assert anchor["activation_state"] == "inactive"
     assert Path(anchor["capsule_path"]).read_bytes() == capsule.read_bytes()
+    launch_path = anchor_path.with_name("anchor-launch-record.json")
+    launch = json.loads(launch_path.read_text(encoding="utf-8"))
+    assert launch_path.read_bytes() == locker._canonical(launch)
+    assert launch["activation_state"] == "inactive"
+    assert launch["anchor_path"] == str(anchor_source)
+    assert launch["arguments"][:5] == [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        str(anchor_source),
+    ]
     assert _harness()._verify_tofu_receipt(
         receipt,
         root=root.resolve(),

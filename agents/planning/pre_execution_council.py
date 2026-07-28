@@ -25,22 +25,22 @@ EXPORTS:
   evaluate_message_quality(message: CouncilMessage) -> list[CouncilQualityWarning]
   run_pre_execution_council(task: str, *, work_dir: str | Path | None=None, council_config: CouncilConfig | None=None) -> CouncilRunResult
   env_enabled() -> bool
-DEPENDS-ON: agents.execution.chatgpt_browser_driver, agents.execution.gemini_driver, agents.planning.council_context, agents.planning.council_logging, agents.planning.council_prompts, agents.planning.council_roles, config
+DEPENDS-ON: agents.execution.chatgpt_browser_driver, agents.execution.gemini_driver, agents.planning.council_context, agents.planning.council_logging, agents.planning.council_prompts, agents.planning.council_roles, config, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/planning/test_pre_execution_council.py
 """
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import os
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -59,6 +59,7 @@ from agents.planning.council_prompts import (
     make_continuity_token,
 )
 from agents.planning.council_roles import DEFAULT_SEAT_SPECS, CouncilSeatSpec, assign_temporary_hats
+from platform_core.runtime.effect_guard import legacyDiagnosticUrlopen
 
 TAG_RE = re.compile(r"\[(CLAIM|RISK|QUESTION|DATA|PLAN|CONSTRAINT|DISAGREE|UPDATE|COMPRESS|SYNTHESIS|ACTION)\]")
 FILLER_RE = re.compile(r"(?i)^\s*(i agree|agreed|sounds good|looks good|yes\b|okay\b|sure\b)")
@@ -781,7 +782,7 @@ def _groq_chat_completion(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with legacyDiagnosticUrlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="replace"))
     except urllib.error.HTTPError:
         raise
@@ -908,7 +909,7 @@ def _cloudflare_workers_ai_run(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with legacyDiagnosticUrlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="replace"))
     except urllib.error.HTTPError:
         raise
@@ -1078,7 +1079,7 @@ def _cerebras_chat_completion(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with legacyDiagnosticUrlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="replace"))
     except urllib.error.HTTPError:
         raise
@@ -1112,7 +1113,7 @@ def _ollama_generate(prompt: str, model: str) -> str:
     )
     timeout = min(float(getattr(config, "OLLAMA_TIMEOUT_SECONDS", 180)), 60.0)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with legacyDiagnosticUrlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="replace"))
     except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"local Ollama-compatible endpoint unavailable: {exc}") from exc
@@ -1650,7 +1651,8 @@ class CouncilRunner:
         jobs.sort(key=lambda j: (-float(getattr(self, "_seat_latency", {}).get(j[0].name, 1.0)), j[0].name))
         results = {}
         def ask(job):
-            seat, prompt, hats, index = job; started = time.perf_counter()
+            seat, prompt, hats, index = job
+            started = time.perf_counter()
             content = seat.ask(prompt, {"task": context_pack.original_task, "context_pack": context_pack.to_safe_dict(),
                 "temporary_hats": hats, "prompt_version": self.config.prompt_version, "run_id": run_id,
                 "turn_index": index, "selector_phase": "independent_memo", "targeted_challenge": "independent memo"})
@@ -1661,7 +1663,8 @@ class CouncilRunner:
                 results[job[3]] = future.result()
         self._seat_latency = getattr(self, "_seat_latency", {})
         for seat, prompt, hats, index in sorted(jobs, key=lambda j: j[3]):
-            content, elapsed = results[index]; self._seat_latency[seat.name] = elapsed
+            content, elapsed = results[index]
+            self._seat_latency[seat.name] = elapsed
             self._record_content(run_id, seat, index, content, hats, prompt, messages, compact_state,
                                  warnings, logger, "independent_memo", "independent memo", elapsed)
         return turn_index + len(jobs)

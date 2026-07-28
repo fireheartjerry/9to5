@@ -9,7 +9,7 @@ not yet `git add`-ed therefore do NOT gate here. Run `python tools/size_audit.py
 EXPORTS:
   collect() -> tuple[list[dict], list[dict]]
   main(args: list[str]) -> int
-DEPENDS-ON: (stdlib only)
+DEPENDS-ON: platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/platform/test_dev_commands.py
 """
@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import ast
 import json
-import subprocess
 import sys
 from pathlib import Path
+
+from platform_core.execution.pre_execution import readLegacyText
+from platform_core.execution.sandbox_broker import runLegacyProcess
 
 # repo_map.py uses bare sibling imports (e.g. `from repo_map_render import ...`), so the tools
 # dir must be on sys.path. Running `python tools/size_audit.py` gets that for free, but importing
@@ -33,7 +35,7 @@ FUNCTION_BUCKETS = ("must_split", "preferred_over")
 
 
 def _run_git_ls() -> list[str]:
-    cp = subprocess.run(
+    cp = runLegacyProcess(
         ["git", "ls-files", "*.py"],
         cwd=REPO_ROOT,
         text=True,
@@ -60,7 +62,7 @@ def _rel(path: Path) -> str:
 
 def _function_rows(path: Path) -> list[dict]:
     try:
-        src = path.read_text(encoding="utf-8", errors="replace")
+        src = readLegacyText(path, encoding="utf-8", errors="replace")
         tree = ast.parse(src)
     except (OSError, SyntaxError):
         return []
@@ -82,7 +84,9 @@ def collect() -> tuple[list[dict], list[dict]]:
     functions = []
     for path in _tracked_py_files():
         try:
-            lines = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+            lines = len(
+                readLegacyText(path, encoding="utf-8", errors="replace").splitlines()
+            )
         except OSError:
             continue
         bucket = "must_split" if lines > 450 else ("acceptable" if lines > 300 else "ideal")

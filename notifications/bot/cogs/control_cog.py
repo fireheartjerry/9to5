@@ -5,7 +5,7 @@ Thin shells over the commands spine (see notifications.slash helpers).
 EXPORTS:
   ControlCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: notifications.audit, notifications.commands, notifications.slash, notifications.views, platform_core.runtime.control
+DEPENDS-ON: notifications.audit, notifications.commands, notifications.slash, notifications.views, platform_core.runtime, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_bot_control_auth.py
 """
@@ -16,10 +16,10 @@ import asyncio
 from discord import app_commands
 from discord.ext import commands as dpy_commands
 
-from platform_core.runtime.control import ControlBus
-from notifications import audit
+from notifications import audit, slash
 from notifications import commands as spine
-from notifications import slash
+from platform_core.runtime.control import ControlBus
+from platform_core.runtime.effect_guard import legacyDiagnosticDiscordSend
 
 
 class ControlCog(dpy_commands.Cog):
@@ -74,13 +74,13 @@ class ControlCog(dpy_commands.Cog):
         if await confirmDestructive(interaction, "abort the run"):
             state = spine.resolveTargetTask()
             if state is None:
-                return await interaction.followup.send(spine.NO_TASK, ephemeral=False)
+                return await legacyDiagnosticDiscordSend(interaction.followup.send, spine.NO_TASK, ephemeral=False)
             audit.record(interaction.user.id, "abort", state.task_id, "slash")
             # applyCommand does blocking ControlBus file IO; offload it so the gateway loop's
             # heartbeat is never frozen while the abort is written.
             msg = await asyncio.to_thread(
                 spine.applyCommand, ControlBus(state.task_id), state, spine.Command("abort", ""))
-            await interaction.followup.send(msg[:slash.MAX_REPLY], ephemeral=False)
+            await legacyDiagnosticDiscordSend(interaction.followup.send, msg[:slash.MAX_REPLY], ephemeral=False)
 
 
 async def setup(bot: dpy_commands.Bot) -> None:

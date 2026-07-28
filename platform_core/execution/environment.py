@@ -8,22 +8,30 @@ ONE whole Claude CLI invocation, so the environment wraps the LAUNCH of run_cmd,
 EXPORTS:
   EnvironmentUnavailable  -- Typed refusal for an unavailable or unauthorized execution backend.
   Capability  -- What a backend's provisioned environment can do (bernstein frozenset[SandboxCapability]…
-  EnvHandle  -- Opaque per-subtask provision result reused across a subtask's attempts.
-  FinalizationOutcome
+  EnvHandle  -- Opaque provision result owned by exactly one attempt.
   PreparedFinalization
-  FinalizationReceipt
   ExecutionContext
+  ResolvedExecutionPolicy  -- Pure, subtask-scoped classification reused only to provision fresh attempts.
+  AttemptProvisionScope  -- Frozen attempt identity passed through provisioning to the clone factory.
   ExecutionEnvironment  -- Where a subtask's Claude CLI process runs and which tree it touches.
-DEPENDS-ON: (stdlib only)
+DEPENDS-ON: platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_execution_environment.py
 """
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from enum import Enum, Flag, auto
 from typing import Any
+
+from platform_core.runtime.receipts import (
+    FinalizationOutcome as FinalizationOutcome,
+)
+from platform_core.runtime.receipts import (
+    FinalizationReceipt as FinalizationReceipt,
+)
 
 
 class EnvironmentUnavailable(RuntimeError):
@@ -54,7 +62,7 @@ class Capability(Flag):
 
 @dataclass
 class EnvHandle:
-    """Opaque per-subtask provision result reused across a subtask's attempts."""
+    """Opaque provision result owned by exactly one attempt."""
     work_dir: str                 # the exec_cwd the executor runs against
     backend: str                  # "local" | "worktree" | "docker" | "remote"
     meta: dict = field(default_factory=dict)   # container id / branch / ssh host / base_dir
@@ -74,16 +82,6 @@ class EnvHandle:
             ],
             "requires_canonical_landing": self.requires_canonical_landing,
         }
-
-
-class FinalizationOutcome(Enum):
-    SUCCEEDED = "succeeded"
-    REJECTED = "rejected"
-    STAGED_PREPARATION_REQUIRED = "staged_preparation_required"
-    RECOVERY_UNAVAILABLE = "recovery_unavailable"
-    AUTHORIZATION_REQUIRED = "authorization_required"
-    PREPARATION_FAILED = "preparation_failed"
-    COMPLETION_FAILED = "completion_failed"
 
 
 def _json_safe(value: Any) -> Any:
@@ -126,68 +124,6 @@ class PreparedFinalization:
 
 
 @dataclass(frozen=True)
-class FinalizationReceipt:
-    backend: str = ""
-    accepted: bool = False
-    requires_canonical_landing: bool = False
-    collected: bool = False
-    merged: bool = False
-    removed: bool = False
-    expected_revision: str = ""
-    observed_revision: str = ""
-    resulting_revision: str = ""
-    checkpoint_revision: str = ""
-    checkpoint_ref: str = ""
-    verification_revision: str = ""
-    promotion_transaction_id: str = ""
-    execution_receipt_id: str = ""
-    staging_receipt_id: str = ""
-    verification_receipt_id: str = ""
-    review_receipt_id: str = ""
-    selection_receipt_id: str = ""
-    promotion_receipt_id: str = ""
-    materialized: bool = False
-    journal_phase: str = ""
-    error: str = ""
-    cleanup_error: str = ""
-    summary: dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def succeeded(self) -> bool:
-        if not self.accepted or self.error:
-            return False
-        if not self.requires_canonical_landing:
-            return self.collected
-        return bool(
-            self.collected
-            and self.merged
-            and self.materialized
-            and self.resulting_revision
-            and self.verification_revision == self.resulting_revision
-            and self.promotion_receipt_id
-            and self.journal_phase == "promoted"
-        )
-
-    @property
-    def outcome(self) -> FinalizationOutcome:
-        lowered = self.error.lower()
-        if "staged preparation required" in lowered:
-            return FinalizationOutcome.STAGED_PREPARATION_REQUIRED
-        if "recovery unavailable" in lowered:
-            return FinalizationOutcome.RECOVERY_UNAVAILABLE
-        if "authorization required" in lowered:
-            return FinalizationOutcome.AUTHORIZATION_REQUIRED
-        if self.succeeded:
-            return FinalizationOutcome.SUCCEEDED
-        if not self.accepted:
-            return FinalizationOutcome.REJECTED
-        return FinalizationOutcome.COMPLETION_FAILED
-
-    def toDict(self) -> dict[str, Any]:
-        return _json_safe(asdict(self))
-
-
-@dataclass(frozen=True)
 class ExecutionContext:
     landing_environment: object
     landing_handle: EnvHandle
@@ -200,6 +136,59 @@ class ExecutionContext:
     read_only: bool = field(metadata={"frozen_scope": True})
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedExecutionPolicy:
+    """Pure, subtask-scoped classification reused only to provision fresh attempts."""
+
+    requested_backend: str
+    runner_kind: str
+    landing_backend: str
+    read_only: bool
+    intent_policy: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self.requested_backend not in {"local", "worktree", "clone", "docker"}:
+            raise ValueError("requested_backend is not a closed execution backend")
+        if self.runner_kind not in {"local", "docker"}:
+            raise ValueError("runner_kind must be local or docker")
+        if self.landing_backend != "clone":
+            raise ValueError("mutating attempts require clone landing")
+        if type(self.read_only) is not bool:
+            raise TypeError("read_only must be bool")
+
+
+_ATTEMPT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+@dataclass(frozen=True, slots=True)
+class AttemptProvisionScope:
+    """Frozen attempt identity passed through provisioning to the clone factory."""
+
+    policy: ResolvedExecutionPolicy
+    attempt_id: str
+    transaction_id: str
+    task_id: str
+    subtask_id: str
+    runner_kind: str
+    trust_receipt_id: str
+
+    def __post_init__(self) -> None:
+        if type(self.policy) is not ResolvedExecutionPolicy:
+            raise TypeError("policy must be an exact ResolvedExecutionPolicy")
+        for name in (
+            "attempt_id",
+            "transaction_id",
+            "task_id",
+            "subtask_id",
+            "trust_receipt_id",
+        ):
+            value = getattr(self, name)
+            if not isinstance(value, str) or _ATTEMPT_ID_RE.fullmatch(value) is None:
+                raise ValueError(f"{name} is invalid")
+        if self.runner_kind != self.policy.runner_kind:
+            raise ValueError("runner_kind differs from resolved policy")
+
+
 class ExecutionEnvironment(ABC):
     """Where a subtask's Claude CLI process runs and which tree it touches."""
     NAME: str = "base"
@@ -207,7 +196,7 @@ class ExecutionEnvironment(ABC):
 
     @abstractmethod
     def provision(self, *, task_state, subtask, base_dir: str, policy) -> EnvHandle:
-        """Stand up the environment for one subtask; return an EnvHandle (reused across attempts)."""
+        """Stand up the environment for one attempt; its EnvHandle is never reused."""
 
     @abstractmethod
     def wrapLauncher(self, run_cmd: list, handle: EnvHandle) -> "tuple[list, str]":

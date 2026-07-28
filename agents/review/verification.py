@@ -25,27 +25,29 @@ EXPORTS:
   VResult  -- One-release compat shim: the legacy vresult dict shape, carrying the typed Receipt.
   verdictFor(rc, output: str, expect) -> 'tuple[Verdict, tuple, tuple]'  -- PURE function of (rc, output, expect) -> (verdict, matched, missing).
   VerifyCancelled  -- cancel_check fired while the acceptance command was running.
-  runReceipt(verify: Optional[dict], work_dir: str, executor_result: dict, *, declared_targets=None, cancel_check=None, timeout_seconds: Optional[int]=None) -> Receipt  -- THE verification pipeline (single owner)
+  VerificationCommandRefused  -- The universal credentialless verifier authority is absent or stale.
+  VerificationCommandRequest
+  VerificationCommandAuthority
+  issueDiagnosticVerificationCommandAuthority(*, transaction_id: str, proposed_revision: str, resource_id: str, work_dir: str, image_digest: str, security_profile_digest: str, command_policy_digest: str, watchdog_generation: int, deadline: str, runner: Callable[[VerificationCommandRequest], subprocess.CompletedProcess]) -> VerificationCommandAuthority  -- Test seam
+  validateVerificationCommandAuthority(authority: object) -> VerificationCommandAuthority  -- Pure first-operation validation
+  runReceipt(verify: Optional[dict], work_dir: str, executor_result: dict, *, declared_targets=None, cancel_check=None, timeout_seconds: Optional[int]=None, authority: object=None) -> Receipt  -- THE verification pipeline (single owner)
   receiptToVResult(receipt: Receipt) -> VResult  -- The legacy vresult dict shape from a Receipt (compat shim, one release).
-DEPENDS-ON: agents.executor, agents.verification_diff, agents.verifier_sanitize, config, platform_core.execution.launch_guard
+DEPENDS-ON: agents.verification_diff, agents.verifier_sanitize, config
 SIDE-EFFECTS: runs the acceptance subprocess; reads git status
 RUN/TEST: python -m pytest tests/review/test_verification.py
 """
 from __future__ import annotations
 
-import os
 import re
 import shlex
 import subprocess
-import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import config
-from agents.executor import _killProcessTree
 from agents.verifier_sanitize import sanitizeVerify
 
 LOG = config.getLogger("verifier")
@@ -171,6 +173,113 @@ class VerifyCancelled(Exception):
     """cancel_check fired while the acceptance command was running."""
 
 
+class VerificationCommandRefused(RuntimeError):
+    """The universal credentialless verifier authority is absent or stale."""
+
+
+@dataclass(frozen=True, slots=True)
+class VerificationCommandRequest:
+    transaction_id: str
+    proposed_revision: str
+    resource_id: str
+    argv: tuple[str, ...]
+    work_dir: str
+    timeout_seconds: int
+    max_output_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class VerificationCommandAuthority:
+    transaction_id: str
+    proposed_revision: str
+    resource_id: str
+    work_dir: str
+    image_digest: str
+    security_profile_digest: str
+    command_policy_digest: str
+    watchdog_generation: int
+    deadline: str
+    _runner: Callable[[VerificationCommandRequest], subprocess.CompletedProcess]
+    _seal: object
+
+
+_VERIFICATION_AUTHORITY_SEAL = object()
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+_OID_RE = re.compile(r"^[0-9a-f]{40}$")
+_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,191}$")
+_FORBIDDEN_VERIFIER_PROGRAMS = frozenset(
+    {"bash", "cmd", "claude", "codex", "pwsh", "powershell", "sh"}
+)
+
+
+def _authorityTime(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError) as exc:
+        raise VerificationCommandRefused("verification authority deadline is invalid") from exc
+    if parsed.tzinfo is None:
+        raise VerificationCommandRefused("verification authority deadline is not absolute")
+    return parsed.astimezone(timezone.utc)
+
+
+def issueDiagnosticVerificationCommandAuthority(
+    *,
+    transaction_id: str,
+    proposed_revision: str,
+    resource_id: str,
+    work_dir: str,
+    image_digest: str,
+    security_profile_digest: str,
+    command_policy_digest: str,
+    watchdog_generation: int,
+    deadline: str,
+    runner: Callable[[VerificationCommandRequest], subprocess.CompletedProcess],
+) -> VerificationCommandAuthority:
+    """Test seam; production receives this from the registered verifier resource."""
+
+    if not _ID_RE.fullmatch(transaction_id) or not _ID_RE.fullmatch(resource_id):
+        raise VerificationCommandRefused("verification authority identity is invalid")
+    if not _OID_RE.fullmatch(proposed_revision):
+        raise VerificationCommandRefused("verification authority revision is invalid")
+    if any(
+        not _DIGEST_RE.fullmatch(value)
+        for value in (image_digest, security_profile_digest, command_policy_digest)
+    ):
+        raise VerificationCommandRefused("verification authority digest is invalid")
+    if not isinstance(work_dir, str) or not work_dir:
+        raise VerificationCommandRefused("verification authority work directory is invalid")
+    if type(watchdog_generation) is not int or watchdog_generation < 1:
+        raise VerificationCommandRefused("verification watchdog generation is invalid")
+    if _authorityTime(deadline) <= datetime.now(timezone.utc):
+        raise VerificationCommandRefused("verification authority already expired")
+    return VerificationCommandAuthority(
+        transaction_id=transaction_id,
+        proposed_revision=proposed_revision,
+        resource_id=resource_id,
+        work_dir=work_dir,
+        image_digest=image_digest,
+        security_profile_digest=security_profile_digest,
+        command_policy_digest=command_policy_digest,
+        watchdog_generation=watchdog_generation,
+        deadline=deadline,
+        _runner=runner,
+        _seal=_VERIFICATION_AUTHORITY_SEAL,
+    )
+
+
+def validateVerificationCommandAuthority(authority: object) -> VerificationCommandAuthority:
+    """Pure first-operation validation; performs no path or process action."""
+
+    if type(authority) is not VerificationCommandAuthority:
+        raise VerificationCommandRefused("exact process-local verification authority is required")
+    assert isinstance(authority, VerificationCommandAuthority)
+    if authority._seal is not _VERIFICATION_AUTHORITY_SEAL:
+        raise VerificationCommandRefused("verification authority issuer differs")
+    if _authorityTime(authority.deadline) <= datetime.now(timezone.utc):
+        raise VerificationCommandRefused("verification authority expired")
+    return authority
+
+
 def _splitCmd(cmd: str) -> "list[str]":
     """Windows-aware arg-vector split. shlex in NON-posix mode preserves backslashes in
     C:\\ paths and groups quoted spans; surrounding quotes are then stripped per token
@@ -186,117 +295,64 @@ def _splitCmd(cmd: str) -> "list[str]":
     return out
 
 
-def _runVector(argv: "list[str]", work_dir: str, cancel_check=None,
-               timeout_seconds: Optional[int] = None) -> subprocess.CompletedProcess:
-    """Run the acceptance ARG-VECTOR (shell=False) with the tree-kill discipline.
+def _runVector(
+    authority: object,
+    argv: "list[str]",
+    work_dir: str | None = None,
+    cancel_check=None,
+    timeout_seconds: Optional[int] = None,
+) -> subprocess.CompletedProcess:
+    """Submit a typed argv request to the credentialless verifier broker."""
 
-    Popen + CREATE_NEW_PROCESS_GROUP + tree-kill on timeout/cancel -- the SAME Windows
-    orphan fix the executor uses (f57855b): a plain kill leaves a python.exe grandchild
-    holding a file lock on the artifact the next retry must rewrite. ``cancel_check`` is
-    polled every 0.5s so an operator kill / deadline breaks a long verify promptly."""
-    from platform_core.execution.launch_guard import requireTransactionalKernelActive
-    requireTransactionalKernelActive()
-    # A bare ``python``/``python3`` resolves from PATH, which on CI can be a DIFFERENT
-    # interpreter than the one running this suite (uv install) -- module mismatches.
-    # Pin it to sys.executable; copy first so the caller's argv stays authored-as-is.
-    argv = list(argv)
-    if argv and argv[0].lower() in ("python", "python3"):
-        argv[0] = sys.executable
-    Path(work_dir).mkdir(parents=True, exist_ok=True)
-    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-    proc = subprocess.Popen(argv, shell=False, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
-                            cwd=work_dir, creationflags=creationflags,
-                            start_new_session=(os.name != "nt"))
+    validated = validateVerificationCommandAuthority(authority)
+    if cancel_check is not None and cancel_check():
+        raise VerifyCancelled("verification cancelled before broker submission")
+    if work_dir is not None and work_dir != validated.work_dir:
+        raise VerificationCommandRefused("caller work directory conflicts with authority")
+    if not isinstance(argv, list) or not argv or any(
+        not isinstance(value, str) or not value or "\x00" in value for value in argv
+    ):
+        raise VerificationCommandRefused("verification argv is invalid")
+    program = re.split(r"[/\\]", argv[0])[-1].casefold()
+    if program.endswith(".exe"):
+        program = program[:-4]
+    if program in _FORBIDDEN_VERIFIER_PROGRAMS:
+        raise VerificationCommandRefused("provider and shell programs are outside verifier policy")
     limit = timeout_seconds if timeout_seconds is not None else config.VERIFY_TIMEOUT_SECONDS
-    deadline = time.monotonic() + limit
-    while True:
-        try:
-            out, err = proc.communicate(timeout=0.5)
-            return subprocess.CompletedProcess(argv, proc.returncode, out or "", err or "")
-        except subprocess.TimeoutExpired:
-            if cancel_check is not None and cancel_check():
-                _killProcessTree(proc.pid)
-                _drainQuietly(proc)
-                raise VerifyCancelled("verification cancelled by cancel_check") from None
-            if time.monotonic() >= deadline:
-                _killProcessTree(proc.pid)
-                _drainQuietly(proc)
-                raise subprocess.TimeoutExpired(argv, limit) from None
-
-
-def _drainQuietly(proc) -> None:
-    try:
-        proc.communicate(timeout=10)
-    except Exception:  # noqa: BLE001
-        pass
+    remaining = int((_authorityTime(validated.deadline) - datetime.now(timezone.utc)).total_seconds())
+    limit = min(limit, remaining)
+    if limit <= 0:
+        raise VerificationCommandRefused("verification authority expired before submission")
+    request = VerificationCommandRequest(
+        transaction_id=validated.transaction_id,
+        proposed_revision=validated.proposed_revision,
+        resource_id=validated.resource_id,
+        argv=tuple(argv),
+        work_dir=validated.work_dir,
+        timeout_seconds=limit,
+        max_output_bytes=2 * 1024 * 1024,
+    )
+    result = validated._runner(request)
+    if type(result) is not subprocess.CompletedProcess:
+        raise VerificationCommandRefused("verification broker returned an untyped result")
+    for output in (result.stdout, result.stderr):
+        if output is not None and not isinstance(output, str):
+            raise VerificationCommandRefused("verification broker output is not text")
+        if isinstance(output, str) and len(output.encode("utf-8")) > request.max_output_bytes:
+            raise VerificationCommandRefused("verification broker output exceeds its quota")
+    return result
 
 
 # ==== PATH / WORKDIR HELPERS ====
-
-def _extractVerifyPath(cmd: str) -> Optional[str]:
-    """Best-effort: return the first path-like argument in a verify command."""
-    toks = cmd.strip().split()
-    skip = {"py", "python", "python3", "pytest", "unittest", "coverage", "run"}
-    for tok in toks[1:]:
-        if tok.startswith("-"):
-            continue
-        if tok.lower() in skip:
-            continue
-        if tok.endswith(".py") or "/" in tok or "\\" in tok:
-            return tok
-    return None
-
-
-def _normalizeWorkDir(cmd: str, work_dir: str) -> str:
-    """Return the dir a verify command should run in.
-
-    Verify commands are authored relative to the repo root, but a self-referential
-    run sets a subtask's work_dir to a ``.sc-ctx/<sid>`` scratch dir -- so a verify
-    like ``python tests/foo.py`` cannot find its target from the scratch cwd.
-    Re-root to PROJECT_ROOT (this checkout) when the referenced path lives under it
-    but not under work_dir; fall back to INSTALL_ROOT only when the PROJECT_ROOT
-    probe misses and INSTALL_ROOT exists (dev-box convenience -- INSTALL_ROOT is
-    absent on CI). Absolute repo-root paths are normalised too."""
-    candidate = _extractVerifyPath(cmd)
-    if not candidate:
-        return work_dir
-    script = Path(candidate.strip("\"'"))
-    if script.is_absolute():
-        for root in (config.PROJECT_ROOT, config.INSTALL_ROOT):
-            try:
-                script.relative_to(root)
-                return str(root)
-            except ValueError:
-                continue
-        return work_dir
-    probe = re.split(r"[*?\[]", str(script), maxsplit=1)[0]
-    if probe.endswith(("/", "\\")) or probe == str(script):
-        check = Path(probe)
-    else:
-        check = Path(probe).parent
-    try:
-        in_workdir = (Path(work_dir) / check).exists()
-        in_project = (Path(config.PROJECT_ROOT) / check).exists()
-        # INSTALL_ROOT is the OTHER checkout on the dev box; it does not exist on CI.
-        in_install = (not in_project and Path(config.INSTALL_ROOT).exists()
-                      and (Path(config.INSTALL_ROOT) / check).exists())
-    except OSError:
-        return work_dir
-    if in_project and not in_workdir:
-        return str(config.PROJECT_ROOT)
-    if in_install and not in_workdir:
-        return str(config.INSTALL_ROOT)
-    return work_dir
-
 
 # ==== DIFF GROUNDING (replaces the token-scan synthesizer; see verification_diff) ====
 
 from agents.verification_diff import (  # noqa: E402 -- grouped with its pipeline stage
     changedFiles,
+)
+from agents.verification_diff import (
     checkDeclaredTargets as _checkDeclaredTargets,
 )
-
 
 # ==== THE PIPELINE ====
 
@@ -340,7 +396,8 @@ def _errorReceipt(argv, cmd: str, expect: str, feedback: str, duration: float) -
 
 
 def runReceipt(verify: Optional[dict], work_dir: str, executor_result: dict, *,
-               declared_targets=None, cancel_check=None, timeout_seconds: Optional[int] = None) -> Receipt:
+               declared_targets=None, cancel_check=None, timeout_seconds: Optional[int] = None,
+               authority: object = None) -> Receipt:
     """THE verification pipeline (single owner). See module docstring for the order."""
     executor_result = executor_result if isinstance(executor_result, dict) else {}
     raw_targets = tuple(str(t) for t in (
@@ -353,7 +410,6 @@ def runReceipt(verify: Optional[dict], work_dir: str, executor_result: dict, *,
         return _skippedReceipt(executor_result, raw_targets, work_dir)
 
     expect = str(verify.get("expect"))                 # sanitizer guarantees a non-empty str
-    run_dir = _normalizeWorkDir(cmd, work_dir)
     try:
         argv = _splitCmd(cmd)
     except (ValueError, TypeError) as e:
@@ -361,7 +417,13 @@ def runReceipt(verify: Optional[dict], work_dir: str, executor_result: dict, *,
     LOG.info("Verifying (vector): %s  (expect: %s)", argv, expect)
     t0 = time.monotonic()
     try:
-        proc = _runVector(argv, run_dir, cancel_check=cancel_check, timeout_seconds=timeout_seconds)
+        proc = _runVector(
+            authority,
+            argv,
+            work_dir,
+            cancel_check=cancel_check,
+            timeout_seconds=timeout_seconds,
+        )
     except subprocess.TimeoutExpired:
         limit = timeout_seconds if timeout_seconds is not None else config.VERIFY_TIMEOUT_SECONDS
         return _errorReceipt(argv, cmd, expect, f"verify TIMEOUT after {limit}s",

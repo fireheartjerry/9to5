@@ -15,25 +15,30 @@ RUN/TEST: python -m pytest tests/notifications/test_discord_channels.py tests/no
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 
-from platform_core.app_config._env import _envBool, _envInt, loadEnvOnce
+from platform_core.app_config._env import (
+    _envBool,
+    _envInt,
+    _envString,
+    controllerConfigActive,
+    loadEnvOnce,
+)
 
 
 def _envSnowflake(key: str) -> int:
     """Discord id from env; non-numeric/absent -> 0 (never crashes import)."""
-    raw = os.getenv(key, "0") or "0"
+    raw = _envString(key, "0") or "0"
     return int(raw) if raw.isdigit() else 0
 
 
 @dataclass(frozen=True)
 class DiscordCfg:
     # --- credentials + channel ids (builder-computed) ---
-    DISCORD_BOT_TOKEN: str = field(default_factory=lambda: os.getenv("DISCORD_BOT_TOKEN", ""))
+    DISCORD_BOT_TOKEN: str = field(default_factory=lambda: _envString("DISCORD_BOT_TOKEN", ""))
     DISCORD_CHANNEL_ID: int = field(default_factory=lambda: _envSnowflake("DISCORD_CHANNEL_ID"))
     # Human to @-ping for severe events only (blocked / critical decision / deadlock abort).
-    DISCORD_HUMAN_USER_ID: str = field(default_factory=lambda: os.getenv("DISCORD_HUMAN_USER_ID", ""))
+    DISCORD_HUMAN_USER_ID: str = field(default_factory=lambda: _envString("DISCORD_HUMAN_USER_ID", ""))
     # Guild for instant slash-command registration; 0 => global (~1h to propagate).
     DISCORD_GUILD_ID: int = field(default_factory=lambda: _envSnowflake("DISCORD_GUILD_ID"))
 
@@ -50,7 +55,7 @@ class DiscordCfg:
     # --- bot identity / branding ---
     VERSION: str = "1.0.0"
     BRAND_COLOR: int = 0x5865F2                      # 9TO5 brand (Discord blurple)
-    BRAND_ICON_URL: str = field(default_factory=lambda: os.getenv("BRAND_ICON_URL", ""))
+    BRAND_ICON_URL: str = field(default_factory=lambda: _envString("BRAND_ICON_URL", ""))
 
     # --- bot UX behaviour ---
     COOLDOWN_RATE: int = 3                            # max mutating-command uses ...
@@ -76,7 +81,7 @@ class DiscordCfg:
     REACTION_APPROVE: bool = field(default_factory=lambda: _envBool("REACTION_APPROVE", True))
     WATCHDOG_ENABLED: bool = field(default_factory=lambda: _envBool("WATCHDOG_ENABLED", True))
     VISUALS_ENABLED: bool = field(default_factory=lambda: _envBool("VISUALS_ENABLED", True))
-    COCKPIT_THEME: str = field(default_factory=lambda: os.getenv("COCKPIT_THEME", "dark"))
+    COCKPIT_THEME: str = field(default_factory=lambda: _envString("COCKPIT_THEME", "dark"))
     # Throttle the cockpit's Pillow hero-image upload (text-CV2 edits still flow freely).
     COCKPIT_IMAGE_MIN_INTERVAL: int = field(
         default_factory=lambda: _envInt("COCKPIT_IMAGE_MIN_INTERVAL", 30))
@@ -114,7 +119,10 @@ def buildDiscordCfg() -> DiscordCfg:
     still be overridden individually in .env."""
     loadEnvOnce()
     lab = _envBool("DISCORD_LAB_MODE", False)
+    capsule_active = controllerConfigActive()
     return DiscordCfg(
+        DISCORD_DASHBOARD=not capsule_active,
+        WEB_DASHBOARD=not capsule_active,
         CAST_MODE=_envBool("CAST_MODE", lab),
         ASK_NL_CONTROL=_envBool("ASK_NL_CONTROL", lab),
         POLL_GATES=_envBool("POLL_GATES", lab),

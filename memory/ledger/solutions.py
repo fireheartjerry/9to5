@@ -17,7 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
-from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _nowIso
+from memory.experience_schema import LOG, _connect, _nowIso, _writeConnect
 
 _EXECUTOR_PROVENANCE = '{"origin":"executor"}'
 
@@ -34,7 +34,7 @@ def upsert_solution(signature: str, spec_json: str, *, verify_passed: bool,
     """
     prov = provenance if provenance is not None else _EXECUTOR_PROVENANCE
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute(
                 """INSERT INTO solution_cache
                    (signature, spec_json, last_verify_passed, reuse_count, last_used_at, provenance)
@@ -53,7 +53,7 @@ def get_solution(signature: str, db_path: Optional[Path] = None) -> Optional[dic
     # Holds _WRITE_LOCK: this does an UPDATE (reuse_count bump), and EVERY other writer in this module
     # serializes on _WRITE_LOCK. Without it this write raced concurrent writers (parallel subtask
     # workers / the SIE maintenance thread), risking interleaved writes and 'database is locked'.
-    with _WRITE_LOCK, _connect(db_path) as conn:
+    with _writeConnect(db_path) as conn:
         row = conn.execute(
             "SELECT * FROM solution_cache WHERE signature=? AND last_verify_passed=1",
             (signature,)).fetchone()
@@ -66,7 +66,7 @@ def get_solution(signature: str, db_path: Optional[Path] = None) -> Optional[dic
 def upsert_kg_node(kind: str, key: str, summary: str, db_path: Optional[Path] = None) -> bool:
     """Add/refresh a codebase knowledge-graph node (file/module/gotcha) (N)."""
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute(
                 """INSERT INTO kg_nodes (kind, key, summary) VALUES (?, ?, ?)
                    ON CONFLICT(kind, key) DO UPDATE SET summary=excluded.summary""",
@@ -92,7 +92,7 @@ def record_reflection(*, run_id: str, subtask_id: str, role: str = "executor",
                       db_path: Optional[Path] = None, **fields: Any) -> bool:
     """Store an executor/teacher learning summary (I/M). Keyed to dedupe re-syncs."""
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute(
                 """INSERT INTO reflections
                    (run_id, subtask_id, role, teacher, approach, reusable_recipe,

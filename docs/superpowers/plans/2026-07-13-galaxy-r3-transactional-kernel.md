@@ -1,13 +1,18 @@
 # GALAXY Singularity Revision 3: Transactional Attempt Kernel Implementation Plan
 
-> **Execution mode:** implement directly on `main` at the user's explicit request. Use test-driven development for every behavior change. Each task gets an implementer, a specification reviewer, and a code-quality reviewer before the next task starts.
+> **Execution mode:** implement in the dedicated `galaxy-r3-implementation`
+> worktree and integration branch. References to canonical `main` below name
+> the protected promotion target, not the implementation workspace. Use
+> test-driven development for every behavior change. Each task gets an
+> implementer, a specification reviewer, and a code-quality reviewer before
+> the next task starts.
 
 **Goal:** Make every mutating autonomous coding attempt transactional: each retry gets a fresh self-contained external clone, explicitly trusted Local or a credential-separated Docker plane executes only there, a native no-follow snapshot crosses into a pinned networkless object parser, and only its bounded canonical tree/blob manifest crosses back to a small memory-safe host object writer. The exact staged revision is verified in a fresh no-link clone inside the universal credentialless hardened verifier, and promotion uses a fenced Git ref/materialization protocol plus a crash-reconcilable journal. Preserve the execution-origin tier as receipt evidence, fail closed when isolation or credential separation cannot be honored, and leave durable linked recovery evidence on every rejection or crash.
 
-**Design sources:** `docs/superpowers/specs/2026-07-13-galaxy-singularity-revision-3-design.md`,
-`docs/superpowers/specs/2026-07-13-galaxy-r3-qualified-capability-topology.md`,
-`docs/superpowers/specs/2026-07-13-galaxy-r3-pulsar-singularity-r1-qualified-topology.md`,
-and `docs/superpowers/specs/2026-07-13-galaxy-r3-quark-portfolio-r2-qualified-topology.md`.
+**Design sources:** `docs/superpowers/specs/2026-07-14-galaxy-r3-design.md`,
+`docs/superpowers/specs/2026-07-14-galaxy-r3-qualified-capability-topology.md`,
+`docs/superpowers/specs/2026-07-14-galaxy-r3-pulsar-r1-qualified-topology.md`,
+and `docs/superpowers/specs/2026-07-14-galaxy-r3-quark-portfolio-r2-qualified-topology.md`.
 This plan implements only the transactional prerequisite. Kernel completion does
 not mean the 131-node / 250-edge GALAXY core or disabled 134-node / 256-edge
 federation-ready target is implemented, and it does not authorize Pulsar or
@@ -49,18 +54,23 @@ If preparation, verification, compare-and-swap, promotion, or cleanup fails:
 - no later candidate may build on a rejected revision;
 - nothing may mutate the promoted tree after its verified SHA is sealed.
 
-### Pre-implementation documentation gate
+### Historical pre-implementation documentation gate
 
-This approved design, qualified-topology addenda, and implementation plans are versioned before production code changes. Stage exactly these seven known documentation files, inspect the staged diff, commit them, and require the tree to contain no other documentation change before Task 1:
+This gate records the seven-file documentation set used when the child plan was
+first authored. The later approved package contains seven frozen specifications
+and four registered child plans. Do not rerun this historical staging recipe
+against the current dirty worktree; current verification uses
+`config/galaxy/artifacts.v1.json` and the package `SHA256SUMS` file. The migrated
+paths below are retained only to make the historical receipt intelligible:
 
 ```powershell
 git diff --cached --quiet
 if ($LASTEXITCODE -ne 0) { throw 'Pre-existing staged paths; preserve them and stop' }
 $stageAllowlist = @(
-  'docs/superpowers/specs/2026-07-13-galaxy-singularity-revision-3-design.md',
-  'docs/superpowers/specs/2026-07-13-galaxy-r3-qualified-capability-topology.md',
-  'docs/superpowers/specs/2026-07-13-galaxy-r3-pulsar-singularity-r1-qualified-topology.md',
-  'docs/superpowers/specs/2026-07-13-galaxy-r3-quark-portfolio-r2-qualified-topology.md',
+  'docs/superpowers/specs/2026-07-14-galaxy-r3-design.md',
+  'docs/superpowers/specs/2026-07-14-galaxy-r3-qualified-capability-topology.md',
+  'docs/superpowers/specs/2026-07-14-galaxy-r3-pulsar-r1-qualified-topology.md',
+  'docs/superpowers/specs/2026-07-14-galaxy-r3-quark-portfolio-r2-qualified-topology.md',
   'docs/superpowers/plans/2026-07-13-galaxy-r3-transactional-kernel.md',
   'docs/superpowers/plans/2026-07-13-galaxy-r3-pulsar-r1-implementation-plan.md',
   'docs/superpowers/plans/2026-07-13-galaxy-r3-quark-r2-implementation-plan.md'
@@ -2384,7 +2394,7 @@ The path list is an allowlist, not a convenience glob. Before `git add`, compare
 
 **Files**
 
-- Modify: `docs/superpowers/specs/2026-07-13-galaxy-singularity-revision-3-design.md` only if implementation truth requires a correction
+- Verify unchanged: `docs/superpowers/specs/2026-07-14-galaxy-r3-design.md`; record implementation-time truth corrections in this plan or the evidence report, never in the frozen specification
 - Modify: `docs/superpowers/plans/2026-07-13-galaxy-r3-transactional-kernel.md` only for reviewed implementation-time manifest/truth corrections
 - Add: `docs/superpowers/reports/2026-07-13-galaxy-r3-kernel-evidence.md`
 - Regenerate: `.repo-map.json`

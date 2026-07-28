@@ -26,14 +26,14 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _nowIso
+from memory.experience_schema import LOG, _connect, _nowIso, _writeConnect
 
 
 def upsert_lesson(scope: str, signature_tags: str, text: str, *, support_count: int,
                   win_rate: float, db_path: Optional[Path] = None) -> bool:
     """Insert/refresh a consolidated lesson (keyed by scope+tags+text). Best-effort."""
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute(
                 """INSERT INTO lessons (scope, signature_tags, text, support_count, win_rate, last_seen_at)
                    VALUES (?, ?, ?, ?, ?, ?)
@@ -59,7 +59,7 @@ def fetch_lessons(scope: Optional[str] = None,
 
 
 def clear_lessons(db_path: Optional[Path] = None) -> None:
-    with _WRITE_LOCK, _connect(db_path) as conn:
+    with _writeConnect(db_path) as conn:
         conn.execute("DELETE FROM lessons")
 
 
@@ -67,7 +67,7 @@ def set_arm(context_key: str, action_json: str, *, pulls: int, reward_sum: float
             reward_sq_sum: float, db_path: Optional[Path] = None) -> bool:
     """Write a policy arm's accumulated stats (keyed by context+action). Best-effort."""
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute(
                 """INSERT INTO policy_arms (context_key, action_json, pulls, reward_sum, reward_sq_sum)
                    VALUES (?, ?, ?, ?, ?)
@@ -93,7 +93,7 @@ def fetch_arms(context_key: Optional[str] = None,
 
 
 def clear_arms(db_path: Optional[Path] = None) -> None:
-    with _WRITE_LOCK, _connect(db_path) as conn:
+    with _writeConnect(db_path) as conn:
         conn.execute("DELETE FROM policy_arms")
 
 
@@ -108,7 +108,7 @@ def register_variant(role: str, body: str, *, state: str = "challenger",
     import hashlib
     h = hashlib.sha256(body.encode("utf-8")).hexdigest()
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             row = conn.execute(
                 "SELECT id FROM prompt_variants WHERE role=? AND body_hash=?", (role, h)).fetchone()
             if row:
@@ -175,7 +175,7 @@ def promote_variant(role: str, variant_id: int, db_path: Optional[Path] = None) 
     Stamps gate attestation on the promoted variant so provenance gate allows it."""
     _GATE_PROVENANCE = json.dumps({"origin": "brain", "attested_by": "sie:promotion-gate"})
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute(
                 "UPDATE prompt_variants SET state='retired' WHERE role=? AND state='champion'",
                 (role,))
@@ -191,7 +191,7 @@ def promote_variant(role: str, variant_id: int, db_path: Optional[Path] = None) 
 def tag_run_prompt(run_id: str, prompt_set_id: str, db_path: Optional[Path] = None) -> bool:
     """Record which prompt champion authored a run (so per-variant field metrics exist)."""
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute("UPDATE runs SET prompt_set_id=? WHERE run_id=?",
                          (str(prompt_set_id), run_id))
         return True

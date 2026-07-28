@@ -25,7 +25,7 @@ if __name__ == "__main__":
         _sys.path.insert(0, str(_ROOT))
 
 import config
-from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _j, _nowIso
+from memory.experience_schema import LOG, _connect, _j, _nowIso, _writeConnect
 
 
 def record_pr_outcome(
@@ -56,7 +56,7 @@ def record_pr_outcome(
         if subtask_id and not prov.get("subtask_id"):
             prov = dict(prov, subtask_id=subtask_id)
         promote_safe = result.get("promote_safe")
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute(
                 """INSERT INTO pr_outcomes
                    (run_id, subtask_id, pr_url, ci_status, ci_summary,

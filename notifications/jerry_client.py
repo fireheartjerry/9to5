@@ -15,7 +15,7 @@ EXPORTS:
   decide(gate: str, state, *, timeout: float=6.0) -> Optional[dict]  -- Ask the Jerry service for a verb
   advise(gate: str, state, *, timeout: float=6.0) -> Optional[str]  -- Advisor role: a one-line second opinion to inject into the Ollama brain's
   recordOutcome(gate: str, predicted: Optional[dict], human_verb: str) -> None  -- Append a shadow-mode comparison line (model vs human)
-DEPENDS-ON: platform_core.core.best_effort
+DEPENDS-ON: platform_core.core.best_effort, platform_core.execution, platform_core.runtime
 SIDE-EFFECTS: appends to logs/jerry_shadow.jsonl
 RUN/TEST: python -m pytest tests/notifications/test_jerry_client.py
 """
@@ -29,6 +29,11 @@ from pathlib import Path
 from typing import Optional
 
 from platform_core.core.best_effort import best_effort  # stdlib-only kernel: keeps this torch-free
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+    openLegacyFile,
+)
+from platform_core.runtime.effect_guard import legacyDiagnosticUrlopen
 
 SERVICE_URL = os.getenv("JERRY_URL", "http://127.0.0.1:8008")
 SHADOW_LOG = Path(__file__).resolve().parent.parent / "logs" / "jerry_shadow.jsonl"
@@ -80,7 +85,7 @@ def decide(gate: str, state, *, timeout: float = 6.0) -> Optional[dict]:
         body = json.dumps({"gate": gate, "context": ctx}).encode("utf-8")
         req = urllib.request.Request(f"{SERVICE_URL}/decide", data=body, method="POST",
                                      headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with legacyDiagnosticUrlopen(req, timeout=timeout) as resp:
             out = json.loads(resp.read().decode("utf-8"))
         if isinstance(out, dict) and out.get("verb") and out.get("verb") != "none":
             return out
@@ -111,6 +116,6 @@ def recordOutcome(gate: str, predicted: Optional[dict], human_verb: str) -> None
             "human_verb": human_verb,
             "agreed": bool(predicted) and (predicted.get("verb") == human_verb),
         }
-        SHADOW_LOG.parent.mkdir(parents=True, exist_ok=True)
-        with SHADOW_LOG.open("a", encoding="utf-8", newline="\n") as f:
+        mutateLegacyPath(SHADOW_LOG.parent.mkdir,parents=True, exist_ok=True)
+        with openLegacyFile(SHADOW_LOG, "a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")

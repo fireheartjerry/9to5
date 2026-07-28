@@ -7,7 +7,7 @@ EXPORTS:
   redact_council_text(text: Any) -> str
   slugify(text: str, limit: int=42) -> str
   CouncilRunLogger
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -21,6 +21,10 @@ from pathlib import Path
 from typing import Any
 
 import config
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+    openLegacyFile,
+)
 
 SECRET_PATTERNS = (
     re.compile(r"(?i)(api[_-]?key|token|secret|password)\s*[:=]\s*['\"]?[^'\"\s]+"),
@@ -75,7 +79,7 @@ class CouncilRunLogger:
             base = Path(config.PROJECT_ROOT) / base
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.run_dir = base / f"{stamp}_{slugify(task)}_{run_id[:8]}"
-        self.run_dir.mkdir(parents=True, exist_ok=True)
+        mutateLegacyPath(self.run_dir.mkdir,parents=True, exist_ok=True)
         self.transcript_jsonl_path = self.run_dir / "transcript.jsonl"
         self.transcript_md_path = self.run_dir / "transcript.md"
         self.brief_json_path = self.run_dir / "brief.json"
@@ -83,36 +87,36 @@ class CouncilRunLogger:
         self.metadata_path = self.run_dir / "metadata.json"
 
     def write_context(self, context_pack: Any) -> None:
-        (self.run_dir / "context_pack.json").write_text(
+        mutateLegacyPath((self.run_dir / "context_pack.json").write_text,
             json.dumps(_safe_json(context_pack), indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
 
     def write_config(self, council_config: Any) -> None:
-        (self.run_dir / "config.json").write_text(
+        mutateLegacyPath((self.run_dir / "config.json").write_text,
             json.dumps(_safe_json(council_config), indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
 
     def write_metadata(self, metadata: dict[str, Any]) -> None:
-        self.metadata_path.write_text(
+        mutateLegacyPath(self.metadata_path.write_text,
             json.dumps(_safe_json(metadata), indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
 
     def write_message(self, message: Any) -> None:
-        with self.transcript_jsonl_path.open("a", encoding="utf-8") as fh:
+        with openLegacyFile(self.transcript_jsonl_path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(_safe_json(message), ensure_ascii=False) + "\n")
         md = self._message_markdown(message)
-        with self.transcript_md_path.open("a", encoding="utf-8") as fh:
+        with openLegacyFile(self.transcript_md_path, "a", encoding="utf-8") as fh:
             fh.write(md + "\n\n")
 
     def write_brief(self, brief: Any, markdown: str) -> None:
-        self.brief_json_path.write_text(
+        mutateLegacyPath(self.brief_json_path.write_text,
             json.dumps(_safe_json(brief), indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
-        self.brief_md_path.write_text(redact_council_text(markdown), encoding="utf-8")
+        mutateLegacyPath(self.brief_md_path.write_text,redact_council_text(markdown), encoding="utf-8")
 
     def _message_markdown(self, message: Any) -> str:
         data = _safe_json(message)

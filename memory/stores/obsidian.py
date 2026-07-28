@@ -13,7 +13,7 @@ EXPORTS:
   flushRest(timeout: Optional[float]=None) -> None  -- Wait for queued REST syncs to drain (used on shutdown / before resume reads).
   writeClaudioMd(task_state, subtask: Optional[dict], additional_context: str='', work_dir: Optional[str]=None, executor_playbook: str='') -> Path  -- Write a fresh per-subtask CLAUDE.md to the working directory.
   ObsidianClient
-DEPENDS-ON: config, platform_core.core.best_effort, platform_core.core.fsio
+DEPENDS-ON: config, platform_core.core.best_effort, platform_core.core.fsio, platform_core.execution, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_hooks_obsidian.py tests/notifications/test_obsidian_atomic_claude_md.py tests/notifications/test_obsidian_write.py
 """
@@ -27,12 +27,22 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-import requests
+import requests  # noqa: F401 -- compatibility patch seam; calls route through effect_guard
 import urllib3
 
 import config
 from platform_core.core import fsio
 from platform_core.core.best_effort import best_effort, recordDegradation
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+    observeLegacyPath,
+    openLegacyFile,
+    readLegacyText,
+)
+from platform_core.runtime.effect_guard import (
+    legacyDiagnosticHttpGet,
+    legacyDiagnosticHttpPut,
+)
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -91,9 +101,13 @@ def _restPut(base_url: str, headers: dict, rel_path: str, content: str) -> None:
     registry still counts it for the run-end summary."""
     _warnIfNonLoopback(base_url)
     with best_effort("obsidian.rest_sync", log=LOG, level=logging.DEBUG):
-        r = requests.put(f"{base_url}/vault/{rel_path}", data=content.encode("utf-8"),
-                         headers={**headers, "Content-Type": "text/markdown"},
-                         verify=False, timeout=10)
+        r = legacyDiagnosticHttpPut(
+            f"{base_url}/vault/{rel_path}",
+            data=content.encode("utf-8"),
+            headers={**headers, "Content-Type": "text/markdown"},
+            verify=False,
+            timeout=10,
+        )
         if not (200 <= r.status_code < 300):
             LOG.debug("REST PUT %s -> %s (disk copy already written)", rel_path, r.status_code)
 
@@ -119,7 +133,7 @@ def writeClaudioMd(task_state, subtask: Optional[dict], additional_context: str 
     injected on EVERY attempt so the executor's expertise is never forgotten.
     """
     work_dir_path = Path(work_dir) if work_dir else config.PROJECT_ROOT
-    work_dir_path.mkdir(parents=True, exist_ok=True)
+    mutateLegacyPath(work_dir_path.mkdir,parents=True, exist_ok=True)
     meta = task_state.meta
     parts = [
         "# 9TO5 — live subtask context (auto-generated; read fully before acting)",
@@ -174,7 +188,7 @@ def _atomicWriteText(path: Path, content: str) -> None:
     try:
         fsio.atomicWriteText(path, content, retries=6, cap=0.3)
     except Exception:  # noqa: BLE001 -- swap kept failing: behave exactly like the old code
-        path.write_text(content, encoding="utf-8")
+        mutateLegacyPath(path.write_text,content, encoding="utf-8")
 
 
 class ObsidianClient:
@@ -189,8 +203,8 @@ class ObsidianClient:
 
     def _writeDisk(self, rel_path: str, content: str) -> Path:
         p = self._diskPath(rel_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
+        mutateLegacyPath(p.parent.mkdir,parents=True, exist_ok=True)
+        mutateLegacyPath(p.write_text,content, encoding="utf-8")
         return p
 
     # ---- public API -----------------------------------------------------
@@ -215,7 +229,7 @@ class ObsidianClient:
         """Legacy synchronous REST-first write (disk fallback)."""
         _warnIfNonLoopback(self.base_url)
         try:
-            r = requests.put(
+            r = legacyDiagnosticHttpPut(
                 f"{self.base_url}/vault/{rel_path}", data=content.encode("utf-8"),
                 headers={**self.headers, "Content-Type": "text/markdown"}, verify=False, timeout=10)
             if 200 <= r.status_code < 300:
@@ -233,12 +247,12 @@ class ObsidianClient:
         url = f"{self.base_url}/vault/{rel_path}"
         _warnIfNonLoopback(url)
         with best_effort("obsidian.rest_read", log=LOG, level=logging.DEBUG):
-            r = requests.get(url, headers=self.headers, verify=False, timeout=10)
+            r = legacyDiagnosticHttpGet(url, headers=self.headers, verify=False, timeout=10)
             if 200 <= r.status_code < 300:
                 return r.text
         p = self._diskPath(rel_path)
-        if p.exists():
-            return p.read_text(encoding="utf-8")
+        if observeLegacyPath(p.exists):
+            return readLegacyText(p, encoding="utf-8")
         return None
 
     def appendNote(self, rel_path: str, content: str) -> dict:
@@ -247,8 +261,8 @@ class ObsidianClient:
         with _APPEND_LOCK:
             p = self._diskPath(rel_path)
             try:
-                p.parent.mkdir(parents=True, exist_ok=True)
-                with p.open("a", encoding="utf-8") as fh:
+                mutateLegacyPath(p.parent.mkdir,parents=True, exist_ok=True)
+                with openLegacyFile(p, "a", encoding="utf-8") as fh:
                     fh.write(content)
                 return {"ok": True, "via": "disk-append", "rel_path": rel_path, "disk_path": str(p)}
             except Exception as e:  # noqa: BLE001 -- fallback still needs to run; count it
@@ -262,12 +276,14 @@ class ObsidianClient:
         authed = False
         _warnIfNonLoopback(self.base_url)
         try:
-            r = requests.get(f"{self.base_url}/", verify=False, timeout=6)
+            r = legacyDiagnosticHttpGet(f"{self.base_url}/", verify=False, timeout=6)
             rest_ok = r.status_code == 200
         except Exception:  # noqa: BLE001
             return {"rest_ok": False, "authed": False}
         try:
-            r2 = requests.get(f"{self.base_url}/vault/", headers=self.headers, verify=False, timeout=6)
+            r2 = legacyDiagnosticHttpGet(
+                f"{self.base_url}/vault/", headers=self.headers, verify=False, timeout=6
+            )
             authed = 200 <= r2.status_code < 300
         except Exception:  # noqa: BLE001
             authed = False

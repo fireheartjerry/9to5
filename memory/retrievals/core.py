@@ -29,7 +29,7 @@ EXPORTS:
   backfill_embeddings(db_path: Optional[Path]=None) -> dict[str, int]  -- Embed every verify-passing subtask that lacks an embedding (run off the hot path,
   rebuild_retrieval_index(db_path: Optional[Path]=None, include_failures: bool=True) -> dict[str, int]  -- Rebuild the derived ANN index from SQLite embeddings
   lessons_block(goal: str, title: str='', *, db_path: Optional[Path]=None) -> str  -- Orchestrator-facing one-call helper: retrieve + render, fully best-effort.
-DEPENDS-ON: config, memory.exp_index, memory.experience, memory.experience_content, memory.retrieval_rank, memory.retrieval_render, platform_core.runtime.perf
+DEPENDS-ON: config, llm_io, memory.exp_index, memory.experience, memory.experience_content, memory.retrieval_rank, memory.retrieval_render, platform_core.runtime.perf
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_orch_core_bugs.py tests/slow/test_simulation_core.py
 """
@@ -43,16 +43,18 @@ from pathlib import Path
 from typing import Any, Optional
 
 import config
-from memory import experience
-from memory import experience_content
-from memory import exp_index
-from memory import retrieval_rank
+import llm_io
+from memory import exp_index, experience, experience_content, retrieval_rank
 from memory.retrieval_render import (
-    approx_tokens as _approx_tokens,
+    approx_tokens as _approx_tokens,  # noqa: F401 -- historical test/facade seam
+)
+from memory.retrieval_render import (
     render_failures,
     render_lessons,
     render_solutions,
-    sanitize_field as _sanitizeField,
+)
+from memory.retrieval_render import (
+    sanitize_field as _sanitizeField,  # noqa: F401 -- historical facade seam
 )
 from platform_core.runtime import perf
 
@@ -75,8 +77,7 @@ def _embed_call(text: str) -> Optional[list[float]]:
     Returns the vector, or None if the model/server is unavailable (the common case in
     a container with no Ollama running -- callers treat None as "no retrieval today")."""
     try:
-        import ollama  # imported lazily: absent/slow import must not taint module load
-        client = ollama.Client(host=config.OLLAMA_HOST)
+        client = llm_io.getClient()
         resp = client.embeddings(model=config.EMBED_MODEL, prompt=text)
         vec = resp.get("embedding") if isinstance(resp, dict) else getattr(resp, "embedding", None)
         return list(vec) if vec else None

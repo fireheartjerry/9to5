@@ -9,7 +9,7 @@ EXPORTS:
   composeRunSettingsDict(base_settings_path=None) -> dict  -- Per-run settings dict: base settings merged with the generated hooks block.
   composeRunSettings(base_settings_path=None, out_path=None) -> Path  -- Write the per-run --settings file (see composeRunSettingsDict) and return its path.
   buildHookCtxEnv(boundaries=None) -> str  -- JSON for the NINE_TO_FIVE_HOOK_CTX env var: ONE channel for hook context (boundaries +
-DEPENDS-ON: agents.workflow_resolver, config, notifications.discord_bot, platform_core.runtime.action_risk
+DEPENDS-ON: agents.workflow_resolver, config, notifications.discord_bot, platform_core.execution, platform_core.runtime.action_risk
 SIDE-EFFECTS: composeRunSettings writes the per-run settings JSON
 RUN/TEST: python -m pytest tests/execution/test_executor.py
 """
@@ -21,6 +21,11 @@ from pathlib import Path
 from typing import Optional, Union
 
 import config
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+    observeLegacyPath,
+    readLegacyText,
+)
 
 LOG = config.getLogger("executor.env")
 
@@ -165,7 +170,7 @@ def _hookInterpreter() -> str:
     Guard hooks are stdlib+action_risk only by design, so bare `python` still guards."""
     try:
         venv_py = getattr(config, "VENV_PYTHON", None)
-        if venv_py and Path(venv_py).exists():
+        if venv_py and observeLegacyPath(Path(venv_py).exists):
             return '"' + str(venv_py).replace("\\", "/") + '"'
     except Exception:  # noqa: BLE001
         pass
@@ -209,10 +214,10 @@ def composeRunSettingsDict(base_settings_path=None) -> dict:
     path = Path(base_settings_path) if base_settings_path else Path(config.CLAUDE_SETTINGS_PATH)
     base: dict = {}
     try:
-        if path.exists():
+        if observeLegacyPath(path.exists):
             # Windows editors may emit a UTF-8 BOM. It is still a valid settings
             # file and must not trigger a fallback regeneration during a run.
-            loaded = json.loads(path.read_text(encoding="utf-8-sig"))
+            loaded = json.loads(readLegacyText(path, encoding="utf-8-sig"))
             if isinstance(loaded, dict):
                 base = loaded
     except Exception as e:  # noqa: BLE001
@@ -240,8 +245,8 @@ def composeRunSettingsDict(base_settings_path=None) -> dict:
 def composeRunSettings(base_settings_path=None, out_path=None) -> Path:
     """Write the per-run --settings file (see composeRunSettingsDict) and return its path."""
     out = Path(out_path) if out_path else (Path(config.LOG_PATH) / "claude_run_settings.json")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(composeRunSettingsDict(base_settings_path), indent=2), encoding="utf-8")
+    mutateLegacyPath(out.parent.mkdir,parents=True, exist_ok=True)
+    mutateLegacyPath(out.write_text,json.dumps(composeRunSettingsDict(base_settings_path), indent=2), encoding="utf-8")
     return out
 
 

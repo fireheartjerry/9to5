@@ -97,6 +97,7 @@ class _LoopHost(OrchestratorExecuteMixin):
 
     def __init__(self):
         self._state_lock = threading.RLock()
+        self._fully_injected = True
 
     def _translateDiscord(self, bus, state):
         pass

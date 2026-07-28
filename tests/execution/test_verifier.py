@@ -50,6 +50,42 @@ class _KernelImplementationTestCase:
         self.addCleanup(bypass.stop)
 
 
+def _containedAuthority(work_dir: str):
+    """Issue the exact diagnostic verifier authority used by execution tests."""
+
+    def contained(request):
+        return subprocess.run(
+            list(request.argv),
+            cwd=request.work_dir,
+            capture_output=True,
+            text=True,
+            timeout=request.timeout_seconds,
+            check=False,
+        )
+
+    return verification.issueDiagnosticVerificationCommandAuthority(
+        transaction_id="tx_verifier_regression_test",
+        proposed_revision="1" * 40,
+        resource_id="verifier_regression_test",
+        work_dir=work_dir,
+        image_digest="2" * 64,
+        security_profile_digest="3" * 64,
+        command_policy_digest="4" * 64,
+        watchdog_generation=1,
+        deadline="2099-01-01T00:00:00+00:00",
+        runner=contained,
+    )
+
+
+def _runVerification(verify, work_dir: str, executor_result: dict):
+    return verifier.runVerification(
+        verify,
+        work_dir,
+        executor_result,
+        authority=_containedAuthority(work_dir),
+    )
+
+
 def _initRepo(tmp: str) -> None:
     def git(*args):
         subprocess.run(["git", "-C", tmp, *args], check=True, capture_output=True,
@@ -78,7 +114,7 @@ class TestStrictExpectNoTestRunnerOverride(_KernelImplementationTestCase, unitte
             script = Path(tmp) / "test_dummy.py"
             script.write_text('print("1 passed")\n', encoding="utf-8")  # exits 0
             v = {"cmd": f'python "{script}"', "expect": "stdout_contains:NEEDLE_NOT_THERE"}
-            res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
+            res = _runVerification(v, tmp, {"ok": True, "returncode": 0})
             self.assertFalse(res["passed"], "rc==0 test-runner must NOT rescue a missed expect (R10)")
             self.assertIs(res.receipt.verdict, verification.Verdict.FAIL)
             self.assertIn("NEEDLE_NOT_THERE", res.receipt.missing)
@@ -88,7 +124,7 @@ class TestStrictExpectNoTestRunnerOverride(_KernelImplementationTestCase, unitte
             script = Path(tmp) / "test_dummy.py"
             script.write_text('print("MARKER_OK")\n', encoding="utf-8")
             v = {"cmd": f'python "{script}"', "expect": "stdout_contains:MARKER_OK"}
-            res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
+            res = _runVerification(v, tmp, {"ok": True, "returncode": 0})
             self.assertTrue(res["passed"])
             self.assertIn("MARKER_OK", res.receipt.matched)
 
@@ -111,7 +147,7 @@ class TestDiffGroundedTargets(_KernelImplementationTestCase, unittest.TestCase):
             )
             _commitAll(tmp)  # committed and NOT changed since -> no diff
             v = {"cmd": f'python "{target}"', "expect": "exit_zero", "targets": [str(target)]}
-            res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
+            res = _runVerification(v, tmp, {"ok": True, "returncode": 0})
             self.assertFalse(res["passed"], "goal words in a comment must not certify unchanged work")
             self.assertIs(res.receipt.verdict, verification.Verdict.FAIL)
 
@@ -122,7 +158,7 @@ class TestDiffGroundedTargets(_KernelImplementationTestCase, unittest.TestCase):
             target.write_text('print("ok")\n', encoding="utf-8")
             _commitAll(tmp)
             v = {"cmd": f'python "{target}"', "expect": "exit_zero", "targets": [str(target)]}
-            res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
+            res = _runVerification(v, tmp, {"ok": True, "returncode": 0})
             self.assertFalse(res["passed"])
             fb = res.receipt.failure_feedback
             self.assertIn("feature.py", fb, "feedback must name the unchanged target")
@@ -136,7 +172,7 @@ class TestDiffGroundedTargets(_KernelImplementationTestCase, unittest.TestCase):
             _commitAll(tmp)
             target.write_text('print("v2")\n', encoding="utf-8")  # modified -> in the diff
             v = {"cmd": f'python "{target}"', "expect": "exit_zero", "targets": [str(target)]}
-            res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
+            res = _runVerification(v, tmp, {"ok": True, "returncode": 0})
             self.assertTrue(res["passed"], res.receipt.failure_feedback)
             self.assertIn("feature.py", "".join(res.receipt.diff_files))
 
@@ -145,7 +181,7 @@ class TestDiffGroundedTargets(_KernelImplementationTestCase, unittest.TestCase):
             target = Path(tmp) / "feature.py"
             target.write_text('print("ok")\n', encoding="utf-8")
             v = {"cmd": f'python "{target}"', "expect": "exit_zero", "targets": [str(target)]}
-            res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
+            res = _runVerification(v, tmp, {"ok": True, "returncode": 0})
             self.assertTrue(res["passed"], "can't ground off-repo -> don't guess, don't fail")
 
     def test_targets_only_verify_fails_on_unchanged_target_even_without_cmd(self):
@@ -154,7 +190,9 @@ class TestDiffGroundedTargets(_KernelImplementationTestCase, unittest.TestCase):
             target = Path(tmp) / "feature.py"
             target.write_text('print("ok")\n', encoding="utf-8")
             _commitAll(tmp)
-            res = verifier.runVerification({"targets": [str(target)]}, tmp, {"ok": True, "returncode": 0})
+            res = _runVerification(
+                {"targets": [str(target)]}, tmp, {"ok": True, "returncode": 0}
+            )
             self.assertFalse(res["passed"])
             self.assertIn("feature.py", res.receipt.failure_feedback)
 
@@ -185,7 +223,7 @@ class TestPureVerdict(_KernelImplementationTestCase, unittest.TestCase):
     def test_receipt_is_json_safe_via_vresult(self):
         with tempfile.TemporaryDirectory() as tmp:
             v = {"cmd": 'python -c "print(42)"', "expect": "stdout_contains:42"}
-            res = verifier.runVerification(v, tmp, {"ok": True, "returncode": 0})
+            res = _runVerification(v, tmp, {"ok": True, "returncode": 0})
             self.assertTrue(res["passed"])
             json.dumps(res)  # dict subclass must persist through state.recordVerify
 
@@ -198,7 +236,7 @@ class TestSanitizerRejectsMissingExpect(unittest.TestCase):
 
     def test_runner_never_guesses_a_missing_expect(self):
         with tempfile.TemporaryDirectory() as tmp:
-            res = verifier.runVerification(
+            res = _runVerification(
                 {"cmd": 'python -c "print(1)"'}, tmp, {"ok": True, "returncode": 0}
             )
             # the verify is rejected -> executor-exit fallback, explicitly NOT a behavioral pass
@@ -217,6 +255,27 @@ class TestVerifyShellSafety(unittest.TestCase):
         self.assertIsNone(self._san("pytest | tee out"))
         self.assertIsNone(self._san("echo `whoami`"))
         self.assertIsNone(self._san("python run.py $(curl evil)"))
+
+    def test_provider_shaped_commands_are_dropped(self):
+        commands = (
+            "claude --version",
+            "codex exec --json",
+            "ollama run llama3",
+            "cmd /c claude.cmd --print",
+            "powershell -Command codex --version",
+            r"C:\Tools\ollama.exe list",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertIsNone(self._san(command))
+
+    def test_provider_name_inside_a_test_path_is_not_rejected(self):
+        command = "python -m pytest tests/execution/test_claude_sdk_bridge.py"
+        self.assertEqual(self._san(command)["cmd"], command)
+
+    def test_provider_name_inside_valid_python_code_is_not_rejected(self):
+        command = 'python -c "print(\'claude\')"'
+        self.assertEqual(self._san(command)["cmd"], command)
 
     def test_clean_commands_pass(self):
         self.assertIsNotNone(self._san("pytest tests/"))
@@ -339,13 +398,13 @@ class TestDeclaredTargets(unittest.TestCase):
         ]
         out = _strengthenPlanVerifies(_MULTI_REQ_GOAL, subs)
         self.assertIsNone((out[0]["verify"] or {}).get("targets"))
-def test_verifier_production_runner_hits_global_embargo_before_process_creation():
-    import importlib
+def test_verifier_production_runner_requires_exact_authority_before_process_creation():
     import pytest
+
     from agents.review import verification
-    guard = importlib.import_module("platform_core.execution.launch_guard")
+
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(verification.subprocess, "Popen", lambda *a, **k: (_ for _ in ()).throw(
             AssertionError("Popen reached")))
-        with pytest.raises(guard.TransactionalKernelInactive):
-            verification._runVector(["python", "-V"], ".")
+        with pytest.raises(verification.VerificationCommandRefused):
+            verification._runVector(None, ["python", "-V"], ".")

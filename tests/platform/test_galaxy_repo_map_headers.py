@@ -5,10 +5,52 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools"))
+
+import repo_map  # noqa: E402
+import repo_map_outputs  # noqa: E402
 
 
+def test_headers_only_keeps_tracked_files_on_the_canonical_inventory(
+    tmp_path, monkeypatch
+):
+    package = tmp_path / "pkg" / "__init__.py"
+    tracked = tmp_path / "pkg" / "tracked.py"
+    reviewed_untracked = tmp_path / "pkg" / "reviewed.py"
+    for path in (package, tracked, reviewed_untracked):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('"""fixture"""\n', encoding="utf-8")
+    monkeypatch.setattr(repo_map, "REPO_ROOT", tmp_path)
+
+    tracked_paths = [package, tracked]
+    expanded_paths = [package, reviewed_untracked, tracked]
+    tracked_test = tmp_path / "tests" / "test_tracked.py"
+    expanded_test = tmp_path / "tests" / "test_reviewed.py"
+    _, tracked_modules, tracked_tests = repo_map_outputs._header_inventory(
+        tracked,
+        tracked_paths=tracked_paths,
+        expanded_paths=expanded_paths,
+        tracked_test_paths=[tracked_test],
+        expanded_test_paths=[tracked_test, expanded_test],
+    )
+    _, untracked_modules, untracked_tests = repo_map_outputs._header_inventory(
+        reviewed_untracked,
+        tracked_paths=tracked_paths,
+        expanded_paths=expanded_paths,
+        tracked_test_paths=[tracked_test],
+        expanded_test_paths=[tracked_test, expanded_test],
+    )
+
+    assert tracked_modules == {"pkg", "pkg.tracked"}
+    assert untracked_modules == {"pkg", "pkg.reviewed", "pkg.tracked"}
+    assert tracked_tests == [tracked_test]
+    assert untracked_tests == [tracked_test, expanded_test]
+
+
+@pytest.mark.timeout(180)
 def test_headers_only_prefix_isolated_check_is_idempotent():
     listed = subprocess.check_output(
         ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
@@ -24,17 +66,24 @@ def test_headers_only_prefix_isolated_check_is_idempotent():
     before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in protected}
     command = [sys.executable, "tools/repo_map.py", "--headers-only", "--only",
                "bootstrap/galaxy_launcher"]
+    global_command = [sys.executable, "tools/repo_map.py", "--check"]
+    before_global = subprocess.run(
+        global_command, cwd=ROOT, text=True, capture_output=True
+    )
     first = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
     assert first.returncode == 0, first.stderr
     check = subprocess.run([*command, "--check"], cwd=ROOT, text=True, capture_output=True)
     assert check.returncode == 0, check.stderr
-    global_check = subprocess.run(
-        [sys.executable, "tools/repo_map.py", "--check"],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
+    global_check = subprocess.run(global_command, cwd=ROOT, text=True, capture_output=True)
+    assert (
+        global_check.returncode,
+        global_check.stdout,
+        global_check.stderr,
+    ) == (
+        before_global.returncode,
+        before_global.stdout,
+        before_global.stderr,
     )
-    assert global_check.returncode == 0, global_check.stderr
     first_trust = {path: path.read_bytes() for path in
                    (ROOT / "bootstrap" / "galaxy_launcher").rglob("*") if path.is_file()}
     second = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)

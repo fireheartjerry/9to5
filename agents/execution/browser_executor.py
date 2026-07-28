@@ -33,7 +33,7 @@ EXPORTS:
   preflightLogin(timeout_s: int=300, poll_s: int=3) -> bool  -- Verify Gemini is reachable before a run relies on it
   sessionAsk(message: str, *, expect_json: bool=False) -> Optional[str]  -- Ask Gemini one message through the run session
   askGemini(message: str, *, runner=None, expect_json: bool=False) -> Optional[str]  -- Send one ``message`` to Gemini and return the reply text.
-DEPENDS-ON: agents.executor, agents.gemini_driver, config, notifications.lane_feed, platform_core.core.contracts
+DEPENDS-ON: agents.executor, agents.gemini_driver, config, notifications.lane_feed, platform_core.core.contracts, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_browser_executor.py
 """
@@ -47,6 +47,8 @@ from typing import Any, Optional
 
 import config
 from agents import executor
+from platform_core.execution.pre_execution import mutateLegacyPath
+from platform_core.execution.sandbox_broker import legacyDiagnosticAutomationLease
 
 LOG = config.getLogger("browser_executor")
 
@@ -157,7 +159,7 @@ def _run_actions(actions: list[dict[str, Any]], *, timeout_ms: int = 30000,
             "browser layer unavailable: `pip install playwright && playwright install chromium`") from e
 
     lines: list[str] = []
-    with sync_playwright() as p:
+    with legacyDiagnosticAutomationLease(sync_playwright) as p:
         browser = p.chromium.launch(headless=True)
         try:
             page = browser.new_page()
@@ -208,7 +210,7 @@ def _run_actions(actions: list[dict[str, Any]], *, timeout_ms: int = 30000,
                     lines.append(f"upload {Path(act['path']).name} -> {act['selector']}")
                 elif kind == "download":
                     target = Path(screenshot_dir or ".") / Path(act.get("path") or f"download-{i}").name
-                    target.parent.mkdir(parents=True, exist_ok=True)
+                    mutateLegacyPath(target.parent.mkdir, parents=True, exist_ok=True)
                     with page.expect_download() as download_info:
                         page.click(act["selector"])
                     download_info.value.save_as(str(target))

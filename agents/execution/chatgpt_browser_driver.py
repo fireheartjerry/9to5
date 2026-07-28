@@ -17,21 +17,37 @@ EXPORTS:
   ChatGptBrowserSession  -- A reused ChatGPT project chat thread that never opens duplicate tabs.
   send_prompt_to_project(project_url: str, model: str, reasoning: str, prompt: str) -> str  -- Send a prompt through the reusable project chat, never a fresh tab/chat.
   close_project_session(project_url: str, model: str, reasoning: str) -> None  -- Explicit cleanup only
-DEPENDS-ON: (stdlib only)
+DEPENDS-ON: platform_core.execution, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_chatgpt_browser_driver.py
 """
 from __future__ import annotations
 
 import json
+import logging
 import socket
 import subprocess
 import time
-import uuid
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any
+
+from platform_core.execution.pre_execution import (
+    observeLegacyPath,
+)
+from platform_core.execution.sandbox_broker import (
+    legacyDiagnosticAutomationLease,
+    popenLegacyProcess,
+    runLegacyProcess,
+)
+from platform_core.runtime.effect_guard import (
+    legacyDiagnosticSocket,
+    legacyDiagnosticUrlopen,
+)
+
+LOG = logging.getLogger(__name__)
 
 
 DEFAULT_PROFILE = Path(r"C:\9to5\state\chatgpt_profile_recon")
@@ -81,20 +97,20 @@ class ChatGptBrowserError(RuntimeError):
 
 def _http_json(url: str, timeout: float) -> dict[str, Any] | None:
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
+        with legacyDiagnosticUrlopen(url, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8", errors="replace"))
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
         return None
 
 
 def _port_listening(port: int, timeout: float = 0.5) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    with legacyDiagnosticSocket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(timeout)
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
 def _run(cmd: list[str], *, cwd: Path | None = None, timeout: float = 15.0) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return runLegacyProcess(
         cmd,
         cwd=str(cwd) if cwd else None,
         capture_output=True,
@@ -126,9 +142,9 @@ def _verify_profile_is_gitignored(profile: Path) -> str:
 
 
 def _verify_profile_dir(profile: Path) -> None:
-    if not profile.exists():
+    if not observeLegacyPath(profile.exists):
         raise ChatGptBrowserError(f"Profile path missing: {profile}")
-    if not profile.is_dir():
+    if not observeLegacyPath(profile.is_dir):
         raise ChatGptBrowserError(f"Profile path is not a directory: {profile}")
 
 
@@ -172,7 +188,7 @@ def _launch_chrome(
     project_url: str,
     debug_port: int,
 ) -> None:
-    if not chrome.exists():
+    if not observeLegacyPath(chrome.exists):
         raise ChatGptBrowserError(f"Chrome executable missing: {chrome}")
     launch_args = [
         f"--user-data-dir={profile}",
@@ -182,7 +198,11 @@ def _launch_chrome(
         "--new-window",
         project_url,
     ]
-    subprocess.Popen([str(chrome), *launch_args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    popenLegacyProcess(
+        [str(chrome), *launch_args],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def _ensure_debuggable_chrome(
@@ -528,7 +548,7 @@ class ChatGptBrowserSession:
             raise ChatGptBrowserError(
                 "Playwright is not available. Install dependencies before running this driver."
             ) from exc
-        self._playwright = sync_playwright().start()
+        self._playwright = legacyDiagnosticAutomationLease(sync_playwright).start()
         try:
             self._browser = self._playwright.chromium.connect_over_cdp(
                 f"http://127.0.0.1:{self.debug_port}"
@@ -568,7 +588,6 @@ class ChatGptBrowserSession:
     def close(self) -> None:
         """Detach from the reused page; leave both its tab and Chrome running."""
         self._closed = True
-        page = self._page
         self._page = None
         # The page belongs to the user/browser session. Keep the existing tab and
         # conversation available for the next project request.

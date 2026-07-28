@@ -4,7 +4,7 @@
 EXPORTS:
   record(metric: str, elapsed_s: float, **fields: Any) -> None  -- Append one best-effort timing row
   summarize(limit: int=500) -> dict[str, float]  -- Aggregate recent telemetry by metric.
-DEPENDS-ON: config, platform_core.core.jsonl_io
+DEPENDS-ON: config, platform_core.core.jsonl_io, platform_core.execution
 SIDE-EFFECTS: appends + size-rotates state/perf.jsonl
 RUN/TEST: python -m pytest tests/test_perf_telemetry.py
 """
@@ -18,6 +18,7 @@ from typing import Any
 
 import config
 from platform_core.core import jsonl_io
+from platform_core.execution.pre_execution import readLegacyText
 
 
 def _path() -> Path:
@@ -36,7 +37,7 @@ def record(metric: str, elapsed_s: float, **fields: Any) -> None:
 def summarize(limit: int = 500) -> dict[str, float]:
     """Aggregate recent telemetry by metric."""
     try:
-        lines = _path().read_text(encoding="utf-8").splitlines()[-max(1, int(limit)) :]
+        lines = readLegacyText(_path(), encoding="utf-8").splitlines()[-max(1, int(limit)) :]
     except Exception:  # noqa: BLE001
         return {}
     totals: dict[str, float] = {}

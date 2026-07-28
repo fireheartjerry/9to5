@@ -19,7 +19,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 import config
 from platform_core.ops import retention
 
-
 _DAY = 86400
 
 
@@ -85,7 +84,8 @@ def test_archive_terminal_tasks_moves_not_deletes(tmp_path, monkeypatch):
 def test_sweep_all_disabled_is_noop(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "RETENTION_ENABLED", False, raising=False)
     result = retention.sweepAll()
-    assert result == {"enabled": False}
+    assert result["status"] == "maintenance_deferred"
+    assert result["activation_authority"] is False
 
 
 def test_sweep_missing_dir_is_safe(tmp_path):
@@ -164,10 +164,11 @@ def test_sweep_all_includes_hook_log_trim(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "LOG_PATH", log_dir, raising=False)
     monkeypatch.setattr(config, "HOOKS_LOG_MAX_BYTES", 50, raising=False)
     monkeypatch.setattr(config, "GUARD_ALERTS_MAX_BYTES", 50, raising=False)
+    original = hooks_log.read_bytes()
     result = retention.sweepAll()
-    assert result["enabled"] is True
-    assert result["hooks_log_trimmed"] > 0
-    assert hooks_log.stat().st_size <= 50 + 40
+    assert result["status"] == "maintenance_deferred"
+    assert result["activation_authority"] is False
+    assert hooks_log.read_bytes() == original
 
 
 if __name__ == "__main__":

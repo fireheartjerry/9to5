@@ -13,6 +13,7 @@
 Runs under pytest (the pytest-only conftest sandbox). Skips only if the tool can't be imported.
 """
 import ast
+import importlib
 import sys
 import unittest
 from pathlib import Path
@@ -25,7 +26,7 @@ sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 repo_map: Any
 try:
-    import repo_map  # noqa: E402  (path injected above)
+    repo_map = importlib.import_module("repo_map")
 except Exception:  # noqa: BLE001 -- old/partial checkout: skip rather than error
     repo_map = None
 
@@ -205,6 +206,27 @@ class TestFindTestsRecursive:
             "tests/control/test_hooks.py",
         ]
 
+    def test_supplied_test_inventory_excludes_untracked_name_collisions(
+        self, tmp_path, monkeypatch
+    ):
+        tests_dir = tmp_path / "tests"
+        tracked = tests_dir / "evolution" / "test_evolution_candidate.py"
+        untracked = tests_dir / "execution" / "test_candidate.py"
+        for path in (tracked, untracked):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("def test_x():\n    pass\n", encoding="utf-8")
+        monkeypatch.setattr(repo_map, "TESTS_DIR", tests_dir)
+
+        assert repo_map.find_tests(
+            "learning.evolution.candidate",
+            "candidate",
+            test_paths=[tracked],
+        ) == ["tests/evolution/test_evolution_candidate.py"]
+        assert repo_map.find_tests(
+            "platform_core.runtime.candidate",
+            "candidate",
+            test_paths=[tracked, untracked],
+        ) == ["tests/execution/test_candidate.py"]
 
 @pytest.mark.skipif(repo_map is None, reason="tools/repo_map.py not importable")
 class TestImportResolution:

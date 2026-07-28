@@ -13,17 +13,17 @@ EXPORTS:
   ensure_training_deps() -> dict  -- Install the LoRA training stack if a GPU host lacks it (best-effort, once).
   ensure_models() -> dict  -- Pull the embedder + base brain into Ollama if missing (best-effort, once).
   ensure_all() -> dict  -- Run the full bootstrap once
-DEPENDS-ON: config, learning.compute
+DEPENDS-ON: config, learning.compute, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_tofu_bootstrap.py tests/platform/test_config_bootstrap.py
 """
 from __future__ import annotations
 
 import shutil
-import subprocess
 import sys
 
 import config
+from platform_core.execution.sandbox_broker import runLegacyProcess
 
 LOG = config.getLogger("sie.bootstrap")
 
@@ -49,8 +49,8 @@ def ensure_training_deps() -> dict:
         return {"present": True}
     try:
         LOG.info("bootstrap: installing training deps %s", missing)
-        subprocess.run([sys.executable, "-m", "pip", "install", "-q", *missing],
-                       capture_output=True, text=True, timeout=1800)
+        runLegacyProcess([sys.executable, "-m", "pip", "install", "-q", *missing],
+                         capture_output=True, text=True, timeout=1800)
         _done["deps"] = True
         return {"installed": missing}
     except Exception as e:  # noqa: BLE001 -- never block on a failed install
@@ -67,11 +67,11 @@ def ensure_models() -> dict:
     pulled = []
     for model in (config.EMBED_MODEL, config.OLLAMA_MODEL):
         try:
-            have = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=30)
+            have = runLegacyProcess(["ollama", "list"], capture_output=True, text=True, timeout=30)
             if model.split(":")[0] in (have.stdout or ""):
                 continue
             LOG.info("bootstrap: pulling Ollama model %s", model)
-            subprocess.run(["ollama", "pull", model], capture_output=True, text=True, timeout=3600)
+            runLegacyProcess(["ollama", "pull", model], capture_output=True, text=True, timeout=3600)
             pulled.append(model)
         except Exception as e:  # noqa: BLE001
             LOG.warning("bootstrap pull %s failed (ignored): %s", model, e)

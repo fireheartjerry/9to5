@@ -19,12 +19,27 @@ from typing import Optional
 # repo_map.py re-exports write_outputs via a lazy wrapper; these top-level imports are safe
 # because by the time repo_map_outputs is first imported, repo_map is already fully loaded.
 from repo_map import (  # noqa: E402
-    build_map, is_test_path, iter_py_files, module_dotted, render_header, splice_header,
-    _read_source, HEADER_SENTINEL, REPO_ROOT, REMEDIATION, first_party_roots,
-    iter_header_files, parse_module, validate_header_prefix,
+    HEADER_SENTINEL,
+    REMEDIATION,
+    REPO_ROOT,
+    _read_source,
+    build_map,
+    first_party_roots,
+    is_test_path,
+    iter_header_files,
+    iter_py_files,
+    iter_test_files,
+    module_dotted,
+    parse_module,
+    render_header,
+    splice_header,
+    validate_header_prefix,
 )
 from repo_map_render import (
-    render_root_agents_md, render_package_agents_md, _packages_with_init, _dump_json,
+    _dump_json,
+    _packages_with_init,
+    render_package_agents_md,
+    render_root_agents_md,
 )
 
 _JSON_PATH = REPO_ROOT / ".repo-map.json"
@@ -126,6 +141,32 @@ def _reportResults(
               + (f" under {only}/" if only else " (all modules)") + ".")
 
 
+def _header_inventory(
+    path: Path,
+    *,
+    tracked_paths: list[Path],
+    expanded_paths: list[Path],
+    tracked_test_paths: list[Path] | None = None,
+    expanded_test_paths: list[Path] | None = None,
+) -> tuple[set[str], set[str], list[Path]]:
+    """Select the dependency universe without destabilizing tracked headers.
+
+    A reviewed untracked leaf needs its explicitly selected prefix peers to resolve
+    imports.  A tracked leaf must retain the canonical tracked-only universe used by
+    the global map, otherwise a narrow headers-only pass makes ``--check`` stale.
+    """
+    tracked = path in tracked_paths
+    inventory = tracked_paths if tracked else expanded_paths
+    test_inventory = (
+        tracked_test_paths or [] if tracked else expanded_test_paths or []
+    )
+    return (
+        first_party_roots(inventory),
+        {module_dotted(candidate) for candidate in inventory},
+        test_inventory,
+    )
+
+
 def _writeHeadersOnly(*, check: bool, only: Optional[str]) -> int:
     """Splice/check one source prefix without deriving or touching global artifacts."""
     try:
@@ -139,15 +180,27 @@ def _writeHeadersOnly(*, check: bool, only: Optional[str]) -> int:
         return 2
     discovered = [path for path in iter_py_files() if not is_test_path(path)]
     inventory_paths = sorted(set(discovered).union(paths))
-    roots = first_party_roots(inventory_paths)
-    known_modules = {module_dotted(path) for path in inventory_paths}
+    tracked_test_paths = iter_test_files()
+    expanded_test_paths = iter_test_files(include_untracked=True)
     drift: list[str] = []
     errors: list[str] = []
     for path in paths:
         rel = path.relative_to(REPO_ROOT).as_posix()
         try:
             source = _read_source(path)
-            record = parse_module(path, roots, known_modules)
+            roots, known_modules, test_paths = _header_inventory(
+                path,
+                tracked_paths=discovered,
+                expanded_paths=inventory_paths,
+                tracked_test_paths=tracked_test_paths,
+                expanded_test_paths=expanded_test_paths,
+            )
+            record = parse_module(
+                path,
+                roots,
+                known_modules,
+                test_paths=test_paths,
+            )
             spliced = splice_header(source, render_header(record))
         except (OSError, SyntaxError, UnicodeError) as exc:
             errors.append(f"{rel}: {exc}")

@@ -13,9 +13,9 @@ EXPORTS:
   register(*, goal_runner: Optional[Callable[[dict], dict]]=None, fitness_under_tag: Optional[Callable[[str], float]]=None) -> None  -- Register richer runners (called by the orchestrator when a live brain exists).
   clear() -> None
   fitness_under_tag() -> Optional[Callable[[str], float]]
-  verify_runner(goal: dict[str, Any]) -> dict[str, Any]  -- Deterministic, zero-API runner: run the goal's held-out verify command and score it.
+  verify_runner(goal: dict[str, Any], *, verification_authority: object=None, work_dir: str | None=None) -> dict[str, Any]  -- Deterministic, zero-API runner: run the goal's held-out verify command and score it.
   active_runner() -> Callable[[dict], dict]  -- The runner the harness should use now: a registered brain runner if present, else
-DEPENDS-ON: agents.verifier, config
+DEPENDS-ON: agents.review.verification, agents.verifier, config
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_eval_runner.py
 """
@@ -50,19 +50,45 @@ def fitness_under_tag() -> Optional[Callable[[str], float]]:
     return _FITNESS_UNDER_TAG
 
 
-def verify_runner(goal: dict[str, Any]) -> dict[str, Any]:
+def verify_runner(
+    goal: dict[str, Any],
+    *,
+    verification_authority: object = None,
+    work_dir: str | None = None,
+) -> dict[str, Any]:
     """Deterministic, zero-API runner: run the goal's held-out verify command and score it.
 
     Reflects whether the repo satisfies the golden checks -- a real, automatic fitness
     signal that runs in any environment (no GPU/brain required)."""
     from agents import verifier
+    from agents.review.verification import (
+        VerificationCommandRefused,
+        validateVerificationCommandAuthority,
+    )
+
     verify = goal.get("verify") or {}
     if not verify.get("cmd"):
         return {"passed": False, "attempts": 1, "challenged": True}
     try:
-        res = verifier.runVerification(verify, str(config.PROJECT_ROOT), {})
+        authority = validateVerificationCommandAuthority(verification_authority)
+        if work_dir is not None and work_dir != authority.work_dir:
+            raise VerificationCommandRefused("eval work directory conflicts with authority")
+        res = verifier.runVerification(
+            verify,
+            authority.work_dir,
+            {},
+            authority=authority,
+        )
         return {"passed": bool(res.get("passed")), "attempts": 1,
                 "challenged": not bool(res.get("passed")), "cost": 0.0}
+    except VerificationCommandRefused as exc:
+        LOG.debug("verify_runner authority unavailable for %s: %s", goal.get("id"), exc)
+        return {
+            "passed": False,
+            "attempts": 1,
+            "challenged": True,
+            "reason": "verification_authority_unavailable",
+        }
     except Exception as e:  # noqa: BLE001 -- a broken golden verify scores as a fail
         LOG.debug("verify_runner failed on %s: %s", goal.get("id"), e)
         return {"passed": False, "attempts": 1, "challenged": True}

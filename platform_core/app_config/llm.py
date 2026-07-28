@@ -19,15 +19,15 @@ RUN/TEST: python -m pytest tests/orchestration/test_llm_compaction_numctx.py tes
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 
 from platform_core.app_config._env import (  # noqa: F401 -- _env* re-exported for callers
     _envBool,
-    _fullStack,
     _envFloat,
     _envInt,
+    _envString,
     _envTuple,
+    _fullStack,
     loadEnvOnce,
 )
 
@@ -38,8 +38,8 @@ _F = field  # local alias keeps the ~100 default_factory lines readable
 class OllamaCfg:
     """Local Ollama brain + the Gemini second brain."""
 
-    OLLAMA_MODEL: str = _F(default_factory=lambda: os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b"))
-    OLLAMA_HOST: str = _F(default_factory=lambda: os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434"))
+    OLLAMA_MODEL: str = _F(default_factory=lambda: _envString("OLLAMA_MODEL", "qwen2.5-coder:7b"))
+    OLLAMA_HOST: str = _F(default_factory=lambda: _envString("OLLAMA_HOST", "http://127.0.0.1:11434"))
     OLLAMA_TIMEOUT_SECONDS: int = _F(default_factory=lambda: _envInt("OLLAMA_TIMEOUT_SECONDS", 180))
     # CRITICAL: num_ctx MUST be identical on EVERY brain call -- ollama reloads the whole
     # model runner when the requested num_ctx changes; an oscillating window (8192<->16384)
@@ -51,16 +51,16 @@ class OllamaCfg:
     OLLAMA_GEN_HEADROOM: int = _F(default_factory=lambda: _envInt("OLLAMA_GEN_HEADROOM", 2048))
     # Pin the runner resident BETWEEN calls: a Claude subprocess can run ~10min while the brain
     # idles; ollama's 5-min default keep_alive would unload it mid-run (empty-completion window).
-    OLLAMA_KEEP_ALIVE: str = _F(default_factory=lambda: os.getenv("OLLAMA_KEEP_ALIVE", "30m"))
-    EMBED_MODEL: str = _F(default_factory=lambda: os.getenv("EMBED_MODEL", "nomic-embed-text"))
+    OLLAMA_KEEP_ALIVE: str = _F(default_factory=lambda: _envString("OLLAMA_KEEP_ALIVE", "30m"))
+    EMBED_MODEL: str = _F(default_factory=lambda: _envString("EMBED_MODEL", "nomic-embed-text"))
     # Frozen base model tag; champion adapters are served under BRAIN_MODEL_TAG:vN.
-    BRAIN_MODEL_TAG: str = _F(default_factory=lambda: os.getenv("BRAIN_MODEL_TAG", "9to5-brain"))
+    BRAIN_MODEL_TAG: str = _F(default_factory=lambda: _envString("BRAIN_MODEL_TAG", "9to5-brain"))
     # Cheapest/fastest model for on-demand briefing + brain-dialogue calls (builder-derived
     # default = OLLAMA_MODEL).
     BRIEF_MODEL: str = ""
     # --- Phase 2: Gemini as the second brain ---
-    GEMINI_API_KEY: str = _F(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
-    GEMINI_MODEL: str = _F(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+    GEMINI_API_KEY: str = _F(default_factory=lambda: _envString("GEMINI_API_KEY", ""))
+    GEMINI_MODEL: str = _F(default_factory=lambda: _envString("GEMINI_MODEL", "gemini-2.5-flash"))
     GEMINI_ENABLED: bool = False   # builder-derived default = bool(GEMINI_API_KEY)
     GEMINI_TIMEOUT_MS: int = _F(default_factory=lambda: _envInt("GEMINI_TIMEOUT_MS", 120000))
     GEMINI_MAX_TURNS: int = _F(default_factory=lambda: _envInt("GEMINI_MAX_TURNS", 40))
@@ -72,10 +72,10 @@ class OllamaCfg:
 
 def buildOllamaCfg() -> OllamaCfg:
     loadEnvOnce()
-    ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
-    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    ollama_model = _envString("OLLAMA_MODEL", "qwen2.5-coder:7b")
+    gemini_key = _envString("GEMINI_API_KEY", "")
     return OllamaCfg(
-        BRIEF_MODEL=os.getenv("BRIEF_MODEL", ollama_model),
+        BRIEF_MODEL=_envString("BRIEF_MODEL", ollama_model),
         GEMINI_ENABLED=_envBool("GEMINI_ENABLED", bool(gemini_key)),
     )
 
@@ -83,12 +83,12 @@ def buildOllamaCfg() -> OllamaCfg:
 def _modelByEffort() -> dict[str, str]:
     """Smart model routing: select model by effort level so light tasks don't burn Opus."""
     return {
-        "low":       os.getenv("MODEL_LOW",       "claude-haiku-4-5-20251001"),
-        "default":   os.getenv("MODEL_DEFAULT",   "claude-sonnet-4-6"),
-        "medium":    os.getenv("MODEL_MEDIUM",    "claude-sonnet-4-6"),
-        "high":      os.getenv("MODEL_HIGH",      "claude-sonnet-4-6"),
-        "xhigh":     os.getenv("MODEL_XHIGH",     "claude-opus-4-8"),
-        "ultracode": os.getenv("MODEL_ULTRACODE", "claude-opus-4-8"),
+        "low":       _envString("MODEL_LOW",       "claude-haiku-4-5-20251001"),
+        "default":   _envString("MODEL_DEFAULT",   "claude-sonnet-4-6"),
+        "medium":    _envString("MODEL_MEDIUM",    "claude-sonnet-4-6"),
+        "high":      _envString("MODEL_HIGH",      "claude-sonnet-4-6"),
+        "xhigh":     _envString("MODEL_XHIGH",     "claude-opus-4-8"),
+        "ultracode": _envString("MODEL_ULTRACODE", "claude-opus-4-8"),
     }
 
 
@@ -122,17 +122,17 @@ class ClaudeCliCfg:
     CLARIFICATION_GATE_ENABLED: bool = _F(default_factory=lambda: _envBool("CLARIFICATION_GATE_ENABLED", False))
     CLARIFICATION_GATE_DRY_RUN: bool = _F(default_factory=lambda: _envBool("CLARIFICATION_GATE_DRY_RUN", False))
     CLARIFICATION_EXECUTOR_BACKEND: str = _F(
-        default_factory=lambda: os.getenv("CLARIFICATION_EXECUTOR_BACKEND", "sdk_preferred"))
+        default_factory=lambda: _envString("CLARIFICATION_EXECUTOR_BACKEND", "sdk_preferred"))
     CLARIFICATION_SCORE_ENABLE_THRESHOLD: int = _F(
         default_factory=lambda: _envInt("CLARIFICATION_SCORE_ENABLE_THRESHOLD", 4))
     CLARIFICATION_SCORE_FORCE_THRESHOLD: int = _F(
         default_factory=lambda: _envInt("CLARIFICATION_SCORE_FORCE_THRESHOLD", 7))
-    CLARIFICATION_PROVIDER: str = _F(default_factory=lambda: os.getenv("CLARIFICATION_PROVIDER", "ollama_first"))
+    CLARIFICATION_PROVIDER: str = _F(default_factory=lambda: _envString("CLARIFICATION_PROVIDER", "ollama_first"))
     CLARIFICATION_MAX_QUESTIONS: int = _F(default_factory=lambda: _envInt("CLARIFICATION_MAX_QUESTIONS", 3))
     CLARIFICATION_HIGH_RISK_UNKNOWN: str = _F(
-        default_factory=lambda: os.getenv("CLARIFICATION_HIGH_RISK_UNKNOWN", "block"))
+        default_factory=lambda: _envString("CLARIFICATION_HIGH_RISK_UNKNOWN", "block"))
     CLARIFICATION_DUPLICATE_POLICY: str = _F(
-        default_factory=lambda: os.getenv("CLARIFICATION_DUPLICATE_POLICY", "reuse_answer"))
+        default_factory=lambda: _envString("CLARIFICATION_DUPLICATE_POLICY", "reuse_answer"))
     CLARIFICATION_REQUIRE_OPTION_LABEL_MATCH: bool = _F(
         default_factory=lambda: _envBool("CLARIFICATION_REQUIRE_OPTION_LABEL_MATCH", True))
     CLARIFICATION_LOG_DECISIONS: bool = _F(
@@ -149,7 +149,7 @@ class ClaudeCliCfg:
     ENABLE_PRE_EXECUTION_COUNCIL: bool = _F(
         default_factory=lambda: _envBool("ENABLE_PRE_EXECUTION_COUNCIL", False))
     PRE_EXECUTION_COUNCIL_PROMPT_VERSION: str = _F(
-        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_PROMPT_VERSION", "pre_execution_council_v0"))
+        default_factory=lambda: _envString("PRE_EXECUTION_COUNCIL_PROMPT_VERSION", "pre_execution_council_v0"))
     PRE_EXECUTION_COUNCIL_MESSAGES_PER_SEAT: int = _F(
         default_factory=lambda: _envInt("PRE_EXECUTION_COUNCIL_MESSAGES_PER_SEAT", 12))
     PRE_EXECUTION_COUNCIL_TOTAL_TARGET_MESSAGES: int = _F(
@@ -157,9 +157,9 @@ class ClaudeCliCfg:
     PRE_EXECUTION_COUNCIL_LOGGING_ENABLED: bool = _F(
         default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_LOGGING_ENABLED", True))
     PRE_EXECUTION_COUNCIL_OUTPUT_DIR: str = _F(
-        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_OUTPUT_DIR", "state/council_runs"))
+        default_factory=lambda: _envString("PRE_EXECUTION_COUNCIL_OUTPUT_DIR", "state/council_runs"))
     PRE_EXECUTION_COUNCIL_TRANSCRIPT_MODE: str = _F(
-        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_TRANSCRIPT_MODE", "full"))
+        default_factory=lambda: _envString("PRE_EXECUTION_COUNCIL_TRANSCRIPT_MODE", "full"))
     PRE_EXECUTION_COUNCIL_COMPACT_PROTOCOL: bool = _F(
         default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_COMPACT_PROTOCOL", True))
     PRE_EXECUTION_COUNCIL_ANTI_FILLER: bool = _F(
@@ -167,7 +167,7 @@ class ClaudeCliCfg:
     PRE_EXECUTION_COUNCIL_MOCK_SEATS_ENABLED: bool = _F(
         default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_MOCK_SEATS_ENABLED", True))
     PRE_EXECUTION_COUNCIL_CONVERSATION_POLICY: str = _F(
-        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_CONVERSATION_POLICY", "round_robin"))
+        default_factory=lambda: _envString("PRE_EXECUTION_COUNCIL_CONVERSATION_POLICY", "round_robin"))
     PRE_EXECUTION_COUNCIL_SELECTOR_DEBATE_ROUNDS: int = _F(
         default_factory=lambda: _envInt("PRE_EXECUTION_COUNCIL_SELECTOR_DEBATE_ROUNDS", 1))
     PRE_EXECUTION_COUNCIL_PARALLEL_MEMOS_ENABLED: bool = _F(
@@ -180,11 +180,11 @@ class ClaudeCliCfg:
             or _envBool("ENABLE_PRE_EXECUTION_COUNCIL_GPT_BROWSER", False)
         ))
     PRE_EXECUTION_COUNCIL_GPT_PROJECT_URL: str = _F(
-        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_GPT_PROJECT_URL", ""))
+        default_factory=lambda: _envString("PRE_EXECUTION_COUNCIL_GPT_PROJECT_URL", ""))
     PRE_EXECUTION_COUNCIL_GPT_MODEL: str = _F(
-        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_GPT_MODEL", ""))
+        default_factory=lambda: _envString("PRE_EXECUTION_COUNCIL_GPT_MODEL", ""))
     PRE_EXECUTION_COUNCIL_GPT_REASONING: str = _F(
-        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_GPT_REASONING", ""))
+        default_factory=lambda: _envString("PRE_EXECUTION_COUNCIL_GPT_REASONING", ""))
     PRE_EXECUTION_COUNCIL_LIVE_GEMINI_ENABLED: bool = _F(
         default_factory=lambda: (
             _envBool("PRE_EXECUTION_COUNCIL_LIVE_GEMINI_ENABLED", False)
@@ -196,16 +196,16 @@ class ClaudeCliCfg:
             or _envBool("ENABLE_PRE_EXECUTION_COUNCIL_GROQ", False)
         ))
     PRE_EXECUTION_COUNCIL_GROQ_MODEL: str = _F(
-        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_GROQ_MODEL", "qwen/qwen3-32b"))
+        default_factory=lambda: _envString("PRE_EXECUTION_COUNCIL_GROQ_MODEL", "qwen/qwen3-32b"))
     PRE_EXECUTION_COUNCIL_GROQ_FALLBACK_MODELS: str = _F(
-        default_factory=lambda: os.getenv(
+        default_factory=lambda: _envString(
             "PRE_EXECUTION_COUNCIL_GROQ_FALLBACK_MODELS",
             "llama-3.1-8b-instant,llama-3.3-70b-versatile,openai/gpt-oss-20b",
         ))
     PRE_EXECUTION_COUNCIL_LIVE_CLOUDFLARE_ENABLED: bool = _F(
         default_factory=lambda: _envBool("ENABLE_PRE_EXECUTION_COUNCIL_CLOUDFLARE", False))
     PRE_EXECUTION_COUNCIL_CLOUDFLARE_MODEL: str = _F(
-        default_factory=lambda: os.getenv(
+        default_factory=lambda: _envString(
             "PRE_EXECUTION_COUNCIL_CLOUDFLARE_MODEL",
             "@cf/meta/llama-3.1-8b-instruct-fp8-fast",
         ))
@@ -215,8 +215,8 @@ class ClaudeCliCfg:
             or _envBool("ENABLE_PRE_EXECUTION_COUNCIL_CEREBRAS", False)
         ))
     PRE_EXECUTION_COUNCIL_CEREBRAS_MODEL: str = _F(
-        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_CEREBRAS_MODEL", "gpt-oss-120b"))
-    CEREBRAS_API_KEY: str = _F(default_factory=lambda: os.getenv("CEREBRAS_API_KEY", ""))
+        default_factory=lambda: _envString("PRE_EXECUTION_COUNCIL_CEREBRAS_MODEL", "gpt-oss-120b"))
+    CEREBRAS_API_KEY: str = _F(default_factory=lambda: _envString("CEREBRAS_API_KEY", ""))
     PRE_EXECUTION_COUNCIL_LIVE_CLAUDE_ENABLED: bool = _F(
         default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_LIVE_CLAUDE_ENABLED", False))
     PRE_EXECUTION_COUNCIL_LIVE_LOCAL_ENABLED: bool = _F(
@@ -225,7 +225,7 @@ class ClaudeCliCfg:
             or _envBool("ENABLE_PRE_EXECUTION_COUNCIL_LOCAL", False)
         ))
     PRE_EXECUTION_COUNCIL_LOCAL_MODEL: str = _F(
-        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_LOCAL_MODEL", ""))
+        default_factory=lambda: _envString("PRE_EXECUTION_COUNCIL_LOCAL_MODEL", ""))
     # --- pre-execution council orchestration seam (default-off metadata-only bridge) ---
     PRE_EXECUTION_COUNCIL_SEAM_ENABLED: bool = _F(
         default_factory=lambda: _envBool("PRE_EXECUTION_COUNCIL_SEAM_ENABLED", False))
@@ -240,7 +240,7 @@ class ClaudeCliCfg:
     PRE_EXECUTION_COUNCIL_MAX_INJECTED_CHARS: int = _F(
         default_factory=lambda: _envInt("PRE_EXECUTION_COUNCIL_MAX_INJECTED_CHARS", 2500))
     PRE_EXECUTION_COUNCIL_POLICY_MODE: str = _F(
-        default_factory=lambda: os.getenv("PRE_EXECUTION_COUNCIL_POLICY_MODE", "advisory"))
+        default_factory=lambda: _envString("PRE_EXECUTION_COUNCIL_POLICY_MODE", "advisory"))
     # --- living Claude Code knowledge base (fetch + injection behaviour) ---
     # CLAUDE_DOC_FETCH's run-scoped live value lives in settings.runFlags().
     CLAUDE_DOC_FETCH: bool = _F(default_factory=lambda: _envBool("CLAUDE_DOC_FETCH", True))
@@ -285,7 +285,7 @@ class SieCfg:
     The five SIE_TUNABLE_KNOBS all live in THIS domain (overrides layer = replace(sie))."""
 
     # --- Obsidian Local REST API (service; paths live in PathsCfg) ---
-    OBSIDIAN_API_KEY: str = _F(default_factory=lambda: os.getenv("OBSIDIAN_API_KEY", ""))
+    OBSIDIAN_API_KEY: str = _F(default_factory=lambda: _envString("OBSIDIAN_API_KEY", ""))
     OBSIDIAN_PORT: int = _F(default_factory=lambda: _envInt("OBSIDIAN_PORT", 27124))
     OBSIDIAN_HTTPS: bool = _F(default_factory=lambda: _envBool("OBSIDIAN_HTTPS", True))
     OBSIDIAN_BASE_URL: str = ""   # builder-derived from OBSIDIAN_HTTPS + OBSIDIAN_PORT
@@ -306,8 +306,8 @@ class SieCfg:
     RETRIEVAL_FAILURES_ENABLED: bool = _F(default_factory=lambda: _envBool("RETRIEVAL_FAILURES_ENABLED", True))
     RETRIEVAL_FAILURES_K: int = _F(default_factory=lambda: _envInt("RETRIEVAL_FAILURES_K", 2))
     ANN_INDEX_ENABLED: bool = _F(default_factory=lambda: _envBool("ANN_INDEX_ENABLED", True))
-    ANN_INDEX_BACKEND: str = _F(default_factory=lambda: os.getenv("ANN_INDEX_BACKEND", "chroma"))
-    ANN_INDEX_DIR: str = _F(default_factory=lambda: os.getenv("ANN_INDEX_DIR", "state/ann_index"))
+    ANN_INDEX_BACKEND: str = _F(default_factory=lambda: _envString("ANN_INDEX_BACKEND", "chroma"))
+    ANN_INDEX_DIR: str = _F(default_factory=lambda: _envString("ANN_INDEX_DIR", "state/ann_index"))
     ANN_INDEX_CANDIDATE_MULTIPLIER: int = _F(default_factory=lambda: _envInt("ANN_INDEX_CANDIDATE_MULTIPLIER", 10))
     # Embedding dim pinned into the collection name (nomic-embed-text = 768-dim).
     ANN_EMBED_DIM: int = _F(default_factory=lambda: _envInt("ANN_EMBED_DIM", 768))
@@ -336,7 +336,7 @@ class SieCfg:
     COMPACTION_RESERVE_RATIO: float = _F(default_factory=lambda: _envFloat("COMPACTION_RESERVE_RATIO", 0.4))
     COMPACTION_RESERVE_FLOOR: int = _F(default_factory=lambda: _envInt("COMPACTION_RESERVE_FLOOR", 1024))
     COMPACTION_MAX_PASSES: int = _F(default_factory=lambda: _envInt("COMPACTION_MAX_PASSES", 3))
-    COMPACTION_OFFLOAD_DIR: str = _F(default_factory=lambda: os.getenv("COMPACTION_OFFLOAD_DIR", "state/compaction"))
+    COMPACTION_OFFLOAD_DIR: str = _F(default_factory=lambda: _envString("COMPACTION_OFFLOAD_DIR", "state/compaction"))
     # Optional episodic->semantic consolidation (off the hot path; default OFF).
     REFLECTION_CONSOLIDATE_ENABLED: bool = _F(default_factory=lambda: _envBool("REFLECTION_CONSOLIDATE_ENABLED", False))
     # --- eval harness: golden suite fitness scalar weights ---
@@ -395,7 +395,7 @@ class SieCfg:
     # 0.0 = confirm-everything (eliza-safe).
     AUTONOMY_ALLOWANCE_USD: float = _F(default_factory=lambda: _envFloat("AUTONOMY_ALLOWANCE_USD", 0.0))
     # "block" (fail-closed) | "strict_allowance" (still hard-blocks destructive/unknown).
-    AUTONOMOUS_DESTRUCTIVE_POLICY: str = _F(default_factory=lambda: os.getenv("AUTONOMOUS_DESTRUCTIVE_POLICY", "block"))
+    AUTONOMOUS_DESTRUCTIVE_POLICY: str = _F(default_factory=lambda: _envString("AUTONOMOUS_DESTRUCTIVE_POLICY", "block"))
     AUTONOMOUS_DESTRUCTIVE_ALLOWANCE_USD: float = _F(default_factory=lambda: _envFloat("AUTONOMOUS_DESTRUCTIVE_ALLOWANCE_USD", 0.0))
     # Decision-only cost HINT for the per-attempt PAID Claude subprocess call.
     CLAUDE_ATTEMPT_COST_HINT_USD: float = _F(default_factory=lambda: _envFloat("CLAUDE_ATTEMPT_COST_HINT_USD", 0.0))
@@ -403,11 +403,11 @@ class SieCfg:
     # means no CLI cap; it never stands in for metered spend.
     CLAUDE_MAX_BUDGET_USD: float = _F(default_factory=lambda: _envFloat("CLAUDE_MAX_BUDGET_USD", 0.0))
     # --- compute / LoRA / self-play / bootstrap ---
-    SIE_COMPUTE: str = _F(default_factory=lambda: os.getenv("SIE_COMPUTE", "auto"))
+    SIE_COMPUTE: str = _F(default_factory=lambda: _envString("SIE_COMPUTE", "auto"))
     # Hugging Face source model used only by the opt-in local LoRA trainer.  It
     # intentionally defaults empty: an operator must select a base compatible
     # with the configured Ollama model before training can start.
-    LORA_HF_BASE_REPO: str = _F(default_factory=lambda: os.getenv("LORA_HF_BASE_REPO", "").strip())
+    LORA_HF_BASE_REPO: str = _F(default_factory=lambda: _envString("LORA_HF_BASE_REPO", "").strip())
     LORA_RANK: int = _F(default_factory=lambda: _envInt("LORA_RANK", 16))
     LORA_EPOCHS: int = _F(default_factory=lambda: _envInt("LORA_EPOCHS", 2))
     SELFPLAY_ENABLED: bool = _F(default_factory=lambda: _envBool("SELFPLAY_ENABLED", True))
@@ -435,15 +435,15 @@ class SieCfg:
     ADVERSARY_LOWCONF_CONSULT: bool = _F(default_factory=lambda: _envBool("ADVERSARY_LOWCONF_CONSULT", True))
     ADVERSARY_PREPR_DIFF_MAX_CHARS: int = _F(default_factory=lambda: _envInt("ADVERSARY_PREPR_DIFF_MAX_CHARS", 12000))
     # Teeth: severity at/above this holds the PR + drives the remediation loop.
-    ADVERSARY_BLOCKING_SEVERITY: str = _F(default_factory=lambda: os.getenv("ADVERSARY_BLOCKING_SEVERITY", "high"))
+    ADVERSARY_BLOCKING_SEVERITY: str = _F(default_factory=lambda: _envString("ADVERSARY_BLOCKING_SEVERITY", "high"))
     ADVERSARY_REMEDIATION_MAX_ATTEMPTS: int = _F(default_factory=lambda: _envInt("ADVERSARY_REMEDIATION_MAX_ATTEMPTS", 2))
     ADVERSARY_TRIGGER_PHRASES: tuple[str, ...] = (
         "i'm not sure", "i am not sure", "unclear", "multiple approaches",
         "could go either way", "not certain", "ambiguous")
     ADVERSARY_HEARTBEAT_EVERY: int = 3   # every 3rd subtask -> heartbeat review; SIE-tunable
     # Challenged PASSED subtask -> ONE bounded remediation attempt; challenged pre-PR -> hold.
-    ADVERSARY_REMEDIATION_ENABLED: bool = _F(default_factory=lambda: os.getenv("ADVERSARY_REMEDIATION", "1") != "0")
-    ADVERSARY_PR_HOLD_ENABLED: bool = _F(default_factory=lambda: os.getenv("ADVERSARY_PR_HOLD", "1") != "0")
+    ADVERSARY_REMEDIATION_ENABLED: bool = _F(default_factory=lambda: _envString("ADVERSARY_REMEDIATION", "1") != "0")
+    ADVERSARY_PR_HOLD_ENABLED: bool = _F(default_factory=lambda: _envString("ADVERSARY_PR_HOLD", "1") != "0")
     # --- orchestration limits ---
     MAX_SUBTASK_ATTEMPTS: int = 3        # max executor attempts per subtask; SIE-tunable
     MAX_SUBTASKS: int = 8                # hard cap on plan size (anti-runaway / anti-livelock)

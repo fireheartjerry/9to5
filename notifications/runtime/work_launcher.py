@@ -18,16 +18,16 @@ EXPORTS:
   spawnResume(task_id: str, retry_failed: bool=False) -> int
   launchOrError(req: WorkRequest) -> str  -- Validate -> lock -> block-if-active -> spawn -> handshake-confirm
   resumeOrError(task_id: str, retry_failed: bool=False) -> str  -- Resume an existing task by id (block if a run is active)
-DEPENDS-ON: config, notifications.commands, notifications.work_launcher_readiness, platform_core.core.fsio, platform_core.ops.external_project, platform_core.orchestration.work_profile, platform_core.runtime.control, platform_core.runtime.heartbeat, state.task, state.task_io
+DEPENDS-ON: config, notifications.commands, notifications.work_launcher_readiness, platform_core.core.fsio, platform_core.execution, platform_core.ops.external_project, platform_core.orchestration.work_profile, platform_core.runtime.control, platform_core.runtime.heartbeat, state.task, state.task_io
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_work_launcher.py
 """
 
 from __future__ import annotations
 
-import math
 import base64
 import json
+import math
 import os
 import subprocess
 import sys
@@ -35,7 +35,6 @@ import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -46,6 +45,8 @@ from notifications import commands
 # and `from notifications.work_launcher import externalReadiness` keep working unchanged.
 from notifications.work_launcher_readiness import externalReadiness  # noqa: F401
 from platform_core.core import fsio
+from platform_core.execution.pre_execution import observeLegacyPath
+from platform_core.execution.sandbox_broker import runLegacyProcess
 from platform_core.orchestration import work_profile
 from state.task import TaskState
 
@@ -134,7 +135,7 @@ def validate(req: WorkRequest) -> list[str]:
         errs.append("repo_url and work_dir are mutually exclusive.")
     if req.repo_ref and not req.repo_url:
         errs.append("repo_ref requires repo_url.")
-    if req.work_dir and not Path(req.work_dir).is_dir():
+    if req.work_dir and not observeLegacyPath(Path(req.work_dir).is_dir):
         errs.append(f"work_dir does not exist or is not a directory: {req.work_dir}")
     if req.work_profile:
         try:
@@ -155,7 +156,7 @@ def _pythonExe() -> str:
     ``executor_env._hookInterpreter`` pattern."""
     # os.path.exists returns False (never raises) on a broken/malformed path, so no swallow needed.
     venv = str(config.VENV_PYTHON)
-    return venv if os.path.exists(venv) else sys.executable
+    return venv if observeLegacyPath(os.path.exists,venv) else sys.executable
 
 
 def buildArgv(req: WorkRequest) -> list[str]:
@@ -261,33 +262,22 @@ def waitForLaunch(launch_id: str, *, timeout_s: float = 10.0, poll_s: float = 0.
 
 
 def _spawnArgv(argv: list[str], tag: str) -> int:
-    """Spawn argv as a DETACHED child (survives a bot restart). Returns the child PID.
+    """Refuse the retired checkout-side detached launcher.
 
     In a test context this is a hard no-op (returns ``_SPAWN_BLOCKED_PID``) so a unit test
-    can never start a real ``main.py`` run -- see ``_spawnBlocked``."""
+    can never start a real ``main.py`` run -- see ``_spawnBlocked``. Production launch
+    requests must cross the installed request-only Singularity client. A detached child
+    would retain its duplicated log handle after the diagnostic runtime/path permit was
+    released, so that legacy handoff cannot be made authority-safe."""
     if _spawnBlocked():
         LOG.warning(
             "spawn '%s' suppressed (test mode) -- not launching a real run: %s", tag, " ".join(argv[:3])
         )
         return _SPAWN_BLOCKED_PID
-    config.LOG_PATH.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
-    logfile = open(config.LOG_PATH / f"{tag}-{stamp}.log", "a", encoding="utf-8", errors="replace")
-    creationflags = 0
-    if os.name == "nt":
-        creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-    proc = subprocess.Popen(
-        argv,
-        cwd=str(config.PROJECT_ROOT),
-        stdin=subprocess.DEVNULL,
-        stdout=logfile,
-        stderr=subprocess.STDOUT,
-        close_fds=True,
-        creationflags=creationflags,
+    raise SingularityLaunchUnavailable(
+        "legacy detached checkout launch is unavailable; use the installed "
+        "request-only Singularity launcher"
     )
-    logfile.close()  # child keeps its own duplicated handle; release the parent's copy
-    LOG.info("Spawned %s pid=%s", tag, proc.pid)
-    return proc.pid
 
 
 def _requestSingularity(operation: str, payload: dict) -> int:
@@ -305,7 +295,7 @@ def _requestSingularity(operation: str, payload: dict) -> int:
         / "bin"
         / "singularity-admin-client.ps1"
     )
-    if not powershell.is_file() or not client.is_file():
+    if not observeLegacyPath(powershell.is_file) or not observeLegacyPath(client.is_file):
         raise SingularityLaunchUnavailable(
             "installed Singularity request-only client is unavailable"
         )
@@ -327,7 +317,7 @@ def _requestSingularity(operation: str, payload: dict) -> int:
     import tempfile
 
     with tempfile.TemporaryDirectory(prefix="galaxy-launch-request-") as cwd:
-        completed = subprocess.run(
+        completed = runLegacyProcess(
             [
                 str(powershell),
                 "-NoLogo",
@@ -391,7 +381,7 @@ def taskExists(task_id: str) -> bool:
         validateTaskId(task_id)
     except ValueError:
         return False
-    return (config.STATE_DIR / f"{task_id}.json").exists()
+    return observeLegacyPath((config.STATE_DIR / f"{task_id}.json").exists)
 
 
 def spawnResume(task_id: str, retry_failed: bool = False) -> int:
@@ -457,12 +447,17 @@ def launchOrError(req: WorkRequest) -> str:
     if not _LAUNCH_LOCK.acquire(blocking=False):
         return "⛔ Another launch is already in progress."
     try:
-        if not fsio.tryAcquireLock(_launchLockPath(), stale_after=120.0, owner_alive=_lockOwnerAlive):
+        launch_lease = fsio.tryAcquireLockLease(
+            _launchLockPath(),
+            stale_after=120.0,
+            owner_alive=_lockOwnerAlive,
+        )
+        if launch_lease is None:
             return "⛔ Another launch is already in progress (cross-process lock held)."
         try:
             pid, task_id, err = _doLaunch(req)
         finally:
-            fsio.releaseLock(_launchLockPath())
+            fsio.releaseLock(launch_lease)
     finally:
         _LAUNCH_LOCK.release()
     if err:
@@ -501,7 +496,12 @@ def resumeOrError(task_id: str, retry_failed: bool = False) -> str:
     if not _LAUNCH_LOCK.acquire(blocking=False):
         return "⛔ Another launch is already in progress."
     try:
-        if not fsio.tryAcquireLock(_launchLockPath(), stale_after=120.0, owner_alive=_lockOwnerAlive):
+        launch_lease = fsio.tryAcquireLockLease(
+            _launchLockPath(),
+            stale_after=120.0,
+            owner_alive=_lockOwnerAlive,
+        )
+        if launch_lease is None:
             return "⛔ Another launch is already in progress (cross-process lock held)."
         try:
             active = activeRun()
@@ -513,7 +513,7 @@ def resumeOrError(task_id: str, retry_failed: bool = False) -> str:
                 LOG.exception("resume spawn failed")
                 return f"❌ Resume failed: {e}"
         finally:
-            fsio.releaseLock(_launchLockPath())
+            fsio.releaseLock(launch_lease)
     finally:
         _LAUNCH_LOCK.release()
     web = f"http://127.0.0.1:{config.WEB_DASHBOARD_PORT}/"

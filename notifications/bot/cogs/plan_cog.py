@@ -10,10 +10,11 @@ EXPORTS:
   PlanEditView
   PlanCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: config, notifications.audit, notifications.commands, notifications.views, notifications.work_launcher, platform_core.runtime.control
+DEPENDS-ON: config, notifications.audit, notifications.commands, notifications.views, notifications.work_launcher, platform_core.runtime, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_plan_cog.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,11 +23,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands as dpy_commands
 
-from platform_core.runtime.control import ControlBus
+import config
 from notifications import audit
 from notifications import commands as spine
-
-import config
+from platform_core.runtime.control import ControlBus
+from platform_core.runtime.effect_guard import legacyDiagnosticDiscordSend
 
 LOG = config.getLogger("cog.plan")
 
@@ -47,8 +48,11 @@ def _timelinePages(state, per: int = 12) -> list:
     pages = []
     total = (len(lines) + per - 1) // per
     for i in range(0, len(lines), per):
-        pages.append(discord.Embed(title=f" Timeline ({i // per + 1}/{total})",
-                                   description="\n".join(lines[i:i + per])))
+        pages.append(
+            discord.Embed(
+                title=f" Timeline ({i // per + 1}/{total})", description="\n".join(lines[i : i + per])
+            )
+        )
     return pages
 
 
@@ -58,14 +62,21 @@ class SubtaskEditModal(discord.ui.Modal):
         super().__init__(title=f"Edit {sid}"[:45])
         self.sid = sid
         self.t_title = discord.ui.TextInput(label="Title", default=(cur_title or "")[:100], max_length=100)
-        self.t_desc = discord.ui.TextInput(label="Description", style=discord.TextStyle.paragraph,
-                                           default=(cur_desc or "")[:1000], required=False, max_length=2000)
+        self.t_desc = discord.ui.TextInput(
+            label="Description",
+            style=discord.TextStyle.paragraph,
+            default=(cur_desc or "")[:1000],
+            required=False,
+            max_length=2000,
+        )
         self.add_item(self.t_title)
         self.add_item(self.t_desc)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         if not spine.isAuthorized(interaction.user.id):
-            return await interaction.response.send_message("Not authorized.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "Not authorized.", ephemeral=True
+            )
         await interaction.response.defer(ephemeral=True)
         sid, title, desc = self.sid, str(self.t_title), str(self.t_desc)
 
@@ -75,20 +86,28 @@ class SubtaskEditModal(discord.ui.Modal):
             if state is None:
                 return False
             audit.record(interaction.user.id, "edit", state.task_id, "plan-editor")
-            ControlBus(state.task_id).pushOp({"op": "edit", "subtask_id": sid,
-                                              "title": title, "description": desc})
+            ControlBus(state.task_id).pushOp(
+                {"op": "edit", "subtask_id": sid, "title": title, "description": desc}
+            )
             return True
 
         if not await asyncio.to_thread(_queue):
-            return await interaction.followup.send(spine.NO_TASK, ephemeral=True)
-        await interaction.followup.send(f" queued edit for `{sid}`", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(interaction.followup.send, spine.NO_TASK, ephemeral=True)
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send, f" queued edit for `{sid}`", ephemeral=True
+        )
 
 
 class _EditSelect(discord.ui.Select):
     def __init__(self, subtasks: list) -> None:
-        opts = [discord.SelectOption(label=(s["title"] or s["subtask_id"])[:100], value=s["subtask_id"],
-                                     description=f"{s['subtask_id']} · {s['status']}"[:100])
-                for s in subtasks[:25]]
+        opts = [
+            discord.SelectOption(
+                label=(s["title"] or s["subtask_id"])[:100],
+                value=s["subtask_id"],
+                description=f"{s['subtask_id']} · {s['status']}"[:100],
+            )
+            for s in subtasks[:25]
+        ]
         super().__init__(placeholder="Pick a subtask to edit…", options=opts)
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -96,9 +115,12 @@ class _EditSelect(discord.ui.Select):
         state = spine.resolveTargetTask()
         st = state.getSubtask(sid) if state else None
         if not st:
-            return await interaction.response.send_message("That subtask is gone.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "That subtask is gone.", ephemeral=True
+            )
         await interaction.response.send_modal(
-            SubtaskEditModal(sid, st.get("title", ""), st.get("description", "")))
+            SubtaskEditModal(sid, st.get("title", ""), st.get("description", ""))
+        )
 
 
 class PlanEditView(discord.ui.View):
@@ -109,7 +131,9 @@ class PlanEditView(discord.ui.View):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if not spine.isAuthorized(interaction.user.id):
-            await interaction.response.send_message("Not authorized.", ephemeral=True)
+            await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "Not authorized.", ephemeral=True
+            )
             return False
         return True
 
@@ -130,7 +154,9 @@ class PlanCog(dpy_commands.Cog):
     @app_commands.command(name="plan-edit", description="Edit the current plan's subtasks interactively")
     async def plan_edit(self, interaction: discord.Interaction) -> None:
         if not spine.isAuthorized(interaction.user.id):
-            return await interaction.response.send_message("Not authorized.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "Not authorized.", ephemeral=True
+            )
         await interaction.response.defer(ephemeral=True)
 
         def _editable():
@@ -142,12 +168,17 @@ class PlanCog(dpy_commands.Cog):
 
         editable = await asyncio.to_thread(_editable)
         if editable is None:
-            return await interaction.followup.send(spine.NO_TASK, ephemeral=True)
+            return await legacyDiagnosticDiscordSend(interaction.followup.send, spine.NO_TASK, ephemeral=True)
         if not editable:
-            return await interaction.followup.send(
-                "No editable (pending/in_progress) subtasks.", ephemeral=True)
-        await interaction.followup.send(
-            "Pick a subtask to edit:", view=PlanEditView(interaction.user.id, editable), ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.followup.send, "No editable (pending/in_progress) subtasks.", ephemeral=True
+            )
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send,
+            "Pick a subtask to edit:",
+            view=PlanEditView(interaction.user.id, editable),
+            ephemeral=True,
+        )
 
     @app_commands.command(name="timeline", description="Browse the run's event timeline (time-travel)")
     async def timeline(self, interaction: discord.Interaction) -> None:
@@ -162,30 +193,42 @@ class PlanCog(dpy_commands.Cog):
 
         pages = await asyncio.to_thread(_pages)
         if pages is None:
-            return await interaction.followup.send(spine.NO_TASK, ephemeral=True)
+            return await legacyDiagnosticDiscordSend(interaction.followup.send, spine.NO_TASK, ephemeral=True)
         from notifications import views
+
         view = views.Paginator(interaction.user.id, pages) if len(pages) > 1 else None
-        await interaction.followup.send(embed=pages[0], view=view, ephemeral=True)
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send, embed=pages[0], view=view, ephemeral=True
+        )
 
     async def _goal(self, interaction: discord.Interaction, message: discord.Message) -> None:
         if not spine.isAuthorized(interaction.user.id):
-            return await interaction.response.send_message("Not authorized.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "Not authorized.", ephemeral=True
+            )
         goal = (message.content or "").strip()
         if not goal:
-            return await interaction.response.send_message("That message has no text.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "That message has no text.", ephemeral=True
+            )
         await interaction.response.defer(ephemeral=True)
         from notifications import work_launcher
+
         audit.record(interaction.user.id, "work", None, "ctx-menu")
         req = work_launcher.WorkRequest(goal=goal, hours=1.0)
         reply = await asyncio.to_thread(work_launcher.launchOrError, req)
-        await interaction.followup.send(reply[:1800], ephemeral=True)
+        await legacyDiagnosticDiscordSend(interaction.followup.send, reply[:1800], ephemeral=True)
 
     async def _addsub(self, interaction: discord.Interaction, message: discord.Message) -> None:
         if not spine.isAuthorized(interaction.user.id):
-            return await interaction.response.send_message("Not authorized.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "Not authorized.", ephemeral=True
+            )
         title = (message.content or "").strip()[:120]
         if not title:
-            return await interaction.response.send_message("That message has no text.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "That message has no text.", ephemeral=True
+            )
         await interaction.response.defer(ephemeral=True)
         description = message.content[:2000]
 
@@ -199,8 +242,10 @@ class PlanCog(dpy_commands.Cog):
             return True
 
         if not await asyncio.to_thread(_queue):
-            return await interaction.followup.send(spine.NO_TASK, ephemeral=True)
-        await interaction.followup.send(f" queued subtask: {title}", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(interaction.followup.send, spine.NO_TASK, ephemeral=True)
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send, f" queued subtask: {title}", ephemeral=True
+        )
 
 
 async def setup(bot: dpy_commands.Bot) -> None:

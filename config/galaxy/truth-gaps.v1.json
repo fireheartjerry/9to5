@@ -7,7 +7,7 @@
       "evidence_id": "galaxy.truth-gap.01.v1",
       "state": "specified",
       "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
-      "source_paths": [{"path": "platform_core/orchestration/execute_attempt_mixin.py", "sha256": "a9e5f96e861e3e169126d5a4df2638de3a86f5efb6000d5c602ef9cb2a827e48"}],
+      "source_paths": [{"path": "platform_core/orchestration/execute_attempt_mixin.py", "sha256": "141837764523f7931c36406cb621e0505ff522b7ec43f3764b4ed22b3265c141"}],
       "test_paths": [{"path": "tests/orchestration/test_execute_attempt_mixin.py", "sha256": "675b196b4f8ccc494033afb775c0afd64b15f05e217e7ce7a279175790493817"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
@@ -17,8 +17,8 @@
       "evidence_id": "galaxy.truth-gap.02.v1",
       "state": "specified",
       "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
-      "source_paths": [{"path": "platform_core/runtime/worktree.py", "sha256": "104ea8b6a843c4802e0f1b5fb1505a252af34ee64dc8f4fc01e9f84cbc9fb94c"}],
-      "test_paths": [{"path": "tests/execution/test_worktree.py", "sha256": "45dce98cfc80e0bc008633ce2154f609617d4a426a3f3b691ea725b487b04f90"}],
+      "source_paths": [{"path": "platform_core/runtime/worktree.py", "sha256": "b03f155a17aa3949e1d95e615b61dd02028359a15c8cb01d867ddf1968ffe81e"}],
+      "test_paths": [{"path": "tests/execution/test_worktree.py", "sha256": "30c2f1853bc545935c881e491769e2152eabf1eac0a82012c6d5da1277d062af"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
     },
@@ -27,7 +27,7 @@
       "evidence_id": "galaxy.truth-gap.03.v1",
       "state": "specified",
       "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
-      "source_paths": [{"path": "platform_core/execution/environment.py", "sha256": "30b75bd89af1f6c294fe4a30acad8d22f281adb180ac7dde030e271d7d214174"}],
+      "source_paths": [{"path": "platform_core/execution/environment.py", "sha256": "4d982e14d5ce92dc4890d0cef2dba83d48379f55abead66dd52155a1e1cde49f"}],
       "test_paths": [{"path": "tests/execution/test_execution_router.py", "sha256": "ed5168a9387949304eb1ec0e1b44949313665a0a298b230e2252f71a510fb51c"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
@@ -37,8 +37,8 @@
       "evidence_id": "galaxy.truth-gap.04.v1",
       "state": "specified",
       "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
-      "source_paths": [{"path": "platform_core/runtime/control_store.py", "sha256": "e05b4eb4636efcb5955cbfda37efb70976ab48b3b992e9c6c38a61a39d3b63c5"}],
-      "test_paths": [{"path": "tests/control/test_control_store.py", "sha256": "d3a1703b9b28aad287199d8d4e8b52f6c9b9b038f36a5bc1c3fed228bd068538"}],
+      "source_paths": [{"path": "platform_core/runtime/control_store.py", "sha256": "45b8965746eb1d01c8a9360de90033f454ff4be3c7cda74812128743d4e03e00"}],
+      "test_paths": [{"path": "tests/control/test_control_store.py", "sha256": "6015fede93d3b40739d2acc333613118c9d2773d19ad3e32318e0d781ae4254c"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
     },
@@ -47,7 +47,7 @@
       "evidence_id": "galaxy.truth-gap.05.v1",
       "state": "specified",
       "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
-      "source_paths": [{"path": "platform_core/orchestration/llm_mixin.py", "sha256": "26be3ccc502e4d31d61e2310cfccb4692d71c07effe96bb33fc93d0f2408399a"}],
+      "source_paths": [{"path": "platform_core/orchestration/llm_mixin.py", "sha256": "5d1a721da10ea42ec38cf9e1f2c57d1f2e5a928a5b3a424fc56e775785902547"}],
       "test_paths": [{"path": "tests/evolution/test_experience_journal.py", "sha256": "db4db9601a65452855ef30a2ce35c981c5e62dcdbe75894767dc20eed7b4b26b"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
@@ -57,7 +57,7 @@
       "evidence_id": "galaxy.truth-gap.06.v1",
       "state": "specified",
       "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
-      "source_paths": [{"path": "platform_core/orchestration/execute_attempt_mixin.py", "sha256": "a9e5f96e861e3e169126d5a4df2638de3a86f5efb6000d5c602ef9cb2a827e48"}],
+      "source_paths": [{"path": "platform_core/orchestration/execute_attempt_mixin.py", "sha256": "141837764523f7931c36406cb621e0505ff522b7ec43f3764b4ed22b3265c141"}],
       "test_paths": [{"path": "tests/execution/test_external_project.py", "sha256": "fe80f6aa210b7122145c4dd89fd519fd5d02962607cb3e95ab6882ffbf3d6f72"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
@@ -68,7 +68,7 @@
       "state": "implemented_dark",
       "source_revision": "f80247a53ee1079dbec6ef9300407fb5fa98be58",
       "source_paths": [
-        {"path": "platform_core/runtime/action_risk.py", "sha256": "880d109199177b54e5dc35b48e9e32ed53743ee06e811ca022c96abfdddc8154"},
+        {"path": "platform_core/runtime/action_risk.py", "sha256": "ec349a7cf49330a618d5545928317b002b9cb8e23847b506411e27556e8649c8"},
         {"path": "agents/execution/executor.py", "sha256": "eef3273cd7dab55479b853e1d6b63d6bbfd3e9bc7771efced70453cf59781047"},
         {"path": "agents/execution/executor_preflight.py", "sha256": "e07c708a3225a1536b576c1645c2c400bd4e123a384e2b0090087d86a8be114f"}
       ],
@@ -95,8 +95,8 @@
       "state": "implemented_dark",
       "source_revision": "68c094e461a8c5b760ea72fb4d5b195c28a4cc9c",
       "source_paths": [
-        {"path": "platform_core/orchestration/solution_space.py", "sha256": "be23975e86352ca3ded5402e3c99bf9284e4b12e75a9ef23ae986541e6c7ff84"},
-        {"path": "platform_core/orchestration/qd_archive.py", "sha256": "eed884051b18974c8ef92e8bfd7bbc576d2aa2569961f444810c3afa1b21cfcc"}
+        {"path": "platform_core/orchestration/solution_space.py", "sha256": "a58879d1870094411da6ce1e3369355509392003bdfd88110e6b5e430b2ec3eb"},
+        {"path": "platform_core/orchestration/qd_archive.py", "sha256": "0678aa10c37062bab5e2412703e215402a091793e365459fce82391957b34d8f"}
       ],
       "test_paths": [
         {"path": "tests/orchestration/test_solution_space.py", "sha256": "03a9da37f83b397d775807cbe11aef2238d213023c816aefa9278ad9ccfaf877"},
@@ -113,7 +113,7 @@
       "source_revision": "e7382f1ec41b50f4e4898c327cadd43ec8ddd3f0",
       "source_paths": [
         {"path": "platform_core/app_config/epic_flags.py", "sha256": "6da1ad2362379758eec47d3042778487bdc3435c79fa3ee714e9e182326987f0"},
-        {"path": "platform_core/app_config/settings.py", "sha256": "84218754087bb865850f64b3f63c88608eb4c32bae7b0fb4e8814dbd451dccfa"}
+        {"path": "platform_core/app_config/settings.py", "sha256": "3309627252bcf61e433be69ca133e05ea623b06ea3a26e77573176a7965a8712"}
       ],
       "test_paths": [{"path": "tests/platform/test_epic_flags_config.py", "sha256": "3d2be39473216591c1f73e325ae13ec6223fcaa80229a592692cc74c6460709d"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
@@ -144,7 +144,7 @@
       "evidence_id": "galaxy.truth-gap.13.v1",
       "state": "specified",
       "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
-      "source_paths": [{"path": "platform_core/orchestration/review_mixin.py", "sha256": "ca5476f82d032ea319ea502e03c2184113045f11f0fbd27fee1aa3f593f72c9f"}],
+      "source_paths": [{"path": "platform_core/orchestration/review_mixin.py", "sha256": "d270b285b0da6614f7d661023b917478fbf2e0dc4b30f91724153f176364fe75"}],
       "test_paths": [{"path": "tests/execution/test_github_pr_gate.py", "sha256": "094fad0515f10de150381ecb1281cf57f18053e38cb46db44452189773437e8d"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
@@ -154,7 +154,7 @@
       "evidence_id": "galaxy.truth-gap.14.v1",
       "state": "specified",
       "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
-      "source_paths": [{"path": "platform_core/orchestration/github.py", "sha256": "83f7b0fd0910ecfb1830ead4fc994c5418eaa22e4fdd91d94a0f4884c0af5fba"}],
+      "source_paths": [{"path": "platform_core/orchestration/github.py", "sha256": "e979328d3eca89a948f67a0a1d6febfccaefeb10a599ace6a334ee65e03d8969"}],
       "test_paths": [{"path": "tests/execution/test_github_pr_gate.py", "sha256": "094fad0515f10de150381ecb1281cf57f18053e38cb46db44452189773437e8d"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
@@ -164,8 +164,8 @@
       "evidence_id": "galaxy.truth-gap.15.v1",
       "state": "specified",
       "source_revision": "12d66126ca4afaad1554db573549daa92bc7bce1",
-      "source_paths": [{"path": "main.py", "sha256": "c252e89e7700dac9f23e7b647602d97a9372220e430e87b90450b7470eea08b4"}],
-      "test_paths": [{"path": "tests/platform/test_config_bootstrap.py", "sha256": "f5c5e89a318547c02c2980bc65ea19f584a593eda302990f814a2fc7cf5969bd"}],
+      "source_paths": [{"path": "main.py", "sha256": "f5e885213d5fbb1a558b6066ffb26da1b42dbdd8e9edf0a0225be6666e78c6cd"}],
+      "test_paths": [{"path": "tests/platform/test_config_bootstrap.py", "sha256": "1724c3b2b3478afc52f3b391c93afde088c27f0ff29128816ed7971737e9651e"}],
       "fixture_digest": "6c7582c36e963985717967ca28174d145c7c637fa9d4067d44d0efd153f6391d",
       "observed_at": "2026-07-14T12:00:00Z"
     }

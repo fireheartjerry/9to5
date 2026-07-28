@@ -1,0 +1,293 @@
+{
+  "schema_version": "galaxy.research-transfers/v1",
+  "generated_at": "2026-07-20T03:00:25Z",
+  "external_spend_allowed": false,
+  "records": [
+    {
+      "record_id": "98c2a17ab4c5890a0a1246179d7b48e95a955d8eff9941f0e4ccf282d829dd64",
+      "candidate_id": "architecture.pre-execution-council.2026-07-20",
+      "registry_id": null,
+      "registry_entry_sha256": null,
+      "title": "Selective qualified pre-execution council research baseline",
+      "source_status": "public_artifact",
+      "claims": [
+        {
+          "url": "https://raw.githubusercontent.com/karpathy/llm-council/92e1fccb1bdcf1bab7221aa9ed90f9dc72529131/README.md",
+          "locator": "README.md, three-stage workflow and final project-status paragraph",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-20T03:00:25Z",
+          "claim": "The pinned project fans one query out into independent first opinions, anonymizes model identities for peer ranking on accuracy and insight, and gives a designated chairman all responses for final synthesis. Its author describes it as an unsupported Saturday experiment supplied for inspiration, not as a qualified production authority system.",
+          "source_response_sha256": "0f21b96fd783f74ed1599a7a831d75d9718a4876b42da5db2d931cb1442f4245",
+          "source_artifact_path": "docs/superpowers/research/2026-07-20-llm-council-research-transfer.md",
+          "source_artifact_sha256": "00afba9ca9b3df93cbaa152fb734555afaae75edfc94ed85ba3a9f7f4bf098c9",
+          "claim_sha256": "38186e53c395129c0e39b8cacadb488de50683e775f26b54f700a7e06630f137"
+        },
+        {
+          "url": "https://export.arxiv.org/api/query?id_list=2606.01828",
+          "locator": "Atom entry summary for Dynamic Trust-Aware Sparse Communication Topology for LLM-Based Multi-Agent Consensus",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-20T03:00:25Z",
+          "claim": "DySCo scores candidate communication edges using agent reliability, answer divergence, and task relevance; selects a budgeted sparse subset; aggregates with dynamic trust weights; and stops early after stable consensus. These are candidate shadow mechanisms only, subject to independent reproduction and dissent-retention tests.",
+          "source_response_sha256": "48fbb14ee893e7a4a8344ad43f5b569e280e5c80b53093bd49c5ec3f95adb363",
+          "source_artifact_path": "docs/superpowers/research/2026-07-20-llm-council-research-transfer.md",
+          "source_artifact_sha256": "00afba9ca9b3df93cbaa152fb734555afaae75edfc94ed85ba3a9f7f4bf098c9",
+          "claim_sha256": "4bd92c8f7d515e030e030be3d57293fa18fb9cb0683defc24742770a22d501e4"
+        },
+        {
+          "url": "https://aclanthology.org/2026.findings-acl.1694/",
+          "locator": "Abstract for Demystifying Multi-Agent Debate: The Role of Confidence and Diversity",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-20T03:00:25Z",
+          "claim": "The paper reports that vanilla debate can underperform majority vote despite greater compute, identifies diverse initial viewpoints and calibrated confidence exchange as missing mechanisms, and reports gains over both vanilla debate and majority vote across six reasoning-oriented QA benchmarks. GALAXY must therefore retain no-council, single-model, and majority-vote controls rather than assuming that more deliberation is better.",
+          "source_response_sha256": "6baa37e6327f785e7ebcdf9ba2bb764b0148533374c34540af6b75215fd47f77",
+          "source_artifact_path": "docs/superpowers/research/2026-07-20-llm-council-research-transfer.md",
+          "source_artifact_sha256": "00afba9ca9b3df93cbaa152fb734555afaae75edfc94ed85ba3a9f7f4bf098c9",
+          "claim_sha256": "581749084e19d403892fa28387051e535e708cc85d184fa109207305f732c53d"
+        },
+        {
+          "url": "https://aclanthology.org/2026.acl-industry.93/",
+          "locator": "Abstract for CascadeDebate: Multi-Agent Deliberation for Cost-Aware LLM Cascades",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-20T03:00:25Z",
+          "claim": "CascadeDebate inserts deliberation only at confidence-based escalation boundaries. Its abstract reports evaluation on five benchmarks, improvement up to 26.75 percent over its named baselines, and 20.98-52.33 percent relative accuracy improvement from an online threshold optimizer over fixed policies. These reported effects motivate a preregistered value-of-information gate; they are not portable performance guarantees for GALAXY workloads.",
+          "source_response_sha256": "fa0f1bd8ab8d22ae3ab987d80a74903aa43ef15cc1e0fe9d9c5ef687e45066b3",
+          "source_artifact_path": "docs/superpowers/research/2026-07-20-llm-council-research-transfer.md",
+          "source_artifact_sha256": "00afba9ca9b3df93cbaa152fb734555afaae75edfc94ed85ba3a9f7f4bf098c9",
+          "claim_sha256": "82b7a379ea81285f9ff5ce74b8e785e62fb482ed23eb5e63d5c20434757c331d"
+        },
+        {
+          "url": "https://export.arxiv.org/api/query?id_list=2601.05746",
+          "locator": "Atom entry summary for DynaDebate: Breaking Homogeneity in Multi-Agent Debate with Dynamic Path Generation",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-20T03:00:25Z",
+          "claim": "DynaDebate allocates deliberately varied reasoning paths, critiques reasoning processes rather than only final answers, and activates an external tool-using verifier when disagreement persists. GALAXY may test these mechanisms only through credentialless verification and bounded advisory receipts.",
+          "source_response_sha256": "3eace02e046d671f38447ab0a1c5f5d55408f985994aa70a7af0beac4419c808",
+          "source_artifact_path": "docs/superpowers/research/2026-07-20-llm-council-research-transfer.md",
+          "source_artifact_sha256": "00afba9ca9b3df93cbaa152fb734555afaae75edfc94ed85ba3a9f7f4bf098c9",
+          "claim_sha256": "8ad2f2d3416f914592e3c1da6e0ae2873c71aee75c6ab6441fbce927f3834109"
+        },
+        {
+          "url": "https://export.arxiv.org/api/query?id_list=2605.21748",
+          "locator": "Atom entry summary for RankJudge: A Multi-Turn LLM-as-a-Judge Synthetic Benchmark Generator",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-20T03:00:25Z",
+          "claim": "RankJudge constructs unambiguously labelled paired conversations with one localized injected flaw and uses them to evaluate judge reliability. This supports qualifying council reviewers on hidden, failure-localized fixtures instead of treating model rankings as ground truth.",
+          "source_response_sha256": "61058ef05b4a0094158e31a509791bf8276da6ac04fddeee0f27160ca15baae4",
+          "source_artifact_path": "docs/superpowers/research/2026-07-20-llm-council-research-transfer.md",
+          "source_artifact_sha256": "00afba9ca9b3df93cbaa152fb734555afaae75edfc94ed85ba3a9f7f4bf098c9",
+          "claim_sha256": "adb5124399268b59d42b65921714cb1144b2c518916eb3fe47a96b5b00c0f9aa"
+        }
+      ],
+      "local_hypothesis": "The frozen GALAXY Flare/Nebula design may outperform a fixed three-stage council only when isolated first passes, blinded review, correlation controls, selective value-of-information admission, typed contradiction exchange, qualified verification, dissent-preserving synthesis, immutable receipts, calibration, and bounded capacity remain advisory and are qualified together.",
+      "proposed_consumers": [
+        "supernova"
+      ],
+      "required_controls": [
+        "advisory-only-output",
+        "blinded-review-and-self-exclusion",
+        "calibration-and-baseline-ablations",
+        "correlation-firewall",
+        "disagreement-triggered-verification",
+        "dissent-preserving-synthesis",
+        "exact-model-and-session-binding",
+        "exact-provider-wire-binding",
+        "fresh-session-no-model-switch",
+        "independent-first-pass",
+        "invocation-idempotency-and-receipts",
+        "judge-qualification",
+        "paired-provider-independent-evaluation",
+        "paired-replay",
+        "provider-entitlement-and-quota-binding",
+        "scope-and-proactiveness-guard",
+        "selective-voi-capacity-gate",
+        "sparse-bounded-exchange"
+      ],
+      "experiment_manifest_id": null,
+      "falsifier": "Reject or retire the transfer if matched trials fail material benefit against no-council, single-model, majority-vote, and pinned Karpathy-style baselines; regress correlated error, calibration, scope discipline, tail latency, or capacity; permit identity leakage, self-ranking, transcript contamination, hidden fallback, chairman authority, or post-seal mutation; or fail crash, replay, expiry, revocation, dissent-retention, and rollback campaigns.",
+      "status_recheck_at": "2027-01-08T00:00:00Z",
+      "evidence_state": "specified",
+      "blocked_reasons": [
+        "canonical-registry-admission-required"
+      ],
+      "trial_requested": false,
+      "runtime_authority": false,
+      "shadow_only": true
+    },
+    {
+      "record_id": "eddf123461cec51a81c21642ff9b8a3dc0defa4abeb30a741b31a1fd49a668c0",
+      "candidate_id": "model.kimi-k3.2026-07-16",
+      "registry_id": null,
+      "registry_entry_sha256": null,
+      "title": "Kimi K3 post-freeze model release intake",
+      "source_status": "hosted_service",
+      "claims": [
+        {
+          "url": "https://platform.kimi.com/docs/guide/kimi-k3-quickstart",
+          "locator": "Kimi K3 quickstart > Thinking effort, streaming, structured output, dynamic tool loading, and Important limits; exact response fingerprint in the hosted-wire erratum",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-20T00:23:24Z",
+          "claim": "Moonshot's hosted Kimi K3 quickstart names model kimi-k3; requires max reasoning, exact complete assistant message replay, separated reasoning/final streaming, final-content-only strict schema parsing, retained dynamic tool declarations, and fixed token/sampling limits. These are hosted wire requirements, not evidence of public weights.",
+          "source_response_sha256": "524c121f882aba74fa2cf787dfc3bb15d7d7e92ad66d41f024176bad89df418f",
+          "source_artifact_path": "docs/superpowers/research/2026-07-20-kimi-k3-hosted-wire-erratum.md",
+          "source_artifact_sha256": "f307a3d21f287fc5c515111b90be71fe023457fed615f266b0a251564753fed8",
+          "claim_sha256": "0047a6dfdde3a00956ab59bc9a3865e979ef9641820a0d8056ce93a41ba402b4"
+        },
+        {
+          "url": "https://api.github.com/search/repositories?q=org%3AMoonshotAI%20Kimi-K3",
+          "locator": "Credentialless GitHub repository search response; exact response fingerprint in the hosted-wire erratum",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-20T00:23:24Z",
+          "claim": "The credentialless GitHub organization search returned zero repositories matching Kimi-K3 at capture time; this is a time-bounded absence observation, not evidence about future publication.",
+          "source_response_sha256": "4af480b8ee5b87b369a76c49bd22c9a783908272ebffbe97898f8ab0f0772a5f",
+          "source_artifact_path": "docs/superpowers/research/2026-07-20-kimi-k3-hosted-wire-erratum.md",
+          "source_artifact_sha256": "f307a3d21f287fc5c515111b90be71fe023457fed615f266b0a251564753fed8",
+          "claim_sha256": "47fb57c42e999c6c31d9eef210518f5e05895639f160eeb9ac521b78ad467e44"
+        },
+        {
+          "url": "https://www.kimi.com/code/docs/en/",
+          "locator": "Kimi Code Overview > API Access, Service Endpoint, model IDs, and Platform Comparison; exact response fingerprint in the hosted-wire erratum",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-20T00:33:53Z",
+          "claim": "Kimi Code exposes an OpenAI-compatible endpoint at https://api.kimi.com/coding/v1 and an Anthropic-compatible endpoint at https://api.kimi.com/coding/; model k3 requires Moderato or above, its one-million-token context requires Allegretto or above, and it supports low, high, and max reasoning rather than the general API's max-only contract.",
+          "source_response_sha256": "6d8c6582b95c62a28656e5f0327221f4665748f7f3bdc48420146b1750b06c97",
+          "source_artifact_path": "docs/superpowers/research/2026-07-20-kimi-k3-hosted-wire-erratum.md",
+          "source_artifact_sha256": "f307a3d21f287fc5c515111b90be71fe023457fed615f266b0a251564753fed8",
+          "claim_sha256": "56a50e74726f04d499bd9228df42d8d3ae20548dd40d85199529502745d08f8b"
+        },
+        {
+          "url": "https://artificialanalysis.ai/models/kimi-k3/",
+          "locator": "WebSearch Supplemental Results > Artificial Analysis — Kimi K3 independent model analysis; Source Capture Fingerprints row",
+          "source_class": "independent",
+          "retrieved_at": "2026-07-19T22:10:19Z",
+          "claim": "At the captured response, Artificial Analysis classified Kimi K3 as proprietary, scored it 57 and fourth in its comparison set, measured 62 output tokens per second, and reported unusually high evaluation verbosity; its paid API is outside GALAXY's zero-cost policy.",
+          "source_response_sha256": "5014a7cdf940d14b3a24eb0da3226c6c68c85350c39443bda238e2ea3afaf473",
+          "source_artifact_path": "docs/superpowers/research/kimi-k3-last30days/kimi-k3-open-weight-model-architecture-benchmarks-integration-raw-v3.md",
+          "source_artifact_sha256": "8ed6c77a7b1ebb1e58614649f06ba970058b7fd0e36ff4283cddb6cf2905a089",
+          "claim_sha256": "86999eceadc2a9756eb686cdc826f4061ab90f0448353ad409247a0fc0978f82"
+        },
+        {
+          "url": "https://www.tomshardware.com/tech-industry/artificial-intelligence/moonshot-releases-2-8-trillion-parameter-kimi-k3",
+          "locator": "WebSearch Supplemental Results > Arena result summarized by Tom's Hardware; Source Capture Fingerprints row",
+          "source_class": "independent",
+          "retrieved_at": "2026-07-19T22:10:19Z",
+          "claim": "Tom's Hardware reports a category-specific first place at 1,679 points in blind Frontend Code Arena testing, while noting that broader claims cannot be reproduced from public weights before their promised release.",
+          "source_response_sha256": "f15dfec53ed54b75a5398a499a24b4a4b6af142564316423a2da4417c268435e",
+          "source_artifact_path": "docs/superpowers/research/kimi-k3-last30days/kimi-k3-open-weight-model-architecture-benchmarks-integration-raw-v3.md",
+          "source_artifact_sha256": "8ed6c77a7b1ebb1e58614649f06ba970058b7fd0e36ff4283cddb6cf2905a089",
+          "claim_sha256": "9500d17b9217946d89a3a2ceed9ef3e61995b055a41c0f5e4cf700134600b87c"
+        },
+        {
+          "url": "https://platform.kimi.ai/docs/api/overview",
+          "locator": "API Overview > Service Address, OpenAI Compatibility, and Authentication; exact response fingerprint in the hosted-wire erratum",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-20T00:33:53Z",
+          "claim": "Moonshot's international Kimi Open Platform uses the OpenAI-compatible Chat Completions wire at https://api.moonshot.ai/v1 with bearer authentication; this exact endpoint is distinct from the Kimi Code API.",
+          "source_response_sha256": "74b6a7766206c3e1a1dc4ad2a0f7993d40234a9d3f60c245d96a8dc35d96ae93",
+          "source_artifact_path": "docs/superpowers/research/2026-07-20-kimi-k3-hosted-wire-erratum.md",
+          "source_artifact_sha256": "f307a3d21f287fc5c515111b90be71fe023457fed615f266b0a251564753fed8",
+          "claim_sha256": "961845b43ae4b6bfa74de718beddbd8279732f492af9cc465693efcde4e89beb"
+        },
+        {
+          "url": "https://www.kimi.com/blog/kimi-k3",
+          "locator": "WebSearch Supplemental Results > Moonshot AI — Kimi K3 technical launch blog > limitations summary; Source Capture Fingerprints row",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-19T22:10:19Z",
+          "claim": "Moonshot warns that K3 requires preserved thinking history, can become unstable when introduced mid-session, and may make unexpected decisions under ambiguity because of excessive proactiveness.",
+          "source_response_sha256": "8eae6c6048a8acfff00876123a618e8f24e6dac75ee79b57a71d6ee4840a8540",
+          "source_artifact_path": "docs/superpowers/research/kimi-k3-last30days/kimi-k3-open-weight-model-architecture-benchmarks-integration-raw-v3.md",
+          "source_artifact_sha256": "8ed6c77a7b1ebb1e58614649f06ba970058b7fd0e36ff4283cddb6cf2905a089",
+          "claim_sha256": "9e1705bfb5bdb897dc5c7c3c291a7450077e01f5a5f9028f9b117d6c6832565b"
+        },
+        {
+          "url": "https://huggingface.co/api/models?author=moonshotai&search=Kimi-K3&limit=100",
+          "locator": "Credentialless Hugging Face MoonshotAI model search response; exact response fingerprint in the hosted-wire erratum",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-20T00:23:24Z",
+          "claim": "The credentialless Hugging Face MoonshotAI model search returned no Kimi-K3 model at capture time; this is a time-bounded absence observation, not evidence about future publication.",
+          "source_response_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "source_artifact_path": "docs/superpowers/research/2026-07-20-kimi-k3-hosted-wire-erratum.md",
+          "source_artifact_sha256": "f307a3d21f287fc5c515111b90be71fe023457fed615f266b0a251564753fed8",
+          "claim_sha256": "a4fed7e66f8e3686af8fda031cb85b4a9b8db7f4b6a3bc86ea1156a0284c939a"
+        },
+        {
+          "url": "https://www.kimi.com/blog/kimi-k3",
+          "locator": "WebSearch Supplemental Results > Moonshot AI — Kimi K3 technical launch blog > availability statement; Source Capture Fingerprints row",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-19T22:10:19Z",
+          "claim": "Moonshot states that Kimi K3 became available on 2026-07-16 through Kimi, Kimi Work, Kimi Code, and its API; this hosted release does not establish downloadable weights or an immutable checkpoint.",
+          "source_response_sha256": "8eae6c6048a8acfff00876123a618e8f24e6dac75ee79b57a71d6ee4840a8540",
+          "source_artifact_path": "docs/superpowers/research/kimi-k3-last30days/kimi-k3-open-weight-model-architecture-benchmarks-integration-raw-v3.md",
+          "source_artifact_sha256": "8ed6c77a7b1ebb1e58614649f06ba970058b7fd0e36ff4283cddb6cf2905a089",
+          "claim_sha256": "a629b26a94c758d5ac2e5c4f956d79a3ca38a71462c610ade06769734011ac20"
+        },
+        {
+          "url": "https://www.kimi.com/blog/kimi-k3",
+          "locator": "WebSearch Supplemental Results > Moonshot AI — Kimi K3 technical launch blog > architecture-and-serving summary; Source Capture Fingerprints row",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-19T22:10:19Z",
+          "claim": "Moonshot reports KDA, Attention Residuals, Stable LatentMoE, an MXFP4 weight format, MXFP8 activations, and a serving recommendation of at least 64 accelerators; these remain vendor claims pending the technical report and public checkpoint.",
+          "source_response_sha256": "8eae6c6048a8acfff00876123a618e8f24e6dac75ee79b57a71d6ee4840a8540",
+          "source_artifact_path": "docs/superpowers/research/kimi-k3-last30days/kimi-k3-open-weight-model-architecture-benchmarks-integration-raw-v3.md",
+          "source_artifact_sha256": "8ed6c77a7b1ebb1e58614649f06ba970058b7fd0e36ff4283cddb6cf2905a089",
+          "claim_sha256": "af08595d6898995b1702f28a2886156ac5b8ef7960a4b183a219bb4b6c78564c"
+        },
+        {
+          "url": "https://www.kimi.com/blog/kimi-k3",
+          "locator": "WebSearch Supplemental Results > Moonshot AI — Kimi K3 technical launch blog > release-status summary; Source Capture Fingerprints row",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-19T22:10:19Z",
+          "claim": "Moonshot describes Kimi K3 as a 2.8-trillion-parameter, natively multimodal model with a one-million-token context window; it promises full weights by 2026-07-27 and says the technical report with further details is forthcoming, without assigning the report an exact date in the captured wording.",
+          "source_response_sha256": "8eae6c6048a8acfff00876123a618e8f24e6dac75ee79b57a71d6ee4840a8540",
+          "source_artifact_path": "docs/superpowers/research/kimi-k3-last30days/kimi-k3-open-weight-model-architecture-benchmarks-integration-raw-v3.md",
+          "source_artifact_sha256": "8ed6c77a7b1ebb1e58614649f06ba970058b7fd0e36ff4283cddb6cf2905a089",
+          "claim_sha256": "b2b7bf8a5f2efbddf1f268705ef60b3eb419ba69a36d996069003e67bcbb965c"
+        },
+        {
+          "url": "https://www.kimi.com/code/docs/en/kimi-code/models.html",
+          "locator": "Model Configuration > Model Overview and How to Switch Models; exact response fingerprint in the hosted-wire erratum",
+          "source_class": "primary",
+          "retrieved_at": "2026-07-20T00:33:53Z",
+          "claim": "Kimi Code documentation states that disabling thinking for K3 or K2.7 routes the request to K2.6, while a mistyped HighSpeed model ID can silently fall back to standard kimi-for-coding; requested model text alone therefore cannot prove execution provenance.",
+          "source_response_sha256": "f9d171cc7c01598ea10a7e40ebcc3ce99495fb52c6220b2001d4cb75813b76d6",
+          "source_artifact_path": "docs/superpowers/research/2026-07-20-kimi-k3-hosted-wire-erratum.md",
+          "source_artifact_sha256": "f307a3d21f287fc5c515111b90be71fe023457fed615f266b0a251564753fed8",
+          "claim_sha256": "c99d443506cc737a20b98e9afa15ea8da7159997186cdd76e22a12b57ad3ebfb"
+        }
+      ],
+      "local_hypothesis": "If exact open weights, license, tokenizer, inference runtime, quantization, and hardware closure become reproducibly available, K3 may justify a preregistered shadow-only comparison for provider-neutral lensing, long-context packet admission, and independent Supernova analysis.",
+      "proposed_consumers": [
+        "accretion",
+        "lensing",
+        "supernova"
+      ],
+      "required_controls": [
+        "exact-model-and-session-binding",
+        "exact-provider-wire-binding",
+        "fresh-session-no-model-switch",
+        "hidden-long-context-recall",
+        "no-silent-model-fallback",
+        "offline-weight-and-runtime-closure",
+        "paired-provider-independent-evaluation",
+        "preserved-opaque-reasoning-history",
+        "provider-entitlement-and-quota-binding",
+        "scope-and-proactiveness-guard"
+      ],
+      "experiment_manifest_id": null,
+      "falsifier": "Reject the transfer if the promised public artifacts are absent or license-incompatible, cannot form an exact offline closure, exceed available hardware, violate zero-cost policy, regress scope discipline or hard-obligation recall, or fail paired hidden-fixture noninferiority against the incumbent under equal budgets.",
+      "status_recheck_at": "2026-07-28T00:00:00Z",
+      "evidence_state": "unavailable",
+      "blocked_reasons": [
+        "canonical-registry-admission-required",
+        "external-spend-forbidden",
+        "hardware-capacity-unavailable",
+        "license-unverified",
+        "offline-runtime-closure-unavailable",
+        "technical-report-unavailable",
+        "weights-unavailable"
+      ],
+      "trial_requested": false,
+      "runtime_authority": false,
+      "shadow_only": true
+    }
+  ]
+}

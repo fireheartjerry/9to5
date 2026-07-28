@@ -14,18 +14,18 @@ EXPORTS:
   gitDiffFacts(work_dir: str) -> dict  -- Best-effort, re-derivable git facts for the receipt: head sha, working-tree diff text, …
   runEvidenceGate(orch, state, subtask: dict, result: dict, exec_cwd: str, vresult: dict, sid: str) -> 'tuple[dict, bool]'  -- For a code-change subtask that PASSED the deterministic gate: run the independent verif…
   persistReceipt(orch, state, sid: str, receipt: dict) -> None  -- Write the Evidence Receipt as a per-subtask Obsidian note (durable audit artifact).
-DEPENDS-ON: agents.completion_envelope, agents.evidence_receipt, agents.independent_verifier, agents.verification, agents.verifier, config, platform_core.core.best_effort, platform_core.orchestration.work_profile
+DEPENDS-ON: agents.completion_envelope, agents.evidence_receipt, agents.independent_verifier, agents.verification, agents.verifier, config, platform_core.core.best_effort, platform_core.execution, platform_core.orchestration.work_profile
 SIDE-EFFECTS: spawns a read-only Claude subprocess; writes an Obsidian note; mutates state notifications
 RUN/TEST: python -m pytest tests/execution/test_evidence_gate.py
 """
 from __future__ import annotations
 
 import json
-import subprocess
 
 import config
 from agents import evidence_receipt, independent_verifier, verifier
 from agents.completion_envelope import summarizeEnvelope
+from platform_core.execution.sandbox_broker import runLegacyProcess
 
 LOG = config.getLogger("orchestrator")
 
@@ -129,7 +129,8 @@ def runAttemptVerify(orch, state, subtask: dict, result: dict, exec_cwd: str,
     mixin stays under the size threshold; takes the Orchestrator as ``orch``."""
     declared = [t for t in ((verify_spec or {}).get("targets") or []) if t] \
         if isinstance(verify_spec, dict) else []
-    cancel = (lambda: orch._deadlinePassed(state))
+    def cancel() -> bool:
+        return bool(orch._deadlinePassed(state))
     effective_verify = _effectiveVerify(orch, subtask, exec_cwd, verify_spec,
                                         attempt_started, declared, sid)
     vresult = verifier.runVerification(effective_verify, exec_cwd, result, cancel_check=cancel)
@@ -163,8 +164,8 @@ def gitDiffFacts(work_dir: str) -> dict:
     count of changed files. Returns {} on any error (gate then treats it as no code change)."""
     def _git(*args) -> str:
         try:
-            out = subprocess.run(["git", "-C", work_dir, *args], capture_output=True,
-                                 text=True, timeout=config.GIT_TIMEOUT_SECONDS)
+            out = runLegacyProcess(["git", "-C", work_dir, *args], capture_output=True,
+                                   text=True, timeout=config.GIT_TIMEOUT_SECONDS)
             return (out.stdout or "").strip()
         except Exception:  # noqa: BLE001
             return ""

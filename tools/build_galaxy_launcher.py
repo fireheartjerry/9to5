@@ -15,10 +15,11 @@ EXPORTS:
   PhysicalBuild
   seal_oci_layout(layout: Path, closure_documents: Mapping[str, bytes]) -> SealedOciFacts  -- Attach six canonical closure documents to one minimal OCI layout.
   write_deterministic_oci_archive(layout: Path, destination: Path) -> None  -- Write a stable uncompressed tar while refusing links and special files.
-  audit_dockerfile(path: Path, *, expected_base_digest: str, expected_roles: Sequence[str] | None=None) -> DockerfileAudit  -- Require a one-stage, download-free, digest-pinned generic image source.
+  audit_dockerfile(path: Path, *, expected_base_digest: str, expected_roles: Sequence[str] | None=None, expected_copy_closure: Sequence[str] | None=None) -> DockerfileAudit  -- Require a one-stage, download-free, digest-pinned generic image source.
   require_docker_desktop_network_closed() -> dict[str, object]  -- Prove the Docker Desktop VM has no default route during final work.
-  build_offline_closure(*, output_root: Path, lock_output: Path) -> dict[str, object]  -- Build twice, compare, reopen, canary, and lock all nine inactive roles.
+  build_offline_closure(*, output_root: Path, lock_output: Path, sha1dc_source_archive: Path) -> dict[str, object]  -- Build twice, compare, reopen, canary, and lock all nine inactive roles.
   load_activation_image_lock(lock_path: Path, *, archive_root: Path) -> tuple[ActivationImageRecord, ...]  -- Load a canonical exact-nine-role lock without trusting archive contents.
+  verify_offline_closure(lock_path: Path, *, archive_root: Path) -> tuple[ActivationImageRecord, ...]  -- Independently reopen every retained input and output in the offline closure.
   main(argv: Sequence[str] | None=None) -> int
 DEPENDS-ON: bootstrap.galaxy_launcher.runtime_manifest
 SIDE-EFFECTS: unannotated
@@ -28,17 +29,18 @@ RUN/TEST: (no mapped test)
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Mapping, Sequence
 
 if __package__ in (None, ""):
@@ -51,7 +53,16 @@ from bootstrap.galaxy_launcher.runtime_manifest import (  # noqa: E402
     inspect_oci_layout,
     verify_activation_images,
 )
-
+from tools.build_sha1dc_oracle import (  # noqa: E402
+    Sha1dcBuildEvidence,
+    Sha1dcSourceLock,
+    buildSha1dcOracle,
+    closedDockerEnvironment,
+    readSha1dcSourceLock,
+    readSha1dcSourcePassport,
+    resolvePinnedDockerTools,
+    resolvePinnedHostFile,
+)
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _CLOSURE_LEAVES = (
@@ -63,6 +74,8 @@ _CLOSURE_LEAVES = (
     "security_profile",
 )
 _LOCK_SCHEMA = "galaxy.activation-images/v1"
+_OFFLINE_EVIDENCE_SCHEMA = "galaxy.offline-image-build-evidence/v2"
+_SHA1DC_SOURCE_ARCHIVE = "sha1dc-source.tar.gz"
 _ENTRYPOINT = [
     "/usr/bin/env",
     "-i",
@@ -71,10 +84,28 @@ _ENTRYPOINT = [
     "-S",
     "/opt/galaxy/activation_image_entrypoint.py",
 ]
+_ENTRYPOINT_COPY = (
+    "bootstrap/galaxy_launcher/activation_image_entrypoint.py "
+    "/opt/galaxy/activation_image_entrypoint.py"
+)
+_SHA1DC_COPY = (
+    "--chmod=0555 containers/galaxy/generated/galaxy-sha1dc "
+    "/opt/galaxy/galaxy-sha1dc"
+)
+_SHA1DC_IMAGE_NAMES = frozenset({"object-parser", "reviewer"})
+_PINNED_WSL = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "wsl.exe"
+_PINNED_WSL_SHA256 = "e27cbfcbd61c44796e2cfdd031663245bda8d6e4a43c1451b1fc505333908126"
 
 
 class ImageBuildRefused(RuntimeError):
     """An image proposal or offline build input was not exactly closed."""
+
+
+def _resolvePinnedWsl() -> Path:
+    try:
+        return resolvePinnedHostFile(_PINNED_WSL, _PINNED_WSL_SHA256, "WSL host")
+    except RuntimeError as exc:
+        raise ImageBuildRefused("pinned WSL host is unavailable") from exc
 
 
 @dataclass(frozen=True)
@@ -191,6 +222,15 @@ def _sha256_file(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _host_tool_evidence(path: Path) -> dict[str, object]:
+    resolved = path.resolve(strict=True)
+    return {
+        "path": str(resolved),
+        "sha256": _sha256_file(resolved),
+        "size": resolved.stat().st_size,
+    }
 
 
 def _strict_json_file(path: Path, label: str) -> dict[str, object]:
@@ -357,6 +397,162 @@ def _is_reparse(path: Path) -> bool:
     return bool(attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT) if os.name == "nt" else False
 
 
+def _sha1dc_binding(evidence: Sha1dcBuildEvidence) -> tuple[dict[str, object], bytes]:
+    expected_repository_files = {
+        "source_lock_sha256": _REPOSITORY_ROOT
+        / "bootstrap/galaxy_launcher/sha1dc_source.lock.json",
+        "source_passport_sha256": _REPOSITORY_ROOT
+        / "bootstrap/galaxy_launcher/sha1dc_source_passport.json",
+        "wrapper_sha256": _REPOSITORY_ROOT / "containers/galaxy/sha1dc_object_oracle.c",
+    }
+    for field, path in expected_repository_files.items():
+        if _is_reparse(path) or not path.is_file() or getattr(evidence, field) != _sha256_file(path):
+            raise ImageBuildRefused(f"SHA1DC {field} differs from the reviewed repository source")
+    executable = Path(evidence.executable_path)
+    try:
+        if _is_reparse(executable) or not executable.is_file():
+            raise ImageBuildRefused("SHA1DC executable is not an ordinary file")
+        raw = executable.read_bytes()
+    except OSError as exc:
+        raise ImageBuildRefused("SHA1DC executable is unavailable") from exc
+    digest_fields = (
+        evidence.executable_sha256,
+        evidence.source_lock_sha256,
+        evidence.source_archive_sha256,
+        evidence.source_passport_sha256,
+        evidence.wrapper_sha256,
+        evidence.builder_base_digest,
+        evidence.runtime_base_digest,
+    )
+    if any(_SHA256.fullmatch(value) is None for value in digest_fields):
+        raise ImageBuildRefused("SHA1DC evidence contains a malformed digest")
+    if len(raw) != evidence.executable_size or _sha256_bytes(raw) != evidence.executable_sha256:
+        raise ImageBuildRefused("SHA1DC executable differs from its build evidence")
+    if (
+        evidence.builder_base_digest != FULL_BASE.digest
+        or evidence.runtime_base_digest != SLIM_BASE.digest
+        or evidence.reproducibility_runs != 2
+        or evidence.self_test != "collision-detected"
+        or evidence.normal_object_corpus_count != 4
+        or evidence.network_allowed is not False
+    ):
+        raise ImageBuildRefused("SHA1DC build evidence does not satisfy the reviewed offline gate")
+    return (
+        {
+            "schema": "galaxy.sha1dc-runtime-binding/v1",
+            "executable_path": "/opt/galaxy/galaxy-sha1dc",
+            "executable_sha256": evidence.executable_sha256,
+            "executable_size": evidence.executable_size,
+            "source_lock_sha256": evidence.source_lock_sha256,
+            "source_archive_sha256": evidence.source_archive_sha256,
+            "source_passport_sha256": evidence.source_passport_sha256,
+            "wrapper_sha256": evidence.wrapper_sha256,
+            "builder_base_digest": evidence.builder_base_digest,
+            "runtime_base_digest": evidence.runtime_base_digest,
+            "reproducibility_runs": evidence.reproducibility_runs,
+            "self_test": evidence.self_test,
+            "normal_object_corpus_count": evidence.normal_object_corpus_count,
+            "network_allowed": evidence.network_allowed,
+        },
+        raw,
+    )
+
+
+def _expected_copy_closure(spec: ImageSpec) -> tuple[str, ...]:
+    if spec.name in _SHA1DC_IMAGE_NAMES:
+        return (_ENTRYPOINT_COPY, _SHA1DC_COPY)
+    return (_ENTRYPOINT_COPY,)
+
+
+def _materialize_build_context(
+    spec: ImageSpec,
+    destination: Path,
+    *,
+    sha1dc_evidence: Sha1dcBuildEvidence | None,
+) -> Path:
+    """Create an external context containing only the audited COPY leaves."""
+    if destination.exists():
+        raise ImageBuildRefused(f"{spec.name}: build context already exists")
+    destination.mkdir(parents=True)
+    leaves: dict[str, bytes] = {}
+    for relative in (
+        spec.dockerfile,
+        "bootstrap/galaxy_launcher/activation_image_entrypoint.py",
+    ):
+        source = _REPOSITORY_ROOT / relative
+        if _is_reparse(source) or not source.is_file():
+            raise ImageBuildRefused(f"{spec.name}: build context source is unavailable")
+        leaves[relative] = source.read_bytes()
+    if spec.name in _SHA1DC_IMAGE_NAMES:
+        if sha1dc_evidence is None:
+            raise ImageBuildRefused(f"{spec.name} SHA1DC evidence is required")
+        _, executable = _sha1dc_binding(sha1dc_evidence)
+        leaves["containers/galaxy/generated/galaxy-sha1dc"] = executable
+    elif sha1dc_evidence is not None:
+        raise ImageBuildRefused(
+            "SHA1DC evidence is valid only for object-parser or reviewer"
+        )
+    for relative, raw in leaves.items():
+        target = destination.joinpath(*Path(relative).parts)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("xb") as stream:
+            stream.write(raw)
+    observed = {
+        path.relative_to(destination).as_posix()
+        for path in destination.rglob("*")
+        if path.is_file()
+    }
+    if observed != set(leaves):
+        raise ImageBuildRefused(f"{spec.name}: build context leaf closure differs")
+    return destination.resolve(strict=True)
+
+
+def _validate_build_context(
+    spec: ImageSpec,
+    context_root: Path,
+    *,
+    audit: DockerfileAudit,
+    sha1dc_evidence: Sha1dcBuildEvidence | None,
+) -> None:
+    try:
+        root = context_root.resolve(strict=True)
+    except OSError as exc:
+        raise ImageBuildRefused(f"{spec.name}: build context is unavailable") from exc
+    expected = {
+        spec.dockerfile: audit.sha256,
+        "bootstrap/galaxy_launcher/activation_image_entrypoint.py": _sha256_file(
+            _REPOSITORY_ROOT / "bootstrap/galaxy_launcher/activation_image_entrypoint.py"
+        ),
+    }
+    if spec.name in _SHA1DC_IMAGE_NAMES:
+        if sha1dc_evidence is None:
+            raise ImageBuildRefused(f"{spec.name} SHA1DC evidence is required")
+        binding, _ = _sha1dc_binding(sha1dc_evidence)
+        expected["containers/galaxy/generated/galaxy-sha1dc"] = str(
+            binding["executable_sha256"]
+        )
+    elif sha1dc_evidence is not None:
+        raise ImageBuildRefused(
+            "SHA1DC evidence is valid only for object-parser or reviewer"
+        )
+    observed: dict[str, str] = {}
+    for directory, names, filenames in os.walk(root, topdown=True, followlinks=False):
+        parent = Path(directory)
+        if _is_reparse(parent):
+            raise ImageBuildRefused(f"{spec.name}: build context contains a reparse directory")
+        for name in names:
+            if _is_reparse(parent / name):
+                raise ImageBuildRefused(f"{spec.name}: build context contains a reparse directory")
+        for name in filenames:
+            path = parent / name
+            relative = path.relative_to(root).as_posix()
+            if _is_reparse(path) or not path.is_file():
+                raise ImageBuildRefused(f"{spec.name}: build context leaf is not ordinary")
+            observed[relative] = _sha256_file(path)
+    if observed != expected:
+        raise ImageBuildRefused(f"{spec.name}: build context leaf closure differs")
+
+
 def write_deterministic_oci_archive(layout: Path, destination: Path) -> None:
     """Write a stable uncompressed tar while refusing links and special files."""
     root = layout.resolve(strict=True)
@@ -404,6 +600,7 @@ def audit_dockerfile(
     *,
     expected_base_digest: str,
     expected_roles: Sequence[str] | None = None,
+    expected_copy_closure: Sequence[str] | None = None,
 ) -> DockerfileAudit:
     """Require a one-stage, download-free, digest-pinned generic image source."""
     if _SHA256.fullmatch(expected_base_digest) is None:
@@ -435,9 +632,8 @@ def audit_dockerfile(
     if from_values != [expected_from]:
         raise ImageBuildRefused("Dockerfile base is not the exact approved digest")
     copy_values = [value for instruction, value in instructions if instruction == "COPY"]
-    if copy_values != [
-        "bootstrap/galaxy_launcher/activation_image_entrypoint.py /opt/galaxy/activation_image_entrypoint.py"
-    ]:
+    reviewed_copies = tuple(expected_copy_closure or (_ENTRYPOINT_COPY,))
+    if tuple(copy_values) != reviewed_copies:
         raise ImageBuildRefused("Dockerfile COPY closure is not exact")
     if [value for instruction, value in instructions if instruction == "USER"] != ["65532:65532"]:
         raise ImageBuildRefused("Dockerfile must select the exact nonroot identity")
@@ -495,15 +691,46 @@ def _run(
     cwd: Path | None = None,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(
-        list(command),
-        cwd=cwd,
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
+    if not command:
+        raise ImageBuildRefused("offline command is empty")
+    if command[0] == "docker":
+        try:
+            tools = resolvePinnedDockerTools()
+            if len(command) > 1 and command[1] == "buildx":
+                executable = tools.buildx_plugin
+                arguments = command[2:]
+            else:
+                executable = tools.executable
+                arguments = command[1:]
+            with tempfile.TemporaryDirectory(prefix="galaxy-docker-config-") as config_root:
+                completed = subprocess.run(
+                    [str(executable), *arguments],
+                    cwd=cwd,
+                    env=closedDockerEnvironment(Path(config_root)),
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    check=False,
+                    shell=False,
+                )
+        except RuntimeError as exc:
+            raise ImageBuildRefused("pinned Docker command could not run") from exc
+    elif command[0] == "wsl.exe":
+        system_root = os.environ.get("SystemRoot", r"C:\Windows")
+        completed = subprocess.run(
+            [str(_resolvePinnedWsl()), *command[1:]],
+            cwd=cwd,
+            env={"SystemRoot": system_root, "WINDIR": system_root},
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            shell=False,
+        )
+    else:
+        raise ImageBuildRefused("offline runner accepts only pinned Docker or WSL commands")
     if check and completed.returncode != 0:
         rendered = " ".join(command)
         raise ImageBuildRefused(
@@ -517,6 +744,11 @@ def require_docker_desktop_network_closed() -> dict[str, object]:
     """Prove the Docker Desktop VM has no default route during final work."""
     if os.name != "nt":
         raise ImageBuildRefused("this reviewed closure requires the pinned Windows lane")
+    try:
+        docker_tools = resolvePinnedDockerTools()
+        wsl_host = _resolvePinnedWsl()
+    except RuntimeError as exc:
+        raise ImageBuildRefused("reviewed offline host tools are unavailable") from exc
     routes = _run(
         [
             "wsl.exe",
@@ -534,8 +766,8 @@ def require_docker_desktop_network_closed() -> dict[str, object]:
     if any(line.strip().startswith("default ") for line in routes):
         raise ImageBuildRefused("Docker Desktop still has an external default route; final build refused")
     context = _run(["docker", "context", "show"], timeout=30).stdout.strip()
-    if context != "desktop-linux":
-        raise ImageBuildRefused("the reviewed desktop-linux Docker context is required")
+    if context != "default":
+        raise ImageBuildRefused("the empty-config default Docker context is required")
     server = _run(["docker", "version", "--format", "{{json .Server}}"], timeout=30).stdout.strip()
     buildx = _run(["docker", "buildx", "version"], timeout=30).stdout.strip()
     try:
@@ -545,8 +777,13 @@ def require_docker_desktop_network_closed() -> dict[str, object]:
     return {
         "schema": "galaxy.offline-docker-boundary/v1",
         "context": context,
+        "daemon_endpoint": "npipe:////./pipe/dockerDesktopLinuxEngine",
+        "docker_cli": _host_tool_evidence(docker_tools.executable),
+        "buildx_plugin": _host_tool_evidence(docker_tools.buildx_plugin),
+        "wsl_host": _host_tool_evidence(wsl_host),
         "docker_server": server_value,
         "buildx": buildx,
+        "ambient_environment": [],
         "routes": sorted(line.strip() for line in routes if line.strip()),
         "default_route_absent": True,
     }
@@ -747,7 +984,17 @@ def _closure_documents(
     boundary: Mapping[str, object],
     config_digest: str,
     layer_digests: Sequence[str],
+    sha1dc_evidence: Sha1dcBuildEvidence | None = None,
 ) -> dict[str, bytes]:
+    sha1dc_binding: dict[str, object] | None = None
+    if spec.name in _SHA1DC_IMAGE_NAMES:
+        if sha1dc_evidence is None:
+            raise ImageBuildRefused(f"{spec.name} SHA1DC evidence is required")
+        sha1dc_binding, _ = _sha1dc_binding(sha1dc_evidence)
+    elif sha1dc_evidence is not None:
+        raise ImageBuildRefused(
+            "SHA1DC evidence is valid only for object-parser or reviewer"
+        )
     inventory = base["inventory"]
     assert isinstance(inventory, dict)
     packages = inventory["packages"]
@@ -780,6 +1027,8 @@ def _closure_documents(
             "SOURCE_DATE_EPOCH=0",
         ],
     }
+    if sha1dc_binding is not None:
+        toolchain_document["sha1dc_oracle"] = dict(sha1dc_binding)
     package_document = {
         "schema": "galaxy.activation-package-manifest/v1",
         "kind": "package_manifest",
@@ -828,6 +1077,8 @@ def _closure_documents(
         "interpreter_flags": ["-I", "-S"],
         "base_runtime": inventory["runtime"],
     }
+    if sha1dc_binding is not None:
+        runtime_document["sha1dc_oracle"] = dict(sha1dc_binding)
     documents = {
         "base": base_document,
         "toolchain": toolchain_document,
@@ -839,15 +1090,27 @@ def _closure_documents(
     return {name: _canonical_json(value) for name, value in documents.items()}
 
 
-def _build_layout(spec: ImageSpec, destination: Path) -> None:
+def _build_layout(spec: ImageSpec, destination: Path, *, context_root: Path) -> None:
     if destination.exists():
         raise ImageBuildRefused(f"{spec.name}: build destination already exists")
+    try:
+        context = context_root.resolve(strict=True)
+    except OSError as exc:
+        raise ImageBuildRefused(f"{spec.name}: build context is unavailable") from exc
+    if _is_reparse(context) or not context.is_dir():
+        raise ImageBuildRefused(f"{spec.name}: build context is not an ordinary directory")
+    try:
+        context.relative_to(_REPOSITORY_ROOT.resolve(strict=True))
+    except ValueError:
+        pass
+    else:
+        raise ImageBuildRefused(f"{spec.name}: build context must remain outside the repository")
     command = [
         "docker",
         "buildx",
         "build",
         "--builder",
-        "desktop-linux",
+        "default",
         "--platform",
         "linux/amd64",
         "--network=none",
@@ -864,7 +1127,7 @@ def _build_layout(spec: ImageSpec, destination: Path) -> None:
         f"type=oci,dest={destination},tar=false",
         ".",
     ]
-    _run(command, cwd=_REPOSITORY_ROOT)
+    _run(command, cwd=context)
     ingest = destination / "ingest"
     if ingest.exists():
         if not ingest.is_dir() or any(ingest.iterdir()):
@@ -878,10 +1141,18 @@ def _build_sealed_archive(
     audit: DockerfileAudit,
     base: Mapping[str, object],
     boundary: Mapping[str, object],
+    context_root: Path,
     layout: Path,
     archive: Path,
+    sha1dc_evidence: Sha1dcBuildEvidence | None = None,
 ) -> SealedOciFacts:
-    _build_layout(spec, layout)
+    _validate_build_context(
+        spec,
+        context_root,
+        audit=audit,
+        sha1dc_evidence=sha1dc_evidence,
+    )
+    _build_layout(spec, layout, context_root=context_root)
     config, config_digest, layer_digests = _unsealed_layout_details(layout)
     _validate_built_config(config, spec, base)
     documents = _closure_documents(
@@ -891,6 +1162,7 @@ def _build_sealed_archive(
         boundary=boundary,
         config_digest=config_digest,
         layer_digests=layer_digests,
+        sha1dc_evidence=sha1dc_evidence,
     )
     facts = seal_oci_layout(layout, documents)
     write_deterministic_oci_archive(layout, archive)
@@ -1049,23 +1321,136 @@ def _safe_external_output_root(path: Path) -> Path:
     return candidate.resolve(strict=True)
 
 
-def build_offline_closure(*, output_root: Path, lock_output: Path) -> dict[str, object]:
+def _copy_exact_source_archive(
+    source: Path,
+    destination: Path,
+    *,
+    expected_size: int,
+    expected_sha256: str,
+) -> Path:
+    """Copy one reviewed source archive without accepting drift or overwrite."""
+
+    if (
+        not isinstance(expected_size, int)
+        or isinstance(expected_size, bool)
+        or expected_size < 1
+        or _SHA256.fullmatch(expected_sha256) is None
+    ):
+        raise ImageBuildRefused("SHA1DC source archive expectation is malformed")
+    try:
+        resolved_source = source.resolve(strict=True)
+        if _is_reparse(source) or not resolved_source.is_file():
+            raise ImageBuildRefused("SHA1DC source archive is not an ordinary file")
+        if (
+            resolved_source.stat().st_size != expected_size
+            or _sha256_file(resolved_source) != expected_sha256
+        ):
+            raise ImageBuildRefused("SHA1DC source archive differs from its lock")
+    except OSError as exc:
+        raise ImageBuildRefused("SHA1DC source archive is unavailable") from exc
+
+    if destination.exists() or destination.is_symlink():
+        raise ImageBuildRefused("SHA1DC source archive destination already exists")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with resolved_source.open("rb") as input_stream, destination.open("xb") as output_stream:
+            shutil.copyfileobj(input_stream, output_stream, length=1024 * 1024)
+            output_stream.flush()
+            os.fsync(output_stream.fileno())
+        if (
+            destination.stat().st_size != expected_size
+            or _sha256_file(destination) != expected_sha256
+            or resolved_source.stat().st_size != expected_size
+            or _sha256_file(resolved_source) != expected_sha256
+        ):
+            raise ImageBuildRefused("SHA1DC source archive copy differs from its lock")
+        return destination.resolve(strict=True)
+    except Exception:
+        if destination.exists():
+            destination.unlink()
+        raise
+
+
+def _verify_offline_source_archive(
+    root: Path,
+    evidence: Mapping[str, object],
+    *,
+    source: Sha1dcSourceLock,
+) -> Path:
+    """Reopen the retained exact source input named by offline build evidence."""
+
+    if set(evidence) != {
+        "source_archive_path",
+        "source_archive_size",
+        "source_archive_sha256",
+    }:
+        raise ImageBuildRefused("SHA1DC source archive evidence is not closed")
+    if (
+        evidence.get("source_archive_path") != _SHA1DC_SOURCE_ARCHIVE
+        or evidence.get("source_archive_size") != source.archive_size
+        or evidence.get("source_archive_sha256") != source.archive_sha256
+    ):
+        raise ImageBuildRefused("SHA1DC source archive evidence differs from its lock")
+    path = _relative_archive(root, evidence["source_archive_path"])
+    try:
+        if not path.exists() or _is_reparse(path) or not path.is_file():
+            raise ImageBuildRefused("SHA1DC source archive is absent or unsafe")
+        if (
+            path.stat().st_size != source.archive_size
+            or _sha256_file(path) != source.archive_sha256
+        ):
+            raise ImageBuildRefused("SHA1DC source archive bytes differ from its lock")
+    except OSError as exc:
+        raise ImageBuildRefused("SHA1DC source archive is unavailable") from exc
+    return path.resolve(strict=True)
+
+
+def build_offline_closure(
+    *,
+    output_root: Path,
+    lock_output: Path,
+    sha1dc_source_archive: Path,
+) -> dict[str, object]:
     """Build twice, compare, reopen, canary, and lock all nine inactive roles."""
     boundary = require_docker_desktop_network_closed()
     root = _safe_external_output_root(output_root)
     expected_lock = _REPOSITORY_ROOT / "bootstrap/galaxy_launcher/activation_images.lock.json"
     if lock_output.resolve(strict=False) != expected_lock.resolve(strict=False):
         raise ImageBuildRefused("lock proposal must use the reviewed repository path")
+    source_lock_path = (
+        _REPOSITORY_ROOT / "bootstrap/galaxy_launcher/sha1dc_source.lock.json"
+    )
+    source_passport_path = (
+        _REPOSITORY_ROOT / "bootstrap/galaxy_launcher/sha1dc_source_passport.json"
+    )
+    source_lock = readSha1dcSourceLock(source_lock_path)
+    readSha1dcSourcePassport(source_passport_path, source=source_lock)
+    sha1dc_evidence = buildSha1dcOracle(
+        source_lock_path=source_lock_path,
+        source_archive=sha1dc_source_archive,
+        output_root=root / "sha1dc",
+    )
     base_values = {base.name: _collect_base(base) for base in (SLIM_BASE, FULL_BASE)}
     physical: dict[str, PhysicalBuild] = {}
     base_closure_digests: dict[str, str] = {}
     layouts = root / "layouts"
     layouts.mkdir()
+    contexts = root / "contexts"
+    contexts.mkdir()
     for spec in IMAGE_SPECS:
         audit = audit_dockerfile(
             _REPOSITORY_ROOT / spec.dockerfile,
             expected_base_digest=spec.base.digest,
             expected_roles=spec.roles,
+            expected_copy_closure=_expected_copy_closure(spec),
+        )
+        selected_sha1dc_evidence = (
+            sha1dc_evidence if spec.name in _SHA1DC_IMAGE_NAMES else None
+        )
+        context = _materialize_build_context(
+            spec,
+            contexts / spec.name,
+            sha1dc_evidence=selected_sha1dc_evidence,
         )
         base_value = base_values[spec.base.name]
         first_layout = layouts / f"{spec.name}-one"
@@ -1077,16 +1462,20 @@ def build_offline_closure(*, output_root: Path, lock_output: Path) -> dict[str, 
             audit=audit,
             base=base_value,
             boundary=boundary,
+            context_root=context,
             layout=first_layout,
             archive=first_archive,
+            sha1dc_evidence=selected_sha1dc_evidence,
         )
         second = _build_sealed_archive(
             spec=spec,
             audit=audit,
             base=base_value,
             boundary=boundary,
+            context_root=context,
             layout=second_layout,
             archive=second_archive,
+            sha1dc_evidence=selected_sha1dc_evidence,
         )
         first_hash = _sha256_file(first_archive)
         second_hash = _sha256_file(second_archive)
@@ -1109,6 +1498,7 @@ def build_offline_closure(*, output_root: Path, lock_output: Path) -> dict[str, 
     if layouts.resolve(strict=True).parent != root:
         raise ImageBuildRefused("layout staging root escaped the artifact root")
     shutil.rmtree(layouts)
+    shutil.rmtree(contexts)
 
     canaries: dict[str, tuple[dict[str, object], dict[str, object]]] = {}
     for value in physical.values():
@@ -1187,21 +1577,47 @@ def build_offline_closure(*, output_root: Path, lock_output: Path) -> dict[str, 
         "bases": bases_for_lock,
         "images": images_for_lock,
     }
-    lock_output.write_bytes(_canonical_json(lock))
-    records = load_activation_image_lock(lock_output, archive_root=root)
-    verify_activation_images(records)
+    lock_sha256 = _sha256_bytes(_canonical_json(lock))
+    retained_source = _copy_exact_source_archive(
+        Path(sha1dc_source_archive),
+        root / _SHA1DC_SOURCE_ARCHIVE,
+        expected_size=source_lock.archive_size,
+        expected_sha256=source_lock.archive_sha256,
+    )
     evidence = {
-        "schema": "galaxy.offline-image-build-evidence/v1",
+        "schema": _OFFLINE_EVIDENCE_SCHEMA,
         "status": "verified_inactive",
-        "lock_sha256": _sha256_file(lock_output),
+        "lock_sha256": lock_sha256,
         "network_boundary": boundary,
         "roles": sorted(ACTIVATION_IMAGE_ROLES),
         "physical_images": sorted(physical),
         "reproducibility_runs": 2,
         "archive_sha256": {name: value.archive_sha256 for name, value in sorted(physical.items())},
+        "sha1dc_oracle": {
+            "executable_sha256": sha1dc_evidence.executable_sha256,
+            "source_lock_sha256": sha1dc_evidence.source_lock_sha256,
+            "source_archive_sha256": sha1dc_evidence.source_archive_sha256,
+            "source_passport_sha256": sha1dc_evidence.source_passport_sha256,
+            "reproducibility_runs": sha1dc_evidence.reproducibility_runs,
+            "self_test": sha1dc_evidence.self_test,
+            "network_allowed": sha1dc_evidence.network_allowed,
+        },
+        "sha1dc_source_archive": {
+            "source_archive_path": retained_source.name,
+            "source_archive_size": retained_source.stat().st_size,
+            "source_archive_sha256": _sha256_file(retained_source),
+        },
         "activation_authority": False,
     }
     (root / "offline-build-evidence.json").write_bytes(_canonical_json(evidence))
+    published_lock_sha256 = _verify_and_publish_lock(
+        lock,
+        artifact_root=root,
+        lock_output=lock_output,
+        require_offline_closure=True,
+    )
+    if published_lock_sha256 != lock_sha256:
+        raise ImageBuildRefused("published activation lock digest differs from evidence")
     return evidence
 
 
@@ -1224,6 +1640,44 @@ def _relative_archive(root: Path, value: object) -> Path:
     except ValueError as exc:
         raise ImageBuildRefused("archive path escapes artifact root") from exc
     return path
+
+
+def _verify_and_publish_lock(
+    lock: Mapping[str, object],
+    *,
+    artifact_root: Path,
+    lock_output: Path,
+    require_offline_closure: bool = False,
+) -> str:
+    """Independently verify an external proposal before atomic repository publication."""
+    root = artifact_root.resolve(strict=True)
+    if _is_reparse(root) or not root.is_dir():
+        raise ImageBuildRefused("lock proposal root is not an ordinary directory")
+    raw = _canonical_json(lock)
+    proposal = root / "activation_images.lock.proposal.json"
+    if proposal.exists() and (_is_reparse(proposal) or not proposal.is_file()):
+        raise ImageBuildRefused("lock proposal path is unsafe")
+    proposal.write_bytes(raw)
+    records = load_activation_image_lock(proposal, archive_root=root)
+    verify_activation_images(records)
+    if require_offline_closure:
+        verify_offline_closure(proposal, archive_root=root)
+
+    destination = lock_output.resolve(strict=False)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists() and (_is_reparse(destination) or not destination.is_file()):
+        raise ImageBuildRefused("lock publication target is unsafe")
+    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+    try:
+        with temporary.open("xb") as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return _sha256_bytes(raw)
 
 
 def load_activation_image_lock(lock_path: Path, *, archive_root: Path) -> tuple[ActivationImageRecord, ...]:
@@ -1369,11 +1823,164 @@ def load_activation_image_lock(lock_path: Path, *, archive_root: Path) -> tuple[
     return tuple(records)
 
 
+def verify_offline_closure(
+    lock_path: Path,
+    *,
+    archive_root: Path,
+) -> tuple[ActivationImageRecord, ...]:
+    """Independently reopen every retained input and output in the offline closure."""
+
+    try:
+        root = archive_root.resolve(strict=True)
+    except OSError as exc:
+        raise ImageBuildRefused("offline closure root is unavailable") from exc
+    if _is_reparse(root) or not root.is_dir():
+        raise ImageBuildRefused("offline closure root is not an ordinary directory")
+
+    lock = _strict_json_file(lock_path, "activation image lock")
+    records = load_activation_image_lock(lock_path, archive_root=root)
+    report = verify_activation_images(
+        records,
+        network_allowed=False,
+        allow_engine_build=False,
+        allow_pull=False,
+    )
+    if report.every_byte_verified is not True or set(report.roles) != ACTIVATION_IMAGE_ROLES:
+        raise ImageBuildRefused("offline image verification report is incomplete")
+
+    evidence = _strict_json_file(
+        root / "offline-build-evidence.json",
+        "offline build evidence",
+    )
+    expected_evidence_fields = {
+        "activation_authority",
+        "archive_sha256",
+        "lock_sha256",
+        "network_boundary",
+        "physical_images",
+        "reproducibility_runs",
+        "roles",
+        "schema",
+        "sha1dc_oracle",
+        "sha1dc_source_archive",
+        "status",
+    }
+    boundary = evidence.get("network_boundary")
+    if (
+        set(evidence) != expected_evidence_fields
+        or evidence.get("schema") != _OFFLINE_EVIDENCE_SCHEMA
+        or evidence.get("status") != "verified_inactive"
+        or evidence.get("activation_authority") is not False
+        or evidence.get("reproducibility_runs") != 2
+        or evidence.get("roles") != sorted(ACTIVATION_IMAGE_ROLES)
+        or not isinstance(boundary, dict)
+        or boundary.get("schema") != "galaxy.offline-docker-boundary/v1"
+        or boundary.get("default_route_absent") is not True
+        or boundary.get("ambient_environment") != []
+        or evidence.get("lock_sha256") != _sha256_file(lock_path)
+    ):
+        raise ImageBuildRefused("offline build evidence policy or lock binding differs")
+
+    source_lock_path = (
+        _REPOSITORY_ROOT / "bootstrap/galaxy_launcher/sha1dc_source.lock.json"
+    )
+    source_passport_path = (
+        _REPOSITORY_ROOT / "bootstrap/galaxy_launcher/sha1dc_source_passport.json"
+    )
+    source_lock = readSha1dcSourceLock(source_lock_path)
+    readSha1dcSourcePassport(source_passport_path, source=source_lock)
+    source_evidence = evidence.get("sha1dc_source_archive")
+    if not isinstance(source_evidence, dict):
+        raise ImageBuildRefused("SHA1DC source archive evidence is malformed")
+    _verify_offline_source_archive(root, source_evidence, source=source_lock)
+
+    linux_root = root / "sha1dc"
+    if (
+        not linux_root.is_dir()
+        or _is_reparse(linux_root)
+        or {path.name for path in linux_root.iterdir()}
+        != {"galaxy-sha1dc", "sha1dc-build-evidence.json"}
+    ):
+        raise ImageBuildRefused("Linux SHA1DC oracle closure is incomplete or open")
+    linux_executable = linux_root / "galaxy-sha1dc"
+    linux_evidence = _strict_json_file(
+        linux_root / "sha1dc-build-evidence.json",
+        "Linux SHA1DC build evidence",
+    )
+    oracle_evidence = evidence.get("sha1dc_oracle")
+    if not isinstance(oracle_evidence, dict):
+        raise ImageBuildRefused("SHA1DC oracle evidence is malformed")
+    expected_oracle_fields = {
+        "executable_sha256",
+        "network_allowed",
+        "reproducibility_runs",
+        "self_test",
+        "source_archive_sha256",
+        "source_lock_sha256",
+        "source_passport_sha256",
+    }
+    if (
+        set(oracle_evidence) != expected_oracle_fields
+        or oracle_evidence.get("executable_sha256") != _sha256_file(linux_executable)
+        or oracle_evidence.get("source_lock_sha256") != _sha256_file(source_lock_path)
+        or oracle_evidence.get("source_passport_sha256")
+        != _sha256_file(source_passport_path)
+        or oracle_evidence.get("source_archive_sha256") != source_lock.archive_sha256
+        or oracle_evidence.get("reproducibility_runs") != 2
+        or oracle_evidence.get("self_test") != "collision-detected"
+        or oracle_evidence.get("network_allowed") is not False
+        or linux_evidence.get("executable_sha256")
+        != oracle_evidence.get("executable_sha256")
+        or linux_evidence.get("source_archive_sha256") != source_lock.archive_sha256
+    ):
+        raise ImageBuildRefused("SHA1DC oracle evidence differs from retained closure")
+
+    physical_images = sorted({record.physical_image for record in records})
+    expected_archives = {
+        record.physical_image: record.archive_sha256
+        for record in records
+    }
+    if (
+        evidence.get("physical_images") != physical_images
+        or evidence.get("archive_sha256") != dict(sorted(expected_archives.items()))
+    ):
+        raise ImageBuildRefused("offline physical-image evidence differs from the lock")
+
+    image_records = lock.get("images")
+    if not isinstance(image_records, list):
+        raise ImageBuildRefused("activation image records are malformed")
+    expected_canaries = {
+        Path(str(record[field])).name
+        for record in image_records
+        if isinstance(record, dict)
+        for field in ("canary_receipt", "canary_boundary")
+    }
+    canary_root = root / "canaries"
+    if (
+        not canary_root.is_dir()
+        or _is_reparse(canary_root)
+        or {path.name for path in canary_root.iterdir()} != expected_canaries
+    ):
+        raise ImageBuildRefused("offline canary evidence closure is incomplete or open")
+    expected_top_level = {
+        *(record.archive.name for record in records),
+        "activation_images.lock.proposal.json",
+        "canaries",
+        "offline-build-evidence.json",
+        "sha1dc",
+        _SHA1DC_SOURCE_ARCHIVE,
+    }
+    if {path.name for path in root.iterdir()} != expected_top_level:
+        raise ImageBuildRefused("offline artifact root contains an undeclared entry")
+    return records
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-offline", action="store_true")
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--lock-output", type=Path)
+    parser.add_argument("--sha1dc-source-archive", type=Path)
     parser.add_argument("--verify-lock", type=Path)
     parser.add_argument("--archive-root", type=Path)
     return parser
@@ -1385,17 +1992,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         if (
             args.output_root is None
             or args.lock_output is None
+            or args.sha1dc_source_archive is None
             or args.verify_lock is not None
             or args.archive_root is not None
         ):
             raise ImageBuildRefused("offline build requires only --output-root and --lock-output")
-        evidence = build_offline_closure(output_root=args.output_root, lock_output=args.lock_output)
+        evidence = build_offline_closure(
+            output_root=args.output_root,
+            lock_output=args.lock_output,
+            sha1dc_source_archive=args.sha1dc_source_archive,
+        )
         print(_canonical_json(evidence).decode("utf-8"))
         return 0
-    if args.verify_lock is None or args.archive_root is None:
+    if (
+        args.verify_lock is None
+        or args.archive_root is None
+        or args.sha1dc_source_archive is not None
+    ):
         raise ImageBuildRefused("explicit --verify-lock and --archive-root are required")
-    records = load_activation_image_lock(args.verify_lock, archive_root=args.archive_root)
-    verify_activation_images(records)
+    verify_offline_closure(args.verify_lock, archive_root=args.archive_root)
     print("offline activation image closure verified; authority remains inactive")
     return 0
 

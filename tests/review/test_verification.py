@@ -6,6 +6,7 @@ Plus error handling for ValueError, TypeError, KeyError injected via mocks.
 """
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,14 +14,13 @@ from unittest.mock import patch
 
 from agents.review.verification import (
     Receipt,
-    VResult,
     Verdict,
+    VResult,
     annotate,
     receiptToVResult,
     runReceipt,
     verdictFor,
 )
-
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -37,16 +37,31 @@ def _receipt(*, verdict: Verdict = Verdict.PASS, cmd: tuple[str, ...] = (),
                    annotations={} if annotations is None else annotations)
 
 
-class _KernelImplementationTestCase:
-    """Exercise dormant receipt mechanics without weakening the production gate."""
+def _contained_authority(work_dir: str, *, runner=None):
+    from agents.review.verification import issueDiagnosticVerificationCommandAuthority
 
-    def setUp(self):
-        bypass = patch(
-            "platform_core.execution.launch_guard.requireTransactionalKernelActive",
-            return_value=None,
+    def contained(request):
+        return subprocess.run(
+            list(request.argv),
+            cwd=request.work_dir,
+            capture_output=True,
+            text=True,
+            timeout=request.timeout_seconds,
+            check=False,
         )
-        bypass.start()
-        self.addCleanup(bypass.stop)
+
+    return issueDiagnosticVerificationCommandAuthority(
+        transaction_id="tx_verification_test",
+        proposed_revision="1" * 40,
+        resource_id="verifier_test",
+        work_dir=work_dir,
+        image_digest="2" * 64,
+        security_profile_digest="3" * 64,
+        command_policy_digest="4" * 64,
+        watchdog_generation=1,
+        deadline="2099-01-01T00:00:00+00:00",
+        runner=runner or contained,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -272,13 +287,13 @@ class TestRunReceiptSkipped(unittest.TestCase):
 # runReceipt -- happy path
 # ---------------------------------------------------------------------------
 
-class TestRunReceiptHappyPath(_KernelImplementationTestCase, unittest.TestCase):
+class TestRunReceiptHappyPath(unittest.TestCase):
     def test_exit_zero_pass(self):
         with tempfile.TemporaryDirectory() as tmp:
             script = Path(tmp) / "ok.py"
             script.write_text('print("ok")\n', encoding="utf-8")
             r = runReceipt({"cmd": f'python "{script}"', "expect": "exit_zero"},
-                           tmp, {"ok": True})
+                           tmp, {"ok": True}, authority=_contained_authority(tmp))
             self.assertIs(r.verdict, Verdict.PASS)
             self.assertTrue(r.passed)
 
@@ -287,7 +302,7 @@ class TestRunReceiptHappyPath(_KernelImplementationTestCase, unittest.TestCase):
             script = Path(tmp) / "s.py"
             script.write_text('print("MARKER")\n', encoding="utf-8")
             r = runReceipt({"cmd": f'python "{script}"', "expect": "stdout_contains:MARKER"},
-                           tmp, {"ok": True})
+                           tmp, {"ok": True}, authority=_contained_authority(tmp))
             self.assertIs(r.verdict, Verdict.PASS)
 
     def test_stdout_contains_fail_when_needle_missing(self):
@@ -295,7 +310,7 @@ class TestRunReceiptHappyPath(_KernelImplementationTestCase, unittest.TestCase):
             script = Path(tmp) / "s.py"
             script.write_text('print("nope")\n', encoding="utf-8")
             r = runReceipt({"cmd": f'python "{script}"', "expect": "stdout_contains:MARKER"},
-                           tmp, {"ok": True})
+                           tmp, {"ok": True}, authority=_contained_authority(tmp))
             self.assertIs(r.verdict, Verdict.FAIL)
 
     def test_nonzero_rc_fails(self):
@@ -303,7 +318,7 @@ class TestRunReceiptHappyPath(_KernelImplementationTestCase, unittest.TestCase):
             script = Path(tmp) / "fail.py"
             script.write_text("raise SystemExit(1)\n", encoding="utf-8")
             r = runReceipt({"cmd": f'python "{script}"', "expect": "exit_zero"},
-                           tmp, {"ok": True})
+                           tmp, {"ok": True}, authority=_contained_authority(tmp))
             self.assertIs(r.verdict, Verdict.FAIL)
             self.assertEqual(r.rc, 1)
 
@@ -312,7 +327,7 @@ class TestRunReceiptHappyPath(_KernelImplementationTestCase, unittest.TestCase):
             script = Path(tmp) / "ok.py"
             script.write_text('print("ok")\n', encoding="utf-8")
             r = runReceipt({"cmd": f'python "{script}"', "expect": "exit_zero"},
-                           tmp, {"ok": True})
+                           tmp, {"ok": True}, authority=_contained_authority(tmp))
             self.assertIn("stdout", r.annotations)
             self.assertIn("cmd_str", r.annotations)
 
@@ -321,11 +336,11 @@ class TestRunReceiptHappyPath(_KernelImplementationTestCase, unittest.TestCase):
 # runReceipt -- error handling (new guards)
 # ---------------------------------------------------------------------------
 
-class TestRunReceiptErrorHandling(_KernelImplementationTestCase, unittest.TestCase):
+class TestRunReceiptErrorHandling(unittest.TestCase):
     def test_spawn_error_returns_error_verdict(self):
         with tempfile.TemporaryDirectory() as tmp:
             r = runReceipt({"cmd": "no_such_binary_xyz123 --flag", "expect": "exit_zero"},
-                           tmp, {"ok": True})
+                           tmp, {"ok": True}, authority=_contained_authority(tmp))
             self.assertIs(r.verdict, Verdict.ERROR)
             self.assertTrue(r.failure_feedback)
 
@@ -336,7 +351,7 @@ class TestRunReceiptErrorHandling(_KernelImplementationTestCase, unittest.TestCa
             with patch("agents.review.verification.changedFiles",
                        side_effect=ValueError("git broken")):
                 r = runReceipt({"cmd": f'python "{script}"', "expect": "exit_zero"},
-                               tmp, {"ok": True})
+                               tmp, {"ok": True}, authority=_contained_authority(tmp))
             self.assertIsNotNone(r)
 
     def test_changedfiles_typeerror_does_not_crash(self):
@@ -346,7 +361,7 @@ class TestRunReceiptErrorHandling(_KernelImplementationTestCase, unittest.TestCa
             with patch("agents.review.verification.changedFiles",
                        side_effect=TypeError("unexpected type")):
                 r = runReceipt({"cmd": f'python "{script}"', "expect": "exit_zero"},
-                               tmp, {"ok": True})
+                               tmp, {"ok": True}, authority=_contained_authority(tmp))
             self.assertIsNotNone(r)
 
     def test_changedfiles_keyerror_does_not_crash(self):
@@ -356,7 +371,7 @@ class TestRunReceiptErrorHandling(_KernelImplementationTestCase, unittest.TestCa
             with patch("agents.review.verification.changedFiles",
                        side_effect=KeyError("missing")):
                 r = runReceipt({"cmd": f'python "{script}"', "expect": "exit_zero"},
-                               tmp, {"ok": True})
+                               tmp, {"ok": True}, authority=_contained_authority(tmp))
             self.assertIsNotNone(r)
 
     def test_check_declared_targets_error_does_not_crash(self):
@@ -367,7 +382,7 @@ class TestRunReceiptErrorHandling(_KernelImplementationTestCase, unittest.TestCa
                        side_effect=KeyError("oops")):
                 r = runReceipt({"cmd": f'python "{script}"', "expect": "exit_zero",
                                 "targets": ["some/file.py"]},
-                               tmp, {"ok": True})
+                               tmp, {"ok": True}, authority=_contained_authority(tmp))
             self.assertIsNotNone(r)
 
     def test_cancel_check_returns_error_receipt(self):
@@ -375,20 +390,19 @@ class TestRunReceiptErrorHandling(_KernelImplementationTestCase, unittest.TestCa
             script = Path(tmp) / "hang.py"
             script.write_text("import time; time.sleep(60)\n", encoding="utf-8")
             r = runReceipt({"cmd": f'python "{script}"', "expect": "exit_zero"},
-                           tmp, {"ok": True}, cancel_check=lambda: True, timeout_seconds=30)
+                           tmp, {"ok": True}, cancel_check=lambda: True, timeout_seconds=30,
+                           authority=_contained_authority(tmp))
             self.assertIs(r.verdict, Verdict.ERROR)
             self.assertIn("cancel", r.failure_feedback.lower())
 
 def test_all_acceptance_vectors_are_embargoed_before_directory_or_process_side_effects():
-    import importlib
     import pytest
+
     from agents.review import verification
-    guard = importlib.import_module("platform_core.execution.launch_guard")
     vectors = [["cmd", "/c", "claude"], ["powershell", "-Command", "claude"],
                ["wrapper.bat"], ["python", "-c", "print(1)"], ["renamed.exe"]]
     for argv in vectors:
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(verification.subprocess, "Popen", lambda *a, **k: (_ for _ in ()).throw(
-                AssertionError("Popen reached")))
-            with pytest.raises(guard.TransactionalKernelInactive):
-                verification._runVector(argv, "missing-dir")
+        calls: list[object] = []
+        with pytest.raises(verification.VerificationCommandRefused):
+            verification._runVector(None, argv, "missing-dir")
+        assert calls == []

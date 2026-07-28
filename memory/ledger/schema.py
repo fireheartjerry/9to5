@@ -5,7 +5,7 @@ EXPORTS:
   ledger_health() -> dict[str, dict]  -- Swallowed-failure counts for every 'ledger.*' best_effort surface this process:
   close_pool() -> None  -- Close every pooled connection across all threads (shutdown / test teardown).
   init(db_path: Optional[Path]=None) -> None  -- Create the database + schema if absent (idempotent).
-DEPENDS-ON: config, memory.experience_ddl, platform_core.core.best_effort
+DEPENDS-ON: config, memory.experience_ddl, platform_core.core.best_effort, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_experience_schema.py tests/evolution/test_run_innovations_schema.py tests/human_nature/test_attention_schema.py tests/notifications/test_notification_schema.py tests/orchestration/test_elaborator_schema.py
 """
@@ -22,6 +22,10 @@ from typing import Any, Iterator, Optional
 import config
 from memory import experience_ddl as _ddl
 from platform_core.core.best_effort import best_effort, degradationSummary, recordDegradation
+from platform_core.runtime.state_store_worker import (
+    legacyDiagnosticSqliteConnection,
+    legacyDiagnosticStateWorkerAccess,
+)
 
 LOG = config.getLogger("sie.experience")
 
@@ -78,17 +82,19 @@ def _db_path(db_path: Optional[Path] = None) -> Path:
 # DDL statements on EVERY write cost 50-100ms/subtask; we do it once per path instead.
 _schema_ready: set[str] = set()
 
-# Thread-local connection pool: opening a fresh sqlite3 connection per call costs a syscall
-# + page-cache warmup every time. We keep ONE connection per (thread, db path) and reuse it.
-# Thread-local because sqlite3 connections are bound to their creating thread (check_same_thread);
-# _WRITE_LOCK still serializes the actual writes across threads. Disable via EXPERIENCE_POOL=false.
+# Compatibility registry for connections that are live inside one lexical
+# diagnostic scope.  Diagnostic handles may not remain pooled: each owns the
+# runtime/path permit that excludes installed-controller activation.
 _pool = threading.local()
-_pool_lock = threading.Lock()          # guards _all_conns (cross-thread close on reset/exit)
+_pool_lock = threading.Lock()
 _all_conns: list[sqlite3.Connection] = []
 
 
 def _new_conn(key: str, first: bool) -> sqlite3.Connection:
-    conn = sqlite3.connect(key, timeout=30.0)
+    # Raw SQL remains a pre-activation compatibility surface only. The engine
+    # lives in the isolated state-worker boundary and is unavailable once the
+    # capsule projection is active; migrated callers use logical operations.
+    conn = legacyDiagnosticSqliteConnection(key)
     try:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA synchronous=NORMAL")    # per-connection, cheap
@@ -111,29 +117,20 @@ def _new_conn(key: str, first: bool) -> sqlite3.Connection:
 
 @contextmanager
 def _connect(db_path: Optional[Path] = None) -> Iterator[sqlite3.Connection]:
-    """Yield a connection (schema ensured once per path), reusing a pooled per-thread
-    connection so repeated reads/writes don't pay connection-open cost. Caller's work is
-    committed on clean exit; on error the txn is rolled back and the (possibly poisoned)
-    connection is evicted so the next call reopens cleanly."""
+    """Fence runtime truth before resolving a diagnostic ledger path."""
+
+    with legacyDiagnosticStateWorkerAccess():
+        with _connectUnfenced(db_path) as connection:
+            yield connection
+
+
+@contextmanager
+def _connectUnfenced(db_path: Optional[Path] = None) -> Iterator[sqlite3.Connection]:
+    """Yield one lexical diagnostic connection and close it before fence unwind."""
     p = _db_path(db_path)
     key = str(p)
     first = key not in _schema_ready
-    if first:
-        p.parent.mkdir(parents=True, exist_ok=True)
-
-    pooled = getattr(config, "EXPERIENCE_POOL", True)
-    cache: dict = _pool.__dict__.setdefault("conns", {}) if pooled else {}
-    conn = cache.get(key) if pooled else None
-    if conn is None:
-        conn = _new_conn(key, first)
-        if pooled:
-            cache[key] = conn
-    elif first:
-        # path was reset/recreated under us -> ensure schema on the reused connection
-        conn.execute("PRAGMA journal_mode=WAL")
-        _applySchema(conn)
-        _applyMigrations(conn)
-        _schema_ready.add(key)
+    conn = _new_conn(key, first)
 
     try:
         yield conn
@@ -141,39 +138,51 @@ def _connect(db_path: Optional[Path] = None) -> Iterator[sqlite3.Connection]:
     except BaseException:
         with best_effort("ledger.pool_rollback", log=LOG):
             conn.rollback()
-        _evict(key, conn)   # a failed conn may be poisoned -> drop it from the pool
         raise
     finally:
-        if not pooled:
-            _evict(key, conn)
+        _evict(key, conn)
+
+
+@contextmanager
+def _writeConnect(db_path: Optional[Path] = None) -> Iterator[sqlite3.Connection]:
+    """Acquire runtime/path exclusion before the ledger's local write lock."""
+
+    with legacyDiagnosticStateWorkerAccess():
+        with _WRITE_LOCK:
+            with _connectUnfenced(db_path) as connection:
+                yield connection
 
 
 def _evict(key: str, conn: sqlite3.Connection) -> None:
     """Close ``conn`` and remove it from the thread-local cache + global registry."""
+    # Closing owns the diagnostic permit release.  Do it before forgetting the
+    # handle: if close is ambiguous, retaining the registry entry is the only
+    # honest representation of the still-live authority/resource.
+    conn.close()
     cache = getattr(_pool, "conns", None)
     if cache is not None and cache.get(key) is conn:
         cache.pop(key, None)
     with _pool_lock:
         if conn in _all_conns:
             _all_conns.remove(conn)
-    with best_effort("ledger.pool_close", log=LOG):
-        conn.close()
 
 
 def close_pool() -> None:
-    """Close every pooled connection across all threads (shutdown / test teardown)."""
+    """Close owner-thread active handles without orphaning foreign permits."""
     with _pool_lock:
-        conns, _all_conns[:] = list(_all_conns), []
+        conns = list(_all_conns)
     for c in conns:
         try:
             c.close()
         except sqlite3.ProgrammingError:
-            # Cross-thread pooled connection at shutdown: sqlite forbids closing from another
-            # thread. EXPECTED on atexit teardown -- not a degradation; logging here would spray
-            # 'I/O operation on closed file' noise into the interpreter-shutdown stderr.
+            # The lexical owner will close and unregister it in ``_evict``.
             continue
         except Exception as e:  # noqa: BLE001
             recordDegradation("ledger.pool_close", e, log=LOG)
+        else:
+            with _pool_lock:
+                if c in _all_conns:
+                    _all_conns.remove(c)
     if hasattr(_pool, "conns"):
         _pool.conns.clear()
 
@@ -183,7 +192,6 @@ _atexit.register(close_pool)
 
 def init(db_path: Optional[Path] = None) -> None:
     """Create the database + schema if absent (idempotent)."""
-    Path(_db_path(db_path)).parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path):
         pass
 

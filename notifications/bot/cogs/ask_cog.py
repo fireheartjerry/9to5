@@ -7,10 +7,11 @@ action via the same ``commands`` spine every other surface uses.
 EXPORTS:
   AskCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: config, notifications.ask, notifications.audit, notifications.commands, notifications.views, platform_core.runtime.control
+DEPENDS-ON: config, notifications.ask, notifications.audit, notifications.commands, notifications.views, platform_core.runtime, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_audit_correctness.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -20,11 +21,11 @@ from discord import app_commands
 from discord.ext import commands as dpy_commands
 
 import config
-from platform_core.runtime.control import ControlBus
 from notifications import ask as ask_mod
-from notifications import audit
+from notifications import audit, views
 from notifications import commands as spine
-from notifications import views
+from platform_core.runtime.control import ControlBus
+from platform_core.runtime.effect_guard import legacyDiagnosticDiscordSend
 
 LOG = config.getLogger("cog.ask")
 
@@ -33,33 +34,45 @@ class AskCog(dpy_commands.Cog):
     def __init__(self, bot: dpy_commands.Bot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="ask",
-                          description="Ask Nightclaw about the current run (local brain, zero-cost)")
+    @app_commands.command(
+        name="ask", description="Ask Nightclaw about the current run (local brain, zero-cost)"
+    )
     @app_commands.describe(question="Your question about the live run")
     async def ask(self, interaction: discord.Interaction, question: str) -> None:
         if not config.ASK_ENABLED:
-            return await interaction.response.send_message("`/ask` is disabled.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "`/ask` is disabled.", ephemeral=True
+            )
         await interaction.response.defer(thinking=True)
         state = await asyncio.to_thread(spine.resolveTargetTask)
         if state is None:
-            return await interaction.followup.send(spine.NO_TASK)
+            return await legacyDiagnosticDiscordSend(interaction.followup.send, spine.NO_TASK)
 
         # Conservative NL-control: a SHORT imperative may map to a control verb (guarded + audited).
         verb = ask_mod.detectControlIntent(question)
         if verb and config.ASK_NL_CONTROL:
             if not spine.isAuthorized(interaction.user.id):
-                return await interaction.followup.send("⛔ Not authorized for control.")
+                return await legacyDiagnosticDiscordSend(
+                    interaction.followup.send, "⛔ Not authorized for control."
+                )
             # #42: `abort` is irreversible -- it kills a live run immediately. It must NEVER fire from a
             # loosely-parsed NL imperative (e.g. "stop worrying about X") without an explicit confirm.
             # Other verbs (pause/resume/approve/reject/retry) are reversible or expected gate decisions,
             # so they apply directly as before. A timed-out / cancelled confirm leaves the run untouched.
             if verb == "abort":
                 view = views.ConfirmView(interaction.user.id)
-                await interaction.followup.send(
-                    "⚠️ (interpreted as `abort`) Confirm **aborting the run**?", view=view, ephemeral=True)
+                await legacyDiagnosticDiscordSend(
+                    interaction.followup.send,
+                    "⚠️ (interpreted as `abort`) Confirm **aborting the run**?",
+                    view=view,
+                    ephemeral=True,
+                )
                 await view.wait()
                 if not view.value:
-                    return await interaction.followup.send("✋ Abort cancelled — run untouched.")
+                    return await legacyDiagnosticDiscordSend(
+                        interaction.followup.send, "✋ Abort cancelled — run untouched."
+                    )
+
             def _applyControl() -> str:
                 # off the event loop: audit.record + applyCommand both do blocking file IO
                 # (audit append + ControlBus atomic temp/os.replace). Inline froze the heartbeat.
@@ -67,11 +80,13 @@ class AskCog(dpy_commands.Cog):
                 return spine.applyCommand(ControlBus(state.task_id), state, spine.Command(verb, ""))
 
             msg = await asyncio.to_thread(_applyControl)
-            return await interaction.followup.send(f" (interpreted as `{verb}`) {msg}")
+            return await legacyDiagnosticDiscordSend(
+                interaction.followup.send, f" (interpreted as `{verb}`) {msg}"
+            )
 
         reply = await asyncio.to_thread(ask_mod.answer, question, state)
         q = discord.utils.escape_markdown(question[:180])
-        await interaction.followup.send(f"**Q:** {q}\n{reply[:1800]}")
+        await legacyDiagnosticDiscordSend(interaction.followup.send, f"**Q:** {q}\n{reply[:1800]}")
 
 
 async def setup(bot: dpy_commands.Bot) -> None:

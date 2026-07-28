@@ -10,7 +10,7 @@ EXPORTS:
   appendRecord(path, record: Any, *, max_bytes: Optional[int]=None) -> None  -- Append ``record`` as one JSON line
   iterRecords(path) -> 'tuple[list, int]'  -- Parse every line of ``path``
   readTail(path, n: int=20) -> list  -- The last ``n`` records (oldest-first within the window)
-DEPENDS-ON: (stdlib only)
+DEPENDS-ON: platform_core.execution
 SIDE-EFFECTS: appends to the given path; rotates to <name>.1; creates parent dirs
 RUN/TEST: python -m pytest tests/platform/test_jsonl_io.py
 """
@@ -21,6 +21,13 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+    observeLegacyPath,
+    openLegacyFile,
+    readLegacyText,
+)
+
 LOG = logging.getLogger("core.jsonl_io")
 
 
@@ -29,10 +36,10 @@ def appendRecord(path, record: Any, *, max_bytes: Optional[int] = None) -> None:
     already past it, the file is first rotated to ``<name>.1`` (overwriting a prior .1).
     Raises on IO failure -- callers own their fail-open policy."""
     p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    if max_bytes is not None and p.exists() and p.stat().st_size > max_bytes:
-        p.replace(p.with_name(p.name + ".1"))   # rotate (overwrites the prior .1)
-    with p.open("a", encoding="utf-8") as fh:
+    mutateLegacyPath(p.parent.mkdir,parents=True, exist_ok=True)
+    if max_bytes is not None and observeLegacyPath(p.exists) and observeLegacyPath(p.stat).st_size > max_bytes:
+        mutateLegacyPath(p.replace,p.with_name(p.name + ".1"))   # rotate (overwrites the prior .1)
+    with openLegacyFile(p, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
@@ -44,7 +51,7 @@ def iterRecords(path) -> "tuple[list, int]":
     an unreadable file logs a WARNING and returns ``([], 0)``."""
     p = Path(path)
     try:
-        lines = p.read_text(encoding="utf-8").splitlines()
+        lines = readLegacyText(p, encoding="utf-8").splitlines()
     except FileNotFoundError:
         return [], 0
     except Exception as e:  # noqa: BLE001
@@ -68,7 +75,7 @@ def readTail(path, n: int = 20) -> list:
     any read error degrades to ``[]``."""
     p = Path(path)
     try:
-        lines = p.read_text(encoding="utf-8").splitlines()
+        lines = readLegacyText(p, encoding="utf-8").splitlines()
     except FileNotFoundError:
         return []
     except Exception as e:  # noqa: BLE001

@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 import time
+from unittest.mock import Mock
 
 import config
 from agents import executor_stream
@@ -200,20 +201,63 @@ def test_streaming_drains_large_stderr_without_deadlock():
                 stream.close()
 def test_low_level_launch_seam_checks_embargo_before_popen(monkeypatch):
     import importlib
+
     import pytest
+
     from agents.execution import executor_stream
 
     guard = importlib.import_module("platform_core.execution.launch_guard")
-    popen = __import__("unittest").mock.Mock(side_effect=AssertionError("Popen reached"))
+    popen = Mock(side_effect=AssertionError("Popen reached"))
     monkeypatch.setattr(executor_stream.subprocess, "Popen", popen)
     with pytest.raises(guard.TransactionalKernelInactive):
         executor_stream._launchClaude(["claude", "--print"], ".", {}, 0)
     popen.assert_not_called()
 
 
+def test_low_level_launch_uses_controller_owned_launcher(monkeypatch):
+    monkeypatch.setattr(
+        "platform_core.execution.launch_guard.requireTransactionalKernelActive",
+        lambda: None,
+    )
+    raw_popen = Mock(
+        side_effect=AssertionError("raw Popen reached")
+    )
+    monkeypatch.setattr(executor_stream.subprocess, "Popen", raw_popen)
+    launched = {}
+
+    def factory(argv, work, env, creationflags):
+        launched["plan"] = (argv, work, env, creationflags)
+
+        def registered(argv, **kwargs):
+            launched["call"] = (argv, kwargs)
+            return object()
+
+        return registered
+
+    result = executor_stream._launchClaude(
+        ["sealed-claude", "--print"],
+        "C:/candidate",
+        {"A": "B"},
+        512,
+        process_launcher_factory=factory,
+    )
+
+    assert type(result) is object
+    assert launched["plan"] == (
+        ["sealed-claude", "--print"],
+        "C:/candidate",
+        {"A": "B"},
+        512,
+    )
+    assert launched["call"][0] == ["sealed-claude", "--print"]
+    raw_popen.assert_not_called()
+
+
 def test_runclaude_and_provision_wiring_guard_before_any_input_or_backend_work():
     import importlib
+
     import pytest
+
     from agents.execution import executor
     from platform_core.execution import wiring
     guard = importlib.import_module("platform_core.execution.launch_guard")

@@ -13,7 +13,7 @@ EXPORTS:
   attribution(*, db_path: Optional[Path]=None) -> dict[str, Any]  -- Summarize the SIE's learned state + fitness trend (the attribution signal).
   render_report(attr: dict[str, Any]) -> str
   write_report(path: Optional[Path]=None, *, db_path: Optional[Path]=None) -> Optional[Path]  -- Write the attribution report (best-effort)
-DEPENDS-ON: config, learning.compute, learning.prompts, memory.experience
+DEPENDS-ON: config, learning.compute, learning.prompts, memory.experience, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_curriculum.py
 """
@@ -25,6 +25,9 @@ from typing import Any, Optional
 import config
 from learning import prompts
 from memory import experience
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+)
 
 LOG = config.getLogger("sie.release")
 
@@ -98,8 +101,8 @@ def write_report(path: Optional[Path] = None, *, db_path: Optional[Path] = None)
     p = Path(path) if path is not None \
         else Path(config.VAULT_DISK_ROOT) / config.SESSIONS_DIR_REL / "sie-report.md"
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(render_report(attribution(db_path=db_path)), encoding="utf-8")
+        mutateLegacyPath(p.parent.mkdir,parents=True, exist_ok=True)
+        mutateLegacyPath(p.write_text,render_report(attribution(db_path=db_path)), encoding="utf-8")
         return p
     except Exception as e:  # noqa: BLE001
         LOG.warning("report write failed (ignored): %s", e)

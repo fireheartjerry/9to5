@@ -7,7 +7,7 @@ EXPORTS:
   scanLocalClaude(roots: Optional[tuple]=None) -> dict  -- Recursively read every installed ``.claude`` surface
   readProductSelfKnowledge(roots: Optional[tuple]=None) -> dict  -- Locate + read the product-self-knowledge skill (Claude Code's own current
   readRecommendations(path: Optional[Path]=None) -> dict  -- Read the expert recommendations doc (how 9to5 should wield Claude Code)
-DEPENDS-ON: platform_core.app_config, platform_core.core.provenance
+DEPENDS-ON: platform_core.app_config, platform_core.core.provenance, platform_core.execution, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/platform/test_scraper.py
 """
@@ -20,10 +20,17 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
 
+import platform_core.core.provenance as _prov
+
 # Direction rule (R12): platform_core modules read the in-platform registry facade,
 # never the root config module (same call shape: config.X / config.getLogger).
 from platform_core import app_config as config
-import platform_core.core.provenance as _prov
+from platform_core.execution.pre_execution import (
+    globLegacy,
+    observeLegacyPath,
+    readLegacyText,
+)
+from platform_core.runtime.effect_guard import legacyDiagnosticHttpGet
 
 LOG = config.getLogger("knowledge.scraper")
 
@@ -106,8 +113,11 @@ def _htmlToText(html: str) -> str:
 def _fetchOne(url: str, timeout: int) -> "tuple[str, str | None]":
     """Fetch one URL -> (url, body or None). Never raises."""
     try:
-        import requests
-        r = requests.get(url, timeout=timeout, headers={"User-Agent": "9to5-knowledge-refresh"})
+        r = legacyDiagnosticHttpGet(
+            url,
+            timeout=timeout,
+            headers={"User-Agent": "9to5-knowledge-refresh"},
+        )
         if 200 <= r.status_code < 300 and r.text:
             body = r.text if url.endswith(".md") else _htmlToText(r.text)
             if body and len(body) > 200:
@@ -223,7 +233,7 @@ def _parseFrontmatter(text: str) -> dict:
 
 def _readText(p: Path, limit: int = 200_000) -> str:
     try:
-        return p.read_text(encoding="utf-8", errors="replace")[:limit]
+        return readLegacyText(p, encoding="utf-8", errors="replace")[:limit]
     except Exception:  # noqa: BLE001
         return ""
 
@@ -310,7 +320,7 @@ def _stripProvHeader(text: str) -> str:
 def _scanRootSkillsAndAgents(root: Path, inv: dict,
                               seen_skill: set, seen_agent: set) -> None:
     """Scan skills and subagents from one .claude root into inv in-place."""
-    for skill_md in root.glob("**/SKILL.md"):
+    for skill_md in globLegacy(root, "**/SKILL.md"):
         if _isExcludedScanPath(skill_md, root):
             continue
         inv["files_scanned"] += 1
@@ -324,7 +334,7 @@ def _scanRootSkillsAndAgents(root: Path, inv: dict,
         inv["skills"].append({"name": name, "description": (fm.get("description") or "")[:400],
                               "allowed_tools": fm.get("allowed-tools") or fm.get("allowed_tools"),
                               "path": str(skill_md), "desc_trusted": desc_trusted})
-    for agent_md in (root / "agents").glob("*.md") if (root / "agents").exists() else []:
+    for agent_md in globLegacy(root / "agents", "*.md") if observeLegacyPath((root / "agents").exists) else []:
         inv["files_scanned"] += 1
         raw_text = _readText(agent_md)
         desc_trusted = _isTrustedSource(raw_text, str(agent_md))
@@ -341,9 +351,9 @@ def _scanRootSkillsAndAgents(root: Path, inv: dict,
 def _scanRootSettings(root: Path, inv: dict) -> None:
     """Scan settings.json / .mcp.json from one .claude root into inv in-place."""
     import json
-    for sj in list(root.glob("settings*.json")) + list(root.glob(".mcp.json")) + \
-            list((root.parent).glob(".mcp.json")):
-        if not sj.exists():
+    for sj in list(globLegacy(root, "settings*.json")) + list(globLegacy(root, ".mcp.json")) + \
+            list(globLegacy(root.parent, ".mcp.json")):
+        if not observeLegacyPath(sj.exists):
             continue
         inv["files_scanned"] += 1
         inv["settings"].append(str(sj))
@@ -372,17 +382,17 @@ def scanLocalClaude(roots: Optional[tuple] = None) -> dict:
     seen_agent: set[str] = set()
     for root in roots:
         root = Path(root)
-        if not root.exists():
+        if not observeLegacyPath(root.exists):
             continue
         inv["roots"].append(str(root))
         _scanRootSkillsAndAgents(root, inv, seen_skill, seen_agent)
-        for wf in (root / "workflows").glob("**/*") if (root / "workflows").exists() else []:
+        for wf in globLegacy(root / "workflows", "**/*") if observeLegacyPath((root / "workflows").exists) else []:
             if _isExcludedScanPath(wf, root):
                 continue
-            if wf.is_file() and wf.suffix in (".js", ".ts", ".md"):
+            if observeLegacyPath(wf.is_file) and wf.suffix in (".js", ".ts", ".md"):
                 inv["files_scanned"] += 1
                 inv["workflows"].append({"name": wf.stem, "path": str(wf)})
-        for cmd in (root / "commands").glob("**/*.md") if (root / "commands").exists() else []:
+        for cmd in globLegacy(root / "commands", "**/*.md") if observeLegacyPath((root / "commands").exists) else []:
             if _isExcludedScanPath(cmd, root):
                 continue
             inv["files_scanned"] += 1
@@ -409,13 +419,13 @@ def readProductSelfKnowledge(roots: Optional[tuple] = None) -> dict:
     search_roots = list(roots or config.CLAUDE_SCAN_ROOTS) + [Path.home() / ".claude"]
     for root in search_roots:
         root = Path(root)
-        if not root.exists():
+        if not observeLegacyPath(root.exists):
             continue
         for pattern in _PRODUCT_SELF_KNOWLEDGE_GLOBS:
-            for hit in root.glob(pattern):
+            for hit in globLegacy(root, pattern):
                 if _isExcludedScanPath(hit, root):
                     continue
-                if hit.is_file():
+                if observeLegacyPath(hit.is_file):
                     txt = _readText(hit, limit=60_000)
                     if txt:
                         LOG.info("product-self-knowledge found: %s", hit)
@@ -428,7 +438,7 @@ def readRecommendations(path: Optional[Path] = None) -> dict:
     """Read the expert recommendations doc (how 9to5 should wield Claude Code). Returns
     ``{found, path, text}``. Never raises."""
     path = Path(path or config.CLAUDE_RECOMMENDATIONS_PATH)
-    if path.exists():
+    if observeLegacyPath(path.exists):
         txt = _readText(path, limit=300_000)
         if txt.strip():
             LOG.info("recommendations found: %s (%d chars)", path, len(txt))

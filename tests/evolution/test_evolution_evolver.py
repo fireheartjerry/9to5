@@ -1,6 +1,7 @@
 import pytest
-from memory import experience
+
 from learning.evolution import evolver
+from memory import experience
 
 
 @pytest.fixture()
@@ -12,9 +13,41 @@ def db(tmp_path):
     experience._reset_schema_cache()
 
 
-def test_disabled_by_default_is_noop(db, monkeypatch):
+@pytest.fixture()
+def maintenance_authorities(tmp_path):
+    from platform_core.runtime.controller_state import issueDiagnosticControllerStateAuthority
+    from platform_core.runtime.effect_guard import issueDiagnosticMaintenanceAuthority
+
+    capability = object()
+    controller = issueDiagnosticControllerStateAuthority(
+        root=tmp_path / "controller",
+        repository_id="repo_test",
+        controller_generation=1,
+        process_capability=capability,
+        expires_at="2099-01-01T00:00:00+00:00",
+    )
+    maintenance = issueDiagnosticMaintenanceAuthority(
+        operations={"evolver"},
+        controller_generation=1,
+        process_capability=capability,
+        expires_at="2099-01-01T00:00:00+00:00",
+    )
+    return {
+        "controller_state_authority": controller,
+        "maintenance_authority": maintenance,
+    }
+
+
+def test_missing_authority_defers_before_reading_enablement(db, monkeypatch):
     monkeypatch.setattr(evolver.config, "EVOLUTION_ENABLED", False, raising=False)
-    assert evolver.propose_candidates(db_path=db) == {"skipped": "disabled"}
+    assert evolver.propose_candidates(db_path=db)["status"] == "maintenance_deferred"
+
+
+def test_disabled_by_default_is_noop(db, monkeypatch, maintenance_authorities):
+    monkeypatch.setattr(evolver.config, "EVOLUTION_ENABLED", False, raising=False)
+    assert evolver.propose_candidates(db_path=db, **maintenance_authorities) == {
+        "skipped": "disabled"
+    }
 
 
 def test_reviewer_argv_is_write_only():
@@ -26,7 +59,7 @@ def test_reviewer_argv_is_write_only():
     assert "Read" in joined and "Grep" in joined
 
 
-def test_ollama_path_proposes_without_spawn(db, monkeypatch):
+def test_ollama_path_proposes_without_spawn(db, monkeypatch, maintenance_authorities):
     monkeypatch.setattr(evolver.config, "EVOLUTION_ENABLED", True, raising=False)
     monkeypatch.setattr(evolver.config, "EVOLUTION_ESCALATE", False, raising=False)
     experience.record_insight(scope="family:auth", text="Verify before refresh.",
@@ -35,13 +68,21 @@ def test_ollama_path_proposes_without_spawn(db, monkeypatch):
     def fake_brain(prompt):
         return "### Evolved auth discipline\n- verify token before refresh."
 
-    out = evolver.propose_candidates(brain=fake_brain, db_path=db)
+    out = evolver.propose_candidates(
+        brain=fake_brain,
+        db_path=db,
+        **maintenance_authorities,
+    )
     assert out.get("proposed")
     cands = experience.fetch_candidates(db_path=db)
     assert cands and cands[0]["provenance_json"]
 
 
-def test_escalation_uses_spawn_only_for_repeated_failures(db, monkeypatch):
+def test_escalation_uses_spawn_only_for_repeated_failures(
+    db,
+    monkeypatch,
+    maintenance_authorities,
+):
     from platform_core.execution import launch_guard
     monkeypatch.setattr(launch_guard, "requireTransactionalKernelActive", lambda: None)
     monkeypatch.setattr(evolver.config, "EVOLUTION_ENABLED", True, raising=False)
@@ -57,7 +98,11 @@ def test_escalation_uses_spawn_only_for_repeated_failures(db, monkeypatch):
         spawned["n"] += 1
         return {"candidate_body": "### Reviewer-authored\n- do the disciplined thing."}
 
-    out = evolver.propose_candidates(spawn=fake_spawn, db_path=db)
+    out = evolver.propose_candidates(
+        spawn=fake_spawn,
+        db_path=db,
+        **maintenance_authorities,
+    )
     assert spawned["n"] >= 1
     assert out.get("proposed")
 def test_evolution_spawn_callback_is_behind_transactional_embargo(monkeypatch, tmp_path):

@@ -140,8 +140,7 @@ class TestDiscordHealthRobustness(unittest.TestCase):
 
 
 class TestControlBusRobustness(unittest.TestCase):
-    """Garbage rows in the SQLite control store must degrade to safe defaults, never crash
-    a poll loop (the old JSON-file bus had a whole corrupt-rebuild ladder for this)."""
+    """Malformed values in native control documents degrade safely, never crashing polls."""
 
     def _bus(self, task_id: str = "t-robustness"):
         from platform_core.runtime.control import ControlBus
@@ -149,33 +148,30 @@ class TestControlBusRobustness(unittest.TestCase):
         return ControlBus(task_id)
 
     def test_garbage_flag_value_reads_as_default(self):
-        """A non-JSON value smuggled into the flags table reads as the default, not a crash."""
+        """A wrong-typed durable flag reads as the default, not a truthy control signal."""
         from platform_core.runtime import control_store
 
         bus = self._bus("t-badflag")
-        bus.requestPause()  # ensure db/schema exist
-        conn = control_store._connect()
-        try:
-            conn.execute("INSERT OR REPLACE INTO flags VALUES ('t-badflag','abort','{oops','x')")
-        finally:
-            conn.close()
+        bus.requestPause()  # materialize the authority-bound native document
+        binding = control_store._binding()
+        logical = control_store._logical("t-badflag")
+        document = binding.store.readJson(logical, authority=binding.authority)
+        document["flags"]["abort"] = "{oops"
+        binding.store.writeJson(logical, document, authority=binding.authority)
         self.assertFalse(bus.isAbort())
         self.assertIsInstance(bus.load(), dict)
 
     def test_garbage_op_row_is_skipped(self):
-        """An unparseable ops row is dropped by drain/load, and good ops still flow."""
+        """A malformed native op is dropped by drain/load, while good ops still flow."""
         from platform_core.runtime import control_store
 
         bus = self._bus("t-badop")
         bus.pushOp({"op": "retry"})
-        conn = control_store._connect()
-        try:
-            conn.execute(
-                "INSERT INTO ops(task_id, op_json, source_msg_id, created_at) "
-                "VALUES ('t-badop', 'not json at all', NULL, 'x')"
-            )
-        finally:
-            conn.close()
+        binding = control_store._binding()
+        logical = control_store._logical("t-badop")
+        document = binding.store.readJson(logical, authority=binding.authority)
+        document["ops"].append({"sequence": 999, "op": "not json at all"})
+        binding.store.writeJson(logical, document, authority=binding.authority)
         self.assertEqual(bus.load()["plan_ops"], [{"op": "retry"}])
         self.assertEqual(bus.drainOps(), [{"op": "retry"}])
 

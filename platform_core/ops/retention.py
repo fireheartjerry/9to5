@@ -7,8 +7,8 @@ EXPORTS:
   archiveTerminalTasks(max_age_days=None) -> int  -- Move terminal-status task JSON older than the archive horizon into state/archive/
   sweepHookLogs(path=None, max_bytes=None) -> int  -- Truncate logs/hooks.log to its tail once it exceeds ``max_bytes``
   sweepGuardAlerts(path=None, max_bytes=None) -> int  -- Truncate logs/guard_alerts.jsonl to its tail once it exceeds ``max_bytes``
-  sweepAll() -> dict  -- Run every sweep, gated by config.RETENTION_ENABLED
-DEPENDS-ON: config
+  sweepAll(*, effect_authority=None, controller_state_authority=None) -> dict  -- Run every sweep, gated by config.RETENTION_ENABLED
+DEPENDS-ON: config, platform_core.execution, platform_core.runtime
 SIDE-EFFECTS: deletes/moves files under state/ (never .py; guarded, fail-open); truncates logs/hooks.log and logs/guard_alerts.jsonl
 RUN/TEST: python -m pytest tests/platform/test_retention.py
 """
@@ -20,6 +20,13 @@ import time
 from pathlib import Path
 
 import config
+from platform_core.execution.pre_execution import (
+    globLegacy,
+    mutateLegacyPath,
+    observeLegacyPath,
+    openLegacyFile,
+    readLegacyText,
+)
 
 LOG = config.getLogger("retention")
 
@@ -40,9 +47,9 @@ def _pruneByPolicy(directory: Path, pattern: str, keep_recent: int, max_age_days
     ``max_age_days``; delete the rest. Never touches .py. Fail-open per file. Returns count removed."""
     removed = 0
     try:
-        if not directory.is_dir():
+        if not observeLegacyPath(directory.is_dir):
             return 0
-        files = [f for f in directory.glob(pattern) if f.is_file() and f.suffix != ".py"]
+        files = [f for f in globLegacy(directory, pattern) if observeLegacyPath(f.is_file) and f.suffix != ".py"]
     except Exception as e:  # noqa: BLE001
         LOG.warning("retention: cannot list %s: %s", directory, e)
         return 0
@@ -50,17 +57,17 @@ def _pruneByPolicy(directory: Path, pattern: str, keep_recent: int, max_age_days
     cutoff = now - max_age_days * _DAY_SECONDS
     # Newest first; the first keep_recent are always retained.
     try:
-        files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+        files.sort(key=lambda f: observeLegacyPath(f.stat).st_mtime, reverse=True)
     except Exception:  # noqa: BLE001 -- a vanished file mid-sort must not abort the sweep
-        files = [f for f in files if f.exists()]
-        files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+        files = [f for f in files if observeLegacyPath(f.exists)]
+        files.sort(key=lambda f: observeLegacyPath(f.stat).st_mtime, reverse=True)
     for idx, f in enumerate(files):
         if idx < max(0, keep_recent):
             continue
         try:
-            if f.stat().st_mtime >= cutoff:
+            if observeLegacyPath(f.stat).st_mtime >= cutoff:
                 continue  # young enough to keep regardless of position
-            f.unlink()
+            mutateLegacyPath(f.unlink)
             removed += 1
         except Exception as e:  # noqa: BLE001
             LOG.debug("retention: could not remove %s: %s", f, e)
@@ -89,7 +96,7 @@ def _isTerminalTaskFile(path: Path) -> bool:
     try:
         import json
 
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(readLegacyText(path, encoding="utf-8"))
     except Exception:  # noqa: BLE001
         return False
     status = (data.get("meta") or {}).get("status") or data.get("status") or ""
@@ -104,19 +111,19 @@ def archiveTerminalTasks(max_age_days=None) -> int:
     try:
         state_dir = Path(config.STATE_DIR)
         archive_dir = Path(config.ARCHIVE_DIR)
-        if not state_dir.is_dir():
+        if not observeLegacyPath(state_dir.is_dir):
             return 0
-        candidates = [f for f in state_dir.glob("*.json") if f.is_file()]
+        candidates = [f for f in globLegacy(state_dir, "*.json") if observeLegacyPath(f.is_file)]
     except Exception as e:  # noqa: BLE001
         LOG.warning("retention: cannot list task dir: %s", e)
         return 0
     cutoff = time.time() - ma * _DAY_SECONDS
     for f in candidates:
         try:
-            if f.stat().st_mtime >= cutoff or not _isTerminalTaskFile(f):
+            if observeLegacyPath(f.stat).st_mtime >= cutoff or not _isTerminalTaskFile(f):
                 continue
-            archive_dir.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(f), str(archive_dir / f.name))
+            mutateLegacyPath(archive_dir.mkdir,parents=True, exist_ok=True)
+            mutateLegacyPath(shutil.move,str(f), str(archive_dir / f.name))
             archived += 1
         except Exception as e:  # noqa: BLE001
             LOG.debug("retention: could not archive %s: %s", f, e)
@@ -129,7 +136,7 @@ def _truncateToTail(path: Path, max_bytes: int) -> int:
     Returns bytes trimmed (0 if under the cap, missing, or on any error). Fail-open:
     a read/write failure here must never abort the sweep."""
     try:
-        size = path.stat().st_size
+        size = observeLegacyPath(path.stat).st_size
     except FileNotFoundError:
         return 0
     except Exception as e:  # noqa: BLE001
@@ -138,16 +145,16 @@ def _truncateToTail(path: Path, max_bytes: int) -> int:
     if size <= max_bytes:
         return 0
     try:
-        with path.open("rb") as fh:
+        with openLegacyFile(path, "rb") as fh:
             fh.seek(size - max_bytes)
             tail = fh.read()
         nl = tail.find(b"\n")
         if nl != -1:
             tail = tail[nl + 1 :]
         tmp = path.with_name(path.name + ".tmp")
-        tmp.write_bytes(tail)
-        tmp.replace(path)
-        return size - path.stat().st_size
+        mutateLegacyPath(tmp.write_bytes,tail)
+        mutateLegacyPath(tmp.replace,path)
+        return size - observeLegacyPath(path.stat).st_size
     except Exception as e:  # noqa: BLE001
         LOG.debug("retention: could not truncate %s: %s", path, e)
         return 0
@@ -172,8 +179,20 @@ def sweepGuardAlerts(path=None, max_bytes=None) -> int:
     return _truncateToTail(p, mb)
 
 
-def sweepAll() -> dict:
+def sweepAll(*, effect_authority=None, controller_state_authority=None) -> dict:
     """Run every sweep, gated by config.RETENTION_ENABLED. Fail-open: never raises."""
+    del effect_authority, controller_state_authority
+    from platform_core.runtime.effect_guard import maintenanceDeferred
+
+    return maintenanceDeferred(
+        "retention",
+        reason="retention requires the future durable effect-command authority",
+    )
+
+
+def _sweepAllUnsafe() -> dict:
+    """Legacy implementation retained only for migration tests; not a public boundary."""
+
     if not getattr(config, "RETENTION_ENABLED", True):
         return {"enabled": False}
     result = {

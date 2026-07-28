@@ -19,7 +19,7 @@ EXPORTS:
   nativeActions(app: str, steps: list[dict[str, Any]]) -> list[dict[str, Any]]  -- Build a canonical action list from a high-level recipe
   runNative(spec_or_prompt, *, work_dir: Optional[str]=None, task_state=None, subtask: Optional[dict]=None, resume_session: Optional[str]=None, **_kw) -> dict  -- Execute a native UI subtask
   selectForSurface(terminal_fn, spec: dict)  -- Routing helper: return runNative when surface=native and NATIVE_LAYER_ENABLED,
-DEPENDS-ON: agents.executor, config, notifications.lane_feed
+DEPENDS-ON: agents.executor, config, notifications.lane_feed, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_native_executor_cleanup.py
 """
@@ -31,6 +31,8 @@ from typing import Any, Optional
 
 import config
 from agents import executor
+from platform_core.execution.pre_execution import mutateLegacyPath
+from platform_core.execution.sandbox_broker import legacyDiagnosticAutomationCall
 
 LOG = config.getLogger("native_executor")
 
@@ -81,10 +83,14 @@ def _execNativeAction(
 
     laneTap("native", f"{kind}: {str(act.get('app') or act.get('title') or act)[:80]}")
     if kind == "launch":
-        app = pywinauto.Application(backend="uia").start(act["app"])
+        app = legacyDiagnosticAutomationCall(
+            pywinauto.Application, backend="uia"
+        ).start(act["app"])
         return app, window, f"launch {act['app']!r}", True, False
     if kind == "connect":
-        app = pywinauto.Application(backend="uia").connect(title_re=act.get("app", ".*"))
+        app = legacyDiagnosticAutomationCall(
+            pywinauto.Application, backend="uia"
+        ).connect(title_re=act.get("app", ".*"))
         return app, window, f"connect to {act.get('app')!r}", False, False
     if kind == "find":
         if app is None:
@@ -110,12 +116,16 @@ def _execNativeAction(
     if kind == "screenshot":
         name = act.get("path") or f"native-screenshot-{i}.png"
         sd = screenshot_dir or str(NATIVE_SCREENSHOT_DIR)
-        Path(sd).mkdir(parents=True, exist_ok=True)  # create the target dir before saving
+        mutateLegacyPath(
+            Path(sd).mkdir, parents=True, exist_ok=True
+        )  # create the target dir before saving
         path = str(Path(sd) / name)
         (window or app.top_window()).capture_as_image().save(path)
         return app, window, f"screenshot -> {path}", False, False
     if kind == "close":
-        target = app or pywinauto.Application(backend="uia").connect(title_re=act.get("app", ".*"))
+        target = app or legacyDiagnosticAutomationCall(
+            pywinauto.Application, backend="uia"
+        ).connect(title_re=act.get("app", ".*"))
         target.kill()
         return app, window, f"close {act.get('app')!r}", False, True
     return app, window, f"(skipped unknown action {kind!r})", False, False

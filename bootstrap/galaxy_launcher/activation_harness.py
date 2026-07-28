@@ -23,6 +23,7 @@ EXPORTS:
   MountSpec
   ContainerSecurityProfile
   SealedHarnessRuntime
+  InertRoleResult  -- Bound output from one authority-free, offline container invocation.
   ClosedAcceptance
   parse_closed_acceptance(raw: bytes, *, expected_ledger_digest: str, requirements_digest: str) -> ClosedAcceptance  -- Parse only the immutable 192-invariant canonical acceptance ledger.
   parse_runtime_profile_ledger(raw: bytes, *, expected_ledger_digest: str, acceptance_ledger_digest: str) -> RuntimeProfileLedger  -- Parse the exact role-to-runtime-profile assignment ledger.
@@ -37,6 +38,8 @@ EXPORTS:
   ValidatedExternalReport
   EvidenceReplayGuard  -- One-use evidence admission, optionally durable across validator processes.
   validate_external_report(raw_report: Mapping[str, Any], *, acceptance: ClosedAcceptance, independent_observation: Mapping[str, Any], replay_guard: EvidenceReplayGuard | None=None) -> ValidatedExternalReport  -- Validate every signed result against independent parent observation.
+  issueKernelArtifactQualification(*, controller_source_revision: str, issued_at: str, expires_at: str, revocation_generation: int) -> dict[str, object]  -- Issue one installed, signed, staging-only artifact qualification.
+  run_inert_role(runtime: SealedHarnessRuntime, *, role: str, runtime_argv: Sequence[str], input_mounts: Sequence[tuple[Path, str]], writable_mounts: Sequence[tuple[Path, str]], invocation_root: Path, command_runner: Callable[..., subprocess.CompletedProcess[str]] | None=None) -> InertRoleResult  -- Run one digest-bound, networkless maintenance role without authority.
   main(argv: Sequence[str] | None=None) -> int
 DEPENDS-ON: bootstrap.galaxy_launcher.activation_crypto
 SIDE-EFFECTS: unannotated
@@ -46,22 +49,26 @@ RUN/TEST: python -m pytest tests/execution/test_activation_harness.py
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import base64
 import concurrent.futures
 import ctypes
+import dataclasses
 import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
 import re
-import subprocess
+import secrets
+import shutil
 import sqlite3
+import stat
+import subprocess
 import sys
+import tempfile
 import time
-from typing import Any, Mapping, Sequence
-
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Callable, Mapping, Sequence
 
 PINNED_REQUIREMENTS_DIGEST = "5266e7a77718e30db79b06f30e609fa104e2f6282267ca6c860ecc7e08a85b47"
 PINNED_ACCEPTANCE_LEDGER_DIGEST = "5c8f7ce7d1b6a6f95167d778e170eeaee020a6486f83a1dd16f78fdba597cbc5"
@@ -333,6 +340,8 @@ class SealedHarnessRuntime:
     harness_digest: str
     probe_entrypoint: Path
     probe_digest: str
+    reviewer_entrypoint: Path
+    reviewer_digest: str
     adapter_entrypoint: Path
     adapter_digest: str
     acceptance_path: Path
@@ -342,11 +351,34 @@ class SealedHarnessRuntime:
     windows_launcher_path: Path
     crypto_path: Path
     dpapi_path: Path
+    git_object_writer_source_path: Path
+    git_object_writer_source_digest: str
+    object_parser_entrypoint_path: Path
+    object_parser_entrypoint_digest: str
+    sha1dc_build_evidence_path: Path
+    sha1dc_build_evidence_digest: str
+    sha1dc_oracle_path: Path
+    sha1dc_oracle_digest: str
+    sha1dc_runtime_source_path: Path
+    sha1dc_runtime_source_digest: str
     runtime_digest: str
     image_digests: Mapping[str, str]
     image_archive_paths: Mapping[str, Path]
     security_profiles: Mapping[str, ContainerSecurityProfile]
     max_probe_concurrency: int
+
+
+@dataclasses.dataclass(frozen=True)
+class InertRoleResult:
+    """Bound output from one authority-free, offline container invocation."""
+
+    role: str
+    image_digest: str
+    runtime_digest: str
+    entrypoint_digest: str
+    security_profile_digest: str
+    stdout: bytes
+    stderr: bytes
 
 
 @dataclasses.dataclass(frozen=True)
@@ -724,6 +756,7 @@ _RUNTIME_FILE_KEYS = {
     "docker",
     "harness",
     "probe",
+    "reviewer",
     "adapter",
     "acceptance",
     "runtime_profiles",
@@ -733,6 +766,11 @@ _RUNTIME_FILE_KEYS = {
     "crypto",
     "dpapi",
     "service_host",
+    "git_object_writer_source",
+    "object_parser_entrypoint",
+    "sha1dc_build_evidence",
+    "sha1dc_oracle",
+    "sha1dc_runtime_source",
 }
 _TOFU_RECEIPT_KEYS = {
     "schema",
@@ -759,6 +797,9 @@ _TOFU_RECEIPT_KEYS = {
     "service_name",
     "repository_identity",
     "anchor_record_path",
+    "anchor_launch_record_path",
+    "anchor_launch_record_sha256",
+    "host_signature_sha256",
     "activation_state",
 }
 
@@ -945,6 +986,27 @@ def _verify_tofu_receipt(
     )
     if anchor_record.parent != root / "repositories" / repository_identity:
         raise ActivationAcceptanceRefused("TOFU receipt repository anchor path mismatch")
+    launch_record = _ordinary_file(
+        Path(_text(receipt["anchor_launch_record_path"], "anchor launch record path")),
+        root=root,
+        label="anchor launch record",
+    )
+    if (
+        launch_record.parent != anchor_record.parent
+        or _sha256_file(launch_record)
+        != _hex_digest(
+            receipt["anchor_launch_record_sha256"],
+            "anchor launch record digest",
+        )
+    ):
+        raise ActivationAcceptanceRefused("TOFU receipt anchor launch binding mismatch")
+    launch_value = _strict_json(launch_record.read_bytes())
+    if (
+        not isinstance(launch_value, dict)
+        or launch_value.get("host_signature_sha256")
+        != _hex_digest(receipt["host_signature_sha256"], "host signature digest")
+    ):
+        raise ActivationAcceptanceRefused("TOFU receipt host signature binding mismatch")
     return merkle
 
 
@@ -958,7 +1020,23 @@ def _hex_digest(value: object, at: str) -> str:
 def _runtime_pointer_path() -> Path:
     adjacent = Path(__file__).resolve().with_name("runtime.lock.json")
     if adjacent.is_file():
-        return adjacent
+        adjacent_value = _strict_json(adjacent.read_bytes())
+        if (
+            isinstance(adjacent_value, dict)
+            and adjacent_value.get("schema")
+            == "galaxy.activation.sealed-runtime/v1"
+        ):
+            return adjacent
+        if not (
+            isinstance(adjacent_value, dict)
+            and adjacent_value.get("schema")
+            == "galaxy.controller-runtime-source-lock/v1"
+            and adjacent_value.get("authority") == "inactive"
+            and adjacent_value.get("status") == "reviewed_inactive"
+        ):
+            raise ActivationAcceptanceRefused(
+                "adjacent runtime lock is neither sealed nor reviewed-inactive"
+            )
     local = os.environ.get("LOCALAPPDATA")
     if not local:
         raise ActivationAcceptanceRefused("installed controller root is unavailable")
@@ -1213,6 +1291,8 @@ def _load_runtime() -> tuple[SealedHarnessRuntime, ClosedAcceptance]:
         harness_digest=digests["harness"],
         probe_entrypoint=resolved_files["probe"],
         probe_digest=digests["probe"],
+        reviewer_entrypoint=resolved_files["reviewer"],
+        reviewer_digest=digests["reviewer"],
         adapter_entrypoint=resolved_files["adapter"],
         adapter_digest=digests["adapter"],
         acceptance_path=resolved_files["acceptance"],
@@ -1222,6 +1302,16 @@ def _load_runtime() -> tuple[SealedHarnessRuntime, ClosedAcceptance]:
         windows_launcher_path=resolved_files["windows_launcher"],
         crypto_path=resolved_files["crypto"],
         dpapi_path=resolved_files["dpapi"],
+        git_object_writer_source_path=resolved_files["git_object_writer_source"],
+        git_object_writer_source_digest=digests["git_object_writer_source"],
+        object_parser_entrypoint_path=resolved_files["object_parser_entrypoint"],
+        object_parser_entrypoint_digest=digests["object_parser_entrypoint"],
+        sha1dc_build_evidence_path=resolved_files["sha1dc_build_evidence"],
+        sha1dc_build_evidence_digest=digests["sha1dc_build_evidence"],
+        sha1dc_oracle_path=resolved_files["sha1dc_oracle"],
+        sha1dc_oracle_digest=digests["sha1dc_oracle"],
+        sha1dc_runtime_source_path=resolved_files["sha1dc_runtime_source"],
+        sha1dc_runtime_source_digest=digests["sha1dc_runtime_source"],
         runtime_digest=runtime_digest,
         image_digests=parsed_image_digests,
         image_archive_paths=resolved_images,
@@ -2313,6 +2403,651 @@ def _receipt_seed(runtime: SealedHarnessRuntime) -> bytes:
     return seed
 
 
+def _kernel_artifact_qualification_payload(
+    *,
+    runtime: Any,
+    controller_source_revision: str,
+    issued_at: str,
+    expires_at: str,
+    revocation_generation: int,
+    docker_server_identity_digest: str,
+    object_parser_record: Mapping[str, object],
+    object_parser_archive: Path,
+    inspection: Any,
+    host_sha1dc: Mapping[str, object],
+) -> dict[str, object]:
+    """Construct one closed qualification with an immutable staging-only ceiling."""
+
+    if re.fullmatch(r"[0-9a-f]{40}", controller_source_revision) is None:
+        raise ActivationAcceptanceRefused(
+            "kernel qualification source revision is not full"
+        )
+    try:
+        issued = datetime.strptime(issued_at, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+        expires = datetime.strptime(expires_at, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+    except (TypeError, ValueError) as exc:
+        raise ActivationAcceptanceRefused(
+            "kernel qualification timestamps are not canonical UTC"
+        ) from exc
+    if expires <= issued or expires - issued > timedelta(days=7):
+        raise ActivationAcceptanceRefused(
+            "kernel qualification lifetime is not positive and bounded"
+        )
+    if (
+        type(revocation_generation) is not int
+        or revocation_generation < 0
+        or type(getattr(runtime, "generation", None)) is not int
+        or runtime.generation < 1
+    ):
+        raise ActivationAcceptanceRefused(
+            "kernel qualification generation is malformed"
+        )
+    server_digest = _hex_digest(
+        docker_server_identity_digest, "Docker server identity"
+    )
+    runtime_digest = _hex_digest(
+        getattr(runtime, "runtime_digest", None), "installed runtime digest"
+    )
+    docker_digest = _hex_digest(
+        getattr(runtime, "docker_digest", None), "sealed Docker digest"
+    )
+    parser_source_digest = _hex_digest(
+        getattr(runtime, "object_parser_entrypoint_digest", None),
+        "object-parser entrypoint digest",
+    )
+    writer_source_digest = _hex_digest(
+        getattr(runtime, "git_object_writer_source_digest", None),
+        "object writer source digest",
+    )
+    runtime_lock = _ordinary_file(
+        Path(getattr(runtime, "runtime_lock_path")),
+        root=None,
+        label="kernel qualification runtime lock",
+    )
+    docker = _ordinary_file(
+        Path(getattr(runtime, "docker_path")),
+        root=None,
+        label="kernel qualification Docker executable",
+    )
+    parser_source = _ordinary_file(
+        Path(getattr(runtime, "object_parser_entrypoint_path")),
+        root=None,
+        label="kernel qualification object-parser entrypoint",
+    )
+    writer_source = _ordinary_file(
+        Path(getattr(runtime, "git_object_writer_source_path")),
+        root=None,
+        label="kernel qualification object writer source",
+    )
+    archive = _ordinary_file(
+        Path(object_parser_archive),
+        root=None,
+        label="kernel qualification object-parser archive",
+    )
+    if (
+        _sha256_file(docker) != docker_digest
+        or _sha256_file(parser_source) != parser_source_digest
+        or _sha256_file(writer_source) != writer_source_digest
+        or _sha256_file(archive)
+        != _hex_digest(
+            object_parser_record.get("archive_sha256"),
+            "object-parser archive digest",
+        )
+    ):
+        raise ActivationAcceptanceRefused(
+            "kernel qualification sealed artifact digest differs"
+        )
+    closure_digests = getattr(inspection, "closure_digests", None)
+    closure_documents = getattr(inspection, "closure_documents", None)
+    runtime_document = (
+        closure_documents.get("runtime")
+        if isinstance(closure_documents, Mapping)
+        else None
+    )
+    sha1dc_binding = (
+        runtime_document.get("sha1dc_oracle")
+        if isinstance(runtime_document, Mapping)
+        else None
+    )
+    if (
+        object_parser_record.get("role") != "object_parser"
+        or not isinstance(closure_digests, Mapping)
+        or not isinstance(sha1dc_binding, dict)
+        or object_parser_record.get("manifest_digest")
+        != getattr(inspection, "manifest_digest", None)
+        or object_parser_record.get("config_digest")
+        != getattr(inspection, "config_digest", None)
+        or object_parser_record.get("toolchain_digest")
+        != closure_digests.get("toolchain")
+        or object_parser_record.get("runtime_digest")
+        != closure_digests.get("runtime")
+        or object_parser_record.get("security_profile_digest")
+        != closure_digests.get("security_profile")
+    ):
+        raise ActivationAcceptanceRefused(
+            "kernel qualification object-parser closure differs"
+        )
+    parser_digests = {
+        key: _hex_digest(value, f"object-parser {key}")
+        for key, value in {
+            "manifest_digest": getattr(inspection, "manifest_digest", None),
+            "config_digest": getattr(inspection, "config_digest", None),
+            "toolchain_digest": closure_digests.get("toolchain"),
+            "runtime_digest": closure_digests.get("runtime"),
+            "security_profile_digest": closure_digests.get("security_profile"),
+        }.items()
+    }
+    expected_host_fields = {
+        "schema",
+        "executable_path",
+        "executable_sha256",
+        "executable_link_count",
+        "runtime_attestation_digest",
+        "build_evidence_path",
+        "build_evidence_sha256",
+        "source_revision",
+        "protocol",
+        "collision_detection",
+        "network_allowed",
+    }
+    if (
+        set(host_sha1dc) != expected_host_fields
+        or host_sha1dc.get("schema")
+        != "galaxy.sha1dc-standalone-evidence/v1"
+        or host_sha1dc.get("protocol")
+        != "galaxy.sha1dc-object-oracle/v1"
+        or host_sha1dc.get("collision_detection") != "SHA1_DC"
+        or host_sha1dc.get("network_allowed") is not False
+    ):
+        raise ActivationAcceptanceRefused(
+            "kernel qualification host SHA1_DC evidence is not closed"
+        )
+    for field in (
+        "executable_sha256",
+        "runtime_attestation_digest",
+        "build_evidence_sha256",
+    ):
+        _hex_digest(host_sha1dc.get(field), f"host SHA1_DC {field}")
+    executable_link_count = host_sha1dc.get("executable_link_count")
+    if (
+        not isinstance(executable_link_count, int)
+        or isinstance(executable_link_count, bool)
+        or executable_link_count < 1
+        or re.fullmatch(
+            r"[0-9a-f]{40}",
+            _text(host_sha1dc.get("source_revision"), "SHA1_DC source revision"),
+        )
+        is None
+    ):
+        raise ActivationAcceptanceRefused(
+            "kernel qualification host SHA1_DC identity is malformed"
+        )
+    payload: dict[str, object] = {
+        "schema": "galaxy.kernel-artifact-qualification/v1",
+        "status": "qualified_staging_only",
+        "authority_ceiling": "staging_only",
+        "qualification_id": "",
+        "generation": runtime.generation,
+        "controller_source_revision": controller_source_revision,
+        "runtime_digest": runtime_digest,
+        "runtime_lock_sha256": _sha256_file(runtime_lock),
+        "issued_at": issued_at,
+        "expires_at": expires_at,
+        "revocation_generation": revocation_generation,
+        "docker": {
+            "executable_path": str(docker),
+            "executable_sha256": docker_digest,
+            "context": "desktop-linux",
+            "server_identity_digest": server_digest,
+        },
+        "object_parser": {
+            "repository": "galaxy-r3/object-parser",
+            "manifest_digest": parser_digests["manifest_digest"],
+            "archive_path": str(archive),
+            "archive_sha256": _sha256_file(archive),
+            "config_digest": parser_digests["config_digest"],
+            "toolchain_digest": parser_digests["toolchain_digest"],
+            "runtime_digest": parser_digests["runtime_digest"],
+            "security_profile_digest": parser_digests[
+                "security_profile_digest"
+            ],
+            "sha1dc_binding_digest": hashlib.sha256(
+                _canonical_json(sha1dc_binding)
+            ).hexdigest(),
+            "runtime_entrypoint_path": str(parser_source),
+            "runtime_entrypoint_sha256": parser_source_digest,
+        },
+        "writer": {
+            "source_path": str(writer_source),
+            "source_sha256": writer_source_digest,
+            "version_digest": writer_source_digest,
+            "host_sha1dc": dict(host_sha1dc),
+        },
+    }
+    identity_payload = dict(payload)
+    identity_payload.pop("qualification_id")
+    payload["qualification_id"] = hashlib.sha256(
+        _canonical_json(identity_payload)
+    ).hexdigest()
+    return payload
+
+
+def _publish_durable_bytes(path: Path, raw: bytes, *, replace: bool) -> None:
+    """Publish exact bytes with a flushed file and write-through namespace update."""
+
+    parent = path.parent
+    try:
+        if _path_has_reparse_component(parent):
+            raise OSError("parent traverses a reparse point")
+        resolved_parent = parent.resolve(strict=True)
+        if not resolved_parent.is_dir() or resolved_parent.is_symlink():
+            raise OSError("parent is not an ordinary directory")
+    except OSError as exc:
+        raise ActivationInvariantFailed("qualification output parent is unsafe") from exc
+    temporary = resolved_parent / f".{path.name}.{os.getpid()}.{time.time_ns()}.tmp"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(temporary, flags, 0o600)
+        offset = 0
+        while offset < len(raw):
+            written = os.write(descriptor, raw[offset:])
+            if written < 1:
+                raise OSError("short write")
+            offset += written
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = None
+        destination = resolved_parent / path.name
+        if os.name == "nt":
+            move_flags = 0x8 | (0x1 if replace else 0)  # WRITE_THROUGH | REPLACE_EXISTING
+            moved = ctypes.windll.kernel32.MoveFileExW(
+                str(temporary), str(destination), move_flags
+            )
+            if not moved:
+                error = ctypes.get_last_error()
+                if not replace and destination.is_file():
+                    existing = _ordinary_file(
+                        destination,
+                        root=resolved_parent,
+                        label="existing immutable kernel qualification",
+                    )
+                    if existing.read_bytes() != raw:
+                        raise ActivationInvariantFailed(
+                            "immutable qualification identity collision"
+                        )
+                    temporary.unlink()
+                else:
+                    raise ctypes.WinError(error)
+        elif replace:
+            os.replace(temporary, destination)
+            directory = os.open(resolved_parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        else:
+            try:
+                os.link(temporary, destination)
+            except FileExistsError:
+                if destination.read_bytes() != raw:
+                    raise ActivationInvariantFailed(
+                        "immutable qualification identity collision"
+                    )
+            temporary.unlink()
+            directory = os.open(resolved_parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        installed = _ordinary_file(
+            destination,
+            root=resolved_parent,
+            label="published kernel qualification state",
+        )
+        if installed.read_bytes() != raw:
+            raise ActivationInvariantFailed(
+                "published kernel qualification bytes differ"
+            )
+    except ActivationInvariantFailed:
+        raise
+    except OSError as exc:
+        raise ActivationInvariantFailed(
+            "kernel qualification durable publication failed"
+        ) from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        try:
+            if temporary.exists():
+                temporary.unlink()
+        except OSError:
+            pass
+
+
+def _attest_standalone_sha1dc(runtime: Any) -> dict[str, object]:
+    """Attest the sealed oracle through its separately sealed runtime module."""
+
+    source = _ordinary_file(
+        Path(getattr(runtime, "sha1dc_runtime_source_path")),
+        root=None,
+        label="sealed SHA1_DC runtime source",
+    )
+    source_digest = _hex_digest(
+        getattr(runtime, "sha1dc_runtime_source_digest", None),
+        "sealed SHA1_DC runtime source digest",
+    )
+    executable = _ordinary_file(
+        Path(getattr(runtime, "sha1dc_oracle_path")),
+        root=None,
+        label="sealed SHA1_DC executable",
+    )
+    build_evidence = _ordinary_file(
+        Path(getattr(runtime, "sha1dc_build_evidence_path")),
+        root=None,
+        label="sealed SHA1_DC build evidence",
+    )
+    executable_digest = _hex_digest(
+        getattr(runtime, "sha1dc_oracle_digest", None),
+        "sealed SHA1_DC executable digest",
+    )
+    build_evidence_digest = _hex_digest(
+        getattr(runtime, "sha1dc_build_evidence_digest", None),
+        "sealed SHA1_DC build evidence digest",
+    )
+    if (
+        _sha256_file(source) != source_digest
+        or _sha256_file(executable) != executable_digest
+        or _sha256_file(build_evidence) != build_evidence_digest
+    ):
+        raise ActivationInvariantFailed("sealed SHA1_DC closure digest differs")
+    module = _load_adjacent_module(
+        f"galaxy_sealed_sha1dc_{source_digest}",
+        source,
+    )
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="galaxy-sealed-sha1dc-"
+        ) as temporary:
+            evidence, oracle = module.qualifyStandaloneSha1dc(
+                executable=executable,
+                build_evidence=build_evidence,
+                sterile_root=Path(temporary) / "sterile",
+            )
+            oracle.revalidate()
+            observed = dict(evidence.toDict())
+    except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        raise ActivationInvariantFailed(
+            "sealed standalone SHA1_DC attestation failed"
+        ) from exc
+    expected_fields = {
+        "schema",
+        "executable_path",
+        "executable_sha256",
+        "executable_link_count",
+        "runtime_attestation_digest",
+        "build_evidence_path",
+        "build_evidence_sha256",
+        "source_revision",
+        "protocol",
+        "collision_detection",
+        "network_allowed",
+    }
+    if (
+        set(observed) != expected_fields
+        or observed.get("schema")
+        != "galaxy.sha1dc-standalone-evidence/v1"
+        or observed.get("executable_path") != str(executable)
+        or observed.get("executable_sha256") != executable_digest
+        or observed.get("build_evidence_path") != str(build_evidence)
+        or observed.get("build_evidence_sha256") != build_evidence_digest
+        or observed.get("protocol") != "galaxy.sha1dc-object-oracle/v1"
+        or observed.get("collision_detection") != "SHA1_DC"
+        or observed.get("network_allowed") is not False
+    ):
+        raise ActivationInvariantFailed(
+            "sealed standalone SHA1_DC evidence differs"
+        )
+    return observed
+
+
+def _docker_server_identity_digest(runtime: Any) -> str:
+    completed = _docker_command(
+        runtime,
+        ["version", "--format", "{{json .Server}}"],
+        timeout=15,
+    )
+    if completed.stderr or not completed.stdout or len(completed.stdout) > 1024 * 1024:
+        raise ActivationInvariantFailed("Docker server identity is unavailable")
+    try:
+        value = json.loads(
+            completed.stdout,
+            object_pairs_hook=_reject_duplicate_keys,
+            parse_float=_reject_non_integral,
+            parse_constant=_reject_non_integral,
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ActivationInvariantFailed("Docker server identity is malformed") from exc
+    if not isinstance(value, dict) or not value:
+        raise ActivationInvariantFailed("Docker server identity is malformed")
+    return hashlib.sha256(_canonical_json(value)).hexdigest()
+
+
+def _load_kernel_artifact_inputs(
+    runtime: Any,
+) -> tuple[dict[str, object], Path, Any]:
+    """Cross-resolve the object-parser lock, OCI bytes, and sealed inspector."""
+
+    generation_root = (
+        Path(runtime.external_root)
+        / "generations"
+        / f"{runtime.generation:08d}"
+    ).resolve(strict=True)
+    lock_path = _ordinary_file(
+        generation_root / "bootstrap" / "activation_images.lock.json",
+        root=generation_root,
+        label="sealed activation image lock",
+    )
+    lock = _strict_json(lock_path.read_bytes())
+    if (
+        not isinstance(lock, dict)
+        or set(lock)
+        != {"bases", "images", "network_acquisition_closed", "schema"}
+        or lock.get("schema") != "galaxy.activation-images/v1"
+        or lock.get("network_acquisition_closed") is not True
+        or not isinstance(lock.get("images"), list)
+    ):
+        raise ActivationInvariantFailed(
+            "sealed activation image lock is not closed"
+        )
+    matches = [
+        record
+        for record in lock["images"]
+        if isinstance(record, dict) and record.get("role") == "object_parser"
+    ]
+    expected_fields = {
+        "archive",
+        "archive_sha256",
+        "archive_size",
+        "base_digest",
+        "base_image_digest",
+        "canary_boundary",
+        "canary_boundary_sha256",
+        "canary_receipt",
+        "canary_receipt_sha256",
+        "config_digest",
+        "dockerfile",
+        "dockerfile_sha256",
+        "layer_digests",
+        "manifest_digest",
+        "package_manifest_digest",
+        "physical_image",
+        "role",
+        "runtime_digest",
+        "sbom_digest",
+        "security_profile_digest",
+        "toolchain_digest",
+    }
+    if len(matches) != 1 or set(matches[0]) != expected_fields:
+        raise ActivationInvariantFailed(
+            "sealed object-parser image record is not unique and closed"
+        )
+    record = dict(matches[0])
+    archive_name = record.get("archive")
+    if (
+        record.get("physical_image") != "object-parser"
+        or archive_name != "object-parser.oci.tar"
+        or type(record.get("archive_size")) is not int
+        or record["archive_size"] < 1
+    ):
+        raise ActivationInvariantFailed(
+            "sealed object-parser image identity differs"
+        )
+    archive = _ordinary_file(
+        generation_root / "images" / archive_name,
+        root=generation_root,
+        label="sealed object-parser OCI archive",
+    )
+    if (
+        archive.stat().st_size != record["archive_size"]
+        or _sha256_file(archive)
+        != _hex_digest(record.get("archive_sha256"), "object-parser archive")
+    ):
+        raise ActivationInvariantFailed("sealed object-parser OCI archive differs")
+    inspector_source = _ordinary_file(
+        generation_root / "bootstrap" / "runtime_manifest.py",
+        root=generation_root,
+        label="sealed OCI inspector source",
+    )
+    inspector_digest = _sha256_file(inspector_source)
+    inspector = _load_adjacent_module(
+        f"galaxy_sealed_runtime_manifest_{inspector_digest}",
+        inspector_source,
+    )
+    try:
+        inspection = inspector.inspect_oci_archive(archive)
+    except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        raise ActivationInvariantFailed(
+            "sealed object-parser OCI inspection failed"
+        ) from exc
+    return record, archive, inspection
+
+
+def issueKernelArtifactQualification(
+    *,
+    controller_source_revision: str,
+    issued_at: str,
+    expires_at: str,
+    revocation_generation: int,
+) -> dict[str, object]:
+    """Issue one installed, signed, staging-only artifact qualification."""
+
+    acceptance = load_sealed_acceptance()
+    runtime = resolve_sealed_harness_runtime(acceptance)
+    object_parser_record, object_parser_archive, inspection = (
+        _load_kernel_artifact_inputs(runtime)
+    )
+    payload = _kernel_artifact_qualification_payload(
+        runtime=runtime,
+        controller_source_revision=controller_source_revision,
+        issued_at=issued_at,
+        expires_at=expires_at,
+        revocation_generation=revocation_generation,
+        docker_server_identity_digest=_docker_server_identity_digest(runtime),
+        object_parser_record=object_parser_record,
+        object_parser_archive=object_parser_archive,
+        inspection=inspection,
+        host_sha1dc=_attest_standalone_sha1dc(runtime),
+    )
+    identity_payload = dict(payload)
+    qualification_id = identity_payload.pop("qualification_id", None)
+    expected_id = hashlib.sha256(_canonical_json(identity_payload)).hexdigest()
+    if (
+        payload.get("schema") != "galaxy.kernel-artifact-qualification/v1"
+        or payload.get("status") != "qualified_staging_only"
+        or payload.get("authority_ceiling") != "staging_only"
+        or qualification_id != expected_id
+    ):
+        raise ActivationInvariantFailed(
+            "kernel qualification payload identity or authority ceiling differs"
+        )
+    seed = _receipt_seed(runtime)
+    signature = _crypto_module().sign(seed, _canonical_json(payload))
+    receipt = {
+        "signed_payload": payload,
+        "signature_base64url": base64.urlsafe_b64encode(signature)
+        .decode("ascii")
+        .rstrip("="),
+    }
+    receipt_raw = _canonical_json(receipt)
+    generation_root = (
+        Path(runtime.external_root)
+        / "generations"
+        / f"{runtime.generation:08d}"
+    ).resolve(strict=True)
+    qualification_root = generation_root / "qualifications"
+    if not qualification_root.exists():
+        try:
+            os.mkdir(qualification_root)
+        except FileExistsError:
+            pass
+        except OSError as exc:
+            raise ActivationInvariantFailed(
+                "kernel qualification directory creation failed"
+            ) from exc
+    if (
+        _path_has_reparse_component(qualification_root)
+        or not qualification_root.resolve(strict=True).is_dir()
+        or qualification_root.resolve(strict=True).parent != generation_root
+    ):
+        raise ActivationInvariantFailed("kernel qualification directory is unsafe")
+    qualification_path = qualification_root / f"kernel-artifacts-{qualification_id}.json"
+    _publish_durable_bytes(qualification_path, receipt_raw, replace=False)
+    pointer = {
+        "schema": "galaxy.kernel-artifacts-pointer/v1",
+        "status": "qualified_staging_only",
+        "generation": runtime.generation,
+        "revocation_generation": revocation_generation,
+        "qualification_path": str(qualification_path),
+        "qualification_sha256": hashlib.sha256(receipt_raw).hexdigest(),
+        "runtime_lock_sha256": _sha256_file(Path(runtime.runtime_lock_path)),
+    }
+    pointer_path = Path(runtime.external_root) / "kernel-artifacts.current.json"
+    pointer_raw = _canonical_json(pointer)
+    if pointer_path.exists():
+        current = _strict_json(pointer_path.read_bytes())
+        if not isinstance(current, dict):
+            raise ActivationInvariantFailed(
+                "existing kernel qualification pointer is malformed"
+            )
+        if current == pointer:
+            return pointer
+        current_generation = current.get("generation")
+        current_revocation = current.get("revocation_generation")
+        if (
+            type(current_generation) is not int
+            or type(current_revocation) is not int
+            or current_generation > runtime.generation
+            or current_revocation >= revocation_generation
+        ):
+            raise ActivationInvariantFailed(
+                "kernel qualification pointer would not advance monotonically"
+            )
+    _publish_durable_bytes(pointer_path, pointer_raw, replace=True)
+    reread = _strict_json(pointer_path.read_bytes())
+    if reread != pointer:
+        raise ActivationInvariantFailed(
+            "kernel qualification pointer reread differs"
+        )
+    return pointer
+
+
 def _required_bindings(required: tuple[ReceiptSpec, ...], observation_id: str) -> list[dict[str, Any]]:
     bindings = []
     for contract in required:
@@ -2748,7 +3483,12 @@ def _run_restricted_probe(
         child.close()
 
 
-_DOCKER_ENVIRONMENT = {"DOCKER_HOST": "npipe:////./pipe/dockerDesktopLinuxEngine"}
+_DOCKER_ENVIRONMENT = {
+    "DOCKER_HOST": "npipe:////./pipe/dockerDesktopLinuxEngine",
+    "DOCKER_CLI_HINTS": "false",
+    "DOCKER_SCAN_SUGGEST": "false",
+}
+_MAX_DOCKER_COMMAND_OUTPUT_BYTES = 64 * 1024 * 1024
 
 
 def _docker_command(
@@ -2757,16 +3497,59 @@ def _docker_command(
     *,
     timeout: float,
 ) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(
-        [str(runtime.docker_path), *arguments],
-        cwd=runtime.external_root,
-        env=dict(_DOCKER_ENVIRONMENT),
-        stdin=subprocess.DEVNULL,
-        text=True,
-        capture_output=True,
-        timeout=timeout,
-        check=False,
-    )
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="galaxy-docker-config-",
+            dir=runtime.external_root,
+        ) as config_root:
+            environment = {
+                **_DOCKER_ENVIRONMENT,
+                "DOCKER_CONFIG": config_root,
+            }
+            system_root = os.environ.get("SystemRoot")
+            if system_root:
+                environment["SystemRoot"] = system_root
+            command = [str(runtime.docker_path), *arguments]
+            with tempfile.TemporaryFile() as stdout_stream, tempfile.TemporaryFile() as stderr_stream:
+                observed = subprocess.run(
+                    command,
+                    cwd=runtime.external_root,
+                    env=environment,
+                    stdin=subprocess.DEVNULL,
+                    stdout=stdout_stream,
+                    stderr=stderr_stream,
+                    timeout=timeout,
+                    check=False,
+                    shell=False,
+                )
+                stdout_stream.seek(0, os.SEEK_END)
+                stderr_stream.seek(0, os.SEEK_END)
+                stdout_size = stdout_stream.tell()
+                stderr_size = stderr_stream.tell()
+                if (
+                    stdout_size + stderr_size
+                    > _MAX_DOCKER_COMMAND_OUTPUT_BYTES
+                ):
+                    raise ActivationInvariantFailed(
+                        "Docker command output exceeds quota"
+                    )
+                stdout_stream.seek(0)
+                stderr_stream.seek(0)
+                try:
+                    stdout = stdout_stream.read().decode("utf-8", errors="strict")
+                    stderr = stderr_stream.read().decode("utf-8", errors="strict")
+                except UnicodeDecodeError as exc:
+                    raise ActivationInvariantFailed(
+                        "Docker command output is not strict UTF-8"
+                    ) from exc
+                completed = subprocess.CompletedProcess(
+                    command,
+                    observed.returncode,
+                    stdout,
+                    stderr,
+                )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ActivationInvariantFailed("Docker command could not be observed") from exc
     if completed.returncode != 0:
         raise ActivationInvariantFailed(
             f"Docker command failed ({completed.returncode}): {completed.stderr.strip()}"
@@ -2792,6 +3575,306 @@ def _ensure_images_loaded(runtime: SealedHarnessRuntime) -> None:
             or records[0].get("Id") != f"sha256:{runtime.image_digests[role]}"
         ):
             raise ActivationInvariantFailed(f"loaded image identity mismatch for {role}")
+
+
+_INERT_ROLE_ENTRYPOINTS = {
+    "object_parser": (
+        "object_parser_entrypoint_path",
+        "object_parser_entrypoint_digest",
+        "object_parser_entrypoint.py",
+    ),
+    "reviewer": (
+        "reviewer_entrypoint",
+        "reviewer_digest",
+        "activation_reviewer.py",
+    ),
+}
+_INERT_MOUNT_TARGET = re.compile(
+    r"^/galaxy-(?:input|objects|output|proposal)(?:/[A-Za-z0-9._-]+)*$"
+)
+_MAX_INERT_OUTPUT_BYTES = 64 * 1024 * 1024
+
+
+def _inert_directory(path: Path, *, root: Path, label: str) -> Path:
+    try:
+        resolved = Path(path).resolve(strict=True)
+        resolved.relative_to(root)
+        info = resolved.stat()
+    except (OSError, ValueError) as exc:
+        raise ActivationInvariantFailed(f"{label} is outside installed root") from exc
+    if _path_has_reparse_component(path) or not stat.S_ISDIR(info.st_mode):
+        raise ActivationInvariantFailed(f"{label} is not an ordinary directory")
+    return resolved
+
+
+def _inert_mount(source: Path, target: str, *, readonly: bool) -> str:
+    if "," in str(source):
+        raise ActivationInvariantFailed("inert mount source contains a Docker separator")
+    option = f"type=bind,source={source},target={target}"
+    return option + (",readonly" if readonly else "")
+
+
+def _ensure_inert_image_loaded(
+    runtime: SealedHarnessRuntime,
+    role: str,
+    command_runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> None:
+    digest = runtime.image_digests[role]
+
+    def inspect() -> subprocess.CompletedProcess[str]:
+        return command_runner(
+            runtime,
+            ["image", "inspect", f"sha256:{digest}"],
+            timeout=30,
+        )
+
+    try:
+        observed = inspect()
+    except ActivationInvariantFailed:
+        archive = _ordinary_file(
+            runtime.image_archive_paths[role],
+            root=runtime.external_root,
+            label=f"inert {role} image archive",
+        )
+        command_runner(runtime, ["load", "--input", str(archive)], timeout=180)
+        observed = inspect()
+    if observed.returncode != 0:
+        raise ActivationInvariantFailed(f"inert {role} image inspection failed")
+    try:
+        records = json.loads(observed.stdout)
+    except json.JSONDecodeError as exc:
+        raise ActivationInvariantFailed("Docker image inspection was not JSON") from exc
+    if (
+        not isinstance(records, list)
+        or len(records) != 1
+        or not isinstance(records[0], dict)
+        or records[0].get("Id") != f"sha256:{digest}"
+    ):
+        raise ActivationInvariantFailed(f"inert {role} image identity mismatch")
+
+
+def run_inert_role(
+    runtime: SealedHarnessRuntime,
+    *,
+    role: str,
+    runtime_argv: Sequence[str],
+    input_mounts: Sequence[tuple[Path, str]],
+    writable_mounts: Sequence[tuple[Path, str]],
+    invocation_root: Path,
+    command_runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+) -> InertRoleResult:
+    """Run one digest-bound, networkless maintenance role without authority."""
+
+    binding = _INERT_ROLE_ENTRYPOINTS.get(role)
+    if binding is None or role not in runtime.image_digests:
+        raise ActivationInvariantFailed("inert role is outside the closed enum")
+    if (
+        len(runtime_argv) > 256
+        or any(not isinstance(item, str) or "\x00" in item for item in runtime_argv)
+        or sum(len(item.encode("utf-8")) for item in runtime_argv) > 32 * 1024
+    ):
+        raise ActivationInvariantFailed("inert runtime arguments exceed the closed profile")
+    external = Path(runtime.external_root).resolve(strict=True)
+    if _path_has_reparse_component(external) or not external.is_dir():
+        raise ActivationInvariantFailed("installed runtime root is unsafe")
+    docker = _ordinary_file(
+        Path(runtime.docker_path),
+        root=external,
+        label="inert Docker client",
+    )
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", str(runtime.docker_digest)) is None
+        or _sha256_file(docker) != runtime.docker_digest
+    ):
+        raise ActivationInvariantFailed("inert Docker client digest mismatch")
+    entrypoint_attr, digest_attr, entrypoint_name = binding
+    entrypoint = _ordinary_file(
+        Path(getattr(runtime, entrypoint_attr)),
+        root=external,
+        label=f"inert {role} entrypoint",
+    )
+    entrypoint_digest = str(getattr(runtime, digest_attr))
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", entrypoint_digest) is None
+        or _sha256_file(entrypoint) != entrypoint_digest
+    ):
+        raise ActivationInvariantFailed(f"inert {role} entrypoint digest mismatch")
+    image_digest = runtime.image_digests[role]
+    if re.fullmatch(r"[0-9a-f]{64}", image_digest) is None:
+        raise ActivationInvariantFailed("inert image digest is malformed")
+
+    root_candidate = Path(invocation_root)
+    root_candidate.mkdir(parents=True, exist_ok=True)
+    projection_parent = _inert_directory(
+        root_candidate,
+        root=external,
+        label="inert invocation root",
+    )
+    resolved_mounts: list[tuple[Path, str, bool]] = []
+    targets: set[str] = set()
+    for readonly, mounts in ((True, input_mounts), (False, writable_mounts)):
+        for source, target in mounts:
+            if (
+                not isinstance(target, str)
+                or _INERT_MOUNT_TARGET.fullmatch(target) is None
+                or target in targets
+            ):
+                raise ActivationInvariantFailed("inert mount target is malformed or repeated")
+            targets.add(target)
+            resolved_mounts.append(
+                (
+                    _inert_directory(
+                        Path(source),
+                        root=external,
+                        label=f"inert mount {target}",
+                    ),
+                    target,
+                    readonly,
+                )
+            )
+    runner = command_runner or _docker_command
+    _ensure_inert_image_loaded(runtime, role, runner)
+    security_profile = {
+        "schema": "galaxy.inert-role-security-profile/v1",
+        "role": role,
+        "network": "none",
+        "rootfs": "readonly",
+        "capabilities": "drop-all",
+        "no_new_privileges": True,
+        "user": "65532:65532",
+        "pids_limit": 64,
+        "memory_bytes": 536870912,
+        "cpus": "1.0",
+        "mounts": [
+            {"target": target, "read_only": readonly}
+            for _, target, readonly in sorted(
+                resolved_mounts, key=lambda item: item[1]
+            )
+        ],
+    }
+    security_profile_digest = hashlib.sha256(
+        _canonical_json(security_profile)
+    ).hexdigest()
+
+    with tempfile.TemporaryDirectory(
+        prefix=f"galaxy-inert-{role}-",
+        dir=projection_parent,
+    ) as temporary:
+        projection = Path(temporary)
+        runtime_root = projection / "runtime"
+        control_root = projection / "control"
+        runtime_root.mkdir()
+        control_root.mkdir()
+        runtime_copy = runtime_root / entrypoint_name
+        shutil.copyfile(entrypoint, runtime_copy)
+        if _sha256_file(runtime_copy) != entrypoint_digest:
+            raise ActivationInvariantFailed("inert runtime projection digest mismatch")
+        control = {
+            "schema": "galaxy.activation-runtime/v1",
+            "role": role,
+            "entrypoint": entrypoint_name,
+            "argv": list(runtime_argv),
+            "leaves": [
+                {
+                    "path": entrypoint_name,
+                    "sha256": entrypoint_digest,
+                    "size": runtime_copy.stat().st_size,
+                }
+            ],
+        }
+        control_path = control_root / "activation.json"
+        _atomic_json(control_path, control)
+        control_digest = _sha256_file(control_path)
+        invocation_digest = hashlib.sha256(
+            _canonical_json(
+                {
+                    "role": role,
+                    "image_digest": image_digest,
+                    "runtime_digest": runtime.runtime_digest,
+                    "entrypoint_digest": entrypoint_digest,
+                    "runtime_argv": list(runtime_argv),
+                    "security_profile_digest": security_profile_digest,
+                }
+            )
+        ).hexdigest()
+        container_name = f"galaxy-inert-{role.replace('_', '-')}-{invocation_digest[:20]}-{secrets.token_hex(4)}"
+        arguments = [
+            "create",
+            "--name",
+            container_name,
+            "--label",
+            f"galaxy.inert_role={role}",
+            "--label",
+            f"galaxy.invocation_digest={invocation_digest}",
+            "--pull=never",
+            "--platform=linux/amd64",
+            "--network=none",
+            "--read-only",
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges:true",
+            "--pids-limit=64",
+            "--memory=536870912",
+            "--cpus=1.0",
+            "--restart=no",
+            "--user=65532:65532",
+            "--workdir=/empty",
+            "--mount",
+            _inert_mount(runtime_root, "/galaxy-runtime", readonly=True),
+            "--mount",
+            _inert_mount(control_root, "/galaxy-control", readonly=True),
+        ]
+        for source, target, readonly in sorted(
+            resolved_mounts, key=lambda item: item[1]
+        ):
+            arguments.extend(
+                ["--mount", _inert_mount(source, target, readonly=readonly)]
+            )
+        arguments.extend(
+            [
+                f"sha256:{image_digest}",
+                "run-bound",
+                "--sealed-role",
+                role,
+                "--manifest-sha256",
+                control_digest,
+            ]
+        )
+        created = runner(runtime, arguments, timeout=60)
+        container_id = created.stdout.strip()
+        if created.returncode != 0 or re.fullmatch(r"[0-9a-f]{64}", container_id) is None:
+            raise ActivationInvariantFailed("Docker returned a malformed inert container ID")
+        removed = False
+        try:
+            started = runner(runtime, ["start", container_id], timeout=30)
+            if started.returncode != 0:
+                raise ActivationInvariantFailed("inert container could not start")
+            waited = runner(runtime, ["wait", container_id], timeout=300)
+            logs = runner(runtime, ["logs", container_id], timeout=30)
+            stdout = logs.stdout.encode("utf-8", errors="strict")
+            stderr = logs.stderr.encode("utf-8", errors="strict")
+            if len(stdout) + len(stderr) > _MAX_INERT_OUTPUT_BYTES:
+                raise ActivationInvariantFailed("inert container output exceeds quota")
+            if waited.returncode != 0 or waited.stdout.strip() != "0":
+                raise ActivationInvariantFailed(
+                    f"inert {role} container refused: {stderr.decode('utf-8', errors='replace').strip()}"
+                )
+            runner(runtime, ["rm", "-f", container_id], timeout=30)
+            removed = True
+            return InertRoleResult(
+                role=role,
+                image_digest=image_digest,
+                runtime_digest=runtime.runtime_digest,
+                entrypoint_digest=entrypoint_digest,
+                security_profile_digest=security_profile_digest,
+                stdout=stdout,
+                stderr=stderr,
+            )
+        finally:
+            if not removed:
+                try:
+                    runner(runtime, ["rm", "-f", container_id], timeout=30)
+                except (ActivationInvariantFailed, OSError, subprocess.SubprocessError):
+                    pass
 
 
 def _run_container_probe(

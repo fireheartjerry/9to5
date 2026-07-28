@@ -6,7 +6,7 @@ EXPORTS:
   council_summary(state: Any) -> dict
   read_transcript(state: Any) -> dict
   resolve_transcript_path(raw: Any) -> Path | None
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
@@ -16,7 +16,10 @@ from pathlib import Path
 from typing import Any
 
 import config
-
+from platform_core.execution.pre_execution import (
+    observeLegacyPath,
+    readLegacyBytes,
+)
 
 MAX_TRANSCRIPT_BYTES = 2_000_000
 
@@ -37,7 +40,7 @@ def council_summary(state: Any) -> dict:
         "provider_health": list(meta.get("provider_health") or [])[:12],
         "selected_first_slice": meta.get("selected_first_slice") or "",
         "warnings": list(meta.get("warnings") or [])[:12],
-        "transcript_available": bool(transcript and transcript.exists()),
+        "transcript_available": bool(transcript and observeLegacyPath(transcript.exists)),
         "discord_transcript_message_id": meta.get("discord_transcript_message_id") or "",
     }
 
@@ -47,9 +50,9 @@ def read_transcript(state: Any) -> dict:
     path = _safe_transcript_path(meta.get("transcript_path"))
     if path is None:
         return {"ok": False, "error": "no council transcript path", "content": ""}
-    if not path.exists() or not path.is_file():
+    if not observeLegacyPath(path.exists) or not observeLegacyPath(path.is_file):
         return {"ok": False, "error": "council transcript is not available", "content": ""}
-    data = path.read_bytes()
+    data = readLegacyBytes(path)
     truncated = len(data) > MAX_TRANSCRIPT_BYTES
     if truncated:
         data = data[:MAX_TRANSCRIPT_BYTES]

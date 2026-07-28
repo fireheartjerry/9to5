@@ -32,7 +32,7 @@ EXPORTS:
   responseText(resp) -> str  -- ``resp['message']['content']`` as text
   parseJsonLoose(text: str | None) -> JsonContainer | None  -- THE tolerant JSON ladder (promoted from brain_io.parseJsonText
   responseJson(resp: Any) -> JsonContainer | None  -- Parse the JSON body of a chat response via the ONE loose ladder
-DEPENDS-ON: config, notifications.lane_feed
+DEPENDS-ON: config, notifications.lane_feed, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_llm_io_pydantic.py
 """
@@ -72,9 +72,11 @@ def getClient() -> Any:
     if _CLIENT is None:
         with _CLIENT_LOCK:
             if _CLIENT is None:
-                import ollama
+                from platform_core.execution.local_model_broker import (
+                    buildDiagnosticOllamaClient,
+                )
 
-                _CLIENT = ollama.Client(
+                _CLIENT = buildDiagnosticOllamaClient(
                     host=config.OLLAMA_HOST,
                     timeout=config.OLLAMA_TIMEOUT_SECONDS,
                 )

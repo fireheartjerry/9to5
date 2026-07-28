@@ -33,14 +33,22 @@ RUN/TEST: python -m pytest tests/execution/test_execution_router.py tests/orches
 from __future__ import annotations
 
 import logging
-import os
 import sys
 import threading
 from dataclasses import dataclass, fields, replace
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Optional
 
-from platform_core.app_config._env import loadEnvOnce
+from platform_core.app_config._env import (
+    _envString,
+    _legacyConfigPathMutation,
+    _legacyConfigPathObservation,
+    _runtimeAbsencePermit,
+    _runtimeConfigPermit,
+    controllerConfigActive,
+    loadEnvOnce,
+)
 from platform_core.app_config.discord import DiscordCfg, buildDiscordCfg
 from platform_core.app_config.epic_flags import EpicFlags
 from platform_core.app_config.inventor_flags import InventorFlags
@@ -113,9 +121,11 @@ def _withinBounds(bounds: dict, knob: str, value: Any) -> bool:
 def _applyOverridesLayer(s: Settings) -> Settings:
     """sie_overrides.json as a first-class build layer (whitelisted + bounds-checked).
     Absent/corrupt file -> stock defaults; out-of-band values are skipped LOUDLY."""
+    if controllerConfigActive():
+        return s
     from platform_core.core import fsio
     try:   # absent or EMPTY file -> stock defaults, silently (matches the old loader)
-        if s.paths.SIE_OVERRIDES_PATH.stat().st_size == 0:
+        if _legacyConfigPathObservation(s.paths.SIE_OVERRIDES_PATH.stat).st_size == 0:
             return s
     except OSError:
         return s
@@ -136,12 +146,13 @@ def _applyOverridesLayer(s: Settings) -> Settings:
 
 def buildSettings() -> Settings:
     """Fresh registry: coded defaults < .env (loadEnvOnce) < sie_overrides.json."""
-    loadEnvOnce()
-    s = Settings(paths=buildPathsCfg(), ollama=buildOllamaCfg(),
-                 claude_cli=buildClaudeCliCfg(), discord=buildDiscordCfg(),
-                 sie=buildSieCfg(), epic=EpicFlags(), inventor=InventorFlags(),
-                 prompts=PromptsCfg())
-    return _applyOverridesLayer(s)
+    with _runtimeConfigPermit():
+        loadEnvOnce()
+        s = Settings(paths=buildPathsCfg(), ollama=buildOllamaCfg(),
+                     claude_cli=buildClaudeCliCfg(), discord=buildDiscordCfg(),
+                     sie=buildSieCfg(), epic=EpicFlags(), inventor=InventorFlags(),
+                     prompts=PromptsCfg())
+        return _applyOverridesLayer(s)
 
 
 _LOCK = threading.Lock()
@@ -152,11 +163,12 @@ _NAME_MAP: Optional[dict[str, str]] = None   # ALL_CAPS constant name -> domain 
 def settings() -> Settings:
     """The process-wide registry singleton (lazy, thread-safe)."""
     global _SETTINGS
-    if _SETTINGS is None:
-        with _LOCK:
-            if _SETTINGS is None:
-                _SETTINGS = buildSettings()
-    return _SETTINGS
+    with _runtimeConfigPermit():
+        if _SETTINGS is None:
+            with _LOCK:
+                if _SETTINGS is None:
+                    _SETTINGS = buildSettings()
+        return _SETTINGS
 
 
 def _nameMap() -> dict[str, str]:
@@ -229,25 +241,28 @@ _RUN_FLAGS: Optional[RunFlags] = None
 def runFlags() -> RunFlags:
     """The run-scoped flag singleton, seeded from the registry's coded/env defaults."""
     global _RUN_FLAGS
-    if _RUN_FLAGS is None:
-        s = settings()   # build OUTSIDE the lock (settings() takes _LOCK; it is not reentrant)
-        with _LOCK:
-            if _RUN_FLAGS is None:
-                _RUN_FLAGS = RunFlags(NIGHT_MODE=s.discord.NIGHT_MODE,
-                                      WEB_DASHBOARD=s.discord.WEB_DASHBOARD,
-                                      WEB_DASHBOARD_PORT=s.discord.WEB_DASHBOARD_PORT,
-                                      CLAUDE_DOC_FETCH=s.claude_cli.CLAUDE_DOC_FETCH)
-    return _RUN_FLAGS
+    with _runtimeConfigPermit():
+        if _RUN_FLAGS is None:
+            # Build outside _LOCK: settings() takes the same non-reentrant lock.
+            s = settings()
+            with _LOCK:
+                if _RUN_FLAGS is None:
+                    _RUN_FLAGS = RunFlags(NIGHT_MODE=s.discord.NIGHT_MODE,
+                                          WEB_DASHBOARD=s.discord.WEB_DASHBOARD,
+                                          WEB_DASHBOARD_PORT=s.discord.WEB_DASHBOARD_PORT,
+                                          CLAUDE_DOC_FETCH=s.claude_cli.CLAUDE_DOC_FETCH)
+        return _RUN_FLAGS
 
 
 def reload() -> Settings:
     """Rebuild the registry from the current env + overrides file and reseed run flags.
     For tests; production never reloads mid-process."""
     global _SETTINGS, _RUN_FLAGS
-    with _LOCK:
-        _SETTINGS = buildSettings()
-        _RUN_FLAGS = None
-    return _SETTINGS
+    with _runtimeConfigPermit():
+        with _LOCK:
+            _SETTINGS = buildSettings()
+            _RUN_FLAGS = None
+        return _SETTINGS
 
 
 # ---------------------------------------------------------------------------
@@ -261,27 +276,36 @@ def setOverride(knob: str, value: Any) -> tuple[bool, bool]:
     a persistence failure still leaves the live registry updated -> (True, False),
     matching the historical config.set_override semantics."""
     global _SETTINGS
-    s = settings()
-    if knob not in s.sie.SIE_TUNABLE_KNOBS or not _withinBounds(s.sie.SIE_BOUNDS, knob, value):
-        return False, False
-    with _LOCK:
-        cur = _SETTINGS if _SETTINGS is not None else s
-        _SETTINGS = replace(cur, sie=replace(cur.sie, **{knob: value}))
-    try:
-        from platform_core.core import fsio
-        # Honor an explicit shadow on the root facade (tests patch config.SIE_OVERRIDES_PATH;
-        # a patched attr lives in vars(), unpatched reads route through __getattr__ -> here).
-        # Without this the persistence path ignored the patch and wrote the REAL state file.
-        _cfg = sys.modules.get("config")
-        path = (_cfg and vars(_cfg).get("SIE_OVERRIDES_PATH")) or settings().paths.SIE_OVERRIDES_PATH
-        data = fsio.loadJson(path, {})
-        if not isinstance(data, dict):
-            data = {}
-        data[knob] = value
-        fsio.atomicWriteJson(path, data)
-        return True, True
-    except Exception:  # noqa: BLE001 -- caller decides how loud to be
-        return True, False
+    with _runtimeConfigPermit() as controller:
+        if controller is not None:
+            return False, False
+        s = settings()
+        if (
+            knob not in s.sie.SIE_TUNABLE_KNOBS
+            or not _withinBounds(s.sie.SIE_BOUNDS, knob, value)
+        ):
+            return False, False
+        with _LOCK:
+            cur = _SETTINGS if _SETTINGS is not None else s
+            _SETTINGS = replace(cur, sie=replace(cur.sie, **{knob: value}))
+        try:
+            from platform_core.core import fsio
+            # Honor an explicit shadow on the root facade (tests patch
+            # config.SIE_OVERRIDES_PATH; a patched attr lives in vars(), while
+            # unpatched reads route through __getattr__ -> here).
+            _cfg = sys.modules.get("config")
+            path = (
+                (_cfg and vars(_cfg).get("SIE_OVERRIDES_PATH"))
+                or settings().paths.SIE_OVERRIDES_PATH
+            )
+            data = fsio.loadJson(path, {})
+            if not isinstance(data, dict):
+                data = {}
+            data[knob] = value
+            fsio.atomicWriteJson(path, data)
+            return True, True
+        except Exception:  # noqa: BLE001 -- caller decides how loud to be
+            return True, False
 
 
 # ---------------------------------------------------------------------------
@@ -295,10 +319,82 @@ _LOG_MAX_BYTES = 10 * 1024 * 1024   # 10MB per file, 5 rotated backups
 _LOG_BACKUP_COUNT = 5
 
 
+class _RuntimeFencedRotatingFileHandler(RotatingFileHandler):
+    """Open, emit, and close one legacy log record under exact runtime absence."""
+
+    def rotate(self, source: str, dest: str) -> None:
+        # Several Windows processes may briefly hold the shared log.  A failed
+        # rollover must not turn one diagnostic record into a traceback storm.
+        try:
+            super().rotate(source, dest)
+        except OSError:
+            pass
+
+    def handle(self, record: logging.LogRecord) -> bool:
+        permit = _runtimeAbsencePermit()
+        try:
+            permit.__enter__()
+        except RuntimeError:
+            # The console handler remains available; a retained ambient file
+            # handler becomes an inert sink once runtime composition begins.
+            return False
+        try:
+            filtered = self.filter(record)
+            if not filtered:
+                return False
+            if isinstance(filtered, logging.LogRecord):
+                record = filtered
+
+            # Formatting may invoke arbitrary ``msg.__str__`` or filters.  Do
+            # it before the final state check, then emit only an inert string.
+            rendered = self.format(record)
+            from platform_core.app_config.paths import controllerPathsActive
+            from platform_core.runtime.controller_state import (
+                controllerRuntimeStateExactlyAbsent,
+            )
+
+            if (
+                not controllerRuntimeStateExactlyAbsent()
+                or controllerPathsActive()
+            ):
+                return False
+
+            safe_record = logging.makeLogRecord(record.__dict__.copy())
+            safe_record.msg = rendered
+            safe_record.args = ()
+            safe_record.exc_info = None
+            safe_record.exc_text = None
+            safe_record.stack_info = None
+            self.acquire()
+            try:
+                formatter = self.formatter
+                self.setFormatter(logging.Formatter("%(message)s"))
+                try:
+                    self.emit(safe_record)
+                finally:
+                    self.setFormatter(formatter)
+            finally:
+                self.release()
+            return True
+        finally:
+            # RotatingFileHandler normally retains its stream indefinitely.
+            # Close it before releasing the runtime fence so no legacy file
+            # descriptor can survive into pending/live/poisoned composition.
+            self.acquire()
+            try:
+                stream = self.stream
+                self.stream = None
+                if stream is not None:
+                    stream.close()
+            finally:
+                self.release()
+                permit.__exit__(None, None, None)
+
+
 def _logLevelFromEnv() -> int:
     """NINE_TO_FIVE_LOG_LEVEL env knob (DEBUG/INFO/WARNING/ERROR/CRITICAL or a number);
     unset or unparseable -> INFO. This is what finally makes LOG.debug diagnostics reachable."""
-    raw = (os.getenv("NINE_TO_FIVE_LOG_LEVEL") or "").strip().upper()
+    raw = (_envString("NINE_TO_FIVE_LOG_LEVEL") or "").strip().upper()
     if not raw:
         return logging.INFO
     if raw.isdigit():
@@ -312,41 +408,41 @@ def _configureLogging() -> None:
     two threads racing this at import time both pass the flag check and each add a
     FileHandler/StreamHandler, doubling every log line for the rest of the process."""
     global _LOGGER_CONFIGURED
-    with _LOGGER_CONFIG_LOCK:
-        if _LOGGER_CONFIGURED:
-            return
-        _configureLoggingLocked()
-        _LOGGER_CONFIGURED = True
+    # Resolve every environment, registry, and filesystem dependency before
+    # taking the logger lock.  This preserves runtime -> path/env -> logger.
+    with _runtimeConfigPermit() as controller:
+        level = _logLevelFromEnv()
+        log_dir: Path | None = None
+        if controller is None:
+            override = (_envString("NINE_TO_FIVE_LOG_DIR", "") or "").strip()
+            log_dir = Path(override) if override else settings().paths.LOG_PATH
+            _legacyConfigPathMutation(log_dir.mkdir, parents=True, exist_ok=True)
+        with _LOGGER_CONFIG_LOCK:
+            if _LOGGER_CONFIGURED:
+                return
+            _configureLoggingLocked(level=level, log_dir=log_dir)
+            _LOGGER_CONFIGURED = True
 
 
-def _configureLoggingLocked() -> None:
-    from logging.handlers import RotatingFileHandler
-
-    class _SharedLogRotatingHandler(RotatingFileHandler):
-        """Multi-process safe on Windows: the orchestrator, gateway bot, and web
-        dashboard all hold 9to5.log, so rollover's os.rename can hit WinError 32.
-        Skip that rotation attempt (the file grows past the cap until the sole
-        holder rotates) instead of spraying 'Logging error' tracebacks per emit."""
-
-        def rotate(self, source: str, dest: str) -> None:
-            try:
-                super().rotate(source, dest)
-            except OSError:
-                pass
-
-    # NINE_TO_FIVE_LOG_DIR redirects the log FileHandler (read live so conftest's sandbox works; prod uses LOG_PATH).
-    _override = os.getenv("NINE_TO_FIVE_LOG_DIR", "").strip()
-    log_dir = Path(_override) if _override else settings().paths.LOG_PATH
-    log_dir.mkdir(parents=True, exist_ok=True)
+def _configureLoggingLocked(*, level: int, log_dir: Path | None) -> None:
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     base = logging.getLogger("9to5")
-    base.setLevel(_logLevelFromEnv())
-    fh = _SharedLogRotatingHandler(log_dir / "9to5.log", maxBytes=_LOG_MAX_BYTES,
-                                   backupCount=_LOG_BACKUP_COUNT, encoding="utf-8",
-                                   delay=True)
-    fh.setFormatter(fmt)
+    base.setLevel(level)
     ch = logging.StreamHandler()
     ch.setFormatter(fmt)
+    if log_dir is None:
+        base.addHandler(ch)
+        base.propagate = False
+        return
+
+    fh = _RuntimeFencedRotatingFileHandler(
+        log_dir / "9to5.log",
+        maxBytes=_LOG_MAX_BYTES,
+        backupCount=_LOG_BACKUP_COUNT,
+        encoding="utf-8",
+        delay=True,
+    )
+    fh.setFormatter(fmt)
     base.addHandler(fh)
     base.addHandler(ch)
     base.propagate = False

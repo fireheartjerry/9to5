@@ -28,7 +28,7 @@ EXPORTS:
   dispatchPsyche(content: str, *, state: Any) -> Optional[str]  -- Route a psyche bang command to its render core
   PsycheCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: config, human_nature, notifications.commands, notifications.slash
+DEPENDS-ON: config, human_nature, notifications.commands, notifications.slash, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_psyche_cog.py
 """
@@ -39,8 +39,6 @@ from typing import Any, Optional
 
 from discord import app_commands
 from discord.ext import commands as dpy_commands
-
-import config
 from human_nature.character_vector import new_character_vector
 from human_nature.charter import new_charter
 from human_nature.psyche_commands import (
@@ -51,8 +49,11 @@ from human_nature.psyche_commands import (
     cmd_why_i_feel,
 )
 from human_nature.self_state import new_self_state
+
+import config
 from notifications import commands as spine
 from notifications import slash
+from platform_core.runtime.effect_guard import legacyDiagnosticDiscordSend
 
 LOG = config.getLogger("cog.psyche")
 
@@ -265,7 +266,7 @@ class PsycheCog(dpy_commands.Cog):
         await interaction.response.defer(thinking=True)
         state = await asyncio.to_thread(spine.resolveTargetTask)
         out = await asyncio.to_thread(render, state)
-        await interaction.followup.send((out or _OFF_TEXT)[:slash.MAX_REPLY])
+        await legacyDiagnosticDiscordSend(interaction.followup.send, (out or _OFF_TEXT)[:slash.MAX_REPLY])
 
     @dpy_commands.Cog.listener("on_message")
     async def _bang_listener(self, message) -> None:  # noqa: ANN001  # pragma: no cover -- gateway
@@ -284,7 +285,7 @@ class PsycheCog(dpy_commands.Cog):
         state = await asyncio.to_thread(spine.resolveTargetTask)
         out = await asyncio.to_thread(lambda: dispatchPsyche(message.content, state=state))
         if out:
-            await message.channel.send(out[:slash.MAX_REPLY])
+            await legacyDiagnosticDiscordSend(message.channel.send, out[:slash.MAX_REPLY])
 
 
 async def setup(bot: dpy_commands.Bot) -> None:

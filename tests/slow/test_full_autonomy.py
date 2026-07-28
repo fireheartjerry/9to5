@@ -45,6 +45,23 @@ class TestSelfPlay(unittest.TestCase):
         mock.patch.object(config, "SELFPLAY_MAX_PER_DAY", 3).start()
         mock.patch.object(config, "SELFPLAY_START_HOUR", 0).start()
         mock.patch.object(config, "SELFPLAY_END_HOUR", 24).start()
+        from platform_core.runtime.controller_state import issueDiagnosticControllerStateAuthority
+        from platform_core.runtime.effect_guard import issueDiagnosticMaintenanceAuthority
+
+        capability = object()
+        self.controller_state_authority = issueDiagnosticControllerStateAuthority(
+            root=self.dir / "controller",
+            repository_id="repo_selfplay_test",
+            controller_generation=1,
+            process_capability=capability,
+            expires_at="2099-01-01T00:00:00+00:00",
+        )
+        self.maintenance_authority = issueDiagnosticMaintenanceAuthority(
+            operations={"selfplay"},
+            controller_generation=1,
+            process_capability=capability,
+            expires_at="2099-01-01T00:00:00+00:00",
+        )
 
     def tearDown(self):
         mock.patch.stopall()
@@ -61,37 +78,44 @@ class TestSelfPlay(unittest.TestCase):
                 "subtask_id": f"st-{i}", "title": "flaky api task", "status": "failed",
                 "verify_result": {"passed": False}, "session": {"attempts": 3}}, db_path=self.db)
 
+    def _run(self, **kwargs):
+        return selfplay.run(
+            maintenance_authority=self.maintenance_authority,
+            controller_state_authority=self.controller_state_authority,
+            **kwargs,
+        )
+
     def test_disabled_skips(self):
         with mock.patch.object(config, "SELFPLAY_ENABLED", False):
-            self.assertEqual(selfplay.run(db_path=self.db)["skipped"], "disabled")
+            self.assertEqual(self._run(db_path=self.db)["skipped"], "disabled")
 
     def test_outside_window_skips(self):
         with mock.patch.object(config, "SELFPLAY_START_HOUR", 9), \
              mock.patch.object(config, "SELFPLAY_END_HOUR", 17):
-            out = selfplay.run(db_path=self.db, now=datetime(2026, 6, 23, 3, 0).astimezone())
+            out = self._run(db_path=self.db, now=datetime(2026, 6, 23, 3, 0).astimezone())
         self.assertEqual(out["skipped"], "outside_window")
 
     def test_busy_skips(self):
         self._weak_family()
-        out = selfplay.run(db_path=self.db, is_busy=lambda: True,
-                           launch_fn=lambda g, h: None)
+        out = self._run(db_path=self.db, is_busy=lambda: True,
+                        launch_fn=lambda g, h: None)
         self.assertEqual(out["skipped"], "busy")
 
     def test_launches_weak_family_goal(self):
         self._weak_family()
         launched = {}
-        out = selfplay.run(db_path=self.db, is_busy=lambda: False,
-                           launch_fn=lambda g, h: launched.update(goal=g, hours=h))
+        out = self._run(db_path=self.db, is_busy=lambda: False,
+                        launch_fn=lambda g, h: launched.update(goal=g, hours=h))
         self.assertIn("launched", out)
         self.assertIn("flaky", launched["goal"])   # family = first significant word
         # Daily cap enforced on the next call.
-        out2 = selfplay.run(db_path=self.db, is_busy=lambda: False, launch_fn=lambda g, h: None)
+        out2 = self._run(db_path=self.db, is_busy=lambda: False, launch_fn=lambda g, h: None)
         self.assertEqual(_cap_or_launch(out2), True)
 
     def test_daily_cap(self):
         self._weak_family()
         with mock.patch.object(config, "SELFPLAY_MAX_PER_DAY", 0):
-            self.assertEqual(selfplay.run(db_path=self.db, launch_fn=lambda g, h: None)["skipped"],
+            self.assertEqual(self._run(db_path=self.db, launch_fn=lambda g, h: None)["skipped"],
                              "daily_cap")
 
 

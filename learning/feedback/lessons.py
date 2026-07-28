@@ -11,7 +11,7 @@ Pure-stdlib, offline-testable. See the spec (Layer 2).
 EXPORTS:
   family_of(title: str, signature_tags: Optional[str]=None) -> str  -- Coarse task-family key
   consolidate(*, db_path: Optional[Path]=None, write_digest: bool=True, digest_path: Optional[Path]=None) -> dict[str, Any]  -- Rebuild the ``lessons`` table from the ledger and (optionally) write the digest.
-DEPENDS-ON: config, memory.experience, memory.experience_schema
+DEPENDS-ON: config, memory.experience, memory.experience_schema, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_lessons.py
 """
@@ -24,7 +24,10 @@ from typing import Any, Optional
 
 import config
 from memory import experience
-from memory.experience_schema import _WRITE_LOCK, _connect, _nowIso
+from memory.experience_schema import _connect, _nowIso, _writeConnect
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+)
 
 LOG = config.getLogger("sie.lessons")
 
@@ -102,7 +105,7 @@ def _rebuild_lessons(new_lessons: list[tuple[str, str, str, int, float]], *,
     never a half-cleared table. Mirrors experience_policy.upsert_lesson but shares a single txn.
     Returns the number of lessons written."""
     now = _nowIso()
-    with _WRITE_LOCK, _connect(db_path) as conn:
+    with _writeConnect(db_path) as conn:
         conn.execute("DELETE FROM lessons")
         for scope, fam, text, support, win_rate in new_lessons:
             conn.execute(
@@ -122,8 +125,8 @@ def _write_digest(path: Path, *, db_path: Optional[Path] = None) -> None:
     for ls in lessons:
         lines.append(f"- ({ls['scope']}, support={ls['support_count']}) {ls['text']}")
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        mutateLegacyPath(path.parent.mkdir,parents=True, exist_ok=True)
+        mutateLegacyPath(path.write_text,"\n".join(lines) + "\n", encoding="utf-8")
     except Exception as e:  # noqa: BLE001 -- digest is a convenience, not load-bearing
         LOG.warning("lessons digest write failed (ignored): %s", e)
 

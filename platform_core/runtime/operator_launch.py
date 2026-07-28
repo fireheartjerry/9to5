@@ -12,38 +12,60 @@ EXPORTS:
   OperatorApprovalRefused  -- The proposed spec or fresh operator approval was invalid.
   OperatorCapabilityRefused  -- Transferred execution capabilities were missing, corrupt, or replayed.
   OperatorCapabilityPidMismatch  -- A capability was presented by a process other than its bound child.
+  CapsuleBootstrapAuthority  -- Opaque test/bootstrap handle for one capsule-owned static scope.
+  OperatorChildQuiescenceEvidence  -- Bounded cleanup observations for one rejected spawned child.
+  OperatorChildContainmentFailure  -- A rejected child could not be proven terminal after bounded cleanup.
   PreSpecAnalysisAuthority
   SpecProposal
   OperatorApprovalFrame
   OperatorLaunchCapability
   OperatorSpecApprovalCapability
-  AuthorizedOuterCapabilities
+  AuthorizedOuterCapabilities  -- Opaque process-local transfer handle
+  validate_authorized_outer_capabilities(value: object) -> AuthorizedOuterCapabilities  -- Require the exact one-use, PID-bound capability result from this process.
   OperatorSpawnResult
-  consume_outer_capabilities(*, argv: Sequence[str], capability_handles: Sequence[int]) -> AuthorizedOuterCapabilities  -- Consume the two PID-bound anonymous capabilities exactly once.
+  consume_outer_capabilities(*, argv: Sequence[str], capability_handles: Sequence[int]) -> AuthorizedOuterCapabilities  -- Consume two handles and retire issuer-process bindings on every exit.
   OperatorLauncher  -- Own the model-free gap between spec proposal and execution child.
-DEPENDS-ON: (stdlib only)
+DEPENDS-ON: platform_core.app_config.paths, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_operator_launch.py
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import errno
 import hashlib
 import json
 import os
-from pathlib import Path
+import re
 import secrets
 import struct
 import tempfile
-from typing import Callable, Mapping, Sequence
+import threading
+import time
 import unicodedata
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Callable, Mapping, Sequence, cast
 
+from platform_core.runtime.bootstrap_scope import (
+    CAPSULE_BOOTSTRAP_SCOPE_WIRE_FIELDS,
+    CapsuleBootstrapScope,
+)
 
 _MAX_SPEC_BYTES = 64 * 1024
 _MAX_GOAL_CHARS = 32 * 1024
 _CAPABILITY_BYTES = 16 * 1024
-_CAPABILITY_VERSION = 1
+_CAPABILITY_VERSION = 2
+_CAPABILITY_WAIT_SECONDS = 5.0
+_CAPABILITY_POLL_SECONDS = 0.005
+_CAPABILITY_WRITE_SECONDS = 5.0
+_CAPABILITY_WRITE_POLL_SECONDS = 0.005
+_MAX_TRANSFER_ID_ATTEMPTS = 32
+_OUTER_SCOPE_DIGEST_DOMAIN = "galaxy.authorized-outer-capability.scope"
+_OUTER_SCOPE_DIGEST_VERSION = 2
 _SCOPE_FIELDS = frozenset({"schema", "goal"})
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+_OID_RE = re.compile(r"^[0-9a-f]{40}$")
 _BIDI_HAZARDS = frozenset(
     {
         "\u061c",
@@ -64,6 +86,7 @@ _BIDI_HAZARDS = frozenset(
 # Parent-side identities permit a wrong process in the issuer to be rejected
 # without consuming a pipe byte.  A child independently peeks the Windows pipe
 # payload before deciding whether it is the bound consumer.
+_PARENT_BINDINGS_LOCK = threading.RLock()
 _PARENT_BINDINGS: dict[int, int] = {}
 
 
@@ -83,11 +106,204 @@ class OperatorCapabilityPidMismatch(OperatorCapabilityRefused):
     """A capability was presented by a process other than its bound child."""
 
 
+@dataclass(frozen=True, slots=True, eq=False)
+class CapsuleBootstrapAuthority:
+    """Opaque test/bootstrap handle for one capsule-owned static scope."""
+
+    authority_id: str
+    _token: object = field(repr=False, compare=False)
+
+
+@dataclass(frozen=True, slots=True)
+class _IssuedCapsuleBootstrapAuthority:
+    authority: CapsuleBootstrapAuthority
+    token: object
+    scope: CapsuleBootstrapScope
+    scope_digest: str
+    claim_token: object | None
+
+
+_CAPSULE_BOOTSTRAP_AUTHORITY_LOCK = threading.RLock()
+_CAPSULE_BOOTSTRAP_AUTHORITY_REGISTRY: dict[
+    str, _IssuedCapsuleBootstrapAuthority
+] = {}
+
+
+def _utc_now() -> datetime:
+    """Return the module-owned wall clock used by every capsule expiry fence."""
+
+    return datetime.now(timezone.utc)
+
+
+def _require_live_capsule_scope(scope: CapsuleBootstrapScope) -> None:
+    """Recheck both absolute capsule deadlines at each authority boundary."""
+
+    try:
+        expires = datetime.fromisoformat(
+            scope.capability_expires_at.replace("Z", "+00:00")
+        )
+        deadline = datetime.fromisoformat(scope.run_deadline.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise OperatorLaunchRefused("capsule bootstrap time scope is invalid") from exc
+    if expires.tzinfo is None or deadline.tzinfo is None:
+        raise OperatorLaunchRefused("capsule bootstrap time scope is not absolute")
+    now = _utc_now()
+    if (
+        type(now) is not datetime
+        or now.tzinfo is None
+        or now.utcoffset() != timedelta(0)
+    ):
+        raise OperatorLaunchRefused(
+            "capsule bootstrap clock must return an exact aware UTC datetime"
+        )
+    if deadline.astimezone(timezone.utc) <= now or expires.astimezone(timezone.utc) <= now:
+        raise OperatorLaunchRefused("capsule bootstrap authority is expired")
+    if deadline.astimezone(timezone.utc) > expires.astimezone(timezone.utc):
+        raise OperatorLaunchRefused("run deadline exceeds capsule capability expiry")
+
+
+def _issueDiagnosticCapsuleBootstrapAuthority(
+    scope: CapsuleBootstrapScope,
+) -> CapsuleBootstrapAuthority:
+    """Test-only stand-in for the still-inactive installed capsule issuer."""
+
+    if type(scope) is not CapsuleBootstrapScope:
+        raise OperatorLaunchRefused("exact capsule bootstrap scope is required")
+    _require_live_capsule_scope(scope)
+    from platform_core.app_config.paths import controllerPathsActivationFence
+
+    with controllerPathsActivationFence() as paths_active:
+        if paths_active:
+            raise OperatorLaunchRefused(
+                "capsule bootstrap test authority is unavailable after activation"
+            )
+        for _attempt in range(_MAX_TRANSFER_ID_ATTEMPTS):
+            authority_id = secrets.token_hex(32)
+            if type(authority_id) is not str or _DIGEST_RE.fullmatch(authority_id) is None:
+                raise OperatorLaunchRefused(
+                    "capsule bootstrap authority ID generator is invalid"
+                )
+            token = object()
+            authority = CapsuleBootstrapAuthority(authority_id=authority_id, _token=token)
+            issued = _IssuedCapsuleBootstrapAuthority(
+                authority=authority,
+                token=token,
+                scope=scope,
+                scope_digest=scope.digest(),
+                claim_token=None,
+            )
+            with _CAPSULE_BOOTSTRAP_AUTHORITY_LOCK:
+                if authority_id in _CAPSULE_BOOTSTRAP_AUTHORITY_REGISTRY:
+                    continue
+                _CAPSULE_BOOTSTRAP_AUTHORITY_REGISTRY[authority_id] = issued
+                return authority
+    raise OperatorLaunchRefused("capsule bootstrap authority ID collision budget exhausted")
+
+
+def _resolveCapsuleBootstrapAuthority(
+    value: object,
+    *,
+    claim_token: object | None = None,
+) -> CapsuleBootstrapScope:
+    """Resolve a live exact opaque bootstrap handle without accepting scope facts."""
+
+    if type(value) is not CapsuleBootstrapAuthority:
+        raise OperatorLaunchRefused("capsule bootstrap authority is not live")
+    assert isinstance(value, CapsuleBootstrapAuthority)
+    if type(value.authority_id) is not str or _DIGEST_RE.fullmatch(value.authority_id) is None:
+        raise OperatorLaunchRefused("capsule bootstrap authority ID is malformed")
+    from platform_core.app_config.paths import controllerPathsActivationFence
+
+    with controllerPathsActivationFence() as paths_active:
+        if paths_active:
+            raise OperatorLaunchRefused(
+                "capsule bootstrap authority is unavailable after activation"
+            )
+        with _CAPSULE_BOOTSTRAP_AUTHORITY_LOCK:
+            issued = _CAPSULE_BOOTSTRAP_AUTHORITY_REGISTRY.get(value.authority_id)
+            if (
+                issued is None
+                or issued.authority is not value
+                or issued.token is not value._token
+                or issued.scope_digest != issued.scope.digest()
+                or (
+                    claim_token is not None
+                    and issued.claim_token is not claim_token
+                )
+            ):
+                raise OperatorLaunchRefused("capsule bootstrap authority is not live")
+            scope = issued.scope
+        _require_live_capsule_scope(scope)
+        return scope
+
+
+def _claimCapsuleBootstrapAuthority(
+    value: object,
+    *,
+    claim_token: object,
+) -> CapsuleBootstrapScope:
+    """Spend one opaque capsule authority into exactly one launcher instance."""
+
+    if type(value) is not CapsuleBootstrapAuthority or claim_token is None:
+        raise OperatorLaunchRefused("capsule bootstrap authority is not live")
+    assert isinstance(value, CapsuleBootstrapAuthority)
+    from platform_core.app_config.paths import controllerPathsActivationFence
+
+    with controllerPathsActivationFence() as paths_active:
+        if paths_active:
+            raise OperatorLaunchRefused(
+                "capsule bootstrap authority is unavailable after activation"
+            )
+        with _CAPSULE_BOOTSTRAP_AUTHORITY_LOCK:
+            issued = _CAPSULE_BOOTSTRAP_AUTHORITY_REGISTRY.get(value.authority_id)
+            if (
+                issued is None
+                or issued.authority is not value
+                or issued.token is not value._token
+                or issued.scope_digest != issued.scope.digest()
+                or issued.claim_token is not None
+            ):
+                raise OperatorLaunchRefused(
+                    "capsule bootstrap authority is already claimed or not live"
+                )
+            _require_live_capsule_scope(issued.scope)
+            claimed = _IssuedCapsuleBootstrapAuthority(
+                authority=issued.authority,
+                token=issued.token,
+                scope=issued.scope,
+                scope_digest=issued.scope_digest,
+                claim_token=claim_token,
+            )
+            _CAPSULE_BOOTSTRAP_AUTHORITY_REGISTRY[value.authority_id] = claimed
+            return claimed.scope
+
+
+@dataclass(frozen=True, slots=True)
+class OperatorChildQuiescenceEvidence:
+    """Bounded cleanup observations for one rejected spawned child."""
+
+    terminal_observed: bool
+    attempts: tuple[str, ...]
+    failure_types: tuple[str, ...]
+    return_code: int | None
+
+
+class OperatorChildContainmentFailure(OperatorLaunchRefused):
+    """A rejected child could not be proven terminal after bounded cleanup."""
+
+    def __init__(self, evidence: OperatorChildQuiescenceEvidence) -> None:
+        super().__init__(
+            "spawned execution child could not be proven quiescent after launch refusal"
+        )
+        self.evidence = evidence
+
+
 @dataclass(frozen=True)
 class PreSpecAnalysisAuthority:
     kind: str
     repository_attestation_digest: str
     expected_base_sha: str
+    source_snapshot_receipt_digest: str
     task_id: str
     raw_intent_digest: str
 
@@ -119,13 +335,203 @@ class OperatorSpecApprovalCapability:
     spec_digest: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class AuthorizedOuterCapabilities:
-    authorized: bool
-    repository_attestation_digest: str
-    expected_base_sha: str
+    """Opaque process-local transfer handle; issuer scope never travels on it."""
+
+    transfer_id: str
+    _token: object = field(repr=False, compare=False)
+
+
+@dataclass(frozen=True, slots=True)
+class _OuterCapabilityScope:
+    protocol_version: int
+    bootstrap_scope: CapsuleBootstrapScope
     task_id: str
+    raw_intent_digest: str
+    spec_schema: int
+    canonical_spec_length: int
     spec_digest: str
+    approval_nonce: str
+    child_pid: int
+    launch_id: str
+    launch_secret_digest: str
+    approval_secret_digest: str
+    argv_digest: str
+    launch_frame_digest: str
+    approval_frame_digest: str
+    process_capability: object
+
+
+@dataclass(frozen=True, slots=True)
+class _IssuedOuterCapabilities:
+    handle: AuthorizedOuterCapabilities
+    token: object
+    scope: _OuterCapabilityScope
+    scope_digest: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedOuterCapabilities:
+    """Detached issuer-validated scope for trusted in-package derivation only."""
+
+    protocol_version: int
+    bootstrap_scope: CapsuleBootstrapScope
+    task_id: str
+    raw_intent_digest: str
+    spec_schema: int
+    canonical_spec_length: int
+    spec_digest: str
+    approval_nonce: str
+    child_pid: int
+    launch_id: str
+    launch_secret_digest: str
+    approval_secret_digest: str
+    argv_digest: str
+    launch_frame_digest: str
+    approval_frame_digest: str
+    scope_digest: str
+    process_capability: object
+
+    @property
+    def repository_attestation_digest(self) -> str:
+        return self.bootstrap_scope.repository_attestation_digest
+
+    @property
+    def expected_base_sha(self) -> str:
+        return self.bootstrap_scope.expected_base_sha
+
+
+_OUTER_CAPABILITY_REGISTRY_LOCK = threading.RLock()
+_OUTER_CAPABILITY_REGISTRY: dict[str, _IssuedOuterCapabilities] = {}
+_CONSUMED_OUTER_FRAME_IDENTITIES: set[str] = set()
+
+
+def _outer_scope_digest(scope: _OuterCapabilityScope) -> bytes:
+    """Recompute the issuer-owned scope integrity digest from every binding."""
+
+    try:
+        encoded = json.dumps(
+            {
+                "domain": _OUTER_SCOPE_DIGEST_DOMAIN,
+                "version": _OUTER_SCOPE_DIGEST_VERSION,
+                "protocol_version": scope.protocol_version,
+                "bootstrap_scope": scope.bootstrap_scope.wire_mapping(),
+                "bootstrap_scope_digest": scope.bootstrap_scope.digest(),
+                "task_id": scope.task_id,
+                "raw_intent_digest": scope.raw_intent_digest,
+                "spec_schema": scope.spec_schema,
+                "canonical_spec_length": scope.canonical_spec_length,
+                "spec_digest": scope.spec_digest,
+                "approval_nonce": scope.approval_nonce,
+                "child_pid": scope.child_pid,
+                "launch_id": scope.launch_id,
+                "launch_secret_digest": scope.launch_secret_digest,
+                "approval_secret_digest": scope.approval_secret_digest,
+                "argv_digest": scope.argv_digest,
+                "launch_frame_digest": scope.launch_frame_digest,
+                "approval_frame_digest": scope.approval_frame_digest,
+                "process_capability_identity": id(scope.process_capability),
+            },
+            ensure_ascii=True,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    except (AttributeError, TypeError, ValueError, UnicodeEncodeError) as exc:
+        raise OperatorCapabilityRefused("outer capability issuer scope is malformed") from exc
+    return hashlib.sha256(encoded).digest()
+
+
+def _register_authorized_outer_capabilities(
+    scope: _OuterCapabilityScope,
+) -> AuthorizedOuterCapabilities:
+    """Create a collision-safe opaque handle for one issuer-owned scope."""
+
+    scope_digest = _outer_scope_digest(scope)
+    for _attempt in range(_MAX_TRANSFER_ID_ATTEMPTS):
+        transfer_id = secrets.token_hex(32)
+        if type(transfer_id) is not str or _DIGEST_RE.fullmatch(transfer_id) is None:
+            raise OperatorCapabilityRefused(
+                "operator capability transfer ID generator is invalid"
+            )
+        token = object()
+        handle = AuthorizedOuterCapabilities(transfer_id=transfer_id, _token=token)
+        issued = _IssuedOuterCapabilities(
+            handle=handle,
+            token=token,
+            scope=scope,
+            scope_digest=scope_digest,
+        )
+        with _OUTER_CAPABILITY_REGISTRY_LOCK:
+            if transfer_id in _OUTER_CAPABILITY_REGISTRY:
+                continue
+            _OUTER_CAPABILITY_REGISTRY[transfer_id] = issued
+            return handle
+    raise OperatorCapabilityRefused(
+        "operator capability transfer ID collision budget exhausted"
+    )
+
+
+def _resolve_authorized_outer_capabilities(
+    value: object,
+) -> _ResolvedOuterCapabilities:
+    """Validate and detach trusted scope without retaining the registry lock."""
+
+    if type(value) is not AuthorizedOuterCapabilities:
+        raise OperatorCapabilityRefused("outer capability transfer is not live")
+    assert isinstance(value, AuthorizedOuterCapabilities)
+    if type(value.transfer_id) is not str or _DIGEST_RE.fullmatch(value.transfer_id) is None:
+        raise OperatorCapabilityRefused("outer capability transfer ID is malformed")
+    current_pid = os.getpid()
+    with _OUTER_CAPABILITY_REGISTRY_LOCK:
+        issued = _OUTER_CAPABILITY_REGISTRY.get(value.transfer_id)
+        if (
+            issued is None
+            or issued.handle is not value
+            or value._token is not issued.token
+            or issued.scope_digest != _outer_scope_digest(issued.scope)
+        ):
+            raise OperatorCapabilityRefused("outer capability transfer is not live")
+        scope = issued.scope
+        if scope.child_pid != current_pid:
+            raise OperatorCapabilityPidMismatch(
+                f"outer capability is bound to PID {scope.child_pid}, not {current_pid}"
+            )
+        resolved = _ResolvedOuterCapabilities(
+            protocol_version=scope.protocol_version,
+            bootstrap_scope=scope.bootstrap_scope,
+            task_id=scope.task_id,
+            raw_intent_digest=scope.raw_intent_digest,
+            spec_schema=scope.spec_schema,
+            canonical_spec_length=scope.canonical_spec_length,
+            spec_digest=scope.spec_digest,
+            approval_nonce=scope.approval_nonce,
+            child_pid=scope.child_pid,
+            launch_id=scope.launch_id,
+            launch_secret_digest=scope.launch_secret_digest,
+            approval_secret_digest=scope.approval_secret_digest,
+            argv_digest=scope.argv_digest,
+            launch_frame_digest=scope.launch_frame_digest,
+            approval_frame_digest=scope.approval_frame_digest,
+            scope_digest=issued.scope_digest.hex(),
+            process_capability=scope.process_capability,
+        )
+    try:
+        _require_live_capsule_scope(resolved.bootstrap_scope)
+    except OperatorLaunchRefused as exc:
+        raise OperatorCapabilityRefused(str(exc)) from exc
+    return resolved
+
+
+def validate_authorized_outer_capabilities(
+    value: object,
+) -> AuthorizedOuterCapabilities:
+    """Require the exact one-use, PID-bound capability result from this process."""
+
+    _resolve_authorized_outer_capabilities(value)
+    assert isinstance(value, AuthorizedOuterCapabilities)
+    return value
 
 
 @dataclass(frozen=True)
@@ -228,7 +634,9 @@ def _control_neutral_render(canonical: bytes) -> str:
     return f"0001: {''.join(pieces)}\n"
 
 
-def _atomic_write(path: Path, payload: bytes) -> None:
+def _atomic_write_once_exact(path: Path, payload: bytes) -> None:
+    """Create one sealed spec, accepting only an exact idempotent replay."""
+
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(
         prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
@@ -238,7 +646,29 @@ def _atomic_write(path: Path, payload: bytes) -> None:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            existing_descriptor = os.open(
+                path,
+                os.O_RDONLY | getattr(os, "O_BINARY", 0),
+            )
+            try:
+                existing = bytearray()
+                while len(existing) <= _MAX_SPEC_BYTES:
+                    chunk = os.read(
+                        existing_descriptor,
+                        min(64 * 1024, _MAX_SPEC_BYTES + 1 - len(existing)),
+                    )
+                    if not chunk:
+                        break
+                    existing.extend(chunk)
+            finally:
+                os.close(existing_descriptor)
+            if bytes(existing) != payload:
+                raise OperatorApprovalRefused(
+                    "canonical acceptance spec path is already sealed with differing bytes"
+                )
         try:
             directory = os.open(path.parent, os.O_RDONLY)
         except OSError:
@@ -250,12 +680,11 @@ def _atomic_write(path: Path, payload: bytes) -> None:
                 pass
             finally:
                 os.close(directory)
-    except BaseException:
+    finally:
         try:
             os.unlink(temporary)
         except OSError:
             pass
-        raise
 
 
 def _capability_payload(kind: str, *, child_pid: int, values: Mapping[str, object]) -> bytes:
@@ -283,10 +712,11 @@ def _new_capability_pipes() -> tuple[list[int], list[int]]:
     try:
         for _ in range(2):
             reader, writer = os.pipe()
-            os.set_inheritable(reader, False)
-            os.set_inheritable(writer, False)
             readers.append(reader)
             writers.append(writer)
+            os.set_inheritable(reader, False)
+            os.set_inheritable(writer, False)
+            _set_capability_writer_nonblocking(writer)
         return readers, writers
     except BaseException:
         for descriptor in readers + writers:
@@ -297,13 +727,186 @@ def _new_capability_pipes() -> tuple[list[int], list[int]]:
         raise
 
 
+def _set_capability_writer_nonblocking(descriptor: int) -> None:
+    """Put a private capability writer into fail-fast nonblocking mode."""
+
+    if os.name != "nt":
+        set_blocking = getattr(os, "set_blocking", None)
+        if not callable(set_blocking):
+            raise OperatorLaunchRefused(
+                "operator capability writer has no nonblocking mode"
+            )
+        set_blocking(descriptor, False)
+        return
+
+    import ctypes
+    import msvcrt
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetNamedPipeHandleStateW.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_ulong),
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+    ]
+    kernel32.GetNamedPipeHandleStateW.restype = ctypes.c_int
+    kernel32.SetNamedPipeHandleState.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_ulong),
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+    ]
+    kernel32.SetNamedPipeHandleState.restype = ctypes.c_int
+    handle = ctypes.c_void_p(msvcrt.get_osfhandle(descriptor))
+    current_mode = ctypes.c_ulong()
+    if kernel32.GetNamedPipeHandleStateW(
+        handle,
+        ctypes.byref(current_mode),
+        None,
+        None,
+        None,
+        None,
+        0,
+    ) and current_mode.value & 0x00000001:
+        return
+    pipe_nowait = ctypes.c_ulong(0x00000001)
+    ok = kernel32.SetNamedPipeHandleState(
+        handle,
+        ctypes.byref(pipe_nowait),
+        None,
+        None,
+    )
+    if not ok:
+        raise OperatorLaunchRefused(
+            "operator capability writer could not enter bounded nonblocking mode: "
+            f"{ctypes.get_last_error()}"
+        )
+
+
 def _write_all(descriptor: int, payload: bytes) -> None:
+    """Publish one frame without permitting a non-reading child to block forever."""
+
+    _set_capability_writer_nonblocking(descriptor)
+    deadline = time.monotonic() + _CAPABILITY_WRITE_SECONDS
     view = memoryview(payload)
     while view:
-        written = os.write(descriptor, view)
-        if written <= 0:
-            raise OperatorLaunchRefused("operator capability pipe write failed")
-        view = view[written:]
+        if time.monotonic() >= deadline:
+            raise OperatorLaunchRefused(
+                "operator capability frame write exceeded its bounded deadline"
+            )
+        try:
+            written = os.write(descriptor, view)
+        except InterruptedError:
+            continue
+        except OSError as exc:
+            if exc.errno not in {
+                errno.EAGAIN,
+                errno.EWOULDBLOCK,
+                errno.ENOSPC,
+            }:
+                raise
+            written = 0
+        if written > 0:
+            view = view[written:]
+            continue
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise OperatorLaunchRefused(
+                "operator capability frame write exceeded its bounded deadline"
+            )
+        time.sleep(min(_CAPABILITY_WRITE_POLL_SECONDS, remaining))
+
+
+def _close_parent_capability_descriptors(descriptors: Sequence[int]) -> None:
+    """Unregister and close every issuer-side pipe copy, attempting all."""
+
+    for descriptor in descriptors:
+        with _PARENT_BINDINGS_LOCK:
+            _PARENT_BINDINGS.pop(descriptor, None)
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+
+
+def _quiesce_spawned_child(child: object) -> OperatorChildQuiescenceEvidence:
+    """Prove terminal state or surface typed containment failure with evidence."""
+
+    attempts: list[str] = []
+    failure_types: list[str] = []
+    return_code: int | None = None
+
+    def evidence(terminal_observed: bool) -> OperatorChildQuiescenceEvidence:
+        return OperatorChildQuiescenceEvidence(
+            terminal_observed=terminal_observed,
+            attempts=tuple(attempts),
+            failure_types=tuple(failure_types),
+            return_code=return_code,
+        )
+
+    def poll_terminal(label: str) -> bool:
+        nonlocal return_code
+        attempts.append(label)
+        poll = getattr(child, "poll", None)
+        if not callable(poll):
+            failure_types.append(f"{label}:missing")
+            return False
+        try:
+            observed = poll()
+        except BaseException as exc:
+            failure_types.append(f"{label}:{type(exc).__name__}")
+            return False
+        if observed is None:
+            return False
+        if type(observed) is not int:
+            failure_types.append(f"{label}:invalid_result")
+            return False
+        return_code = observed
+        return True
+
+    def signal(method_name: str, label: str) -> None:
+        attempts.append(label)
+        method = getattr(child, method_name, None)
+        if not callable(method):
+            failure_types.append(f"{label}:missing")
+            return
+        try:
+            method()
+        except BaseException as exc:
+            failure_types.append(f"{label}:{type(exc).__name__}")
+
+    def wait_terminal(label: str) -> bool:
+        nonlocal return_code
+        attempts.append(label)
+        wait = getattr(child, "wait", None)
+        if not callable(wait):
+            failure_types.append(f"{label}:missing")
+            return False
+        try:
+            observed = wait(timeout=_CAPABILITY_WAIT_SECONDS)
+        except BaseException as exc:
+            failure_types.append(f"{label}:{type(exc).__name__}")
+            return False
+        if type(observed) is not int:
+            failure_types.append(f"{label}:invalid_result")
+            return False
+        return_code = observed
+        return True
+
+    if poll_terminal("poll_initial"):
+        return evidence(True)
+    signal("terminate", "terminate")
+    if wait_terminal("wait_after_terminate"):
+        return evidence(True)
+    signal("kill", "kill")
+    if wait_terminal("wait_after_kill"):
+        return evidence(True)
+    if poll_terminal("poll_final"):
+        return evidence(True)
+    raise OperatorChildContainmentFailure(evidence(False))
 
 
 def _parse_payload(raw: bytes) -> dict[str, object]:
@@ -312,12 +915,43 @@ def _parse_payload(raw: bytes) -> dict[str, object]:
     size = struct.unpack("<I", raw[:4])[0]
     if size <= 0 or size > _CAPABILITY_BYTES - 4 or len(raw) != size + 4:
         raise OperatorCapabilityRefused("operator capability length is invalid")
+    body = raw[4:]
+
+    def reject_duplicate(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, item in pairs:
+            if key in result:
+                raise OperatorCapabilityRefused(
+                    f"duplicate operator capability key: {key!r}"
+                )
+            result[key] = item
+        return result
+
     try:
-        value = json.loads(raw[4:].decode("utf-8", errors="strict"))
+        value = json.loads(
+            body.decode("utf-8", errors="strict"),
+            object_pairs_hook=reject_duplicate,
+            parse_constant=lambda item: (_ for _ in ()).throw(
+                OperatorCapabilityRefused(
+                    f"non-finite operator capability value: {item}"
+                )
+            ),
+        )
+    except OperatorCapabilityRefused:
+        raise
     except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
         raise OperatorCapabilityRefused("operator capability encoding is invalid") from exc
     if not isinstance(value, dict):
         raise OperatorCapabilityRefused("operator capability payload is not an object")
+    canonical = json.dumps(
+        value,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    if canonical != body:
+        raise OperatorCapabilityRefused("operator capability JSON is not canonical")
     return value
 
 
@@ -325,24 +959,49 @@ def _windows_peek(handle: int) -> bytes:
     import ctypes
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    buffer = ctypes.create_string_buffer(_CAPABILITY_BYTES)
-    read = ctypes.c_ulong()
-    available = ctypes.c_ulong()
-    ok = kernel32.PeekNamedPipe(
-        ctypes.c_void_p(handle),
-        buffer,
-        len(buffer),
-        ctypes.byref(read),
-        ctypes.byref(available),
-        None,
-    )
-    if not ok:
-        raise OperatorCapabilityRefused(
-            f"operator capability handle cannot be peeked: {ctypes.get_last_error()}"
+    deadline = time.monotonic() + _CAPABILITY_WAIT_SECONDS
+    expected_size: int | None = None
+    while True:
+        buffer = ctypes.create_string_buffer(_CAPABILITY_BYTES)
+        read = ctypes.c_ulong()
+        available = ctypes.c_ulong()
+        ok = kernel32.PeekNamedPipe(
+            ctypes.c_void_p(handle),
+            buffer,
+            len(buffer),
+            ctypes.byref(read),
+            ctypes.byref(available),
+            None,
         )
-    if available.value > _CAPABILITY_BYTES or read.value != available.value:
-        raise OperatorCapabilityRefused("operator capability frame is unavailable or over budget")
-    return bytes(buffer.raw[: read.value])
+        if not ok:
+            raise OperatorCapabilityRefused(
+                "operator capability pipe closed before one complete frame: "
+                f"{ctypes.get_last_error()}"
+            )
+        if available.value > _CAPABILITY_BYTES or read.value > _CAPABILITY_BYTES:
+            raise OperatorCapabilityRefused(
+                "operator capability frame is unavailable or over budget"
+            )
+        preview = bytes(buffer.raw[: read.value])
+        if expected_size is None and len(preview) >= 4:
+            body_size = struct.unpack("<I", preview[:4])[0]
+            if body_size <= 0 or body_size > _CAPABILITY_BYTES - 4:
+                raise OperatorCapabilityRefused(
+                    "operator capability length is invalid"
+                )
+            expected_size = body_size + 4
+        if expected_size is not None:
+            if available.value > expected_size:
+                raise OperatorCapabilityRefused(
+                    "operator capability pipe contains trailing bytes or a second frame"
+                )
+            if available.value == expected_size and len(preview) == expected_size:
+                return preview
+        if time.monotonic() >= deadline:
+            raise OperatorCapabilityRefused(
+                "operator capability frame did not become complete before its deadline"
+            )
+        time.sleep(_CAPABILITY_POLL_SECONDS)
 
 
 def _windows_read(handle: int, size: int) -> bytes:
@@ -365,8 +1024,97 @@ def _windows_read(handle: int, size: int) -> bytes:
     return bytes(result)
 
 
-def _peek_capability(handle: int) -> tuple[dict[str, object], Callable[[], bytes]]:
-    bound_pid = _PARENT_BINDINGS.get(handle)
+def _windows_require_closed_without_trailing(handle: int) -> None:
+    """Wait for writer closure after one consumed frame; reject any extra byte."""
+
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    deadline = time.monotonic() + _CAPABILITY_WAIT_SECONDS
+    broken_pipe_errors = {109, 232}
+    while True:
+        available = ctypes.c_ulong()
+        ok = kernel32.PeekNamedPipe(
+            ctypes.c_void_p(handle),
+            None,
+            0,
+            None,
+            ctypes.byref(available),
+            None,
+        )
+        if not ok:
+            error = ctypes.get_last_error()
+            if error in broken_pipe_errors:
+                return
+            raise OperatorCapabilityRefused(
+                f"operator capability closure cannot be proven: {error}"
+            )
+        if available.value:
+            raise OperatorCapabilityRefused(
+                "operator capability pipe contains trailing bytes or a second frame"
+            )
+        if time.monotonic() >= deadline:
+            raise OperatorCapabilityRefused(
+                "operator capability writer did not close after one frame"
+            )
+        time.sleep(_CAPABILITY_POLL_SECONDS)
+
+
+def _parent_require_closed_without_trailing(handle: int) -> None:
+    """CRT-fd equivalent of the one-frame-and-closed-writer proof."""
+
+    if os.name == "nt":
+        import msvcrt
+
+        try:
+            native_handle = msvcrt.get_osfhandle(handle)
+        except OSError as exc:
+            raise OperatorCapabilityRefused(
+                "operator capability parent pipe cannot prove closure"
+            ) from exc
+        _windows_require_closed_without_trailing(native_handle)
+        return
+    deadline = time.monotonic() + _CAPABILITY_WAIT_SECONDS
+    set_blocking = getattr(os, "set_blocking", None)
+    if not callable(set_blocking):
+        raise OperatorCapabilityRefused(
+            "operator capability parent pipe cannot prove closure"
+        )
+    try:
+        set_blocking(handle, False)
+    except OSError as exc:
+        raise OperatorCapabilityRefused(
+            "operator capability parent pipe cannot prove closure"
+        ) from exc
+    try:
+        while True:
+            try:
+                trailing = os.read(handle, 1)
+            except BlockingIOError:
+                trailing = None
+            if trailing == b"":
+                return
+            if trailing:
+                raise OperatorCapabilityRefused(
+                    "operator capability pipe contains trailing bytes or a second frame"
+                )
+            if time.monotonic() >= deadline:
+                raise OperatorCapabilityRefused(
+                    "operator capability writer did not close after one frame"
+                )
+            time.sleep(_CAPABILITY_POLL_SECONDS)
+    finally:
+        try:
+            set_blocking(handle, True)
+        except OSError:
+            pass
+
+
+def _peek_capability(
+    handle: int,
+) -> tuple[dict[str, object], bytes, Callable[[], bytes]]:
+    with _PARENT_BINDINGS_LOCK:
+        bound_pid = _PARENT_BINDINGS.get(handle)
     if bound_pid is not None:
         if bound_pid != os.getpid():
             raise OperatorCapabilityPidMismatch(
@@ -374,21 +1122,34 @@ def _peek_capability(handle: int) -> tuple[dict[str, object], Callable[[], bytes
             )
 
         def read_parent() -> bytes:
-            prefix = os.read(handle, 4)
-            if len(prefix) != 4:
-                raise OperatorCapabilityRefused("operator capability was already consumed")
-            size = struct.unpack("<I", prefix)[0]
-            body = bytearray()
-            while len(body) < size:
-                chunk = os.read(handle, size - len(body))
-                if not chunk:
-                    raise OperatorCapabilityRefused("operator capability frame is truncated")
-                body.extend(chunk)
-            return prefix + bytes(body)
+            try:
+                prefix = os.read(handle, 4)
+                if len(prefix) != 4:
+                    raise OperatorCapabilityRefused(
+                        "operator capability was already consumed"
+                    )
+                size = struct.unpack("<I", prefix)[0]
+                if size <= 0 or size > _CAPABILITY_BYTES - 4:
+                    raise OperatorCapabilityRefused(
+                        "operator capability length is invalid"
+                    )
+                body = bytearray()
+                while len(body) < size:
+                    chunk = os.read(handle, size - len(body))
+                    if not chunk:
+                        raise OperatorCapabilityRefused(
+                            "operator capability frame is truncated"
+                        )
+                    body.extend(chunk)
+                _parent_require_closed_without_trailing(handle)
+                return prefix + bytes(body)
+            finally:
+                with _PARENT_BINDINGS_LOCK:
+                    _PARENT_BINDINGS.pop(handle, None)
 
         # Matching parent use is not a production path, but retain exact framing.
         raw = read_parent()
-        return _parse_payload(raw), lambda: raw
+        return _parse_payload(raw), raw, lambda: raw
 
     if os.name != "nt":
         raise OperatorCapabilityRefused(
@@ -396,10 +1157,116 @@ def _peek_capability(handle: int) -> tuple[dict[str, object], Callable[[], bytes
         )
     preview = _windows_peek(handle)
     parsed = _parse_payload(preview)
-    return parsed, lambda: _windows_read(handle, len(preview))
+
+    def read_windows() -> bytes:
+        raw = _windows_read(handle, len(preview))
+        _windows_require_closed_without_trailing(handle)
+        return raw
+
+    return parsed, preview, read_windows
 
 
-def consume_outer_capabilities(
+_DYNAMIC_WIRE_FIELDS = frozenset(
+    {
+        "version",
+        "kind",
+        "child_pid",
+        "launch_id",
+        "task_id",
+        "raw_intent_digest",
+        "spec_schema",
+        "canonical_spec_length",
+        "spec_digest",
+        "approval_nonce",
+        "launch_secret_digest",
+        "approval_secret_digest",
+        "one_time_secret",
+    }
+)
+_WIRE_FIELDS = _DYNAMIC_WIRE_FIELDS | CAPSULE_BOOTSTRAP_SCOPE_WIRE_FIELDS
+
+
+def _require_exact_wire_types(value: Mapping[str, object]) -> None:
+    exact_strings = (
+        "kind",
+        "launch_id",
+        "task_id",
+        "raw_intent_digest",
+        "spec_digest",
+        "approval_nonce",
+        "launch_secret_digest",
+        "approval_secret_digest",
+        "one_time_secret",
+    )
+    exact_integers = (
+        "version",
+        "child_pid",
+        "spec_schema",
+        "canonical_spec_length",
+    )
+    if any(type(value.get(name)) is not str for name in exact_strings) or any(
+        type(value.get(name)) is not int for name in exact_integers
+    ):
+        raise OperatorCapabilityRefused(
+            "outer capability fields require exact wire types"
+        )
+
+
+def _validate_wire_scope(value: Mapping[str, object]) -> CapsuleBootstrapScope:
+    _require_exact_wire_types(value)
+    version = cast(int, value["version"])
+    kind = cast(str, value["kind"])
+    child_pid = cast(int, value["child_pid"])
+    spec_schema = cast(int, value["spec_schema"])
+    canonical_spec_length = cast(int, value["canonical_spec_length"])
+    if version != _CAPABILITY_VERSION:
+        raise OperatorCapabilityRefused("outer capability version is unsupported")
+    if kind not in {"launch", "spec_approval"}:
+        raise OperatorCapabilityRefused("outer capability kind is invalid")
+    if child_pid <= 0:
+        raise OperatorCapabilityRefused("outer capability child PID is invalid")
+    if spec_schema != 1:
+        raise OperatorCapabilityRefused("outer capability spec schema is invalid")
+    if not 0 < canonical_spec_length <= _MAX_SPEC_BYTES:
+        raise OperatorCapabilityRefused("outer capability spec length is invalid")
+    for name in (
+        "launch_id",
+        "raw_intent_digest",
+        "spec_digest",
+        "launch_secret_digest",
+        "approval_secret_digest",
+        "one_time_secret",
+    ):
+        if _DIGEST_RE.fullmatch(cast(str, value[name])) is None:
+            raise OperatorCapabilityRefused(
+                f"outer capability {name} binding is malformed"
+            )
+    task_id = cast(str, value["task_id"])
+    if (
+        not task_id
+        or len(task_id.encode("utf-8")) > 256
+        or any(ord(character) < 33 or ord(character) > 126 for character in task_id)
+    ):
+        raise OperatorCapabilityRefused("outer capability task binding is malformed")
+    nonce = cast(str, value["approval_nonce"])
+    if len(nonce) != 64 or any(
+        ord(character) < 33 or ord(character) > 126 for character in nonce
+    ):
+        raise OperatorCapabilityRefused("outer capability approval nonce is malformed")
+    static_scope = {
+        name: value[name] for name in CAPSULE_BOOTSTRAP_SCOPE_WIRE_FIELDS
+    }
+    try:
+        scope = CapsuleBootstrapScope.from_wire_mapping(static_scope)
+        _require_live_capsule_scope(scope)
+    except (OperatorLaunchRefused, TypeError, ValueError) as exc:
+        raise OperatorCapabilityRefused(
+            "outer capability capsule bootstrap scope is invalid"
+        ) from exc
+    return scope
+
+
+def _consume_outer_capabilities_once(
     *, argv: Sequence[str], capability_handles: Sequence[int]
 ) -> AuthorizedOuterCapabilities:
     """Consume the two PID-bound anonymous capabilities exactly once."""
@@ -407,13 +1274,19 @@ def consume_outer_capabilities(
         raise OperatorLaunchRefused("two live outer capability handles are required")
     if not isinstance(argv, Sequence) or isinstance(argv, (str, bytes)):
         raise OperatorLaunchRefused("execution-child argv is malformed")
+    if any(type(descriptor) is not int or descriptor < 0 for descriptor in capability_handles):
+        raise OperatorCapabilityRefused("operator capability handle is invalid")
+    if capability_handles[0] == capability_handles[1]:
+        raise OperatorCapabilityRefused(
+            "two distinct operator capability handles are required"
+        )
     previews: list[dict[str, object]] = []
+    preview_frames: list[bytes] = []
     readers: list[Callable[[], bytes]] = []
-    for handle in capability_handles:
-        if type(handle) is not int or handle < 0:
-            raise OperatorCapabilityRefused("operator capability handle is invalid")
-        preview, reader = _peek_capability(handle)
+    for descriptor in capability_handles:
+        preview, preview_frame, reader = _peek_capability(descriptor)
         previews.append(preview)
+        preview_frames.append(preview_frame)
         readers.append(reader)
     for preview in previews:
         child_pid = preview.get("child_pid")
@@ -421,44 +1294,114 @@ def consume_outer_capabilities(
             raise OperatorCapabilityPidMismatch(
                 f"operator capability is bound to PID {child_pid!r}, not {os.getpid()}"
             )
-    consumed = [_parse_payload(reader()) for reader in readers]
-    launch = next((item for item in consumed if item.get("kind") == "launch"), None)
-    approval = next((item for item in consumed if item.get("kind") == "spec_approval"), None)
-    if launch is None or approval is None:
+    consumed_frames = [reader() for reader in readers]
+    if consumed_frames != preview_frames:
+        raise OperatorCapabilityRefused(
+            "operator capability changed between preview and consumption"
+        )
+    consumed = [_parse_payload(frame) for frame in consumed_frames]
+    kinds = [item.get("kind") for item in consumed]
+    if kinds.count("launch") != 1 or kinds.count("spec_approval") != 1:
         raise OperatorCapabilityRefused("outer capability kinds are missing or duplicated")
-    expected_launch = {
-        "version",
-        "kind",
-        "child_pid",
-        "launch_id",
-        "repository_attestation_digest",
-        "expected_base_sha",
-        "task_id",
-        "spec_digest",
-        "approval_nonce",
-        "one_time_secret",
-    }
-    if set(launch) != expected_launch or set(approval) != expected_launch:
+    launch = next(item for item in consumed if item["kind"] == "launch")
+    approval = next(item for item in consumed if item["kind"] == "spec_approval")
+    if set(launch) != _WIRE_FIELDS or set(approval) != _WIRE_FIELDS:
         raise OperatorCapabilityRefused("outer capability schema is not exact")
-    shared = expected_launch - {"kind", "one_time_secret"}
+    launch_bootstrap_scope = _validate_wire_scope(launch)
+    approval_bootstrap_scope = _validate_wire_scope(approval)
+    shared = _WIRE_FIELDS - {"kind", "one_time_secret"}
     if any(launch.get(key) != approval.get(key) for key in shared):
         raise OperatorCapabilityRefused("outer capability pair does not bind the same scope")
+    if launch_bootstrap_scope != approval_bootstrap_scope:
+        raise OperatorCapabilityRefused("outer capability pair bootstrap scopes differ")
     if launch.get("one_time_secret") == approval.get("one_time_secret"):
         raise OperatorCapabilityRefused("outer capability secrets are not independently split")
-    if launch.get("version") != _CAPABILITY_VERSION:
-        raise OperatorCapabilityRefused("outer capability version is unsupported")
+    launch_secret = launch["one_time_secret"]
+    approval_secret = approval["one_time_secret"]
+    assert isinstance(launch_secret, str) and isinstance(approval_secret, str)
+    if hashlib.sha256(launch_secret.encode("ascii")).hexdigest() != launch[
+        "launch_secret_digest"
+    ]:
+        raise OperatorCapabilityRefused("outer launch secret digest differs")
+    if hashlib.sha256(approval_secret.encode("ascii")).hexdigest() != approval[
+        "approval_secret_digest"
+    ]:
+        raise OperatorCapabilityRefused("outer approval secret digest differs")
+    for item in consumed:
+        child_pid = item["child_pid"]
+        if type(child_pid) is not int or child_pid != os.getpid():
+            raise OperatorCapabilityPidMismatch(
+                f"operator capability is bound to PID {child_pid!r}, not {os.getpid()}"
+            )
     # Argv carries only a fixed request marker.  All scope comes from the live
     # handles, so neither copied argv nor handle-number coincidence can confer
     # or disclose authority.
-    if list(argv) != ["main.py", "--operator-child-launch"]:
+    closed_argv = ["main.py", "--operator-child-launch"]
+    if list(argv) != closed_argv:
         raise OperatorCapabilityRefused("execution-child argv is not the closed request form")
-    return AuthorizedOuterCapabilities(
-        authorized=True,
-        repository_attestation_digest=str(launch["repository_attestation_digest"]),
-        expected_base_sha=str(launch["expected_base_sha"]),
-        task_id=str(launch["task_id"]),
-        spec_digest=str(launch["spec_digest"]),
+    frames_by_kind = {
+        cast(str, item["kind"]): frame
+        for item, frame in zip(consumed, consumed_frames, strict=True)
+    }
+    frame_identity = hashlib.sha256(
+        b"galaxy.outer-capability-frame-pair/v2\x00"
+        + frames_by_kind["launch"]
+        + b"\x00"
+        + frames_by_kind["spec_approval"]
+    ).hexdigest()
+    with _OUTER_CAPABILITY_REGISTRY_LOCK:
+        if frame_identity in _CONSUMED_OUTER_FRAME_IDENTITIES:
+            raise OperatorCapabilityRefused(
+                "outer capability frame pair was already consumed"
+            )
+        _CONSUMED_OUTER_FRAME_IDENTITIES.add(frame_identity)
+    process_capability = object()
+    transfer = _register_authorized_outer_capabilities(
+        _OuterCapabilityScope(
+            protocol_version=cast(int, launch["version"]),
+            bootstrap_scope=launch_bootstrap_scope,
+            task_id=cast(str, launch["task_id"]),
+            raw_intent_digest=cast(str, launch["raw_intent_digest"]),
+            spec_schema=cast(int, launch["spec_schema"]),
+            canonical_spec_length=cast(int, launch["canonical_spec_length"]),
+            spec_digest=cast(str, launch["spec_digest"]),
+            approval_nonce=cast(str, launch["approval_nonce"]),
+            child_pid=cast(int, launch["child_pid"]),
+            launch_id=cast(str, launch["launch_id"]),
+            launch_secret_digest=cast(str, launch["launch_secret_digest"]),
+            approval_secret_digest=cast(str, launch["approval_secret_digest"]),
+            argv_digest=hashlib.sha256(
+                json.dumps(
+                    closed_argv,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                ).encode("ascii")
+            ).hexdigest(),
+            launch_frame_digest=hashlib.sha256(frames_by_kind["launch"]).hexdigest(),
+            approval_frame_digest=hashlib.sha256(
+                frames_by_kind["spec_approval"]
+            ).hexdigest(),
+            process_capability=process_capability,
+        )
     )
+    return validate_authorized_outer_capabilities(transfer)
+
+
+def consume_outer_capabilities(
+    *, argv: Sequence[str], capability_handles: Sequence[int]
+) -> AuthorizedOuterCapabilities:
+    """Consume two handles and retire issuer-process bindings on every exit."""
+
+    try:
+        return _consume_outer_capabilities_once(
+            argv=argv,
+            capability_handles=capability_handles,
+        )
+    finally:
+        with _PARENT_BINDINGS_LOCK:
+            for descriptor in capability_handles:
+                if type(descriptor) is int:
+                    _PARENT_BINDINGS.pop(descriptor, None)
 
 
 class OperatorLauncher:
@@ -467,23 +1410,47 @@ class OperatorLauncher:
     def __init__(
         self,
         *,
-        repository_attestation_digest: str,
-        expected_base_sha: str,
+        bootstrap_authority: object,
         worker: object,
         operator_channel: object,
         child_factory: object,
         nonce_factory: Callable[[], str] = lambda: secrets.token_hex(32),
-        canonical_spec_path: str | Path,
     ) -> None:
-        if not repository_attestation_digest or not expected_base_sha:
-            raise ValueError("repository attestation and expected base are required")
-        self.repository_attestation_digest = repository_attestation_digest
-        self.expected_base_sha = expected_base_sha
+        self._claim_token = object()
+        _claimCapsuleBootstrapAuthority(
+            bootstrap_authority,
+            claim_token=self._claim_token,
+        )
+        self._bootstrap_authority = bootstrap_authority
         self.worker = worker
         self.operator_channel = operator_channel
         self.child_factory = child_factory
         self.nonce_factory = nonce_factory
-        self.canonical_spec_path = Path(canonical_spec_path)
+        self._lifecycle_lock = threading.RLock()
+        self._proposal_started = False
+        self._proposal: SpecProposal | None = None
+        self._approval_started = False
+
+    def _bootstrapScope(self) -> CapsuleBootstrapScope:
+        return _resolveCapsuleBootstrapAuthority(
+            self._bootstrap_authority,
+            claim_token=self._claim_token,
+        )
+
+    @staticmethod
+    def _canonicalSpecPath(
+        scope: CapsuleBootstrapScope,
+        task_id: str,
+    ) -> Path:
+        run_key = hashlib.sha256(scope.run_id.encode("ascii")).hexdigest()
+        task_key = hashlib.sha256(task_id.encode("ascii")).hexdigest()
+        return (
+            Path(scope.controller_state_root)
+            / "specs"
+            / run_key
+            / "R0"
+            / f"{task_key}.json"
+        )
 
     @staticmethod
     def assert_outer_ancestry(*, inside_registered_model_job: bool) -> None:
@@ -493,40 +1460,68 @@ class OperatorLauncher:
             )
 
     def propose(self, *, raw_intent: str, task_id: str) -> SpecProposal:
-        if not isinstance(raw_intent, str) or not raw_intent or not task_id:
-            raise OperatorLaunchRefused("raw intent and task ID are required")
-        raw_digest = hashlib.sha256(raw_intent.encode("utf-8")).hexdigest()
-        authority = PreSpecAnalysisAuthority(
-            kind="pre_spec_analysis",
-            repository_attestation_digest=self.repository_attestation_digest,
-            expected_base_sha=self.expected_base_sha,
-            task_id=task_id,
-            raw_intent_digest=raw_digest,
-        )
-        run = getattr(self.worker, "run", None)
-        if not callable(run):
-            raise OperatorLaunchRefused("pre-spec worker is unavailable")
-        result = run(
-            stdin="pipe",
-            stdout="pipe",
-            stderr="pipe",
-            controlling_terminal=None,
-            console_input_handle=None,
-            operator_input_handle=None,
-            local_trust_grant=None,
-            execution_child_capability=None,
-            authority=authority,
-        )
-        if not isinstance(result, Mapping):
-            raise OperatorLaunchRefused("pre-spec worker returned an invalid envelope")
-        candidate = result.get("length_prefixed_bytes")
-        if not isinstance(candidate, bytes):
-            raise OperatorLaunchRefused("pre-spec worker did not return bounded bytes")
-        return SpecProposal(
-            task_id=task_id,
-            raw_intent_digest=raw_digest,
-            candidate_bytes=candidate,
-        )
+        with self._lifecycle_lock:
+            if self._proposal_started:
+                raise OperatorLaunchRefused(
+                    "operator launcher proposal authority is already spent"
+                )
+            self._proposal_started = True
+            if (
+                type(raw_intent) is not str
+                or not raw_intent
+                or type(task_id) is not str
+                or not task_id
+                or len(task_id.encode("utf-8")) > 256
+                or any(
+                    ord(character) < 33 or ord(character) > 126
+                    for character in task_id
+                )
+            ):
+                raise OperatorLaunchRefused("raw intent and task ID are required")
+            bootstrap_scope = self._bootstrapScope()
+            raw_digest = hashlib.sha256(raw_intent.encode("utf-8")).hexdigest()
+            authority = PreSpecAnalysisAuthority(
+                kind="pre_spec_analysis",
+                repository_attestation_digest=(
+                    bootstrap_scope.repository_attestation_digest
+                ),
+                expected_base_sha=bootstrap_scope.expected_base_sha,
+                source_snapshot_receipt_digest=(
+                    bootstrap_scope.source_snapshot_receipt_digest
+                ),
+                task_id=task_id,
+                raw_intent_digest=raw_digest,
+            )
+            run = getattr(self.worker, "run", None)
+            if not callable(run):
+                raise OperatorLaunchRefused("pre-spec worker is unavailable")
+            result = run(
+                stdin="pipe",
+                stdout="pipe",
+                stderr="pipe",
+                controlling_terminal=None,
+                console_input_handle=None,
+                operator_input_handle=None,
+                local_trust_grant=None,
+                execution_child_capability=None,
+                authority=authority,
+            )
+            if not isinstance(result, Mapping):
+                raise OperatorLaunchRefused(
+                    "pre-spec worker returned an invalid envelope"
+                )
+            candidate = result.get("length_prefixed_bytes")
+            if not isinstance(candidate, bytes):
+                raise OperatorLaunchRefused(
+                    "pre-spec worker did not return bounded bytes"
+                )
+            proposal = SpecProposal(
+                task_id=task_id,
+                raw_intent_digest=raw_digest,
+                candidate_bytes=candidate,
+            )
+            self._proposal = proposal
+            return proposal
 
     def _quiesce_worker(self) -> None:
         quiesce = getattr(self.worker, "revoke_and_quiesce_tree", None)
@@ -549,9 +1544,30 @@ class OperatorLauncher:
     ) -> OperatorSpawnResult:
         if type(proposal) is not SpecProposal:
             raise OperatorApprovalRefused("spec proposal contract is invalid")
+        with self._lifecycle_lock:
+            if proposal is not self._proposal or self._approval_started:
+                raise OperatorApprovalRefused(
+                    "operator launcher approval authority is absent or already spent"
+                )
+            self._approval_started = True
+            return self._approveAndSpawnOnce(
+                proposal,
+                approval_source=approval_source,
+            )
+
+    def _approveAndSpawnOnce(
+        self,
+        proposal: SpecProposal,
+        *,
+        approval_source: str,
+    ) -> OperatorSpawnResult:
+        if type(proposal) is not SpecProposal:
+            raise OperatorApprovalRefused("spec proposal contract is invalid")
         if approval_source != "operator_exclusive":
             raise OperatorApprovalRefused("approval source is not the exclusive operator")
+        bootstrap_scope = self._bootstrapScope()
         self._quiesce_worker()
+        bootstrap_scope = self._bootstrapScope()
         canonical = _canonical_spec(proposal.candidate_bytes)
         digest = hashlib.sha256(canonical).hexdigest()
 
@@ -581,16 +1597,26 @@ class OperatorLauncher:
         expected = f"APPROVE SPEC {digest} NONCE {nonce}"
         if not isinstance(response, str) or response != expected:
             raise OperatorApprovalRefused("fresh exact spec approval was not received")
+        bootstrap_scope = self._bootstrapScope()
 
-        _atomic_write(self.canonical_spec_path, canonical)
-        readers, writers = _new_capability_pipes()
+        canonical_spec_path = self._canonicalSpecPath(
+            bootstrap_scope,
+            proposal.task_id,
+        )
+        self._bootstrapScope()
+        _atomic_write_once_exact(canonical_spec_path, canonical)
         launch_id = secrets.token_hex(32)
+        if type(launch_id) is not str or _DIGEST_RE.fullmatch(launch_id) is None:
+            raise OperatorLaunchRefused("operator child launch ID is malformed")
+        readers, writers = _new_capability_pipes()
         argv = ["main.py", "--operator-child-launch"]
         child = None
+        child_pid: int | None = None
         try:
             spawn = getattr(self.child_factory, "spawn", None)
             if not callable(spawn):
                 raise OperatorLaunchRefused("execution child factory is unavailable")
+            bootstrap_scope = self._bootstrapScope()
             child = spawn(
                 argv=argv,
                 env={},
@@ -600,61 +1626,95 @@ class OperatorLauncher:
                 controlling_terminal=None,
                 capability_handles=tuple(readers),
             )
+            bootstrap_scope = self._bootstrapScope()
             child_pid_value = getattr(
                 child, "authority_pid", getattr(child, "pid", None)
             )
-            child_pid = child_pid_value if type(child_pid_value) is int else -1
+            if type(child_pid_value) is not int or child_pid_value <= 0:
+                raise OperatorLaunchRefused(
+                    "execution child did not expose a positive authority PID"
+                )
+            child_pid = child_pid_value
             common = {
+                **bootstrap_scope.wire_mapping(),
                 "launch_id": launch_id,
-                "repository_attestation_digest": self.repository_attestation_digest,
-                "expected_base_sha": self.expected_base_sha,
                 "task_id": proposal.task_id,
+                "raw_intent_digest": proposal.raw_intent_digest,
+                "spec_schema": 1,
+                "canonical_spec_length": len(canonical),
                 "spec_digest": digest,
                 "approval_nonce": nonce,
+            }
+            launch_secret = secrets.token_hex(32)
+            approval_secret = secrets.token_hex(32)
+            secret_digests = {
+                "launch_secret_digest": hashlib.sha256(
+                    launch_secret.encode("ascii")
+                ).hexdigest(),
+                "approval_secret_digest": hashlib.sha256(
+                    approval_secret.encode("ascii")
+                ).hexdigest(),
             }
             payloads = (
                 _capability_payload(
                     "launch",
                     child_pid=child_pid,
-                    values={**common, "one_time_secret": secrets.token_hex(32)},
+                    values={
+                        **common,
+                        **secret_digests,
+                        "one_time_secret": launch_secret,
+                    },
                 ),
                 _capability_payload(
                     "spec_approval",
                     child_pid=child_pid,
-                    values={**common, "one_time_secret": secrets.token_hex(32)},
+                    values={
+                        **common,
+                        **secret_digests,
+                        "one_time_secret": approval_secret,
+                    },
                 ),
             )
-            for reader in readers:
-                _PARENT_BINDINGS[reader] = child_pid
-            for writer, payload in zip(writers, payloads, strict=True):
-                _write_all(writer, payload)
-                os.close(writer)
-            writers.clear()
-        except BaseException:
-            for descriptor in readers + writers:
-                _PARENT_BINDINGS.pop(descriptor, None)
+            self._bootstrapScope()
+            with _PARENT_BINDINGS_LOCK:
+                for reader in readers:
+                    _PARENT_BINDINGS[reader] = child_pid
+            for payload in payloads:
+                writer = writers.pop(0)
                 try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
+                    self._bootstrapScope()
+                    _write_all(writer, payload)
+                    self._bootstrapScope()
+                finally:
+                    _close_parent_capability_descriptors((writer,))
+            _close_parent_capability_descriptors(readers)
+            readers.clear()
+        except BaseException as launch_error:
+            _close_parent_capability_descriptors(readers + writers)
+            if child is not None:
+                try:
+                    _quiesce_spawned_child(child)
+                except OperatorChildContainmentFailure as containment_error:
+                    raise containment_error from launch_error
             raise
-        reported_pid = getattr(
-            child, "authority_pid", getattr(child, "pid", None)
-        )
+        assert child_pid is not None
         return OperatorSpawnResult(
             spec_digest=digest,
-            canonical_spec_path=str(self.canonical_spec_path),
-            child_pid=reported_pid if type(reported_pid) is int else None,
+            canonical_spec_path=str(canonical_spec_path),
+            child_pid=child_pid,
             child_inheritance_probe=[],
         )
 
 
 __all__ = [
     "AuthorizedOuterCapabilities",
+    "CapsuleBootstrapAuthority",
     "OperatorApprovalFrame",
     "OperatorApprovalRefused",
     "OperatorCapabilityPidMismatch",
     "OperatorCapabilityRefused",
+    "OperatorChildContainmentFailure",
+    "OperatorChildQuiescenceEvidence",
     "OperatorLaunchCapability",
     "OperatorLauncher",
     "OperatorLaunchRefused",
@@ -663,4 +1723,5 @@ __all__ = [
     "PreSpecAnalysisAuthority",
     "SpecProposal",
     "consume_outer_capabilities",
+    "validate_authorized_outer_capabilities",
 ]

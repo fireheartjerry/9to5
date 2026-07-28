@@ -10,7 +10,7 @@ EXPORTS:
   readHookCtx() -> dict  -- Parse the NINE_TO_FIVE_HOOK_CTX env var (JSON: boundaries, log/alert paths).
   writeGuardAlert(hook: str, reason: str) -> None  -- Fire-and-forget guard alert: append one JSON line to guard_alerts.jsonl.
   blockDestructive(data)  -- PreToolUse: block destructive Bash commands by exiting 2.
-DEPENDS-ON: platform_core.runtime.action_risk
+DEPENDS-ON: platform_core.execution, platform_core.runtime.action_risk
 SIDE-EFFECTS: appends logs/guard_alerts.jsonl when a guard blocks
 RUN/TEST: python -m pytest tests/control/test_hooks.py
 """
@@ -22,14 +22,23 @@ import sys
 from datetime import datetime
 from pathlib import Path as _Path
 
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+)
+
 sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
+from platform_core.execution.pre_execution import openLegacyFile  # noqa: E402
 
 # The pattern SOURCE is the one shared taxonomy: the hook block decision, the orchestrator
 # escalation decision, and executor_env's headless pre-scan all derive from it.
 # DESTRUCTIVE_PATTERNS is re-exported so `from agents.hooks import DESTRUCTIVE_PATTERNS`
 # keeps working unchanged.
 from platform_core.runtime.action_risk import (  # noqa: E402,F401
-    DESTRUCTIVE_PATTERNS, ActionDescriptor, RiskTier, classifyActionRisk, scanDestructive,
+    DESTRUCTIVE_PATTERNS,
+    ActionDescriptor,
+    RiskTier,
+    classifyActionRisk,
+    scanDestructive,
 )
 
 _REPO_ROOT = _Path(__file__).resolve().parents[2]
@@ -56,10 +65,10 @@ def writeGuardAlert(hook: str, reason: str) -> None:
     try:
         target = readHookCtx().get("guard_alerts") or str(_REPO_ROOT / "logs" / "guard_alerts.jsonl")
         path = _Path(target)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        mutateLegacyPath(path.parent.mkdir,parents=True, exist_ok=True)
         entry = {"time": datetime.now().isoformat(timespec="seconds"),
                  "hook": hook, "reason": reason}
-        with path.open("a", encoding="utf-8") as fh:
+        with openLegacyFile(path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry) + "\n")
     except Exception:  # noqa: BLE001
         pass

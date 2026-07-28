@@ -12,12 +12,13 @@ Usage:
 EXPORTS:
   is_test_path(path: Path) -> bool  -- True for files under the test trees (see TEST_TOP_DIRS): never mapped, never spliced.
   iter_py_files(only: Optional[str]=None) -> list[Path]  -- All first-party .py files (sorted, deterministic), skipping EXCLUDE_DIRS
+  iter_test_files(*, include_untracked: bool=False) -> list[Path]  -- Test-tree Python files from the canonical or explicit review universe.
   validate_header_prefix(value: Optional[str]) -> str  -- Return one canonical, narrow, repository-relative directory prefix.
   iter_header_files(prefix: str) -> list[Path]  -- Python leaves under one validated prefix, including reviewed untracked leaves.
   module_dotted(path: Path) -> str  -- agents/adversary.py -> 'agents.adversary'
   first_party_roots(paths: Optional[Iterable[Path]]=None) -> set[str]  -- Top-level importable names from the same discovered file universe used by the map.
-  parse_module(path: Path, roots: set[str], known_modules: Optional[set[str]]=None) -> dict  -- Extract the per-module record (sans callers, which are computed globally).
-  find_tests(dotted: str, name: str) -> list[str]  -- Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> prefix exact -> glob -> …
+  parse_module(path: Path, roots: set[str], known_modules: Optional[set[str]]=None, *, test_paths: Optional[Iterable[Path]]=None) -> dict  -- Extract the per-module record (sans callers, which are computed globally).
+  find_tests(dotted: str, name: str, *, test_paths: Optional[Iterable[Path]]=None) -> list[str]  -- Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> prefix exact -> glob -> …
   build_map(only: Optional[str]=None) -> dict  -- Full-repo machine index
   toplevel_import_graph() -> dict[str, list[str]]  -- {dotted-module: [first-party modules imported at LOAD time]}
   render_header(rec: dict) -> str  -- Render the @AI-MAP block (text only, no surrounding quotes).
@@ -34,10 +35,10 @@ from __future__ import annotations
 # ==== IMPORTS ====
 import argparse
 import ast
-from collections.abc import Iterable
-from importlib.util import resolve_name
 import subprocess
 import sys
+from collections.abc import Iterable
+from importlib.util import resolve_name
 from pathlib import Path, PurePosixPath
 from typing import Optional
 
@@ -47,7 +48,7 @@ sys.dont_write_bytecode = True
 
 # Rendering helpers live in repo_map_render (no import of repo_map there -> no circular).
 # Re-exported here so callers can do `from repo_map import render_root_agents_md`.
-from repo_map_render import render_root_agents_md, render_package_agents_md  # noqa: F401
+from repo_map_render import render_package_agents_md, render_root_agents_md  # noqa: F401
 
 # MANUAL_TEST_MAP is pure data (dotted-module -> covering tests); lives in its own module
 # so this facade stays under the size-audit line budget. Re-exported here so callers can do
@@ -118,6 +119,32 @@ def _git_tracked_py_files() -> Optional[list[Path]]:
     return [REPO_ROOT / rel for rel in proc.stdout.split("\0") if rel]
 
 
+def _git_untracked_py_files() -> Optional[list[Path]]:
+    """Nonignored untracked ``*.py`` paths, for an explicit headers-only review."""
+    try:
+        proc = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(REPO_ROOT),
+                "ls-files",
+                "-z",
+                "--others",
+                "--exclude-standard",
+                "--",
+                "*.py",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return [REPO_ROOT / rel for rel in proc.stdout.split("\0") if rel]
+
+
 def is_test_path(path: Path) -> bool:
     """True for files under the test trees (see TEST_TOP_DIRS): never mapped, never spliced."""
     return path.relative_to(REPO_ROOT).parts[0] in TEST_TOP_DIRS
@@ -146,6 +173,35 @@ def iter_py_files(only: Optional[str] = None) -> list[Path]:
             continue
         out.append(p)
     return sorted(out)
+
+
+def iter_test_files(*, include_untracked: bool = False) -> list[Path]:
+    """Test-tree Python files from the canonical or explicit review universe."""
+    tracked = _git_tracked_py_files()
+    if tracked is None:
+        candidates = list(TESTS_DIR.rglob("*.py"))
+    else:
+        candidates = list(tracked)
+        if include_untracked:
+            untracked = _git_untracked_py_files()
+            if untracked is None:
+                candidates.extend(TESTS_DIR.rglob("*.py"))
+            else:
+                candidates.extend(untracked)
+    result: list[Path] = []
+    for path in sorted(set(candidates)):
+        try:
+            relative = path.relative_to(TESTS_DIR)
+        except ValueError:
+            continue
+        if (
+            any(part in EXCLUDE_DIRS for part in relative.parts)
+            or not path.exists()
+            or path.suffix != ".py"
+        ):
+            continue
+        result.append(path)
+    return result
 
 
 def validate_header_prefix(value: Optional[str]) -> str:
@@ -363,7 +419,11 @@ def _read_source(path: Path) -> str:
 
 
 def parse_module(
-    path: Path, roots: set[str], known_modules: Optional[set[str]] = None
+    path: Path,
+    roots: set[str],
+    known_modules: Optional[set[str]] = None,
+    *,
+    test_paths: Optional[Iterable[Path]] = None,
 ) -> dict:
     """Extract the per-module record (sans callers, which are computed globally)."""
     src = _read_source(path)
@@ -382,31 +442,55 @@ def parse_module(
             known_modules=known_modules,
         ),
         "side_effects": [s.strip() for s in se.split(";")] if se else [SIDE_EFFECTS_PLACEHOLDER],
-        "test": find_tests(dotted, path.stem),
+        "test": find_tests(
+            dotted,
+            path.stem,
+            test_paths=test_paths,
+        ),
         "callers": [],  # filled by build_map
     }
 
 
 # ==== TEST MAPPING ====
-def find_tests(dotted: str, name: str) -> list[str]:
+def find_tests(
+    dotted: str,
+    name: str,
+    *,
+    test_paths: Optional[Iterable[Path]] = None,
+) -> list[str]:
     """Resolve a module's covering tests: MANUAL_TEST_MAP -> exact -> prefix exact -> glob -> []."""
     if dotted in MANUAL_TEST_MAP:
         return sorted(MANUAL_TEST_MAP[dotted])
     if not TESTS_DIR.exists():
         return []
-    exact = sorted(TESTS_DIR.rglob(f"test_{name}.py"))
+    candidates = (
+        sorted(test_paths)
+        if test_paths is not None
+        else sorted(TESTS_DIR.rglob("test_*.py"))
+    )
+
+    def render(paths: Iterable[Path]) -> list[str]:
+        return [f"tests/{path.relative_to(TESTS_DIR).as_posix()}" for path in paths]
+
+    exact = [path for path in candidates if path.name == f"test_{name}.py"]
     if exact:
-        return [f"tests/{p.relative_to(TESTS_DIR).as_posix()}" for p in exact]
+        return render(exact)
     parts = name.split("_")
     for size in range(len(parts) - 1, 0, -1):
         prefix = "_".join(parts[:size])
         if len(prefix) < 4:
             continue
-        prefix_exact = sorted(TESTS_DIR.rglob(f"test_{prefix}.py"))
+        prefix_exact = [
+            path for path in candidates if path.name == f"test_{prefix}.py"
+        ]
         if prefix_exact:
-            return [f"tests/{p.relative_to(TESTS_DIR).as_posix()}" for p in prefix_exact]
-    hits = sorted(TESTS_DIR.rglob(f"test_*{name}*.py"))
-    return [f"tests/{p.relative_to(TESTS_DIR).as_posix()}" for p in hits]
+            return render(prefix_exact)
+    hits = [
+        path
+        for path in candidates
+        if path.name.startswith("test_") and name in path.stem[5:]
+    ]
+    return render(hits)
 
 
 # ==== MAP ASSEMBLY ====
@@ -416,11 +500,17 @@ def build_map(only: Optional[str] = None) -> dict:
     paths = [path for path in iter_py_files() if not is_test_path(path)]
     roots = first_party_roots(paths)
     known_modules = {module_dotted(path) for path in paths}
+    test_paths = iter_test_files()
     modules: dict[str, dict] = {}
     skipped: list[str] = []
     for path in paths:
         try:
-            modules[module_dotted(path)] = parse_module(path, roots, known_modules)
+            modules[module_dotted(path)] = parse_module(
+                path,
+                roots,
+                known_modules,
+                test_paths=test_paths,
+            )
         except SyntaxError as e:  # a single unparseable file must not break the whole map
             skipped.append(f"{path.relative_to(REPO_ROOT)} ({e.msg})")
     if skipped:

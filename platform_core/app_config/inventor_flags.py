@@ -15,10 +15,9 @@ RUN/TEST: python -m pytest tests/platform/test_inventor_flags_config.py
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 
-from platform_core.app_config._env import _envBool, _envFloat, _envInt
+from platform_core.app_config._env import _envBool, _envFloat, _envInt, _envString
 
 _F = field
 _AUTONOMY_MODES = ("proposal", "hybrid", "auto")
@@ -26,7 +25,7 @@ _AUTONOMY_MODES = ("proposal", "hybrid", "auto")
 
 def _envChoice(key: str, default: str, choices: tuple[str, ...]) -> str:
     """Env string constrained to ``choices`` (unknown/unset -> default)."""
-    raw = (os.getenv(key) or "").strip().lower()
+    raw = (_envString(key) or "").strip().lower()
     return raw if raw in choices else default
 
 
@@ -46,7 +45,7 @@ class InventorFlags:
     # --- Innovator Excellence: local-only divergent idea generation (ship DARK) ---
     INVENTOR_EXCELLENCE_ENABLED: bool = _F(
         default_factory=lambda: _envBool("INVENTOR_EXCELLENCE_ENABLED", False))
-    INVENTOR_MODEL: str = _F(default_factory=lambda: os.getenv("INVENTOR_MODEL", "qwen2.5:7b"))
+    INVENTOR_MODEL: str = _F(default_factory=lambda: _envString("INVENTOR_MODEL", "qwen2.5:7b"))
     INVENTOR_RAW_IDEA_COUNT: int = _F(default_factory=lambda: _envInt("INVENTOR_RAW_IDEA_COUNT", 18))
     INVENTOR_FINAL_IDEA_COUNT: int = _F(default_factory=lambda: _envInt("INVENTOR_FINAL_IDEA_COUNT", 6))
     INVENTOR_TEMPERATURE: float = _F(default_factory=lambda: _envFloat("INVENTOR_TEMPERATURE", 0.9))

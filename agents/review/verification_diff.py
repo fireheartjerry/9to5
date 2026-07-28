@@ -8,7 +8,7 @@ Split from agents/verification.py to hold the module size budget.
 EXPORTS:
   changedFiles(work_dir: str) -> 'Optional[set[str]]'  -- Changed + untracked files per ``git status --porcelain`` (paths normalized to
   checkDeclaredTargets(work_dir: str, declared: 'tuple[str, ...]', cmd: Optional[str], changed: 'Optional[set[str]]') -> 'tuple[bool, str]'  -- Diff-grounded evaluation (R10c): the diff must intersect the declared target files,
-DEPENDS-ON: config, platform_core.core.git_io
+DEPENDS-ON: config, platform_core.core.git_io, platform_core.execution
 SIDE-EFFECTS: reads git status
 RUN/TEST: python -m pytest tests/execution/test_verification_diff.py
 """
@@ -18,6 +18,9 @@ from typing import Optional
 
 import config
 from platform_core.core import git_io
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+)
 
 
 def changedFiles(work_dir: str) -> "Optional[set[str]]":
@@ -39,7 +42,7 @@ def changedFiles(work_dir: str) -> "Optional[set[str]]":
         if " -> " in path:                      # rename: take the new side
             path = path.split(" -> ", 1)[1].strip().strip('"')
         if path:
-            out.add(path.replace("\\", "/"))
+            out.add(mutateLegacyPath(path.replace,"\\", "/"))
     return out
 
 

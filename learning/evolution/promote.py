@@ -10,7 +10,7 @@ The I8 fence reuses config.CORE_PROTECTED_FILES -- the SAME guard selfmod/hooks_
 EXPORTS:
   run_evolution_promotions(*, runner: Callable[[dict, str], dict], actor: str='gate', db_path: Optional[Path]=None, suite_dir: Optional[Path]=None) -> dict[str, Any]  -- Evaluate every proposed candidate, fence it, and promote ONLY on a facts-green receipt.
   rollback(candidate_id: int, *, db_path: Optional[Path]=None) -> bool  -- One-row reversal: retire a champion candidate so its target falls back to the prior
-DEPENDS-ON: config, learning.evolution.validate, learning.prompts, learning.safety, memory.experience
+DEPENDS-ON: config, learning.evolution.validate, learning.prompts, learning.safety, memory.experience, platform_core.execution
 SIDE-EFFECTS: flips champion rows; writes audit reports
 RUN/TEST: python -m pytest tests/evolution/test_evolution_promote.py
 """
@@ -21,9 +21,13 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 import config
-from learning import safety
 import learning.evolution.validate as validate_mod
+from learning import safety
 from memory import experience
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+    openLegacyFile,
+)
 
 LOG = config.getLogger("sie.evolution.promote")
 
@@ -42,7 +46,7 @@ def _i8_violation(cand: dict[str, Any]) -> Optional[str]:
     core = {c.replace("/", "\\").lower() for c in getattr(config, "CORE_PROTECTED_FILES", ())}
     core_bases = {c.rsplit("\\", 1)[-1] for c in core}
     for p in _referenced_paths(cand):
-        norm = p.replace("/", "\\").lower()
+        norm = mutateLegacyPath(p.replace,"/", "\\").lower()
         base = norm.rsplit("\\", 1)[-1]
         if norm in core or any(norm.endswith("\\" + c) for c in core) or base in core_bases:
             return f"I8: candidate touches core-protected path '{p}'"
@@ -69,8 +73,8 @@ def _audit(action: str, cand: dict[str, Any], detail: str) -> None:
     try:
         # Derive from STATE_DIR (state/tasks) so per-test isolation redirects this too.
         rep_dir = Path(config.STATE_DIR).parent / "evolution" / "reports"
-        rep_dir.mkdir(parents=True, exist_ok=True)
-        with (rep_dir / "REPORT.md").open("a", encoding="utf-8") as fh:
+        mutateLegacyPath(rep_dir.mkdir,parents=True, exist_ok=True)
+        with openLegacyFile(rep_dir / "REPORT.md", "a", encoding="utf-8") as fh:
             fh.write(f"- [{action}] {cand.get('kind')}:{cand.get('target')} "
                      f"(id={cand.get('id')}) -- {detail}\n")
     except Exception as e:  # noqa: BLE001

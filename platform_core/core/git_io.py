@@ -12,7 +12,7 @@ EXPORTS:
   runGit(*args: str, cwd, timeout: Optional[float]=DEFAULT_TIMEOUT_SECONDS, check: bool=False) -> subprocess.CompletedProcess  -- ``git <args>`` in ``cwd`` with GIT_TERMINAL_PROMPT=0 so git can NEVER hang a run
   gitPreflight(work_dir, *, require_origin: bool=False, timeout: Optional[float]=DEFAULT_TIMEOUT_SECONDS) -> 'tuple[bool, str]'  -- (ok, reason) preflight: ``work_dir`` is inside a git work tree, and (optionally)
   gateCommands(tier: str) -> 'list[list[str]]'  -- Fresh mutable copies of a GATE_COMMANDS tier so callers can't mutate the table.
-DEPENDS-ON: (stdlib only)
+DEPENDS-ON: platform_core.execution
 SIDE-EFFECTS: spawns subprocesses (git, gh, python gate commands)
 RUN/TEST: python -m pytest tests/platform/test_git_io.py
 """
@@ -23,6 +23,8 @@ import os
 import subprocess
 import sys
 from typing import Optional
+
+from platform_core.execution.sandbox_broker import runLegacyProcess
 
 # Callers should pass config.GIT_TIMEOUT_SECONDS; this fallback keeps the kernel a
 # stdlib-only leaf (it must not import config).
@@ -44,7 +46,7 @@ def runTool(
     if extra_env:
         env = os.environ.copy()
         env.update(extra_env)
-    return subprocess.run(
+    return runLegacyProcess(
         list(cmd),
         cwd=(str(cwd) if cwd is not None else None),
         check=check,

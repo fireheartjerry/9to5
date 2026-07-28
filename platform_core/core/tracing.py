@@ -20,7 +20,7 @@ EXPORTS:
   emit(run_id: str, event: str, *, subtask_id: Optional[str]=None, **fields: Any) -> None  -- Append one structured event to ``logs/runs/<run_id>/events.jsonl``
   readEvents(run_id: str) -> list[dict]  -- Parse a run's events.jsonl into a list of dicts (skips blank/corrupt lines)
   recentRunIds(limit: int=10) -> list[str]  -- The most-recently-modified run ids under RUNS_ROOT (newest first)
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/platform/test_tracing.py
 """
@@ -32,6 +32,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 import config
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+    observeLegacyPath,
+    openLegacyBuiltin,
+    readLegacyText,
+)
 
 LOG = config.getLogger("tracing")
 
@@ -56,7 +62,7 @@ def emit(run_id: str, event: str, *, subtask_id: Optional[str] = None, **fields:
     ``"replan_split"``, ``"run_completed"``). Extra ``**fields`` are merged into the record."""
     try:
         d = runDir(run_id)
-        d.mkdir(parents=True, exist_ok=True)
+        mutateLegacyPath(d.mkdir,parents=True, exist_ok=True)
         record: dict[str, Any] = {
             "ts": _nowIso(),
             "run_id": str(run_id),
@@ -65,7 +71,7 @@ def emit(run_id: str, event: str, *, subtask_id: Optional[str] = None, **fields:
         }
         record.update(fields)
         line = json.dumps(record, ensure_ascii=False, default=str)
-        with open(d / "events.jsonl", "a", encoding="utf-8") as fh:
+        with openLegacyBuiltin(d / "events.jsonl", "a", encoding="utf-8") as fh:
             fh.write(line + "\n")
     except Exception as e:  # noqa: BLE001 -- tracing must never break a run
         LOG.debug("trace emit failed for %s/%s: %s", run_id, event, e)
@@ -76,7 +82,7 @@ def readEvents(run_id: str) -> list[dict]:
     out: list[dict] = []
     path = runDir(run_id) / "events.jsonl"
     try:
-        text = path.read_text(encoding="utf-8")
+        text = readLegacyText(path, encoding="utf-8")
     except OSError:
         return out
     for line in text.splitlines():
@@ -93,8 +99,8 @@ def readEvents(run_id: str) -> list[dict]:
 def recentRunIds(limit: int = 10) -> list[str]:
     """The most-recently-modified run ids under RUNS_ROOT (newest first). Best-effort, [] if none."""
     try:
-        dirs = [p for p in RUNS_ROOT.iterdir() if p.is_dir()]
+        dirs = [p for p in observeLegacyPath(RUNS_ROOT.iterdir) if observeLegacyPath(p.is_dir)]
     except OSError:
         return []
-    dirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    dirs.sort(key=lambda p: observeLegacyPath(p.stat).st_mtime, reverse=True)
     return [p.name for p in dirs[:limit]]

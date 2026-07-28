@@ -10,7 +10,7 @@ EXPORTS:
   BlackboardEntry  -- One append-only coordination artifact
   makeEntry(kind: str, author: str, to: str, value: dict, *, subtask_id: Optional[str]=None, key: Optional[str]=None, refs: Optional[list]=None, span_id: Optional[str]=None) -> BlackboardEntry  -- Construct a BlackboardEntry, deriving a logical key slot when not supplied.
   Blackboard  -- Append-only JSONL coordination store
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.execution
 SIDE-EFFECTS: writes <path>.jsonl
 RUN/TEST: python -m pytest tests/orchestration/test_society_blackboard.py
 """
@@ -26,6 +26,11 @@ from pathlib import Path
 from typing import Callable, Optional, Union
 
 import config
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+    observeLegacyPath,
+    openLegacyBuiltin,
+)
 
 LOG = config.getLogger("society.blackboard")
 
@@ -64,7 +69,7 @@ class Blackboard:
     def __init__(self, path: Union[str, Path],
                  on_append: Optional[Callable[[dict], None]] = None) -> None:
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        mutateLegacyPath(self.path.parent.mkdir,parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._on_append = on_append
 
@@ -82,7 +87,7 @@ class Blackboard:
         rec["ts_ns"] = time.time_ns()
         line = json.dumps(rec, ensure_ascii=False, default=str)
         with self._lock:
-            with open(self.path, "a", encoding="utf-8") as fh:
+            with openLegacyBuiltin(self.path, "a", encoding="utf-8") as fh:
                 self._osLock(fh)
                 try:
                     fh.write(line + "\n")
@@ -98,10 +103,10 @@ class Blackboard:
 
     def readAll(self) -> list:
         """Return every well-formed entry in append order; skip malformed lines."""
-        if not self.path.exists():
+        if not observeLegacyPath(self.path.exists):
             return []
         out = []
-        with open(self.path, "r", encoding="utf-8") as fh:
+        with openLegacyBuiltin(self.path, "r", encoding="utf-8") as fh:
             for ln in fh:
                 ln = ln.strip()
                 if not ln:

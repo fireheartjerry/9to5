@@ -7,7 +7,7 @@ EXPORTS:
   getCapabilities() -> str
   ensureCapabilities() -> str  -- Lazily build the capabilities summary OFFLINE (no web fetch) from the on-disk
   injectCapabilities(system_prompt: str) -> str  -- Prepend the cached CLAUDE CODE CAPABILITIES block to ANY brain system prompt.
-DEPENDS-ON: platform_core.app_config, platform_core.knowledge_base.builder, platform_core.knowledge_base.scraper
+DEPENDS-ON: platform_core.app_config, platform_core.execution, platform_core.knowledge_base.builder, platform_core.knowledge_base.scraper
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/platform/test_compress.py
 """
@@ -19,12 +19,15 @@ from typing import Optional
 
 # Direction rule (R12): platform_core modules read the in-platform registry facade.
 from platform_core import app_config as config
+from platform_core.execution.pre_execution import (
+    observeLegacyPath,
+)
 from platform_core.knowledge_base.builder import _topHeadings
 from platform_core.knowledge_base.scraper import (
     _readText,
     injectableDoc,
-    scanLocalClaude,
     readRecommendations,
+    scanLocalClaude,
 )
 
 LOG = config.getLogger("knowledge.compress")
@@ -199,7 +202,7 @@ def ensureCapabilities() -> str:
             return _CAPABILITIES
         try:
             prior = ""
-            if config.CLAUDE_KNOWLEDGE_PATH.exists():
+            if observeLegacyPath(config.CLAUDE_KNOWLEDGE_PATH.exists):
                 raw = _readText(config.CLAUDE_KNOWLEDGE_PATH, limit=2_000_000)
                 # Gate: only use the on-disk unified doc as the heading-index source
                 # if it carries a valid provenance stamp (written by buildUnifiedDoc).

@@ -12,7 +12,7 @@ EXPORTS:
   shouldCompact(system: str, user: str, num_ctx: int, headroom: int) -> bool  -- True when system+user is estimated to exceed the window budget (eliza model-input-budge…
   compactPayload(system: str, user: str, num_ctx: int, headroom: int, *, summarize: Callable[[str], str], offload_dir: Optional[str]=None) -> str  -- Condense the oldest half into a MUST-PRESERVE summary + offload the raw with a
   fitOrCompact(system: str, user: str, num_ctx: int, headroom: int, *, summarize: Optional[Callable[[str], str]]=None) -> str  -- The llm_mixin seam
-DEPENDS-ON: config, platform_core.orchestration.brain_io
+DEPENDS-ON: config, platform_core.execution, platform_core.orchestration.brain_io
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_compaction.py
 """
@@ -24,6 +24,9 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import config
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+)
 
 LOG = config.getLogger("orchestrator.compaction")
 
@@ -65,9 +68,9 @@ def _writeOffload(raw: str, offload_dir: str) -> Optional[str]:
     """Persist the raw compress-half to disk; return its path (or None on failure)."""
     try:
         d = Path(offload_dir)
-        d.mkdir(parents=True, exist_ok=True)
+        mutateLegacyPath(d.mkdir,parents=True, exist_ok=True)
         path = d / f"ctx-{int(time.time() * 1000)}-{os.getpid()}.txt"
-        path.write_text(raw, encoding="utf-8")
+        mutateLegacyPath(path.write_text,raw, encoding="utf-8")
         return str(path)
     except Exception as e:  # noqa: BLE001
         LOG.debug("offload write skipped (ignored): %s", e)

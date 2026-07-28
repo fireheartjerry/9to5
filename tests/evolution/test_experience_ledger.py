@@ -36,8 +36,8 @@ class TestExperienceLedger(unittest.TestCase):
 
     def tearDown(self):
         mock.patch.stopall()
-        # Release the pooled SQLite connection before unlinking the temp db, or Windows
-        # raises PermissionError (WinError 32: file in use) on the open inode.
+        # Forget schema readiness and close any operation still unwinding before
+        # unlinking the temp database on Windows.
         experience._reset_schema_cache()
         _forceRmtree(self.dir)
 
@@ -64,13 +64,15 @@ class TestExperienceLedger(unittest.TestCase):
         self.assertEqual(len(runs), 1)
         self.assertEqual(runs[0]["goal_raw"], "g")
 
-    def test_pool_reuses_one_connection_per_thread(self):
+    def test_pool_flag_cannot_retain_a_diagnostic_connection(self):
         experience.close_pool()
         with experience._connect(self.db) as c1:
             pass
         with experience._connect(self.db) as c2:
             pass
-        self.assertIs(c1, c2)                       # same connection object reused
+        self.assertIsNot(c1, c2)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            c1.execute("SELECT 1")
 
     def test_reset_schema_cache_drops_pooled_connection(self):
         with experience._connect(self.db) as c1:
@@ -88,19 +90,21 @@ class TestExperienceLedger(unittest.TestCase):
                 pass
         self.assertIsNot(c1, c2)                     # no reuse when pooling is off
 
-    def test_failed_txn_evicts_connection(self):
+    def test_failed_txn_closes_connection_before_next_scope(self):
         experience.close_pool()
         with experience._connect(self.db) as c1:
             pass
         try:
             with experience._connect(self.db) as c2:
-                self.assertIs(c1, c2)
+                self.assertIsNot(c1, c2)
                 raise RuntimeError("boom")           # rollback + evict
         except RuntimeError:
             pass
+        with self.assertRaises(sqlite3.ProgrammingError):
+            c2.execute("SELECT 1")
         with experience._connect(self.db) as c3:
             pass
-        self.assertIsNot(c1, c3)                     # poisoned conn was replaced
+        self.assertIsNot(c2, c3)
 
     def test_run_upsert_is_idempotent(self):
         for status in ("executing", "executing", "done"):

@@ -22,7 +22,7 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
-from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _nowIso
+from memory.experience_schema import LOG, _connect, _nowIso, _writeConnect
 from platform_core.core.best_effort import best_effort
 
 _CONTESTED = {"challenged", "fail", "failed", "blocked", "reject", "rejected"}
@@ -76,7 +76,7 @@ def recordSolutionContent(run_id: str, st_id: str, *, solution_content: str,
     if not (run_id or "").strip() or not (st_id or "").strip():
         return False
     with best_effort("ledger.exp_content", log=LOG):   # learning never blocks a run
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute(
                 """INSERT INTO exp_content
                    (run_id, st_id, solution_content, post_mortem, importance, model_id, created_at)

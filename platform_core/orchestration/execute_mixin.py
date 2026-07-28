@@ -4,7 +4,7 @@
 EXPORTS:
   AttemptOutcome
   OrchestratorExecuteMixin  -- Handles executor routing, the attempt loop, adversary remediation, and SIE enrichment.
-DEPENDS-ON: agents.adversary, agents.verifier, config, notifications.cast, notifications.dashboard, notifications.discord_bot, platform_core.core.best_effort, platform_core.core.surfaces, platform_core.execution.wiring, platform_core.orchestration.execute_attempt_mixin, platform_core.orchestration.execute_delegates_mixin, platform_core.orchestration.solution_space, platform_core.orchestration.subtask, platform_core.runtime.control, state.task
+DEPENDS-ON: agents.adversary, agents.verifier, config, notifications.cast, notifications.dashboard, notifications.discord_bot, platform_core.core.best_effort, platform_core.core.surfaces, platform_core.execution.environment, platform_core.execution.wiring, platform_core.orchestration.execute_attempt_mixin, platform_core.orchestration.execute_delegates_mixin, platform_core.orchestration.solution_space, platform_core.runtime.control, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_execute_mixin_teardown.py tests/orchestration/test_execute_mixin_env.py tests/orchestration/test_execute_mixin_fork_wiring.py
 """
@@ -12,6 +12,7 @@ RUN/TEST: python -m pytest tests/execution/test_execute_mixin_teardown.py tests/
 from __future__ import annotations
 
 import inspect
+import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -117,14 +118,17 @@ class OrchestratorExecuteMixin(OrchestratorExecuteAttemptMixin, OrchestratorExec
 
     @staticmethod
     def _seedResumeContext(subtask: dict) -> "tuple[str | None, str | None]":
-        """For a resumable subtask (Epic 1b), return (resume_block_as_feedback, resume_session_id)
-        to seed attempt 1; ((None, None) when the flag is off or the subtask isn't resumable)."""
+        """Return bounded textual resume context, never an unbound provider session."""
         if not getattr(config, "STEP_RESUME_ENABLED", False):
             return None, None
         sess = subtask.get("session") or {}
         if not sess.get("resumable"):
             return None, None
-        return sess.get("resume_block"), sess.get("resume_session_id")
+        # A persisted provider session has no proof here that transaction,
+        # clone, provider, capability, and spec digests still match.  Retain
+        # only the bounded diagnostic text; exact same-transaction resume must
+        # arrive later through controller-owned attempt authority.
+        return sess.get("resume_block"), None
 
     def _runAttemptLoop(
         self,
@@ -151,27 +155,62 @@ class OrchestratorExecuteMixin(OrchestratorExecuteAttemptMixin, OrchestratorExec
         result: dict = {"ok": False, "stdout": "", "stderr": "", "returncode": None}
         vresult: "dict | None" = None
         combined = ""
-        resume_session: "str | None" = seed_resume  # continue the SAME Claude session across retries
+        resume_session: "str | None" = seed_resume
+        if env_ctx is not None:
+            raise TypeError("pre-provisioned subtask environments cannot cross retry boundaries")
+        from platform_core.execution import wiring as _env_wiring
+
+        policy = None
+        if not getattr(self, "_fully_injected", False):
+            policy = _env_wiring.resolveExecutionPolicy(state, subtask)
         while attempt < config.MAX_SUBTASK_ATTEMPTS and not passed:
             attempt += 1
             with self._state_lock:
                 state.updateSubtask(
                     sid, status="in_progress", started_at=subtask.get("started_at") or nowIso()
                 )
-            spec, result, vresult, combined, passed, resume_session, failure_feedback = self._runOneAttempt(
-                state,
-                subtask,
-                architect_doc,
-                exec_cwd,
-                bus,
-                dashboard,
-                sid,
-                verify_spec,
-                failure_feedback,
-                resume_session,
-                attempt,
-                env_ctx,
-            )
+            attempt_context = None
+            attempt_cwd = exec_cwd
+            if policy is not None:
+                attempt_id = f"attempt-{uuid.uuid4().hex}"
+                transaction_id = f"txn-{uuid.uuid4().hex}"
+                attempt_context = _env_wiring.provisionForAttempt(
+                    policy,
+                    attempt_id,
+                    transaction_id=transaction_id,
+                    state=state,
+                    subtask=subtask,
+                    exec_cwd=exec_cwd,
+                )
+                from platform_core.execution.environment import ExecutionContext
+
+                if type(attempt_context) is not ExecutionContext:
+                    raise TypeError("attempt provision returned an invalid ExecutionContext")
+                attempt_cwd = attempt_context.work_dir
+            try:
+                spec, result, vresult, combined, passed, _returned_session, failure_feedback = self._runOneAttempt(
+                    state,
+                    subtask,
+                    architect_doc,
+                    attempt_cwd,
+                    bus,
+                    dashboard,
+                    sid,
+                    verify_spec,
+                    failure_feedback,
+                    resume_session,
+                    attempt,
+                    attempt_context,
+                )
+                # Every retry has a new transaction and clone.  A provider
+                # session returned by the prior transaction is diagnostics,
+                # never a capability that can cross this boundary.
+                resume_session = None
+            finally:
+                if attempt_context is not None:
+                    _env_wiring.finalizeAttemptContextQuietly(
+                        attempt_context, state, subtask, sid, LOG
+                    )
             self._translateDiscord(bus, state)
             # honor !pause mid-subtask via the SHARED escapable wait (abort / night-mode
             # timeout / deadline), so a !pause can never wedge an unattended run (CB-1).
@@ -328,29 +367,15 @@ class OrchestratorExecuteMixin(OrchestratorExecuteAttemptMixin, OrchestratorExec
         verify_spec = subtask.get("verify")
         exec_cwd = exec_cwd or self._execCwd(state, sid, work_dir)
         dashboard.update(state, "executing", f"-> {sid} {subtask['title']}")
-        from platform_core.execution import wiring as _env_wiring
-
-        exec_cwd, env, handle, env_ctx = self._prepareSubtaskEnv(state, subtask, exec_cwd)
-        # finalizeQuietly (collect+teardown) must run on EVERY exit path, including an AbortRun
-        # (or any other exception) raised out of _runSubtaskAttempts -- previously it only ran on
-        # the two normal-return paths, so an abort mid-attempt leaked the provisioned env (a
-        # Docker container that never self-exits despite --rm, or a remote host's /tmp tree).
-        try:
-            spec, result, vresult, combined, passed, attempt = self._runSubtaskAttempts(
-                state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec, env_ctx=env_ctx
-            )
-            if spec is None or (state.getSubtask(sid) or {}).get("status") == "removed":
-                return "removed"
-            outcome = AttemptOutcome(sid, spec, result, vresult, combined, passed, attempt, exec_cwd)
-            if defer_completion:
-                return outcome
-            return self._finalizeAttemptOutcome(state, subtask, architect_doc, bus, dashboard, outcome)
-
-        finally:
-            if env is not None and handle is not None:
-                _env_wiring.finalizeQuietly(
-                    env, handle, state, subtask, sid, LOG
-                )  # Epic 8: collect+teardown
+        spec, result, vresult, combined, passed, attempt = self._runSubtaskAttempts(
+            state, subtask, architect_doc, exec_cwd, bus, dashboard, sid, verify_spec
+        )
+        if spec is None or (state.getSubtask(sid) or {}).get("status") == "removed":
+            return "removed"
+        outcome = AttemptOutcome(sid, spec, result, vresult, combined, passed, attempt, exec_cwd)
+        if defer_completion:
+            return outcome
+        return self._finalizeAttemptOutcome(state, subtask, architect_doc, bus, dashboard, outcome)
 
     def _finalizeAttemptOutcome(
         self, state: TaskState, subtask: dict, architect_doc: str, bus: "ControlBus",
@@ -365,33 +390,6 @@ class OrchestratorExecuteMixin(OrchestratorExecuteAttemptMixin, OrchestratorExec
             outcome.passed, final, outcome.exec_cwd, architect_doc, bus, dashboard, outcome.attempt_count,
         )
         return final
-
-    def _prepareSubtaskEnv(self, state: TaskState, subtask: dict, exec_cwd: str) -> tuple:
-        """Boundary divergence check (#12, observe-only) + Epic 8 per-subtask env provisioning.
-        Returns (exec_cwd, env, handle, env_ctx)."""
-        # A fully injected credentialless harness has no environment adapter to
-        # provision or finalize.  Its supplied executor writes only to the test
-        # fixture and cannot reach the built-in backend registry/launcher.
-        if getattr(self, "_fully_injected", False):
-            return exec_cwd, None, None, None
-
-        # Under _state_lock: it mutates state.meta + saves, and EVERY other meta mutation in this
-        # parallel execution path is guarded by _state_lock -- an unguarded save here races a peer
-        # worker's save (lost/torn meta update).
-        with self._state_lock:
-            try:
-                from platform_core.orchestration.subtask import _checkCodeDivergence
-
-                _checkCodeDivergence(state)
-            except Exception:  # noqa: BLE001
-                pass
-        # Epic 8: provision a per-subtask env (default local; fabric OFF => identity => today).
-        from platform_core.execution import wiring as _env_wiring
-
-        env, handle, env_ctx, exec_cwd = _env_wiring.provisionForSubtask(state, subtask, exec_cwd)
-        with self._state_lock:
-            subtask["env_handle_meta"] = {"backend": handle.backend, "meta": handle.meta}
-        return exec_cwd, env, handle, env_ctx
 
     def _commitSubtaskResult(
         self, state: TaskState, sid: str, subtask: dict, passed: bool, attempt: int, vresult: "dict | None"

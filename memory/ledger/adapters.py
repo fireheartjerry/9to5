@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
-from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _j, _nowIso
+from memory.experience_schema import LOG, _connect, _j, _nowIso, _writeConnect
 
 
 def register_adapter(*, base_model: str, tag: str, lora_path: str, role: str = "all",
@@ -28,7 +28,7 @@ def register_adapter(*, base_model: str, tag: str, lora_path: str, role: str = "
                      state: str = "challenger", db_path: Optional[Path] = None) -> Optional[int]:
     """Register a trained LoRA adapter (keyed by unique tag, scoped to a brain ``role``)."""
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             cur = conn.execute(
                 """INSERT INTO adapters
                    (base_model, tag, role, lora_path, modelfile_path, n_train_examples, trained_at, state)
@@ -68,7 +68,7 @@ def fetch_adapters(state: Optional[str] = None,
 def promote_adapter(adapter_id: int, db_path: Optional[Path] = None) -> bool:
     """Make ``adapter_id`` the champion for ITS role; retire that role's prior champion."""
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             row = conn.execute("SELECT role FROM adapters WHERE id=?", (adapter_id,)).fetchone()
             role = row["role"] if row else "all"
             conn.execute(
@@ -84,7 +84,7 @@ def retire_champion_adapter(role: Optional[str] = None,
                             db_path: Optional[Path] = None) -> bool:
     """Roll back: retire the champion adapter (of ``role``, or all roles if None)."""
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             if role is None:
                 conn.execute("UPDATE adapters SET state='retired' WHERE state='champion'")
             else:
@@ -101,7 +101,7 @@ def record_feedback(*, kind: str, run_id: Optional[str] = None, subtask_id: Opti
                     db_path: Optional[Path] = None) -> bool:
     """Capture a human control decision (approve/reject/skip/edit/...) as a label (J)."""
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute(
                 """INSERT INTO human_feedback
                    (run_id, subtask_id, kind, target, before_json, after_json, at)
@@ -127,7 +127,7 @@ def upsert_failure_mode(signature_tags: str, taxonomy_class: str, *, root_cause:
                         mitigation: str = "", db_path: Optional[Path] = None) -> bool:
     """Accrete a failure into the taxonomy (occurrence-counted, keyed by family+class) (L)."""
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             now = _nowIso()
             conn.execute(
                 """INSERT INTO failure_modes

@@ -1,12 +1,22 @@
 """Config knobs + (Task 4) router fallback discipline."""
 import importlib
 import inspect
+from types import SimpleNamespace
 from unittest import mock
 
 import config
-
-from platform_core.execution import router
+import pytest
+from platform_core.execution import environment as environment_contracts
+from platform_core.execution import router, wiring
+from platform_core.execution.backends.clone import CloneEnvironment
 from platform_core.execution.backends.local import LocalEnvironment
+from platform_core.execution.environment import (
+    EnvHandle,
+    EnvironmentUnavailable,
+    ExecutionContext,
+    ResolvedExecutionPolicy,
+)
+from platform_core.execution.launch_guard import TransactionalKernelInactive
 
 
 def _trust_authority(mod, tmp_path):
@@ -40,6 +50,402 @@ def _unavailable():
     return importlib.import_module("platform_core.execution.environment").EnvironmentUnavailable
 
 
+def _local_clone_policy() -> ResolvedExecutionPolicy:
+    return ResolvedExecutionPolicy(
+        requested_backend="worktree",
+        runner_kind="local",
+        landing_backend="clone",
+        read_only=False,
+    )
+
+
+def _validated_trust(receipt_id: str = "trust-receipt-1") -> SimpleNamespace:
+    return SimpleNamespace(receipt_id=receipt_id)
+
+
+def test_wiring_maps_worktree_to_local_runner_clone_landing_without_side_effects():
+    state = SimpleNamespace(meta={})
+    with (
+        mock.patch.object(wiring, "requireTransactionalKernelActive") as guard,
+        mock.patch.object(wiring._env_router, "selectEnvironment") as select,
+        mock.patch.object(wiring._env_router, "provision") as provision,
+    ):
+        policy = wiring.resolveExecutionPolicy(
+            state,
+            {"execution_backend": "worktree"},
+        )
+
+    assert type(policy) is ResolvedExecutionPolicy
+    assert (
+        policy.requested_backend,
+        policy.runner_kind,
+        policy.landing_backend,
+        policy.read_only,
+    ) == ("worktree", "local", "clone", False)
+    guard.assert_not_called()
+    select.assert_not_called()
+    provision.assert_not_called()
+
+
+def test_wiring_refuses_mutating_remote_before_guard_router_or_resources():
+    state = SimpleNamespace(meta={})
+    with (
+        mock.patch.object(wiring, "requireTransactionalKernelActive") as guard,
+        mock.patch.object(wiring._env_router, "selectEnvironment") as select,
+        mock.patch.object(wiring._env_router, "provision") as provision,
+        pytest.raises(EnvironmentUnavailable, match="remote.*sealed candidate") as raised,
+    ):
+        wiring.resolveExecutionPolicy(state, {"execution_backend": "remote"})
+
+    assert raised.value.backend == "remote"
+    guard.assert_not_called()
+    select.assert_not_called()
+    provision.assert_not_called()
+
+
+def test_provision_for_attempt_checks_immutable_guard_before_router_calls():
+    with (
+        mock.patch.object(
+            wiring,
+            "requireTransactionalKernelActive",
+            side_effect=TransactionalKernelInactive("sealed inactive kernel"),
+        ) as guard,
+        mock.patch.object(wiring._env_router, "selectEnvironment") as select,
+        mock.patch.object(wiring._env_router, "provision") as provision,
+        pytest.raises(TransactionalKernelInactive, match="inactive kernel"),
+    ):
+        wiring.provisionForAttempt(
+            _local_clone_policy(),
+            "attempt-1",
+            transaction_id="transaction-1",
+            state=SimpleNamespace(meta={}),
+            subtask={"subtask_id": "subtask-1"},
+            exec_cwd="/canonical",
+        )
+
+    guard.assert_called_once_with()
+    select.assert_not_called()
+    provision.assert_not_called()
+
+
+def test_local_runner_without_exact_trust_refuses_before_landing_resolution():
+    events = []
+
+    def refuse_trust(*args, **kwargs):
+        del args, kwargs
+        events.append("validate-trust")
+        raise EnvironmentUnavailable("local", "exact live workload trust is required")
+
+    def legacy_select(*args, **kwargs):
+        del args, kwargs
+        events.append("legacy-select")
+        raise EnvironmentUnavailable("clone", "legacy selection was reached")
+
+    with (
+        mock.patch.object(wiring, "requireTransactionalKernelActive"),
+        mock.patch.object(
+            router,
+            "validateLocalRunnerEligibility",
+            side_effect=refuse_trust,
+            create=True,
+        ) as validate,
+        mock.patch.object(
+            router,
+            "resolveInstalledLandingEnvironment",
+            create=True,
+        ) as resolve_landing,
+        mock.patch.object(router, "selectEnvironment", side_effect=legacy_select) as select,
+        mock.patch.object(router, "provision") as provision,
+        pytest.raises(EnvironmentUnavailable),
+    ):
+        wiring.provisionForAttempt(
+            _local_clone_policy(),
+            "attempt-1",
+            transaction_id="transaction-1",
+            state=SimpleNamespace(task_id="task-1", meta={}),
+            subtask={"subtask_id": "subtask-1"},
+            exec_cwd="/canonical",
+            backend_registry=object(),
+        )
+
+    assert events == ["validate-trust"]
+    validate.assert_called_once()
+    resolve_landing.assert_not_called()
+    select.assert_not_called()
+    provision.assert_not_called()
+
+
+@pytest.mark.parametrize("fabric_enabled", (False, True))
+def test_attempt_uses_installed_clone_landing_independently_of_fabric_flag(
+    monkeypatch,
+    fabric_enabled,
+):
+    monkeypatch.setattr(config, "EXECUTION_FABRIC_ENABLED", fabric_enabled)
+    events = []
+    registry = object()
+    environment = SimpleNamespace(NAME="clone", teardown=mock.Mock())
+    lease = SimpleNamespace(
+        attempt_id="attempt-1",
+        transaction_id="transaction-1",
+        task_id="task-1",
+        subtask_id="subtask-1",
+        runner_kind="local",
+    )
+    handle = EnvHandle(work_dir="/candidate", backend="clone", runtime_token=lease)
+
+    def validate(*args, **kwargs):
+        del args, kwargs
+        events.append("validate-trust")
+        return _validated_trust()
+
+    def resolve(*args, **kwargs):
+        del args, kwargs
+        events.append("resolve-installed-landing")
+        return environment
+
+    def legacy_select(*args, **kwargs):
+        del args, kwargs
+        events.append("legacy-select")
+        return environment
+
+    def provision(*args, **kwargs):
+        del args, kwargs
+        events.append("provision")
+        return environment, handle
+
+    with (
+        mock.patch.object(wiring, "requireTransactionalKernelActive"),
+        mock.patch.object(
+            router,
+            "validateLocalRunnerEligibility",
+            side_effect=validate,
+            create=True,
+        ),
+        mock.patch.object(
+            router,
+            "resolveInstalledLandingEnvironment",
+            side_effect=resolve,
+            create=True,
+        ) as resolve_landing,
+        mock.patch.object(router, "selectEnvironment", side_effect=legacy_select) as select,
+        mock.patch.object(router, "provision", side_effect=provision),
+    ):
+        context = wiring.provisionForAttempt(
+            _local_clone_policy(),
+            lease.attempt_id,
+            transaction_id=lease.transaction_id,
+            state=SimpleNamespace(task_id=lease.task_id, meta={}),
+            subtask={"subtask_id": lease.subtask_id},
+            exec_cwd="/canonical",
+            backend_registry=registry,
+            trust_grant=object(),
+            trust_scope={"task_id": lease.task_id},
+            trust_authority=object(),
+        )
+
+    assert type(context) is ExecutionContext
+    assert events == ["validate-trust", "resolve-installed-landing", "provision"]
+    resolve_landing.assert_called_once_with(registry, backend="clone")
+    select.assert_not_called()
+
+
+@pytest.mark.parametrize("requested_backend", ("local", "worktree"))
+def test_provision_for_attempt_removes_task_routing_override_before_clone_selection(
+    tmp_path,
+    requested_backend,
+):
+    state = SimpleNamespace(task_id="task-1", meta={})
+    subtask = {
+        "subtask_id": "subtask-1",
+        "title": "preserved title",
+        "metadata": {"preserved": True},
+        "execution_backend": requested_backend,
+    }
+    policy = wiring.resolveExecutionPolicy(state, subtask)
+    environment = SimpleNamespace(NAME="clone", teardown=mock.Mock())
+    handle = EnvHandle(
+        work_dir=str(tmp_path / "candidate"),
+        backend="clone",
+        runtime_token=SimpleNamespace(
+            attempt_id="attempt-1",
+            transaction_id="transaction-1",
+            task_id="task-1",
+            subtask_id="subtask-1",
+            runner_kind="local",
+        ),
+    )
+    captured = {}
+
+    def provision(selected, **kwargs):
+        captured["environment"] = selected
+        captured["subtask"] = kwargs["subtask"]
+        return selected, handle
+
+    with (
+        mock.patch.object(wiring, "requireTransactionalKernelActive"),
+        mock.patch.object(
+            wiring._env_router,
+            "validateLocalRunnerEligibility",
+            return_value=_validated_trust(),
+        ),
+        mock.patch.object(
+            wiring._env_router,
+            "resolveInstalledLandingEnvironment",
+            return_value=environment,
+        ) as resolve_landing,
+        mock.patch.object(wiring._env_router, "selectEnvironment") as select,
+        mock.patch.object(
+            wiring._env_router,
+            "provision",
+            side_effect=provision,
+        ),
+    ):
+        wiring.provisionForAttempt(
+            policy,
+            "attempt-1",
+            transaction_id="transaction-1",
+            state=state,
+            subtask=subtask,
+            exec_cwd=str(tmp_path / "canonical"),
+            backend_registry=object(),
+        )
+
+    assert captured == {
+        "environment": environment,
+        "subtask": {
+            "subtask_id": "subtask-1",
+            "title": "preserved title",
+            "metadata": {"preserved": True},
+        },
+    }
+    resolve_landing.assert_called_once()
+    select.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("field", "foreign_value"),
+    (
+        ("attempt_id", "attempt-other"),
+        ("transaction_id", "transaction-other"),
+        ("task_id", "task-other"),
+        ("subtask_id", "subtask-other"),
+        ("runner_kind", "docker"),
+    ),
+)
+def test_provision_for_attempt_refuses_foreign_lease_without_direct_teardown(
+    field,
+    foreign_value,
+):
+    environment = SimpleNamespace(NAME="clone", teardown=mock.Mock())
+    lease_identity = {
+        "attempt_id": "attempt-1",
+        "transaction_id": "transaction-1",
+        "task_id": "task-1",
+        "subtask_id": "subtask-1",
+        "runner_kind": "local",
+    }
+    lease_identity[field] = foreign_value
+    handle = EnvHandle(
+        work_dir="/candidate",
+        backend="clone",
+        runtime_token=SimpleNamespace(**lease_identity),
+    )
+    with (
+        mock.patch.object(wiring, "requireTransactionalKernelActive"),
+        mock.patch.object(
+            router,
+            "validateLocalRunnerEligibility",
+            return_value=_validated_trust(),
+            create=True,
+        ),
+        mock.patch.object(
+            router,
+            "resolveInstalledLandingEnvironment",
+            return_value=environment,
+            create=True,
+        ),
+        mock.patch.object(wiring._env_router, "selectEnvironment", return_value=environment),
+        mock.patch.object(wiring._env_router, "provision", return_value=(environment, handle)),
+        pytest.raises(EnvironmentUnavailable, match="identity differs") as raised,
+    ):
+        wiring.provisionForAttempt(
+            _local_clone_policy(),
+            "attempt-1",
+            transaction_id="transaction-1",
+            state=SimpleNamespace(task_id="task-1", meta={}),
+            subtask={"subtask_id": "subtask-1"},
+            exec_cwd="/canonical",
+            backend_registry=object(),
+            trust_grant=object(),
+            trust_scope={"task_id": "task-1"},
+            trust_authority=object(),
+        )
+
+    assert raised.value.backend == "clone"
+    environment.teardown.assert_not_called()
+
+
+def test_provision_for_attempt_passes_frozen_typed_identity_scope_to_router(tmp_path):
+    captured = {}
+    environment = SimpleNamespace(NAME="clone", teardown=mock.Mock())
+    lease = SimpleNamespace(
+        attempt_id="attempt-1",
+        transaction_id="transaction-1",
+        task_id="task-1",
+        subtask_id="subtask-1",
+        runner_kind="local",
+    )
+    handle = EnvHandle(
+        work_dir=str(tmp_path / "candidate"),
+        backend="clone",
+        runtime_token=lease,
+    )
+
+    def provision(selected, **kwargs):
+        captured["environment"] = selected
+        captured["scope"] = kwargs["policy"]
+        return selected, handle
+
+    with (
+        mock.patch.object(wiring, "requireTransactionalKernelActive"),
+        mock.patch.object(
+            wiring._env_router,
+            "validateLocalRunnerEligibility",
+            return_value=_validated_trust(),
+        ),
+        mock.patch.object(
+            wiring._env_router,
+            "resolveInstalledLandingEnvironment",
+            return_value=environment,
+        ),
+        mock.patch.object(wiring._env_router, "selectEnvironment") as select,
+        mock.patch.object(wiring._env_router, "provision", side_effect=provision),
+    ):
+        context = wiring.provisionForAttempt(
+            _local_clone_policy(),
+            lease.attempt_id,
+            transaction_id=lease.transaction_id,
+            state=SimpleNamespace(task_id=lease.task_id, meta={}),
+            subtask={"subtask_id": lease.subtask_id},
+            exec_cwd=str(tmp_path / "canonical"),
+            backend_registry=object(),
+        )
+
+    assert type(context) is ExecutionContext
+    scope_type = getattr(environment_contracts, "AttemptProvisionScope", None)
+    assert scope_type is not None, "router provisioning lacks a typed per-attempt identity scope"
+    scope = captured["scope"]
+    assert type(scope) is scope_type
+    assert scope.attempt_id == lease.attempt_id
+    assert scope.transaction_id == lease.transaction_id
+    assert scope.task_id == lease.task_id
+    assert scope.subtask_id == lease.subtask_id
+    assert scope.runner_kind == lease.runner_kind
+    assert scope.trust_receipt_id == "trust-receipt-1"
+    assert scope_type.__dataclass_params__.frozen is True
+    select.assert_not_called()
+
+
 def test_explicit_nonlocal_refuses_when_fabric_disabled():
     with mock.patch.object(config, "EXECUTION_FABRIC_ENABLED", False):
         with __import__("pytest").raises(_unavailable()):
@@ -51,6 +457,37 @@ def test_unknown_backend_is_typed_unavailable():
          mock.patch.object(config, "EXECUTION_BACKEND", "local"):
         with __import__("pytest").raises(_unavailable()):
             router.selectEnvironment({}, {"execution_backend": "does-not-exist"}, None)
+
+
+def test_transactional_clone_route_requires_controller_owned_composition(monkeypatch):
+    monkeypatch.setattr(config, "EXECUTION_FABRIC_ENABLED", True)
+    with __import__("pytest").raises(_unavailable(), match="clone.*composition"):
+        router.selectEnvironment({}, {"execution_backend": "clone"}, None)
+
+
+def test_controller_composition_routes_clone_and_legacy_worktree_without_rebuild(
+    monkeypatch,
+):
+    monkeypatch.setattr(config, "EXECUTION_FABRIC_ENABLED", True)
+    clone = CloneEnvironment(clone_factory=lambda **_: None, kernel=object())
+    registry = router._buildDiagnosticExecutionBackendRegistry(clone)
+
+    selected = router.selectEnvironment(
+        {},
+        {"execution_backend": "clone"},
+        None,
+        backend_registry=registry,
+    )
+    assert selected is clone
+
+    legacy = router.selectEnvironment(
+        {},
+        {"execution_backend": "worktree"},
+        None,
+        backend_registry=registry,
+    )
+    assert legacy.clone_environment is clone
+    assert legacy.healthCheck() is True
 
 
 def test_false_health_check_is_typed_unavailable():
@@ -190,10 +627,15 @@ def test_model_backend_risk_task_and_repo_fields_only_tighten_selection(tmp_path
                                      trust_scope=scope, trust_authority=authority)
     with mock.patch.object(config, "EXECUTION_FABRIC_ENABLED", True), \
          mock.patch.object(router, "_backendClass") as lookup:
-        router.selectEnvironment({"risk_tier": "hostile"}, {}, None,
-                                 trust_grant=grant, trust_scope=scope,
-                                 trust_authority=authority)
-    lookup.assert_called_once()  # a live grant may be tightened to the stronger configured tier
+        with __import__("pytest").raises(
+            _unavailable(), match="controller-owned clone composition"
+        ):
+            router.selectEnvironment({"risk_tier": "hostile"}, {}, None,
+                                     trust_grant=grant, trust_scope=scope,
+                                     trust_authority=authority)
+    # Tightening to clone/worktree still requires the controller-owned registry;
+    # policy input cannot reconstruct it through the legacy class lookup.
+    lookup.assert_not_called()
 
 
 def test_legacy_finalize_preserves_accepted_landing_artifact():

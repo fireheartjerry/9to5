@@ -10,7 +10,7 @@ EXPORTS:
   applySubtaskAction(action: str, sid: str, user_id) -> str  -- Pure router: returns the human reply for a per-subtask action
   subtaskButton(action: str, sid: str) -> 'SubtaskButton'
   SubtaskButton
-DEPENDS-ON: config, notifications.audit, notifications.commands, platform_core.runtime.control
+DEPENDS-ON: config, notifications.audit, notifications.commands, platform_core.runtime, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_dynamic.py
 """
@@ -19,9 +19,10 @@ from __future__ import annotations
 import discord
 
 import config
-from platform_core.runtime.control import ControlBus
 from notifications import audit
 from notifications import commands as spine
+from platform_core.runtime.control import ControlBus
+from platform_core.runtime.effect_guard import legacyDiagnosticDiscordSend
 
 LOG = config.getLogger("ui.dynamic")
 
@@ -72,4 +73,4 @@ class SubtaskButton(discord.ui.DynamicItem[discord.ui.Button], template=TEMPLATE
 
     async def callback(self, interaction: discord.Interaction) -> None:
         msg = applySubtaskAction(self.action, self.sid, interaction.user.id)
-        await interaction.response.send_message(msg[:1900], ephemeral=True)
+        await legacyDiagnosticDiscordSend(interaction.response.send_message, msg[:1900], ephemeral=True)

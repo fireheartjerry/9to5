@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import config
-from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _j
+from memory.experience_schema import LOG, _connect, _j, _writeConnect
 from platform_core.core.best_effort import best_effort
 
 
@@ -72,7 +72,7 @@ def record_subtask(run_id: str, st: dict[str, Any], db_path: Optional[Path] = No
         LOG.warning("record_subtask: missing or empty subtask_id, skipping")
         return False
     with best_effort("ledger.subtasks", log=LOG):
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute(
                 """INSERT INTO subtasks
                    (run_id, st_id, position, title, signature_tags, effort, model,
@@ -167,7 +167,7 @@ def set_subtask_embedding(run_id: str, st_id: str, blob: bytes,
                           db_path: Optional[Path] = None) -> bool:
     """Attach an embedding BLOB to an existing subtask row (Layer 1 retrieval). Best-effort."""
     with best_effort("ledger.subtasks", log=LOG):
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute("UPDATE subtasks SET embedding=? WHERE run_id=? AND st_id=?",
                          (blob, run_id, st_id))
         return True
@@ -179,7 +179,7 @@ def set_subtask_importance(run_id: str, st_id: str, importance: float,
     """Denormalize write-time salience onto the subtask row (so rerank has it even for
     rows that predate exp_content). Best-effort; mirrors set_subtask_embedding."""
     with best_effort("ledger.subtasks", log=LOG):
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute("UPDATE subtasks SET importance=? WHERE run_id=? AND st_id=?",
                          (float(importance), run_id, st_id))
         return True

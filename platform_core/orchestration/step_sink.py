@@ -6,7 +6,7 @@ the orchestrator injects this sink. Fail-open: the sink never raises into the fe
 EXPORTS:
   makeSink(run_id: str, subtask_id: str, attempt: int, plan_sig: str, session_getter: Callable[[], Optional[str]], recorder: Any=None, parent_span_id: Optional[str]=None, profile_meta: Optional[dict]=None) -> Callable[[int, str, str, dict], None]  -- Build the on_step(step_idx, tool, summary, input) callback
   buildAttemptFeed(orch, state, sid: str, attempt: int, resume_session: Optional[str]) -> tuple  -- Wire the live surface feed for ONE Claude-CLI attempt: step-journal sink + trajectory
-DEPENDS-ON: config, memory.experience, notifications.event_bus, notifications.subprocess_feed, platform_core.orchestration.step_resume
+DEPENDS-ON: config, memory.experience, notifications.runtime.event_bus, notifications.runtime.subprocess_feed, platform_core.orchestration.step_resume
 SIDE-EFFECTS: writes journal rows + trajectory spans
 RUN/TEST: python -m pytest tests/orchestration/test_step_sink.py
 """
@@ -64,8 +64,8 @@ def buildAttemptFeed(orch, state, sid: str, attempt: int,
     (feed, recorder, parent_span) -- ALL None on any failure, because the live feed and
     journal are best-effort and must never block an attempt."""
     try:
-        from notifications.event_bus import get_bus
-        from notifications.subprocess_feed import SubprocessFeed
+        from notifications.runtime.event_bus import get_bus
+        from notifications.runtime.subprocess_feed import SubprocessFeed
         # Plan signature gates resume; recorded on every journal row (Epic 1b consumer).
         try:
             from platform_core.orchestration.step_resume import planSignature

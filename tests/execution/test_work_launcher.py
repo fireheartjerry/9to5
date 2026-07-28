@@ -138,19 +138,21 @@ class TestActiveRun(unittest.TestCase):
 
 
 class TestSpawn(unittest.TestCase):
-    def test_spawn_uses_argv(self):
-        fake = mock.Mock(pid=4321)
-        # opt out of the test-mode spawn guard: this test asserts the real Popen path.
+    def test_legacy_detached_spawn_is_disabled_before_opening_a_log_or_process(self):
         with (
             mock.patch.object(wl, "_spawnBlocked", return_value=False),
-            mock.patch.object(subprocess, "Popen", return_value=fake) as p,
-            mock.patch("builtins.open", mock.mock_open()),
+            mock.patch.object(Path, "mkdir") as mkdir,
+            mock.patch("builtins.open") as legacy_open,
+            mock.patch.object(subprocess, "Popen") as legacy_popen,
         ):
-            pid = wl._spawnArgv(wl.buildArgv(wl.WorkRequest(goal="do x")), "work")
-        self.assertEqual(pid, 4321)
-        args, kwargs = p.call_args
-        self.assertEqual(args[0], wl.buildArgv(wl.WorkRequest(goal="do x")))
-        self.assertEqual(kwargs["cwd"], str(config.PROJECT_ROOT))
+            with self.assertRaisesRegex(
+                wl.SingularityLaunchUnavailable,
+                "request-only Singularity",
+            ):
+                wl._spawnArgv(wl.buildArgv(wl.WorkRequest(goal="do x")), "work")
+        mkdir.assert_not_called()
+        legacy_open.assert_not_called()
+        legacy_popen.assert_not_called()
 
     def test_spawn_suppressed_in_test_mode(self):
         # the guard must hard-block a real launch and never call Popen during tests
@@ -194,17 +196,14 @@ class TestResume(unittest.TestCase):
         with mock.patch.object(config, "STATE_DIR", d / "tasks"):
             self.assertFalse(wl.taskExists("../sibling"))
 
-    def test_spawn_resume_uses_argv(self):
-        fake = mock.Mock(pid=99)
-        # opt out of the test-mode spawn guard: this test asserts the real Popen path.
+    def test_legacy_detached_resume_is_disabled_before_process_creation(self):
         with (
             mock.patch.object(wl, "_spawnBlocked", return_value=False),
-            mock.patch.object(subprocess, "Popen", return_value=fake) as p,
-            mock.patch("builtins.open", mock.mock_open()),
+            mock.patch.object(subprocess, "Popen") as legacy_popen,
         ):
-            pid = wl._spawnArgv(wl.buildResumeArgv("abc-123"), "resume")
-        self.assertEqual(pid, 99)
-        self.assertEqual(p.call_args.args[0], wl.buildResumeArgv("abc-123"))
+            with self.assertRaises(wl.SingularityLaunchUnavailable):
+                wl._spawnArgv(wl.buildResumeArgv("abc-123"), "resume")
+        legacy_popen.assert_not_called()
 
 
 class TestLaunchGlue(unittest.TestCase):

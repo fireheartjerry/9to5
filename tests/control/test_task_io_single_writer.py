@@ -15,6 +15,58 @@ from state import task_io
 from state.task import TaskState
 
 
+def _controller_binding(tmp_path):
+    from platform_core.runtime import controller_state
+
+    capability = object()
+    authority = controller_state.issueDiagnosticControllerStateAuthority(
+        root=tmp_path / "controller-state",
+        repository_id="repo_task_io_test",
+        controller_generation=7,
+        process_capability=capability,
+        expires_at="2099-01-01T00:00:00+00:00",
+    )
+    store = controller_state.ControllerStateStore(
+        root=tmp_path / "controller-state", authority=authority
+    )
+    return store, authority
+
+
+def test_diagnostic_task_state_uses_only_explicit_controller_store(
+    tmp_path, monkeypatch
+):
+    store, authority = _controller_binding(tmp_path)
+    poison = tmp_path / "target-repository" / "state" / "tasks"
+    monkeypatch.setattr(task_io, "_INSTALLED_BINDING", None, raising=False)
+    monkeypatch.setattr(task_io, "_controllerPathsActive", lambda: False)
+    monkeypatch.setattr(config, "STATE_DIR", poison)
+    task_io.installTaskStateStore(store=store, authority=authority)
+
+    st = TaskState.create("external state", 1.0)
+    st.save()
+    st.meta["status"] = "executing"
+    st.save()
+
+    assert not poison.exists()
+    assert TaskState.load(st.task_id).meta["status"] == "executing"
+    assert [data["task_id"] for _path, data in TaskState.iterStored()] == [
+        st.task_id
+    ]
+    assert store.readJson(
+        f"task-backups/{st.task_id}", authority=authority
+    )["meta"]["status"] == "created"
+
+
+def test_capsule_task_state_refuses_without_exact_store_binding(monkeypatch):
+    from platform_core.app_config import paths
+
+    monkeypatch.setattr(task_io, "_INSTALLED_BINDING", None, raising=False)
+    monkeypatch.setattr(paths, "controllerPathsActive", lambda: True)
+
+    with pytest.raises(task_io.TaskStateStoreUnavailable):
+        TaskState.load("33333333-3333-4333-8333-333333333333")
+
+
 # --------------------------------------------------------------------- iterStored
 def test_iterstored_skips_foreign_shaped_files(caplog):
     st = TaskState.create("real goal", 1.0)

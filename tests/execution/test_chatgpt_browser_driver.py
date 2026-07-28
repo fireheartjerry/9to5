@@ -37,6 +37,12 @@ class TestChatGptBrowserDriver(unittest.TestCase):
 
     def test_send_prompt_to_project_reuses_session_without_closing_tab(self):
         driver._SHARED_PROJECT_SESSIONS.clear()
+        self.addCleanup(
+            driver.close_project_session,
+            driver.DEFAULT_PROJECT_URL,
+            driver.DEFAULT_MODEL,
+            driver.DEFAULT_REASONING,
+        )
         browser = mock.Mock()
         context = mock.Mock()
         page = mock.Mock()

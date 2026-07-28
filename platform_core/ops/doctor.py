@@ -16,7 +16,7 @@ EXPORTS:
   check_degradations() -> dict[str, Any]  -- Surfaces swallowed best_effort failures recorded this process (structured
   run() -> dict[str, Any]  -- Run every preflight check
   render(report: dict[str, Any]) -> str
-DEPENDS-ON: config, learning.compute, platform_core.core.best_effort, platform_core.core.git_io
+DEPENDS-ON: config, learning.compute, llm_io, platform_core.core.best_effort, platform_core.core.git_io
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/platform/test_doctor.py
 """
@@ -27,6 +27,7 @@ import shutil
 from typing import Any
 
 import config
+import llm_io
 from platform_core.core.git_io import runGit
 
 LOG = config.getLogger("doctor")
@@ -39,9 +40,7 @@ def _check(name: str, ok: bool, *, hard: bool, detail: str = "", fix: str = "") 
 def check_ollama() -> dict[str, Any]:
     """The local brain -- a HARD requirement (planning/spec authoring need it)."""
     try:
-        import ollama
-
-        client = ollama.Client(host=config.OLLAMA_HOST, timeout=5)
+        client = llm_io.getClient()
         models = client.list().get("models", [])
         names = {(m.get("model") or m.get("name") or "") for m in models}
         want = config.OLLAMA_MODEL
@@ -81,11 +80,9 @@ def check_claude_cli() -> dict[str, Any]:
 def check_embedder() -> dict[str, Any]:
     """Local embedder for retrieval (degraded feature: no retrieval until present)."""
     try:
-        import ollama
-
         names = {
             (m.get("model") or m.get("name") or "")
-            for m in ollama.Client(host=config.OLLAMA_HOST, timeout=5).list().get("models", [])
+            for m in llm_io.getClient().list().get("models", [])
         }
         ok = config.EMBED_MODEL in names
         return _check(

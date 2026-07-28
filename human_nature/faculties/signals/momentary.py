@@ -35,9 +35,7 @@ _OLLAMA = None  # lazy singleton; never imported at module load time
 def _getOllama():
     global _OLLAMA
     if _OLLAMA is None:
-        import ollama  # deferred: ~0.3 s SDK import paid only on first real call
-        _OLLAMA = ollama.Client(host=config.OLLAMA_HOST,
-                                timeout=config.OLLAMA_TIMEOUT_SECONDS)
+        _OLLAMA = llm_io.getClient()
     return _OLLAMA
 
 

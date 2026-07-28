@@ -14,7 +14,7 @@ param(
     [Alias('request-only')]
     [switch] $RequestOnly,
 
-    [Parameter(ParameterSetName = 'Request')]
+    [Parameter(ParameterSetName = 'Request', Position = 0)]
     [string] $Operation,
 
     [Parameter(ParameterSetName = 'Request')]
@@ -22,8 +22,23 @@ param(
     [string] $PayloadBase64Url,
 
     [Parameter(ParameterSetName = 'Request')]
+    [Alias('arguments-base64url')]
+    [string] $ArgumentsBase64Url,
+
+    [Parameter(ParameterSetName = 'Request')]
+    [Alias('envelope-request-id')]
+    [string] $EnvelopeRequestId,
+
+    [Parameter(ParameterSetName = 'Request')]
     [Alias('require-server-validated-client-digest')]
-    [switch] $RequireServerValidatedClientDigest
+    [switch] $RequireServerValidatedClientDigest,
+
+    [Parameter(ParameterSetName = 'Request')]
+    [Alias('emit-canonical-response')]
+    [switch] $EmitCanonicalResponse,
+
+    [Parameter(ParameterSetName = 'Request', ValueFromRemainingArguments = $true)]
+    [string[]] $InvocationArguments
 )
 
 Set-StrictMode -Version 2.0
@@ -157,16 +172,23 @@ function ConvertFrom-StrictUtf8Json {
 
 function Invoke-RequestEnvelopeSelfTest {
     param([Parameter(Mandatory = $true)][string] $Encoded)
-    $requestBytes = ConvertFrom-StrictBase64Url $Encoded 8192 'request envelope'
+    # The self-test transports the raw pipe frame through argv once more.  Its
+    # base64url wrapper may be 10,923 characters while the decoded request
+    # itself remains capped at the protocol's exact 8 KiB.
+    $requestBytes = ConvertFrom-StrictBase64Url $Encoded 10923 'request envelope'
+    if ($requestBytes.Length -gt 8192) { throw 'request envelope decoded byte cap exceeded' }
     $request = ConvertFrom-StrictUtf8Json $requestBytes 'request envelope'
     $names = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::Ordinal)
     foreach ($property in $request.PSObject.Properties) { [void] $names.Add($property.Name) }
-    if ($names.Count -ne 3 -or -not $names.Contains('operation') -or
+    if ($names.Count -ne 4 -or -not $names.Contains('arguments') -or
+            -not $names.Contains('operation') -or
             -not $names.Contains('payload_base64url') -or -not $names.Contains('request_id')) {
         throw 'request envelope schema mismatch'
     }
     if ($request.operation -ne 'append-path-manifest' -or
-            $request.payload_base64url -isnot [string] -or $request.request_id -isnot [string]) {
+            $request.arguments -isnot [System.Management.Automation.PSCustomObject] -or
+            $request.payload_base64url -isnot [string] -or
+            $request.request_id -isnot [string]) {
         throw 'request envelope field mismatch'
     }
     $payloadBytes = ConvertFrom-StrictBase64Url $request.payload_base64url 8192 'path manifest'
@@ -177,18 +199,304 @@ function Invoke-RequestEnvelopeSelfTest {
     [System.Console]::Out.WriteLine($output)
 }
 
+function ConvertFrom-InvocationArguments {
+    param([string[]] $Tokens)
+    $result = [ordered]@{}
+    $index = 0
+    while ($index -lt $Tokens.Count) {
+        $token = [string]$Tokens[$index]
+        if (-not [System.Text.RegularExpressions.Regex]::IsMatch(
+                $token, '\A--[a-z][a-z0-9-]{0,63}\z',
+                [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)) {
+            throw "operation argument token is malformed: $token"
+        }
+        $key = $token.Substring(2).Replace('-', '_')
+        if ($result.Contains($key)) { throw "operation argument is duplicated: $token" }
+        $value = $true
+        if ($index + 1 -lt $Tokens.Count -and
+                -not ([string]$Tokens[$index + 1]).StartsWith('--')) {
+            $index += 1
+            $raw = [string]$Tokens[$index]
+            if ($raw.Length -gt 32767 -or $raw.IndexOf([char]0) -ge 0 -or
+                    $raw.Contains("`r") -or $raw.Contains("`n")) {
+                throw "operation argument value is malformed: $token"
+            }
+            if ([System.Text.RegularExpressions.Regex]::IsMatch(
+                    $raw, '\A(?:0|[1-9][0-9]{0,17})\z',
+                    [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)) {
+                $value = [System.Int64]::Parse(
+                    $raw, [System.Globalization.CultureInfo]::InvariantCulture)
+            }
+            else { $value = $raw }
+        }
+        $result[$key] = $value
+        $index += 1
+    }
+    return $result
+}
+
+function ConvertTo-Base64UrlUtf8 {
+    param([Parameter(Mandatory = $true)][string] $Text)
+    $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
+    return [System.Convert]::ToBase64String($utf8.GetBytes($Text)).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+}
+
+function Get-Utf8Sha256 {
+    param([Parameter(Mandatory = $true)][string] $Text)
+    $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return ([System.BitConverter]::ToString(
+            $sha.ComputeHash($utf8.GetBytes($Text)))).Replace('-', '').ToLowerInvariant()
+    }
+    finally { $sha.Dispose() }
+}
+
+function Read-ExactPipeBytes {
+    param(
+        [Parameter(Mandatory = $true)][System.IO.Stream] $Stream,
+        [Parameter(Mandatory = $true)][int] $Count,
+        [Parameter(Mandatory = $true)][string] $Label
+    )
+    if ($Count -lt 0 -or $Count -gt 1048576) { throw "$Label length is outside its bound" }
+    $bytes = [byte[]]::new($Count)
+    $offset = 0
+    while ($offset -lt $Count) {
+        $read = $Stream.Read($bytes, $offset, $Count - $offset)
+        if ($read -le 0) { throw "$Label pipe frame ended early" }
+        $offset += $read
+    }
+    return ,$bytes
+}
+
+function ConvertTo-BigEndianLength {
+    param([Parameter(Mandatory = $true)][int] $Value)
+    if ($Value -lt 1 -or $Value -gt 1048576) { throw 'pipe frame length is outside its bound' }
+    return ,[byte[]]@(
+        [byte](($Value -shr 24) -band 255),
+        [byte](($Value -shr 16) -band 255),
+        [byte](($Value -shr 8) -band 255),
+        [byte]($Value -band 255)
+    )
+}
+
+function ConvertFrom-BigEndianLength {
+    param([Parameter(Mandatory = $true)][byte[]] $Bytes)
+    if ($Bytes.Length -ne 4) { throw 'pipe frame header length differs' }
+    $value = ([int]$Bytes[0] -shl 24) -bor ([int]$Bytes[1] -shl 16) -bor `
+        ([int]$Bytes[2] -shl 8) -bor [int]$Bytes[3]
+    if ($value -lt 1 -or $value -gt 1048576) { throw 'pipe response length is outside its bound' }
+    return $value
+}
+
+function Invoke-ProtectedPipeRequest {
+    param([Parameter(Mandatory = $true)][byte[]] $RequestBytes)
+    if ($RequestBytes.Length -lt 1 -or $RequestBytes.Length -gt 8192) {
+        throw 'request envelope byte length is outside 1..8192'
+    }
+    function New-ExactPipeClient {
+        return [System.IO.Pipes.NamedPipeClientStream]::new(
+            '.', '9to5-singularity-v1', [System.IO.Pipes.PipeDirection]::InOut,
+            [System.IO.Pipes.PipeOptions]::None,
+            [System.Security.Principal.TokenImpersonationLevel]::Identification)
+    }
+    function Start-ExactSingularityService {
+        $controller = [System.ServiceProcess.ServiceController]::new(
+            '9to5Singularity', '.')
+        try {
+            $controller.Refresh()
+            if ($controller.Status -eq [System.ServiceProcess.ServiceControllerStatus]::Stopped) {
+                $controller.Start()
+            }
+            if ($controller.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Running) {
+                $controller.WaitForStatus(
+                    [System.ServiceProcess.ServiceControllerStatus]::Running,
+                    [System.TimeSpan]::FromSeconds(5))
+            }
+        }
+        finally { $controller.Dispose() }
+    }
+    $pipe = New-ExactPipeClient
+    try {
+        try { $pipe.Connect(250) }
+        catch {
+            $pipe.Dispose()
+            Start-ExactSingularityService
+            $pipe = New-ExactPipeClient
+            $pipe.Connect(5000)
+        }
+        $header = ConvertTo-BigEndianLength $RequestBytes.Length
+        $pipe.Write($header, 0, $header.Length)
+        $pipe.Write($RequestBytes, 0, $RequestBytes.Length)
+        $pipe.Flush()
+        $responseHeader = Read-ExactPipeBytes $pipe 4 'response header'
+        $responseLength = ConvertFrom-BigEndianLength $responseHeader
+        return ,(Read-ExactPipeBytes $pipe $responseLength 'response')
+    }
+    finally { $pipe.Dispose() }
+}
+
 try {
     if ($PSCmdlet.ParameterSetName -eq 'SelfTest') {
         Invoke-RequestEnvelopeSelfTest $SelfTestRequestEnvelope
         exit 0
     }
+    $closedOperations = New-Object 'System.Collections.Generic.HashSet[string]' (
+        [System.StringComparer]::Ordinal)
+    foreach ($name in @(
+            'abort-cutover', 'abort-path-manifest', 'abort-source-update',
+            'acknowledge-terminal-disposition', 'acquire-begin-intent',
+            'acquire-transition-purpose', 'append-path-manifest',
+            'attest-committed-source', 'attest-target', 'begin-cutover',
+            'begin-path-manifest', 'begin-source-update',
+            'classify-purpose-successor', 'commit-source-proposal',
+            'current-tofu-receipt', 'finish-cutover', 'finish-source-update',
+            'handoff-to-anchor', 'install-inactive',
+            'normalize-bootstrap-git-config', 'normalize-bootstrap-ref',
+            'normalize-developer-source', 'observe-top-level-transition',
+            'prepare-source-commit', 'reconcile-cutover-failure',
+            'reconcile-source-commit', 'reconcile-source-update',
+            'resolve-begin-intent', 'resolve-begin-intent-owner-fence',
+            'resolve-current-top-level-transition', 'resolve-cutover-begin',
+            'resolve-cutover-disposition', 'resolve-source-commit-disposition',
+            'resolve-source-update-begin', 'resolve-source-update-disposition',
+            'resolve-transition-purpose', 'resolve-transition-purpose-outcome',
+            'review-source-proposal', 'seal-path-manifest',
+            'settle-top-level-transition', 'verify-cutover', 'verify-drained',
+            'verify-proposal-trust-closure', 'verify-self',
+            'verify-source-proposal', 'verify-tofu-receipt')) {
+        [void]$closedOperations.Add($name)
+    }
+    $providedInvocationArguments = @(
+        $InvocationArguments | Where-Object { $null -ne $_ }
+    )
+    if ([string]::IsNullOrEmpty($Operation)) {
+        $operationCandidates = @(
+            $providedInvocationArguments | Where-Object {
+                $closedOperations.Contains([string]$_)
+            }
+        )
+        if ($operationCandidates.Count -ne 1) {
+            throw 'request contains no unique closed operation token'
+        }
+        $Operation = [string]$operationCandidates[0]
+        $remaining = New-Object 'System.Collections.Generic.List[string]'
+        $removed = $false
+        foreach ($token in $providedInvocationArguments) {
+            if (-not $removed -and [string]$token -ceq $Operation) {
+                $removed = $true
+                continue
+            }
+            $remaining.Add([string]$token)
+        }
+        $providedInvocationArguments = $remaining.ToArray()
+    }
+    elseif (-not $closedOperations.Contains($Operation) -or
+            @($providedInvocationArguments | Where-Object {
+                $closedOperations.Contains([string]$_)
+            }).Count -gt 0) {
+        throw 'request operation is duplicated or outside the closed enum'
+    }
     if (-not $RequestOnly -or [string]::IsNullOrEmpty($Operation) -or
-            [string]::IsNullOrEmpty($PayloadBase64Url) -or
             -not $RequireServerValidatedClientDigest) {
         throw 'request-only closed protocol arguments are required'
     }
-    [System.Console]::Out.WriteLine('{"accepted":false,"error":"TransactionalKernelInactive"}')
-    exit 73
+    if (-not [System.Text.RegularExpressions.Regex]::IsMatch(
+            $Operation, '\A[a-z][a-z0-9-]{0,63}\z',
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)) {
+        throw 'operation is outside the bounded token grammar'
+    }
+    $identityForValidation = if ([string]::IsNullOrEmpty($EnvelopeRequestId)) {
+        'request_x'
+    } else { $EnvelopeRequestId }
+    if (-not [System.Text.RegularExpressions.Regex]::IsMatch(
+            $identityForValidation,
+            '\A[A-Za-z][A-Za-z0-9_.:-]{0,511}\z',
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)) {
+        throw 'request identity is outside the bounded token grammar'
+    }
+    if (-not [string]::IsNullOrEmpty($ArgumentsBase64Url)) {
+        if ($providedInvocationArguments.Count -gt 0) {
+            throw 'explicit argument envelope cannot be combined with plan-style flags'
+        }
+        $argumentBytes = ConvertFrom-StrictBase64Url $ArgumentsBase64Url 5462 'arguments'
+        if ($argumentBytes.Length -gt 4096) { throw 'arguments decoded byte cap exceeded' }
+        $arguments = ConvertFrom-StrictUtf8Json $argumentBytes 'arguments'
+    }
+    else { $arguments = ConvertFrom-InvocationArguments $providedInvocationArguments }
+    if ([string]::IsNullOrEmpty($PayloadBase64Url) -and
+            $arguments -is [System.Collections.IDictionary] -and
+            $arguments.Contains('canonical_records_json_base64url')) {
+        $PayloadBase64Url = [string]$arguments['canonical_records_json_base64url']
+        [void]$arguments.Remove('canonical_records_json_base64url')
+    }
+    if ([string]::IsNullOrEmpty($PayloadBase64Url)) {
+        $PayloadBase64Url = ConvertTo-Base64UrlUtf8 '{}'
+    }
+    $payloadBytes = ConvertFrom-StrictBase64Url $PayloadBase64Url 5462 'payload'
+    if ($payloadBytes.Length -gt 4096) { throw 'payload decoded byte cap exceeded' }
+    [void](ConvertFrom-StrictUtf8Json $payloadBytes 'payload')
+    if ([string]::IsNullOrEmpty($EnvelopeRequestId)) {
+        $identity = [ordered]@{
+            arguments = $arguments
+            operation = $Operation
+            payload_base64url = $PayloadBase64Url
+        }
+        $EnvelopeRequestId = 'request_' + (Get-Utf8Sha256 (ConvertTo-CanonicalJson $identity))
+    }
+    $request = [ordered]@{
+        arguments = $arguments
+        operation = $Operation
+        payload_base64url = $PayloadBase64Url
+        request_id = $EnvelopeRequestId
+    }
+    $requestText = ConvertTo-CanonicalJson $request
+    $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
+    $requestBytes = $utf8.GetBytes($requestText)
+    $responseBytes = Invoke-ProtectedPipeRequest $requestBytes
+    $response = ConvertFrom-StrictUtf8Json $responseBytes 'response'
+    $responseText = ConvertTo-CanonicalJson $response
+    $responseNames = New-Object 'System.Collections.Generic.HashSet[string]' (
+        [System.StringComparer]::Ordinal)
+    foreach ($property in $response.PSObject.Properties) {
+        [void]$responseNames.Add($property.Name)
+    }
+    foreach ($requiredName in @(
+            'accepted', 'authority_ceiling', 'operation', 'production_active',
+            'request_id', 'result', 'schema')) {
+        if (-not $responseNames.Contains($requiredName)) {
+            throw 'response schema is not closed'
+        }
+    }
+    if ($responseNames.Count -ne 7 -or
+            $response.schema -cne 'galaxy.singularity-admin-response/v1' -or
+            $response.authority_ceiling -cne 'maintenance_only' -or
+            $response.production_active -ne $false -or
+            $response.operation -cne $Operation -or
+            $response.request_id -cne $EnvelopeRequestId -or
+            $response.result -isnot [System.Management.Automation.PSCustomObject]) {
+        throw 'response authority or request binding differs'
+    }
+    if ($response.accepted -ne $true) {
+        [System.Console]::Error.WriteLine($responseText)
+        exit 73
+    }
+    if ($EmitCanonicalResponse) {
+        [System.Console]::Out.WriteLine($responseText)
+    }
+    else {
+        $outputProperty = $response.result.PSObject.Properties['output']
+        if ($null -ne $outputProperty) {
+            $output = $outputProperty.Value
+            if ($output -isnot [string] -or $output.Length -gt 32767 -or
+                    $output.IndexOf([char]0) -ge 0 -or $output.Contains("`r") -or
+                    $output.Contains("`n")) {
+                throw 'response output is not one bounded scalar line'
+            }
+            if ($output.Length -gt 0) { [System.Console]::Out.WriteLine($output) }
+        }
+    }
+    exit 0
 }
 catch {
     [System.Console]::Error.WriteLine('Singularity request refused: ' + $_.Exception.Message)

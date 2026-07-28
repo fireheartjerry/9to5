@@ -12,10 +12,9 @@ RUN/TEST: python -m pytest tests/platform/test_epic_flags_config.py tests/slow/t
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 
-from platform_core.app_config._env import _envBool, _envFloat, _envInt, _fullStack
+from platform_core.app_config._env import _envBool, _envFloat, _envInt, _envString, _fullStack
 
 _F = field
 
@@ -57,7 +56,7 @@ class EpicFlags:
     SOCIETY_TOKEN_BUDGET_USD: float = _F(default_factory=lambda: _envFloat("SOCIETY_TOKEN_BUDGET_USD", 5.0))
     # role -> effort_level key (resolved through MODEL_BY_EFFORT; narrows, never bypasses).
     SOCIETY_ROLE_MODELS: dict[str, str] = _F(default_factory=lambda: {
-        r: os.getenv(f"SOCIETY_MODEL_{r.upper()}", d) for r, d in
+        r: _envString(f"SOCIETY_MODEL_{r.upper()}", d) for r, d in
         (("researcher", "low"), ("coder", "high"), ("tester", "default"), ("reviewer", "high"), ("planner", "default"))})
     # --- Elaborator excellence tier (spec 2026-07-05); ships DARK, byte-identical flag-off ---
     ELABORATOR_EXCELLENCE_ENABLED: bool = _F(default_factory=lambda: _envBool("ELABORATOR_EXCELLENCE_ENABLED", False))
@@ -67,7 +66,7 @@ class EpicFlags:
     ELABORATOR_DEFER_ENABLED: bool = _F(default_factory=lambda: _envBool("ELABORATOR_DEFER_ENABLED", False))
     ELABORATOR_CANDIDATES_MAX: int = _F(default_factory=lambda: _envInt("ELABORATOR_CANDIDATES_MAX", 5))
     # §7.5 escalation model: empty => deferral escalation is inert (keep local spec).
-    ELABORATOR_DEFER_MODEL: str = _F(default_factory=lambda: os.environ.get("ELABORATOR_DEFER_MODEL", ""))
+    ELABORATOR_DEFER_MODEL: str = _F(default_factory=lambda: _envString("ELABORATOR_DEFER_MODEL", ""))
     # --- Epic 6: solution-space forking (ships dark; conservative opt-in) ---
     SOLUTION_FORK_ENABLED: bool = _F(default_factory=lambda: _envBool("SOLUTION_FORK_ENABLED", _fullStack()))
     SOLUTION_FORK_N: int = _F(default_factory=lambda: _envInt("SOLUTION_FORK_N", 2))
@@ -87,11 +86,11 @@ class EpicFlags:
     EXPLORE_APPROACHES_N: int = _F(default_factory=lambda: _envInt("EXPLORE_APPROACHES_N", 3))
     # --- Epic 8: Cloud Execution Fabric (OFF => LocalEnvironment => byte-for-byte today) ---
     EXECUTION_FABRIC_ENABLED: bool = _F(default_factory=lambda: _envBool("EXECUTION_FABRIC_ENABLED", _fullStack()))
-    EXECUTION_BACKEND: str = _F(default_factory=lambda: os.getenv("EXECUTION_BACKEND", "worktree" if _fullStack() else "local"))
+    EXECUTION_BACKEND: str = _F(default_factory=lambda: _envString("EXECUTION_BACKEND", "worktree" if _fullStack() else "local"))
     EXECUTION_BACKEND_BY_RISK: dict[str, str] = _F(default_factory=dict)  # populated when Epic 4 lands
-    DOCKER_EXECUTOR_IMAGE: str = _F(default_factory=lambda: os.getenv("DOCKER_EXECUTOR_IMAGE", "9to5-executor:latest"))
-    EXECUTION_REMOTE_KIND: str = _F(default_factory=lambda: os.getenv("EXECUTION_REMOTE_KIND", "ssh"))
-    EXECUTION_REMOTE_HOST: str = _F(default_factory=lambda: os.getenv("EXECUTION_REMOTE_HOST", ""))
+    DOCKER_EXECUTOR_IMAGE: str = _F(default_factory=lambda: _envString("DOCKER_EXECUTOR_IMAGE", "9to5-executor:latest"))
+    EXECUTION_REMOTE_KIND: str = _F(default_factory=lambda: _envString("EXECUTION_REMOTE_KIND", "ssh"))
+    EXECUTION_REMOTE_HOST: str = _F(default_factory=lambda: _envString("EXECUTION_REMOTE_HOST", ""))
     EXECUTION_PROVISION_TIMEOUT_SECONDS: int = _F(default_factory=lambda: _envInt("EXECUTION_PROVISION_TIMEOUT_SECONDS", 120))
     # --- Human-Nature layer (behaviour-coupling OFF until an in-house A/B proves it) ---
     HUMAN_NATURE_ENABLED: bool = _F(default_factory=lambda: _envBool("HUMAN_NATURE_ENABLED", _fullStack()))
@@ -104,7 +103,7 @@ class EpicFlags:
     # Conviction recalibration temperature (F11: RLHF overconfidence correction).
     HN_RECAL_TEMPERATURE: float = _F(default_factory=lambda: _envFloat("HN_RECAL_TEMPERATURE", 2.5))
     # Cheap Ollama model for the pre-verbal / fast faculties.
-    HN_FAST_MODEL: str = _F(default_factory=lambda: os.getenv("HN_FAST_MODEL", "qwen2.5:1.5b"))
+    HN_FAST_MODEL: str = _F(default_factory=lambda: _envString("HN_FAST_MODEL", "qwen2.5:1.5b"))
     # --- Human-Nature psyche-v2 (spec 2026-07-06): manifold/instinct/drives/authority coupling ---
     HN_MANIFOLD: bool = _F(default_factory=lambda: _envBool("HN_MANIFOLD", _fullStack()))
     HN_INSTINCT: bool = _F(default_factory=lambda: _envBool("HN_INSTINCT", _fullStack()))
@@ -128,5 +127,5 @@ class EpicFlags:
     HN_MAX_VERIFY_DEEPEN: int = _F(default_factory=lambda: _envInt("HN_MAX_VERIFY_DEEPEN", 2))
     HN_DEBATE_RATE_LIMIT: int = _F(default_factory=lambda: _envInt("HN_DEBATE_RATE_LIMIT", 1))
     HN_INSTINCT_HOTPATH_BUDGET_MS: int = _F(default_factory=lambda: _envInt("HN_INSTINCT_HOTPATH_BUDGET_MS", 25))
-    HN_AUTHORITY_MAX: str = _F(default_factory=lambda: os.getenv("HN_AUTHORITY_MAX", "hold"))
-    HN_OPERATOR_CEILING: str = _F(default_factory=lambda: os.getenv("HN_OPERATOR_CEILING", "veto"))
+    HN_AUTHORITY_MAX: str = _F(default_factory=lambda: _envString("HN_AUTHORITY_MAX", "hold"))
+    HN_OPERATOR_CEILING: str = _F(default_factory=lambda: _envString("HN_OPERATOR_CEILING", "veto"))

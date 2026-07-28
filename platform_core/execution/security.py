@@ -13,7 +13,7 @@ EXPORTS:
   MountSecurityError  -- A requested mount or network mode violates the sandbox threat model.
   CapabilityPolicy  -- Per-subtask resolved capability scope with source provenance (openclaw layered scopes).
   validateMounts(policy: CapabilityPolicy, mounts, *, network_mode: str='bridge') -> None  -- Refuse a backend's requested bind-mounts/network
-DEPENDS-ON: config, platform_core.runtime.action_risk
+DEPENDS-ON: config, platform_core.execution, platform_core.runtime.action_risk
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_execution_security.py
 """
@@ -23,6 +23,9 @@ import os
 from dataclasses import dataclass, field
 
 import config
+from platform_core.execution.pre_execution import (
+    observeLegacyPath,
+)
 
 LOG = config.getLogger("execution.security")
 
@@ -87,7 +90,7 @@ class CapabilityPolicy:
 def _existingAncestorRealpath(path: str) -> str:
     """Resolve the realpath of the nearest existing ancestor (symlink-escape hardening)."""
     cur = os.path.abspath(path)
-    while not os.path.exists(cur):
+    while not observeLegacyPath(os.path.exists,cur):
         parent = os.path.dirname(cur)
         if parent == cur:
             break

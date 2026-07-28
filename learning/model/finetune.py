@@ -23,14 +23,13 @@ EXPORTS:
   run_finetune_cycle(*, trainer: Optional[Trainer]=None, ollama_runner: Optional[OllamaRunner]=None, out_dir: Optional[Path]=None, min_examples: Optional[int]=None, suite: Optional[list[dict[str, Any]]]=None, db_path: Optional[Path]=None) -> dict[str, Any]  -- One automatic distillation cycle: build gold dataset -> (if enough) train LoRA ->
   run_dpo_cycle(*, trainer: Optional[Callable[[str, str, float], str]]=None, ollama_runner: Optional[OllamaRunner]=None, out_dir: Optional[Path]=None, min_pairs: Optional[int]=None, suite: Optional[list[dict[str, Any]]]=None, db_path: Optional[Path]=None) -> dict[str, Any]  -- One automatic DPO cycle: build preference pairs -> (if enough) train a DPO LoRA with
   consider_promotion(adapter_id: int, *, challenger_fitness: float, champion_fitness: float, replay_ok: bool=True, db_path: Optional[Path]=None) -> dict[str, Any]  -- Gate an adapter through the harness result + replay set (invariant I4: never promote
-DEPENDS-ON: config, learning.compute, learning.distill, learning.preferences, memory.experience
+DEPENDS-ON: config, learning.compute, learning.distill, learning.preferences, memory.experience, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_finetune.py
 """
 
 from __future__ import annotations
 
-import subprocess
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -38,6 +37,10 @@ from typing import Any, Callable, Optional
 import config
 from learning import distill
 from memory import experience
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+)
+from platform_core.execution.sandbox_broker import runLegacyProcess
 
 LOG = config.getLogger("sie.finetune")
 
@@ -58,7 +61,7 @@ def _servable_tags() -> Optional[set]:
         return _SERVABLE_CACHE["tags"]
     tags: Optional[set] = None
     try:
-        proc = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=10)
+        proc = runLegacyProcess(["ollama", "list"], capture_output=True, text=True, timeout=10)
         if proc.returncode == 0:
             tags = set()
             for line in (proc.stdout or "").splitlines()[1:]:  # skip the NAME/ID/SIZE header
@@ -91,8 +94,8 @@ def modelfile_text(base_model: str, lora_path: str) -> str:
 
 
 def write_modelfile(path: Path, base_model: str, lora_path: str) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(modelfile_text(base_model, lora_path), encoding="utf-8")
+    mutateLegacyPath(path.parent.mkdir,parents=True, exist_ok=True)
+    mutateLegacyPath(path.write_text,modelfile_text(base_model, lora_path), encoding="utf-8")
     return path
 
 
@@ -181,9 +184,7 @@ def default_ollama_runner() -> Optional[OllamaRunner]:
         return None
 
     def _create(tag: str, modelfile_path: str):
-        import subprocess
-
-        return subprocess.run(
+        return runLegacyProcess(
             ["ollama", "create", tag, "-f", modelfile_path], capture_output=True, text=True, timeout=600
         )
 

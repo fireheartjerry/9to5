@@ -20,7 +20,7 @@ EXPORTS:
   score(results: list[dict[str, Any]], *, weights: Optional[dict[str, float]]=None, cost_cap: float=DEFAULT_COST_CAP) -> dict[str, Any]  -- Full score payload: the aggregate metrics plus the fitness scalar.
   run_suite(runner: Optional[Callable[[dict[str, Any]], dict[str, Any]]]=None, *, suite_dir: Optional[Path]=None, prompt_set_id: Optional[str]=None, adapter_id: Optional[str]=None, record: bool=True, db_path: Optional[Path]=None) -> dict[str, Any]  -- Run every goal through ``runner`` (goal -> result), score, and (optionally) persist
   fitness_panel(limit: int=30, db_path: Optional[Path]=None) -> str  -- Render the recent fitness series as a compact sparkline + delta for a dashboard
-DEPENDS-ON: config, memory.experience
+DEPENDS-ON: config, memory.experience, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_eval_harness.py
 """
@@ -32,6 +32,11 @@ from typing import Any, Callable, Optional
 
 import config
 from memory import experience
+from platform_core.execution.pre_execution import (
+    globLegacy,
+    observeLegacyPath,
+    readLegacyText,
+)
 
 LOG = config.getLogger("sie.eval")
 
@@ -97,11 +102,11 @@ def load_suite(suite_dir: Optional[Path] = None) -> list[dict[str, Any]]:
     so the suite is deterministic. Held-out verifies live in each goal file by design."""
     d = Path(suite_dir or config.EVAL_SUITE_DIR)
     goals: list[dict[str, Any]] = []
-    if not d.exists():
+    if not observeLegacyPath(d.exists):
         return goals
-    for f in sorted(d.glob("*.json")):
+    for f in sorted(globLegacy(d, "*.json")):
         try:
-            goal = json.loads(f.read_text(encoding="utf-8"))
+            goal = json.loads(readLegacyText(f, encoding="utf-8"))
             goal.setdefault("id", f.stem)
             goals.append(goal)
         except Exception as e:  # noqa: BLE001 -- a malformed fixture must not crash scoring

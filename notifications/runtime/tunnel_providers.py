@@ -16,7 +16,7 @@ EXPORTS:
   BoreProvider
   LocaltunnelProvider
   default_providers() -> list  -- Providers in priority order (cloudflared first, localtunnel last).
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.execution, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_tunnel.py
 """
@@ -36,6 +36,14 @@ from pathlib import Path
 from typing import Optional
 
 import config
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+    observeLegacyPath,
+    openLegacyBuiltin,
+    readLegacyBytes,
+)
+from platform_core.execution.sandbox_broker import popenLegacyProcess
+from platform_core.runtime.effect_guard import legacyDiagnosticUrlopen
 
 LOG = config.getLogger("tunnel.providers")
 
@@ -85,7 +93,7 @@ class TunnelProvider:
         """True when an HTTP GET returns a non-5xx status (end-to-end reachability)."""
         try:
             req = urllib.request.Request(url, method="GET", headers={"User-Agent": "9to5-probe"})
-            with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 -- known https
+            with legacyDiagnosticUrlopen(req, timeout=timeout) as resp:
                 return int(getattr(resp, "status", 200)) < 500
         except urllib.error.HTTPError as e:  # an HTTP error code is still "reachable" if <500
             return int(getattr(e, "code", 500)) < 500
@@ -104,21 +112,27 @@ class TunnelProvider:
         on a mismatch.
         """
         try:
-            dest.parent.mkdir(parents=True, exist_ok=True)
+            mutateLegacyPath(dest.parent.mkdir, parents=True, exist_ok=True)
             req = urllib.request.Request(url, headers={"User-Agent": "9to5-dl"})
-            with urllib.request.urlopen(req, timeout=_DOWNLOAD_TIMEOUT_S) as resp:  # noqa: S310 -- pinned vendor URL
-                with open(dest, "wb") as f:
+            with legacyDiagnosticUrlopen(req, timeout=_DOWNLOAD_TIMEOUT_S) as resp:
+                with openLegacyBuiltin(dest, "wb") as f:
                     shutil.copyfileobj(resp, f)
             if expected_sha256 is not None:
-                digest = hashlib.sha256(dest.read_bytes()).hexdigest()
+                digest = hashlib.sha256(readLegacyBytes(dest)).hexdigest()
                 if digest.lower() != expected_sha256.lower():
                     LOG.warning(
                         "binary checksum mismatch (%s): expected %s, got %s", url, expected_sha256, digest
                     )
-                    dest.unlink(missing_ok=True)
+                    mutateLegacyPath(dest.unlink, missing_ok=True)
                     return False
-            dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            return dest.exists()
+            mutateLegacyPath(
+                dest.chmod,
+                observeLegacyPath(dest.stat).st_mode
+                | stat.S_IXUSR
+                | stat.S_IXGRP
+                | stat.S_IXOTH,
+            )
+            return observeLegacyPath(dest.exists)
         except Exception as e:  # noqa: BLE001
             LOG.warning("binary download failed (%s): %s", url, e)
             return False
@@ -152,7 +166,7 @@ class CloudflaredProvider(TunnelProvider):
             self._bin = found
             return True
         cached = self._cached_path()
-        if cached.exists():
+        if observeLegacyPath(cached.exists):
             self._bin = str(cached)
             return True
         os_token, arch, suffix = _plat()
@@ -259,7 +273,7 @@ class LocaltunnelProvider(TunnelProvider):
 def _spawn(cmd: list) -> "subprocess.Popen":
     """Launch a tunnel process with a line-buffered text stdout pipe."""
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-    return subprocess.Popen(
+    return popenLegacyProcess(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

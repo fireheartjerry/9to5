@@ -13,7 +13,7 @@ EXPORTS:
   format_pair(row: dict[str, Any]) -> Optional[dict[str, Any]]  -- Turn one gold subtask row into an SFT (prompt, completion) pair, or None if it
   write_jsonl(examples: list[dict[str, Any]], path: Path) -> None
   build(*, db_path: Optional[Path]=None, out_path: Optional[Path]=None, suite: Optional[list[dict[str, Any]]]=None) -> dict[str, Any]  -- Build, clean, and (optionally) write the gold SFT dataset
-DEPENDS-ON: config, learning.dataset, memory.experience
+DEPENDS-ON: config, learning.dataset, memory.experience, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_finetune.py
 """
@@ -26,6 +26,10 @@ from typing import Any, Optional
 import config
 from learning import dataset
 from memory import experience
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+    openLegacyFile,
+)
 
 LOG = config.getLogger("sie.distill")
 
@@ -44,8 +48,8 @@ def format_pair(row: dict[str, Any]) -> Optional[dict[str, Any]]:
 
 
 def write_jsonl(examples: list[dict[str, Any]], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
+    mutateLegacyPath(path.parent.mkdir,parents=True, exist_ok=True)
+    with openLegacyFile(path, "w", encoding="utf-8") as f:
         for ex in examples:
             f.write(json.dumps(ex, ensure_ascii=False) + "\n")
 

@@ -17,6 +17,7 @@ EXPORTS:
   select_verified_runtime(manifest: ControllerRuntimeManifest, *, no_follow: bool=True) -> VerifiedControllerRuntime  -- Verify and select a fully declared, isolated controller runtime.
   require_offline_activation_artifacts(records: Sequence[ActivationImageRecord], *, builder: Callable[[], object] | None=None, puller: Callable[[], object] | None=None) -> Sequence[ActivationImageRecord]  -- Require artifacts without ever invoking a build or network fallback.
   verify_activation_images(records: Sequence[ActivationImageRecord], *, network_allowed: bool=False, allow_engine_build: bool=False, allow_pull: bool=False, builder: Callable[[], object] | None=None, puller: Callable[[], object] | None=None) -> ActivationImageVerificationReport  -- Verify preseeded image archives
+  inspect_oci_archive(archive: Path) -> OciLayoutInspection  -- Inspect one bounded, link-free, uncompressed OCI archive.
   inspect_oci_layout(layout: Path) -> OciLayoutInspection  -- Open every descriptor reachable from one minimal OCI image layout.
 DEPENDS-ON: (stdlib only)
 SIDE-EFFECTS: unannotated
@@ -25,18 +26,17 @@ RUN/TEST: python -m pytest tests/execution/test_controller_runtime_manifest.py
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import stat
 import subprocess
 import tarfile
 import tempfile
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Iterable, Mapping, Sequence
-
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _CLOSURE_LEAVES = (
@@ -62,6 +62,28 @@ ACTIVATION_IMAGE_ROLES = frozenset(
 )
 _MAX_OCI_ARCHIVE_MEMBERS = 4096
 _MAX_OCI_ARCHIVE_BYTES = 16 * 1024 * 1024 * 1024
+_SHA1DC_BUILDER_BASE = "9bed8554e926c07c6f908841d5ee88c33e8df9236b191526bbce81a9062ab43a"
+_SHA1DC_RUNTIME_BASE = "d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b"
+_SHA1DC_PHYSICAL_IMAGES = frozenset({"object-parser", "reviewer"})
+_PINNED_DOCKER_CLI_SHA256 = "8f6dea04cf35515b6d6de5bfc3f5ba54c827fc4532996922eccc29d362585620"
+_PINNED_BUILDX_SHA256 = "b0074bdac78c8b7f9179863c2d6e4cdfbbade54829ad4d569cc81e7409426fed"
+_PINNED_WSL_SHA256 = "e27cbfcbd61c44796e2cfdd031663245bda8d6e4a43c1451b1fc505333908126"
+
+
+def _exact_host_tool(
+    value: object,
+    *,
+    path: str,
+    sha256: str,
+    size: int,
+) -> bool:
+    return (
+        isinstance(value, dict)
+        and set(value) == {"path", "sha256", "size"}
+        and value.get("path") == path
+        and value.get("sha256") == sha256
+        and value.get("size") == size
+    )
 
 
 class RuntimeClosureUnavailable(RuntimeError):
@@ -487,6 +509,22 @@ def _inspect_oci_archive(archive: Path) -> OciLayoutInspection:
         return inspect_oci_layout(root)
 
 
+def inspect_oci_archive(archive: Path) -> OciLayoutInspection:
+    """Inspect one bounded, link-free, uncompressed OCI archive."""
+
+    try:
+        _assert_no_reparse(archive, "archive")
+        candidate = Path(archive).resolve(strict=True)
+        metadata = candidate.stat()
+    except (OSError, RuntimeClosureUnavailable) as exc:
+        raise OfflineActivationArtifactsUnavailable("archive: unavailable") from exc
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        raise OfflineActivationArtifactsUnavailable(
+            "archive: single-link regular file required"
+        )
+    return _inspect_oci_archive(candidate)
+
+
 def _descriptor_digest(value: object, label: str) -> str:
     if not isinstance(value, str) or not value.startswith("sha256:"):
         raise OfflineActivationArtifactsUnavailable(f"{label}: sha256 descriptor required")
@@ -547,6 +585,78 @@ def _semantic_list(value: object, label: str) -> list[object]:
     if not isinstance(value, list) or not value:
         raise OfflineActivationArtifactsUnavailable(f"{label}: nonempty list required")
     return value
+
+
+def _validate_sha1dc_binding(
+    *,
+    physical_image: str,
+    base_manifest: str,
+    toolchain: Mapping[str, object],
+    runtime: Mapping[str, object],
+) -> None:
+    toolchain_has_oracle = "sha1dc_oracle" in toolchain
+    runtime_has_oracle = "sha1dc_oracle" in runtime
+    if physical_image not in _SHA1DC_PHYSICAL_IMAGES:
+        if toolchain_has_oracle or runtime_has_oracle:
+            raise OfflineActivationArtifactsUnavailable(
+                "SHA1DC: oracle binding is forbidden outside object-parser or reviewer"
+            )
+        return
+    toolchain_binding = toolchain.get("sha1dc_oracle")
+    runtime_binding = runtime.get("sha1dc_oracle")
+    exact_fields = {
+        "schema",
+        "executable_path",
+        "executable_sha256",
+        "executable_size",
+        "source_lock_sha256",
+        "source_archive_sha256",
+        "source_passport_sha256",
+        "wrapper_sha256",
+        "builder_base_digest",
+        "runtime_base_digest",
+        "reproducibility_runs",
+        "self_test",
+        "normal_object_corpus_count",
+        "network_allowed",
+    }
+    if (
+        not toolchain_has_oracle
+        or not runtime_has_oracle
+        or not isinstance(toolchain_binding, dict)
+        or not isinstance(runtime_binding, dict)
+        or toolchain_binding != runtime_binding
+        or set(toolchain_binding) != exact_fields
+    ):
+        raise OfflineActivationArtifactsUnavailable(
+            "SHA1DC: exact cross-resolved oracle binding is required"
+        )
+    for field in (
+        "executable_sha256",
+        "source_lock_sha256",
+        "source_archive_sha256",
+        "source_passport_sha256",
+        "wrapper_sha256",
+        "builder_base_digest",
+        "runtime_base_digest",
+    ):
+        _semantic_digest(toolchain_binding.get(field), f"SHA1DC {field}")
+    executable_size = toolchain_binding.get("executable_size")
+    if (
+        toolchain_binding.get("schema") != "galaxy.sha1dc-runtime-binding/v1"
+        or toolchain_binding.get("executable_path") != "/opt/galaxy/galaxy-sha1dc"
+        or not isinstance(executable_size, int)
+        or isinstance(executable_size, bool)
+        or not 1024 <= executable_size <= 16 * 1024 * 1024
+        or toolchain_binding.get("builder_base_digest") != _SHA1DC_BUILDER_BASE
+        or toolchain_binding.get("runtime_base_digest") != _SHA1DC_RUNTIME_BASE
+        or base_manifest != _SHA1DC_RUNTIME_BASE
+        or toolchain_binding.get("reproducibility_runs") != 2
+        or toolchain_binding.get("self_test") != "collision-detected"
+        or toolchain_binding.get("normal_object_corpus_count") != 4
+        or toolchain_binding.get("network_allowed") is not False
+    ):
+        raise OfflineActivationArtifactsUnavailable("SHA1DC: offline oracle evidence differs")
 
 
 def _validate_closure_semantics(
@@ -634,6 +744,46 @@ def _validate_closure_semantics(
         or toolchain.get("kind") != "toolchain"
         or toolchain.get("base_manifest_digest") != base_manifest
         or not isinstance(boundary, dict)
+        or set(boundary)
+        != {
+            "schema",
+            "context",
+            "daemon_endpoint",
+            "docker_cli",
+            "buildx_plugin",
+            "wsl_host",
+            "docker_server",
+            "buildx",
+            "ambient_environment",
+            "routes",
+            "default_route_absent",
+        }
+        or boundary.get("schema") != "galaxy.offline-docker-boundary/v1"
+        or boundary.get("context") != "default"
+        or boundary.get("daemon_endpoint") != "npipe:////./pipe/dockerDesktopLinuxEngine"
+        or not _exact_host_tool(
+            boundary.get("docker_cli"),
+            path=r"C:\Program Files\Docker\Docker\resources\bin\docker.exe",
+            sha256=_PINNED_DOCKER_CLI_SHA256,
+            size=43267504,
+        )
+        or not _exact_host_tool(
+            boundary.get("buildx_plugin"),
+            path=r"C:\Program Files\Docker\Docker\resources\cli-plugins\docker-buildx.exe",
+            sha256=_PINNED_BUILDX_SHA256,
+            size=67032496,
+        )
+        or not _exact_host_tool(
+            boundary.get("wsl_host"),
+            path=r"C:\Windows\System32\wsl.exe",
+            sha256=_PINNED_WSL_SHA256,
+            size=278528,
+        )
+        or not isinstance(boundary.get("docker_server"), dict)
+        or not boundary["docker_server"]
+        or not isinstance(boundary.get("buildx"), str)
+        or not boundary["buildx"].startswith("github.com/docker/buildx v0.34.0-desktop.1 ")
+        or boundary.get("ambient_environment") != []
         or boundary.get("default_route_absent") is not True
         or not isinstance(boundary.get("routes"), list)
         or any(str(route).strip().startswith("default ") for route in boundary["routes"])
@@ -712,6 +862,12 @@ def _validate_closure_semantics(
     _semantic_digest(runtime.get("entrypoint_sha256"), "runtime entrypoint")
     if labels.get("org.galaxy.image.roles") != ",".join(supported_roles):
         raise OfflineActivationArtifactsUnavailable("runtime: role label mismatch")
+    _validate_sha1dc_binding(
+        physical_image=physical_image,
+        base_manifest=base_manifest,
+        toolchain=toolchain,
+        runtime=runtime,
+    )
 
     identity = security.get("identity")
     process = security.get("process")

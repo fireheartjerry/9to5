@@ -34,3 +34,16 @@ def test_local_handle_is_explicitly_non_landing():
     env = LocalEnvironment()
     h = env.provision(task_state=None, subtask=None, base_dir="/repo", policy=None)
     assert h.requires_canonical_landing is False
+
+
+def test_local_backend_declares_unconfined_external_trust_boundary():
+    env = LocalEnvironment()
+    h = env.provision(task_state=None, subtask=None, base_dir="/repo", policy=None)
+
+    assert env.OS_ENFORCED is False
+    assert env.REQUIRES_EXTERNAL_TRUST is True
+    assert h.meta == {
+        "os_enforced": False,
+        "trust_authority": "external_required",
+    }
+    assert "eligibility" not in h.meta

@@ -36,16 +36,23 @@ import re
 from typing import Optional
 
 import config
+from agents.verification import (  # noqa: F401 -- the typed pipeline surface
+    _COMPOUND_PREFIXES,
+    Receipt,
+    Verdict,
+    VResult,
+    changedFiles,
+    receiptToVResult,
+    runReceipt,
+    verdictFor,
+)
+from agents.verifier_runner import (  # noqa: F401
+    _evaluate,
+    runVerification,
+)
 
 # Sub-module re-exports (backward compat: callers import these from agents.verifier)
 from agents.verifier_sanitize import sanitizeVerify  # noqa: F401
-from agents.verifier_runner import (  # noqa: F401
-    runVerification, _evaluate, _normalizeWorkDir,
-)
-from agents.verification import (  # noqa: F401 -- the typed pipeline surface
-    Receipt, Verdict, VResult, runReceipt, receiptToVResult, verdictFor, changedFiles,
-    _COMPOUND_PREFIXES,
-)
 
 LOG = config.getLogger("verifier")
 

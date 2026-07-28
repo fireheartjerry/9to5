@@ -28,6 +28,12 @@ EXPORTS:
   AmbiguousTask5Recovery
   Task5InputDrift
   BegunReservationCannotCancel
+  AdminProtocolRefused  -- A protected maintenance request was not closed and byte exact.
+  AdminOperationUnavailable  -- A closed operation has no reviewed handler in this installed slice.
+  InjectedAdminResponseLoss  -- A test-only loss after durable outcome persistence.
+  AdminRequest
+  AdminTrustContext  -- Digest-bound installed trust material available to read-only commands.
+  parse_admin_request(raw: bytes) -> AdminRequest  -- Parse one exact request without granting run or activation authority.
   ProtectedAnchorRecord
   ServiceLaunchPlan
   PreAnchorLegacyReadiness
@@ -59,6 +65,13 @@ EXPORTS:
   TransitionBegin
   TransitionObservation
   TransitionState
+  ExternalPathManifestStore  -- Durable, ordered upload store for one protected repository path universe.
+  AdminTransitionStore  -- Durable repository-global purpose, intent, fence, and begin state.
+  AdminContainedRuntime  -- Authority-free adapters over the installed digest-pinned OCI roles.
+  AdminSourceCommitStore  -- Crash-replayable source normalization under one live transition.
+  AdminCommandProcessor  -- Request-idempotent dispatcher for the reviewed maintenance-only subset.
+  run_sealed_admin_request(*, request_base64url: str, runtime_lock_path: Path, runtime_lock_sha256: str) -> bytes  -- Resolve protected installed state and dispatch one inactive request.
+  main(argv: Sequence[str] | None=None) -> int
   DurableTransitionCoordinator  -- Create-or-return transition state with one host-global logical owner.
   TofuProposal
   TofuInstallReceipt
@@ -77,24 +90,35 @@ RUN/TEST: python -m pytest tests/execution/test_anchor_host_isolation.py
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import argparse
+import base64
+import binascii
 import copy
 import ctypes
+import errno
 import hashlib
+import importlib.util
 import json
 import os
-from pathlib import Path
 import re
 import secrets
 import shutil
 import stat
 import struct
 import subprocess
+import sys
+import threading
+import time
+import unicodedata
+from contextlib import contextmanager
+from ctypes import wintypes
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
-
 
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_SID = re.compile(r"^S-1(?:-[0-9]+)+$")
 
 
 class AnchorIntegrityRefused(RuntimeError):
@@ -185,10 +209,422 @@ class BegunReservationCannotCancel(RuntimeError):
     pass
 
 
+class AdminProtocolRefused(RuntimeError):
+    """A protected maintenance request was not closed and byte exact."""
+
+
+_ADMIN_LOCK_REGISTRY_GUARD = threading.Lock()
+_ADMIN_LOCK_REGISTRY: dict[str, threading.RLock] = {}
+
+
+class _RepositoryAdminLock:
+    """Bounded process-global lock for one registered repository's admin root."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = Path(path).resolve(strict=False)
+        identity = os.path.normcase(str(self.path))
+        with _ADMIN_LOCK_REGISTRY_GUARD:
+            self._thread_lock = _ADMIN_LOCK_REGISTRY.setdefault(
+                identity, threading.RLock()
+            )
+
+    @contextmanager
+    def hold(self, *, timeout: float = 30.0):
+        if (
+            not isinstance(timeout, (int, float))
+            or isinstance(timeout, bool)
+            or timeout <= 0
+        ):
+            raise AdminProtocolRefused("repository admin lock timeout is malformed")
+        deadline = time.monotonic() + float(timeout)
+        if not self._thread_lock.acquire(timeout=float(timeout)):
+            raise AdminProtocolRefused("repository admin lock timed out")
+        stream = None
+        locked = False
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            _assert_no_reparse(
+                self.path.parent,
+                AdminProtocolRefused,
+                "repository admin lock root",
+            )
+            _assert_no_reparse(
+                self.path,
+                AdminProtocolRefused,
+                "repository admin lock",
+            )
+            stream = self.path.open("a+b", buffering=0)
+            stream.seek(0, os.SEEK_END)
+            size = stream.tell()
+            if size == 0:
+                stream.write(b"\0")
+                stream.flush()
+                os.fsync(stream.fileno())
+                _sync_admin_directory(self.path.parent)
+            elif size != 1:
+                raise AdminProtocolRefused("repository admin lock file is malformed")
+            before = os.fstat(stream.fileno())
+            live = self.path.stat()
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_nlink != 1
+                or (before.st_dev, before.st_ino, before.st_size)
+                != (live.st_dev, live.st_ino, live.st_size)
+            ):
+                raise AdminProtocolRefused("repository admin lock identity differs")
+            stream.seek(0)
+            while True:
+                try:
+                    if os.name == "nt":
+                        import msvcrt
+
+                        msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                    else:
+                        import fcntl
+
+                        getattr(fcntl, "flock")(
+                            stream.fileno(),
+                            getattr(fcntl, "LOCK_EX") | getattr(fcntl, "LOCK_NB"),
+                        )
+                    locked = True
+                    break
+                except OSError as exc:
+                    if exc.errno not in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
+                        raise AdminProtocolRefused(
+                            "repository admin lock could not be acquired"
+                        ) from exc
+                    if time.monotonic() >= deadline:
+                        raise AdminProtocolRefused(
+                            "repository admin lock timed out"
+                        ) from exc
+                    time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+            yield
+        finally:
+            if stream is not None:
+                if locked:
+                    try:
+                        stream.seek(0)
+                        if os.name == "nt":
+                            import msvcrt
+
+                            msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                        else:
+                            import fcntl
+
+                            getattr(fcntl, "flock")(
+                                stream.fileno(), getattr(fcntl, "LOCK_UN")
+                            )
+                    except OSError:
+                        pass
+                stream.close()
+            self._thread_lock.release()
+
+
+class AdminOperationUnavailable(AdminProtocolRefused):
+    """A closed operation has no reviewed handler in this installed slice."""
+
+
+class InjectedAdminResponseLoss(RuntimeError):
+    """A test-only loss after durable outcome persistence."""
+
+
 RECOVERABLE_PHASES = frozenset({
     "reserved", "purpose", "intent", "begin", "cas", "finish", "observe",
     "acknowledge", "archive", "advance_old_to_new", "reconcile", "release",
 })
+
+
+_ADMIN_OPERATIONS = frozenset(
+    {
+        "abort-cutover",
+        "abort-path-manifest",
+        "abort-source-update",
+        "acknowledge-terminal-disposition",
+        "acquire-begin-intent",
+        "acquire-transition-purpose",
+        "append-path-manifest",
+        "attest-committed-source",
+        "attest-target",
+        "begin-cutover",
+        "begin-path-manifest",
+        "begin-source-update",
+        "classify-purpose-successor",
+        "commit-source-proposal",
+        "current-tofu-receipt",
+        "finish-cutover",
+        "finish-source-update",
+        "handoff-to-anchor",
+        "install-inactive",
+        "normalize-bootstrap-git-config",
+        "normalize-bootstrap-ref",
+        "normalize-developer-source",
+        "observe-top-level-transition",
+        "prepare-source-commit",
+        "reconcile-cutover-failure",
+        "reconcile-source-commit",
+        "reconcile-source-update",
+        "resolve-begin-intent",
+        "resolve-begin-intent-owner-fence",
+        "resolve-current-top-level-transition",
+        "resolve-cutover-begin",
+        "resolve-cutover-disposition",
+        "resolve-source-commit-disposition",
+        "resolve-source-update-begin",
+        "resolve-source-update-disposition",
+        "resolve-transition-purpose",
+        "resolve-transition-purpose-outcome",
+        "review-source-proposal",
+        "seal-path-manifest",
+        "settle-top-level-transition",
+        "verify-cutover",
+        "verify-drained",
+        "verify-proposal-trust-closure",
+        "verify-self",
+        "verify-source-proposal",
+        "verify-tofu-receipt",
+    }
+)
+_REQUEST_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,511}$")
+_SCOPE_ID = re.compile(r"^[a-z][a-z0-9-]*_[0-9a-f]{64}$")
+_MANIFEST_ID = re.compile(r"^manifest_[0-9a-f]{64}$")
+_PATH_ROLES = frozenset(
+    {"allowed-only", "test-only", "required-change", "required-test"}
+)
+_MAX_REQUEST_BYTES = 8192
+_MAX_MANIFEST_PAYLOAD_BYTES = 4096
+_RUNTIME_FILE_KEYS = {
+    "acceptance",
+    "adapter",
+    "crypto",
+    "docker",
+    "dpapi",
+    "git_object_writer_source",
+    "harness",
+    "interpreter",
+    "object_parser_entrypoint",
+    "powershell",
+    "probe",
+    "receipt_private_key",
+    "receipt_public_key",
+    "reviewer",
+    "runtime_profiles",
+    "service_host",
+    "sha1dc_build_evidence",
+    "sha1dc_oracle",
+    "sha1dc_runtime_source",
+    "windows_launcher",
+}
+_SEALED_RUNTIME_LOCK_KEYS = {
+    "external_root",
+    "file_digests",
+    "files",
+    "generation",
+    "image_archive_paths",
+    "image_digests",
+    "max_probe_concurrency",
+    "runtime_digest",
+    "schema",
+    "security_profiles",
+    "status",
+    "tofu_receipt_path",
+}
+_TOFU_RECEIPT_KEYS = {
+    "activation_acceptance_sha256",
+    "activation_adapter_sha256",
+    "activation_receipt_public_key",
+    "activation_receipt_public_key_digest",
+    "activation_runtime_profiles_sha256",
+    "activation_state",
+    "anchor_launch_record_path",
+    "anchor_launch_record_sha256",
+    "anchor_record_path",
+    "approval_response_sha256",
+    "artifact_leaves",
+    "artifact_root",
+    "challenge",
+    "dacl_sddl",
+    "host_signature_sha256",
+    "image_digests",
+    "merkle_root",
+    "monotone_generation",
+    "nonce",
+    "operator_sid",
+    "repository_identity",
+    "runtime_digest",
+    "schema",
+    "service_name",
+    "service_sid",
+    "source_leaves",
+    "source_root",
+    "status",
+}
+_ADMIN_LAUNCH_RECORD_KEYS = {
+    "activation_state",
+    "anchor_path",
+    "anchor_sha256",
+    "arguments",
+    "control_pipe",
+    "environment",
+    "host_path",
+    "host_sha256",
+    "host_signature",
+    "host_signature_sha256",
+    "schema",
+    "service_name",
+    "stdio",
+    "working_directory",
+}
+_TOFU_FINALIZATION_RESULT_KEYS = {
+    "activation_authority",
+    "anchor_launch_record_path",
+    "anchor_launch_record_sha256",
+    "anchor_record_path",
+    "generation",
+    "merkle_root",
+    "receipt_path",
+    "runtime_pointer_path",
+    "schema",
+    "status",
+}
+
+
+def _duplicate_admin_member(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, member in pairs:
+        if key in value:
+            raise AdminProtocolRefused(f"duplicate JSON member: {key}")
+        value[key] = member
+    return value
+
+
+def _refuse_admin_constant(value: str) -> Any:
+    raise AdminProtocolRefused(f"non-finite JSON number is forbidden: {value}")
+
+
+def _refuse_admin_float(value: str) -> Any:
+    raise AdminProtocolRefused(f"floating-point JSON number is forbidden: {value}")
+
+
+def _bounded_admin_integer(value: str) -> int:
+    if len(value.lstrip("-")) > 18:
+        raise AdminProtocolRefused("JSON integer exceeds the closed bound")
+    parsed = int(value, 10)
+    if parsed < -(2**63) or parsed > 2**63 - 1:
+        raise AdminProtocolRefused("JSON integer exceeds the signed 64-bit bound")
+    return parsed
+
+
+def _canonical_admin_json(value: Any) -> bytes:
+    try:
+        return json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8", errors="strict")
+    except (TypeError, ValueError, UnicodeEncodeError) as exc:
+        raise AdminProtocolRefused("request value is not canonical JSON") from exc
+
+
+def _strict_admin_object(raw: bytes, *, label: str, maximum: int) -> dict[str, Any]:
+    if not isinstance(raw, bytes) or not raw or len(raw) > maximum:
+        raise AdminProtocolRefused(f"{label} byte length is outside its closed bound")
+    if raw.startswith((b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff")):
+        raise AdminProtocolRefused(f"{label} BOM is forbidden")
+    try:
+        text = raw.decode("utf-8", errors="strict")
+        value = json.loads(
+            text,
+            object_pairs_hook=_duplicate_admin_member,
+            parse_constant=_refuse_admin_constant,
+            parse_float=_refuse_admin_float,
+            parse_int=_bounded_admin_integer,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise AdminProtocolRefused(f"{label} is not strict UTF-8 JSON") from exc
+    if not isinstance(value, dict):
+        raise AdminProtocolRefused(f"{label} must be a JSON object")
+    if _canonical_admin_json(value) != raw:
+        raise AdminProtocolRefused(f"{label} is not byte-exact canonical JSON")
+    return value
+
+
+def _decode_admin_base64url(encoded: str, *, label: str, maximum: int) -> bytes:
+    maximum_encoded = (4 * maximum + 2) // 3
+    if (
+        not isinstance(encoded, str)
+        or not encoded
+        or len(encoded) > maximum_encoded
+        or re.fullmatch(r"[A-Za-z0-9_-]+", encoded) is None
+        or len(encoded) % 4 == 1
+    ):
+        raise AdminProtocolRefused(f"{label} is not bounded strict unpadded base64url")
+    try:
+        raw = base64.b64decode(
+            encoded + "=" * (-len(encoded) % 4), altchars=b"-_", validate=True
+        )
+    except (ValueError, binascii.Error) as exc:
+        raise AdminProtocolRefused(f"{label} base64url decode failed") from exc
+    canonical = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    if canonical != encoded or len(raw) > maximum:
+        raise AdminProtocolRefused(f"{label} encoding or decoded byte length differs")
+    return raw
+
+
+@dataclass(frozen=True)
+class AdminRequest:
+    operation: str
+    request_id: str
+    arguments: Mapping[str, Any]
+    payload: Mapping[str, Any]
+    canonical_bytes: bytes
+    payload_bytes: bytes
+
+
+@dataclass(frozen=True)
+class AdminTrustContext:
+    """Digest-bound installed trust material available to read-only commands."""
+
+    external_root: Path
+    runtime_lock_path: Path
+    runtime_lock_sha256: str
+    tofu_receipt_path: Path
+    tofu_receipt_sha256: str
+    repository_identity: str
+
+    @property
+    def receipt_id(self) -> str:
+        if _HEX64.fullmatch(self.tofu_receipt_sha256) is None:
+            raise AdminProtocolRefused("TOFU receipt context digest is malformed")
+        return "tofu_" + self.tofu_receipt_sha256
+
+
+def parse_admin_request(raw: bytes) -> AdminRequest:
+    """Parse one exact request without granting run or activation authority."""
+
+    value = _strict_admin_object(raw, label="admin request", maximum=_MAX_REQUEST_BYTES)
+    if set(value) != {"arguments", "operation", "payload_base64url", "request_id"}:
+        raise AdminProtocolRefused("admin request fields are not closed")
+    operation = value.get("operation")
+    request_id = value.get("request_id")
+    arguments = value.get("arguments")
+    encoded = value.get("payload_base64url")
+    if not isinstance(operation, str) or operation not in _ADMIN_OPERATIONS:
+        raise AdminProtocolRefused("admin operation is outside the Task 1/2 maintenance enum")
+    if not isinstance(request_id, str) or _REQUEST_ID.fullmatch(request_id) is None:
+        raise AdminProtocolRefused("admin request identity is malformed")
+    if not isinstance(arguments, dict):
+        raise AdminProtocolRefused("admin request arguments must be an object")
+    if not isinstance(encoded, str):
+        raise AdminProtocolRefused("admin payload encoding is malformed")
+    payload_raw = _decode_admin_base64url(
+        encoded, label="admin payload", maximum=_MAX_MANIFEST_PAYLOAD_BYTES
+    )
+    payload = _strict_admin_object(
+        payload_raw, label="admin payload", maximum=_MAX_MANIFEST_PAYLOAD_BYTES
+    )
+    return AdminRequest(operation, request_id, arguments, payload, raw, payload_raw)
 
 
 def _sha256(path: Path) -> str:
@@ -213,7 +649,7 @@ def _assert_no_reparse(path: Path, error: type[RuntimeError], label: str) -> Non
     current = Path(absolute.parts[0])
     for part in absolute.parts[1:]:
         current /= part
-        if current.exists() and _is_reparse(current):
+        if (current.exists() or current.is_symlink()) and _is_reparse(current):
             raise error(f"{label} traverses a reparse point: {current}")
 
 
@@ -1051,6 +1487,105 @@ def _verify_mapping(mapping: Any, *, label: str) -> dict[str, Any]:
     return mapping
 
 
+_ADMIN_DIRECTORY_SYNC_BINDINGS: tuple[Any, ...] | None = None
+
+
+def _sync_admin_directory(directory: Path) -> None:
+    """Durably publish a directory entry through a retained no-follow handle."""
+
+    path = Path(directory)
+    _assert_no_reparse(path, AdminProtocolRefused, "admin durability directory")
+    try:
+        resolved = path.resolve(strict=True)
+        info = resolved.stat()
+    except OSError as exc:
+        raise AdminProtocolRefused("admin durability directory is unavailable") from exc
+    if not stat.S_ISDIR(info.st_mode) or resolved.is_symlink():
+        raise AdminProtocolRefused("admin durability target is not a directory")
+    if os.name != "nt":
+        flags = os.O_RDONLY
+        if hasattr(os, "O_DIRECTORY"):
+            flags |= os.O_DIRECTORY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        try:
+            handle = os.open(resolved, flags)
+            try:
+                os.fsync(handle)
+            finally:
+                os.close(handle)
+        except OSError as exc:
+            raise AdminProtocolRefused("admin directory fsync failed") from exc
+        return
+
+    global _ADMIN_DIRECTORY_SYNC_BINDINGS
+    if _ADMIN_DIRECTORY_SYNC_BINDINGS is None:
+        class _AdminIoStatusBlock(ctypes.Structure):
+            _fields_ = [("status", ctypes.c_void_p), ("information", ctypes.c_size_t)]
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        ntdll = ctypes.WinDLL("ntdll", use_last_error=True)
+        create_file = kernel32.CreateFileW
+        create_file.argtypes = (
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.HANDLE,
+        )
+        create_file.restype = wintypes.HANDLE
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = (wintypes.HANDLE,)
+        close_handle.restype = wintypes.BOOL
+        flush = ntdll.NtFlushBuffersFile
+        flush.argtypes = (wintypes.HANDLE, ctypes.POINTER(_AdminIoStatusBlock))
+        flush.restype = ctypes.c_long
+        status_to_error = ntdll.RtlNtStatusToDosError
+        status_to_error.argtypes = (ctypes.c_long,)
+        status_to_error.restype = wintypes.ULONG
+        _ADMIN_DIRECTORY_SYNC_BINDINGS = (
+            create_file,
+            close_handle,
+            flush,
+            status_to_error,
+            _AdminIoStatusBlock,
+        )
+    create_file, close_handle, flush, status_to_error, status_block_type = (
+        _ADMIN_DIRECTORY_SYNC_BINDINGS
+    )
+    native_path = str(resolved)
+    if not native_path.startswith("\\\\?\\"):
+        native_path = "\\\\?\\" + native_path
+    handle = create_file(
+        native_path,
+        0x0001 | 0x0002 | 0x0080 | 0x00100000,
+        0x00000001 | 0x00000002 | 0x00000004,
+        None,
+        3,
+        0x02000000 | 0x00200000,
+        None,
+    )
+    if ctypes.c_void_p(handle).value == ctypes.c_void_p(-1).value:
+        raise AdminProtocolRefused(
+            f"admin durability directory open failed: {ctypes.get_last_error()}"
+        )
+    try:
+        status_block = status_block_type()
+        status = int(flush(handle, ctypes.byref(status_block)))
+        if status < 0:
+            error = int(status_to_error(status))
+            raise AdminProtocolRefused(
+                f"admin directory flush failed with Windows error {error}"
+            )
+    finally:
+        if not close_handle(handle):
+            raise AdminProtocolRefused(
+                f"admin durability directory close failed: {ctypes.get_last_error()}"
+            )
+
+
 def _atomic_json(path: Path, mapping: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     sealed = _sealed_mapping(mapping)
@@ -1062,6 +1597,7 @@ def _atomic_json(path: Path, mapping: Mapping[str, Any]) -> None:
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
+        _sync_admin_directory(path.parent)
     finally:
         if temporary.exists():
             temporary.unlink()
@@ -1079,6 +1615,6989 @@ def _read_json(path: Path, *, label: str) -> dict[str, Any]:
     if _canonical_json(mapping) != raw:
         raise AnchorIntegrityRefused(f"{label} record is not canonical JSON")
     return _verify_mapping(mapping, label=label)
+
+
+def _exclusive_sealed_json(path: Path, mapping: Mapping[str, Any]) -> dict[str, Any]:
+    """Create one immutable sealed JSON record, or return an exact replay."""
+
+    sealed = _sealed_mapping(mapping)
+    raw = _canonical_json(sealed)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _assert_no_reparse(path.parent, AdminProtocolRefused, "protected manifest root")
+    try:
+        with path.open("xb") as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError:
+        try:
+            existing = path.read_bytes()
+        except OSError as exc:
+            raise AdminProtocolRefused("immutable manifest replay is unreadable") from exc
+        if not secrets.compare_digest(existing, raw):
+            raise AdminProtocolRefused("immutable manifest identity collision")
+    except OSError as exc:
+        raise AdminProtocolRefused("immutable manifest publication failed") from exc
+    _sync_admin_directory(path.parent)
+    return _read_json(path, label="sealed path manifest")
+
+
+def _exclusive_admin_bytes(path: Path, raw: bytes, *, label: str) -> None:
+    """Create one exact non-sealed input leaf, accepting only byte-identical replay."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _assert_no_reparse(path.parent, AdminProtocolRefused, f"{label} root")
+    try:
+        with path.open("xb") as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError:
+        try:
+            existing = path.read_bytes()
+        except OSError as exc:
+            raise AdminProtocolRefused(f"{label} replay is unreadable") from exc
+        if not secrets.compare_digest(existing, raw):
+            raise AdminProtocolRefused(f"{label} immutable collision")
+    except OSError as exc:
+        raise AdminProtocolRefused(f"{label} publication failed") from exc
+    _sync_admin_directory(path.parent)
+
+
+def _manifest_path(value: Any) -> str:
+    if not isinstance(value, str):
+        raise AdminProtocolRefused("manifest path is not text")
+    if (
+        not value
+        or len(value) > 240
+        or len(value.encode("utf-8", errors="strict")) > 1024
+        or value != unicodedata.normalize("NFC", value)
+        or value.startswith("/")
+        or "\\" in value
+        or ":" in value
+        or any(ord(character) < 32 or ord(character) == 127 for character in value)
+    ):
+        raise AdminProtocolRefused("manifest path is not a normalized relative path")
+    parts = value.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        raise AdminProtocolRefused("manifest path traverses or has an empty component")
+    return value
+
+
+class ExternalPathManifestStore:
+    """Durable, ordered upload store for one protected repository path universe."""
+
+    def __init__(self, root: Path, *, repository_root: Path):
+        repository = Path(repository_root)
+        _assert_no_reparse(repository, AdminProtocolRefused, "registered repository")
+        try:
+            self.repository_root = repository.resolve(strict=True)
+        except OSError as exc:
+            raise AdminProtocolRefused("registered repository is unavailable") from exc
+        if not self.repository_root.is_dir() or self.repository_root.is_symlink():
+            raise AdminProtocolRefused("registered repository is not an ordinary directory")
+        self.root = Path(root).resolve(strict=False)
+        self.root.mkdir(parents=True, exist_ok=True)
+        _assert_no_reparse(self.root, AdminProtocolRefused, "path manifest root")
+        if not self.root.is_dir() or self.root.is_symlink():
+            raise AdminProtocolRefused("path manifest root is not an ordinary directory")
+        self.sessions = self.root / "sessions"
+        self.sealed = self.root / "sealed"
+        self.cleanup = self.root / "cleanup"
+        self.sessions.mkdir(exist_ok=True)
+        self.sealed.mkdir(exist_ok=True)
+        self.cleanup.mkdir(exist_ok=True)
+        _assert_no_reparse(self.sessions, AdminProtocolRefused, "manifest sessions")
+        _assert_no_reparse(self.sealed, AdminProtocolRefused, "sealed manifests")
+        _assert_no_reparse(self.cleanup, AdminProtocolRefused, "manifest cleanup")
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _count(value: Any, *, label: str) -> int:
+        if type(value) is not int or value < 0 or value > 100_000:
+            raise AdminProtocolRefused(f"{label} is outside the closed count bound")
+        return value
+
+    @staticmethod
+    def _scope(value: Any) -> str:
+        if not isinstance(value, str) or _SCOPE_ID.fullmatch(value) is None:
+            raise AdminProtocolRefused("path manifest scope is malformed")
+        return value
+
+    @staticmethod
+    def _manifest_id(value: Any) -> str:
+        if not isinstance(value, str) or _MANIFEST_ID.fullmatch(value) is None:
+            raise AdminProtocolRefused("path manifest identity is malformed")
+        return value
+
+    def _session_path(self, manifest_id: str) -> Path:
+        return self.sessions / f"{self._manifest_id(manifest_id)}.json"
+
+    def _session(self, manifest_id: str) -> dict[str, Any]:
+        try:
+            return _read_json(self._session_path(manifest_id), label="path manifest session")
+        except (OSError, AnchorIntegrityRefused) as exc:
+            raise AdminProtocolRefused("path manifest session is unavailable") from exc
+
+    def begin(
+        self,
+        *,
+        scope: str,
+        expected_total_count: int,
+        expected_required_count: int,
+        expected_test_count: int,
+        idempotency_key: str | None = None,
+    ) -> str:
+        scope = self._scope(scope)
+        total = self._count(expected_total_count, label="expected total count")
+        required = self._count(expected_required_count, label="expected required count")
+        tests = self._count(expected_test_count, label="expected test count")
+        if total < 1 or required > total or tests > total:
+            raise AdminProtocolRefused("path manifest expected set relationship is invalid")
+        if idempotency_key is not None and _REQUEST_ID.fullmatch(idempotency_key) is None:
+            raise AdminProtocolRefused("path manifest idempotency key is malformed")
+        with self._lock:
+            identity = {
+                "scope": scope,
+                "repository_root": str(self.repository_root),
+                "expected_total_count": total,
+                "expected_required_count": required,
+                "expected_test_count": tests,
+                "nonce": (
+                    hashlib.sha256(idempotency_key.encode("ascii")).hexdigest()
+                    if idempotency_key is not None
+                    else secrets.token_hex(32)
+                ),
+            }
+            manifest_id = "manifest_" + hashlib.sha256(
+                _canonical_admin_json(identity)
+            ).hexdigest()
+            _exclusive_sealed_json(
+                self._session_path(manifest_id),
+                {
+                    "schema": "galaxy.path-manifest-session/v1",
+                    "manifest_id": manifest_id,
+                    "scope": scope,
+                    "repository_root": str(self.repository_root),
+                    "expected_total_count": total,
+                    "expected_required_count": required,
+                    "expected_test_count": tests,
+                    "next_sequence": 0,
+                    "chunks": [],
+                    "records": [],
+                    "status": "open",
+                    "sealed_receipt_path": None,
+                },
+            )
+            return manifest_id
+
+    @staticmethod
+    def _validated_records(value: Any) -> list[dict[str, str]]:
+        if not isinstance(value, list) or not value or len(value) > 24:
+            raise AdminProtocolRefused("path manifest chunk record count is outside 1..24")
+        records: list[dict[str, str]] = []
+        local_paths: set[str] = set()
+        for record in value:
+            if not isinstance(record, dict) or set(record) != {"path", "role"}:
+                raise AdminProtocolRefused("path manifest role record fields are not closed")
+            path = _manifest_path(record.get("path"))
+            role = record.get("role")
+            folded = path.casefold()
+            if not isinstance(role, str) or role not in _PATH_ROLES:
+                raise AdminProtocolRefused("path manifest role is outside the closed enum")
+            if folded in local_paths:
+                raise AdminProtocolRefused("path manifest chunk repeats a path")
+            local_paths.add(folded)
+            records.append({"path": path, "role": role})
+        return records
+
+    def append(
+        self,
+        *,
+        scope: str,
+        manifest_id: str,
+        sequence: int,
+        canonical_records_base64url: str,
+    ) -> dict[str, Any]:
+        scope = self._scope(scope)
+        manifest_id = self._manifest_id(manifest_id)
+        sequence = self._count(sequence, label="path manifest sequence")
+        payload_raw = _decode_admin_base64url(
+            canonical_records_base64url,
+            label="path manifest records",
+            maximum=_MAX_MANIFEST_PAYLOAD_BYTES,
+        )
+        payload = _strict_admin_object(
+            payload_raw,
+            label="path manifest records",
+            maximum=_MAX_MANIFEST_PAYLOAD_BYTES,
+        )
+        if set(payload) != {"records", "sequence"} or payload.get("sequence") != sequence:
+            raise AdminProtocolRefused("path manifest payload sequence or fields differ")
+        records = self._validated_records(payload.get("records"))
+        payload_digest = hashlib.sha256(payload_raw).hexdigest()
+        with self._lock:
+            session = self._session(manifest_id)
+            if session.get("scope") != scope:
+                raise AdminProtocolRefused("path manifest scope binding differs")
+            if session.get("status") != "open":
+                raise AdminProtocolRefused("sealed or aborted path manifest is immutable")
+            chunks = session.get("chunks")
+            existing_records = session.get("records")
+            next_sequence = session.get("next_sequence")
+            if not isinstance(chunks, list) or not isinstance(existing_records, list):
+                raise AdminProtocolRefused("path manifest session collections are malformed")
+            if type(next_sequence) is not int or next_sequence < 0:
+                raise AdminProtocolRefused("path manifest next sequence is malformed")
+            if sequence < next_sequence:
+                matches = [chunk for chunk in chunks if chunk.get("sequence") == sequence]
+                if (
+                    len(matches) == 1
+                    and matches[0].get("payload_sha256") == payload_digest
+                    and matches[0].get("records") == records
+                ):
+                    return {
+                        "manifest_id": manifest_id,
+                        "next_sequence": next_sequence,
+                        "replayed": True,
+                    }
+                raise AdminProtocolRefused("path manifest replay differs from persisted bytes")
+            if sequence != next_sequence:
+                raise AdminProtocolRefused("path manifest chunk is missing or out of order")
+            seen = {
+                str(record.get("path", "")).casefold() for record in existing_records
+            }
+            if any(record["path"].casefold() in seen for record in records):
+                raise AdminProtocolRefused("path manifest repeats a path across chunks")
+            expected_total = session.get("expected_total_count")
+            if type(expected_total) is not int or len(existing_records) + len(records) > expected_total:
+                raise AdminProtocolRefused("path manifest exceeds its declared total")
+            session["records"] = [*existing_records, *records]
+            session["chunks"] = [
+                *chunks,
+                {
+                    "sequence": sequence,
+                    "payload_sha256": payload_digest,
+                    "records": records,
+                },
+            ]
+            session["next_sequence"] = next_sequence + 1
+            _atomic_json(self._session_path(manifest_id), session)
+            return {
+                "manifest_id": manifest_id,
+                "next_sequence": next_sequence + 1,
+                "replayed": False,
+            }
+
+    def seal(
+        self,
+        *,
+        scope: str,
+        manifest_id: str,
+        require_total_count: int,
+        require_required_count: int,
+        require_test_count: int,
+    ) -> dict[str, Any]:
+        scope = self._scope(scope)
+        manifest_id = self._manifest_id(manifest_id)
+        required_counts = (
+            self._count(require_total_count, label="required total count"),
+            self._count(require_required_count, label="required required count"),
+            self._count(require_test_count, label="required test count"),
+        )
+        with self._lock:
+            session = self._session(manifest_id)
+            if session.get("scope") != scope:
+                raise AdminProtocolRefused("path manifest scope binding differs")
+            if session.get("status") == "sealed":
+                receipt_path = session.get("sealed_receipt_path")
+                if not isinstance(receipt_path, str):
+                    raise AdminProtocolRefused("sealed manifest receipt binding is absent")
+                try:
+                    return _read_json(Path(receipt_path), label="sealed path manifest")
+                except (OSError, AnchorIntegrityRefused) as exc:
+                    raise AdminProtocolRefused("sealed manifest receipt is unavailable") from exc
+            if session.get("status") != "open":
+                raise AdminProtocolRefused("path manifest is not sealable")
+            declared_counts = (
+                session.get("expected_total_count"),
+                session.get("expected_required_count"),
+                session.get("expected_test_count"),
+            )
+            if declared_counts != required_counts:
+                raise AdminProtocolRefused("path manifest required counts differ from begin")
+            records = session.get("records")
+            if not isinstance(records, list):
+                raise AdminProtocolRefused("path manifest records are malformed")
+            allowed = sorted(str(record["path"]) for record in records)
+            required = sorted(
+                str(record["path"])
+                for record in records
+                if record.get("role") in {"required-change", "required-test"}
+            )
+            tests = sorted(
+                str(record["path"])
+                for record in records
+                if record.get("role") in {"test-only", "required-test"}
+            )
+            if (len(allowed), len(required), len(tests)) != required_counts:
+                raise AdminProtocolRefused("path manifest observed counts differ")
+            manifest_body = {
+                "schema": "galaxy.path-manifest/v1",
+                "manifest_id": manifest_id,
+                "scope": scope,
+                "repository_root": str(self.repository_root),
+                "allowed_paths": allowed,
+                "required_paths": required,
+                "test_paths": tests,
+                "records": sorted(records, key=lambda record: str(record["path"])),
+            }
+            manifest_digest = hashlib.sha256(
+                _canonical_admin_json(manifest_body)
+            ).hexdigest()
+            receipt_path = self.sealed / f"path-manifest-{manifest_digest}.json"
+            receipt = _exclusive_sealed_json(
+                receipt_path,
+                {
+                    "schema": "galaxy.path-manifest-receipt/v1",
+                    "manifest_id": manifest_id,
+                    "scope": scope,
+                    "repository_root": str(self.repository_root),
+                    "manifest_sha256": manifest_digest,
+                    "allowed_paths": allowed,
+                    "required_paths": required,
+                    "test_paths": tests,
+                    "total_count": len(allowed),
+                    "required_count": len(required),
+                    "test_count": len(tests),
+                },
+            )
+            session["status"] = "sealed"
+            session["sealed_receipt_path"] = str(receipt_path)
+            session["sealed_receipt_sha256"] = hashlib.sha256(
+                _canonical_json(receipt)
+            ).hexdigest()
+            _atomic_json(self._session_path(manifest_id), session)
+            return receipt
+
+    def abort(self, *, scope: str, manifest_id: str) -> dict[str, Any]:
+        """Terminally discard one open upload and return its immutable receipt."""
+
+        scope = self._scope(scope)
+        manifest_id = self._manifest_id(manifest_id)
+        with self._lock:
+            session = self._session(manifest_id)
+            if session.get("scope") != scope:
+                raise AdminProtocolRefused("path manifest scope binding differs")
+            if session.get("status") == "aborted":
+                receipt_path = session.get("cleanup_receipt_path")
+                if not isinstance(receipt_path, str):
+                    raise AdminProtocolRefused("path manifest cleanup binding is absent")
+                try:
+                    return _read_json(Path(receipt_path), label="path manifest cleanup")
+                except (OSError, AnchorIntegrityRefused) as exc:
+                    raise AdminProtocolRefused(
+                        "path manifest cleanup receipt is unavailable"
+                    ) from exc
+            if session.get("status") != "open":
+                raise AdminProtocolRefused("sealed path manifest cannot be aborted")
+            chunks = session.get("chunks")
+            records = session.get("records")
+            if not isinstance(chunks, list) or not isinstance(records, list):
+                raise AdminProtocolRefused("path manifest session collections are malformed")
+            cleanup_body = {
+                "schema": "galaxy.path-manifest-cleanup-receipt/v1",
+                "manifest_id": manifest_id,
+                "scope": scope,
+                "repository_root": str(self.repository_root),
+                "discarded_chunk_count": len(chunks),
+                "discarded_record_count": len(records),
+            }
+            cleanup_digest = hashlib.sha256(
+                _canonical_admin_json(cleanup_body)
+            ).hexdigest()
+            receipt_path = self.cleanup / f"path-manifest-cleanup-{cleanup_digest}.json"
+            receipt = _exclusive_sealed_json(receipt_path, cleanup_body)
+            session["status"] = "aborted"
+            session["chunks"] = []
+            session["records"] = []
+            session["next_sequence"] = 0
+            session["cleanup_receipt_path"] = str(receipt_path)
+            session["cleanup_receipt_sha256"] = hashlib.sha256(
+                _canonical_json(receipt)
+            ).hexdigest()
+            _atomic_json(self._session_path(manifest_id), session)
+            persisted = self._session(manifest_id)
+            if (
+                persisted.get("status") != "aborted"
+                or persisted.get("chunks") != []
+                or persisted.get("records") != []
+                or persisted.get("cleanup_receipt_sha256")
+                != session["cleanup_receipt_sha256"]
+            ):
+                raise AdminProtocolRefused("path manifest cleanup did not reread exactly")
+            return receipt
+
+    def abort_open_scope(self, *, scope: str) -> tuple[str, ...]:
+        """Abort every open upload for one transaction; retain sealed evidence."""
+
+        scope = self._scope(scope)
+        aborted: list[str] = []
+        with self._lock:
+            for path in sorted(self.sessions.glob("manifest_*.json")):
+                try:
+                    session = _read_json(path, label="path manifest session")
+                except (OSError, AnchorIntegrityRefused) as exc:
+                    raise AdminProtocolRefused(
+                        "path manifest session inventory is unreadable"
+                    ) from exc
+                if session.get("scope") != scope or session.get("status") != "open":
+                    continue
+                manifest_id = self._manifest_id(session.get("manifest_id"))
+                receipt = self.abort(scope=scope, manifest_id=manifest_id)
+                receipt_id = "pathcleanup_" + str(receipt.get("record_sha256"))
+                if re.fullmatch(r"pathcleanup_[0-9a-f]{64}", receipt_id) is None:
+                    raise AdminProtocolRefused(
+                        "path manifest cleanup receipt identity is malformed"
+                    )
+                aborted.append(receipt_id)
+        return tuple(aborted)
+
+    def resolve_receipt(self, *, receipt_id: str, scope: str) -> dict[str, Any]:
+        """Resolve one opaque sealed receipt without accepting caller-supplied paths."""
+
+        match = re.fullmatch(r"pathmanifest_([0-9a-f]{64})", receipt_id)
+        scope = self._scope(scope)
+        if match is None:
+            raise AdminProtocolRefused("path manifest receipt identity is malformed")
+        expected_digest = match.group(1)
+        matches: list[dict[str, Any]] = []
+        for path in sorted(self.sealed.glob("path-manifest-*.json")):
+            try:
+                receipt = _read_json(path, label="sealed path manifest")
+            except (OSError, AnchorIntegrityRefused) as exc:
+                raise AdminProtocolRefused("sealed path manifest store is unreadable") from exc
+            if receipt.get("record_sha256") == expected_digest:
+                matches.append(receipt)
+        if len(matches) != 1:
+            raise AdminProtocolRefused("path manifest receipt is absent or ambiguous")
+        receipt = matches[0]
+        if (
+            receipt.get("schema") != "galaxy.path-manifest-receipt/v1"
+            or receipt.get("scope") != scope
+            or receipt.get("repository_root") != str(self.repository_root)
+            or not isinstance(receipt.get("allowed_paths"), list)
+            or not isinstance(receipt.get("required_paths"), list)
+            or not isinstance(receipt.get("test_paths"), list)
+        ):
+            raise AdminProtocolRefused("path manifest receipt binding differs")
+        return receipt
+
+
+_DEFAULT_REVIEWED_TRANSITION_DAG: Mapping[str, str | None] = {
+    "task1-cutover-v1": None,
+    "task2-source-v1": "task1-cutover-v1",
+    "task34-source-v1": "task2-source-v1",
+    "task5-correction-v1": "task34-source-v1",
+    "task5-final-evidence-v1": "task5-correction-v1",
+    "controller-activation-v1": "task5-final-evidence-v1",
+}
+_REVIEWED_PURPOSE_SPECS: Mapping[str, Mapping[str, str]] = {
+    "task1-cutover-v1": {
+        "operation": "cutover",
+        "contract": "cutover-drain-v1",
+        "requested_fences": "close-ingress+quiesce-legacy-tree+hold-restart-fence",
+        "canonicalization_policy": "strict-utf8-parent-bom-preserving-crlf-to-lf-or-exact",
+    },
+    "task2-source-v1": {
+        "operation": "source-update",
+        "contract": "source-update-maintenance-v1",
+        "requested_fences": "cli-run-closed+discord-disabled+maintenance-index-ref",
+        "canonicalization_policy": "strict-utf8-parent-bom-preserving-crlf-to-lf-or-exact",
+    },
+    "task34-source-v1": {
+        "operation": "source-update",
+        "contract": "source-update-maintenance-v1",
+        "requested_fences": "cli-run-closed+discord-disabled+maintenance-index-ref",
+        "canonicalization_policy": "strict-utf8-parent-bom-preserving-crlf-to-lf-or-exact",
+    },
+}
+_PURPOSE_RECEIPT = re.compile(r"^purpose_[0-9a-f]{64}$")
+_OWNER_FENCE_RECEIPT = re.compile(r"^ownerfence_[0-9a-f]{64}$")
+_SOURCE_TRANSACTION = re.compile(r"^source_[0-9a-f]{64}$")
+_BEGIN_REQUEST = re.compile(r"^request_[0-9a-f]{64}$")
+
+
+class AdminTransitionStore:
+    """Durable repository-global purpose, intent, fence, and begin state."""
+
+    _PURPOSE_KEYS = {
+        "canonicalization_policy",
+        "contract",
+        "operation",
+        "plan_node",
+        "requested_fences",
+    }
+    _INTENT_KEYS = {"contract", "operation", "requested_fences"}
+
+    def __init__(
+        self,
+        root: Path,
+        *,
+        repository_root: Path,
+        epoch: str,
+        snapshotter: Callable[[Path], str],
+        reviewed_dag: Mapping[str, str | None] | None = None,
+    ):
+        if re.fullmatch(r"tofu_[0-9a-f]{64}", epoch) is None:
+            raise AdminProtocolRefused("transition epoch is not a TOFU receipt")
+        repository = Path(repository_root)
+        _assert_no_reparse(repository, AdminProtocolRefused, "transition repository")
+        try:
+            self.repository_root = repository.resolve(strict=True)
+        except OSError as exc:
+            raise AdminProtocolRefused("transition repository is unavailable") from exc
+        if not self.repository_root.is_dir() or self.repository_root.is_symlink():
+            raise AdminProtocolRefused("transition repository is not ordinary")
+        self.root = Path(root).resolve(strict=False)
+        self.root.mkdir(parents=True, exist_ok=True)
+        _assert_no_reparse(self.root, AdminProtocolRefused, "transition store")
+        if not self.root.is_dir() or self.root.is_symlink():
+            raise AdminProtocolRefused("transition store is not ordinary")
+        self.epoch = epoch
+        self.snapshotter = snapshotter
+        self.reviewed_dag = dict(
+            _DEFAULT_REVIEWED_TRANSITION_DAG if reviewed_dag is None else reviewed_dag
+        )
+        self.purposes = self.root / "purposes"
+        self.intents = self.root / "intents"
+        self.transactions = self.root / "transactions"
+        for directory in (self.purposes, self.intents, self.transactions):
+            directory.mkdir(exist_ok=True)
+            _assert_no_reparse(directory, AdminProtocolRefused, "transition directory")
+        self.slot_path = self.root / "repository-global-slot.json"
+        self._lock = threading.RLock()
+        if not self.slot_path.exists():
+            _exclusive_sealed_json(
+                self.slot_path,
+                {
+                    "schema": "galaxy.repository-transition-slot/v1",
+                    "epoch": self.epoch,
+                    "repository_root": str(self.repository_root),
+                    "revision": 0,
+                    "live": None,
+                    "archives": [],
+                    "production_active": False,
+                    "discord_enabled": False,
+                },
+            )
+        self._slot()
+
+    @property
+    def production_active(self) -> bool:
+        return False
+
+    @property
+    def discord_enabled(self) -> bool:
+        return False
+
+    def _slot(self) -> dict[str, Any]:
+        try:
+            slot = _read_json(self.slot_path, label="repository transition slot")
+        except (OSError, AnchorIntegrityRefused) as exc:
+            raise AdminProtocolRefused("repository transition slot is unreadable") from exc
+        if (
+            slot.get("schema") != "galaxy.repository-transition-slot/v1"
+            or slot.get("epoch") != self.epoch
+            or slot.get("repository_root") != str(self.repository_root)
+            or type(slot.get("revision")) is not int
+            or slot["revision"] < 0
+            or not isinstance(slot.get("archives"), list)
+            or slot.get("production_active") is not False
+            or slot.get("discord_enabled") is not False
+            or (slot.get("live") is not None and not isinstance(slot.get("live"), dict))
+        ):
+            raise AdminProtocolRefused("repository transition slot binding differs")
+        return slot
+
+    def _write_slot(self, slot: dict[str, Any]) -> None:
+        slot["revision"] = int(slot["revision"]) + 1
+        slot["production_active"] = False
+        slot["discord_enabled"] = False
+        _atomic_json(self.slot_path, slot)
+        reread = self._slot()
+        if reread.get("revision") != slot["revision"] or reread.get("live") != slot.get(
+            "live"
+        ):
+            raise AdminProtocolRefused("repository transition slot did not reread exactly")
+
+    def _snapshot_digest(self) -> str:
+        digest = self.snapshotter(self.repository_root)
+        if not isinstance(digest, str) or _HEX64.fullmatch(digest) is None:
+            raise AdminProtocolRefused("repository snapshotter returned no exact digest")
+        return digest
+
+    @staticmethod
+    def _spec_digest(spec: Mapping[str, Any]) -> str:
+        return hashlib.sha256(_canonical_admin_json(dict(spec))).hexdigest()
+
+    def _purpose_path(self, spec_digest: str) -> Path:
+        return self.purposes / f"purpose-spec-{_admin_hex(spec_digest, label='purpose spec')}.json"
+
+    def _purpose_record(self, purpose_id: str) -> dict[str, Any]:
+        if _PURPOSE_RECEIPT.fullmatch(purpose_id) is None:
+            raise AdminProtocolRefused("transition purpose receipt is malformed")
+        matches = []
+        for path in sorted(self.purposes.glob("purpose-spec-*.json")):
+            record = _read_json(path, label="transition purpose")
+            if record.get("purpose_id") == purpose_id:
+                matches.append(record)
+        if len(matches) != 1:
+            raise AdminProtocolRefused("transition purpose is absent or ambiguous")
+        return matches[0]
+
+    def _validate_purpose_recovery_state(
+        self, record: Mapping[str, Any], slot: Mapping[str, Any]
+    ) -> None:
+        """Permit exact live/archive recovery without pretending drift is old state."""
+
+        purpose_id = record.get("purpose_id")
+        old_state = record.get("old_state_sha256")
+        if (
+            not isinstance(purpose_id, str)
+            or _PURPOSE_RECEIPT.fullmatch(purpose_id) is None
+            or not isinstance(old_state, str)
+            or _HEX64.fullmatch(old_state) is None
+        ):
+            raise AdminProtocolRefused("transition purpose recovery binding is malformed")
+        if self._snapshot_digest() == old_state:
+            return
+        live = slot.get("live")
+        if isinstance(live, dict) and live.get("purpose_id") == purpose_id:
+            return
+        archives = sorted(
+            [
+                item
+                for item in slot["archives"]
+                if isinstance(item, dict) and item.get("purpose_id") == purpose_id
+            ],
+            key=lambda item: int(item.get("owner_generation", -1)),
+        )
+        if archives and archives[-1].get("outcome") == "archived_achieved":
+            return
+        raise AdminProtocolRefused(
+            "transition purpose old state drifted outside live or achieved recovery"
+        )
+
+    def _predecessor_satisfied(self, plan_node: str, slot: Mapping[str, Any]) -> None:
+        if plan_node not in self.reviewed_dag:
+            raise AdminProtocolRefused("plan node is outside the reviewed purpose DAG")
+        predecessor = self.reviewed_dag[plan_node]
+        if predecessor is None:
+            return
+        matches = sorted(
+            [
+            item
+            for item in slot["archives"]
+            if isinstance(item, dict)
+            and item.get("plan_node") == predecessor
+            ],
+            key=lambda item: int(item.get("owner_generation", -1)),
+        )
+        if not matches or matches[-1].get("outcome") != "archived_achieved":
+            raise AdminProtocolRefused(
+                "reviewed purpose predecessor is absent, non-achieved, or ambiguous"
+            )
+
+    @staticmethod
+    def _purpose_attempt_generation(
+        purpose_id: str, slot: Mapping[str, Any]
+    ) -> int:
+        archives = [
+            item
+            for item in slot["archives"]
+            if isinstance(item, dict) and item.get("purpose_id") == purpose_id
+        ]
+        ordered_archives: list[tuple[int, dict[str, Any]]] = []
+        for item in archives:
+            generation = item.get("owner_generation")
+            if (
+                not isinstance(generation, int)
+                or isinstance(generation, bool)
+                or generation < 1
+            ):
+                raise AdminProtocolRefused(
+                    "transition purpose attempt archive is ambiguous"
+                )
+            ordered_archives.append((generation, item))
+        ordered_archives.sort(key=lambda pair: pair[0])
+        generations = [generation for generation, _ in ordered_archives]
+        archives = [item for _, item in ordered_archives]
+        if len(set(generations)) != len(generations):
+            raise AdminProtocolRefused("transition purpose attempt archive is ambiguous")
+        if generations and generations != list(range(1, max(generations) + 1)):
+            raise AdminProtocolRefused("transition purpose attempt archive is not contiguous")
+        live = slot.get("live")
+        if isinstance(live, dict) and live.get("purpose_id") == purpose_id:
+            generation = live.get("owner_generation")
+            if type(generation) is not int or generation != len(generations) + 1:
+                raise AdminProtocolRefused("live transition attempt generation differs")
+            return generation
+        if live is not None:
+            raise AdminProtocolRefused("repository-global transition slot is occupied")
+        if archives and archives[-1].get("outcome") != "archived_retryable":
+            raise AdminProtocolRefused("transition purpose is not retryable")
+        return len(generations) + 1
+
+    def acquire_purpose(self, spec: Mapping[str, Any]) -> str:
+        if set(spec) != self._PURPOSE_KEYS or any(
+            not isinstance(value, str) or not value for value in spec.values()
+        ):
+            raise AdminProtocolRefused("transition purpose specification is not closed")
+        spec_value = dict(spec)
+        spec_digest = self._spec_digest(spec_value)
+        path = self._purpose_path(spec_digest)
+        with self._lock:
+            old_state = self._snapshot_digest()
+            if path.exists():
+                record = _read_json(path, label="transition purpose")
+                if (
+                    record.get("spec") != spec_value
+                    or record.get("spec_sha256") != spec_digest
+                    or record.get("epoch") != self.epoch
+                    or _PURPOSE_RECEIPT.fullmatch(str(record.get("purpose_id"))) is None
+                ):
+                    raise AdminProtocolRefused("transition purpose replay binding differs")
+                self._validate_purpose_recovery_state(record, self._slot())
+                return str(record["purpose_id"])
+            slot = self._slot()
+            if slot.get("live") is not None:
+                raise AdminProtocolRefused("repository-global transition slot is occupied")
+            self._predecessor_satisfied(str(spec_value["plan_node"]), slot)
+            identity = {
+                "epoch": self.epoch,
+                "old_state_sha256": old_state,
+                "repository_root": str(self.repository_root),
+                "spec_sha256": spec_digest,
+            }
+            purpose_id = "purpose_" + hashlib.sha256(
+                _canonical_admin_json(identity)
+            ).hexdigest()
+            _exclusive_sealed_json(
+                path,
+                {
+                    "schema": "galaxy.transition-purpose-receipt/v1",
+                    "purpose_id": purpose_id,
+                    "epoch": self.epoch,
+                    "repository_root": str(self.repository_root),
+                    "spec": spec_value,
+                    "spec_sha256": spec_digest,
+                    "old_state_sha256": old_state,
+                    "status": "issued",
+                },
+            )
+            return purpose_id
+
+    def resolve_purpose(self, spec: Mapping[str, Any]) -> str:
+        if set(spec) != self._PURPOSE_KEYS:
+            raise AdminProtocolRefused("transition purpose lookup specification differs")
+        spec_value = dict(spec)
+        path = self._purpose_path(self._spec_digest(spec_value))
+        if not path.exists():
+            return "none"
+        record = _read_json(path, label="transition purpose")
+        if (
+            record.get("spec") != spec_value
+            or record.get("epoch") != self.epoch
+            or _PURPOSE_RECEIPT.fullmatch(str(record.get("purpose_id"))) is None
+        ):
+            raise AdminProtocolRefused("transition purpose lookup binding differs")
+        self._validate_purpose_recovery_state(record, self._slot())
+        return str(record["purpose_id"])
+
+    def current_purpose(self) -> str:
+        live = self._slot().get("live")
+        if live is None:
+            return "none"
+        purpose = live.get("purpose_id")
+        if not isinstance(purpose, str) or _PURPOSE_RECEIPT.fullmatch(purpose) is None:
+            raise AdminProtocolRefused("live transition purpose is malformed")
+        return purpose
+
+    def _intent_path(self, purpose_id: str, intent_digest: str) -> Path:
+        self._purpose_record(purpose_id)
+        return self.intents / f"intent-{intent_digest}.json"
+
+    def acquire_intent(self, purpose_id: str, spec: Mapping[str, Any]) -> str:
+        if set(spec) != self._INTENT_KEYS or any(
+            not isinstance(value, str) or not value for value in spec.values()
+        ):
+            raise AdminProtocolRefused("transition begin-intent specification is not closed")
+        purpose = self._purpose_record(purpose_id)
+        if (
+            purpose["spec"].get("operation") != spec.get("operation")
+            or purpose["spec"].get("contract") != spec.get("contract")
+            or purpose["spec"].get("requested_fences") != spec.get("requested_fences")
+        ):
+            raise AdminProtocolRefused("begin intent differs from transition purpose")
+        slot = self._slot()
+        owner_generation = self._purpose_attempt_generation(purpose_id, slot)
+        intent_identity = {
+            "epoch": self.epoch,
+            "owner_generation": owner_generation,
+            "purpose_id": purpose_id,
+            "spec": dict(spec),
+        }
+        intent_digest = self._spec_digest(intent_identity)
+        request_id = "request_" + intent_digest
+        owner_fence_id = "ownerfence_" + hashlib.sha256(
+            _canonical_admin_json(
+                {
+                    "owner_generation": owner_generation,
+                    "request_id": request_id,
+                    "epoch": self.epoch,
+                }
+            )
+        ).hexdigest()
+        path = self._intent_path(purpose_id, intent_digest)
+        with self._lock:
+            _exclusive_sealed_json(
+                path,
+                {
+                    "schema": "galaxy.transition-begin-intent/v1",
+                    "request_id": request_id,
+                    "purpose_id": purpose_id,
+                    "owner_fence_id": owner_fence_id,
+                    "owner_generation": owner_generation,
+                    "epoch": self.epoch,
+                    "spec": dict(spec),
+                    "status": "persisted",
+                },
+            )
+            slot = self._slot()
+            live = slot.get("live")
+            expected_live = {
+                "purpose_id": purpose_id,
+                "request_id": request_id,
+                "owner_fence_id": owner_fence_id,
+                "owner_generation": owner_generation,
+                "operation": spec["operation"],
+                "contract": spec["contract"],
+                "requested_fences": spec["requested_fences"],
+                "status": "intent_persisted",
+                "transaction_id": None,
+                "production_active": False,
+                "discord_enabled": False,
+            }
+            if live is None:
+                slot["live"] = expected_live
+                self._write_slot(slot)
+            elif live != expected_live:
+                raise AdminProtocolRefused("repository-global transition slot is occupied")
+            return request_id
+
+    def resolve_intent(self, purpose_id: str, spec: Mapping[str, Any]) -> str:
+        if set(spec) != self._INTENT_KEYS:
+            raise AdminProtocolRefused("begin-intent lookup specification differs")
+        slot = self._slot()
+        live = slot.get("live")
+        if not isinstance(live, dict) or live.get("purpose_id") != purpose_id:
+            return "none"
+        generation = live.get("owner_generation")
+        if type(generation) is not int or generation < 1:
+            raise AdminProtocolRefused("live begin-intent generation is malformed")
+        intent_digest = self._spec_digest(
+            {
+                "epoch": self.epoch,
+                "owner_generation": generation,
+                "purpose_id": purpose_id,
+                "spec": dict(spec),
+            }
+        )
+        path = self._intent_path(purpose_id, intent_digest)
+        if not path.exists():
+            return "none"
+        record = _read_json(path, label="transition begin intent")
+        if (
+            not isinstance(live, dict)
+            or live.get("purpose_id") != purpose_id
+            or live.get("request_id") != record.get("request_id")
+            or live.get("owner_fence_id") != record.get("owner_fence_id")
+        ):
+            raise AdminProtocolRefused("persisted begin intent is not the live slot")
+        return str(record["request_id"])
+
+    def resolve_owner_fence(self, request_id: str, purpose_id: str) -> str:
+        if (
+            _BEGIN_REQUEST.fullmatch(request_id) is None
+            or _PURPOSE_RECEIPT.fullmatch(purpose_id) is None
+        ):
+            raise AdminProtocolRefused("owner-fence lookup identity is malformed")
+        live = self._slot().get("live")
+        owner_generation = live.get("owner_generation") if isinstance(live, dict) else None
+        if (
+            not isinstance(live, dict)
+            or live.get("request_id") != request_id
+            or live.get("purpose_id") != purpose_id
+            or not isinstance(owner_generation, int)
+            or isinstance(owner_generation, bool)
+            or owner_generation < 1
+            or _OWNER_FENCE_RECEIPT.fullmatch(str(live.get("owner_fence_id"))) is None
+        ):
+            raise AdminProtocolRefused("current transition owner fence is unavailable")
+        return str(live["owner_fence_id"])
+
+    def validate_authority(
+        self, *, purpose_id: str, owner_fence_id: str
+    ) -> dict[str, Any]:
+        live = self._slot().get("live")
+        owner_generation = live.get("owner_generation") if isinstance(live, dict) else None
+        if (
+            not isinstance(live, dict)
+            or live.get("purpose_id") != purpose_id
+            or live.get("owner_fence_id") != owner_fence_id
+            or not isinstance(owner_generation, int)
+            or isinstance(owner_generation, bool)
+            or owner_generation < 1
+            or live.get("production_active") is not False
+            or live.get("discord_enabled") is not False
+            or _PURPOSE_RECEIPT.fullmatch(purpose_id) is None
+            or _OWNER_FENCE_RECEIPT.fullmatch(owner_fence_id) is None
+        ):
+            raise AdminProtocolRefused("transition owner authority is stale or mismatched")
+        return dict(live)
+
+    def validate_child_scope(
+        self, *, scope: str, purpose_id: str, owner_fence_id: str
+    ) -> dict[str, Any]:
+        live = self.validate_authority(
+            purpose_id=purpose_id, owner_fence_id=owner_fence_id
+        )
+        if (
+            live.get("status") != "begun"
+            or live.get("transaction_id") != scope
+            or _SCOPE_ID.fullmatch(scope) is None
+        ):
+            raise AdminProtocolRefused("child resource scope is not the live transaction")
+        return live
+
+    def begin_source_update(
+        self, *, request_id: str, purpose_id: str, owner_fence_id: str
+    ) -> str:
+        if _OWNER_FENCE_RECEIPT.fullmatch(owner_fence_id) is None:
+            raise AdminProtocolRefused("source-update owner fence is malformed")
+        with self._lock:
+            slot = self._slot()
+            live = slot.get("live")
+            if (
+                not isinstance(live, dict)
+                or live.get("request_id") != request_id
+                or live.get("purpose_id") != purpose_id
+                or live.get("owner_fence_id") != owner_fence_id
+                or live.get("operation") != "source-update"
+                or live.get("contract") != "source-update-maintenance-v1"
+                or live.get("production_active") is not False
+                or live.get("discord_enabled") is not False
+            ):
+                raise AdminProtocolRefused("source-update begin authority differs")
+            transaction_id = "source_" + hashlib.sha256(
+                _canonical_admin_json(
+                    {
+                        "epoch": self.epoch,
+                        "purpose_id": purpose_id,
+                        "request_id": request_id,
+                        "old_state_sha256": self._purpose_record(purpose_id)[
+                            "old_state_sha256"
+                        ],
+                    }
+                )
+            ).hexdigest()
+            transaction_path = self.transactions / f"{transaction_id}.json"
+            _exclusive_sealed_json(
+                transaction_path,
+                {
+                    "schema": "galaxy.source-update-transaction/v1",
+                    "transaction_id": transaction_id,
+                    "request_id": request_id,
+                    "purpose_id": purpose_id,
+                    "owner_fence_id": owner_fence_id,
+                    "owner_generation": live["owner_generation"],
+                    "epoch": self.epoch,
+                    "status": "begun",
+                    "source_cas_committed": False,
+                    "production_active": False,
+                    "discord_enabled": False,
+                },
+            )
+            expected_live = dict(live)
+            expected_live["transaction_id"] = transaction_id
+            expected_live["status"] = "begun"
+            if live.get("transaction_id") is None:
+                slot["live"] = expected_live
+                self._write_slot(slot)
+            elif live != expected_live:
+                raise AdminProtocolRefused("source-update begin replay differs")
+            return transaction_id
+
+    def resolve_source_begin(self, request_id: str, purpose_id: str) -> str:
+        live = self._slot().get("live")
+        if (
+            not isinstance(live, dict)
+            or live.get("request_id") != request_id
+            or live.get("purpose_id") != purpose_id
+        ):
+            return "not_started"
+        transaction_id = live.get("transaction_id")
+        if transaction_id is None:
+            return "not_started"
+        if _SOURCE_TRANSACTION.fullmatch(str(transaction_id)) is None:
+            raise AdminProtocolRefused("source-update transaction identity is malformed")
+        record = _read_json(
+            self.transactions / f"{transaction_id}.json",
+            label="source-update transaction",
+        )
+        if (
+            record.get("request_id") != request_id
+            or record.get("purpose_id") != purpose_id
+            or record.get("status")
+            not in {
+                "aborted",
+                "attested",
+                "begun",
+                "cas_committed",
+                "finished",
+                "normalized",
+                "recovery_pending",
+            }
+            or record.get("production_active") is not False
+            or record.get("discord_enabled") is not False
+        ):
+            raise AdminProtocolRefused("source-update begin receipt differs")
+        return str(transaction_id)
+
+    def _transaction(self, transaction_id: str) -> tuple[Path, dict[str, Any]]:
+        if _SOURCE_TRANSACTION.fullmatch(transaction_id) is None:
+            raise AdminProtocolRefused("source-update transaction identity is malformed")
+        path = self.transactions / f"{transaction_id}.json"
+        try:
+            record = _read_json(path, label="source-update transaction")
+        except (OSError, AnchorIntegrityRefused) as exc:
+            raise AdminProtocolRefused("source-update transaction is unavailable") from exc
+        if (
+            record.get("schema") != "galaxy.source-update-transaction/v1"
+            or record.get("transaction_id") != transaction_id
+            or record.get("epoch") != self.epoch
+            or record.get("production_active") is not False
+            or record.get("discord_enabled") is not False
+        ):
+            raise AdminProtocolRefused("source-update transaction binding differs")
+        return path, record
+
+    def record_source_cas(
+        self,
+        *,
+        transaction_id: str,
+        purpose_id: str,
+        owner_fence_id: str,
+        commit_oid: str,
+        source_receipt_id: str,
+    ) -> None:
+        if (
+            _HEX40.fullmatch(commit_oid) is None
+            or re.fullmatch(r"sourcereceipt_[0-9a-f]{64}", source_receipt_id) is None
+        ):
+            raise AdminProtocolRefused("source CAS evidence identity is malformed")
+        live = self.validate_authority(
+            purpose_id=purpose_id, owner_fence_id=owner_fence_id
+        )
+        if live.get("transaction_id") != transaction_id:
+            raise AdminProtocolRefused("source CAS transaction is not live")
+        path, record = self._transaction(transaction_id)
+        expected = {
+            "commit_oid": commit_oid,
+            "source_receipt_id": source_receipt_id,
+            "source_cas_committed": True,
+        }
+        if record.get("source_cas_committed") is True:
+            if (
+                any(record.get(key) != value for key, value in expected.items())
+                or record.get("status")
+                not in {"cas_committed", "attested", "finished"}
+            ):
+                raise AdminProtocolRefused("source CAS replay differs")
+            return
+        if (
+            record.get("status") not in {"begun", "normalized"}
+            or record.get("source_cas_committed") is not False
+        ):
+            raise AdminProtocolRefused("source CAS is outside its legal phase")
+        record.update(expected)
+        record["status"] = "cas_committed"
+        _atomic_json(path, record)
+
+    def record_source_attestation(
+        self,
+        *,
+        transaction_id: str,
+        purpose_id: str,
+        owner_fence_id: str,
+        source_receipt_id: str,
+    ) -> None:
+        live = self.validate_authority(
+            purpose_id=purpose_id, owner_fence_id=owner_fence_id
+        )
+        if live.get("transaction_id") != transaction_id:
+            raise AdminProtocolRefused("source attestation transaction is not live")
+        path, record = self._transaction(transaction_id)
+        if (
+            record.get("source_cas_committed") is not True
+            or record.get("source_receipt_id") != source_receipt_id
+            or record.get("status") not in {"cas_committed", "attested", "finished"}
+        ):
+            raise AdminProtocolRefused("source attestation lacks an exact committed CAS")
+        if record.get("status") in {"attested", "finished"}:
+            if record.get("attested") is not True:
+                raise AdminProtocolRefused("source attestation replay differs")
+            return
+        record["status"] = "attested"
+        record["attested"] = True
+        _atomic_json(path, record)
+
+    def record_source_abort(
+        self,
+        *,
+        transaction_id: str,
+        purpose_id: str,
+        owner_fence_id: str,
+        recovery_receipt_id: str,
+        disposition: str,
+    ) -> None:
+        """Persist a pre-CAS recovery outcome without inferring open ingress."""
+
+        if re.fullmatch(r"recovery_[0-9a-f]{64}", recovery_receipt_id) is None:
+            raise AdminProtocolRefused("source recovery receipt identity is malformed")
+        if disposition not in {
+            "safe_old_developer_ingress_open",
+            "fenced_recovery_pending",
+        }:
+            raise AdminProtocolRefused("source abort disposition is outside the closed map")
+        with self._lock:
+            live = self.validate_authority(
+                purpose_id=purpose_id, owner_fence_id=owner_fence_id
+            )
+            if live.get("transaction_id") != transaction_id:
+                raise AdminProtocolRefused("source abort transaction is not live")
+            path, record = self._transaction(transaction_id)
+            if record.get("source_cas_committed") is not False:
+                raise AdminProtocolRefused("source abort is forbidden after CAS")
+            expected_status = (
+                "aborted"
+                if disposition == "safe_old_developer_ingress_open"
+                else "recovery_pending"
+            )
+            expected_ingress = (
+                "open"
+                if disposition == "safe_old_developer_ingress_open"
+                else "held_closed"
+            )
+            if record.get("status") == "aborted":
+                if (
+                    record.get("status") != expected_status
+                    or record.get("developer_ingress") != expected_ingress
+                    or record.get("recovery_receipt_id") != recovery_receipt_id
+                ):
+                    raise AdminProtocolRefused("source abort replay differs")
+            elif record.get("status") == "recovery_pending":
+                if expected_status not in {"aborted", "recovery_pending"}:
+                    raise AdminProtocolRefused("source recovery advancement differs")
+                record["status"] = expected_status
+                record["developer_ingress"] = expected_ingress
+                record["recovery_receipt_id"] = recovery_receipt_id
+                _atomic_json(path, record)
+            else:
+                if record.get("status") not in {"begun", "normalized"}:
+                    raise AdminProtocolRefused("source abort is outside its legal phase")
+                record["status"] = expected_status
+                record["developer_ingress"] = expected_ingress
+                record["recovery_receipt_id"] = recovery_receipt_id
+                _atomic_json(path, record)
+            slot = self._slot()
+            current = slot.get("live")
+            if not isinstance(current, dict) or current != live:
+                raise AdminProtocolRefused("source abort live slot raced")
+            expected_live_status = (
+                "terminal_retryable_old"
+                if disposition == "safe_old_developer_ingress_open"
+                else "recovery_pending"
+            )
+            if current.get("status") != expected_live_status:
+                updated = dict(current)
+                updated["status"] = expected_live_status
+                slot["live"] = updated
+                self._write_slot(slot)
+
+    def finish_source_update(
+        self, *, transaction_id: str, purpose_id: str, owner_fence_id: str
+    ) -> str:
+        with self._lock:
+            live = self.validate_authority(
+                purpose_id=purpose_id, owner_fence_id=owner_fence_id
+            )
+            if live.get("transaction_id") != transaction_id:
+                raise AdminProtocolRefused("source finish transaction is not live")
+            path, record = self._transaction(transaction_id)
+            if record.get("status") != "finished":
+                if (
+                    record.get("status") != "attested"
+                    or record.get("source_cas_committed") is not True
+                    or record.get("attested") is not True
+                ):
+                    raise AdminProtocolRefused("source update cannot finish before attestation")
+                record["status"] = "finished"
+                record["developer_ingress"] = "open"
+                _atomic_json(path, record)
+            elif record.get("developer_ingress") != "open":
+                raise AdminProtocolRefused("finished source-update ingress differs")
+            slot = self._slot()
+            current = slot.get("live")
+            if not isinstance(current, dict) or current != live:
+                raise AdminProtocolRefused("source finish live slot raced")
+            if current.get("status") != "terminal_achieved":
+                updated = dict(current)
+                updated["status"] = "terminal_achieved"
+                slot["live"] = updated
+                self._write_slot(slot)
+            return "committed_exact_new_developer_ingress_open"
+
+    def resolve_source_disposition(self, transaction_id: str) -> str:
+        """Return only a closed, persisted source-ingress disposition."""
+
+        _, record = self._transaction(transaction_id)
+        status = record.get("status")
+        if status == "begun" and record.get("source_cas_committed") is False:
+            return "safe_old_developer_ingress_held_closed"
+        if status == "normalized" and record.get("source_cas_committed") is False:
+            return "fenced_recovery_pending"
+        if status == "recovery_pending":
+            if (
+                record.get("source_cas_committed") is not False
+                or record.get("developer_ingress") != "held_closed"
+                or re.fullmatch(
+                    r"recovery_[0-9a-f]{64}",
+                    str(record.get("recovery_receipt_id")),
+                )
+                is None
+            ):
+                raise AdminProtocolRefused("source recovery-pending state is malformed")
+            return "fenced_recovery_pending"
+        if status == "aborted":
+            if (
+                record.get("source_cas_committed") is not False
+                or record.get("developer_ingress") != "open"
+                or re.fullmatch(
+                    r"recovery_[0-9a-f]{64}",
+                    str(record.get("recovery_receipt_id")),
+                )
+                is None
+            ):
+                raise AdminProtocolRefused("aborted source disposition is malformed")
+            slot = self._slot()
+            live = slot.get("live")
+            if isinstance(live, dict) and live.get("transaction_id") == transaction_id:
+                if live.get("status") != "terminal_retryable_old":
+                    return "fenced_recovery_pending"
+                return "safe_old_developer_ingress_open"
+            archives = [
+                item
+                for item in slot["archives"]
+                if isinstance(item, dict)
+                and item.get("transaction_id") == transaction_id
+                and item.get("outcome") == "archived_retryable"
+            ]
+            if live is None and len(archives) == 1:
+                return "safe_old_developer_ingress_open"
+            return "fenced_recovery_pending"
+        if status in {"cas_committed", "attested"}:
+            if record.get("source_cas_committed") is not True:
+                raise AdminProtocolRefused("committed source disposition lacks CAS evidence")
+            return "committed_exact_new_developer_ingress_held_closed"
+        if status == "finished":
+            if (
+                record.get("source_cas_committed") is not True
+                or record.get("attested") is not True
+                or record.get("developer_ingress") != "open"
+            ):
+                raise AdminProtocolRefused("finished source disposition is malformed")
+            slot = self._slot()
+            live = slot.get("live")
+            if isinstance(live, dict) and live.get("transaction_id") == transaction_id:
+                if live.get("status") != "terminal_achieved":
+                    return "fenced_recovery_pending"
+                return "committed_exact_new_developer_ingress_open"
+            archives = [
+                item
+                for item in slot["archives"]
+                if isinstance(item, dict)
+                and item.get("transaction_id") == transaction_id
+                and item.get("outcome") == "archived_achieved"
+            ]
+            if live is None and len(archives) == 1:
+                return "committed_exact_new_developer_ingress_open"
+            return "fenced_recovery_pending"
+        raise AdminProtocolRefused("source-update disposition is outside the closed map")
+
+    def _terminal_token(self, live: Mapping[str, Any]) -> str:
+        transaction_id = live.get("transaction_id")
+        if not isinstance(transaction_id, str):
+            raise AdminProtocolRefused("terminal source transaction is absent")
+        _, record = self._transaction(transaction_id)
+        terminal_states = {
+            "terminal_achieved": ("finished", "achieved"),
+            "terminal_retryable_old": ("aborted", "retryable_old"),
+        }
+        terminal = terminal_states.get(str(live.get("status")))
+        if terminal is None or record.get("status") != terminal[0]:
+            raise AdminProtocolRefused("transition has no closed terminal source outcome")
+        outcome = terminal[1]
+        digest = hashlib.sha256(
+            _canonical_admin_json(
+                {
+                    "commit_oid": record.get("commit_oid"),
+                    "outcome": outcome,
+                    "owner_generation": live.get("owner_generation"),
+                    "purpose_id": live.get("purpose_id"),
+                    "recovery_receipt_id": record.get("recovery_receipt_id"),
+                    "source_receipt_id": record.get("source_receipt_id"),
+                    "transaction_id": transaction_id,
+                }
+            )
+        ).hexdigest()
+        return f"terminal_source_{outcome}_{digest}"
+
+    def observe_terminal(self, purpose_id: str) -> str:
+        live = self._slot().get("live")
+        if not isinstance(live, dict) or live.get("purpose_id") != purpose_id:
+            raise AdminProtocolRefused("terminal observation purpose is not live")
+        if live.get("status") not in {"terminal_achieved", "terminal_retryable_old"}:
+            return "recovery_pending"
+        return self._terminal_token(live)
+
+    def acknowledge_terminal(self, purpose_id: str, terminal_token: str) -> None:
+        with self._lock:
+            slot = self._slot()
+            live = slot.get("live")
+            if live is None:
+                matches = [
+                    item
+                    for item in slot["archives"]
+                    if isinstance(item, dict)
+                    and item.get("purpose_id") == purpose_id
+                    and item.get("terminal_token") == terminal_token
+                ]
+                if len(matches) == 1:
+                    return
+                raise AdminProtocolRefused("terminal acknowledgement has no live transition")
+            if (
+                not isinstance(live, dict)
+                or live.get("purpose_id") != purpose_id
+                or live.get("status")
+                not in {"terminal_achieved", "terminal_retryable_old"}
+                or terminal_token != self._terminal_token(live)
+            ):
+                raise AdminProtocolRefused("terminal observation is stale or mismatched")
+            purpose = self._purpose_record(purpose_id)
+            archive_outcomes = {
+                "terminal_achieved": "archived_achieved",
+                "terminal_retryable_old": "archived_retryable",
+            }
+            archive = {
+                "purpose_id": purpose_id,
+                "plan_node": purpose["spec"]["plan_node"],
+                "operation": purpose["spec"]["operation"],
+                "outcome": archive_outcomes[str(live["status"])],
+                "terminal_token": terminal_token,
+                "transaction_id": live.get("transaction_id"),
+                "owner_generation": live.get("owner_generation"),
+            }
+            prior = [
+                item
+                for item in slot["archives"]
+                if isinstance(item, dict)
+                and item.get("purpose_id") == purpose_id
+                and item.get("owner_generation") == live.get("owner_generation")
+            ]
+            if prior:
+                if prior != [archive]:
+                    raise AdminProtocolRefused(
+                        "terminal attempt archive is duplicated or differs"
+                    )
+            else:
+                slot["archives"] = [*slot["archives"], archive]
+            slot["live"] = None
+            self._write_slot(slot)
+
+    def resolve_purpose_outcome(self, purpose_id: str) -> str:
+        self._purpose_record(purpose_id)
+        slot = self._slot()
+        matches = sorted(
+            [
+                item
+                for item in slot["archives"]
+                if isinstance(item, dict) and item.get("purpose_id") == purpose_id
+            ],
+            key=lambda item: int(item.get("owner_generation", -1)),
+        )
+        generations = [item.get("owner_generation") for item in matches]
+        if any(type(value) is not int or value < 1 for value in generations) or len(
+            set(generations)
+        ) != len(generations):
+            raise AdminProtocolRefused("transition purpose archive is ambiguous")
+        if matches:
+            outcome = matches[-1].get("outcome")
+            if outcome not in {
+                "archived_achieved",
+                "archived_failed",
+                "archived_retryable",
+                "archived_rollback",
+            }:
+                raise AdminProtocolRefused("transition purpose archive outcome is malformed")
+            return str(outcome)
+        live = slot.get("live")
+        if live is None:
+            return "clear_never_started"
+        if isinstance(live, dict) and live.get("purpose_id") == purpose_id:
+            return "active"
+        raise AdminProtocolRefused("transition purpose outcome conflicts with live slot")
+
+    def classify_purpose_successor(
+        self, completed_purpose_id: str, desired_purpose_id: str
+    ) -> str:
+        completed = self._purpose_record(completed_purpose_id)
+        desired = self._purpose_record(desired_purpose_id)
+        slot = self._slot()
+        completed_archives = sorted(
+            [
+                item
+                for item in slot["archives"]
+                if isinstance(item, dict)
+                and item.get("purpose_id") == completed_purpose_id
+            ],
+            key=lambda item: int(item.get("owner_generation", -1)),
+        )
+        if not completed_archives:
+            raise AdminProtocolRefused("completed purpose archive is absent or ambiguous")
+        if completed_purpose_id == desired_purpose_id:
+            return "same"
+        completed_node = completed["spec"].get("plan_node")
+        desired_node = desired["spec"].get("plan_node")
+        if (
+            self.reviewed_dag.get(str(desired_node)) == completed_node
+            and completed_archives[-1].get("outcome") == "archived_achieved"
+        ):
+            return "allowed_predecessor"
+        return "unrelated_or_new_epoch"
+
+
+@dataclass(frozen=True)
+class _AdminParentCatalog:
+    git_dir: Path
+    common_dir: Path
+    head_ref: str
+    revision: str
+    object_root: Path
+    inventory: tuple[tuple[str, Path, tuple[int, ...]], ...]
+    derived_inventory: tuple[tuple[str, Path, tuple[int, ...]], ...]
+    attestation_digest: str
+    inventory_digest: str
+    loose_oids: tuple[str, ...]
+    indexes: tuple[dict[str, Any], ...]
+    packs: tuple[dict[str, Any], ...]
+    policy: Mapping[str, Any]
+
+
+class AdminContainedRuntime:
+    """Authority-free adapters over the installed digest-pinned OCI roles."""
+
+    _CONTAMINATION_CONTROLS = [
+        "fresh-session",
+        "no-writer-rationale",
+        "no-writer-transcript",
+        "read-only-inputs",
+    ]
+    _HEARTBEAT = b"GALAXY_OBJECT_PARSER_HEARTBEAT/v1\n"
+    _PACK_INDEX = re.compile(r"^pack/(pack-([0-9a-f]{40}))\.idx$")
+    _PACK_HEADER = re.compile(r"^pack-header/(pack-[0-9a-f]{40})$")
+    _PACK_RANGE = re.compile(
+        r"^pack-range/(pack-[0-9a-f]{40})/"
+        r"([1-9][0-9]*)-(0|[1-9][0-9]*)-([1-9][0-9]*)-([0-9a-f]{8})$"
+    )
+
+    def __init__(
+        self,
+        *,
+        external_root: Path,
+        admin_root: Path,
+        repository_root: Path,
+        repository_identity: str,
+        trust_receipt_id: str,
+        runtime: Any,
+        role_runner: Callable[..., Any],
+    ) -> None:
+        try:
+            external = Path(external_root).resolve(strict=True)
+            repository = Path(repository_root).resolve(strict=True)
+            admin = Path(admin_root).resolve(strict=False)
+            admin.relative_to(external)
+        except (OSError, ValueError) as exc:
+            raise AdminProtocolRefused(
+                "contained runtime roots are unavailable or unbound"
+            ) from exc
+        admin.mkdir(parents=True, exist_ok=True)
+        _assert_no_reparse(external, AdminProtocolRefused, "contained external root")
+        _assert_no_reparse(repository, AdminProtocolRefused, "contained repository")
+        _assert_no_reparse(admin, AdminProtocolRefused, "contained runtime root")
+        if (
+            not external.is_dir()
+            or not repository.is_dir()
+            or not admin.is_dir()
+            or _HEX64.fullmatch(repository_identity) is None
+            or re.fullmatch(r"tofu_[0-9a-f]{64}", trust_receipt_id) is None
+            or not callable(role_runner)
+        ):
+            raise AdminProtocolRefused("contained runtime binding is malformed")
+        image_digests = getattr(runtime, "image_digests", None)
+        digest_bindings = (
+            getattr(runtime, "runtime_digest", None),
+            getattr(runtime, "object_parser_entrypoint_digest", None),
+            getattr(runtime, "reviewer_digest", None),
+        )
+        if (
+            not isinstance(image_digests, Mapping)
+            or not {"object_parser", "reviewer"} <= set(image_digests)
+            or any(_HEX64.fullmatch(str(value)) is None for value in digest_bindings)
+            or any(
+                _HEX64.fullmatch(str(image_digests[role])) is None
+                for role in ("object_parser", "reviewer")
+            )
+            or type(getattr(runtime, "generation", None)) is not int
+            or runtime.generation < 1
+            or _HEX64.fullmatch(str(getattr(runtime, "tofu_merkle_root", "")))
+            is None
+        ):
+            raise AdminProtocolRefused("contained sealed runtime closure is malformed")
+        self.external_root = external
+        self.admin_root = admin
+        self.repository_root = repository
+        self.repository_identity = repository_identity
+        self.trust_receipt_id = trust_receipt_id
+        self.runtime = runtime
+        self.role_runner = role_runner
+        self.root = admin / "contained-runtime"
+        self.hash_payloads = self.root / "hash-payloads"
+        self.hash_batches = self.root / "hash-batches"
+        self.hash_receipts = self.root / "hash-receipts"
+        self.parent_raw = self.root / "parent-raw"
+        self.parent_requests = self.root / "parent-requests"
+        self.parent_outputs = self.root / "parent-outputs"
+        self.parser_receipts = self.root / "parser-receipts"
+        self.review_inputs = self.root / "review-inputs"
+        self.qualifications = self.root / "qualifications"
+        self.proposal_objects = admin / "source-commits" / "proposal-objects"
+        for directory in (
+            self.root,
+            self.hash_payloads,
+            self.hash_batches,
+            self.hash_receipts,
+            self.parent_raw,
+            self.parent_requests,
+            self.parent_outputs,
+            self.parser_receipts,
+            self.review_inputs,
+            self.qualifications,
+            self.proposal_objects,
+        ):
+            directory.mkdir(parents=True, exist_ok=True)
+            _assert_no_reparse(
+                directory, AdminProtocolRefused, "contained runtime state"
+            )
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _container_json(raw: bytes, *, label: str, maximum: int) -> dict[str, Any]:
+        if not raw.endswith(b"\n") or raw.endswith(b"\n\n"):
+            raise AdminProtocolRefused(f"{label} output framing differs")
+        return _strict_admin_object(raw[:-1], label=label, maximum=maximum)
+
+    @staticmethod
+    def _validate_runner(
+        result: Any,
+        *,
+        role: str,
+        runtime_digest: str,
+        entrypoint_digest: str,
+        image_digest: str,
+        allow_parser_heartbeat: bool,
+    ) -> None:
+        stderr = getattr(result, "stderr", None)
+        if (
+            getattr(result, "role", None) != role
+            or getattr(result, "runtime_digest", None) != runtime_digest
+            or getattr(result, "entrypoint_digest", None) != entrypoint_digest
+            or getattr(result, "image_digest", None) != image_digest
+            or _HEX64.fullmatch(
+                str(getattr(result, "security_profile_digest", ""))
+            )
+            is None
+            or not isinstance(getattr(result, "stdout", None), bytes)
+            or not isinstance(stderr, bytes)
+        ):
+            raise AdminProtocolRefused("contained role result binding differs")
+        if stderr:
+            if not allow_parser_heartbeat or any(
+                line + b"\n" != AdminContainedRuntime._HEARTBEAT
+                for line in stderr.splitlines()
+            ):
+                raise AdminProtocolRefused("contained role emitted unexpected stderr")
+
+    def _put_payload(self, payload: bytes) -> str:
+        if not isinstance(payload, bytes) or len(payload) > 128 * 1024 * 1024:
+            raise AdminProtocolRefused("contained hash payload exceeds quota")
+        digest = hashlib.sha256(payload).hexdigest()
+        directory = self.hash_payloads / digest[:2]
+        directory.mkdir(exist_ok=True)
+        _exclusive_admin_bytes(
+            directory / digest,
+            payload,
+            label="contained hash payload",
+        )
+        return digest
+
+    def hash_objects(
+        self, objects: Sequence[tuple[str, bytes]]
+    ) -> tuple[str, ...]:
+        """Hash a batch only inside the sealed object-parser/SHA1DC role."""
+
+        if not isinstance(objects, Sequence) or not objects or len(objects) > 200_000:
+            raise AdminProtocolRefused("contained object batch count is outside quota")
+        with self._lock:
+            identities: list[tuple[str, str, int]] = []
+            payload_by_identity: dict[tuple[str, str, int], bytes] = {}
+            total = 0
+            for item in objects:
+                if (
+                    not isinstance(item, tuple)
+                    or len(item) != 2
+                    or item[0] not in {"blob", "tree", "commit"}
+                    or not isinstance(item[1], bytes)
+                ):
+                    raise AdminProtocolRefused("contained object batch item is malformed")
+                object_type, payload = item
+                total += len(payload)
+                if total > 2 * 1024 * 1024 * 1024:
+                    raise AdminProtocolRefused("contained object batch exceeds aggregate quota")
+                digest = self._put_payload(payload)
+                identity = (object_type, digest, len(payload))
+                identities.append(identity)
+                payload_by_identity.setdefault(identity, payload)
+            unique = sorted(payload_by_identity)
+            records = [
+                {
+                    "sequence": sequence,
+                    "object_type": identity[0],
+                    "payload_sha256": identity[1],
+                    "size": identity[2],
+                }
+                for sequence, identity in enumerate(unique)
+            ]
+            batch_digest = hashlib.sha256(
+                _canonical_admin_json(
+                    {
+                        "records": records,
+                        "parser_runtime_sha256": self.runtime.object_parser_entrypoint_digest,
+                        "parser_image_digest": self.runtime.image_digests[
+                            "object_parser"
+                        ],
+                        "trust_receipt_id": self.trust_receipt_id,
+                    }
+                )
+            ).hexdigest()
+            batch_id = "hashbatch_" + batch_digest
+            request = {
+                "schema": "galaxy.object-hash-batch-request/v1",
+                "operation": "hash-object-batch",
+                "batch_id": batch_id,
+                "records": records,
+            }
+            request_root = self.hash_batches / batch_id
+            request_path = request_root / "request.json"
+            _exclusive_admin_bytes(
+                request_path,
+                _canonical_admin_json(request),
+                label="contained hash request",
+            )
+            result = self.role_runner(
+                self.runtime,
+                role="object_parser",
+                runtime_argv=(
+                    "hash-object-batch",
+                    "--sha1dc-executable",
+                    "/opt/galaxy/galaxy-sha1dc",
+                    "--request",
+                    "/galaxy-input/request.json",
+                    "--payload-root",
+                    "/galaxy-objects",
+                ),
+                input_mounts=(
+                    (request_root, "/galaxy-input"),
+                    (self.hash_payloads, "/galaxy-objects"),
+                ),
+                writable_mounts=(),
+                invocation_root=self.root / "invocations",
+            )
+            self._validate_runner(
+                result,
+                role="object_parser",
+                runtime_digest=self.runtime.runtime_digest,
+                entrypoint_digest=self.runtime.object_parser_entrypoint_digest,
+                image_digest=self.runtime.image_digests["object_parser"],
+                allow_parser_heartbeat=False,
+            )
+            parsed = self._container_json(
+                result.stdout,
+                label="contained object hash result",
+                maximum=64 * 1024 * 1024,
+            )
+            expected_fields = {
+                "schema",
+                "batch_id",
+                "request_sha256",
+                "records",
+                "parser_version_digest",
+                "network_allowed",
+            }
+            parsed_records = parsed.get("records")
+            if (
+                set(parsed) != expected_fields
+                or parsed.get("schema") != "galaxy.object-hash-batch-result/v1"
+                or parsed.get("batch_id") != batch_id
+                or parsed.get("request_sha256")
+                != hashlib.sha256(request_path.read_bytes()).hexdigest()
+                or parsed.get("parser_version_digest")
+                != self.runtime.object_parser_entrypoint_digest
+                or parsed.get("network_allowed") is not False
+                or not isinstance(parsed_records, list)
+                or len(parsed_records) != len(records)
+            ):
+                raise AdminProtocolRefused("contained object hash result header differs")
+            oid_by_identity: dict[tuple[str, str, int], str] = {}
+            for expected, observed in zip(records, parsed_records, strict=True):
+                if not isinstance(observed, dict) or set(observed) != {
+                    *expected,
+                    "oid",
+                    "frame_sha256",
+                }:
+                    raise AdminProtocolRefused("contained object hash record fields differ")
+                expected_size = expected.get("size")
+                if (
+                    not isinstance(expected_size, int)
+                    or isinstance(expected_size, bool)
+                    or expected_size < 0
+                ):
+                    raise AdminProtocolRefused("contained object hash record size differs")
+                identity = (
+                    str(expected["object_type"]),
+                    str(expected["payload_sha256"]),
+                    expected_size,
+                )
+                payload = payload_by_identity[identity]
+                frame = (
+                    f"{identity[0]} {len(payload)}".encode("ascii")
+                    + b"\0"
+                    + payload
+                )
+                if (
+                    any(observed.get(key) != value for key, value in expected.items())
+                    or _HEX40.fullmatch(str(observed.get("oid"))) is None
+                    or observed.get("frame_sha256")
+                    != hashlib.sha256(frame).hexdigest()
+                ):
+                    raise AdminProtocolRefused("contained object hash record differs")
+                oid_by_identity[identity] = str(observed["oid"])
+            receipt_body = {
+                "schema": "galaxy.contained-object-hash-receipt/v1",
+                "batch_id": batch_id,
+                "request_sha256": parsed["request_sha256"],
+                "result_sha256": hashlib.sha256(result.stdout).hexdigest(),
+                "parser_runtime_sha256": result.entrypoint_digest,
+                "parser_image_digest": "sha256:" + result.image_digest,
+                "security_profile_sha256": result.security_profile_digest,
+                "network_enabled": False,
+                "authority": False,
+            }
+            receipt_id = "hashreceipt_" + hashlib.sha256(
+                _canonical_admin_json(receipt_body)
+            ).hexdigest()
+            _exclusive_sealed_json(
+                self.hash_receipts / f"{receipt_id}.json",
+                {**receipt_body, "receipt_id": receipt_id},
+            )
+            return tuple(oid_by_identity[identity] for identity in identities)
+
+    def hash_object(self, object_type: str, payload: bytes) -> str:
+        return self.hash_objects(((object_type, payload),))[0]
+
+    @staticmethod
+    def _git_directory(path: Path, *, label: str) -> Path:
+        _assert_no_reparse(path, AdminProtocolRefused, label)
+        try:
+            resolved = path.resolve(strict=True)
+            info = resolved.stat()
+        except OSError as exc:
+            raise AdminProtocolRefused(f"{label} is unavailable") from exc
+        if not stat.S_ISDIR(info.st_mode) or resolved.is_symlink():
+            raise AdminProtocolRefused(f"{label} is not an ordinary directory")
+        return resolved
+
+    @staticmethod
+    def _git_text(path: Path, *, root: Path, label: str, maximum: int = 1024 * 1024) -> str:
+        _, raw = _read_admin_file(path, root=root, label=label, maximum=maximum)
+        try:
+            text = raw.decode("ascii", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise AdminProtocolRefused(f"{label} is not strict ASCII") from exc
+        if "\x00" in text or "\r" in text:
+            raise AdminProtocolRefused(f"{label} contains forbidden bytes")
+        return text
+
+    def _resolve_git_authority(self) -> tuple[Path, Path, str, str]:
+        marker = self.repository_root / ".git"
+        _assert_no_reparse(marker, AdminProtocolRefused, "Git directory marker")
+        if marker.is_dir():
+            git_dir = self._git_directory(marker, label="Git directory")
+        elif marker.is_file():
+            marker_root = marker.parent.resolve(strict=True)
+            text = self._git_text(
+                marker, root=marker_root, label="Git worktree marker", maximum=32767
+            )
+            if not text.endswith("\n") or text.count("\n") != 1 or not text.startswith(
+                "gitdir: "
+            ):
+                raise AdminProtocolRefused("Git worktree marker is malformed")
+            candidate = Path(text[8:-1])
+            if not candidate.is_absolute():
+                candidate = marker.parent / candidate
+            git_dir = self._git_directory(candidate, label="Git worktree directory")
+        else:
+            raise AdminProtocolRefused("registered repository has no ordinary Git directory")
+        common_marker = git_dir / "commondir"
+        if common_marker.exists():
+            text = self._git_text(
+                common_marker,
+                root=git_dir,
+                label="Git common-directory marker",
+                maximum=32767,
+            )
+            if not text.endswith("\n") or text.count("\n") != 1:
+                raise AdminProtocolRefused("Git common-directory marker is malformed")
+            common_candidate = Path(text[:-1])
+            if not common_candidate.is_absolute():
+                common_candidate = git_dir / common_candidate
+            common = self._git_directory(common_candidate, label="Git common directory")
+        else:
+            common = git_dir
+        head_text = self._git_text(
+            git_dir / "HEAD", root=git_dir, label="symbolic HEAD", maximum=32767
+        )
+        if not head_text.endswith("\n") or head_text.count("\n") != 1:
+            raise AdminProtocolRefused("symbolic HEAD framing differs")
+        head_line = head_text[:-1]
+        if not head_line.startswith("ref: "):
+            raise AdminProtocolRefused("registered repository HEAD must be symbolic")
+        head_ref = head_line[5:]
+        if (
+            re.fullmatch(r"refs/heads/[A-Za-z0-9][A-Za-z0-9._/-]{0,240}", head_ref)
+            is None
+            or ".." in head_ref.split("/")
+            or "//" in head_ref
+            or head_ref.endswith(("/", ".lock"))
+        ):
+            raise AdminProtocolRefused("symbolic HEAD ref is outside the closed grammar")
+        ref_path = common.joinpath(*head_ref.split("/"))
+        head_oid = self._git_text(
+            ref_path, root=common, label="loose target ref", maximum=128
+        )
+        if not head_oid.endswith("\n") or _HEX40.fullmatch(head_oid[:-1]) is None:
+            raise AdminProtocolRefused("loose target ref is not one exact SHA-1 OID")
+        head_oid = head_oid[:-1]
+        packed = common / "packed-refs"
+        if packed.exists():
+            packed_text = self._git_text(
+                packed, root=common, label="packed refs", maximum=64 * 1024 * 1024
+            )
+            shadow: str | None = None
+            for line in packed_text.splitlines():
+                if not line or line.startswith(("#", "^")):
+                    continue
+                parts = line.split(" ", 1)
+                if len(parts) != 2 or _HEX40.fullmatch(parts[0]) is None:
+                    raise AdminProtocolRefused("packed refs contains a malformed entry")
+                if parts[1] == head_ref:
+                    if shadow is not None:
+                        raise AdminProtocolRefused("packed refs repeats the target ref")
+                    shadow = parts[0]
+            if shadow is not None and shadow != head_oid:
+                raise AdminProtocolRefused("packed and loose target refs disagree")
+        for relative in (
+            "objects/info/alternates",
+            "objects/info/http-alternates",
+            "shallow",
+            "info/grafts",
+        ):
+            candidate = common.joinpath(*relative.split("/"))
+            if candidate.exists() or candidate.is_symlink():
+                raise AdminProtocolRefused(f"unsupported Git authority exists: {relative}")
+        replace = common / "refs" / "replace"
+        if replace.exists():
+            replace_root = self._git_directory(replace, label="Git replacement refs")
+            try:
+                if any(os.scandir(replace_root)):
+                    raise AdminProtocolRefused("Git replacement refs are forbidden")
+            except OSError as exc:
+                raise AdminProtocolRefused("Git replacement refs cannot be inspected") from exc
+        config = common / "config"
+        if config.exists():
+            config_text = self._git_text(
+                config, root=common, label="Git config", maximum=4 * 1024 * 1024
+            )
+            object_formats = re.findall(
+                r"(?im)^\s*objectformat\s*=\s*([^#;\s]+)\s*$", config_text
+            )
+            if any(value.casefold() != "sha1" for value in object_formats):
+                raise AdminProtocolRefused("Git object format is not SHA-1")
+        return git_dir, common, head_ref, head_oid
+
+    @staticmethod
+    def _object_inventory(objects: Path) -> tuple[tuple[str, Path, tuple[int, ...]], ...]:
+        try:
+            root_info = objects.stat()
+            top = sorted(os.scandir(objects), key=lambda item: item.name)
+        except OSError as exc:
+            raise AdminProtocolRefused("Git object store cannot be inventoried") from exc
+        if not stat.S_ISDIR(root_info.st_mode) or _is_reparse(objects):
+            raise AdminProtocolRefused("Git object store is unsafe")
+        records: list[tuple[str, Path, tuple[int, ...]]] = []
+
+        def ordinary(entry: os.DirEntry[str], *, label: str) -> tuple[Path, tuple[int, ...]]:
+            path = Path(entry.path)
+            if entry.is_symlink() or _is_reparse(path):
+                raise AdminProtocolRefused(f"{label} traverses a reparse entry")
+            try:
+                # DirEntry.stat() reports st_nlink=0 on Windows for ordinary
+                # files.  Re-open the no-reparse path to retain hard-link checks.
+                info = path.stat()
+            except OSError as exc:
+                raise AdminProtocolRefused(f"{label} identity is unavailable") from exc
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_nlink != 1
+                or not 1 <= info.st_size <= 1024 * 1024 * 1024
+            ):
+                raise AdminProtocolRefused(f"{label} is not a bounded ordinary file")
+            return path, (
+                info.st_dev,
+                info.st_ino,
+                info.st_size,
+                info.st_mtime_ns,
+            )
+
+        pack_entries: list[os.DirEntry[str]] = []
+        for entry in top:
+            name = entry.name
+            if re.fullmatch(r"[0-9a-f]{2}", name):
+                if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+                    raise AdminProtocolRefused("Git loose-object fanout is unsafe")
+                try:
+                    leaves = sorted(os.scandir(entry.path), key=lambda item: item.name)
+                except OSError as exc:
+                    raise AdminProtocolRefused("Git loose-object fanout is unreadable") from exc
+                for leaf in leaves:
+                    if re.fullmatch(r"[0-9a-f]{38}", leaf.name) is None:
+                        raise AdminProtocolRefused("Git loose-object name is malformed")
+                    path, identity = ordinary(leaf, label="Git loose object")
+                    records.append((f"loose/{name}{leaf.name}", path, identity))
+            elif name == "pack":
+                if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+                    raise AdminProtocolRefused("Git pack directory is unsafe")
+                try:
+                    pack_entries = sorted(os.scandir(entry.path), key=lambda item: item.name)
+                except OSError as exc:
+                    raise AdminProtocolRefused("Git pack directory is unreadable") from exc
+            elif name == "info":
+                if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+                    raise AdminProtocolRefused("Git object info directory is unsafe")
+            else:
+                raise AdminProtocolRefused("Git object store has an unknown top-level entry")
+        pairs: dict[str, set[str]] = {}
+        for entry in pack_entries:
+            match = re.fullmatch(r"pack-([0-9a-f]{40})\.(pack|idx)", entry.name)
+            if match is not None:
+                pairs.setdefault(match.group(1), set()).add(match.group(2))
+        if any(members != {"pack", "idx"} for members in pairs.values()):
+            raise AdminProtocolRefused("Git pack and index files are not paired")
+        for entry in pack_entries:
+            match = re.fullmatch(r"pack-([0-9a-f]{40})\.(pack|idx)", entry.name)
+            if match is not None:
+                path, identity = ordinary(entry, label="Git pack object")
+                records.append((f"pack/{entry.name}", path, identity))
+                continue
+            sidecar = re.fullmatch(
+                r"pack-([0-9a-f]{40})\.(?:bitmap|rev|mtimes)", entry.name
+            )
+            if entry.name == "multi-pack-index" or (
+                sidecar is not None and sidecar.group(1) in pairs
+            ):
+                if entry.is_symlink() or _is_reparse(Path(entry.path)):
+                    raise AdminProtocolRefused("Git pack sidecar is unsafe")
+                continue
+            raise AdminProtocolRefused("Git pack directory has unknown authority data")
+        return tuple(sorted(records, key=lambda item: item[0]))
+
+    @staticmethod
+    def _derived_object_inventory(
+        objects: Path,
+    ) -> tuple[tuple[str, Path, tuple[int, ...]], ...]:
+        """Inventory bounded derived accelerators without granting object authority."""
+
+        records: list[tuple[str, Path, tuple[int, ...]]] = []
+
+        def add_file(path: Path, logical: str, *, maximum: int) -> None:
+            _assert_no_reparse(path, AdminProtocolRefused, f"Git {logical}")
+            try:
+                info = path.stat()
+            except OSError as exc:
+                raise AdminProtocolRefused(
+                    f"Git {logical} identity is unavailable"
+                ) from exc
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_nlink != 1
+                or info.st_size < 0
+                or info.st_size > maximum
+            ):
+                raise AdminProtocolRefused(
+                    f"Git {logical} is not a bounded ordinary file"
+                )
+            records.append(
+                (
+                    logical,
+                    path,
+                    (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns),
+                )
+            )
+
+        info_root = objects / "info"
+        if info_root.exists():
+            _assert_no_reparse(info_root, AdminProtocolRefused, "Git object info")
+            try:
+                info_entries = sorted(os.scandir(info_root), key=lambda item: item.name)
+            except OSError as exc:
+                raise AdminProtocolRefused("Git object info is unreadable") from exc
+            for entry in info_entries:
+                path = Path(entry.path)
+                if entry.name == "packs":
+                    add_file(path, "info/packs", maximum=64 * 1024 * 1024)
+                    continue
+                if entry.name == "commit-graph":
+                    add_file(path, "info/commit-graph", maximum=1024 * 1024 * 1024)
+                    continue
+                if entry.name == "commit-graphs":
+                    if entry.is_symlink() or _is_reparse(path) or not entry.is_dir(
+                        follow_symlinks=False
+                    ):
+                        raise AdminProtocolRefused(
+                            "Git object info commit-graphs directory is unsafe"
+                        )
+                    try:
+                        graph_entries = sorted(
+                            os.scandir(path), key=lambda item: item.name
+                        )
+                    except OSError as exc:
+                        raise AdminProtocolRefused(
+                            "Git object info commit-graphs directory is unreadable"
+                        ) from exc
+                    for graph in graph_entries:
+                        if graph.name == "commit-graph-chain" or re.fullmatch(
+                            r"graph-[0-9a-f]{40}\.graph", graph.name
+                        ):
+                            add_file(
+                                Path(graph.path),
+                                f"info/commit-graphs/{graph.name}",
+                                maximum=1024 * 1024 * 1024,
+                            )
+                            continue
+                        raise AdminProtocolRefused(
+                            "Git object info commit-graphs has unknown derived data"
+                        )
+                    continue
+                raise AdminProtocolRefused(
+                    "Git object info has unknown authority-like data"
+                )
+
+        pack_root = objects / "pack"
+        if pack_root.exists():
+            _assert_no_reparse(pack_root, AdminProtocolRefused, "Git pack directory")
+            try:
+                pack_entries = sorted(os.scandir(pack_root), key=lambda item: item.name)
+            except OSError as exc:
+                raise AdminProtocolRefused("Git pack directory is unreadable") from exc
+            for entry in pack_entries:
+                name = entry.name
+                if name == "multi-pack-index" or re.fullmatch(
+                    r"multi-pack-index-[0-9a-f]{40}\.(?:rev|bitmap)", name
+                ):
+                    add_file(
+                        Path(entry.path),
+                        f"pack/{name}",
+                        maximum=1024 * 1024 * 1024,
+                    )
+                    continue
+                if re.fullmatch(
+                    r"pack-[0-9a-f]{40}\.(?:bitmap|rev|mtimes)", name
+                ):
+                    add_file(
+                        Path(entry.path),
+                        f"pack/{name}",
+                        maximum=1024 * 1024 * 1024,
+                    )
+        return tuple(sorted(records, key=lambda item: item[0]))
+
+    def _put_parent_raw(self, payload: bytes) -> tuple[str, int]:
+        if not isinstance(payload, bytes) or not 1 <= len(payload) <= 1024 * 1024 * 1024:
+            raise AdminProtocolRefused("contained parent raw range is outside quota")
+        digest = hashlib.sha256(payload).hexdigest()
+        directory = self.parent_raw / digest[:2]
+        directory.mkdir(exist_ok=True)
+        _assert_no_reparse(
+            directory, AdminProtocolRefused, "contained parent raw fanout"
+        )
+        _exclusive_admin_bytes(
+            directory / digest,
+            payload,
+            label="contained parent raw range",
+        )
+        return digest, len(payload)
+
+    @staticmethod
+    def _read_parent_record(
+        record: tuple[str, Path, tuple[int, ...]],
+        *,
+        offset: int = 0,
+        length: int | None = None,
+    ) -> bytes:
+        logical, path, identity = record
+        expected_size = identity[2]
+        if length is None:
+            length = expected_size
+        if (
+            type(offset) is not int
+            or type(length) is not int
+            or offset < 0
+            or length < 1
+            or offset + length > expected_size
+        ):
+            raise AdminProtocolRefused("Git selected object range is outside its source")
+        _assert_no_reparse(path, AdminProtocolRefused, "Git selected object source")
+        try:
+            with path.open("rb", buffering=0) as stream:
+                before = os.fstat(stream.fileno())
+                observed_before = (
+                    before.st_dev,
+                    before.st_ino,
+                    before.st_size,
+                    before.st_mtime_ns,
+                )
+                if (
+                    observed_before != identity
+                    or not stat.S_ISREG(before.st_mode)
+                    or before.st_nlink != 1
+                ):
+                    raise AdminProtocolRefused(
+                        f"Git selected object identity differs: {logical}"
+                    )
+                stream.seek(offset)
+                payload = stream.read(length)
+                after = os.fstat(stream.fileno())
+            live = path.stat()
+        except OSError as exc:
+            raise AdminProtocolRefused("Git selected object could not be read exactly") from exc
+        observed_after = (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+        )
+        observed_live = (
+            live.st_dev,
+            live.st_ino,
+            live.st_size,
+            live.st_mtime_ns,
+        )
+        if len(payload) != length or observed_after != identity or observed_live != identity:
+            raise AdminProtocolRefused("Git selected object changed during retained read")
+        return payload
+
+    def _capture_parent_catalog(self) -> _AdminParentCatalog:
+        """Capture names and pack indexes only; whole pack bytes never enter the projection."""
+
+        git_dir, common, head_ref, head_oid = self._resolve_git_authority()
+        objects = self._git_directory(common / "objects", label="Git object store")
+        inventory = self._object_inventory(objects)
+        derived_inventory = self._derived_object_inventory(objects)
+        if not inventory or len(inventory) > 100_000:
+            raise AdminProtocolRefused("Git object inventory count is outside quota")
+        if sum(record[2][2] for record in inventory) > 4 * 1024 * 1024 * 1024:
+            raise AdminProtocolRefused("Git object inventory exceeds aggregate quota")
+
+        projection = [
+            {
+                "path": logical,
+                "device": identity[0],
+                "file": identity[1],
+                "size": identity[2],
+                "write_time_ns": identity[3],
+            }
+            for logical, _path, identity in inventory
+        ]
+        inventory_digest = hashlib.sha256(
+            _canonical_admin_json(projection)
+        ).hexdigest()
+        indexes: list[dict[str, Any]] = []
+        loose_oids: list[str] = []
+        packs: list[dict[str, Any]] = []
+        catalog_bytes = 0
+        for record in inventory:
+            logical, _path, identity = record
+            if logical.startswith("loose/"):
+                oid = logical.removeprefix("loose/")
+                if _HEX40.fullmatch(oid) is None:
+                    raise AdminProtocolRefused("Git loose-object catalog name differs")
+                loose_oids.append(oid)
+                continue
+            if logical.endswith(".idx"):
+                if identity[2] > 64 * 1024 * 1024:
+                    raise AdminProtocolRefused("Git pack index exceeds parser quota")
+                payload = self._read_parent_record(record)
+                digest, size = self._put_parent_raw(payload)
+                catalog_bytes += size
+                if catalog_bytes > 128 * 1024 * 1024:
+                    raise AdminProtocolRefused("Git object catalog exceeds byte quota")
+                indexes.append(
+                    {"path": logical, "raw_sha256": digest, "size": size}
+                )
+                continue
+            if logical.endswith(".pack"):
+                if not 32 <= identity[2] <= 4 * 1024 * 1024 * 1024:
+                    raise AdminProtocolRefused("Git pack size is outside parser quota")
+                packs.append({"path": logical, "size": identity[2]})
+                continue
+            raise AdminProtocolRefused("Git object catalog contains an unknown member")
+
+        derived_entries: list[dict[str, Any]] = []
+        derived_total = 0
+        for record in derived_inventory:
+            logical, _path, identity = record
+            if identity[2] == 0:
+                payload = b""
+                _assert_no_reparse(record[1], AdminProtocolRefused, "Git derived metadata")
+                try:
+                    before = record[1].stat()
+                    payload = record[1].read_bytes()
+                    after = record[1].stat()
+                except OSError as exc:
+                    raise AdminProtocolRefused(
+                        "Git derived-object metadata snapshot read failed"
+                    ) from exc
+                if (
+                    (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+                    != identity
+                    or (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+                    != identity
+                    or payload
+                ):
+                    raise AdminProtocolRefused(
+                        "Git derived-object metadata changed during snapshot"
+                    )
+            else:
+                payload = self._read_parent_record(record)
+            derived_total += len(payload)
+            if derived_total > 2 * 1024 * 1024 * 1024:
+                raise AdminProtocolRefused(
+                    "Git derived-object metadata exceeds aggregate quota"
+                )
+            derived_entries.append(
+                {
+                    "path": logical,
+                    "raw_sha256": hashlib.sha256(payload).hexdigest(),
+                    "size": len(payload),
+                }
+            )
+
+        if self._object_inventory(objects) != inventory:
+            raise AdminProtocolRefused("Git object inventory changed during catalog capture")
+        if self._derived_object_inventory(objects) != derived_inventory:
+            raise AdminProtocolRefused("Git derived metadata changed during catalog capture")
+        if self._resolve_git_authority() != (git_dir, common, head_ref, head_oid):
+            raise AdminProtocolRefused("Git source authority changed during catalog capture")
+        attestation = hashlib.sha256(
+            _canonical_admin_json(
+                {
+                    "schema": "galaxy.admin-parent-attestation/v2",
+                    "repository_identity": self.repository_identity,
+                    "repository_root": os.path.normcase(str(self.repository_root)),
+                    "git_directory": os.path.normcase(str(git_dir)),
+                    "git_common_directory": os.path.normcase(str(common)),
+                    "head_ref": head_ref,
+                    "head_oid": head_oid,
+                    "inventory_digest": inventory_digest,
+                    "derived_entries": derived_entries,
+                }
+            )
+        ).hexdigest()
+        return _AdminParentCatalog(
+            git_dir=git_dir,
+            common_dir=common,
+            head_ref=head_ref,
+            revision=head_oid,
+            object_root=objects,
+            inventory=inventory,
+            derived_inventory=derived_inventory,
+            attestation_digest=attestation,
+            inventory_digest=inventory_digest,
+            loose_oids=tuple(sorted(loose_oids)),
+            indexes=tuple(sorted(indexes, key=lambda item: str(item["path"]))),
+            packs=tuple(sorted(packs, key=lambda item: str(item["path"]))),
+            policy={
+                "reserved_roots": [],
+                "max_files": 200_000,
+                "max_total_bytes": 2 * 1024 * 1024 * 1024,
+                "max_file_bytes": 128 * 1024 * 1024,
+                "max_depth": 64,
+                "max_path_bytes": 240,
+            },
+        )
+
+    def _assert_parent_catalog_current(self, catalog: _AdminParentCatalog) -> None:
+        if self._object_inventory(catalog.object_root) != catalog.inventory:
+            raise AdminProtocolRefused("Git object inventory changed during contained parsing")
+        if self._derived_object_inventory(catalog.object_root) != catalog.derived_inventory:
+            raise AdminProtocolRefused("Git derived metadata changed during contained parsing")
+        if self._resolve_git_authority() != (
+            catalog.git_dir,
+            catalog.common_dir,
+            catalog.head_ref,
+            catalog.revision,
+        ):
+            raise AdminProtocolRefused("Git source authority changed during contained parsing")
+
+    def _selected_parent_record(
+        self,
+        catalog: _AdminParentCatalog,
+        path: str,
+    ) -> tuple[tuple[str, Path, tuple[int, ...]], int, int]:
+        inventory = {logical: record for record in catalog.inventory for logical in (record[0],)}
+        direct = inventory.get(path)
+        if direct is not None and not path.endswith(".pack"):
+            return direct, 0, direct[2][2]
+        if match := self._PACK_HEADER.fullmatch(path):
+            record = inventory.get(f"pack/{match.group(1)}.pack")
+            if record is None or record[2][2] < 32:
+                raise AdminProtocolRefused("selected pack header has no exact source")
+            return record, 0, 12
+        match = self._PACK_RANGE.fullmatch(path)
+        if match is None:
+            raise AdminProtocolRefused("selected parent source path is outside the closed grammar")
+        record = inventory.get(f"pack/{match.group(1)}.pack")
+        source_size = int(match.group(2))
+        offset = int(match.group(3))
+        length = int(match.group(4))
+        if (
+            record is None
+            or source_size != record[2][2]
+            or offset < 12
+            or length < 1
+            or offset + length > source_size - 20
+        ):
+            raise AdminProtocolRefused("selected parent pack range escapes its source")
+        return record, offset, length
+
+    def _locate_parent_sources(
+        self,
+        catalog: _AdminParentCatalog,
+        *,
+        transaction_id: str,
+        requested_oids: tuple[str, ...],
+    ) -> tuple[tuple[str, ...], dict[str, Any]]:
+        requested = tuple(sorted(set(requested_oids)))
+        if not requested or any(_HEX40.fullmatch(oid) is None for oid in requested):
+            raise AdminProtocolRefused("contained parent frontier is malformed")
+        request = {
+            "schema": "galaxy.source-object-locator-request/v1",
+            "operation": "source-object-locate",
+            "transaction_id": transaction_id,
+            "inventory_digest": catalog.inventory_digest,
+            "loose_oids": list(catalog.loose_oids),
+            "indexes": list(catalog.indexes),
+            "packs": list(catalog.packs),
+            "requested_oids": list(requested),
+        }
+        raw = _canonical_admin_json(request)
+        request_digest = hashlib.sha256(raw).hexdigest()
+        request_root = self.parent_requests / f"locator-{request_digest[:32]}"
+        request_path = request_root / "request.json"
+        _exclusive_admin_bytes(request_path, raw, label="contained parent locator request")
+        result = self.role_runner(
+            self.runtime,
+            role="object_parser",
+            runtime_argv=(
+                "source-object-locate",
+                "--sha1dc-executable",
+                "/opt/galaxy/galaxy-sha1dc",
+                "--request",
+                "/galaxy-input/request.json",
+                "--catalog-root",
+                "/galaxy-catalog",
+                "--heartbeat-interval",
+                "1.0",
+            ),
+            input_mounts=(
+                (request_root, "/galaxy-input"),
+                (self.parent_raw, "/galaxy-catalog"),
+            ),
+            writable_mounts=(),
+            invocation_root=self.root / "invocations",
+        )
+        self._validate_runner(
+            result,
+            role="object_parser",
+            runtime_digest=self.runtime.runtime_digest,
+            entrypoint_digest=self.runtime.object_parser_entrypoint_digest,
+            image_digest=self.runtime.image_digests["object_parser"],
+            allow_parser_heartbeat=True,
+        )
+        parsed = self._container_json(
+            result.stdout,
+            label="contained parent locator result",
+            maximum=64 * 1024 * 1024,
+        )
+        sources = parsed.get("sources")
+        if (
+            set(parsed)
+            != {
+                "schema",
+                "transaction_id",
+                "inventory_digest",
+                "requested_oids",
+                "sources",
+                "parser_version_digest",
+                "network_allowed",
+            }
+            or parsed.get("schema") != "galaxy.source-object-locator-result/v1"
+            or parsed.get("transaction_id") != transaction_id
+            or parsed.get("inventory_digest") != catalog.inventory_digest
+            or parsed.get("requested_oids") != list(requested)
+            or parsed.get("parser_version_digest")
+            != self.runtime.object_parser_entrypoint_digest
+            or parsed.get("network_allowed") is not False
+            or not isinstance(sources, list)
+            or len(sources) != len(requested)
+        ):
+            raise AdminProtocolRefused("contained parent locator binding differs")
+        selected: set[str] = set()
+        for expected_oid, source in zip(requested, sources, strict=True):
+            if not isinstance(source, dict) or set(source) != {"oid", "paths"}:
+                raise AdminProtocolRefused("contained parent locator source is malformed")
+            paths = source.get("paths")
+            if source.get("oid") != expected_oid or not isinstance(paths, list):
+                raise AdminProtocolRefused("contained parent locator OID binding differs")
+            if paths == [f"loose/{expected_oid}"]:
+                pass
+            elif (
+                len(paths) == 3
+                and all(isinstance(path, str) for path in paths)
+                and (index := self._PACK_INDEX.fullmatch(str(paths[0]))) is not None
+                and paths[1] == f"pack-header/{index.group(1)}"
+                and (selected_range := self._PACK_RANGE.fullmatch(str(paths[2])))
+                is not None
+                and selected_range.group(1) == index.group(1)
+            ):
+                pass
+            else:
+                raise AdminProtocolRefused("contained parent locator returned an unsafe path")
+            for path in paths:
+                self._selected_parent_record(catalog, str(path))
+                selected.add(str(path))
+        return tuple(sorted(selected)), {
+            "operation": "source-object-locate",
+            "request_sha256": request_digest,
+            "result_sha256": hashlib.sha256(result.stdout).hexdigest(),
+            "security_profile_sha256": result.security_profile_digest,
+        }
+
+    def _capture_parent_selection(
+        self,
+        catalog: _AdminParentCatalog,
+        selected: set[str],
+        entries: dict[str, dict[str, Any]],
+    ) -> None:
+        for path in sorted(selected):
+            if path in entries:
+                continue
+            record, offset, length = self._selected_parent_record(catalog, path)
+            payload = self._read_parent_record(record, offset=offset, length=length)
+            digest, size = self._put_parent_raw(payload)
+            entries[path] = {"path": path, "raw_sha256": digest, "size": size}
+        if sum(int(entry["size"]) for entry in entries.values()) > 4 * 1024 * 1024 * 1024:
+            raise AdminProtocolRefused("selected parent object closure exceeds byte quota")
+        groups: dict[str, set[str]] = {}
+        for path in entries:
+            if match := self._PACK_INDEX.fullmatch(path):
+                groups.setdefault(match.group(1), set()).add("idx")
+            elif match := self._PACK_HEADER.fullmatch(path):
+                groups.setdefault(match.group(1), set()).add("header")
+            elif match := self._PACK_RANGE.fullmatch(path):
+                groups.setdefault(match.group(1), set()).add("range")
+        if any(roles != {"idx", "header", "range"} for roles in groups.values()):
+            raise AdminProtocolRefused("selected parent pack evidence is incomplete")
+
+    @staticmethod
+    def _parent_snapshot(
+        catalog: _AdminParentCatalog,
+        entries: Mapping[str, Mapping[str, Any]],
+        repository_identity: str,
+    ) -> dict[str, Any]:
+        ordered = [dict(entries[path]) for path in sorted(entries)]
+        body = {
+            "repository_id": repository_identity,
+            "revision": catalog.revision,
+            "canonical_attestation_digest": catalog.attestation_digest,
+            "entries": ordered,
+            "policy": dict(catalog.policy),
+        }
+        return {
+            **body,
+            "snapshot_digest": hashlib.sha256(_canonical_admin_json(body)).hexdigest(),
+        }
+
+    def _run_parent_frontier(
+        self,
+        snapshot: Mapping[str, Any],
+        *,
+        transaction_id: str,
+    ) -> tuple[dict[str, Any], Any, Path, Path, dict[str, Any]]:
+        request = {
+            "schema": "galaxy.source-object-parser-request/v1",
+            "operation": "source-object-closure",
+            "transaction_id": transaction_id,
+            "snapshot": dict(snapshot),
+        }
+        raw = _canonical_admin_json(request)
+        request_digest = hashlib.sha256(raw).hexdigest()
+        request_root = self.parent_requests / f"frontier-{request_digest[:32]}"
+        request_path = request_root / "request.json"
+        _exclusive_admin_bytes(request_path, raw, label="contained parent frontier request")
+        output_root = self.parent_outputs / transaction_id / "payloads"
+        output_root.mkdir(parents=True, exist_ok=True)
+        _assert_no_reparse(output_root, AdminProtocolRefused, "contained parent parser output")
+        if os.name != "nt":
+            os.chmod(output_root, 0o733)
+        result = self.role_runner(
+            self.runtime,
+            role="object_parser",
+            runtime_argv=(
+                "source-object-frontier",
+                "--sha1dc-executable",
+                "/opt/galaxy/galaxy-sha1dc",
+                "--request",
+                "/galaxy-input/request.json",
+                "--raw-root",
+                "/galaxy-raw",
+                "--output-root",
+                "/galaxy-output",
+                "--heartbeat-interval",
+                "1.0",
+            ),
+            input_mounts=(
+                (request_root, "/galaxy-input"),
+                (self.parent_raw, "/galaxy-raw"),
+            ),
+            writable_mounts=((output_root, "/galaxy-output"),),
+            invocation_root=self.root / "invocations",
+        )
+        self._validate_runner(
+            result,
+            role="object_parser",
+            runtime_digest=self.runtime.runtime_digest,
+            entrypoint_digest=self.runtime.object_parser_entrypoint_digest,
+            image_digest=self.runtime.image_digests["object_parser"],
+            allow_parser_heartbeat=True,
+        )
+        parsed = self._container_json(
+            result.stdout,
+            label="contained parent frontier result",
+            maximum=64 * 1024 * 1024,
+        )
+        transcript = {
+            "operation": "source-object-frontier",
+            "request_sha256": request_digest,
+            "result_sha256": hashlib.sha256(result.stdout).hexdigest(),
+            "security_profile_sha256": result.security_profile_digest,
+        }
+        return parsed, result, request_path, output_root, transcript
+
+    def _select_parent_snapshot(
+        self,
+        catalog: _AdminParentCatalog,
+    ) -> tuple[dict[str, Any], dict[str, Any], Any, Path, Path, list[dict[str, Any]]]:
+        transaction_id = f"admin-parent-{catalog.attestation_digest[:32]}"
+        missing = (catalog.revision,)
+        selected: set[str] = set()
+        entries: dict[str, dict[str, Any]] = {}
+        transcript: list[dict[str, Any]] = []
+        for _round in range(128):
+            located, locator_record = self._locate_parent_sources(
+                catalog,
+                transaction_id=transaction_id,
+                requested_oids=missing,
+            )
+            transcript.append(locator_record)
+            new_paths = set(located).difference(selected)
+            if not new_paths:
+                raise AdminProtocolRefused("contained parent frontier made no progress")
+            selected.update(new_paths)
+            self._capture_parent_selection(catalog, selected, entries)
+            snapshot = self._parent_snapshot(catalog, entries, self.repository_identity)
+            self._assert_parent_catalog_current(catalog)
+            parsed, result, request_path, output_root, frontier_record = (
+                self._run_parent_frontier(snapshot, transaction_id=transaction_id)
+            )
+            transcript.append(frontier_record)
+            if parsed.get("schema") == "galaxy.source-object-parser-result/v1":
+                self._assert_parent_catalog_current(catalog)
+                return snapshot, parsed, result, request_path, output_root, transcript
+            missing_value = parsed.get("missing_oids")
+            if (
+                set(parsed)
+                != {
+                    "schema",
+                    "transaction_id",
+                    "snapshot_digest",
+                    "missing_oids",
+                    "parser_version_digest",
+                    "network_allowed",
+                }
+                or parsed.get("schema") != "galaxy.source-object-frontier-result/v1"
+                or parsed.get("transaction_id") != transaction_id
+                or parsed.get("snapshot_digest") != snapshot["snapshot_digest"]
+                or parsed.get("parser_version_digest")
+                != self.runtime.object_parser_entrypoint_digest
+                or parsed.get("network_allowed") is not False
+                or not isinstance(missing_value, list)
+                or not missing_value
+                or missing_value != sorted(missing_value)
+                or len(set(missing_value)) != len(missing_value)
+                or any(_HEX40.fullmatch(str(oid)) is None for oid in missing_value)
+            ):
+                raise AdminProtocolRefused("contained parent frontier binding differs")
+            missing = tuple(str(oid) for oid in missing_value)
+        raise AdminProtocolRefused("contained parent frontier exceeded its round quota")
+
+    def load_parent_manifest(self, repository_root: Path) -> Mapping[str, Any]:
+        """Parse the exact parent commit from a native, external object snapshot."""
+
+        try:
+            requested = Path(repository_root).resolve(strict=True)
+        except OSError as exc:
+            raise AdminProtocolRefused("parent manifest repository is unavailable") from exc
+        if requested != self.repository_root:
+            raise AdminProtocolRefused("parent manifest repository binding differs")
+        with self._lock:
+            catalog = self._capture_parent_catalog()
+            (
+                snapshot,
+                parsed,
+                result,
+                request_path,
+                output_root,
+                selection_transcript,
+            ) = self._select_parent_snapshot(catalog)
+            snapshot_digest = str(snapshot["snapshot_digest"])
+            transaction_id = f"admin-parent-{catalog.attestation_digest[:32]}"
+            fields = {
+                "schema",
+                "transaction_id",
+                "repository_id",
+                "revision",
+                "tree_oid",
+                "snapshot_digest",
+                "manifest",
+                "manifest_digest",
+                "objects",
+                "object_closure_digest",
+                "payload_set_digest",
+                "parser_version_digest",
+                "network_allowed",
+            }
+            manifest = parsed.get("manifest")
+            objects = parsed.get("objects")
+            if (
+                set(parsed) != fields
+                or parsed.get("schema") != "galaxy.source-object-parser-result/v1"
+                or parsed.get("transaction_id") != transaction_id
+                or parsed.get("repository_id") != self.repository_identity
+                or parsed.get("revision") != snapshot["revision"]
+                or parsed.get("snapshot_digest") != snapshot_digest
+                or parsed.get("parser_version_digest")
+                != self.runtime.object_parser_entrypoint_digest
+                or parsed.get("network_allowed") is not False
+                or not isinstance(manifest, dict)
+                or set(manifest)
+                != {"expected_revision", "entries", "attribute_rules", "policy"}
+                or manifest.get("expected_revision") != snapshot["revision"]
+                or manifest.get("attribute_rules") != []
+                or manifest.get("policy") != snapshot["policy"]
+                or parsed.get("manifest_digest")
+                != hashlib.sha256(_canonical_admin_json(manifest)).hexdigest()
+                or not isinstance(objects, list)
+                or parsed.get("object_closure_digest")
+                != hashlib.sha256(_canonical_admin_json(objects)).hexdigest()
+            ):
+                raise AdminProtocolRefused("contained parent parser binding differs")
+            payload_set: set[tuple[str, int]] = set()
+            for record in objects:
+                if not isinstance(record, dict) or set(record) != {
+                    "object_type",
+                    "oid",
+                    "payload_sha256",
+                    "framed_object_sha256",
+                    "size",
+                }:
+                    raise AdminProtocolRefused("contained parent object record differs")
+                object_type = record.get("object_type")
+                oid = record.get("oid")
+                digest = record.get("payload_sha256")
+                size = record.get("size")
+                if (
+                    object_type not in {"blob", "tree", "commit"}
+                    or _HEX40.fullmatch(str(oid)) is None
+                    or _HEX64.fullmatch(str(digest)) is None
+                    or _HEX64.fullmatch(str(record.get("framed_object_sha256")))
+                    is None
+                    or type(size) is not int
+                    or not 0 <= size <= 128 * 1024 * 1024
+                ):
+                    raise AdminProtocolRefused("contained parent object is malformed")
+                _, payload = _read_admin_file_exact_size(
+                    output_root / str(digest)[:2] / str(digest),
+                    root=output_root,
+                    label="contained parent object payload",
+                    expected_size=int(size),
+                )
+                frame = (
+                    f"{object_type} {size}".encode("ascii") + b"\0" + payload
+                )
+                if (
+                    len(payload) != size
+                    or hashlib.sha256(payload).hexdigest() != digest
+                    or hashlib.sha256(frame).hexdigest()
+                    != record["framed_object_sha256"]
+                ):
+                    raise AdminProtocolRefused("contained parent object payload differs")
+                payload_set.add((str(digest), int(size)))
+            expected_payload_set = [
+                {"sha256": digest, "size": size}
+                for digest, size in sorted(payload_set)
+            ]
+            if parsed.get("payload_set_digest") != hashlib.sha256(
+                _canonical_admin_json(expected_payload_set)
+            ).hexdigest():
+                raise AdminProtocolRefused("contained parent payload-set binding differs")
+            entries = manifest.get("entries")
+            if not isinstance(entries, list):
+                raise AdminProtocolRefused("contained parent entries are malformed")
+            public_entries: list[dict[str, Any]] = []
+            for entry in entries:
+                if not isinstance(entry, dict) or set(entry) != {
+                    "path",
+                    "mode",
+                    "blob_oid",
+                    "blob_sha256",
+                    "framed_object_sha256",
+                    "size",
+                }:
+                    raise AdminProtocolRefused("contained parent entry fields differ")
+                relative = _manifest_path(entry.get("path"))
+                if (
+                    entry.get("mode") not in {0o100644, 0o100755}
+                    or _HEX40.fullmatch(str(entry.get("blob_oid"))) is None
+                    or _HEX64.fullmatch(str(entry.get("blob_sha256"))) is None
+                    or type(entry.get("size")) is not int
+                ):
+                    raise AdminProtocolRefused("contained parent entry is malformed")
+                public_entries.append(
+                    {
+                        "path": relative,
+                        "mode": entry["mode"],
+                        "blob_oid": entry["blob_oid"],
+                        "blob_sha256": entry["blob_sha256"],
+                        "size": entry["size"],
+                    }
+                )
+            if public_entries != sorted(public_entries, key=lambda item: item["path"]):
+                raise AdminProtocolRefused("contained parent entries are not ordered")
+            receipt_body = {
+                "schema": "galaxy.contained-parent-parser-receipt/v1",
+                "transaction_id": transaction_id,
+                "repository_identity": self.repository_identity,
+                "parent_oid": snapshot["revision"],
+                "snapshot_digest": snapshot_digest,
+                "request_sha256": hashlib.sha256(request_path.read_bytes()).hexdigest(),
+                "result_sha256": hashlib.sha256(result.stdout).hexdigest(),
+                "selection_transcript_digest": hashlib.sha256(
+                    _canonical_admin_json(selection_transcript)
+                ).hexdigest(),
+                "manifest_digest": parsed["manifest_digest"],
+                "object_closure_digest": parsed["object_closure_digest"],
+                "parser_runtime_sha256": result.entrypoint_digest,
+                "parser_image_digest": "sha256:" + result.image_digest,
+                "security_profile_sha256": result.security_profile_digest,
+                "network_enabled": False,
+                "authority": False,
+            }
+            receipt_id = "parserreceipt_" + hashlib.sha256(
+                _canonical_admin_json(receipt_body)
+            ).hexdigest()
+            _exclusive_sealed_json(
+                self.parser_receipts / f"{receipt_id}.json",
+                {**receipt_body, "parser_receipt_id": receipt_id},
+            )
+            return {
+                "schema": "galaxy.admin-parent-manifest/v1",
+                "parent_oid": snapshot["revision"],
+                "entries": public_entries,
+                "contained_parser_receipt_id": receipt_id,
+            }
+
+    def _reviewer_qualification(self) -> str:
+        body = {
+            "schema": "galaxy.reviewer-qualification/v1",
+            "generation": self.runtime.generation,
+            "trust_receipt_id": self.trust_receipt_id,
+            "tofu_merkle_root": self.runtime.tofu_merkle_root,
+            "runtime_digest": self.runtime.runtime_digest,
+            "reviewer_runtime_sha256": self.runtime.reviewer_digest,
+            "reviewer_image_digest": "sha256:"
+            + self.runtime.image_digests["reviewer"],
+            "network_enabled": False,
+            "authority": False,
+        }
+        receipt_id = "reviewerqualification_" + hashlib.sha256(
+            _canonical_admin_json(body)
+        ).hexdigest()
+        _exclusive_sealed_json(
+            self.qualifications / f"{receipt_id}.json",
+            {**body, "qualification_receipt_id": receipt_id},
+        )
+        return receipt_id
+
+    def review_proposal(
+        self, proposal: Mapping[str, Any], pass_index: int
+    ) -> Mapping[str, Any]:
+        """Run one fresh, read-only reviewer container and return its observation."""
+
+        proposal_id = proposal.get("proposal_id")
+        proposal_digest = proposal.get("record_sha256")
+        if (
+            re.fullmatch(r"proposal_[0-9a-f]{64}", str(proposal_id)) is None
+            or _HEX64.fullmatch(str(proposal_digest)) is None
+            or type(pass_index) is not int
+            or pass_index not in {1, 2}
+        ):
+            raise AdminProtocolRefused("contained review binding is malformed")
+        with self._lock:
+            qualification = self._reviewer_qualification()
+            request_root = self.review_inputs / f"{proposal_id}-pass-{pass_index}"
+            journal_path = request_root / "session.json"
+            if journal_path.exists():
+                try:
+                    journal = _read_json(journal_path, label="contained review session")
+                except (OSError, AnchorIntegrityRefused) as exc:
+                    raise AdminProtocolRefused(
+                        "contained review session is unreadable"
+                    ) from exc
+                if (
+                    journal.get("proposal_id") != proposal_id
+                    or journal.get("proposal_record_sha256") != proposal_digest
+                    or journal.get("pass_index") != pass_index
+                    or journal.get("qualification_receipt_id") != qualification
+                    or re.fullmatch(
+                        r"reviewsession_[0-9a-f]{64}",
+                        str(journal.get("reviewer_session_id")),
+                    )
+                    is None
+                ):
+                    raise AdminProtocolRefused("contained review session replay differs")
+            else:
+                nonce = secrets.token_hex(32)
+                session_id = "reviewsession_" + hashlib.sha256(
+                    _canonical_admin_json(
+                        {
+                            "proposal_id": proposal_id,
+                            "proposal_record_sha256": proposal_digest,
+                            "pass_index": pass_index,
+                            "qualification_receipt_id": qualification,
+                            "nonce": nonce,
+                        }
+                    )
+                ).hexdigest()
+                journal = _exclusive_sealed_json(
+                    journal_path,
+                    {
+                        "schema": "galaxy.contained-review-session/v1",
+                        "proposal_id": proposal_id,
+                        "proposal_record_sha256": proposal_digest,
+                        "pass_index": pass_index,
+                        "qualification_receipt_id": qualification,
+                        "nonce": nonce,
+                        "reviewer_session_id": session_id,
+                        "canonical_write_allowed": False,
+                        "source_execution_allowed": False,
+                    },
+                )
+            request = {
+                "schema": "galaxy.source-proposal-review-request/v1",
+                "proposal_id": proposal_id,
+                "proposal_record_sha256": proposal_digest,
+                "pass_index": pass_index,
+                "reviewer_session_id": journal["reviewer_session_id"],
+                "reviewer_runtime_sha256": self.runtime.reviewer_digest,
+                "reviewer_image_digest": "sha256:"
+                + self.runtime.image_digests["reviewer"],
+                "reviewer_qualification_receipt_id": qualification,
+                "contamination_controls": self._CONTAMINATION_CONTROLS,
+            }
+            _exclusive_admin_bytes(
+                request_root / "request.json",
+                _canonical_admin_json(request),
+                label="contained review request",
+            )
+            _exclusive_admin_bytes(
+                request_root / "proposal.json",
+                _canonical_admin_json(dict(proposal)),
+                label="contained source proposal",
+            )
+            result = self.role_runner(
+                self.runtime,
+                role="reviewer",
+                runtime_argv=(
+                    "--source-proposal",
+                    "/galaxy-input/proposal.json",
+                    "--object-root",
+                    "/galaxy-objects",
+                    "--sha1dc-executable",
+                    "/opt/galaxy/galaxy-sha1dc",
+                    "--request",
+                    "/galaxy-input/request.json",
+                ),
+                input_mounts=(
+                    (request_root, "/galaxy-input"),
+                    (self.proposal_objects, "/galaxy-objects"),
+                ),
+                writable_mounts=(),
+                invocation_root=self.root / "invocations",
+            )
+            self._validate_runner(
+                result,
+                role="reviewer",
+                runtime_digest=self.runtime.runtime_digest,
+                entrypoint_digest=self.runtime.reviewer_digest,
+                image_digest=self.runtime.image_digests["reviewer"],
+                allow_parser_heartbeat=False,
+            )
+            observation = self._container_json(
+                result.stdout,
+                label="contained review observation",
+                maximum=1024 * 1024,
+            )
+            expected = {
+                "canonical_write_observed": False,
+                "decision": "accept",
+                "findings": [],
+                "independent": True,
+                "network_enabled": False,
+                "pass_index": pass_index,
+                "proposal_id": proposal_id,
+                "proposal_record_sha256": proposal_digest,
+                "reviewer_image_digest": request["reviewer_image_digest"],
+                "reviewer_qualification_receipt_id": qualification,
+                "reviewer_runtime_sha256": self.runtime.reviewer_digest,
+                "reviewer_session_id": journal["reviewer_session_id"],
+                "schema": "galaxy.independent-source-review/v1",
+                "source_execution_observed": False,
+            }
+            if observation != expected:
+                raise AdminProtocolRefused("contained review observation differs")
+            return observation
+
+
+class AdminSourceCommitStore:
+    """Crash-replayable source normalization under one live transition."""
+
+    _MAX_FILE_BYTES = 64 * 1024 * 1024
+    _MAX_TOTAL_BYTES = 256 * 1024 * 1024
+
+    def __init__(
+        self,
+        root: Path,
+        *,
+        repository_root: Path,
+        transitions: AdminTransitionStore,
+        path_manifests: ExternalPathManifestStore,
+        object_hasher: Callable[[str, bytes], str] | None = None,
+        object_batch_hasher: (
+            Callable[[Sequence[tuple[str, bytes]]], Sequence[str]] | None
+        ) = None,
+        parent_manifest_loader: Callable[[Path], Mapping[str, Any]] | None = None,
+        proposal_reviewer: (
+            Callable[[Mapping[str, Any], int], Mapping[str, Any]] | None
+        ) = None,
+    ) -> None:
+        self.root = Path(root).resolve(strict=False)
+        self.root.mkdir(parents=True, exist_ok=True)
+        _assert_no_reparse(self.root, AdminProtocolRefused, "source-commit store")
+        try:
+            repository = Path(repository_root).resolve(strict=True)
+        except OSError as exc:
+            raise AdminProtocolRefused("source-commit repository is unavailable") from exc
+        if (
+            repository != transitions.repository_root
+            or repository != path_manifests.repository_root
+            or not repository.is_dir()
+            or repository.is_symlink()
+        ):
+            raise AdminProtocolRefused("source-commit repository binding differs")
+        self.repository_root = repository
+        self.transitions = transitions
+        self.path_manifests = path_manifests
+        self.object_hasher = object_hasher
+        self.object_batch_hasher = object_batch_hasher
+        self.parent_manifest_loader = parent_manifest_loader
+        self.proposal_reviewer = proposal_reviewer
+        self.normalizations = self.root / "normalizations"
+        self.normalization_backups = self.root / "normalization-backups"
+        self.normalization_receipts = self.root / "normalization-receipts"
+        self.proposal_journals = self.root / "proposal-journals"
+        self.proposals = self.root / "proposals"
+        self.objects = self.root / "proposal-objects"
+        self.review_journals = self.root / "review-journals"
+        self.review_observations = self.root / "review-observations"
+        self.review_receipts = self.root / "review-receipts"
+        self.review_index = self.root / "review-index"
+        self.verification_receipts = self.root / "verification-receipts"
+        self.verification_index = self.root / "verification-index"
+        self.recovery_receipts = self.root / "recovery-receipts"
+        for directory in (
+            self.normalizations,
+            self.normalization_backups,
+            self.normalization_receipts,
+            self.proposal_journals,
+            self.proposals,
+            self.objects,
+            self.review_journals,
+            self.review_observations,
+            self.review_receipts,
+            self.review_index,
+            self.verification_receipts,
+            self.verification_index,
+            self.recovery_receipts,
+        ):
+            directory.mkdir(exist_ok=True)
+            _assert_no_reparse(directory, AdminProtocolRefused, "source-commit directory")
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _canonicalize_source(raw: bytes) -> tuple[bytes, str]:
+        bom = b"\xef\xbb\xbf"
+        prefix = bom if raw.startswith(bom) else b""
+        body = raw[len(prefix) :]
+        if b"\x00" in body:
+            return raw, "binary_exact"
+        try:
+            body.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            return raw, "binary_exact"
+        normalized = body.replace(b"\r\n", b"\n")
+        if b"\r" in normalized:
+            raise AdminProtocolRefused(
+                "strict source policy refuses a bare carriage return"
+            )
+        return prefix + normalized, "strict_utf8_crlf_to_lf"
+
+    def _source_path(self, relative: str) -> Path:
+        relative = _manifest_path(relative)
+        candidate = self.repository_root.joinpath(*relative.split("/"))
+        _assert_no_reparse(candidate, AdminProtocolRefused, "source path")
+        try:
+            candidate.relative_to(self.repository_root)
+        except ValueError as exc:
+            raise AdminProtocolRefused("source path escapes the repository") from exc
+        return candidate
+
+    def _read_source(self, relative: str) -> tuple[bytes, int] | None:
+        path = self._source_path(relative)
+        if path.is_symlink() or _is_reparse(path):
+            raise AdminProtocolRefused("source normalization input is a reparse entry")
+        if not path.exists():
+            return None
+        resolved, raw = _read_admin_file(
+            path,
+            root=self.repository_root,
+            label="source normalization input",
+            maximum=self._MAX_FILE_BYTES,
+        )
+        try:
+            mode = stat.S_IMODE(resolved.stat().st_mode)
+        except OSError as exc:
+            raise AdminProtocolRefused("source normalization mode is unreadable") from exc
+        return raw, mode
+
+    def _replace_source(self, relative: str, before: bytes, after: bytes, mode: int) -> None:
+        if before == after:
+            return
+        path = self._source_path(relative)
+        observed = self._read_source(relative)
+        if observed is None or observed[0] != before:
+            raise AdminProtocolRefused("source normalization input changed before replace")
+        temporary = path.with_name(
+            f".{path.name}.singularity-normalize.{os.getpid()}.{secrets.token_hex(8)}.tmp"
+        )
+        try:
+            _assert_no_reparse(path.parent, AdminProtocolRefused, "source parent")
+            with temporary.open("xb") as stream:
+                stream.write(after)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.chmod(temporary, mode)
+            observed = self._read_source(relative)
+            if observed is None or observed[0] != before:
+                raise AdminProtocolRefused("source normalization input raced")
+            os.replace(temporary, path)
+            _sync_admin_directory(path.parent)
+            reread = self._read_source(relative)
+            if reread is None or reread[0] != after:
+                raise AdminProtocolRefused("normalized source did not reread exactly")
+        except OSError as exc:
+            raise AdminProtocolRefused("source normalization replace failed") from exc
+        finally:
+            try:
+                if temporary.exists():
+                    temporary.unlink()
+            except OSError:
+                pass
+
+    def _normalization_path(self, transaction_id: str) -> Path:
+        if _SOURCE_TRANSACTION.fullmatch(transaction_id) is None:
+            raise AdminProtocolRefused("source normalization transaction is malformed")
+        return self.normalizations / f"{transaction_id}.json"
+
+    def _publish_normalization_backup(self, raw: bytes) -> str:
+        if len(raw) > self._MAX_FILE_BYTES:
+            raise AdminProtocolRefused("source normalization backup exceeds its quota")
+        digest = hashlib.sha256(raw).hexdigest()
+        path = self.normalization_backups / f"{digest}.blob"
+        _exclusive_admin_bytes(path, raw, label="source normalization backup")
+        _, persisted = _read_admin_file(
+            path,
+            root=self.normalization_backups,
+            label="source normalization backup",
+            maximum=self._MAX_FILE_BYTES,
+        )
+        if not secrets.compare_digest(persisted, raw):
+            raise AdminProtocolRefused("source normalization backup did not reread exactly")
+        return digest
+
+    def _read_normalization_backup(self, digest: str) -> bytes:
+        if _HEX64.fullmatch(digest) is None:
+            raise AdminProtocolRefused("source normalization backup identity is malformed")
+        _, raw = _read_admin_file(
+            self.normalization_backups / f"{digest}.blob",
+            root=self.normalization_backups,
+            label="source normalization backup",
+            maximum=self._MAX_FILE_BYTES,
+        )
+        if hashlib.sha256(raw).hexdigest() != digest:
+            raise AdminProtocolRefused("source normalization backup digest differs")
+        return raw
+
+    def _prepare_normalization(
+        self,
+        *,
+        transaction_id: str,
+        purpose_id: str,
+        owner_fence_id: str,
+        path_manifest_receipt_id: str,
+    ) -> dict[str, Any]:
+        live = self.transitions.validate_authority(
+            purpose_id=purpose_id, owner_fence_id=owner_fence_id
+        )
+        if live.get("transaction_id") != transaction_id:
+            raise AdminProtocolRefused("source normalization transaction is not live")
+        _, transaction = self.transitions._transaction(transaction_id)
+        if transaction.get("status") not in {"begun", "normalized"}:
+            raise AdminProtocolRefused("source normalization is outside its legal phase")
+        manifest = self.path_manifests.resolve_receipt(
+            receipt_id=path_manifest_receipt_id, scope=transaction_id
+        )
+        purpose = self.transitions._purpose_record(purpose_id)
+        if purpose["spec"].get("canonicalization_policy") != (
+            "strict-utf8-parent-bom-preserving-crlf-to-lf-or-exact"
+        ):
+            raise AdminProtocolRefused("source normalization policy differs")
+        old_state = self.transitions._snapshot_digest()
+        if old_state != purpose.get("old_state_sha256"):
+            raise AdminProtocolRefused("source changed after transition purpose issuance")
+        records: list[dict[str, Any]] = []
+        total = 0
+        for relative in manifest["allowed_paths"]:
+            source = self._read_source(str(relative))
+            if source is None:
+                records.append(
+                    {
+                        "after_sha256": None,
+                        "before_blob_sha256": None,
+                        "before_sha256": None,
+                        "mode": None,
+                        "path": relative,
+                        "policy": "absent",
+                    }
+                )
+                continue
+            before, mode = source
+            total += len(before)
+            if total > self._MAX_TOTAL_BYTES:
+                raise AdminProtocolRefused("source normalization exceeds aggregate quota")
+            after, policy = self._canonicalize_source(before)
+            before_blob_sha256 = self._publish_normalization_backup(before)
+            records.append(
+                {
+                    "after_sha256": hashlib.sha256(after).hexdigest(),
+                    "before_blob_sha256": before_blob_sha256,
+                    "before_sha256": hashlib.sha256(before).hexdigest(),
+                    "mode": mode,
+                    "path": relative,
+                    "policy": policy,
+                }
+            )
+        return {
+            "schema": "galaxy.source-normalization-journal/v1",
+            "status": "prepared",
+            "transaction_id": transaction_id,
+            "purpose_id": purpose_id,
+            "owner_fence_id": owner_fence_id,
+            "path_manifest_receipt_id": path_manifest_receipt_id,
+            "old_state_sha256": old_state,
+            "records": records,
+            "post_state_sha256": None,
+            "normalization_receipt_id": None,
+            "production_active": False,
+            "discord_enabled": False,
+        }
+
+    def _apply_normalization(self, journal: Mapping[str, Any]) -> None:
+        records = journal.get("records")
+        if not isinstance(records, list):
+            raise AdminProtocolRefused("source normalization journal records are malformed")
+        for record in records:
+            if not isinstance(record, dict) or set(record) != {
+                "after_sha256",
+                "before_blob_sha256",
+                "before_sha256",
+                "mode",
+                "path",
+                "policy",
+            }:
+                raise AdminProtocolRefused("source normalization record fields differ")
+            relative = record["path"]
+            source = self._read_source(str(relative))
+            before_digest = record["before_sha256"]
+            before_blob_digest = record["before_blob_sha256"]
+            after_digest = record["after_sha256"]
+            if before_digest is None and after_digest is None:
+                if before_blob_digest is not None or source is not None:
+                    raise AdminProtocolRefused("an absent normalization input appeared")
+                continue
+            if (
+                source is None
+                or not isinstance(before_digest, str)
+                or not isinstance(after_digest, str)
+                or _HEX64.fullmatch(before_digest) is None
+                or _HEX64.fullmatch(after_digest) is None
+                or before_blob_digest != before_digest
+                or type(record["mode"]) is not int
+            ):
+                raise AdminProtocolRefused("source normalization record is malformed")
+            self._read_normalization_backup(before_blob_digest)
+            current, mode = source
+            current_digest = hashlib.sha256(current).hexdigest()
+            if current_digest == after_digest:
+                continue
+            if current_digest != before_digest:
+                raise AdminProtocolRefused("source normalization encountered a third state")
+            after, policy = self._canonicalize_source(current)
+            if (
+                policy != record["policy"]
+                or hashlib.sha256(after).hexdigest() != after_digest
+            ):
+                raise AdminProtocolRefused("source normalization replay plan differs")
+            self._replace_source(str(relative), current, after, mode)
+
+    def _restore_normalization(self, transaction_id: str) -> None:
+        path = self._normalization_path(transaction_id)
+        try:
+            journal = _read_json(path, label="source normalization journal")
+        except (OSError, AnchorIntegrityRefused) as exc:
+            raise AdminProtocolRefused(
+                "source normalization recovery journal is unavailable"
+            ) from exc
+        records = journal.get("records")
+        if (
+            journal.get("transaction_id") != transaction_id
+            or journal.get("status") != "completed"
+            or not isinstance(records, list)
+        ):
+            raise AdminProtocolRefused("source normalization recovery journal differs")
+        for record in records:
+            if not isinstance(record, dict) or set(record) != {
+                "after_sha256",
+                "before_blob_sha256",
+                "before_sha256",
+                "mode",
+                "path",
+                "policy",
+            }:
+                raise AdminProtocolRefused(
+                    "source normalization recovery record fields differ"
+                )
+            relative = str(record["path"])
+            current = self._read_source(relative)
+            before_digest = record["before_sha256"]
+            after_digest = record["after_sha256"]
+            backup_digest = record["before_blob_sha256"]
+            if before_digest is None and after_digest is None:
+                if backup_digest is not None or current is not None:
+                    raise AdminProtocolRefused(
+                        "absent source normalization input changed during recovery"
+                    )
+                continue
+            if (
+                current is None
+                or not isinstance(before_digest, str)
+                or not isinstance(after_digest, str)
+                or backup_digest != before_digest
+                or type(record["mode"]) is not int
+            ):
+                raise AdminProtocolRefused(
+                    "source normalization recovery record is malformed"
+                )
+            raw, _mode = current
+            observed = hashlib.sha256(raw).hexdigest()
+            if observed == before_digest:
+                continue
+            if observed != after_digest:
+                raise AdminProtocolRefused(
+                    "source normalization recovery encountered a third state"
+                )
+            before = self._read_normalization_backup(backup_digest)
+            self._replace_source(relative, raw, before, int(record["mode"]))
+
+    def _persist_recovery_receipt(
+        self,
+        *,
+        transaction_id: str,
+        purpose_id: str,
+        owner_fence_id: str,
+        proposal_id: str | None,
+        disposition: str,
+        old_state_sha256: str,
+        observed_state_sha256: str,
+        aborted_child_receipt_ids: Sequence[str],
+        source_cas_committed: bool = False,
+    ) -> str:
+        if proposal_id is not None and re.fullmatch(
+            r"proposal_[0-9a-f]{64}", proposal_id
+        ) is None:
+            raise AdminProtocolRefused("source recovery proposal identity is malformed")
+        body = {
+            "schema": "galaxy.source-update-recovery-receipt/v1",
+            "transaction_id": transaction_id,
+            "purpose_id": purpose_id,
+            "owner_fence_id": owner_fence_id,
+            "proposal_id": proposal_id,
+            "disposition": disposition,
+            "old_state_sha256": old_state_sha256,
+            "observed_state_sha256": observed_state_sha256,
+            "aborted_child_receipt_ids": list(aborted_child_receipt_ids),
+            "source_cas_committed": source_cas_committed,
+            "production_active": False,
+            "discord_enabled": False,
+        }
+        receipt_id = "recovery_" + hashlib.sha256(
+            _canonical_admin_json(body)
+        ).hexdigest()
+        receipt = _exclusive_sealed_json(
+            self.recovery_receipts / f"{receipt_id}.json",
+            {**body, "recovery_receipt_id": receipt_id},
+        )
+        if (
+            receipt.get("recovery_receipt_id") != receipt_id
+            or receipt.get("disposition") != disposition
+        ):
+            raise AdminProtocolRefused("source recovery receipt did not reread exactly")
+        return receipt_id
+
+    def abort_source_update(
+        self,
+        *,
+        transaction_id: str,
+        purpose_id: str,
+        owner_fence_id: str,
+        proposal_id: str | None = None,
+    ) -> tuple[str, str]:
+        """Restore the exact pre-normalization source before releasing ingress."""
+
+        with self._lock:
+            live = self.transitions.validate_authority(
+                purpose_id=purpose_id, owner_fence_id=owner_fence_id
+            )
+            if live.get("transaction_id") != transaction_id:
+                raise AdminProtocolRefused("source abort transaction is not live")
+            _, transaction = self.transitions._transaction(transaction_id)
+            if transaction.get("source_cas_committed") is not False:
+                raise AdminProtocolRefused("source abort is forbidden after CAS")
+            if proposal_id is not None:
+                proposal = self.resolve_proposal(proposal_id)
+                if (
+                    proposal.get("transaction_id") != transaction_id
+                    or proposal.get("purpose_id") != purpose_id
+                    or proposal.get("owner_fence_id") != owner_fence_id
+                ):
+                    raise AdminProtocolRefused(
+                        "source abort proposal binding differs"
+                    )
+            aborted_children = self.path_manifests.abort_open_scope(
+                scope=transaction_id
+            )
+            purpose = self.transitions._purpose_record(purpose_id)
+            old_state = str(purpose.get("old_state_sha256"))
+            restore_refused = False
+            if transaction.get("status") in {"normalized", "recovery_pending"}:
+                try:
+                    self._restore_normalization(transaction_id)
+                except AdminProtocolRefused:
+                    restore_refused = True
+            elif transaction.get("status") not in {
+                "aborted",
+                "begun",
+            }:
+                raise AdminProtocolRefused("source abort is outside its legal phase")
+            observed_state = self.transitions._snapshot_digest()
+            disposition = (
+                "safe_old_developer_ingress_open"
+                if not restore_refused and observed_state == old_state
+                else "fenced_recovery_pending"
+            )
+            recovery_receipt_id = self._persist_recovery_receipt(
+                transaction_id=transaction_id,
+                purpose_id=purpose_id,
+                owner_fence_id=owner_fence_id,
+                proposal_id=proposal_id,
+                disposition=disposition,
+                old_state_sha256=old_state,
+                observed_state_sha256=observed_state,
+                aborted_child_receipt_ids=aborted_children,
+            )
+            self.transitions.record_source_abort(
+                transaction_id=transaction_id,
+                purpose_id=purpose_id,
+                owner_fence_id=owner_fence_id,
+                recovery_receipt_id=recovery_receipt_id,
+                disposition=disposition,
+            )
+            if self.transitions.resolve_source_disposition(transaction_id) != disposition:
+                raise AdminProtocolRefused(
+                    "source abort disposition did not reread exactly"
+                )
+            return disposition, recovery_receipt_id
+
+    def reconcile_source_update(
+        self,
+        *,
+        transaction_id: str,
+        purpose_id: str,
+        owner_fence_id: str,
+        proposal_id: str,
+    ) -> tuple[str, str]:
+        """Classify uncertain source CAS state without guessing or rewriting evidence."""
+
+        with self._lock:
+            live = self.transitions.validate_authority(
+                purpose_id=purpose_id, owner_fence_id=owner_fence_id
+            )
+            if live.get("transaction_id") != transaction_id:
+                raise AdminProtocolRefused("source reconciliation transaction is not live")
+            proposal = self.resolve_proposal(proposal_id)
+            if (
+                proposal.get("transaction_id") != transaction_id
+                or proposal.get("purpose_id") != purpose_id
+                or proposal.get("owner_fence_id") != owner_fence_id
+            ):
+                raise AdminProtocolRefused(
+                    "source reconciliation proposal binding differs"
+                )
+            _, transaction = self.transitions._transaction(transaction_id)
+            if transaction.get("source_cas_committed") is False:
+                return self.abort_source_update(
+                    transaction_id=transaction_id,
+                    purpose_id=purpose_id,
+                    owner_fence_id=owner_fence_id,
+                    proposal_id=proposal_id,
+                )
+            if (
+                transaction.get("source_cas_committed") is not True
+                or transaction.get("commit_oid") != proposal.get("commit_oid")
+            ):
+                raise AdminProtocolRefused("source reconciliation CAS evidence differs")
+            status = transaction.get("status")
+            if status == "attested":
+                disposition = self.transitions.finish_source_update(
+                    transaction_id=transaction_id,
+                    purpose_id=purpose_id,
+                    owner_fence_id=owner_fence_id,
+                )
+            elif status == "finished":
+                disposition = self.transitions.resolve_source_disposition(transaction_id)
+            elif status == "cas_committed":
+                disposition = "committed_exact_new_developer_ingress_held_closed"
+            else:
+                raise AdminProtocolRefused(
+                    "source reconciliation phase is outside the closed map"
+                )
+            purpose = self.transitions._purpose_record(purpose_id)
+            receipt_id = self._persist_recovery_receipt(
+                transaction_id=transaction_id,
+                purpose_id=purpose_id,
+                owner_fence_id=owner_fence_id,
+                proposal_id=proposal_id,
+                disposition=disposition,
+                old_state_sha256=str(purpose["old_state_sha256"]),
+                observed_state_sha256=self.transitions._snapshot_digest(),
+                aborted_child_receipt_ids=(),
+                source_cas_committed=True,
+            )
+            return disposition, receipt_id
+
+    def normalize_developer_source(
+        self,
+        *,
+        transaction_id: str,
+        purpose_id: str,
+        owner_fence_id: str,
+        path_manifest_receipt_id: str,
+    ) -> str:
+        with self._lock:
+            path = self._normalization_path(transaction_id)
+            if path.exists():
+                try:
+                    journal = _read_json(path, label="source normalization journal")
+                except (OSError, AnchorIntegrityRefused) as exc:
+                    raise AdminProtocolRefused(
+                        "source normalization journal is unreadable"
+                    ) from exc
+                expected_binding = {
+                    "transaction_id": transaction_id,
+                    "purpose_id": purpose_id,
+                    "owner_fence_id": owner_fence_id,
+                    "path_manifest_receipt_id": path_manifest_receipt_id,
+                }
+                if any(journal.get(key) != value for key, value in expected_binding.items()):
+                    raise AdminProtocolRefused("source normalization replay binding differs")
+                self.transitions.validate_authority(
+                    purpose_id=purpose_id, owner_fence_id=owner_fence_id
+                )
+            else:
+                journal = _exclusive_sealed_json(
+                    path,
+                    self._prepare_normalization(
+                        transaction_id=transaction_id,
+                        purpose_id=purpose_id,
+                        owner_fence_id=owner_fence_id,
+                        path_manifest_receipt_id=path_manifest_receipt_id,
+                    ),
+                )
+            self._apply_normalization(journal)
+            post_state = self.transitions._snapshot_digest()
+            body = {
+                "schema": "galaxy.source-normalization-receipt/v1",
+                "transaction_id": transaction_id,
+                "purpose_id": purpose_id,
+                "owner_fence_id": owner_fence_id,
+                "path_manifest_receipt_id": path_manifest_receipt_id,
+                "old_state_sha256": journal["old_state_sha256"],
+                "post_state_sha256": post_state,
+                "records": journal["records"],
+                "production_active": False,
+                "discord_enabled": False,
+            }
+            receipt_id = "normalization_" + hashlib.sha256(
+                _canonical_admin_json(body)
+            ).hexdigest()
+            receipt_path = self.normalization_receipts / f"{receipt_id}.json"
+            _exclusive_sealed_json(receipt_path, {**body, "receipt_id": receipt_id})
+            journal["status"] = "completed"
+            journal["post_state_sha256"] = post_state
+            journal["normalization_receipt_id"] = receipt_id
+            _atomic_json(path, journal)
+            transaction_path, transaction = self.transitions._transaction(transaction_id)
+            existing = transaction.get("normalization_receipt_id")
+            if existing is not None and existing != receipt_id:
+                raise AdminProtocolRefused("source normalization transaction receipt differs")
+            if transaction.get("status") not in {"begun", "normalized"}:
+                raise AdminProtocolRefused("source normalization transaction phase raced")
+            transaction["status"] = "normalized"
+            transaction["normalization_receipt_id"] = receipt_id
+            transaction["path_manifest_receipt_id"] = path_manifest_receipt_id
+            transaction["normalized_state_sha256"] = post_state
+            _atomic_json(transaction_path, transaction)
+            return receipt_id
+
+    def _normalization_receipt(
+        self,
+        *,
+        receipt_id: str,
+        transaction_id: str,
+        purpose_id: str,
+        owner_fence_id: str,
+        path_manifest_receipt_id: str,
+    ) -> dict[str, Any]:
+        if re.fullmatch(r"normalization_[0-9a-f]{64}", receipt_id) is None:
+            raise AdminProtocolRefused("source normalization receipt is malformed")
+        try:
+            receipt = _read_json(
+                self.normalization_receipts / f"{receipt_id}.json",
+                label="source normalization receipt",
+            )
+        except (OSError, AnchorIntegrityRefused) as exc:
+            raise AdminProtocolRefused(
+                "source normalization receipt is unavailable"
+            ) from exc
+        expected_fields = {
+            "discord_enabled",
+            "old_state_sha256",
+            "owner_fence_id",
+            "path_manifest_receipt_id",
+            "post_state_sha256",
+            "production_active",
+            "receipt_id",
+            "record_sha256",
+            "records",
+            "schema",
+            "purpose_id",
+            "transaction_id",
+        }
+        if set(receipt) != expected_fields:
+            raise AdminProtocolRefused("source normalization receipt fields differ")
+        unsigned = dict(receipt)
+        unsigned.pop("record_sha256")
+        unsigned.pop("receipt_id")
+        expected_id = "normalization_" + hashlib.sha256(
+            _canonical_admin_json(unsigned)
+        ).hexdigest()
+        expected_binding = {
+            "receipt_id": receipt_id,
+            "transaction_id": transaction_id,
+            "purpose_id": purpose_id,
+            "owner_fence_id": owner_fence_id,
+            "path_manifest_receipt_id": path_manifest_receipt_id,
+            "production_active": False,
+            "discord_enabled": False,
+            "schema": "galaxy.source-normalization-receipt/v1",
+        }
+        if expected_id != receipt_id or any(
+            receipt.get(key) != value for key, value in expected_binding.items()
+        ):
+            raise AdminProtocolRefused("source normalization receipt binding differs")
+        if (
+            _HEX64.fullmatch(str(receipt.get("old_state_sha256"))) is None
+            or _HEX64.fullmatch(str(receipt.get("post_state_sha256"))) is None
+            or not isinstance(receipt.get("records"), list)
+        ):
+            raise AdminProtocolRefused("source normalization receipt body is malformed")
+        return receipt
+
+    def _parent_manifest(self) -> dict[str, Any]:
+        loader = self.parent_manifest_loader
+        if loader is None:
+            raise AdminProtocolRefused(
+                "contained parent-object parser authority is unavailable"
+            )
+        try:
+            raw = loader(self.repository_root)
+        except AdminProtocolRefused:
+            raise
+        except Exception as exc:
+            raise AdminProtocolRefused(
+                "contained parent-object parser failed closed"
+            ) from exc
+        if not isinstance(raw, Mapping):
+            raise AdminProtocolRefused("parent-object manifest is not a mapping")
+        manifest = dict(raw)
+        if set(manifest) != {
+            "contained_parser_receipt_id",
+            "entries",
+            "parent_oid",
+            "schema",
+        }:
+            raise AdminProtocolRefused("parent-object manifest fields differ")
+        if (
+            manifest.get("schema") != "galaxy.admin-parent-manifest/v1"
+            or _HEX40.fullmatch(str(manifest.get("parent_oid"))) is None
+            or re.fullmatch(
+                r"parserreceipt_[0-9a-f]{64}",
+                str(manifest.get("contained_parser_receipt_id")),
+            )
+            is None
+            or not isinstance(manifest.get("entries"), list)
+            or len(manifest["entries"]) > 200_000
+        ):
+            raise AdminProtocolRefused("parent-object manifest header is malformed")
+        entries: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for raw_entry in manifest["entries"]:
+            if not isinstance(raw_entry, dict) or set(raw_entry) != {
+                "blob_oid",
+                "blob_sha256",
+                "mode",
+                "path",
+                "size",
+            }:
+                raise AdminProtocolRefused("parent-object entry fields differ")
+            relative = _manifest_path(raw_entry.get("path"))
+            folded = relative.casefold()
+            if relative.split("/", 1)[0] == ".git" or folded in seen:
+                raise AdminProtocolRefused(
+                    "parent-object manifest repeats or includes Git control state"
+                )
+            seen.add(folded)
+            if (
+                type(raw_entry.get("mode")) is not int
+                or raw_entry["mode"] not in {0o100644, 0o100755}
+                or type(raw_entry.get("size")) is not int
+                or raw_entry["size"] < 0
+                or raw_entry["size"] > 128 * 1024 * 1024
+                or _HEX40.fullmatch(str(raw_entry.get("blob_oid"))) is None
+                or _HEX64.fullmatch(str(raw_entry.get("blob_sha256"))) is None
+            ):
+                raise AdminProtocolRefused("parent-object entry is malformed")
+            entries.append(
+                {
+                    "blob_oid": raw_entry["blob_oid"],
+                    "blob_sha256": raw_entry["blob_sha256"],
+                    "mode": raw_entry["mode"],
+                    "path": relative,
+                    "size": raw_entry["size"],
+                }
+            )
+        if entries != sorted(entries, key=lambda entry: str(entry["path"])):
+            raise AdminProtocolRefused("parent-object manifest is not path ordered")
+        return {**manifest, "entries": entries}
+
+    def _scan_proposal_worktree(self) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        stack: list[tuple[Path, tuple[str, ...]]] = [(self.repository_root, ())]
+        total_bytes = 0
+        while stack:
+            directory, relative_parts = stack.pop()
+            _assert_no_reparse(
+                directory, AdminProtocolRefused, "source proposal directory"
+            )
+            try:
+                entries = sorted(os.scandir(directory), key=lambda item: item.name)
+            except OSError as exc:
+                raise AdminProtocolRefused(
+                    "source proposal directory cannot be enumerated"
+                ) from exc
+            for entry in reversed(entries):
+                name = entry.name
+                if not relative_parts and name == ".git":
+                    continue
+                relative = _manifest_path("/".join((*relative_parts, name)))
+                folded = relative.casefold()
+                if folded in seen:
+                    raise AdminProtocolRefused(
+                        "source proposal worktree has a case-folded path collision"
+                    )
+                path = Path(entry.path)
+                if entry.is_symlink() or _is_reparse(path):
+                    raise AdminProtocolRefused(
+                        "source proposal worktree contains a reparse entry"
+                    )
+                try:
+                    info = path.stat()
+                except OSError as exc:
+                    raise AdminProtocolRefused(
+                        "source proposal entry identity is unreadable"
+                    ) from exc
+                if stat.S_ISDIR(info.st_mode):
+                    stack.append((path, (*relative_parts, name)))
+                    continue
+                seen.add(folded)
+                if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                    raise AdminProtocolRefused(
+                        "source proposal entry is not a single-link ordinary file"
+                    )
+                if info.st_size < 0 or info.st_size > 128 * 1024 * 1024:
+                    raise AdminProtocolRefused(
+                        "source proposal file exceeds its individual quota"
+                    )
+                try:
+                    payload = path.read_bytes()
+                    after = path.stat()
+                except OSError as exc:
+                    raise AdminProtocolRefused(
+                        "source proposal file cannot be read exactly"
+                    ) from exc
+                if (
+                    len(payload) != info.st_size
+                    or (info.st_dev, info.st_ino, info.st_size)
+                    != (after.st_dev, after.st_ino, after.st_size)
+                ):
+                    raise AdminProtocolRefused("source proposal file raced")
+                total_bytes += len(payload)
+                if len(records) >= 200_000 or total_bytes > 2 * 1024 * 1024 * 1024:
+                    raise AdminProtocolRefused("source proposal worktree exceeds its quota")
+                records.append(
+                    {
+                        "blob_sha256": hashlib.sha256(payload).hexdigest(),
+                        "mode": (
+                            0o100755
+                            if stat.S_IMODE(info.st_mode) & 0o111
+                            else 0o100644
+                        ),
+                        "path": relative,
+                        "payload": payload,
+                        "size": len(payload),
+                    }
+                )
+        return sorted(records, key=lambda record: str(record["path"]))
+
+    def _hash_git_objects(
+        self,
+        requested: Sequence[tuple[str, bytes]],
+        objects: dict[str, dict[str, Any]],
+    ) -> tuple[str, ...]:
+        if not requested:
+            return ()
+        if any(
+            object_type not in {"blob", "tree", "commit"}
+            or not isinstance(payload, bytes)
+            for object_type, payload in requested
+        ):
+            raise AdminProtocolRefused("Git object type or payload is outside the closed enum")
+        batch_hasher = self.object_batch_hasher
+        try:
+            if batch_hasher is not None:
+                first_raw = batch_hasher(tuple(requested))
+                second_raw = batch_hasher(tuple(requested))
+                first = tuple(first_raw)
+                second = tuple(second_raw)
+            else:
+                hasher = self.object_hasher
+                if hasher is None:
+                    raise AdminProtocolRefused(
+                        "qualified standalone SHA1DC authority is unavailable"
+                    )
+                first = tuple(
+                    hasher(object_type, payload)
+                    for object_type, payload in requested
+                )
+                second = tuple(
+                    hasher(object_type, payload)
+                    for object_type, payload in requested
+                )
+        except AdminProtocolRefused:
+            raise
+        except Exception as exc:
+            raise AdminProtocolRefused("standalone object hasher failed closed") from exc
+        if (
+            len(first) != len(requested)
+            or len(second) != len(requested)
+            or first != second
+            or any(not isinstance(oid, str) or _HEX40.fullmatch(oid) is None for oid in first)
+        ):
+            raise AdminProtocolRefused("standalone object hasher is malformed or unstable")
+        for (object_type, payload), oid in zip(requested, first, strict=True):
+            frame = (
+                f"{object_type} {len(payload)}".encode("ascii") + b"\0" + payload
+            )
+            record = {
+                "frame_sha256": hashlib.sha256(frame).hexdigest(),
+                "object_type": object_type,
+                "oid": oid,
+                "payload": payload,
+                "payload_size": len(payload),
+            }
+            existing = objects.get(oid)
+            if existing is not None and (
+                existing["frame_sha256"] != record["frame_sha256"]
+                or existing["object_type"] != object_type
+                or existing["payload"] != payload
+            ):
+                raise AdminProtocolRefused("Git object identity collision detected")
+            objects[oid] = record
+        return first
+
+    def _hash_git_object(
+        self,
+        object_type: str,
+        payload: bytes,
+        objects: dict[str, dict[str, Any]],
+    ) -> str:
+        return self._hash_git_objects(((object_type, payload),), objects)[0]
+
+    def _build_git_objects(
+        self,
+        current: list[dict[str, Any]],
+        *,
+        parent_oid: str,
+        message: str,
+    ) -> tuple[str, str, bytes, dict[str, dict[str, Any]]]:
+        objects: dict[str, dict[str, Any]] = {}
+        root: dict[str, Any] = {}
+        blob_oids = self._hash_git_objects(
+            tuple(("blob", record["payload"]) for record in current),
+            objects,
+        )
+        for record, blob_oid in zip(current, blob_oids, strict=True):
+            record["blob_oid"] = blob_oid
+            node = root
+            parts = str(record["path"]).split("/")
+            for part in parts[:-1]:
+                existing = node.get(part)
+                if existing is None:
+                    existing = {}
+                    node[part] = existing
+                if not isinstance(existing, dict) or "payload" in existing:
+                    raise AdminProtocolRefused("source proposal tree path conflicts")
+                node = existing
+            if parts[-1] in node:
+                raise AdminProtocolRefused("source proposal tree repeats a path")
+            node[parts[-1]] = record
+
+        tree_nodes: dict[tuple[str, ...], Mapping[str, Any]] = {}
+
+        def collect(node: Mapping[str, Any], path: tuple[str, ...]) -> None:
+            tree_nodes[path] = node
+            for name, value in node.items():
+                if isinstance(value, dict) and "payload" not in value:
+                    collect(value, (*path, name))
+
+        collect(root, ())
+        tree_oids: dict[tuple[str, ...], str] = {}
+        for depth in range(max(map(len, tree_nodes)), -1, -1):
+            paths = sorted(path for path in tree_nodes if len(path) == depth)
+            payloads: list[bytes] = []
+            for path in paths:
+                encoded: list[tuple[bytes, str, str, bool]] = []
+                for name, value in tree_nodes[path].items():
+                    try:
+                        name_bytes = name.encode("utf-8", errors="strict")
+                    except UnicodeEncodeError as exc:
+                        raise AdminProtocolRefused(
+                            "source proposal tree name is not UTF-8"
+                        ) from exc
+                    if isinstance(value, dict) and "payload" not in value:
+                        encoded.append(
+                            (name_bytes, "40000", tree_oids[(*path, name)], True)
+                        )
+                    elif isinstance(value, dict):
+                        encoded.append(
+                            (name_bytes, f"{value['mode']:o}", value["blob_oid"], False)
+                        )
+                    else:
+                        raise AdminProtocolRefused(
+                            "source proposal tree node is malformed"
+                        )
+                body = bytearray()
+                for name_bytes, mode, oid, is_tree in sorted(
+                    encoded,
+                    key=lambda item: item[0] + (b"/" if item[3] else b""),
+                ):
+                    body.extend(mode.encode("ascii"))
+                    body.extend(b" ")
+                    body.extend(name_bytes)
+                    body.extend(b"\0")
+                    body.extend(bytes.fromhex(oid))
+                payloads.append(bytes(body))
+            level_oids = self._hash_git_objects(
+                tuple(("tree", payload) for payload in payloads),
+                objects,
+            )
+            tree_oids.update(zip(paths, level_oids, strict=True))
+
+        tree_oid = tree_oids[()]
+        commit_payload = (
+            f"tree {tree_oid}\n"
+            f"parent {parent_oid}\n"
+            "author GALAXY Singularity <singularity@localhost> 0 +0000\n"
+            "committer GALAXY Singularity <singularity@localhost> 0 +0000\n"
+            f"\n{message}\n"
+        ).encode("utf-8", errors="strict")
+        commit_oid = self._hash_git_object("commit", commit_payload, objects)
+        return tree_oid, commit_oid, commit_payload, objects
+
+    def _publish_proposal_objects(
+        self, objects: Mapping[str, Mapping[str, Any]]
+    ) -> None:
+        for oid in sorted(objects):
+            record = objects[oid]
+            payload = record["payload"]
+            object_type = record["object_type"]
+            frame = f"{object_type} {len(payload)}".encode("ascii") + b"\0" + payload
+            directory = self.objects / oid[:2]
+            directory.mkdir(exist_ok=True)
+            _assert_no_reparse(
+                directory, AdminProtocolRefused, "source proposal object directory"
+            )
+            path = directory / f"{oid[2:]}.frame"
+            try:
+                with path.open("xb") as stream:
+                    stream.write(frame)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            except FileExistsError:
+                try:
+                    existing = path.read_bytes()
+                except OSError as exc:
+                    raise AdminProtocolRefused(
+                        "source proposal object replay is unreadable"
+                    ) from exc
+                if not secrets.compare_digest(existing, frame):
+                    raise AdminProtocolRefused(
+                        "source proposal object identity collision"
+                    )
+            except OSError as exc:
+                raise AdminProtocolRefused(
+                    "source proposal object publication failed"
+                ) from exc
+            _sync_admin_directory(path.parent)
+
+    @staticmethod
+    def _proposal_message(message: str) -> str:
+        try:
+            encoded = message.encode("utf-8", errors="strict")
+        except (AttributeError, UnicodeEncodeError) as exc:
+            raise AdminProtocolRefused(
+                "source proposal message is not strict UTF-8 text"
+            ) from exc
+        if (
+            not isinstance(message, str)
+            or not message
+            or len(encoded) > 16 * 1024
+            or message != unicodedata.normalize("NFC", message)
+            or message != message.strip()
+            or "\x00" in message
+            or "\r" in message
+            or any(
+                ord(character) < 32 and character not in {"\n", "\t"}
+                for character in message
+            )
+        ):
+            raise AdminProtocolRefused("source proposal message is not canonical")
+        return message
+
+    def prepare_source_commit(
+        self,
+        *,
+        transaction_id: str,
+        purpose_id: str,
+        owner_fence_id: str,
+        path_manifest_receipt_id: str,
+        normalization_receipt_id: str,
+        message: str,
+    ) -> str:
+        """Build an immutable, non-authoritative Git object proposal off-repository."""
+
+        with self._lock:
+            message = self._proposal_message(message)
+            live = self.transitions.validate_authority(
+                purpose_id=purpose_id, owner_fence_id=owner_fence_id
+            )
+            if live.get("transaction_id") != transaction_id:
+                raise AdminProtocolRefused("source proposal transaction is not live")
+            _, transaction = self.transitions._transaction(transaction_id)
+            if (
+                transaction.get("status") != "normalized"
+                or transaction.get("path_manifest_receipt_id")
+                != path_manifest_receipt_id
+                or transaction.get("normalization_receipt_id")
+                != normalization_receipt_id
+            ):
+                raise AdminProtocolRefused("source proposal prerequisite phase differs")
+            path_manifest = self.path_manifests.resolve_receipt(
+                receipt_id=path_manifest_receipt_id, scope=transaction_id
+            )
+            normalization = self._normalization_receipt(
+                receipt_id=normalization_receipt_id,
+                transaction_id=transaction_id,
+                purpose_id=purpose_id,
+                owner_fence_id=owner_fence_id,
+                path_manifest_receipt_id=path_manifest_receipt_id,
+            )
+            normalized_state = transaction.get("normalized_state_sha256")
+            if (
+                _HEX64.fullmatch(str(normalized_state)) is None
+                or normalization.get("post_state_sha256") != normalized_state
+                or self.transitions._snapshot_digest() != normalized_state
+            ):
+                raise AdminProtocolRefused("normalized source snapshot binding differs")
+            parent_manifest = self._parent_manifest()
+            parent_entries = {
+                str(entry["path"]): entry for entry in parent_manifest["entries"]
+            }
+            current = self._scan_proposal_worktree()
+            if os.name == "nt":
+                for record in current:
+                    parent = parent_entries.get(str(record["path"]))
+                    if parent is not None:
+                        record["mode"] = parent["mode"]
+            current_entries = {str(record["path"]): record for record in current}
+            all_paths = sorted(set(parent_entries) | set(current_entries))
+            changes: list[dict[str, Any]] = []
+            changed_paths: set[str] = set()
+            for relative in all_paths:
+                before = parent_entries.get(relative)
+                after = current_entries.get(relative)
+                if before is None:
+                    kind = "added"
+                elif after is None:
+                    kind = "deleted"
+                elif (
+                    before["blob_sha256"] != after["blob_sha256"]
+                    or before["size"] != after["size"]
+                    or before["mode"] != after["mode"]
+                ):
+                    kind = "modified"
+                else:
+                    continue
+                changed_paths.add(relative)
+                changes.append(
+                    {
+                        "after_mode": None if after is None else after["mode"],
+                        "after_sha256": (
+                            None if after is None else after["blob_sha256"]
+                        ),
+                        "before_mode": None if before is None else before["mode"],
+                        "before_sha256": (
+                            None if before is None else before["blob_sha256"]
+                        ),
+                        "change": kind,
+                        "path": relative,
+                    }
+                )
+            allowed = set(path_manifest["allowed_paths"])
+            required = set(path_manifest["required_paths"])
+            if changed_paths - allowed:
+                raise AdminProtocolRefused(
+                    "source proposal includes a change outside the sealed allowlist"
+                )
+            if not required.issubset(changed_paths):
+                raise AdminProtocolRefused(
+                    "source proposal does not change every sealed required path"
+                )
+            tree_oid, commit_oid, commit_payload, objects = self._build_git_objects(
+                current,
+                parent_oid=str(parent_manifest["parent_oid"]),
+                message=message,
+            )
+            for relative, before in parent_entries.items():
+                after = current_entries.get(relative)
+                if (
+                    after is not None
+                    and relative not in changed_paths
+                    and before["blob_oid"] != after["blob_oid"]
+                ):
+                    raise AdminProtocolRefused(
+                        "parent-object manifest conflicts with independent object hashing"
+                    )
+            public_objects = sorted(
+                (
+                    {
+                        "frame_sha256": record["frame_sha256"],
+                        "object_type": record["object_type"],
+                        "oid": oid,
+                        "payload_size": record["payload_size"],
+                    }
+                    for oid, record in objects.items()
+                ),
+                key=lambda record: str(record["oid"]),
+            )
+            public_current = [
+                {
+                    "blob_oid": record["blob_oid"],
+                    "blob_sha256": record["blob_sha256"],
+                    "mode": record["mode"],
+                    "path": record["path"],
+                    "size": record["size"],
+                }
+                for record in current
+            ]
+            parent_manifest_sha256 = hashlib.sha256(
+                _canonical_admin_json(parent_manifest)
+            ).hexdigest()
+            tree_manifest_sha256 = hashlib.sha256(
+                _canonical_admin_json(public_current)
+            ).hexdigest()
+            diff_sha256 = hashlib.sha256(_canonical_admin_json(changes)).hexdigest()
+            object_closure_sha256 = hashlib.sha256(
+                _canonical_admin_json(public_objects)
+            ).hexdigest()
+            journal = {
+                "schema": "galaxy.source-proposal-journal/v1",
+                "transaction_id": transaction_id,
+                "purpose_id": purpose_id,
+                "owner_fence_id": owner_fence_id,
+                "path_manifest_receipt_id": path_manifest_receipt_id,
+                "normalization_receipt_id": normalization_receipt_id,
+                "normalized_state_sha256": normalized_state,
+                "parent_manifest_sha256": parent_manifest_sha256,
+                "tree_manifest_sha256": tree_manifest_sha256,
+                "diff_sha256": diff_sha256,
+                "object_closure_sha256": object_closure_sha256,
+                "tree_oid": tree_oid,
+                "commit_oid": commit_oid,
+                "message_sha256": hashlib.sha256(
+                    message.encode("utf-8", errors="strict")
+                ).hexdigest(),
+                "objects": public_objects,
+                "status": "prepared",
+                "production_active": False,
+                "canonical_ref_written": False,
+            }
+            _exclusive_sealed_json(
+                self.proposal_journals / f"{transaction_id}.json", journal
+            )
+            self._publish_proposal_objects(objects)
+            if self.transitions._snapshot_digest() != normalized_state:
+                raise AdminProtocolRefused(
+                    "normalized source changed during proposal preparation"
+                )
+            body = {
+                "schema": "galaxy.source-commit-proposal/v1",
+                "transaction_id": transaction_id,
+                "purpose_id": purpose_id,
+                "owner_fence_id": owner_fence_id,
+                "path_manifest_receipt_id": path_manifest_receipt_id,
+                "normalization_receipt_id": normalization_receipt_id,
+                "normalized_state_sha256": normalized_state,
+                "contained_parser_receipt_id": parent_manifest[
+                    "contained_parser_receipt_id"
+                ],
+                "parent_manifest_sha256": parent_manifest_sha256,
+                "parent_oid": parent_manifest["parent_oid"],
+                "parent_entries": parent_manifest["entries"],
+                "tree_manifest_sha256": tree_manifest_sha256,
+                "current_entries": public_current,
+                "diff_sha256": diff_sha256,
+                "changes": changes,
+                "allowed_paths": sorted(allowed),
+                "required_paths": sorted(required),
+                "object_closure_sha256": object_closure_sha256,
+                "objects": public_objects,
+                "tree_oid": tree_oid,
+                "commit_oid": commit_oid,
+                "commit_payload_hex": commit_payload.hex(),
+                "message": message,
+                "canonical_ref_written": False,
+                "fresh_exact_approval_present": False,
+                "production_active": False,
+                "discord_enabled": False,
+            }
+            proposal_id = "proposal_" + hashlib.sha256(
+                _canonical_admin_json(body)
+            ).hexdigest()
+            _exclusive_sealed_json(
+                self.proposals / f"{proposal_id}.json",
+                {**body, "proposal_id": proposal_id},
+            )
+            return proposal_id
+
+    def resolve_proposal(self, proposal_id: str) -> dict[str, Any]:
+        """Resolve and recheck one opaque, non-authoritative source proposal."""
+
+        if re.fullmatch(r"proposal_[0-9a-f]{64}", proposal_id) is None:
+            raise AdminProtocolRefused("source proposal identity is malformed")
+        try:
+            proposal = _read_json(
+                self.proposals / f"{proposal_id}.json", label="source proposal"
+            )
+        except (OSError, AnchorIntegrityRefused) as exc:
+            raise AdminProtocolRefused("source proposal is unavailable") from exc
+        unsigned = dict(proposal)
+        unsigned.pop("record_sha256", None)
+        observed_id = unsigned.pop("proposal_id", None)
+        expected_id = "proposal_" + hashlib.sha256(
+            _canonical_admin_json(unsigned)
+        ).hexdigest()
+        if (
+            proposal.get("schema") != "galaxy.source-commit-proposal/v1"
+            or observed_id != proposal_id
+            or expected_id != proposal_id
+            or proposal.get("canonical_ref_written") is not False
+            or proposal.get("fresh_exact_approval_present") is not False
+            or proposal.get("production_active") is not False
+            or proposal.get("discord_enabled") is not False
+        ):
+            raise AdminProtocolRefused("source proposal binding or authority state differs")
+        objects = proposal.get("objects")
+        if not isinstance(objects, list) or not objects:
+            raise AdminProtocolRefused("source proposal object closure is malformed")
+        if hashlib.sha256(_canonical_admin_json(objects)).hexdigest() != proposal.get(
+            "object_closure_sha256"
+        ):
+            raise AdminProtocolRefused("source proposal object closure digest differs")
+        checked: dict[str, dict[str, Any]] = {}
+        previous_oid = ""
+        for record in objects:
+            if not isinstance(record, dict) or set(record) != {
+                "frame_sha256",
+                "object_type",
+                "oid",
+                "payload_size",
+            }:
+                raise AdminProtocolRefused("source proposal object record fields differ")
+            oid = record.get("oid")
+            if (
+                not isinstance(oid, str)
+                or _HEX40.fullmatch(oid) is None
+                or oid <= previous_oid
+                or type(record.get("payload_size")) is not int
+                or record["payload_size"] < 0
+                or record["payload_size"] > 128 * 1024 * 1024
+            ):
+                raise AdminProtocolRefused("source proposal object identity is malformed")
+            previous_oid = oid
+            path = self.objects / oid[:2] / f"{oid[2:]}.frame"
+            _, frame = _read_admin_file(
+                path,
+                root=self.objects,
+                label="source proposal object",
+                maximum=128 * 1024 * 1024 + 64,
+            )
+            prefix = f"{record['object_type']} {record['payload_size']}".encode(
+                "ascii"
+            ) + b"\0"
+            if (
+                not frame.startswith(prefix)
+                or len(frame) != len(prefix) + record["payload_size"]
+                or hashlib.sha256(frame).hexdigest() != record["frame_sha256"]
+            ):
+                raise AdminProtocolRefused("source proposal object frame differs")
+            payload = frame[len(prefix) :]
+            if self._hash_git_object(record["object_type"], payload, checked) != oid:
+                raise AdminProtocolRefused("source proposal object hash differs")
+        try:
+            commit_payload = bytes.fromhex(str(proposal.get("commit_payload_hex")))
+        except ValueError as exc:
+            raise AdminProtocolRefused("source proposal commit payload is malformed") from exc
+        if (
+            self._hash_git_object("commit", commit_payload, checked)
+            != proposal.get("commit_oid")
+        ):
+            raise AdminProtocolRefused("source proposal commit identity differs")
+        return proposal
+
+    @staticmethod
+    def _validate_review_observation(
+        value: Any,
+        *,
+        proposal: Mapping[str, Any],
+        pass_index: int,
+    ) -> dict[str, Any]:
+        if not isinstance(value, Mapping):
+            raise AdminProtocolRefused("independent review observation is not a mapping")
+        observation = dict(value)
+        sealed = "record_sha256" in observation or "observation_id" in observation
+        expected_fields = {
+            "canonical_write_observed",
+            "decision",
+            "findings",
+            "independent",
+            "network_enabled",
+            "pass_index",
+            "proposal_id",
+            "proposal_record_sha256",
+            "reviewer_image_digest",
+            "reviewer_qualification_receipt_id",
+            "reviewer_runtime_sha256",
+            "reviewer_session_id",
+            "schema",
+            "source_execution_observed",
+        }
+        if sealed:
+            expected_fields |= {"observation_id", "record_sha256"}
+        if set(observation) != expected_fields:
+            raise AdminProtocolRefused("independent review observation fields differ")
+        if (
+            observation.get("schema") != "galaxy.independent-source-review/v1"
+            or observation.get("proposal_id") != proposal.get("proposal_id")
+            or observation.get("proposal_record_sha256")
+            != proposal.get("record_sha256")
+            or observation.get("pass_index") != pass_index
+            or type(observation.get("pass_index")) is not int
+            or observation.get("decision") != "accept"
+            or observation.get("findings") != []
+            or observation.get("independent") is not True
+            or observation.get("network_enabled") is not False
+            or observation.get("canonical_write_observed") is not False
+            or observation.get("source_execution_observed") is not False
+            or _HEX64.fullmatch(str(observation.get("reviewer_runtime_sha256")))
+            is None
+            or re.fullmatch(
+                r"sha256:[0-9a-f]{64}",
+                str(observation.get("reviewer_image_digest")),
+            )
+            is None
+            or re.fullmatch(
+                r"reviewerqualification_[0-9a-f]{64}",
+                str(observation.get("reviewer_qualification_receipt_id")),
+            )
+            is None
+            or re.fullmatch(
+                r"reviewsession_[0-9a-f]{64}",
+                str(observation.get("reviewer_session_id")),
+            )
+            is None
+        ):
+            raise AdminProtocolRefused("independent review observation refused")
+        if sealed:
+            unsigned = dict(observation)
+            unsigned.pop("record_sha256")
+            observed_id = unsigned.pop("observation_id")
+            expected_id = "reviewobservation_" + hashlib.sha256(
+                _canonical_admin_json(unsigned)
+            ).hexdigest()
+            if observed_id != expected_id:
+                raise AdminProtocolRefused(
+                    "independent review observation identity differs"
+                )
+        return observation
+
+    def _review_observation(
+        self,
+        *,
+        proposal: Mapping[str, Any],
+        pass_index: int,
+    ) -> dict[str, Any]:
+        proposal_id = str(proposal["proposal_id"])
+        path = self.review_observations / f"{proposal_id}-pass-{pass_index}.json"
+        if path.exists():
+            try:
+                existing = _read_json(path, label="independent review observation")
+            except (OSError, AnchorIntegrityRefused) as exc:
+                raise AdminProtocolRefused(
+                    "independent review observation is unreadable"
+                ) from exc
+            return self._validate_review_observation(
+                existing, proposal=proposal, pass_index=pass_index
+            )
+        reviewer = self.proposal_reviewer
+        if reviewer is None:
+            raise AdminProtocolRefused(
+                "sealed independent reviewer authority is unavailable"
+            )
+        try:
+            raw = reviewer(copy.deepcopy(dict(proposal)), pass_index)
+        except AdminProtocolRefused:
+            raise
+        except Exception as exc:
+            raise AdminProtocolRefused("sealed independent reviewer failed closed") from exc
+        body = self._validate_review_observation(
+            raw, proposal=proposal, pass_index=pass_index
+        )
+        observation_id = "reviewobservation_" + hashlib.sha256(
+            _canonical_admin_json(body)
+        ).hexdigest()
+        sealed = _exclusive_sealed_json(
+            path, {**body, "observation_id": observation_id}
+        )
+        return self._validate_review_observation(
+            sealed, proposal=proposal, pass_index=pass_index
+        )
+
+    def review_source_proposal(
+        self, proposal_id: str, *, required_passes: int = 1
+    ) -> str:
+        """Persist independent, networkless review without canonical authority."""
+
+        if type(required_passes) is not int or required_passes not in {1, 2}:
+            raise AdminProtocolRefused("source review pass count is outside 1..2")
+        with self._lock:
+            proposal = self.resolve_proposal(proposal_id)
+            self.transitions.validate_authority(
+                purpose_id=str(proposal["purpose_id"]),
+                owner_fence_id=str(proposal["owner_fence_id"]),
+            )
+            index_path = self.review_index / f"{proposal_id}.json"
+            if index_path.exists():
+                receipt = self.resolve_review_receipt(proposal_id)
+                if receipt.get("pass_count") != required_passes:
+                    raise AdminProtocolRefused(
+                        "source review replay pass contract differs"
+                    )
+                return str(receipt["review_receipt_id"])
+            journal = {
+                "schema": "galaxy.source-review-journal/v1",
+                "proposal_id": proposal_id,
+                "proposal_record_sha256": proposal["record_sha256"],
+                "required_passes": required_passes,
+                "status": "prepared",
+                "canonical_ref_written": False,
+                "production_active": False,
+            }
+            _exclusive_sealed_json(
+                self.review_journals / f"{proposal_id}.json", journal
+            )
+            observations = [
+                self._review_observation(proposal=proposal, pass_index=index)
+                for index in range(1, required_passes + 1)
+            ]
+            sessions = [str(item["reviewer_session_id"]) for item in observations]
+            if len(set(sessions)) != len(sessions):
+                raise AdminProtocolRefused(
+                    "independent review passes reused a reviewer session"
+                )
+            body = {
+                "schema": "galaxy.source-proposal-review-receipt/v1",
+                "proposal_id": proposal_id,
+                "proposal_record_sha256": proposal["record_sha256"],
+                "pass_count": required_passes,
+                "observations": observations,
+                "accepted": True,
+                "canonical_ref_written": False,
+                "production_active": False,
+                "discord_enabled": False,
+            }
+            receipt_id = "review_" + hashlib.sha256(
+                _canonical_admin_json(body)
+            ).hexdigest()
+            _exclusive_sealed_json(
+                self.review_receipts / f"{receipt_id}.json",
+                {**body, "review_receipt_id": receipt_id},
+            )
+            _exclusive_sealed_json(
+                index_path,
+                {
+                    "schema": "galaxy.source-review-index/v1",
+                    "proposal_id": proposal_id,
+                    "proposal_record_sha256": proposal["record_sha256"],
+                    "review_receipt_id": receipt_id,
+                    "pass_count": required_passes,
+                    "canonical_ref_written": False,
+                    "production_active": False,
+                },
+            )
+            self.resolve_review_receipt(proposal_id)
+            return receipt_id
+
+    def resolve_review_receipt(self, proposal_id: str) -> dict[str, Any]:
+        proposal = self.resolve_proposal(proposal_id)
+        try:
+            index = _read_json(
+                self.review_index / f"{proposal_id}.json", label="source review index"
+            )
+        except (OSError, AnchorIntegrityRefused) as exc:
+            raise AdminProtocolRefused("source review receipt is unavailable") from exc
+        if (
+            index.get("schema") != "galaxy.source-review-index/v1"
+            or index.get("proposal_id") != proposal_id
+            or index.get("proposal_record_sha256") != proposal.get("record_sha256")
+            or index.get("canonical_ref_written") is not False
+            or index.get("production_active") is not False
+            or type(index.get("pass_count")) is not int
+            or index["pass_count"] not in {1, 2}
+            or re.fullmatch(
+                r"review_[0-9a-f]{64}", str(index.get("review_receipt_id"))
+            )
+            is None
+        ):
+            raise AdminProtocolRefused("source review index binding differs")
+        receipt_id = str(index["review_receipt_id"])
+        try:
+            receipt = _read_json(
+                self.review_receipts / f"{receipt_id}.json",
+                label="source review receipt",
+            )
+        except (OSError, AnchorIntegrityRefused) as exc:
+            raise AdminProtocolRefused("source review receipt is unreadable") from exc
+        unsigned = dict(receipt)
+        unsigned.pop("record_sha256", None)
+        observed_id = unsigned.pop("review_receipt_id", None)
+        expected_id = "review_" + hashlib.sha256(
+            _canonical_admin_json(unsigned)
+        ).hexdigest()
+        observations = receipt.get("observations")
+        if (
+            observed_id != receipt_id
+            or expected_id != receipt_id
+            or receipt.get("schema")
+            != "galaxy.source-proposal-review-receipt/v1"
+            or receipt.get("proposal_id") != proposal_id
+            or receipt.get("proposal_record_sha256") != proposal.get("record_sha256")
+            or receipt.get("pass_count") != index["pass_count"]
+            or not isinstance(observations, list)
+            or len(observations) != index["pass_count"]
+            or receipt.get("accepted") is not True
+            or receipt.get("canonical_ref_written") is not False
+            or receipt.get("production_active") is not False
+            or receipt.get("discord_enabled") is not False
+        ):
+            raise AdminProtocolRefused("source review receipt binding differs")
+        sessions: set[str] = set()
+        for pass_index, observation in enumerate(observations, start=1):
+            checked = self._validate_review_observation(
+                observation, proposal=proposal, pass_index=pass_index
+            )
+            session = str(checked["reviewer_session_id"])
+            if session in sessions:
+                raise AdminProtocolRefused(
+                    "source review receipt repeats a reviewer session"
+                )
+            sessions.add(session)
+        return receipt
+
+    def verify_source_proposal(
+        self,
+        *,
+        proposal_id: str,
+        normalization_receipt_id: str,
+    ) -> str:
+        """Rebuild and verify a reviewed proposal while all source fences remain held."""
+
+        with self._lock:
+            proposal = self.resolve_proposal(proposal_id)
+            self.transitions.validate_authority(
+                purpose_id=str(proposal["purpose_id"]),
+                owner_fence_id=str(proposal["owner_fence_id"]),
+            )
+            if proposal.get("normalization_receipt_id") != normalization_receipt_id:
+                raise AdminProtocolRefused(
+                    "source verification normalization binding differs"
+                )
+            replayed = self.prepare_source_commit(
+                transaction_id=str(proposal["transaction_id"]),
+                purpose_id=str(proposal["purpose_id"]),
+                owner_fence_id=str(proposal["owner_fence_id"]),
+                path_manifest_receipt_id=str(proposal["path_manifest_receipt_id"]),
+                normalization_receipt_id=normalization_receipt_id,
+                message=str(proposal["message"]),
+            )
+            if replayed != proposal_id:
+                raise AdminProtocolRefused("source verification rebuilt a different proposal")
+            review = self.resolve_review_receipt(proposal_id)
+            body = {
+                "schema": "galaxy.source-proposal-verification-receipt/v1",
+                "proposal_id": proposal_id,
+                "proposal_record_sha256": proposal["record_sha256"],
+                "normalization_receipt_id": normalization_receipt_id,
+                "path_manifest_receipt_id": proposal["path_manifest_receipt_id"],
+                "review_receipt_id": review["review_receipt_id"],
+                "parent_manifest_sha256": proposal["parent_manifest_sha256"],
+                "tree_manifest_sha256": proposal["tree_manifest_sha256"],
+                "diff_sha256": proposal["diff_sha256"],
+                "object_closure_sha256": proposal["object_closure_sha256"],
+                "commit_oid": proposal["commit_oid"],
+                "every_required_path_changed": True,
+                "unexpected_change_count": 0,
+                "canonical_ref_written": False,
+                "production_active": False,
+                "discord_enabled": False,
+            }
+            receipt_id = "verification_" + hashlib.sha256(
+                _canonical_admin_json(body)
+            ).hexdigest()
+            _exclusive_sealed_json(
+                self.verification_receipts / f"{receipt_id}.json",
+                {**body, "verification_receipt_id": receipt_id},
+            )
+            _exclusive_sealed_json(
+                self.verification_index / f"{proposal_id}.json",
+                {
+                    "schema": "galaxy.source-verification-index/v1",
+                    "proposal_id": proposal_id,
+                    "proposal_record_sha256": proposal["record_sha256"],
+                    "verification_receipt_id": receipt_id,
+                    "canonical_ref_written": False,
+                    "production_active": False,
+                },
+            )
+            self.resolve_verification_receipt(proposal_id)
+            return receipt_id
+
+    def resolve_verification_receipt(self, proposal_id: str) -> dict[str, Any]:
+        proposal = self.resolve_proposal(proposal_id)
+        try:
+            index = _read_json(
+                self.verification_index / f"{proposal_id}.json",
+                label="source verification index",
+            )
+        except (OSError, AnchorIntegrityRefused) as exc:
+            raise AdminProtocolRefused(
+                "source verification receipt is unavailable"
+            ) from exc
+        receipt_id = index.get("verification_receipt_id")
+        if (
+            index.get("schema") != "galaxy.source-verification-index/v1"
+            or index.get("proposal_id") != proposal_id
+            or index.get("proposal_record_sha256") != proposal.get("record_sha256")
+            or index.get("canonical_ref_written") is not False
+            or index.get("production_active") is not False
+            or re.fullmatch(r"verification_[0-9a-f]{64}", str(receipt_id)) is None
+        ):
+            raise AdminProtocolRefused("source verification index binding differs")
+        try:
+            receipt = _read_json(
+                self.verification_receipts / f"{receipt_id}.json",
+                label="source verification receipt",
+            )
+        except (OSError, AnchorIntegrityRefused) as exc:
+            raise AdminProtocolRefused(
+                "source verification receipt is unreadable"
+            ) from exc
+        unsigned = dict(receipt)
+        unsigned.pop("record_sha256", None)
+        observed_id = unsigned.pop("verification_receipt_id", None)
+        expected_id = "verification_" + hashlib.sha256(
+            _canonical_admin_json(unsigned)
+        ).hexdigest()
+        review = self.resolve_review_receipt(proposal_id)
+        if (
+            observed_id != receipt_id
+            or expected_id != receipt_id
+            or receipt.get("schema")
+            != "galaxy.source-proposal-verification-receipt/v1"
+            or receipt.get("proposal_id") != proposal_id
+            or receipt.get("proposal_record_sha256") != proposal.get("record_sha256")
+            or receipt.get("normalization_receipt_id")
+            != proposal.get("normalization_receipt_id")
+            or receipt.get("path_manifest_receipt_id")
+            != proposal.get("path_manifest_receipt_id")
+            or receipt.get("review_receipt_id") != review.get("review_receipt_id")
+            or receipt.get("commit_oid") != proposal.get("commit_oid")
+            or receipt.get("every_required_path_changed") is not True
+            or receipt.get("unexpected_change_count") != 0
+            or receipt.get("canonical_ref_written") is not False
+            or receipt.get("production_active") is not False
+            or receipt.get("discord_enabled") is not False
+        ):
+            raise AdminProtocolRefused("source verification receipt binding differs")
+        return receipt
+
+
+class AdminCommandProcessor:
+    """Request-idempotent dispatcher for the reviewed maintenance-only subset."""
+
+    def __init__(
+        self,
+        external_root: Path,
+        *,
+        repository_root: Path,
+        trust_context: AdminTrustContext | None = None,
+        transition_store: AdminTransitionStore | None = None,
+        source_commit_store: AdminSourceCommitStore | None = None,
+        contained_runtime: AdminContainedRuntime | None = None,
+    ):
+        self.external_root = Path(external_root).resolve(strict=False)
+        self.external_root.mkdir(parents=True, exist_ok=True)
+        _assert_no_reparse(
+            self.external_root, AdminProtocolRefused, "admin external root"
+        )
+        if not self.external_root.is_dir() or self.external_root.is_symlink():
+            raise AdminProtocolRefused("admin external root is not an ordinary directory")
+        self.path_manifests = ExternalPathManifestStore(
+            self.external_root / "path-manifests", repository_root=repository_root
+        )
+        self.trust_context = trust_context
+        epoch = (
+            trust_context.receipt_id
+            if trust_context is not None
+            else "tofu_" + "0" * 64
+        )
+        self.transitions = transition_store or AdminTransitionStore(
+            self.external_root / "transitions",
+            repository_root=repository_root,
+            epoch=epoch,
+            snapshotter=_admin_repository_snapshot_digest,
+        )
+        if source_commit_store is not None and contained_runtime is not None:
+            raise AdminProtocolRefused(
+                "source-commit store and contained runtime cannot both be injected"
+            )
+        self.source_commits = source_commit_store or AdminSourceCommitStore(
+            self.external_root / "source-commits",
+            repository_root=repository_root,
+            transitions=self.transitions,
+            path_manifests=self.path_manifests,
+            object_hasher=(
+                contained_runtime.hash_object if contained_runtime is not None else None
+            ),
+            object_batch_hasher=(
+                contained_runtime.hash_objects if contained_runtime is not None else None
+            ),
+            parent_manifest_loader=(
+                contained_runtime.load_parent_manifest
+                if contained_runtime is not None
+                else None
+            ),
+            proposal_reviewer=(
+                contained_runtime.review_proposal
+                if contained_runtime is not None
+                else None
+            ),
+        )
+        self.requests = self.external_root / "admin-requests"
+        self.requests.mkdir(exist_ok=True)
+        _assert_no_reparse(self.requests, AdminProtocolRefused, "admin request journal")
+        self._lock = threading.RLock()
+        self._repository_lock = _RepositoryAdminLock(
+            self.external_root / ".repository-admin.lock"
+        )
+
+    @property
+    def production_active(self) -> bool:
+        return False
+
+    @staticmethod
+    def _arguments(request: AdminRequest, keys: set[str]) -> dict[str, Any]:
+        arguments = dict(request.arguments)
+        if set(arguments) != keys:
+            raise AdminProtocolRefused(
+                f"{request.operation} arguments are outside the closed schema"
+            )
+        return arguments
+
+    @staticmethod
+    def _empty_payload(request: AdminRequest) -> None:
+        if request.payload != {} or request.payload_bytes != b"{}":
+            raise AdminProtocolRefused(
+                f"{request.operation} requires the exact empty payload"
+            )
+
+    @staticmethod
+    def _require_exact_guards(
+        arguments: Mapping[str, Any], guards: Mapping[str, Any]
+    ) -> None:
+        for name, expected in guards.items():
+            if arguments.get(name) != expected or type(arguments.get(name)) is not type(
+                expected
+            ):
+                raise AdminProtocolRefused(f"required guard differs: {name}")
+
+    def _require_repository_argument(self, value: Any) -> None:
+        if not isinstance(value, str) or not value:
+            raise AdminProtocolRefused("registered repository argument is malformed")
+        candidate = Path(value)
+        _assert_no_reparse(candidate, AdminProtocolRefused, "registered repository")
+        try:
+            resolved = candidate.resolve(strict=True)
+        except OSError as exc:
+            raise AdminProtocolRefused("registered repository argument is unavailable") from exc
+        if os.path.normcase(str(resolved)) != os.path.normcase(
+            str(self.path_manifests.repository_root)
+        ):
+            raise AdminProtocolRefused("registered repository argument differs")
+
+    def _purpose_spec(self, arguments: Mapping[str, Any]) -> dict[str, str]:
+        self._require_repository_argument(arguments.get("repo"))
+        plan_node = arguments.get("reviewed_plan_node")
+        reviewed = _REVIEWED_PURPOSE_SPECS.get(str(plan_node))
+        if reviewed is None:
+            raise AdminProtocolRefused("transition purpose plan node is not reviewed")
+        if (
+            arguments.get("operation") != reviewed["operation"]
+            or arguments.get("contract") != reviewed["contract"]
+            or arguments.get("requested_fences") != reviewed["requested_fences"]
+            or arguments.get("bind_canonicalization_policy")
+            != reviewed["canonicalization_policy"]
+        ):
+            raise AdminProtocolRefused("transition purpose reviewed binding differs")
+        return {
+            "plan_node": str(plan_node),
+            "operation": reviewed["operation"],
+            "contract": reviewed["contract"],
+            "requested_fences": reviewed["requested_fences"],
+            "canonicalization_policy": reviewed["canonicalization_policy"],
+        }
+
+    def _intent_spec(self, arguments: Mapping[str, Any]) -> dict[str, str]:
+        self._require_repository_argument(arguments.get("repo"))
+        operation = arguments.get("operation")
+        contract = arguments.get("contract")
+        fences = arguments.get("requested_fences")
+        if (
+            operation != "source-update"
+            or contract != "source-update-maintenance-v1"
+            or fences != "cli-run-closed+discord-disabled+maintenance-index-ref"
+        ):
+            raise AdminProtocolRefused("source-update begin-intent binding differs")
+        return {
+            "operation": str(operation),
+            "contract": str(contract),
+            "requested_fences": str(fences),
+        }
+
+    def _validate_transition_authority(
+        self, arguments: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        self._require_exact_guards(
+            arguments, {"require_current_owner_fencing_generation": True}
+        )
+        purpose = arguments.get("transition_purpose_receipt")
+        owner_fence = arguments.get("transition_owner_fence_receipt")
+        if not isinstance(purpose, str) or not isinstance(owner_fence, str):
+            raise AdminProtocolRefused("transition authority receipt is malformed")
+        return self.transitions.validate_authority(
+            purpose_id=purpose, owner_fence_id=owner_fence
+        )
+
+    def _path_arguments(
+        self, request: AdminRequest, operation_keys: set[str]
+    ) -> dict[str, Any]:
+        authority_keys = {
+            "require_current_owner_fencing_generation",
+            "transition_owner_fence_receipt",
+            "transition_purpose_receipt",
+        }
+        require_authority = self.trust_context is not None
+        arguments = self._arguments(
+            request,
+            operation_keys | (authority_keys if require_authority else set()),
+        )
+        if require_authority:
+            self._validate_transition_authority(arguments)
+            scope = arguments.get("scope")
+            purpose = arguments.get("transition_purpose_receipt")
+            owner_fence = arguments.get("transition_owner_fence_receipt")
+            if not all(isinstance(value, str) for value in (scope, purpose, owner_fence)):
+                raise AdminProtocolRefused("path manifest transition scope is malformed")
+            self.transitions.validate_child_scope(
+                scope=str(scope),
+                purpose_id=str(purpose),
+                owner_fence_id=str(owner_fence),
+            )
+        return arguments
+
+    def _dispatch(self, request: AdminRequest) -> Mapping[str, Any]:
+        if request.operation == "current-tofu-receipt":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request, {"persisted_and_reread", "require_protected_generation"}
+            )
+            self._require_exact_guards(
+                arguments,
+                {"persisted_and_reread": True, "require_protected_generation": True},
+            )
+            context = self._required_trust_context()
+            evidence = _verify_admin_trust_context(context, require_acl=True)
+            return {**evidence, "receipt_id": context.receipt_id, "output": context.receipt_id}
+        if request.operation == "verify-tofu-receipt":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                {
+                    "receipt",
+                    "require_full_leaf_manifest",
+                    "require_inactive_service_readiness",
+                    "require_protected_generation",
+                    "require_sealed_runtime_and_images",
+                },
+            )
+            self._require_exact_guards(
+                arguments,
+                {
+                    "require_full_leaf_manifest": True,
+                    "require_inactive_service_readiness": True,
+                    "require_protected_generation": True,
+                    "require_sealed_runtime_and_images": True,
+                },
+            )
+            context = self._required_trust_context()
+            evidence = _verify_admin_trust_context(context, require_acl=True)
+            _verify_tofu_receipt_argument(arguments["receipt"], context, evidence)
+            return {**evidence, "receipt_id": context.receipt_id, "output": ""}
+        if request.operation == "verify-self":
+            self._empty_payload(request)
+            arguments = dict(request.arguments)
+            inactive_keys = {
+                "require_closed_launch_record",
+                "require_fresh_service_host",
+                "require_inactive_generation",
+                "require_os_pinned_digest",
+                "require_protected_acl",
+            }
+            current_keys = (inactive_keys - {"require_inactive_generation"}) | {
+                "require_current_generation"
+            }
+            if frozenset(arguments) not in {
+                frozenset(inactive_keys),
+                frozenset(current_keys),
+            }:
+                raise AdminProtocolRefused(
+                    "verify-self arguments are outside the closed inactive schemas"
+                )
+            self._require_exact_guards(
+                arguments, {name: True for name in arguments}
+            )
+            evidence = _verify_admin_trust_context(
+                self._required_trust_context(), require_acl=True
+            )
+            return {**evidence, "production_active": False, "output": ""}
+        purpose_common_keys = {
+            "bind_active_reviewed_wave_epoch",
+            "bind_canonicalization_policy",
+            "bind_exact_old_state",
+            "capture_native_no_follow_pre_normalization_batch",
+            "contract",
+            "operation",
+            "reject_unrelated_or_multiple_predecessor_archives",
+            "repo",
+            "reviewed_plan_node",
+            "requested_fences",
+            "require_satisfied_reviewed_predecessor_ledger",
+            "require_wave_epoch_bound_to_current_tofu_receipt",
+        }
+        purpose_common_guards = {
+            "bind_active_reviewed_wave_epoch": True,
+            "bind_exact_old_state": True,
+            "capture_native_no_follow_pre_normalization_batch": True,
+            "reject_unrelated_or_multiple_predecessor_archives": True,
+            "require_satisfied_reviewed_predecessor_ledger": True,
+            "require_wave_epoch_bound_to_current_tofu_receipt": True,
+        }
+        if request.operation == "acquire-transition-purpose":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                purpose_common_keys
+                | {"create_or_return_exact", "persist_before_response", "print_purpose_receipt"},
+            )
+            self._require_exact_guards(
+                arguments,
+                {
+                    **purpose_common_guards,
+                    "create_or_return_exact": True,
+                    "persist_before_response": True,
+                    "print_purpose_receipt": True,
+                },
+            )
+            purpose = self.transitions.acquire_purpose(self._purpose_spec(arguments))
+            return {"purpose_id": purpose, "output": purpose}
+        if request.operation == "resolve-transition-purpose":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                purpose_common_keys
+                | {"print_purpose_receipt_or_none", "read_only", "require_unique_exact"},
+            )
+            self._require_exact_guards(
+                arguments,
+                {
+                    **purpose_common_guards,
+                    "print_purpose_receipt_or_none": True,
+                    "read_only": True,
+                    "require_unique_exact": True,
+                },
+            )
+            purpose = self.transitions.resolve_purpose(self._purpose_spec(arguments))
+            return {"purpose_id": purpose, "output": purpose}
+        if request.operation == "resolve-current-top-level-transition":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                {
+                    "print_none_or_bound_purpose_receipt",
+                    "read_only",
+                    "repo",
+                    "repository_global_all_generations",
+                    "require_unique_live_slot",
+                },
+            )
+            self._require_repository_argument(arguments["repo"])
+            self._require_exact_guards(
+                arguments,
+                {
+                    "print_none_or_bound_purpose_receipt": True,
+                    "read_only": True,
+                    "repository_global_all_generations": True,
+                    "require_unique_live_slot": True,
+                },
+            )
+            purpose = self.transitions.current_purpose()
+            return {"purpose_id": purpose, "output": purpose}
+        intent_common_keys = {
+            "bind_exact_old_state",
+            "contract",
+            "exclusive_top_level_mutation_per_registered_repo_all_generations",
+            "operation",
+            "repo",
+            "requested_fences",
+            "require_exact_purpose_binding",
+            "transition_purpose_receipt",
+        }
+        intent_common_guards = {
+            "bind_exact_old_state": True,
+            "exclusive_top_level_mutation_per_registered_repo_all_generations": True,
+            "require_exact_purpose_binding": True,
+        }
+        if request.operation == "acquire-begin-intent":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                intent_common_keys
+                | {
+                    "create_or_return_unique_slot",
+                    "persist_before_response",
+                    "print_request_id",
+                    "require_reviewed_purpose_dag",
+                },
+            )
+            self._require_exact_guards(
+                arguments,
+                {
+                    **intent_common_guards,
+                    "create_or_return_unique_slot": True,
+                    "persist_before_response": True,
+                    "print_request_id": True,
+                    "require_reviewed_purpose_dag": True,
+                },
+            )
+            purpose = arguments["transition_purpose_receipt"]
+            if not isinstance(purpose, str):
+                raise AdminProtocolRefused("begin-intent purpose receipt is malformed")
+            request_id = self.transitions.acquire_intent(
+                purpose, self._intent_spec(arguments)
+            )
+            return {"begin_request_id": request_id, "output": request_id}
+        if request.operation == "resolve-begin-intent":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                intent_common_keys
+                | {
+                    "print_request_id_or_none",
+                    "read_only",
+                    "require_persisted_intent",
+                    "require_unique_slot",
+                },
+            )
+            self._require_exact_guards(
+                arguments,
+                {
+                    **intent_common_guards,
+                    "print_request_id_or_none": True,
+                    "read_only": True,
+                    "require_persisted_intent": True,
+                    "require_unique_slot": True,
+                },
+            )
+            purpose = arguments["transition_purpose_receipt"]
+            if not isinstance(purpose, str):
+                raise AdminProtocolRefused("begin-intent purpose receipt is malformed")
+            request_id = self.transitions.resolve_intent(
+                purpose, self._intent_spec(arguments)
+            )
+            return {"begin_request_id": request_id, "output": request_id}
+        if request.operation == "resolve-begin-intent-owner-fence":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                {
+                    "print_owner_fence_receipt",
+                    "read_only",
+                    "repo",
+                    "request_id",
+                    "require_current_owner_lease_and_fencing_generation",
+                    "transition_purpose_receipt",
+                },
+            )
+            self._require_repository_argument(arguments["repo"])
+            self._require_exact_guards(
+                arguments,
+                {
+                    "print_owner_fence_receipt": True,
+                    "read_only": True,
+                    "require_current_owner_lease_and_fencing_generation": True,
+                },
+            )
+            request_id = arguments["request_id"]
+            purpose = arguments["transition_purpose_receipt"]
+            if not isinstance(request_id, str) or not isinstance(purpose, str):
+                raise AdminProtocolRefused("owner-fence lookup identity is malformed")
+            owner_fence = self.transitions.resolve_owner_fence(request_id, purpose)
+            return {"owner_fence_id": owner_fence, "output": owner_fence}
+        transition_authority_keys = {
+            "require_current_owner_fencing_generation",
+            "transition_owner_fence_receipt",
+            "transition_purpose_receipt",
+        }
+        if request.operation == "begin-source-update":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                transition_authority_keys
+                | {
+                    "close_cli_run_ingress",
+                    "hold_maintenance_index_and_ref_fences",
+                    "idempotent_create",
+                    "keep_discord_listener_disabled",
+                    "persist_begin_receipt_before_response",
+                    "repo",
+                    "request_id",
+                    "require_exact_purpose_binding",
+                },
+            )
+            self._require_repository_argument(arguments["repo"])
+            self._require_exact_guards(
+                arguments,
+                {
+                    "close_cli_run_ingress": True,
+                    "hold_maintenance_index_and_ref_fences": True,
+                    "idempotent_create": True,
+                    "keep_discord_listener_disabled": True,
+                    "persist_begin_receipt_before_response": True,
+                    "require_exact_purpose_binding": True,
+                },
+            )
+            self._validate_transition_authority(arguments)
+            transaction = self.transitions.begin_source_update(
+                request_id=str(arguments["request_id"]),
+                purpose_id=str(arguments["transition_purpose_receipt"]),
+                owner_fence_id=str(arguments["transition_owner_fence_receipt"]),
+            )
+            return {"source_transaction_id": transaction, "output": transaction}
+        if request.operation == "resolve-source-update-begin":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                transition_authority_keys
+                | {
+                    "classify_started_exact_requested_fences_held_or_not_started",
+                    "print_transaction_or_not_started",
+                    "read_only",
+                    "repo",
+                    "request_id",
+                    "require_exact_old_state_if_started",
+                    "require_exact_purpose_binding",
+                    "require_exact_request_binding",
+                    "require_latest_monotone_journal_if_started",
+                    "require_live_requested_fences_held_if_started",
+                    "require_persisted_begin_receipt_if_started",
+                },
+            )
+            self._require_repository_argument(arguments["repo"])
+            self._require_exact_guards(
+                arguments,
+                {
+                    "classify_started_exact_requested_fences_held_or_not_started": True,
+                    "print_transaction_or_not_started": True,
+                    "read_only": True,
+                    "require_exact_old_state_if_started": True,
+                    "require_exact_purpose_binding": True,
+                    "require_exact_request_binding": True,
+                    "require_latest_monotone_journal_if_started": True,
+                    "require_live_requested_fences_held_if_started": True,
+                    "require_persisted_begin_receipt_if_started": True,
+                },
+            )
+            self._validate_transition_authority(arguments)
+            transaction = self.transitions.resolve_source_begin(
+                str(arguments["request_id"]),
+                str(arguments["transition_purpose_receipt"]),
+            )
+            return {"source_transaction_id": transaction, "output": transaction}
+        if request.operation == "normalize-developer-source":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                transition_authority_keys
+                | {
+                    "binary_exact",
+                    "chain_purpose_pre_normalization_batch_and_policy",
+                    "create_if_absent_or_verify_existing_loose_head",
+                    "disable_auto_ref_packing",
+                    "ensure_symbolic_loose_head_same_oid",
+                    "native_full_tree_exact_index_bytes",
+                    "no_ambient_git_config",
+                    "no_filters",
+                    "no_hooks",
+                    "path_manifest_receipt",
+                    "persist_before_response",
+                    "print_normalization_receipt",
+                    "repo",
+                    "require_exact_purpose_batch_membership",
+                    "require_no_unexpected_change",
+                    "strict_utf8_parent_bom_preserving_crlf_to_lf_only",
+                    "transaction",
+                },
+            )
+            self._require_repository_argument(arguments["repo"])
+            self._require_exact_guards(
+                arguments,
+                {
+                    "binary_exact": True,
+                    "chain_purpose_pre_normalization_batch_and_policy": True,
+                    "create_if_absent_or_verify_existing_loose_head": True,
+                    "disable_auto_ref_packing": True,
+                    "ensure_symbolic_loose_head_same_oid": True,
+                    "native_full_tree_exact_index_bytes": True,
+                    "no_ambient_git_config": True,
+                    "no_filters": True,
+                    "no_hooks": True,
+                    "persist_before_response": True,
+                    "print_normalization_receipt": True,
+                    "require_exact_purpose_batch_membership": True,
+                    "require_no_unexpected_change": True,
+                    "strict_utf8_parent_bom_preserving_crlf_to_lf_only": True,
+                },
+            )
+            self._validate_transition_authority(arguments)
+            receipt = self.source_commits.normalize_developer_source(
+                transaction_id=str(arguments["transaction"]),
+                purpose_id=str(arguments["transition_purpose_receipt"]),
+                owner_fence_id=str(arguments["transition_owner_fence_receipt"]),
+                path_manifest_receipt_id=str(arguments["path_manifest_receipt"]),
+            )
+            return {"normalization_receipt_id": receipt, "output": receipt}
+        if request.operation == "prepare-source-commit":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                transition_authority_keys
+                | {
+                    "fixed_commit_metadata",
+                    "message",
+                    "native_no_follow_snapshot",
+                    "normalization_receipt",
+                    "parent_plus_allowlist_complete_tree",
+                    "path_manifest_receipt",
+                    "repo",
+                    "require_pre_normalization_purpose_chain",
+                    "transaction",
+                },
+            )
+            self._require_repository_argument(arguments["repo"])
+            self._require_exact_guards(
+                arguments,
+                {
+                    "fixed_commit_metadata": True,
+                    "native_no_follow_snapshot": True,
+                    "parent_plus_allowlist_complete_tree": True,
+                    "require_pre_normalization_purpose_chain": True,
+                },
+            )
+            self._validate_transition_authority(arguments)
+            proposal_id = self.source_commits.prepare_source_commit(
+                transaction_id=str(arguments["transaction"]),
+                purpose_id=str(arguments["transition_purpose_receipt"]),
+                owner_fence_id=str(arguments["transition_owner_fence_receipt"]),
+                path_manifest_receipt_id=str(arguments["path_manifest_receipt"]),
+                normalization_receipt_id=str(arguments["normalization_receipt"]),
+                message=arguments["message"],
+            )
+            return {"proposal_id": proposal_id, "output": proposal_id}
+        if request.operation == "review-source-proposal":
+            self._empty_payload(request)
+            base_keys = transition_authority_keys | {
+                "no_canonical_write",
+                "persist_and_reread_review_receipt",
+                "sealed_independent_reviewer",
+                "transaction",
+            }
+            two_pass = "require_two_independent_review_passes" in request.arguments
+            arguments = self._arguments(
+                request,
+                base_keys
+                | ({"require_two_independent_review_passes"} if two_pass else set()),
+            )
+            guards = {
+                "no_canonical_write": True,
+                "persist_and_reread_review_receipt": True,
+                "sealed_independent_reviewer": True,
+            }
+            if two_pass:
+                guards["require_two_independent_review_passes"] = True
+            self._require_exact_guards(arguments, guards)
+            self._validate_transition_authority(arguments)
+            proposal_id = str(arguments["transaction"])
+            proposal_record = self.source_commits.resolve_proposal(proposal_id)
+            if (
+                proposal_record.get("purpose_id")
+                != arguments["transition_purpose_receipt"]
+                or proposal_record.get("owner_fence_id")
+                != arguments["transition_owner_fence_receipt"]
+            ):
+                raise AdminProtocolRefused(
+                    "source review transition authority binding differs"
+                )
+            receipt = self.source_commits.review_source_proposal(
+                proposal_id, required_passes=2 if two_pass else 1
+            )
+            return {"review_receipt_id": receipt, "output": receipt}
+        if request.operation == "verify-source-proposal":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                transition_authority_keys
+                | {
+                    "normalization_receipt",
+                    "require_every_required_path_changed",
+                    "require_exact_manifest",
+                    "require_no_canonical_ref_write",
+                    "require_no_unexpected_change",
+                    "require_pre_normalization_purpose_chain",
+                    "require_review_receipt",
+                    "transaction",
+                },
+            )
+            self._require_exact_guards(
+                arguments,
+                {
+                    "require_every_required_path_changed": True,
+                    "require_exact_manifest": True,
+                    "require_no_canonical_ref_write": True,
+                    "require_no_unexpected_change": True,
+                    "require_pre_normalization_purpose_chain": True,
+                    "require_review_receipt": True,
+                },
+            )
+            self._validate_transition_authority(arguments)
+            proposal_id = str(arguments["transaction"])
+            proposal_record = self.source_commits.resolve_proposal(proposal_id)
+            if (
+                proposal_record.get("purpose_id")
+                != arguments["transition_purpose_receipt"]
+                or proposal_record.get("owner_fence_id")
+                != arguments["transition_owner_fence_receipt"]
+            ):
+                raise AdminProtocolRefused(
+                    "source verification transition authority binding differs"
+                )
+            receipt = self.source_commits.verify_source_proposal(
+                proposal_id=proposal_id,
+                normalization_receipt_id=str(arguments["normalization_receipt"]),
+            )
+            return {"verification_receipt_id": receipt, "output": receipt}
+        if request.operation == "commit-source-proposal":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                transition_authority_keys
+                | {
+                    "cas_loose_ref",
+                    "durable",
+                    "install_verified_index",
+                    "keep_production_run_inactive",
+                    "native_full_tree_materialize",
+                    "normalization_receipt",
+                    "require_final_byte_clean",
+                    "require_fresh_exact_digest_approval",
+                    "require_pre_normalization_purpose_chain",
+                    "source_update",
+                    "transaction",
+                },
+            )
+            self._require_exact_guards(
+                arguments,
+                {
+                    "cas_loose_ref": True,
+                    "durable": True,
+                    "install_verified_index": True,
+                    "keep_production_run_inactive": True,
+                    "native_full_tree_materialize": True,
+                    "require_final_byte_clean": True,
+                    "require_fresh_exact_digest_approval": True,
+                    "require_pre_normalization_purpose_chain": True,
+                },
+            )
+            self._validate_transition_authority(arguments)
+            proposal_id = str(arguments["transaction"])
+            proposal_record = self.source_commits.resolve_proposal(proposal_id)
+            if (
+                proposal_record.get("purpose_id")
+                != arguments["transition_purpose_receipt"]
+                or proposal_record.get("owner_fence_id")
+                != arguments["transition_owner_fence_receipt"]
+                or proposal_record.get("transaction_id") != arguments["source_update"]
+                or proposal_record.get("normalization_receipt_id")
+                != arguments["normalization_receipt"]
+            ):
+                raise AdminProtocolRefused(
+                    "source commit transition or receipt binding differs"
+                )
+            self.source_commits.resolve_verification_receipt(proposal_id)
+            raise FreshExactApprovalRequired(
+                "fresh exact proposal-digest approval is required on the protected "
+                "operator surface"
+            )
+        if request.operation == "abort-source-update":
+            self._empty_payload(request)
+            base_keys = transition_authority_keys | {
+                "abort_all_child_resources",
+                "before_cas_only",
+                "keep_discord_listener_disabled",
+                "keep_production_run_inactive",
+                "persist_and_reread_recovery_receipt",
+                "print_disposition",
+                "reconcile_journaled_normalization",
+                "restore_developer_ingress_only_if_old_ref_index_tree_exact",
+                "transaction",
+            }
+            has_proposal = "proposal" in request.arguments
+            arguments = self._arguments(
+                request, base_keys | ({"proposal"} if has_proposal else set())
+            )
+            self._require_exact_guards(
+                arguments,
+                {
+                    "abort_all_child_resources": True,
+                    "before_cas_only": True,
+                    "keep_discord_listener_disabled": True,
+                    "keep_production_run_inactive": True,
+                    "persist_and_reread_recovery_receipt": True,
+                    "print_disposition": True,
+                    "reconcile_journaled_normalization": True,
+                    "restore_developer_ingress_only_if_old_ref_index_tree_exact": True,
+                },
+            )
+            self._validate_transition_authority(arguments)
+            disposition, recovery_receipt_id = self.source_commits.abort_source_update(
+                transaction_id=str(arguments["transaction"]),
+                purpose_id=str(arguments["transition_purpose_receipt"]),
+                owner_fence_id=str(arguments["transition_owner_fence_receipt"]),
+                proposal_id=(
+                    str(arguments["proposal"]) if has_proposal else None
+                ),
+            )
+            return {
+                "disposition": disposition,
+                "recovery_receipt_id": recovery_receipt_id,
+                "output": disposition,
+            }
+        if request.operation == "reconcile-source-update":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                transition_authority_keys
+                | {
+                    "classify_old_or_exact_new_ref_index_tree",
+                    "finish_only_journal_bound_materialization_attestation_and_ingress",
+                    "keep_discord_listener_disabled",
+                    "keep_production_run_inactive",
+                    "persist_and_reread_recovery_receipt",
+                    "print_disposition",
+                    "proposal",
+                    "transaction",
+                },
+            )
+            self._require_exact_guards(
+                arguments,
+                {
+                    "classify_old_or_exact_new_ref_index_tree": True,
+                    "finish_only_journal_bound_materialization_attestation_and_ingress": True,
+                    "keep_discord_listener_disabled": True,
+                    "keep_production_run_inactive": True,
+                    "persist_and_reread_recovery_receipt": True,
+                    "print_disposition": True,
+                },
+            )
+            self._validate_transition_authority(arguments)
+            disposition, recovery_receipt_id = (
+                self.source_commits.reconcile_source_update(
+                    transaction_id=str(arguments["transaction"]),
+                    purpose_id=str(arguments["transition_purpose_receipt"]),
+                    owner_fence_id=str(
+                        arguments["transition_owner_fence_receipt"]
+                    ),
+                    proposal_id=str(arguments["proposal"]),
+                )
+            )
+            return {
+                "disposition": disposition,
+                "recovery_receipt_id": recovery_receipt_id,
+                "output": disposition,
+            }
+        if request.operation == "resolve-source-update-disposition":
+            self._empty_payload(request)
+            common_keys = transition_authority_keys | {
+                "print_disposition",
+                "read_only",
+                "require_discord_listener_disabled",
+                "require_persisted_receipt",
+                "require_production_run_inactive",
+                "transaction",
+            }
+            classifiers = {
+                "classify_safe_old_developer_ingress_open_or_held_closed_or_recovery_pending",
+                "classify_safe_old_or_committed_exact_new_with_ingress_or_recovery_pending",
+            }
+            present = classifiers & set(request.arguments)
+            if len(present) != 1:
+                raise AdminProtocolRefused(
+                    "source-update disposition classifier is absent or ambiguous"
+                )
+            classifier = next(iter(present))
+            arguments = self._arguments(request, common_keys | {classifier})
+            self._require_exact_guards(
+                arguments,
+                {
+                    classifier: True,
+                    "print_disposition": True,
+                    "read_only": True,
+                    "require_discord_listener_disabled": True,
+                    "require_persisted_receipt": True,
+                    "require_production_run_inactive": True,
+                },
+            )
+            self._validate_transition_authority(arguments)
+            disposition = self.transitions.resolve_source_disposition(
+                str(arguments["transaction"])
+            )
+            if classifier.startswith("classify_safe_old_developer") and disposition not in {
+                "safe_old_developer_ingress_open",
+                "safe_old_developer_ingress_held_closed",
+                "fenced_recovery_pending",
+            }:
+                raise AdminProtocolRefused(
+                    "source-update disposition exceeds the requested closed classifier"
+                )
+            return {"disposition": disposition, "output": disposition}
+        if request.operation == "finish-source-update":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                transition_authority_keys
+                | {
+                    "keep_discord_listener_disabled",
+                    "keep_production_run_inactive",
+                    "persist_and_reread_finish_receipt",
+                    "print_disposition",
+                    "release_developer_only_ingress",
+                    "transaction",
+                },
+            )
+            self._require_exact_guards(
+                arguments,
+                {
+                    "keep_discord_listener_disabled": True,
+                    "keep_production_run_inactive": True,
+                    "persist_and_reread_finish_receipt": True,
+                    "print_disposition": True,
+                    "release_developer_only_ingress": True,
+                },
+            )
+            self._validate_transition_authority(arguments)
+            disposition = self.transitions.finish_source_update(
+                transaction_id=str(arguments["transaction"]),
+                purpose_id=str(arguments["transition_purpose_receipt"]),
+                owner_fence_id=str(arguments["transition_owner_fence_receipt"]),
+            )
+            return {"disposition": disposition, "output": disposition}
+        if request.operation == "observe-top-level-transition":
+            self._empty_payload(request)
+            ordinary_keys = {
+                "bound_purpose_receipt",
+                "closed_terminal_map",
+                "include_owner_lease_and_fencing_generation",
+                "print_owner_state_recovery_pending_or_terminal_observation",
+                "read_only",
+                "repo",
+                "repository_global_all_generations",
+                "require_latest_journal_live_state_and_ingress",
+            }
+            recovery_keys = (
+                ordinary_keys
+                - {
+                    "include_owner_lease_and_fencing_generation",
+                    "print_owner_state_recovery_pending_or_terminal_observation",
+                }
+            ) | transition_authority_keys | {
+                "print_terminal_observation_or_recovery_pending"
+            }
+            raw_keys = set(request.arguments)
+            if raw_keys == ordinary_keys:
+                arguments = self._arguments(request, ordinary_keys)
+                guards = {
+                    "include_owner_lease_and_fencing_generation": True,
+                    "print_owner_state_recovery_pending_or_terminal_observation": True,
+                }
+            elif raw_keys == recovery_keys:
+                arguments = self._arguments(request, recovery_keys)
+                guards = {"print_terminal_observation_or_recovery_pending": True}
+                self._validate_transition_authority(arguments)
+            else:
+                raise AdminProtocolRefused(
+                    "observe-top-level-transition arguments are outside the closed schemas"
+                )
+            self._require_repository_argument(arguments["repo"])
+            self._require_exact_guards(
+                arguments,
+                {
+                    **guards,
+                    "closed_terminal_map": "singularity-top-level-terminal-v1",
+                    "read_only": True,
+                    "repository_global_all_generations": True,
+                    "require_latest_journal_live_state_and_ingress": True,
+                },
+            )
+            purpose = arguments["bound_purpose_receipt"]
+            if not isinstance(purpose, str):
+                raise AdminProtocolRefused("terminal observation purpose is malformed")
+            observation = self.transitions.observe_terminal(purpose)
+            return {"terminal_observation": observation, "output": observation}
+        if request.operation == "acknowledge-terminal-disposition":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                {
+                    "atomic_under_slot_lock",
+                    "bound_purpose_receipt",
+                    "closed_terminal_map",
+                    "idempotent",
+                    "persist_before_response",
+                    "reject_cross_operation_purpose_epoch_or_owner_token_replay",
+                    "repo",
+                    "repository_global_all_generations",
+                    "require_current_owner_fencing_generation_bound_to_observation",
+                    "revalidate_observation_still_current_before_ack",
+                    "terminal_observation_token",
+                },
+            )
+            self._require_repository_argument(arguments["repo"])
+            self._require_exact_guards(
+                arguments,
+                {
+                    "atomic_under_slot_lock": True,
+                    "closed_terminal_map": "singularity-top-level-terminal-v1",
+                    "idempotent": True,
+                    "persist_before_response": True,
+                    "reject_cross_operation_purpose_epoch_or_owner_token_replay": True,
+                    "repository_global_all_generations": True,
+                    "require_current_owner_fencing_generation_bound_to_observation": True,
+                    "revalidate_observation_still_current_before_ack": True,
+                },
+            )
+            purpose = arguments["bound_purpose_receipt"]
+            token = arguments["terminal_observation_token"]
+            if not isinstance(purpose, str) or not isinstance(token, str):
+                raise AdminProtocolRefused("terminal acknowledgement identity is malformed")
+            self.transitions.acknowledge_terminal(purpose, token)
+            return {"acknowledged": True, "output": ""}
+        if request.operation == "resolve-transition-purpose-outcome":
+            self._empty_payload(request)
+            common_keys = {
+                "purpose_receipt",
+                "read_only",
+                "repo",
+                "require_unique_exact_archive",
+            }
+            archived_keys = common_keys | {
+                "print_archived_outcome",
+                "require_observation_acknowledgement_chain",
+            }
+            runnable_keys = common_keys | {
+                "print_clear_never_started_or_archived_outcome"
+            }
+            raw_keys = set(request.arguments)
+            if raw_keys == archived_keys:
+                arguments = self._arguments(request, archived_keys)
+                self._require_exact_guards(
+                    arguments,
+                    {
+                        "print_archived_outcome": True,
+                        "read_only": True,
+                        "require_observation_acknowledgement_chain": True,
+                        "require_unique_exact_archive": True,
+                    },
+                )
+                archived_only = True
+            elif raw_keys == runnable_keys:
+                arguments = self._arguments(request, runnable_keys)
+                self._require_exact_guards(
+                    arguments,
+                    {
+                        "print_clear_never_started_or_archived_outcome": True,
+                        "read_only": True,
+                        "require_unique_exact_archive": True,
+                    },
+                )
+                archived_only = False
+            else:
+                raise AdminProtocolRefused(
+                    "transition-purpose outcome arguments are outside the closed schemas"
+                )
+            self._require_repository_argument(arguments["repo"])
+            purpose = arguments["purpose_receipt"]
+            if not isinstance(purpose, str):
+                raise AdminProtocolRefused("transition-purpose outcome identity is malformed")
+            outcome = self.transitions.resolve_purpose_outcome(purpose)
+            if archived_only and not outcome.startswith("archived_"):
+                raise AdminProtocolRefused("transition-purpose outcome is not archived")
+            return {"outcome": outcome, "output": outcome}
+        if request.operation == "classify-purpose-successor":
+            self._empty_payload(request)
+            arguments = self._arguments(
+                request,
+                {
+                    "completed_purpose_receipt",
+                    "desired_purpose_receipt",
+                    "print_same_allowed_predecessor_or_unrelated",
+                    "read_only",
+                    "reject_multiple_matching_archives",
+                    "repo",
+                    "require_closed_reviewed_purpose_dag",
+                    "require_explicit_wave_restart_edge",
+                },
+            )
+            self._require_repository_argument(arguments["repo"])
+            self._require_exact_guards(
+                arguments,
+                {
+                    "print_same_allowed_predecessor_or_unrelated": True,
+                    "read_only": True,
+                    "reject_multiple_matching_archives": True,
+                    "require_closed_reviewed_purpose_dag": True,
+                    "require_explicit_wave_restart_edge": True,
+                },
+            )
+            completed = arguments["completed_purpose_receipt"]
+            desired = arguments["desired_purpose_receipt"]
+            if not isinstance(completed, str) or not isinstance(desired, str):
+                raise AdminProtocolRefused("purpose-successor identity is malformed")
+            relationship = self.transitions.classify_purpose_successor(
+                completed, desired
+            )
+            return {"relationship": relationship, "output": relationship}
+        if request.operation == "begin-path-manifest":
+            self._empty_payload(request)
+            arguments = self._path_arguments(
+                request,
+                {
+                    "expected_required_count",
+                    "expected_test_count",
+                    "expected_total_count",
+                    "scope",
+                },
+            )
+            manifest_id = self.path_manifests.begin(
+                scope=arguments["scope"],
+                expected_total_count=arguments["expected_total_count"],
+                expected_required_count=arguments["expected_required_count"],
+                expected_test_count=arguments["expected_test_count"],
+                idempotency_key=request.request_id,
+            )
+            return {"manifest_id": manifest_id, "output": manifest_id}
+        if request.operation == "append-path-manifest":
+            arguments = self._path_arguments(
+                request,
+                {
+                    "manifest",
+                    "require_decode_recanonicalize_byte_equality",
+                    "require_decoded_canonical_json_max_bytes",
+                    "require_exact_envelope_max_bytes",
+                    "require_strict_unpadded_base64url",
+                    "scope",
+                    "sequence",
+                },
+            )
+            self._require_exact_guards(
+                arguments,
+                {
+                    "require_decode_recanonicalize_byte_equality": True,
+                    "require_decoded_canonical_json_max_bytes": 4096,
+                    "require_exact_envelope_max_bytes": 8192,
+                    "require_strict_unpadded_base64url": True,
+                },
+            )
+            if set(request.payload) != {"records", "sequence"}:
+                raise AdminProtocolRefused(
+                    "append-path-manifest payload fields are outside the closed schema"
+                )
+            encoded = base64.urlsafe_b64encode(request.payload_bytes).decode(
+                "ascii"
+            ).rstrip("=")
+            result = self.path_manifests.append(
+                scope=arguments["scope"],
+                manifest_id=arguments["manifest"],
+                sequence=arguments["sequence"],
+                canonical_records_base64url=encoded,
+            )
+            return {**result, "output": ""}
+        if request.operation == "seal-path-manifest":
+            self._empty_payload(request)
+            arguments = self._path_arguments(
+                request,
+                {
+                    "canonical_order",
+                    "manifest",
+                    "persist_and_reread",
+                    "require_required_count",
+                    "require_test_count",
+                    "require_total_count",
+                    "sha256",
+                    "scope",
+                },
+            )
+            self._require_exact_guards(
+                arguments,
+                {
+                    "canonical_order": True,
+                    "persist_and_reread": True,
+                    "sha256": True,
+                },
+            )
+            manifest_receipt = self.path_manifests.seal(
+                scope=arguments["scope"],
+                manifest_id=arguments["manifest"],
+                require_total_count=arguments["require_total_count"],
+                require_required_count=arguments["require_required_count"],
+                require_test_count=arguments["require_test_count"],
+            )
+            receipt_id = "pathmanifest_" + str(manifest_receipt["record_sha256"])
+            return {
+                **manifest_receipt,
+                "receipt_id": receipt_id,
+                "output": receipt_id,
+            }
+        if request.operation == "abort-path-manifest":
+            self._empty_payload(request)
+            arguments = self._path_arguments(
+                request,
+                {
+                    "manifest",
+                    "persist_cleanup_receipt",
+                    "require_no_unsealed_resource",
+                    "scope",
+                },
+            )
+            self._require_exact_guards(
+                arguments,
+                {
+                    "persist_cleanup_receipt": True,
+                    "require_no_unsealed_resource": True,
+                },
+            )
+            cleanup_receipt = self.path_manifests.abort(
+                scope=arguments["scope"], manifest_id=arguments["manifest"]
+            )
+            receipt_id = "pathcleanup_" + str(cleanup_receipt["record_sha256"])
+            return {
+                **cleanup_receipt,
+                "cleanup_receipt_id": receipt_id,
+                "output": "",
+            }
+        raise AdminOperationUnavailable(
+            f"{request.operation} is closed but not implemented in this source slice"
+        )
+
+    def _required_trust_context(self) -> AdminTrustContext:
+        if self.trust_context is None:
+            raise AdminProtocolRefused("installed trust context is unavailable")
+        return self.trust_context
+
+    def _request_path(self, request_id: str) -> Path:
+        identity = hashlib.sha256(request_id.encode("ascii")).hexdigest()
+        return self.requests / f"request-{identity}.json"
+
+    def process(self, raw: bytes, *, failpoint: str | None = None) -> bytes:
+        request = parse_admin_request(raw)
+        if request.operation not in {
+            "abort-source-update",
+            "abort-path-manifest",
+            "acquire-begin-intent",
+            "acquire-transition-purpose",
+            "begin-path-manifest",
+            "begin-source-update",
+            "acknowledge-terminal-disposition",
+            "append-path-manifest",
+            "classify-purpose-successor",
+            "commit-source-proposal",
+            "current-tofu-receipt",
+            "finish-source-update",
+            "normalize-developer-source",
+            "observe-top-level-transition",
+            "prepare-source-commit",
+            "reconcile-source-update",
+            "review-source-proposal",
+            "resolve-begin-intent",
+            "resolve-begin-intent-owner-fence",
+            "resolve-current-top-level-transition",
+            "resolve-source-update-begin",
+            "resolve-source-update-disposition",
+            "resolve-transition-purpose",
+            "resolve-transition-purpose-outcome",
+            "seal-path-manifest",
+            "verify-self",
+            "verify-source-proposal",
+            "verify-tofu-receipt",
+        }:
+            raise AdminOperationUnavailable(
+                f"{request.operation} is closed but not implemented in this source slice"
+            )
+        request_digest = hashlib.sha256(request.canonical_bytes).hexdigest()
+        path = self._request_path(request.request_id)
+        with self._lock, self._repository_lock.hold():
+            if path.exists():
+                try:
+                    journal = _read_json(path, label="admin request")
+                except (OSError, AnchorIntegrityRefused) as exc:
+                    raise AdminProtocolRefused("admin request journal is unreadable") from exc
+                if (
+                    journal.get("request_id") != request.request_id
+                    or journal.get("request_sha256") != request_digest
+                    or journal.get("operation") != request.operation
+                ):
+                    raise AdminProtocolRefused(
+                        "admin request identity was replayed with different bytes"
+                    )
+                if journal.get("status") == "completed":
+                    response = journal.get("response")
+                    response_digest = journal.get("response_sha256")
+                    response_raw = _canonical_admin_json(response)
+                    if (
+                        not isinstance(response, dict)
+                        or not isinstance(response_digest, str)
+                        or hashlib.sha256(response_raw).hexdigest() != response_digest
+                    ):
+                        raise AdminProtocolRefused("admin response journal is malformed")
+                    return response_raw
+                if journal.get("status") != "prepared":
+                    raise AdminProtocolRefused("admin request journal status is malformed")
+            else:
+                journal = _exclusive_sealed_json(
+                    path,
+                    {
+                        "schema": "galaxy.singularity-admin-request/v1",
+                        "status": "prepared",
+                        "request_id": request.request_id,
+                        "request_sha256": request_digest,
+                        "operation": request.operation,
+                        "response": None,
+                        "response_sha256": None,
+                    },
+                )
+            if failpoint == "after_prepare":
+                raise InjectedAdminResponseLoss("injected loss after request prepare")
+            result = dict(self._dispatch(request))
+            response = {
+                "schema": "galaxy.singularity-admin-response/v1",
+                "accepted": True,
+                "authority_ceiling": "maintenance_only",
+                "operation": request.operation,
+                "production_active": False,
+                "request_id": request.request_id,
+                "result": result,
+            }
+            response_raw = _canonical_admin_json(response)
+            journal["status"] = "completed"
+            journal["response"] = response
+            journal["response_sha256"] = hashlib.sha256(response_raw).hexdigest()
+            _atomic_json(path, journal)
+            persisted = _read_json(path, label="admin request")
+            if persisted.get("response_sha256") != journal["response_sha256"]:
+                raise AdminProtocolRefused("admin response did not reread exactly")
+            if failpoint == "after_response_persist":
+                raise InjectedAdminResponseLoss(
+                    "injected loss after durable admin response"
+                )
+            return response_raw
+
+
+def _ordinary_admin_file(path: Path, *, root: Path | None, label: str) -> Path:
+    _assert_no_reparse(path, AdminProtocolRefused, label)
+    try:
+        resolved = path.resolve(strict=True)
+        if root is not None:
+            resolved.relative_to(root)
+        info = resolved.stat()
+    except (OSError, ValueError) as exc:
+        raise AdminProtocolRefused(f"{label} is unavailable or outside its root") from exc
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise AdminProtocolRefused(f"{label} is not a single-link ordinary file")
+    return resolved
+
+
+def _read_admin_file(
+    path: Path, *, root: Path | None, label: str, maximum: int
+) -> tuple[Path, bytes]:
+    resolved = _ordinary_admin_file(path, root=root, label=label)
+    try:
+        info = resolved.stat()
+        if info.st_size < 1 or info.st_size > maximum:
+            raise AdminProtocolRefused(f"{label} size is outside its bound")
+        raw = resolved.read_bytes()
+        after = resolved.stat()
+    except OSError as exc:
+        raise AdminProtocolRefused(f"{label} could not be read exactly") from exc
+    if (
+        len(raw) != info.st_size
+        or (info.st_dev, info.st_ino, info.st_size)
+        != (after.st_dev, after.st_ino, after.st_size)
+    ):
+        raise AdminProtocolRefused(f"{label} identity changed while reading")
+    return resolved, raw
+
+
+def _read_admin_file_exact_size(
+    path: Path, *, root: Path | None, label: str, expected_size: int
+) -> tuple[Path, bytes]:
+    """Read an ordinary admin file whose protocol permits an empty payload."""
+
+    if type(expected_size) is not int or not 0 <= expected_size <= 128 * 1024 * 1024:
+        raise AdminProtocolRefused(f"{label} expected size is outside its bound")
+    resolved = _ordinary_admin_file(path, root=root, label=label)
+    try:
+        info = resolved.stat()
+        if info.st_size != expected_size:
+            raise AdminProtocolRefused(f"{label} size differs from its manifest")
+        raw = resolved.read_bytes()
+        after = resolved.stat()
+    except OSError as exc:
+        raise AdminProtocolRefused(f"{label} could not be read exactly") from exc
+    before_identity = (
+        info.st_dev,
+        info.st_ino,
+        info.st_size,
+        info.st_mtime_ns,
+    )
+    after_identity = (
+        after.st_dev,
+        after.st_ino,
+        after.st_size,
+        after.st_mtime_ns,
+    )
+    if len(raw) != expected_size or before_identity != after_identity:
+        raise AdminProtocolRefused(f"{label} identity changed while reading")
+    return resolved, raw
+
+
+def _capture_admin_tree_records(
+    root: Path,
+    *,
+    namespace: str,
+    excluded_top_level: frozenset[str] = frozenset(),
+) -> list[dict[str, Any]]:
+    root = Path(root)
+    _assert_no_reparse(root, AdminProtocolRefused, f"{namespace} snapshot root")
+    try:
+        resolved_root = root.resolve(strict=True)
+    except OSError as exc:
+        raise AdminProtocolRefused(f"{namespace} snapshot root is unavailable") from exc
+    if not resolved_root.is_dir() or resolved_root.is_symlink():
+        raise AdminProtocolRefused(f"{namespace} snapshot root is not ordinary")
+    records: list[dict[str, Any]] = []
+    stack: list[tuple[Path, tuple[str, ...]]] = [(resolved_root, ())]
+    total_bytes = 0
+    while stack:
+        directory, relative_parts = stack.pop()
+        _assert_no_reparse(directory, AdminProtocolRefused, f"{namespace} directory")
+        try:
+            entries = sorted(os.scandir(directory), key=lambda item: item.name)
+        except OSError as exc:
+            raise AdminProtocolRefused(f"{namespace} directory cannot be enumerated") from exc
+        for entry in reversed(entries):
+            name = entry.name
+            if (
+                not name
+                or name in {".", ".."}
+                or name != unicodedata.normalize("NFC", name)
+                or "\x00" in name
+                or "/" in name
+                or "\\" in name
+            ):
+                raise AdminProtocolRefused(f"{namespace} entry name is malformed")
+            child_parts = (*relative_parts, name)
+            if not relative_parts and name in excluded_top_level:
+                continue
+            path = Path(entry.path)
+            if entry.is_symlink() or _is_reparse(path):
+                raise AdminProtocolRefused(f"{namespace} snapshot contains a reparse entry")
+            try:
+                # Windows DirEntry.stat() reports st_nlink=0 even for ordinary
+                # single-link files.  Re-open the path after the no-reparse
+                # check so hard-link identity remains enforceable.
+                info = path.stat()
+            except OSError as exc:
+                raise AdminProtocolRefused(f"{namespace} entry identity is unreadable") from exc
+            if stat.S_ISDIR(info.st_mode):
+                stack.append((path, child_parts))
+                continue
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise AdminProtocolRefused(f"{namespace} snapshot entry is not single-link")
+            if info.st_size < 0 or info.st_size > 128 * 1024 * 1024:
+                raise AdminProtocolRefused(f"{namespace} snapshot file exceeds its bound")
+            try:
+                raw = path.read_bytes()
+                after = path.stat()
+            except OSError as exc:
+                raise AdminProtocolRefused(f"{namespace} snapshot file cannot be read") from exc
+            if (
+                len(raw) != info.st_size
+                or (info.st_dev, info.st_ino, info.st_size)
+                != (after.st_dev, after.st_ino, after.st_size)
+            ):
+                raise AdminProtocolRefused(f"{namespace} snapshot file raced")
+            total_bytes += len(raw)
+            if len(records) >= 200_000 or total_bytes > 2 * 1024 * 1024 * 1024:
+                raise AdminProtocolRefused(f"{namespace} snapshot exceeds its quota")
+            relative = "/".join(child_parts)
+            records.append(
+                {
+                    "path": f"{namespace}/{relative}",
+                    "sha256": hashlib.sha256(raw).hexdigest(),
+                    "size": len(raw),
+                }
+            )
+    return sorted(records, key=lambda record: str(record["path"]))
+
+
+def _resolve_admin_git_common(repository: Path) -> tuple[Path, bytes]:
+    marker = repository / ".git"
+    _assert_no_reparse(marker, AdminProtocolRefused, "repository Git marker")
+    if marker.is_dir():
+        return marker.resolve(strict=True), b"directory"
+    try:
+        raw = marker.read_bytes()
+    except OSError as exc:
+        raise AdminProtocolRefused("repository Git marker is unavailable") from exc
+    if (
+        len(raw) > 32767
+        or raw.startswith((b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff"))
+        or not raw.startswith(b"gitdir: ")
+        or not raw.endswith(b"\n")
+        or raw.count(b"\n") != 1
+        or b"\r" in raw
+        or b"\x00" in raw
+    ):
+        raise AdminProtocolRefused("linked-worktree Git marker is malformed")
+    try:
+        gitdir_text = raw[8:-1].decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise AdminProtocolRefused("linked-worktree Git path is not strict UTF-8") from exc
+    gitdir_candidate = Path(gitdir_text)
+    if not gitdir_candidate.is_absolute():
+        raise AdminProtocolRefused("linked-worktree Git path is not absolute")
+    _assert_no_reparse(gitdir_candidate, AdminProtocolRefused, "linked-worktree Git directory")
+    try:
+        gitdir = gitdir_candidate.resolve(strict=True)
+        commondir_raw = (gitdir / "commondir").read_bytes()
+    except OSError as exc:
+        raise AdminProtocolRefused("linked-worktree Git metadata is unavailable") from exc
+    if (
+        not gitdir.is_dir()
+        or commondir_raw != b"../..\n"
+        or gitdir.parent.name != "worktrees"
+    ):
+        raise AdminProtocolRefused("linked-worktree Git metadata layout differs")
+    common = gitdir.parent.parent.resolve(strict=True)
+    try:
+        gitdir.relative_to(common)
+    except ValueError as exc:
+        raise AdminProtocolRefused("linked-worktree Git directory escaped common root") from exc
+    backlink = gitdir / "gitdir"
+    try:
+        backlink_text = backlink.read_text("utf-8").strip()
+    except (OSError, UnicodeError) as exc:
+        raise AdminProtocolRefused("linked-worktree Git backlink is unavailable") from exc
+    try:
+        backlink_path = Path(backlink_text).resolve(strict=True)
+    except OSError as exc:
+        raise AdminProtocolRefused("linked-worktree Git backlink is stale") from exc
+    if os.path.normcase(str(backlink_path)) != os.path.normcase(str(marker.resolve())):
+        raise AdminProtocolRefused("linked-worktree Git backlink differs")
+    return common, raw
+
+
+def _admin_repository_snapshot_digest(repository: Path) -> str:
+    """Capture the worktree and Git control plane twice without following links."""
+
+    repo = Path(repository).resolve(strict=True)
+    common, marker_raw = _resolve_admin_git_common(repo)
+
+    def capture() -> list[dict[str, Any]]:
+        records = _capture_admin_tree_records(
+            repo, namespace="worktree", excluded_top_level=frozenset({".git"})
+        )
+        records.extend(
+            _capture_admin_tree_records(
+                common, namespace="git-common", excluded_top_level=frozenset({"objects"})
+            )
+        )
+        records.append(
+            {
+                "path": "worktree/.git",
+                "sha256": hashlib.sha256(marker_raw).hexdigest(),
+                "size": len(marker_raw),
+            }
+        )
+        return sorted(records, key=lambda record: str(record["path"]))
+
+    first = capture()
+    second = capture()
+    if first != second:
+        raise AdminProtocolRefused("repository snapshot changed during double capture")
+    return hashlib.sha256(
+        _canonical_admin_json(
+            {
+                "schema": "galaxy.repository-native-snapshot/v1",
+                "repository_root": str(repo),
+                "git_common_root": str(common),
+                "records": first,
+            }
+        )
+    ).hexdigest()
+
+
+def _admin_hex(value: Any, *, label: str) -> str:
+    if not isinstance(value, str) or _HEX64.fullmatch(value) is None:
+        raise AdminProtocolRefused(f"{label} is not a lowercase SHA-256 digest")
+    return value
+
+
+def _admin_text(value: Any, *, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or "\x00" in value
+        or "\r" in value
+        or "\n" in value
+    ):
+        raise AdminProtocolRefused(f"{label} is not bounded single-line text")
+    return value
+
+
+def _verify_admin_leaf_closure(
+    value: Any,
+    *,
+    domain: str,
+    external_root: Path,
+    seen_paths: set[Path],
+) -> tuple[str, set[Path], dict[str, Path]]:
+    if not isinstance(value, list) or not value:
+        raise AdminProtocolRefused(f"TOFU {domain} leaf closure is empty")
+    logical_order: list[str] = []
+    for item in value:
+        logical = item.get("logical_path") if isinstance(item, dict) else None
+        if not isinstance(logical, str):
+            raise AdminProtocolRefused(f"TOFU {domain} leaves are not uniquely ordered")
+        logical_order.append(logical)
+    if logical_order != sorted(logical_order) or len(set(logical_order)) != len(
+        logical_order
+    ):
+        raise AdminProtocolRefused(f"TOFU {domain} leaves are not uniquely ordered")
+    leaf_hashes: list[bytes] = []
+    domain_paths: set[Path] = set()
+    by_logical: dict[str, Path] = {}
+    for index, item in enumerate(value):
+        if not isinstance(item, dict) or set(item) != {
+            "installed_path",
+            "logical_path",
+            "sha256",
+            "size",
+        }:
+            raise AdminProtocolRefused(f"TOFU {domain} leaf {index} fields differ")
+        logical = _manifest_path(item["logical_path"])
+        expected = _admin_hex(item["sha256"], label=f"TOFU {domain} leaf digest")
+        size = item["size"]
+        path_value = _admin_text(
+            item["installed_path"], label=f"TOFU {domain} installed path"
+        )
+        if type(size) is not int or size < 0 or logical in by_logical:
+            raise AdminProtocolRefused(f"TOFU {domain} leaf identity is malformed")
+        candidate = Path(path_value)
+        if not candidate.is_absolute():
+            raise AdminProtocolRefused(f"TOFU {domain} leaf path is not absolute")
+        installed = _ordinary_admin_file(
+            candidate, root=None, label=f"TOFU {domain} leaf {logical}"
+        )
+        metadata = installed.stat()
+        if (
+            installed in seen_paths
+            or metadata.st_size != size
+            or not secrets.compare_digest(_sha256(installed), expected)
+        ):
+            raise AdminProtocolRefused(f"TOFU {domain} leaf bytes or identity differ")
+        if domain == "source":
+            try:
+                installed.relative_to(external_root)
+            except ValueError as exc:
+                raise AdminProtocolRefused(
+                    "TOFU source leaf is outside the installed external root"
+                ) from exc
+        seen_paths.add(installed)
+        domain_paths.add(installed)
+        by_logical[logical] = installed
+        leaf_hashes.append(
+            hashlib.sha256(
+                _canonical_admin_json(
+                    {"logical_path": logical, "sha256": expected, "size": size}
+                )
+            ).digest()
+        )
+    root = hashlib.sha256(
+        domain.encode("ascii") + b"\0" + b"".join(sorted(leaf_hashes))
+    ).hexdigest()
+    return root, domain_paths, by_logical
+
+
+def _live_security_descriptor_sddl(path: Path) -> str:
+    """Read owner, group, and protected DACL through Win32 without a shell."""
+
+    if os.name != "nt":
+        raise AdminProtocolRefused("protected Windows ACL verification is unavailable")
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    get_named = advapi.GetNamedSecurityInfoW
+    get_named.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+    )
+    get_named.restype = wintypes.DWORD
+    to_text = advapi.ConvertSecurityDescriptorToStringSecurityDescriptorW
+    to_text.argtypes = (
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(wintypes.ULONG),
+    )
+    to_text.restype = wintypes.BOOL
+    kernel.LocalFree.argtypes = (ctypes.c_void_p,)
+    kernel.LocalFree.restype = ctypes.c_void_p
+    descriptor = ctypes.c_void_p()
+    information = 0x00000001 | 0x00000002 | 0x00000004
+    status = get_named(
+        str(path), 1, information, None, None, None, None, ctypes.byref(descriptor)
+    )
+    if status != 0 or not descriptor.value:
+        raise AdminProtocolRefused(f"protected ACL read failed with Win32 status {status}")
+    encoded = ctypes.c_void_p()
+    try:
+        if not to_text(
+            descriptor, 1, information, ctypes.byref(encoded), None
+        ) or not encoded.value:
+            raise AdminProtocolRefused("protected ACL conversion failed")
+        return ctypes.wstring_at(encoded.value)
+    finally:
+        if encoded.value:
+            kernel.LocalFree(encoded)
+        kernel.LocalFree(descriptor)
+
+
+def _verify_admin_trust_context(
+    context: AdminTrustContext, *, require_acl: bool
+) -> dict[str, Any]:
+    """Re-read the complete installed inactive closure and return inert evidence."""
+
+    external = Path(context.external_root).resolve(strict=True)
+    if _is_reparse(external) or not external.is_dir():
+        raise AdminProtocolRefused("installed external root identity differs")
+    lock_path, lock_raw = _read_admin_file(
+        context.runtime_lock_path,
+        root=external,
+        label="sealed runtime lock",
+        maximum=4 * 1024 * 1024,
+    )
+    receipt_path, receipt_raw = _read_admin_file(
+        context.tofu_receipt_path,
+        root=external,
+        label="TOFU receipt",
+        maximum=32 * 1024 * 1024,
+    )
+    if (
+        not secrets.compare_digest(hashlib.sha256(lock_raw).hexdigest(), context.runtime_lock_sha256)
+        or not secrets.compare_digest(
+            hashlib.sha256(receipt_raw).hexdigest(), context.tofu_receipt_sha256
+        )
+    ):
+        raise AdminProtocolRefused("installed trust record digest differs")
+    lock = _strict_admin_object(
+        lock_raw, label="sealed runtime lock", maximum=4 * 1024 * 1024
+    )
+    receipt = _strict_admin_object(
+        receipt_raw, label="TOFU receipt", maximum=32 * 1024 * 1024
+    )
+    if (
+        set(lock) != _SEALED_RUNTIME_LOCK_KEYS
+        or lock.get("schema") != "galaxy.activation.sealed-runtime/v1"
+        or lock.get("status") != "installed_inactive"
+        or type(lock.get("generation")) is not int
+        or lock["generation"] < 1
+        or type(lock.get("max_probe_concurrency")) is not int
+        or not 1 <= lock["max_probe_concurrency"] <= 8
+        or lock.get("external_root") != str(external)
+        or lock.get("tofu_receipt_path") != str(receipt_path)
+    ):
+        raise AdminProtocolRefused("sealed runtime lock fields differ")
+    if (
+        set(receipt) != _TOFU_RECEIPT_KEYS
+        or receipt.get("schema") != "galaxy.trust-on-first-install/v1"
+        or receipt.get("status") != "installed_inactive"
+        or receipt.get("activation_state") != "inactive"
+        or receipt.get("service_name") != "9to5Singularity"
+        or receipt.get("monotone_generation") != lock["generation"]
+        or receipt.get("repository_identity") != context.repository_identity
+    ):
+        raise AdminProtocolRefused("TOFU receipt inactive generation binding differs")
+    runtime_digest = _admin_hex(lock.get("runtime_digest"), label="runtime digest")
+    if receipt.get("runtime_digest") != runtime_digest:
+        raise AdminProtocolRefused("TOFU runtime digest differs")
+    files = lock.get("files")
+    file_digests = lock.get("file_digests")
+    if (
+        not isinstance(files, dict)
+        or not isinstance(file_digests, dict)
+        or set(files) != _RUNTIME_FILE_KEYS
+        or set(file_digests) != _RUNTIME_FILE_KEYS
+    ):
+        raise AdminProtocolRefused("sealed runtime file closure differs")
+    runtime_paths: dict[str, Path] = {}
+    for name in sorted(_RUNTIME_FILE_KEYS):
+        value = _admin_text(files[name], label=f"runtime {name} path")
+        expected = _admin_hex(file_digests[name], label=f"runtime {name} digest")
+        allowed_root = None if name in {"docker", "powershell"} else external
+        path = _ordinary_admin_file(
+            Path(value), root=allowed_root, label=f"runtime {name}"
+        )
+        if not secrets.compare_digest(_sha256(path), expected):
+            raise AdminProtocolRefused(f"runtime {name} digest differs")
+        runtime_paths[name] = path
+    image_digests = lock.get("image_digests")
+    image_paths = lock.get("image_archive_paths")
+    if (
+        not isinstance(image_digests, dict)
+        or not image_digests
+        or not isinstance(image_paths, dict)
+        or set(image_paths) != set(image_digests)
+        or receipt.get("image_digests") != image_digests
+    ):
+        raise AdminProtocolRefused("sealed image role closure differs")
+    resolved_images: set[Path] = set()
+    for role in sorted(image_digests):
+        _admin_text(role, label="image role")
+        _admin_hex(image_digests[role], label=f"image role {role} digest")
+        resolved_images.add(
+            _ordinary_admin_file(
+                Path(_admin_text(image_paths[role], label=f"image role {role} archive")),
+                root=external,
+                label=f"image role {role} archive",
+            )
+        )
+    source_root, source_paths, source_by_logical = _verify_admin_leaf_closure(
+        receipt.get("source_leaves"),
+        domain="source",
+        external_root=external,
+        seen_paths=set(),
+    )
+    seen = set(source_paths)
+    artifact_root, artifact_paths, _ = _verify_admin_leaf_closure(
+        receipt.get("artifact_leaves"),
+        domain="artifact",
+        external_root=external,
+        seen_paths=seen,
+    )
+    merkle_root = hashlib.sha256(
+        b"galaxy-tofu-v1\0"
+        + bytes.fromhex(source_root)
+        + bytes.fromhex(artifact_root)
+    ).hexdigest()
+    nonce = _admin_hex(receipt.get("nonce"), label="TOFU nonce")
+    challenge = f"TRUST SINGULARITY BOOTSTRAP {merkle_root} NONCE {nonce}"
+    all_leaf_paths = source_paths | artifact_paths
+    required_paths = {lock_path, *runtime_paths.values(), *resolved_images}
+    if (
+        source_root != _admin_hex(receipt.get("source_root"), label="source root")
+        or artifact_root
+        != _admin_hex(receipt.get("artifact_root"), label="artifact root")
+        or merkle_root != _admin_hex(receipt.get("merkle_root"), label="TOFU root")
+        or receipt.get("challenge") != challenge
+        or receipt.get("approval_response_sha256")
+        != hashlib.sha256(challenge.encode("ascii")).hexdigest()
+        or not required_paths <= all_leaf_paths
+    ):
+        raise AdminProtocolRefused("TOFU leaf/challenge closure differs")
+    public_key = runtime_paths["receipt_public_key"].read_bytes()
+    if (
+        len(public_key) != 32
+        or receipt.get("activation_receipt_public_key") != public_key.hex()
+        or receipt.get("activation_receipt_public_key_digest")
+        != hashlib.sha256(public_key).hexdigest()
+        or receipt.get("activation_adapter_sha256") != file_digests["adapter"]
+        or receipt.get("activation_acceptance_sha256") != file_digests["acceptance"]
+        or receipt.get("activation_runtime_profiles_sha256")
+        != file_digests["runtime_profiles"]
+    ):
+        raise AdminProtocolRefused("TOFU verifier/public-key closure differs")
+    operator_sid = receipt.get("operator_sid")
+    service_sid = receipt.get("service_sid")
+    dacl_sddl = receipt.get("dacl_sddl")
+    if (
+        not isinstance(operator_sid, str)
+        or _SID.fullmatch(operator_sid) is None
+        or not isinstance(service_sid, str)
+        or _SID.fullmatch(service_sid) is None
+        or not isinstance(dacl_sddl, str)
+        or not dacl_sddl.startswith("O:")
+        or "D:P" not in dacl_sddl
+        or operator_sid not in dacl_sddl
+        or service_sid not in dacl_sddl
+        or any(marker in dacl_sddl for marker in (";;;WD)", ";;;AU)", ";;;AN)"))
+    ):
+        raise AdminProtocolRefused("TOFU protected principal policy differs")
+    if require_acl and not secrets.compare_digest(
+        _live_security_descriptor_sddl(external), dacl_sddl
+    ):
+        raise AdminProtocolRefused("live protected root ACL differs from its receipt")
+    record_path = _ordinary_admin_file(
+        Path(_admin_text(receipt.get("anchor_record_path"), label="anchor record path")),
+        root=external,
+        label="anchor record",
+    )
+    expected_record_root = external / "repositories" / context.repository_identity
+    if record_path.parent != expected_record_root:
+        raise AdminProtocolRefused("anchor record repository binding differs")
+    launch_path, launch_raw = _read_admin_file(
+        Path(
+            _admin_text(
+                receipt.get("anchor_launch_record_path"),
+                label="anchor launch record path",
+            )
+        ),
+        root=external,
+        label="anchor launch record",
+        maximum=1024 * 1024,
+    )
+    launch_digest = _admin_hex(
+        receipt.get("anchor_launch_record_sha256"), label="anchor launch record digest"
+    )
+    launch = _strict_admin_object(
+        launch_raw, label="anchor launch record", maximum=1024 * 1024
+    )
+    anchor_path = Path(
+        _admin_text(launch.get("anchor_path"), label="native anchor launch path")
+    ).resolve(strict=True)
+    if (
+        launch_path.parent != record_path.parent
+        or not secrets.compare_digest(hashlib.sha256(launch_raw).hexdigest(), launch_digest)
+        or set(launch) != _ADMIN_LAUNCH_RECORD_KEYS
+        or launch.get("schema") != "galaxy.singularity-anchor-launch/v1"
+        or launch.get("activation_state") != "inactive"
+        or launch.get("service_name") != "9to5Singularity"
+        or launch.get("control_pipe") != r"\\.\pipe\9to5-singularity-v1"
+        or launch.get("host_path") != str(runtime_paths["powershell"])
+        or launch.get("host_sha256") != file_digests["powershell"]
+        or launch.get("host_signature_sha256") != receipt.get("host_signature_sha256")
+        or anchor_path not in source_paths
+        or launch.get("anchor_sha256") != _sha256(anchor_path)
+        or launch.get("stdio")
+        != {"stderr": "null", "stdin": "null", "stdout": "null"}
+    ):
+        raise AdminProtocolRefused("closed native anchor launch record differs")
+    if not {
+        "bootstrap/anchor.py",
+        "bootstrap/singularity_admin_client.ps1",
+        "bootstrap/singularity_anchor.ps1",
+    } <= set(source_by_logical):
+        raise AdminProtocolRefused("maintenance source leaf closure is incomplete")
+    return {
+        "generation": lock["generation"],
+        "merkle_root": merkle_root,
+        "runtime_digest": runtime_digest,
+    }
+
+
+def _sealed_admin_contained_runtime(
+    context: AdminTrustContext,
+    *,
+    repository_root: Path,
+    admin_root: Path,
+) -> AdminContainedRuntime:
+    """Load only the digest-bound installed harness and expose inert role adapters."""
+
+    _verify_admin_trust_context(context, require_acl=True)
+    _, lock_raw = _read_admin_file(
+        context.runtime_lock_path,
+        root=context.external_root,
+        label="sealed runtime lock",
+        maximum=4 * 1024 * 1024,
+    )
+    lock = _strict_admin_object(
+        lock_raw, label="sealed runtime lock", maximum=4 * 1024 * 1024
+    )
+    files = lock.get("files")
+    digests = lock.get("file_digests")
+    if not isinstance(files, dict) or not isinstance(digests, dict):
+        raise AdminProtocolRefused("sealed runtime module closure is malformed")
+    harness_path = _ordinary_admin_file(
+        Path(_admin_text(files.get("harness"), label="sealed harness path")),
+        root=context.external_root,
+        label="sealed activation harness",
+    )
+    harness_digest = _admin_hex(
+        digests.get("harness"), label="sealed harness digest"
+    )
+    if not secrets.compare_digest(_sha256(harness_path), harness_digest):
+        raise AdminProtocolRefused("sealed activation harness digest differs")
+    module_name = f"_galaxy_sealed_activation_harness_{harness_digest[:16]}"
+    module = sys.modules.get(module_name)
+    if module is not None:
+        if Path(str(getattr(module, "__file__", ""))).resolve(strict=True) != harness_path:
+            raise AdminProtocolRefused("sealed harness module identity collision")
+    else:
+        specification = importlib.util.spec_from_file_location(module_name, harness_path)
+        if specification is None or specification.loader is None:
+            raise AdminProtocolRefused("sealed harness module cannot be loaded")
+        module = importlib.util.module_from_spec(specification)
+        sys.modules[module_name] = module
+        try:
+            specification.loader.exec_module(module)
+        except Exception as exc:
+            sys.modules.pop(module_name, None)
+            raise AdminProtocolRefused("sealed harness module failed closed") from exc
+    load_acceptance = getattr(module, "load_sealed_acceptance", None)
+    resolve_runtime = getattr(module, "resolve_sealed_harness_runtime", None)
+    role_runner = getattr(module, "run_inert_role", None)
+    if not callable(load_acceptance):
+        raise AdminProtocolRefused("sealed harness lacks the contained role API")
+    if not callable(resolve_runtime):
+        raise AdminProtocolRefused("sealed harness lacks the contained role API")
+    if not callable(role_runner):
+        raise AdminProtocolRefused("sealed harness lacks the contained role API")
+    try:
+        acceptance = load_acceptance()
+        runtime = resolve_runtime(acceptance)
+    except Exception as exc:
+        raise AdminProtocolRefused("sealed harness runtime revalidation failed") from exc
+    if (
+        Path(runtime.runtime_lock_path).resolve(strict=True)
+        != context.runtime_lock_path.resolve(strict=True)
+        or runtime.runtime_digest != lock.get("runtime_digest")
+        or runtime.generation != lock.get("generation")
+        or runtime.external_root != context.external_root.resolve(strict=True)
+    ):
+        raise AdminProtocolRefused("sealed harness runtime differs from admin trust context")
+    return AdminContainedRuntime(
+        external_root=context.external_root,
+        admin_root=admin_root,
+        repository_root=repository_root,
+        repository_identity=context.repository_identity,
+        trust_receipt_id=context.receipt_id,
+        runtime=runtime,
+        role_runner=role_runner,
+    )
+
+
+def _verify_tofu_receipt_argument(
+    value: Any, context: AdminTrustContext, evidence: Mapping[str, Any]
+) -> None:
+    if not isinstance(value, str) or not value:
+        raise AdminProtocolRefused("TOFU receipt argument is malformed")
+    if secrets.compare_digest(value, context.receipt_id):
+        return
+    raw = value.encode("utf-8", errors="strict")
+    result = _strict_admin_object(
+        raw, label="TOFU finalization result", maximum=64 * 1024
+    )
+    if (
+        set(result) != _TOFU_FINALIZATION_RESULT_KEYS
+        or result.get("schema") != "galaxy.tofu-finalization-result/v1"
+        or result.get("status") != "installed_inactive"
+        or result.get("activation_authority") is not False
+        or result.get("receipt_path") != str(context.tofu_receipt_path)
+        or result.get("generation") != evidence.get("generation")
+        or result.get("merkle_root") != evidence.get("merkle_root")
+    ):
+        raise AdminProtocolRefused("TOFU finalization result binding differs")
+
+
+def run_sealed_admin_request(
+    *,
+    request_base64url: str,
+    runtime_lock_path: Path,
+    runtime_lock_sha256: str,
+) -> bytes:
+    """Resolve protected installed state and dispatch one inactive request."""
+
+    if _HEX64.fullmatch(runtime_lock_sha256) is None:
+        raise AdminProtocolRefused("runtime lock digest is malformed")
+    lock_path, lock_raw = _read_admin_file(
+        Path(runtime_lock_path), root=None, label="runtime lock", maximum=4 * 1024 * 1024
+    )
+    if not secrets.compare_digest(
+        hashlib.sha256(lock_raw).hexdigest(), runtime_lock_sha256
+    ):
+        raise AdminProtocolRefused("runtime lock digest differs")
+    lock = _strict_admin_object(lock_raw, label="runtime lock", maximum=4 * 1024 * 1024)
+    if (
+        lock.get("schema") != "galaxy.activation.sealed-runtime/v1"
+        or lock.get("status") != "installed_inactive"
+        or type(lock.get("generation")) is not int
+        or lock["generation"] < 1
+    ):
+        raise AdminProtocolRefused(
+            "runtime is not an exact installed inactive controller generation"
+        )
+    external_value = lock.get("external_root")
+    if not isinstance(external_value, str) or not external_value:
+        raise AdminProtocolRefused("runtime external root is malformed")
+    external_candidate = Path(external_value)
+    _assert_no_reparse(external_candidate, AdminProtocolRefused, "external root")
+    try:
+        external_root = external_candidate.resolve(strict=True)
+        lock_path.relative_to(external_root)
+    except (OSError, ValueError) as exc:
+        raise AdminProtocolRefused("runtime lock is outside its external root") from exc
+    if not external_root.is_dir() or external_root.is_symlink():
+        raise AdminProtocolRefused("runtime external root is not an ordinary directory")
+    receipt_value = lock.get("tofu_receipt_path")
+    if not isinstance(receipt_value, str):
+        raise AdminProtocolRefused("runtime TOFU receipt path is malformed")
+    receipt_path, receipt_raw = _read_admin_file(
+        Path(receipt_value),
+        root=external_root,
+        label="TOFU receipt",
+        maximum=32 * 1024 * 1024,
+    )
+    receipt = _strict_admin_object(
+        receipt_raw, label="TOFU receipt", maximum=32 * 1024 * 1024
+    )
+    if (
+        receipt.get("schema") != "galaxy.trust-on-first-install/v1"
+        or receipt.get("status") != "installed_inactive"
+        or receipt.get("activation_state") != "inactive"
+    ):
+        raise AdminProtocolRefused("TOFU receipt does not bind an inactive installation")
+    repository_identity = receipt.get("repository_identity")
+    anchor_record_value = receipt.get("anchor_record_path")
+    if (
+        not isinstance(repository_identity, str)
+        or _HEX64.fullmatch(repository_identity) is None
+        or not isinstance(anchor_record_value, str)
+    ):
+        raise AdminProtocolRefused("TOFU repository binding is malformed")
+    anchor_record = Path(anchor_record_value)
+    _assert_no_reparse(anchor_record.parent, AdminProtocolRefused, "repository record root")
+    try:
+        record_root = anchor_record.parent.resolve(strict=True)
+    except OSError as exc:
+        raise AdminProtocolRefused("repository record root is unavailable") from exc
+    expected_record_root = external_root / "repositories" / repository_identity
+    if record_root != expected_record_root:
+        raise AdminProtocolRefused("repository record root identity differs")
+    binding_path, binding_raw = _read_admin_file(
+        record_root / "checkout-binding.txt",
+        root=external_root,
+        label="repository checkout binding",
+        maximum=32767,
+    )
+    del binding_path
+    try:
+        binding_text = binding_raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise AdminProtocolRefused("repository checkout binding is not strict UTF-8") from exc
+    if (
+        not binding_text
+        or binding_text.startswith("\ufeff")
+        or "\x00" in binding_text
+        or "\r" in binding_text
+        or "\n" in binding_text
+    ):
+        raise AdminProtocolRefused("repository checkout binding is malformed")
+    repository_candidate = Path(binding_text)
+    _assert_no_reparse(repository_candidate, AdminProtocolRefused, "registered repository")
+    try:
+        repository = repository_candidate.resolve(strict=True)
+    except OSError as exc:
+        raise AdminProtocolRefused("registered repository is unavailable") from exc
+    observed_identity = hashlib.sha256(
+        os.path.normcase(str(repository)).encode("utf-8")
+    ).hexdigest()
+    if (
+        not repository.is_dir()
+        or repository.is_symlink()
+        or not secrets.compare_digest(observed_identity, repository_identity)
+    ):
+        raise AdminProtocolRefused("registered repository identity differs")
+    request_raw = _decode_admin_base64url(
+        request_base64url, label="admin request envelope", maximum=_MAX_REQUEST_BYTES
+    )
+    trust_context = AdminTrustContext(
+        external_root=external_root,
+        runtime_lock_path=lock_path,
+        runtime_lock_sha256=runtime_lock_sha256,
+        tofu_receipt_path=receipt_path,
+        tofu_receipt_sha256=hashlib.sha256(receipt_raw).hexdigest(),
+        repository_identity=repository_identity,
+    )
+    admin_root = external_root / "admin" / repository_identity
+    operation = parse_admin_request(request_raw).operation
+    contained_runtime = None
+    if operation in {"prepare-source-commit", "review-source-proposal"}:
+        contained_runtime = _sealed_admin_contained_runtime(
+            trust_context,
+            repository_root=repository,
+            admin_root=admin_root,
+        )
+    processor = AdminCommandProcessor(
+        admin_root,
+        repository_root=repository,
+        trust_context=trust_context,
+        contained_runtime=contained_runtime,
+    )
+    return processor.process(request_raw)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="galaxy-singularity-admin")
+    parser.add_argument("--admin-request-base64url", required=True)
+    parser.add_argument("--runtime-lock-path", required=True)
+    parser.add_argument("--runtime-lock-sha256", required=True)
+    args = parser.parse_args(argv)
+    try:
+        response = run_sealed_admin_request(
+            request_base64url=args.admin_request_base64url,
+            runtime_lock_path=Path(args.runtime_lock_path),
+            runtime_lock_sha256=args.runtime_lock_sha256,
+        )
+        sys.stdout.buffer.write(response + b"\n")
+        return 0
+    except (AdminProtocolRefused, OSError, ValueError, KeyError) as exc:
+        sys.stderr.write(f"SingularityAdminRefused: {exc}\n")
+        return 78
 
 
 class DurableTransitionCoordinator:
@@ -1995,3 +9514,7 @@ for _cancel_name in (
     "cancel_final_evidence", "cancel_activation",
 ):
     _install_cancel_helper(_cancel_name)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

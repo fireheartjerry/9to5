@@ -12,7 +12,6 @@ import tarfile
 
 import pytest
 
-
 ROLES = {
     "credentialed_driver",
     "command_sandbox",
@@ -24,6 +23,34 @@ ROLES = {
     "reviewer",
     "state_store",
 }
+
+
+def _builder_boundary():
+    return {
+        "schema": "galaxy.offline-docker-boundary/v1",
+        "context": "default",
+        "daemon_endpoint": "npipe:////./pipe/dockerDesktopLinuxEngine",
+        "docker_cli": {
+            "path": r"C:\Program Files\Docker\Docker\resources\bin\docker.exe",
+            "sha256": "8f6dea04cf35515b6d6de5bfc3f5ba54c827fc4532996922eccc29d362585620",
+            "size": 43267504,
+        },
+        "buildx_plugin": {
+            "path": r"C:\Program Files\Docker\Docker\resources\cli-plugins\docker-buildx.exe",
+            "sha256": "b0074bdac78c8b7f9179863c2d6e4cdfbbade54829ad4d569cc81e7409426fed",
+            "size": 67032496,
+        },
+        "wsl_host": {
+            "path": r"C:\Windows\System32\wsl.exe",
+            "sha256": "e27cbfcbd61c44796e2cfdd031663245bda8d6e4a43c1451b1fc505333908126",
+            "size": 278528,
+        },
+        "docker_server": {"Version": "29.5.2"},
+        "buildx": "github.com/docker/buildx v0.34.0-desktop.1 e655a179805a207c4e98cfbd36e978cd0edfb8f9",
+        "ambient_environment": [],
+        "routes": [],
+        "default_route_absent": True,
+    }
 
 
 def _mod():
@@ -73,6 +100,8 @@ def test_offline_image_closure_opens_hashes_and_validates_every_declared_leaf(tm
                 sbom_digest=digests["sbom"],
                 runtime_digest=digests["runtime"],
                 security_profile_digest=digests["security_profile"],
+                base_image_digest=digests["base_image"],
+                dockerfile_sha256=digests["dockerfile"],
             )
         )
     report = mod.verify_activation_images(records, network_allowed=False)
@@ -96,11 +125,26 @@ def dataclass_replace(value, **changes):
     return dataclasses.replace(value, **changes)
 
 
-def _real_oci_layout(tmp_path, name="oci"):
+def _real_oci_layout(
+    tmp_path,
+    name="oci",
+    *,
+    physical_image=None,
+    sha1dc_oracle=None,
+    builder_boundary=None,
+    omit_required_oracle=False,
+):
     layout = tmp_path / name
     blobs = layout / "blobs" / "sha256"
     blobs.mkdir(parents=True)
     role = name if name in ROLES else "verifier"
+    physical_image = physical_image or role
+    if (
+        physical_image == "reviewer"
+        and sha1dc_oracle is None
+        and not omit_required_oracle
+    ):
+        sha1dc_oracle = _sha1dc_oracle_binding()
     base_diff_id = "sha256:" + "1" * 64
     config_obj = {
         "architecture": "amd64",
@@ -133,7 +177,11 @@ def _real_oci_layout(tmp_path, name="oci"):
     layer_d = hashlib.sha256(layer).hexdigest()
     (blobs / config_d).write_bytes(config)
     (blobs / layer_d).write_bytes(layer)
-    base_image_digest = "a" * 64
+    base_image_digest = (
+        "d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b"
+        if physical_image in {"object-parser", "reviewer"}
+        else "a" * 64
+    )
     dockerfile_sha256 = "b" * 64
     license_digest = "c" * 64
     documents = {
@@ -154,7 +202,7 @@ def _real_oci_layout(tmp_path, name="oci"):
             "base_manifest_digest": base_image_digest,
             "runtime_tools": {"dpkg": "test", "gcc": None, "git": None},
             "python_runtime": {"python": "3.12.13"},
-            "offline_builder": {"default_route_absent": True, "routes": []},
+            "offline_builder": builder_boundary or _builder_boundary(),
             "dockerfile_sha256": dockerfile_sha256,
             "build_flags": [
                 "--network=none",
@@ -190,13 +238,13 @@ def _real_oci_layout(tmp_path, name="oci"):
             "version": 1,
             "serialNumber": "urn:uuid:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             "kind": "sbom",
-            "metadata": {"component": {"type": "container", "name": role}},
+            "metadata": {"component": {"type": "container", "name": physical_image}},
             "components": [{"type": "library", "name": "python", "version": "3.12.13", "properties": []}],
         },
         "runtime": {
             "schema": "galaxy.activation-image-runtime/v1",
             "kind": "runtime",
-            "physical_image": role,
+            "physical_image": physical_image,
             "supported_roles": [role],
             "config_digest": config_d,
             "layer_digests": [layer_d],
@@ -209,7 +257,7 @@ def _real_oci_layout(tmp_path, name="oci"):
         "security_profile": {
             "schema": "galaxy.activation-security-profile/v1",
             "kind": "security_profile",
-            "physical_image": role,
+            "physical_image": physical_image,
             "supported_roles": [role],
             "config_digest": config_d,
             "authority": "inactive",
@@ -230,6 +278,9 @@ def _real_oci_layout(tmp_path, name="oci"):
             "manifest_binding": "exact_sha256_required",
         },
     }
+    if sha1dc_oracle is not None:
+        documents["toolchain"]["sha1dc_oracle"] = dict(sha1dc_oracle)
+        documents["runtime"]["sha1dc_oracle"] = dict(sha1dc_oracle)
     closure = {}
     for closure_name, document in documents.items():
         raw = json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
@@ -260,6 +311,123 @@ def _real_oci_layout(tmp_path, name="oci"):
         "dockerfile": dockerfile_sha256,
         **closure,
     }
+
+
+def test_offline_builder_boundary_requires_exact_pinned_host_tools(tmp_path):
+    mod = _mod()
+    records = []
+    for role in ROLES:
+        boundary = _builder_boundary()
+        if role == "verifier":
+            boundary.pop("docker_cli")
+        layout, digests = _real_oci_layout(
+            tmp_path,
+            role,
+            builder_boundary=boundary,
+        )
+        path = _archive_layout(layout, tmp_path / f"{role}.oci.tar")
+        records.append(
+            _record(
+                mod,
+                role=role,
+                archive=path,
+                archive_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                manifest_digest=digests["manifest"],
+                config_digest=digests["config"],
+                layer_digests=(digests["layer"],),
+                base_digest=digests["base"],
+                toolchain_digest=digests["toolchain"],
+                package_manifest_digest=digests["package_manifest"],
+                sbom_digest=digests["sbom"],
+                runtime_digest=digests["runtime"],
+                security_profile_digest=digests["security_profile"],
+                base_image_digest=digests["base_image"],
+                dockerfile_sha256=digests["dockerfile"],
+            )
+        )
+
+    with pytest.raises(mod.OfflineActivationArtifactsUnavailable, match="toolchain"):
+        mod.verify_activation_images(records, network_allowed=False)
+
+
+def _sha1dc_oracle_binding():
+    return {
+        "schema": "galaxy.sha1dc-runtime-binding/v1",
+        "executable_path": "/opt/galaxy/galaxy-sha1dc",
+        "executable_sha256": "1" * 64,
+        "executable_size": 4096,
+        "source_lock_sha256": "2" * 64,
+        "source_archive_sha256": "3" * 64,
+        "source_passport_sha256": "4" * 64,
+        "wrapper_sha256": "5" * 64,
+        "builder_base_digest": "9bed8554e926c07c6f908841d5ee88c33e8df9236b191526bbce81a9062ab43a",
+        "runtime_base_digest": "d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b",
+        "reproducibility_runs": 2,
+        "self_test": "collision-detected",
+        "normal_object_corpus_count": 4,
+        "network_allowed": False,
+    }
+
+
+def test_object_parser_runtime_requires_exact_cross_resolved_sha1dc_binding(tmp_path):
+    mod = _mod()
+    missing_layout, _ = _real_oci_layout(
+        tmp_path,
+        "missing-oracle",
+        physical_image="object-parser",
+    )
+    with pytest.raises(mod.OfflineActivationArtifactsUnavailable, match="SHA1DC"):
+        mod.inspect_oci_layout(missing_layout)
+
+    binding = _sha1dc_oracle_binding()
+    valid_layout, expected = _real_oci_layout(
+        tmp_path,
+        "valid-oracle",
+        physical_image="object-parser",
+        sha1dc_oracle=binding,
+    )
+    assert mod.inspect_oci_layout(valid_layout).manifest_digest == expected["manifest"]
+
+    mismatched = dict(binding)
+    mismatched["executable_sha256"] = "f" * 64
+    mismatch_layout, _ = _real_oci_layout(
+        tmp_path,
+        "mismatched-oracle",
+        physical_image="object-parser",
+        sha1dc_oracle=binding,
+    )
+    blobs = mismatch_layout / "blobs" / "sha256"
+    manifest_digest = json.loads((mismatch_layout / "index.json").read_text())["manifests"][0][
+        "digest"
+    ][7:]
+    manifest = json.loads((blobs / manifest_digest).read_text())
+    runtime_digest = manifest["annotations"]["org.galaxy.runtime.digest"][7:]
+    runtime = json.loads((blobs / runtime_digest).read_text())
+    runtime["sha1dc_oracle"] = mismatched
+    _replace_closure_document(mismatch_layout, {"manifest": manifest_digest, "runtime": runtime_digest}, "runtime", runtime)
+    with pytest.raises(mod.OfflineActivationArtifactsUnavailable, match="SHA1DC"):
+        mod.inspect_oci_layout(mismatch_layout)
+
+
+def test_reviewer_runtime_requires_exact_cross_resolved_sha1dc_binding(tmp_path):
+    mod = _mod()
+    missing_layout, _ = _real_oci_layout(
+        tmp_path,
+        "missing-reviewer-oracle",
+        physical_image="reviewer",
+        omit_required_oracle=True,
+    )
+    with pytest.raises(mod.OfflineActivationArtifactsUnavailable, match="SHA1DC"):
+        mod.inspect_oci_layout(missing_layout)
+
+    binding = _sha1dc_oracle_binding()
+    valid_layout, expected = _real_oci_layout(
+        tmp_path,
+        "valid-reviewer-oracle",
+        physical_image="reviewer",
+        sha1dc_oracle=binding,
+    )
+    assert mod.inspect_oci_layout(valid_layout).manifest_digest == expected["manifest"]
 
 
 def _archive_layout(layout, archive):
@@ -356,6 +524,8 @@ def test_archive_verifier_compares_every_internal_digest_to_the_record(tmp_path)
                 sbom_digest=digests["sbom"],
                 runtime_digest=digests["runtime"],
                 security_profile_digest=digests["security_profile"],
+                base_image_digest=digests["base_image"],
+                dockerfile_sha256=digests["dockerfile"],
             )
         )
 

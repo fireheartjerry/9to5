@@ -12,7 +12,7 @@ EXPORTS:
   family_stats(*, min_support: int=3, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Per-family {family, support, first_pass_rate}, weakest first, support-gated.
   generate_goals(*, n: int=3, min_support: int=3, db_path: Optional[Path]=None) -> list[dict[str, Any]]  -- Author up to ``n`` practice goals targeting the weakest families.
   write_suggestions(goals: list[dict[str, Any]], path: Optional[Path]=None) -> Optional[Path]  -- Persist suggested goals (for the human/orchestrator to pick up)
-DEPENDS-ON: config, learning.lessons, memory.experience
+DEPENDS-ON: config, learning.lessons, memory.experience, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_curriculum.py
 """
@@ -25,6 +25,9 @@ from typing import Any, Optional
 import config
 from learning.lessons import family_of
 from memory import experience
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+)
 
 LOG = config.getLogger("sie.curriculum")
 
@@ -77,8 +80,8 @@ def write_suggestions(goals: list[dict[str, Any]], path: Optional[Path] = None) 
     for g in goals:
         lines.append(f"- **{g['family']}** — {g['goal']}  _({g['reason']})_")
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        mutateLegacyPath(p.parent.mkdir,parents=True, exist_ok=True)
+        mutateLegacyPath(p.write_text,"\n".join(lines) + "\n", encoding="utf-8")
         return p
     except Exception as e:  # noqa: BLE001
         LOG.warning("curriculum write failed (ignored): %s", e)

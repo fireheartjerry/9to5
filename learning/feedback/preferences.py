@@ -12,7 +12,7 @@ EXPORTS:
   build_pairs(*, db_path: Optional[Path]=None, suite: Optional[list[dict[str, Any]]]=None) -> list[dict[str, Any]]  -- Build cleaned chosen/rejected preference pairs from passing-vs-failing specs,
   write_jsonl(pairs: list[dict[str, Any]], path: Path) -> None
   build(*, db_path: Optional[Path]=None, out_path: Optional[Path]=None, suite: Optional[list[dict[str, Any]]]=None) -> dict[str, Any]  -- Build + (optionally) write the DPO preference dataset
-DEPENDS-ON: config, learning.dataset, learning.lessons, memory.experience
+DEPENDS-ON: config, learning.dataset, learning.lessons, memory.experience, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_preferences.py
 """
@@ -28,6 +28,10 @@ import config
 from learning import dataset
 from learning.lessons import family_of
 from memory import experience
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+    openLegacyFile,
+)
 
 LOG = config.getLogger("sie.preferences")
 
@@ -87,8 +91,8 @@ def build_pairs(*, db_path: Optional[Path] = None,
 
 
 def write_jsonl(pairs: list[dict[str, Any]], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
+    mutateLegacyPath(path.parent.mkdir,parents=True, exist_ok=True)
+    with openLegacyFile(path, "w", encoding="utf-8") as f:
         for ex in pairs:
             f.write(json.dumps(ex, ensure_ascii=False) + "\n")
 

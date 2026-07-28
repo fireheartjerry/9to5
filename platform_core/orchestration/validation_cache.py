@@ -8,7 +8,7 @@ EXPORTS:
   ValidationResult
   diff_fingerprint(work_dir: str) -> str  -- Stable hash for the tracked code state relative to HEAD.
   run_validation_suite(suite_id: str, work_dir: str, *, cache: bool=True, changed_files: Optional[list[str]]=None) -> ValidationResult  -- Run a named validation suite through the DAG cache.
-DEPENDS-ON: config, platform_core.core.epoch, platform_core.runtime.perf
+DEPENDS-ON: config, platform_core.app_config.paths, platform_core.core.epoch, platform_core.execution, platform_core.runtime, platform_core.runtime.perf
 SIDE-EFFECTS: writes state/validation_cache.db derived cache
 RUN/TEST: python -m pytest tests/test_validation_cache.py
 """
@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 import subprocess
 import sys
 import time
@@ -27,28 +26,12 @@ from typing import Callable, Optional
 
 import config
 from platform_core.core import epoch
+from platform_core.execution.sandbox_broker import runLegacyProcess
 from platform_core.runtime import perf
-
-_CACHE_SCHEMA = """
-CREATE TABLE IF NOT EXISTS validation_nodes (
-    suite_id        TEXT,
-    node_id         TEXT,
-    work_dir        TEXT,
-    head_sha        TEXT,
-    repo_root_hash  TEXT,
-    diff_hash       TEXT,
-    command_version TEXT,
-    ok              INTEGER,
-    detail          TEXT,
-    stdout          TEXT,
-    commands_json   TEXT,
-    elapsed_s       REAL,
-    recorded_at     REAL,
-    PRIMARY KEY (
-        suite_id, node_id, work_dir, head_sha, repo_root_hash, diff_hash, command_version
-    )
+from platform_core.runtime.state_store_worker import (
+    executeStateOperation,
+    legacyDiagnosticStateWorkerAccess,
 )
-"""
 
 
 @dataclass
@@ -76,18 +59,29 @@ def _cache_path() -> Path:
     )
 
 
-def _connect() -> sqlite3.Connection:
-    path = _cache_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path), timeout=30.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute(_CACHE_SCHEMA)
-    return conn
+def _cacheEntryKey(key: tuple) -> str:
+    raw = json.dumps(key, sort_keys=False, separators=(",", ":"), ensure_ascii=False)
+    return f"node_{hashlib.sha256(raw.encode('utf-8')).hexdigest()}"
+
+
+def _cacheOperation(operation: str, key: tuple, value: object = None) -> object:
+    # Validation caching is advisory. Until its generation-scoped authority is
+    # threaded through the verifier, retain the exact diagnostic fence from
+    # before ambient path resolution through the complete worker operation.
+    with legacyDiagnosticStateWorkerAccess():
+        return executeStateOperation(
+            database_id="validation_cache",
+            namespace="nodes",
+            operation=operation,
+            key=_cacheEntryKey(key),
+            value=value,
+            legacy_path=_cache_path(),
+        )
 
 
 def _run_git(work_dir: str, *args: str) -> str:
     try:
-        cp = subprocess.run(
+        cp = runLegacyProcess(
             ["git", *args],
             cwd=work_dir,
             capture_output=True,
@@ -110,7 +104,7 @@ def diff_fingerprint(work_dir: str) -> str:
     h.update(_head_sha(work_dir).encode("utf-8", errors="replace"))
     for args in (("diff", "--name-status", "HEAD"), ("diff", "--binary", "HEAD", "--", ".")):
         try:
-            cp = subprocess.run(
+            cp = runLegacyProcess(
                 ["git", *args],
                 cwd=work_dir,
                 capture_output=True,
@@ -156,25 +150,19 @@ def _load_cached(key: tuple) -> Optional[ValidationResult]:
     ttl = float(getattr(config, "VALIDATION_CACHE_TTL_SECONDS", 21600))
     fail_ttl = float(getattr(config, "VALIDATION_FAILURE_CACHE_TTL_SECONDS", 30))
     try:
-        with _connect() as conn:
-            row = conn.execute(
-                """SELECT * FROM validation_nodes
-                   WHERE suite_id=? AND node_id=? AND work_dir=? AND head_sha=?
-                     AND repo_root_hash=? AND diff_hash=? AND command_version=?""",
-                key,
-            ).fetchone()
-        if row is None:
+        row = _cacheOperation("kv_get", key)
+        if not isinstance(row, dict):
             return None
-        age = time.time() - float(row["recorded_at"] or 0.0)
-        ok = bool(row["ok"])
+        age = time.time() - float(row.get("recorded_at") or 0.0)
+        ok = bool(row.get("ok"))
         if age > (ttl if ok else fail_ttl):
             return None
         return ValidationResult(
             ok=ok,
-            detail=row["detail"] or "",
+            detail=str(row.get("detail") or ""),
             cached=True,
-            commands=json.loads(row["commands_json"] or "[]"),
-            stdout=row["stdout"] or "",
+            commands=[list(command) for command in row.get("commands", [])],
+            stdout=str(row.get("stdout") or ""),
         )
     except Exception:  # noqa: BLE001
         return None
@@ -184,21 +172,18 @@ def _store_cached(key: tuple, result: ValidationResult) -> None:
     if not getattr(config, "VALIDATION_CACHE_ENABLED", True):
         return
     try:
-        with _connect() as conn:
-            conn.execute(
-                """INSERT OR REPLACE INTO validation_nodes
-                   (suite_id, node_id, work_dir, head_sha, repo_root_hash, diff_hash,
-                    command_version, ok, detail, stdout, commands_json, elapsed_s, recorded_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    *key,
-                    1 if result.ok else 0,
-                    result.detail,
-                    result.stdout,
-                    json.dumps(result.commands),
-                    float(result.elapsed_s),
-                    time.time(),
-                ),
+        _cacheOperation(
+            "kv_put",
+            key,
+            {
+                "commands": result.commands,
+                "detail": result.detail,
+                "elapsed_s": float(result.elapsed_s),
+                "key": list(key),
+                "ok": bool(result.ok),
+                "recorded_at": time.time(),
+                "stdout": result.stdout,
+            },
             )
     except Exception:  # noqa: BLE001
         return
@@ -211,7 +196,7 @@ def _run_command(cmd: list[str], work_dir: str) -> ValidationResult:
     # killed mid-flight (which would flip every pre-PR / self-ref gate to a spurious failure).
     node_timeout = int(getattr(config, "VALIDATION_NODE_TIMEOUT_SECONDS", 1800))
     try:
-        proc = subprocess.run(
+        proc = runLegacyProcess(
             cmd, cwd=work_dir, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=node_timeout
         )
         elapsed = time.perf_counter() - t0

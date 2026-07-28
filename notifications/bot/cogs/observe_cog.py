@@ -6,10 +6,11 @@ Thin shells over the commands spine + branding builders (see notifications.slash
 EXPORTS:
   ObserveCog
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: config, notifications.audit, notifications.branding, notifications.commands, notifications.metrics, notifications.slash, notifications.views, platform_core.ops.health, platform_core.runtime.control
+DEPENDS-ON: config, notifications.audit, notifications.branding, notifications.commands, notifications.metrics, notifications.slash, notifications.views, platform_core.ops.health, platform_core.runtime, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_observe_cog.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -20,10 +21,10 @@ from discord.ext import commands as dpy_commands
 
 import config
 import platform_core.ops.health as health
-from platform_core.runtime.control import ControlBus
-from notifications import audit, branding, metrics
+from notifications import audit, branding, metrics, slash
 from notifications import commands as spine
-from notifications import slash
+from platform_core.runtime.control import ControlBus
+from platform_core.runtime.effect_guard import legacyDiagnosticDiscordSend
 
 
 class ObserveCog(dpy_commands.Cog):
@@ -47,8 +48,10 @@ class ObserveCog(dpy_commands.Cog):
 
         e = await asyncio.to_thread(_payload)
         if e is None:
-            return await interaction.followup.send(spine.NO_TASK, ephemeral=False)
-        await interaction.followup.send(embed=slash._embed(e), ephemeral=False)
+            return await legacyDiagnosticDiscordSend(
+                interaction.followup.send, spine.NO_TASK, ephemeral=False
+            )
+        await legacyDiagnosticDiscordSend(interaction.followup.send, embed=slash._embed(e), ephemeral=False)
 
     @app_commands.command(name="plan", description="The subtask plan")
     async def plan(self, interaction) -> None:  # noqa: ANN001
@@ -64,14 +67,21 @@ class ObserveCog(dpy_commands.Cog):
 
         pages = await asyncio.to_thread(_pages)
         if pages is None:
-            return await interaction.followup.send(spine.NO_TASK, ephemeral=False)
+            return await legacyDiagnosticDiscordSend(
+                interaction.followup.send, spine.NO_TASK, ephemeral=False
+            )
         total = len(pages)
         from notifications.views import Paginator
+
         if total > 1:
-            await interaction.followup.send(embed=pages[0],
-                                            view=Paginator(interaction.user.id, pages), ephemeral=False)
+            await legacyDiagnosticDiscordSend(
+                interaction.followup.send,
+                embed=pages[0],
+                view=Paginator(interaction.user.id, pages),
+                ephemeral=False,
+            )
         else:
-            await interaction.followup.send(embed=pages[0], ephemeral=False)
+            await legacyDiagnosticDiscordSend(interaction.followup.send, embed=pages[0], ephemeral=False)
 
     @app_commands.command(name="log", description="Obsidian index + web dashboard URL")
     async def log(self, interaction) -> None:  # noqa: ANN001
@@ -89,30 +99,41 @@ class ObserveCog(dpy_commands.Cog):
 
     @app_commands.command(name="help", description="Show the command list")
     async def help_(self, interaction) -> None:  # noqa: ANN001
-        await interaction.response.send_message(embed=slash._embed(branding.helpEmbed()), ephemeral=False)
+        await legacyDiagnosticDiscordSend(
+            interaction.response.send_message, embed=slash._embed(branding.helpEmbed()), ephemeral=False
+        )
 
     @app_commands.command(name="ping", description="Bot latency, uptime, version")
     async def ping(self, interaction) -> None:  # noqa: ANN001
         ms = round(self.bot.latency * 1000) if self.bot.latency else 0
         e = branding.pingEmbed(ms, self._uptime(), config.VERSION)
-        await interaction.response.send_message(embed=slash._embed(e), ephemeral=False)
+        await legacyDiagnosticDiscordSend(
+            interaction.response.send_message, embed=slash._embed(e), ephemeral=False
+        )
 
     @app_commands.command(name="diagnostics", description="Environment health checks")
     async def diagnostics(self, interaction) -> None:  # noqa: ANN001
         await interaction.response.defer(ephemeral=False)
         checks = await asyncio.to_thread(health.collectHealth)
-        await interaction.followup.send(embed=slash._embed(branding.diagnosticsEmbed(checks)), ephemeral=False)
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send, embed=slash._embed(branding.diagnosticsEmbed(checks)), ephemeral=False
+        )
 
     @app_commands.command(name="metrics", description="Aggregate run metrics")
     async def metrics_(self, interaction) -> None:  # noqa: ANN001
         await interaction.response.defer(ephemeral=False)
         m = await asyncio.to_thread(metrics.compute)
-        await interaction.followup.send(embed=slash._embed(branding.metricsEmbed(m)), ephemeral=False)
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send, embed=slash._embed(branding.metricsEmbed(m)), ephemeral=False
+        )
 
     @app_commands.command(name="audit", description="Recent control actions")
     async def audit_(self, interaction) -> None:  # noqa: ANN001
-        await interaction.response.send_message(
-            embed=slash._embed(branding.auditEmbed(audit.recent(20))), ephemeral=False)
+        await legacyDiagnosticDiscordSend(
+            interaction.response.send_message,
+            embed=slash._embed(branding.auditEmbed(audit.recent(20))),
+            ephemeral=False,
+        )
 
 
 async def setup(bot: dpy_commands.Bot) -> None:

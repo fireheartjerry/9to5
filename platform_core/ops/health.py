@@ -7,7 +7,7 @@ or `python health.py`. Exits 0 only if every check passes.
 EXPORTS:
   collectHealth() -> list[dict]  -- Run independent checks concurrently while preserving the public result order.
   runHealthChecks() -> bool
-DEPENDS-ON: agents.executor_env, config, platform_core.core.concurrency, platform_core.core.git_io, platform_core.execution.provider_probe
+DEPENDS-ON: agents.executor_env, config, platform_core.core.concurrency, platform_core.core.git_io, platform_core.execution, platform_core.execution.provider_probe, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_health_aura.py tests/platform/test_health_collect.py tests/platform/test_repo_health.py
 """
@@ -16,13 +16,18 @@ from __future__ import annotations
 import shutil
 import time
 
-import requests
+import requests  # noqa: F401 -- compatibility patch seam; calls route through effect_guard
 import urllib3
 
 import config
 from platform_core.core.concurrency import boundedWorkerBudget, runBounded
 from platform_core.core.git_io import runGit, runTool
+from platform_core.execution.pre_execution import (
+    observeLegacyPath,
+    readLegacyText,
+)
 from platform_core.execution.provider_probe import ProviderProbe
+from platform_core.runtime.effect_guard import legacyDiagnosticHttpGet
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -36,7 +41,7 @@ RST = "\033[0m"
 
 def _ollama() -> tuple[bool, str, str]:
     try:
-        r = requests.get(f"{config.OLLAMA_HOST}/api/tags", timeout=5)
+        r = legacyDiagnosticHttpGet(f"{config.OLLAMA_HOST}/api/tags", timeout=5)
         r.raise_for_status()
         body = r.json()
         if not isinstance(body, dict):
@@ -49,7 +54,7 @@ def _ollama() -> tuple[bool, str, str]:
         # GPU: check loaded models for VRAM usage
         gpu = "GPU unknown (model not currently loaded)"
         try:
-            ps_body = requests.get(f"{config.OLLAMA_HOST}/api/ps", timeout=5).json()
+            ps_body = legacyDiagnosticHttpGet(f"{config.OLLAMA_HOST}/api/ps", timeout=5).json()
             ps = (ps_body.get("models") if isinstance(ps_body, dict) else None) or []
             for m in ps:
                 if m.get("name") == config.OLLAMA_MODEL or m.get("model") == config.OLLAMA_MODEL:
@@ -95,7 +100,7 @@ def _gh() -> tuple[bool, str, str]:
 
 def _obsidian() -> tuple[bool, str, str]:
     try:
-        r = requests.get(config.OBSIDIAN_BASE_URL + "/", verify=False, timeout=5)
+        r = legacyDiagnosticHttpGet(config.OBSIDIAN_BASE_URL + "/", verify=False, timeout=5)
         return r.status_code == 200, f"reachable ({r.status_code}) at {config.OBSIDIAN_BASE_URL}", \
             ("" if r.status_code == 200 else "open Obsidian + enable Local REST API")
     except Exception as e:  # noqa: BLE001
@@ -106,8 +111,11 @@ def _discord() -> tuple[bool, str, str]:
     if not config.DISCORD_BOT_TOKEN:
         return False, "DISCORD_BOT_TOKEN missing", "set DISCORD_BOT_TOKEN in .env"
     try:
-        r = requests.get("https://discord.com/api/v10/users/@me",
-                         headers={"Authorization": f"Bot {config.DISCORD_BOT_TOKEN}"}, timeout=10)
+        r = legacyDiagnosticHttpGet(
+            "https://discord.com/api/v10/users/@me",
+            headers={"Authorization": f"Bot {config.DISCORD_BOT_TOKEN}"},
+            timeout=10,
+        )
         if r.status_code == 200:
             try:
                 username = r.json().get("username") or "(unknown)"
@@ -146,12 +154,13 @@ def _hooks() -> tuple[bool, str, str]:
     """HARD check (R7): the guard hooks (block_destructive, self_modification_guard) must be
     registered in settings AND survive per-run settings generation -- 'hooks: {}' is a failure."""
     p = config.CLAUDE_SETTINGS_PATH
-    if not p.exists():
+    if not observeLegacyPath(p.exists):
         return False, "no .claude/settings.json", "create .claude/settings.json with hooks"
     try:
         import json
+
         from agents.executor_env import composeRunSettingsDict, settingsHasGuardHooks
-        data = json.loads(p.read_text(encoding="utf-8"))
+        data = json.loads(readLegacyText(p, encoding="utf-8"))
         hooks = data.get("hooks") or {}
         if not settingsHasGuardHooks(data):
             return False, f"guard hooks NOT registered (hooks={sorted(hooks.keys())})", \
@@ -166,7 +175,7 @@ def _hooks() -> tuple[bool, str, str]:
 
 def _vault() -> tuple[bool, str, str]:
     root = config.VAULT_DISK_ROOT
-    ok = root.exists()
+    ok = observeLegacyPath(root.exists)
     return ok, (f"exists at {root}" if ok else f"missing {root}"), \
         ("" if ok else "run any task once (ensureDirs creates it) or mkdir it")
 

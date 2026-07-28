@@ -16,7 +16,7 @@ EXPORTS:
   handleCommand(content: str, source_msg_id: 'str | None'=None) -> str  -- Parse + apply a '!' command against the latest task
   buildBot()  -- Construct (but do not run) the NightclawBot
   runBot() -> None
-DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, notifications.views_feedback, notifications.views_terminal, platform_core.runtime.control, platform_core.runtime.heartbeat
+DEPENDS-ON: config, notifications.bot.ui.dynamic, notifications.commands, notifications.icons, notifications.views, notifications.views_feedback, notifications.views_terminal, platform_core.runtime, platform_core.runtime.control, platform_core.runtime.heartbeat
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_orch_core_bugs.py tests/slow/test_simulation_core.py
 """
@@ -26,8 +26,9 @@ import asyncio
 import time
 
 import config
-from platform_core.runtime.control import ControlBus
 from notifications import commands as spine
+from platform_core.runtime.control import ControlBus
+from platform_core.runtime.effect_guard import legacyDiagnosticDiscordSend
 
 LOG = config.getLogger("bot.core")
 MAX_REPLY_CHARS = config.DISCORD_MAX_CONTENT - 100
@@ -97,11 +98,12 @@ async def _setupPersistentViews(bot) -> None:  # pragma: no cover
         await asyncio.to_thread(icons.ensureIcons)
     except Exception:  # noqa: BLE001
         pass
+    import discord as _discord
+
     from notifications import views
+    from notifications.bot.ui.dynamic import SubtaskButton
     from notifications.views_feedback import FeedbackView
     from notifications.views_terminal import TerminalView
-    from notifications.bot.ui.dynamic import SubtaskButton
-    import discord as _discord
     _discord.ui.View.on_error = _onViewError   # global net for component-callback errors
     bot.add_view(views.ControlPanelView())   # persistent: matches cp_* anywhere
     bot.add_view(views.BlockedView())         # persistent: matches sc_*
@@ -135,9 +137,9 @@ async def _onAppError(interaction, error) -> None:  # pragma: no cover  # noqa: 
         msg = "internal error (see logs)"
     try:
         if interaction.response.is_done():
-            await interaction.followup.send(msg, ephemeral=True)
+            await legacyDiagnosticDiscordSend(interaction.followup.send, msg, ephemeral=True)
         else:
-            await interaction.response.send_message(msg, ephemeral=True)
+            await legacyDiagnosticDiscordSend(interaction.response.send_message, msg, ephemeral=True)
     except Exception:  # noqa: BLE001
         pass
 
@@ -149,9 +151,9 @@ async def _onViewError(view, interaction, error, item) -> None:  # noqa: ANN001
     LOG.exception("component error on %s: %s", getattr(item, "custom_id", "?"), error)
     try:
         if interaction.response.is_done():
-            await interaction.followup.send("internal error (see logs)", ephemeral=True)
+            await legacyDiagnosticDiscordSend(interaction.followup.send, "internal error (see logs)", ephemeral=True)
         else:
-            await interaction.response.send_message("internal error (see logs)", ephemeral=True)
+            await legacyDiagnosticDiscordSend(interaction.response.send_message, "internal error (see logs)", ephemeral=True)
     except Exception:  # noqa: BLE001
         LOG.debug("component on_error follow-up failed", exc_info=True)
 
@@ -175,7 +177,7 @@ async def _onMessage(bot, message) -> None:
         LOG.exception("command error")
         reply = "internal error (see logs)"
     if reply:
-        await message.channel.send(reply[:MAX_REPLY_CHARS])
+        await legacyDiagnosticDiscordSend(message.channel.send, reply[:MAX_REPLY_CHARS])
 
 
 def _presenceTick() -> str:

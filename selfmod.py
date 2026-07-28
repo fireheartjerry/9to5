@@ -16,7 +16,7 @@ EXPORTS:
   core_files_changed(work_dir: str) -> list[str]  -- Core protected files with uncommitted changes in ``work_dir`` (or []).
   revert_core(work_dir: str, files: list[str]) -> None  -- Revert the given core files to HEAD (discard the breaking self-edit).
   safety_gate(work_dir: str, *, is_self_referential: bool, test_runner: Optional[Callable[[str], tuple]]=None, code_diverged: bool=False) -> dict[str, Any]  -- Run the post-run core-change safety gate
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_selfmod.py
 """
@@ -27,12 +27,13 @@ import subprocess
 from typing import Any, Callable, Optional
 
 import config
+from platform_core.execution.sandbox_broker import runLegacyProcess
 
 LOG = config.getLogger("selfmod")
 
 
 def _git(work_dir: str, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=work_dir, capture_output=True, text=True, timeout=30)
+    return runLegacyProcess(["git", *args], cwd=work_dir, capture_output=True, text=True, timeout=30)
 
 
 def core_files_changed(work_dir: str) -> list[str]:
@@ -64,7 +65,7 @@ def _default_test_runner(work_dir: str) -> tuple[bool, str, str]:
     code means the suite never actually finished exercising the change.
     """
     try:
-        r = subprocess.run(DEFAULT_TEST_COMMAND, cwd=work_dir, capture_output=True, text=True, timeout=1800)
+        r = runLegacyProcess(DEFAULT_TEST_COMMAND, cwd=work_dir, capture_output=True, text=True, timeout=1800)
         out = (r.stdout or "") + (r.stderr or "")
         status = "passed" if r.returncode == 0 else "failed"
         return r.returncode == 0, status, out[-1500:]

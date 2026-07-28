@@ -23,13 +23,12 @@ import ctypes
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import stat
 import sys
+from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
-
 
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _SID = re.compile(r"S-1(?:-[0-9]+)+")
@@ -63,6 +62,26 @@ _PROPOSAL_KEYS = {
     "checkout_path",
     "repository_identity",
     "service_host_path",
+    "anchor_source_path",
+    "anchor_source_sha256",
+    "developer_client_source_path",
+    "developer_client_source_sha256",
+    "request_client_path",
+    "request_client_sha256",
+    "host_path",
+    "host_sha256",
+    "host_signature",
+    "host_signature_sha256",
+    "json_assembly_path",
+    "json_assembly_sha256",
+    "anchor_record_path",
+    "anchor_record_sha256",
+    "anchor_launch_record_path",
+    "anchor_launch_record_sha256",
+    "anchor_launch_record",
+    "anchor_task_name",
+    "source_manifest_sha256",
+    "source_runtime_lock_sha256",
     "interpreter_path",
     "interpreter_staging_path",
     "proposal_verifier_staging_path",
@@ -393,6 +412,129 @@ def finalize_inactive_install(
         "activation_state": "inactive",
     }
     _exclusive_json(anchor_path, anchor_record)
+    if anchor_path != Path(str(proposal["anchor_record_path"])):
+        raise TofuFinalizationRefused("protected anchor record path drift")
+    if _sha_file(anchor_path) != proposal["anchor_record_sha256"]:
+        raise TofuFinalizationRefused("protected anchor record digest drift")
+    anchor_source = _find_leaf(source_leaves, "bootstrap/singularity_anchor.ps1")
+    developer_client = _find_leaf(source_leaves, "bootstrap/developer_redirect.ps1")
+    request_client = _find_leaf(
+        source_leaves, "bootstrap/singularity_admin_client.ps1"
+    )
+    source_manifest = _find_leaf(source_leaves, "bootstrap/manifest.json")
+    source_runtime_lock = _find_leaf(source_leaves, "bootstrap/runtime.lock.json")
+    host = _find_leaf(artifact_leaves, "system/powershell.exe")
+    json_assembly = _find_leaf(
+        artifact_leaves, "system/System.Web.Extensions.dll"
+    )
+    bindings = (
+        (anchor_source, "anchor_source_path", "anchor_source_sha256"),
+        (
+            developer_client,
+            "developer_client_source_path",
+            "developer_client_source_sha256",
+        ),
+        (request_client, "request_client_path", "request_client_sha256"),
+        (host, "host_path", "host_sha256"),
+        (json_assembly, "json_assembly_path", "json_assembly_sha256"),
+        (source_manifest, None, "source_manifest_sha256"),
+        (source_runtime_lock, None, "source_runtime_lock_sha256"),
+    )
+    for bound_path, path_field, digest_field in bindings:
+        if (
+            (path_field is not None and str(bound_path) != proposal[path_field])
+            or _sha_file(bound_path) != proposal[digest_field]
+        ):
+            raise TofuFinalizationRefused(
+                f"native anchor binding drift: {digest_field}"
+            )
+    if proposal["anchor_task_name"] != "9to5SingularityAnchor":
+        raise TofuFinalizationRefused("anchor task name drift")
+    host_signature = proposal["host_signature"]
+    if (
+        not isinstance(host_signature, dict)
+        or set(host_signature)
+        != {
+            "is_os_binary",
+            "signature_type",
+            "signer_subject",
+            "signer_thumbprint",
+            "status",
+        }
+        or hashlib.sha256(_canonical(host_signature)).hexdigest()
+        != proposal["host_signature_sha256"]
+        or host_signature["is_os_binary"] is not True
+        or host_signature["status"] != "Valid"
+        or host_signature["signature_type"] not in {"Catalog", "Authenticode"}
+        or not isinstance(host_signature["signer_subject"], str)
+        or not host_signature["signer_subject"].startswith("CN=Microsoft Windows,")
+        or not isinstance(host_signature["signer_thumbprint"], str)
+        or re.fullmatch(r"[0-9a-f]{40}", host_signature["signer_thumbprint"])
+        is None
+    ):
+        raise TofuFinalizationRefused("PowerShell host signature binding drift")
+    empty_cwd = record_dir / "empty-cwd"
+    empty_cwd.mkdir(exist_ok=True)
+    _no_reparse(empty_cwd, "anchor working directory")
+    if not empty_cwd.is_dir() or any(empty_cwd.iterdir()):
+        raise TofuFinalizationRefused("anchor working directory is not empty")
+    arguments = [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        str(anchor_source),
+        "-ProtectedRecordPath",
+        str(anchor_path),
+        "-Operation",
+        "diagnostic",
+        "-ExpectedRecordSha256",
+        _sha_file(anchor_path),
+        "-ExpectedHostPath",
+        str(host),
+        "-ExpectedHostSha256",
+        proposal["host_sha256"],
+        "-ExpectedHostSignatureSha256",
+        proposal["host_signature_sha256"],
+        "-ExpectedAnchorSha256",
+        proposal["anchor_source_sha256"],
+        "-JsonAssemblyPath",
+        str(json_assembly),
+        "-ExpectedJsonAssemblySha256",
+        proposal["json_assembly_sha256"],
+    ]
+    host_windows_root = host.parents[3]
+    launch_record = {
+        "activation_state": "inactive",
+        "anchor_path": str(anchor_source),
+        "anchor_sha256": proposal["anchor_source_sha256"],
+        "arguments": arguments,
+        "control_pipe": r"\\.\pipe\9to5-singularity-v1",
+        "environment": {
+            "PATH": "",
+            "PSModulePath": "",
+            "SystemRoot": str(host_windows_root),
+            "WINDIR": str(host_windows_root),
+        },
+        "host_path": str(host),
+        "host_sha256": proposal["host_sha256"],
+        "host_signature": host_signature,
+        "host_signature_sha256": proposal["host_signature_sha256"],
+        "schema": "galaxy.singularity-anchor-launch/v1",
+        "service_name": proposal["service_name"],
+        "stdio": {"stderr": "null", "stdin": "null", "stdout": "null"},
+        "working_directory": str(empty_cwd),
+    }
+    launch_record_path = Path(str(proposal["anchor_launch_record_path"]))
+    if launch_record_path != record_dir / "anchor-launch-record.json":
+        raise TofuFinalizationRefused("anchor launch record path drift")
+    if (
+        launch_record != proposal["anchor_launch_record"]
+        or hashlib.sha256(_canonical(launch_record)).hexdigest()
+        != proposal["anchor_launch_record_sha256"]
+    ):
+        raise TofuFinalizationRefused("anchor launch record proposal drift")
+    _exclusive_json(launch_record_path, launch_record)
 
     pointer_path = resolved_root / "activation-runtime.json"
     pointer = {
@@ -432,6 +574,9 @@ def finalize_inactive_install(
         "service_name": proposal["service_name"],
         "repository_identity": repository_identity,
         "anchor_record_path": str(anchor_path),
+        "anchor_launch_record_path": str(launch_record_path),
+        "anchor_launch_record_sha256": _sha_file(launch_record_path),
+        "host_signature_sha256": proposal["host_signature_sha256"],
         "activation_state": "inactive",
     }
     _exclusive_json(receipt_path, receipt)
@@ -440,6 +585,8 @@ def finalize_inactive_install(
         "status": "installed_inactive",
         "receipt_path": str(receipt_path),
         "anchor_record_path": str(anchor_path),
+        "anchor_launch_record_path": str(launch_record_path),
+        "anchor_launch_record_sha256": _sha_file(launch_record_path),
         "runtime_pointer_path": str(pointer_path),
         "merkle_root": merkle_root,
         "generation": generation,

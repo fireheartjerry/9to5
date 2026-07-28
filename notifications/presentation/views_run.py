@@ -6,10 +6,11 @@ EXPORTS:
   WorkSetupView  -- Dropdowns + Launch/Cancel for the /work guided setup (used after WorkModal).
   WorkModal
   WorkProfileModal
-DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.commands, notifications.work_launcher, platform_core.orchestration.work_profile
+DEPENDS-ON: agents.browser_executor, config, notifications.audit, notifications.commands, notifications.work_launcher, platform_core.orchestration.work_profile, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_views.py
 """
+
 from __future__ import annotations
 
 import discord
@@ -17,12 +18,14 @@ import discord
 import config
 from notifications import audit, commands, work_launcher
 from platform_core.orchestration import work_profile
+from platform_core.runtime.effect_guard import legacyDiagnosticDiscordSend
 
 MAX_REPLY = config.DISCORD_MAX_CONTENT - 100
 
 
 class Paginator(discord.ui.View):
     """Prev/Next over pre-built discord.Embed pages, bound to the invoking user."""
+
     def __init__(self, owner_id: int, pages: list, timeout: float = 120):
         super().__init__(timeout=timeout)
         self.owner_id = owner_id
@@ -36,7 +39,9 @@ class Paginator(discord.ui.View):
 
     async def interaction_check(self, interaction: "discord.Interaction") -> bool:
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not your paginator.", ephemeral=True)
+            await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "Not your paginator.", ephemeral=True
+            )
             return False
         return True
 
@@ -55,12 +60,25 @@ class Paginator(discord.ui.View):
 
 class WorkSetupView(discord.ui.View):
     """Dropdowns + Launch/Cancel for the /work guided setup (used after WorkModal)."""
-    def __init__(self, owner_id: int, goal: str, hours: float, work_dir: "str | None",
-                 repo_url: "str | None" = None, repo_ref: "str | None" = None):
+
+    def __init__(
+        self,
+        owner_id: int,
+        goal: str,
+        hours: float,
+        work_dir: "str | None",
+        repo_url: "str | None" = None,
+        repo_ref: "str | None" = None,
+    ):
         super().__init__(timeout=300)
         self.owner_id = owner_id
-        self.req = work_launcher.WorkRequest(goal=goal, hours=hours, work_dir=work_dir or None,
-                                             repo_url=repo_url or None, repo_ref=repo_ref or None)
+        self.req = work_launcher.WorkRequest(
+            goal=goal,
+            hours=hours,
+            work_dir=work_dir or None,
+            repo_url=repo_url or None,
+            repo_ref=repo_ref or None,
+        )
 
     def _summary(self) -> str:
         prof = work_profile.resolve(self.req.work_profile)
@@ -68,43 +86,57 @@ class WorkSetupView(discord.ui.View):
 
     async def interaction_check(self, interaction: "discord.Interaction") -> bool:
         if not commands.isAuthorized(interaction.user.id):
-            await interaction.response.send_message("Not authorized.", ephemeral=True)
+            await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "Not authorized.", ephemeral=True
+            )
             return False
         return True
 
-    @discord.ui.select(placeholder="Control mode", options=[
-        discord.SelectOption(label="watch (autonomous + abort)", value="watch", default=True),
-        discord.SelectOption(label="gated (approve plan + PR)", value="gated"),
-    ])
+    @discord.ui.select(
+        placeholder="Control mode",
+        options=[
+            discord.SelectOption(label="watch (autonomous + abort)", value="watch", default=True),
+            discord.SelectOption(label="gated (approve plan + PR)", value="gated"),
+        ],
+    )
     async def _mode(self, interaction, select):  # noqa: ANN001
         self.req.mode = select.values[0]
         await interaction.response.defer()
 
-    @discord.ui.select(placeholder="Parallelism", options=[
-        discord.SelectOption(label=f"{i} concurrent subtask(s)", value=str(i), default=(i == 1))
-        for i in range(1, work_launcher.MAX_PARALLEL + 1)
-    ])
+    @discord.ui.select(
+        placeholder="Parallelism",
+        options=[
+            discord.SelectOption(label=f"{i} concurrent subtask(s)", value=str(i), default=(i == 1))
+            for i in range(1, work_launcher.MAX_PARALLEL + 1)
+        ],
+    )
     async def _parallel(self, interaction, select):  # noqa: ANN001
         self.req.parallel = int(select.values[0])
         await interaction.response.defer()
 
-    @discord.ui.select(placeholder="Night mode", options=[
-        discord.SelectOption(label="Night mode: off (default)", value="off", default=True),
-        discord.SelectOption(label="Night mode: on (zero interaction)", value="on"),
-    ])
+    @discord.ui.select(
+        placeholder="Night mode",
+        options=[
+            discord.SelectOption(label="Night mode: off (default)", value="off", default=True),
+            discord.SelectOption(label="Night mode: on (zero interaction)", value="on"),
+        ],
+    )
     async def _night_mode(self, interaction, select):  # noqa: ANN001
-        self.req.night_mode = (select.values[0] == "on")
+        self.req.night_mode = select.values[0] == "on"
         await interaction.response.defer()
 
-    @discord.ui.select(placeholder="Work profile preset", options=[
-        discord.SelectOption(
-            label=name,
-            value=name,
-            description=work_profile.PRESET_DESCRIPTIONS.get(name, "")[:100],
-            default=(name == work_profile.DEFAULT_PRESET),
-        )
-        for name in work_profile.PRESETS
-    ])
+    @discord.ui.select(
+        placeholder="Work profile preset",
+        options=[
+            discord.SelectOption(
+                label=name,
+                value=name,
+                description=work_profile.PRESET_DESCRIPTIONS.get(name, "")[:100],
+                default=(name == work_profile.DEFAULT_PRESET),
+            )
+            for name in work_profile.PRESETS
+        ],
+    )
     async def _profile_preset(self, interaction, select):  # noqa: ANN001
         self.req.work_profile = select.values[0]
         await interaction.response.edit_message(content=self._summary(), view=self)
@@ -115,42 +147,54 @@ class WorkSetupView(discord.ui.View):
 
     @discord.ui.button(label="Details", style=discord.ButtonStyle.secondary)
     async def _details(self, interaction, button):  # noqa: ANN001
-        embed = discord.Embed(title="Nightclaw Work Profile",
-                              description="Five 0-100 axes shape how the whole run behaves.")
+        embed = discord.Embed(
+            title="Nightclaw Work Profile", description="Five 0-100 axes shape how the whole run behaves."
+        )
         for name, value in work_profile.profile_help_embed_fields():
             embed.add_field(name=name, value=value[:1024], inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await legacyDiagnosticDiscordSend(interaction.response.send_message, embed=embed, ephemeral=True)
 
     @discord.ui.button(label="Launch", style=discord.ButtonStyle.success)
     async def _launch(self, interaction, button):  # noqa: ANN001
         import asyncio
+
         import config as _cfg
+
         for c in self.children:
             c.disabled = True
         await interaction.response.edit_message(content="Launching…", view=self)
 
         # Reject a duplicate launch before the Gemini pre-flight check.
         if work_launcher.activeRun() is not None:
-            await interaction.followup.send(
+            await legacyDiagnosticDiscordSend(
+                interaction.followup.send,
                 "⚠️ A run is already active. Abort it with `/abort` before starting another.",
-                ephemeral=True)
+                ephemeral=True,
+            )
             self.stop()
             return
 
         if _cfg.GEMINI_ENABLED:
             from agents import browser_executor
-            await interaction.followup.send("Checking Gemini reachability…", ephemeral=True)
+
+            await legacyDiagnosticDiscordSend(
+                interaction.followup.send, "Checking Gemini reachability…", ephemeral=True
+            )
             reachable = await asyncio.to_thread(browser_executor.preflightLogin, 300, 3)
             if not reachable:
-                await interaction.followup.send(
-                    "Gemini unreachable (check GEMINI_API_KEY / quota). Starting with the Ollama "
-                    "brain only.", ephemeral=True)
+                await legacyDiagnosticDiscordSend(
+                    interaction.followup.send,
+                    "Gemini unreachable (check GEMINI_API_KEY / quota). Starting with the Ollama brain only.",
+                    ephemeral=True,
+                )
             else:
-                await interaction.followup.send("Gemini reachable. Starting run…", ephemeral=True)
+                await legacyDiagnosticDiscordSend(
+                    interaction.followup.send, "Gemini reachable. Starting run…", ephemeral=True
+                )
 
         audit.record(interaction.user.id, "work", None, "modal")
         reply = await asyncio.to_thread(work_launcher.launchOrError, self.req)
-        await interaction.followup.send(reply[:MAX_REPLY], ephemeral=True)
+        await legacyDiagnosticDiscordSend(interaction.followup.send, reply[:MAX_REPLY], ephemeral=True)
         self.stop()
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
@@ -162,31 +206,64 @@ class WorkSetupView(discord.ui.View):
 
 
 class WorkModal(discord.ui.Modal, title="Start a 9TO5 run"):
-    goal = discord.ui.TextInput(label="Goal", style=discord.TextStyle.paragraph,
-                                required=True, max_length=4000)
+    goal = discord.ui.TextInput(
+        label="Goal", style=discord.TextStyle.paragraph, required=True, max_length=4000
+    )
     hours = discord.ui.TextInput(label="Hours", default="1", required=False, max_length=6)
     work_dir = discord.ui.TextInput(label="Working directory (optional)", required=False, max_length=300)
     repo_url = discord.ui.TextInput(label="Repo URL (optional)", required=False, max_length=500)
     repo_ref = discord.ui.TextInput(label="Repo ref (optional)", required=False, max_length=120)
 
     async def on_submit(self, interaction: "discord.Interaction") -> None:
-        view = WorkSetupView(interaction.user.id, str(self.goal),
-                             work_launcher.parseHours(str(self.hours)), str(self.work_dir) or None,
-                             str(self.repo_url) or None, str(self.repo_ref) or None)
-        await interaction.response.send_message(view._summary(), view=view, ephemeral=True)
+        view = WorkSetupView(
+            interaction.user.id,
+            str(self.goal),
+            work_launcher.parseHours(str(self.hours)),
+            str(self.work_dir) or None,
+            str(self.repo_url) or None,
+            str(self.repo_ref) or None,
+        )
+        await legacyDiagnosticDiscordSend(
+            interaction.response.send_message, view._summary(), view=view, ephemeral=True
+        )
 
 
 class WorkProfileModal(discord.ui.Modal, title="Nightclaw work profile"):
-    stability = discord.ui.TextInput(label="Stability (0-100)", default="45", required=False,
-                                     max_length=3, placeholder="Bugs, safety, regressions")
-    evidence = discord.ui.TextInput(label="Evidence (0-100)", default="45", required=False,
-                                    max_length=3, placeholder="Tests, verification, proof")
-    architecture = discord.ui.TextInput(label="Architecture (0-100)", default="45", required=False,
-                                        max_length=3, placeholder="Design, boundaries, maintainability")
-    momentum = discord.ui.TextInput(label="Momentum (0-100)", default="55", required=False,
-                                    max_length=3, placeholder="Shipping speed, concrete delivery")
-    discovery = discord.ui.TextInput(label="Discovery (0-100)", default="35", required=False,
-                                     max_length=3, placeholder="Novelty, exploration, upside")
+    stability = discord.ui.TextInput(
+        label="Stability (0-100)",
+        default="45",
+        required=False,
+        max_length=3,
+        placeholder="Bugs, safety, regressions",
+    )
+    evidence = discord.ui.TextInput(
+        label="Evidence (0-100)",
+        default="45",
+        required=False,
+        max_length=3,
+        placeholder="Tests, verification, proof",
+    )
+    architecture = discord.ui.TextInput(
+        label="Architecture (0-100)",
+        default="45",
+        required=False,
+        max_length=3,
+        placeholder="Design, boundaries, maintainability",
+    )
+    momentum = discord.ui.TextInput(
+        label="Momentum (0-100)",
+        default="55",
+        required=False,
+        max_length=3,
+        placeholder="Shipping speed, concrete delivery",
+    )
+    discovery = discord.ui.TextInput(
+        label="Discovery (0-100)",
+        default="35",
+        required=False,
+        max_length=3,
+        placeholder="Novelty, exploration, upside",
+    )
 
     def __init__(self, parent: WorkSetupView):
         super().__init__()
@@ -200,7 +277,8 @@ class WorkProfileModal(discord.ui.Modal, title="Nightclaw work profile"):
         try:
             work_profile.resolve(raw)
         except ValueError as e:
-            return await interaction.response.send_message(f"Invalid profile: {e}", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, f"Invalid profile: {e}", ephemeral=True
+            )
         self.parent_view.req.work_profile = raw
-        await interaction.response.edit_message(content=self.parent_view._summary(),
-                                                view=self.parent_view)
+        await interaction.response.edit_message(content=self.parent_view._summary(), view=self.parent_view)

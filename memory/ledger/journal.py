@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import config
-from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _j, _nowIso
+from memory.experience_schema import LOG, _connect, _j, _nowIso, _writeConnect
 from platform_core.core.best_effort import best_effort
 
 
@@ -35,7 +35,7 @@ def appendStep(run_id: str, subtask_id: str, attempt: int, step_idx: int, kind: 
     if not (run_id or "").strip() or not (subtask_id or "").strip():
         return
     with best_effort("ledger.step_journal", log=LOG):   # journaling never crashes a run
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute(
                 """INSERT INTO step_journal
                    (run_id, subtask_id, attempt, step_idx, kind, tool, summary,
@@ -99,7 +99,7 @@ def markAttemptSuperseded(run_id: str, subtask_id: str, attempt: int,
     """Resume bookkeeping: drop a stale attempt's journal rows so it won't be resumed.
     Best-effort; never raises."""
     with best_effort("ledger.step_journal", log=LOG):
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute(
                 "DELETE FROM step_journal WHERE run_id=? AND subtask_id=? AND attempt=?",
                 (run_id, subtask_id, int(attempt)))

@@ -67,8 +67,7 @@ def build_context(state, kind: str, arg: str) -> str:
 
 
 def _defaultChat(system: str, user: str) -> str:  # pragma: no cover -- needs live Ollama
-    import ollama
-    client = ollama.Client(host=config.OLLAMA_HOST, timeout=config.OLLAMA_TIMEOUT_SECONDS)
+    client = llm_io.getClient()
     resp = client.chat(model=config.BRIEF_MODEL,
                        messages=[{"role": "system", "content": system},
                                  {"role": "user", "content": user}],

@@ -6,19 +6,18 @@ RUN/TEST: python -m pytest tests/planning/test_pre_execution_council.py
 EXPORTS:
   safe_git_status_summary(work_dir: str | Path | None=None) -> str  -- Return branch + short dirty summary without file contents or env details.
   CouncilContextPack
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import config
-
+from platform_core.execution.sandbox_broker import runLegacyProcess
 
 SENSITIVE_CONTEXT_MARKERS = (
     "--user-data-dir",
@@ -43,7 +42,7 @@ def _safe_text(value: Any, max_chars: int = 4000) -> str:
 
 def _run_git(args: list[str], cwd: Path) -> str:
     try:
-        res = subprocess.run(
+        res = runLegacyProcess(
             ["git", *args],
             cwd=str(cwd),
             capture_output=True,

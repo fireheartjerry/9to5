@@ -5,7 +5,7 @@ EXPORTS:
   ConfirmView  -- Ephemeral Confirm/Cancel
   confirmDestructive(interaction: 'discord.Interaction', label: str) -> bool  -- Send an ephemeral confirm dialog (this consumes the initial response)
   ControlPanelView  -- Persistent (timeout=None)
-DEPENDS-ON: config, notifications.audit, notifications.commands, notifications.icons, platform_core.runtime.control
+DEPENDS-ON: config, notifications.audit, notifications.commands, notifications.icons, platform_core.runtime, platform_core.runtime.control
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_views.py
 """
@@ -16,8 +16,9 @@ import asyncio
 import discord
 
 import config
-from platform_core.runtime.control import ControlBus
 from notifications import audit, commands
+from platform_core.runtime.control import ControlBus
+from platform_core.runtime.effect_guard import legacyDiagnosticDiscordSend
 
 LOG = config.getLogger("views")
 MAX_REPLY = config.DISCORD_MAX_CONTENT - 100
@@ -52,20 +53,20 @@ async def _applyControl(interaction: "discord.Interaction", name: str, arg: str 
     msg = await asyncio.to_thread(_blocking)
     # The response is now consumed (deferred above, or by the abort confirm dialog) -> followup.
     if msg is None:
-        return await interaction.followup.send(commands.NO_TASK, ephemeral=True)
-    await interaction.followup.send(msg[:MAX_REPLY], ephemeral=True)
+        return await legacyDiagnosticDiscordSend(interaction.followup.send, commands.NO_TASK, ephemeral=True)
+    await legacyDiagnosticDiscordSend(interaction.followup.send, msg[:MAX_REPLY], ephemeral=True)
 
 
 async def _send(interaction: "discord.Interaction", msg: str, already_responded: bool) -> None:
     if already_responded:
-        await interaction.followup.send(msg, ephemeral=True)
+        await legacyDiagnosticDiscordSend(interaction.followup.send, msg, ephemeral=True)
     else:
-        await interaction.response.send_message(msg, ephemeral=True)
+        await legacyDiagnosticDiscordSend(interaction.response.send_message, msg, ephemeral=True)
 
 
 async def _skipCurrent(interaction: "discord.Interaction", source: str) -> None:
     if not _ownerOk(interaction):
-        return await interaction.response.send_message("Not authorized.", ephemeral=True)
+        return await legacyDiagnosticDiscordSend(interaction.response.send_message, "Not authorized.", ephemeral=True)
     # Defer BEFORE the blocking ControlBus/TaskState/audit file IO so a file-lock stall can't freeze
     # the gateway heartbeat or expire the 3s interaction token; the work runs via asyncio.to_thread.
     await interaction.response.defer(ephemeral=True)
@@ -86,7 +87,7 @@ async def _skipCurrent(interaction: "discord.Interaction", source: str) -> None:
                                      commands.Command("skip", cur["subtask_id"]))
 
     msg = await asyncio.to_thread(_blocking)
-    await interaction.followup.send(msg[:MAX_REPLY], ephemeral=True)
+    await legacyDiagnosticDiscordSend(interaction.followup.send, msg[:MAX_REPLY], ephemeral=True)
 
 
 # custom_id -> icon concept; applied dynamically so buttons carry the professional app-emoji icon.
@@ -131,7 +132,7 @@ class ConfirmView(discord.ui.View):
 async def confirmDestructive(interaction: "discord.Interaction", label: str) -> bool:
     """Send an ephemeral confirm dialog (this consumes the initial response). True if confirmed."""
     view = ConfirmView(interaction.user.id)
-    await interaction.response.send_message(f"Confirm **{label}**?", view=view, ephemeral=True)
+    await legacyDiagnosticDiscordSend(interaction.response.send_message, f"Confirm **{label}**?", view=view, ephemeral=True)
     await view.wait()
     return view.value
 
@@ -154,7 +155,7 @@ class ControlPanelView(discord.ui.View):
     @discord.ui.button(label="Abort", style=discord.ButtonStyle.danger, custom_id="cp_abort")
     async def abort(self, interaction, button):  # noqa: ANN001
         if not _ownerOk(interaction):
-            return await interaction.response.send_message("Not authorized.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(interaction.response.send_message, "Not authorized.", ephemeral=True)
         if await confirmDestructive(interaction, "abort the run"):
             await _applyControl(interaction, "abort", already_responded=True)
 

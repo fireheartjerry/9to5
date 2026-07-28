@@ -5,30 +5,40 @@ EXPORTS:
   BlockedView  -- Persistent view for the BLOCKED embed's Answer/Skip/Abort buttons (custom_ids sc_*).
   WipeSetupView  -- Multi-select wipe config view
   WipeConfirmView  -- Final confirm/cancel for a wipe
-DEPENDS-ON: notifications.views_control, platform_core.ops.wipe
+DEPENDS-ON: notifications.views_control, platform_core.ops.wipe, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_views.py
 """
+
 from __future__ import annotations
 
 import discord
 
 from notifications.views_control import (
-    _ownerOk, _applyControl, _skipCurrent, confirmDestructive,
+    _applyControl,
+    _ownerOk,
+    _skipCurrent,
+    confirmDestructive,
 )
+from platform_core.runtime.effect_guard import legacyDiagnosticDiscordSend
 
 
 class BlockedView(discord.ui.View):
     """Persistent view for the BLOCKED embed's Answer/Skip/Abort buttons (custom_ids sc_*)."""
+
     def __init__(self):
         super().__init__(timeout=None)
         from notifications.views_control import _applyButtonIcons
+
         _applyButtonIcons(self)
 
     @discord.ui.button(label="Answer", style=discord.ButtonStyle.primary, custom_id="sc_answer")
     async def answer(self, interaction, button):  # noqa: ANN001
-        await interaction.response.send_message(
-            "Type your answer as a normal message; the orchestrator will pick it up.", ephemeral=True)
+        await legacyDiagnosticDiscordSend(
+            interaction.response.send_message,
+            "Type your answer as a normal message; the orchestrator will pick it up.",
+            ephemeral=True,
+        )
 
     @discord.ui.button(label="Skip", style=discord.ButtonStyle.secondary, custom_id="sc_skip")
     async def skip(self, interaction, button):  # noqa: ANN001
@@ -37,13 +47,16 @@ class BlockedView(discord.ui.View):
     @discord.ui.button(label="Abort", style=discord.ButtonStyle.danger, custom_id="sc_abort")
     async def abort(self, interaction, button):  # noqa: ANN001
         if not _ownerOk(interaction):
-            return await interaction.response.send_message("Not authorized.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "Not authorized.", ephemeral=True
+            )
         if await confirmDestructive(interaction, "abort the run"):
             await _applyControl(interaction, "abort", already_responded=True)
 
 
 class WipeSetupView(discord.ui.View):
     """Multi-select wipe config view. Shown immediately after /wipe."""
+
     def __init__(self, owner_id: int):
         super().__init__(timeout=120)
         self.owner_id = owner_id
@@ -52,7 +65,9 @@ class WipeSetupView(discord.ui.View):
 
     async def interaction_check(self, interaction: "discord.Interaction") -> bool:
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("Not your wipe dialog.", ephemeral=True)
+            await legacyDiagnosticDiscordSend(
+                interaction.response.send_message, "Not your wipe dialog.", ephemeral=True
+            )
             return False
         return True
 
@@ -61,22 +76,24 @@ class WipeSetupView(discord.ui.View):
         min_values=0,
         max_values=8,
         options=[
-            discord.SelectOption(label="Tasks", value="tasks",
-                                 description="Task JSON files (state/tasks/)"),
-            discord.SelectOption(label="Control Files", value="control",
-                                 description="Control bus files (state/control/)"),
-            discord.SelectOption(label="Experience DB", value="experience",
-                                 description="experience.db + audit + trust logs"),
-            discord.SelectOption(label="Obsidian Vault", value="vault",
-                                 description="vault/ directory"),
-            discord.SelectOption(label="Logs", value="logs",
-                                 description="logs/ directory"),
-            discord.SelectOption(label="Learning", value="learning",
-                                 description="learning/ directory"),
-            discord.SelectOption(label="Knowledge Base", value="knowledge",
-                                 description="knowledge/ directory"),
-            discord.SelectOption(label="ChatGPT Profile", value="chatgpt_profile",
-                                 description="ChatGPT browser profile (state/chatgpt_profile/)"),
+            discord.SelectOption(label="Tasks", value="tasks", description="Task JSON files (state/tasks/)"),
+            discord.SelectOption(
+                label="Control Files", value="control", description="Control bus files (state/control/)"
+            ),
+            discord.SelectOption(
+                label="Experience DB", value="experience", description="experience.db + audit + trust logs"
+            ),
+            discord.SelectOption(label="Obsidian Vault", value="vault", description="vault/ directory"),
+            discord.SelectOption(label="Logs", value="logs", description="logs/ directory"),
+            discord.SelectOption(label="Learning", value="learning", description="learning/ directory"),
+            discord.SelectOption(
+                label="Knowledge Base", value="knowledge", description="knowledge/ directory"
+            ),
+            discord.SelectOption(
+                label="ChatGPT Profile",
+                value="chatgpt_profile",
+                description="ChatGPT browser profile (state/chatgpt_profile/)",
+            ),
         ],
     )
     async def _categories(self, interaction: "discord.Interaction", select: "discord.ui.Select"):  # noqa: ANN001
@@ -93,19 +110,24 @@ class WipeSetupView(discord.ui.View):
         ],
     )
     async def _backup(self, interaction: "discord.Interaction", select: "discord.ui.Select"):  # noqa: ANN001
-        self.backup = (select.values[0] == "yes")
+        self.backup = select.values[0] == "yes"
         await interaction.response.defer()
 
     @discord.ui.button(label="Proceed to Confirm", style=discord.ButtonStyle.danger)
     async def _proceed(self, interaction: "discord.Interaction", button: "discord.ui.Button"):  # noqa: ANN001
         if not self.selected_keys:
-            return await interaction.response.send_message(
-                "No categories selected — pick at least one.", ephemeral=True)
+            return await legacyDiagnosticDiscordSend(
+                interaction.response.send_message,
+                "No categories selected — pick at least one.",
+                ephemeral=True,
+            )
         from platform_core.ops.wipe import CATEGORIES
+
         items = [CATEGORIES[k]["label"] for k in self.selected_keys if k in CATEGORIES]
         backup_note = " + backup" if self.backup else ""
         summary = "\n".join(f"• {i}" for i in items)
-        await interaction.response.send_message(
+        await legacyDiagnosticDiscordSend(
+            interaction.response.send_message,
             f"**Confirm wipe{backup_note}:**\n{summary}\n\nThis cannot be undone.",
             view=WipeConfirmView(self.owner_id, self.selected_keys, self.backup),
             ephemeral=True,
@@ -122,6 +144,7 @@ class WipeSetupView(discord.ui.View):
 
 class WipeConfirmView(discord.ui.View):
     """Final confirm/cancel for a wipe. Executes then restarts the bot."""
+
     def __init__(self, owner_id: int, keys: list[str], backup: bool):
         super().__init__(timeout=60)
         self.owner_id = owner_id
@@ -134,13 +157,15 @@ class WipeConfirmView(discord.ui.View):
     @discord.ui.button(label="Confirm Wipe", style=discord.ButtonStyle.danger)
     async def _confirm(self, interaction: "discord.Interaction", button: "discord.ui.Button"):  # noqa: ANN001
         import asyncio
+
         from platform_core.ops.wipe import executeWipe, restartBot
 
         await interaction.response.defer(ephemeral=True)
         results = await asyncio.to_thread(executeWipe, self.keys, self.backup)
         lines = "\n".join(v for v in results.values())
-        await interaction.followup.send(
-            f"**Wipe complete:**\n{lines}\n\nRestarting bot…", ephemeral=True)
+        await legacyDiagnosticDiscordSend(
+            interaction.followup.send, f"**Wipe complete:**\n{lines}\n\nRestarting bot…", ephemeral=True
+        )
         self.stop()
         await asyncio.sleep(1)
         restartBot()

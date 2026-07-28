@@ -38,6 +38,23 @@ class TestSieMaintenance(unittest.TestCase):
         mock.patch.object(config, "SELFPLAY_ENABLED", False).start()
         mock.patch.object(config, "SIE_BOOTSTRAP", False).start()
         retrieval.reset_embed_cache()
+        from platform_core.runtime.controller_state import issueDiagnosticControllerStateAuthority
+        from platform_core.runtime.effect_guard import issueDiagnosticMaintenanceAuthority
+
+        capability = object()
+        self.controller_state_authority = issueDiagnosticControllerStateAuthority(
+            root=self.dir / "controller",
+            repository_id="repo_sie_test",
+            controller_generation=1,
+            process_capability=capability,
+            expires_at="2099-01-01T00:00:00+00:00",
+        )
+        self.maintenance_authority = issueDiagnosticMaintenanceAuthority(
+            operations={"sie_maintenance"},
+            controller_generation=1,
+            process_capability=capability,
+            expires_at="2099-01-01T00:00:00+00:00",
+        )
 
     def tearDown(self):
         mock.patch.stopall()
@@ -65,8 +82,15 @@ class TestSieMaintenance(unittest.TestCase):
                 db_path=self.db,
             )
 
+    def _run(self, **kwargs):
+        return sie.run_maintenance(
+            maintenance_authority=self.maintenance_authority,
+            controller_state_authority=self.controller_state_authority,
+            **kwargs,
+        )
+
     def test_force_runs_all_steps_and_records_state(self):
-        out = sie.run_maintenance(force=True, db_path=self.db)
+        out = self._run(force=True, db_path=self.db)
         self.assertEqual(
             set(out["steps"]),
             {
@@ -96,13 +120,13 @@ class TestSieMaintenance(unittest.TestCase):
 
     def test_throttled_second_call_skips(self):
         with mock.patch.object(config, "SIE_FORCE_WEEKLY", False):
-            sie.run_maintenance(force=True, db_path=self.db)
-            out = sie.run_maintenance(force=False, db_path=self.db)  # within window
+            self._run(force=True, db_path=self.db)
+            out = self._run(force=False, db_path=self.db)  # within window
         self.assertEqual(out["skipped"], "not_due")
 
     def test_kill_switch_skips(self):
         with mock.patch.object(config, "SIE_KILL_SWITCH", True):
-            out = sie.run_maintenance(force=True, db_path=self.db)
+            out = self._run(force=True, db_path=self.db)
         self.assertEqual(out["skipped"], "kill_switch")
 
     def test_lock_prevents_overlap(self):
@@ -112,7 +136,7 @@ class TestSieMaintenance(unittest.TestCase):
         # ...and it's ALIVE -- so the lock must NOT be reclaimed and maintenance skips. (A lock whose
         # owner PID is dead is correctly reclaimed; that path is covered by TestSieLock.)
         with mock.patch.object(sie, "_lock_owner_alive", return_value=True):
-            out = sie.run_maintenance(force=True, db_path=self.db)
+            out = self._run(force=True, db_path=self.db)
         self.assertEqual(out["skipped"], "locked")
 
     def test_live_owner_older_than_1h_is_not_stolen(self):
@@ -127,31 +151,31 @@ class TestSieMaintenance(unittest.TestCase):
 
     def test_maintenance_rebuilds_policy_arms(self):
         self._seed()
-        sie.run_maintenance(force=True, db_path=self.db)
+        self._run(force=True, db_path=self.db)
         arms = experience.fetch_arms("discord", db_path=self.db)
         self.assertTrue(arms)  # policy rebuilt automatically, no human action
 
     def test_idempotent_second_force_run(self):
         self._seed()
-        sie.run_maintenance(force=True, db_path=self.db)
-        sie.run_maintenance(force=True, db_path=self.db)  # must not error or double-count
+        self._run(force=True, db_path=self.db)
+        self._run(force=True, db_path=self.db)  # must not error or double-count
         arms = {a["action_json"]: a for a in experience.fetch_arms("discord", db_path=self.db)}
         self.assertEqual(arms['{"effort": "high"}']["pulls"], 3)
 
     def test_evolve_op_registered(self):
-        out = sie.run_maintenance(force=True, db_path=self.db)
+        out = self._run(force=True, db_path=self.db)
         self.assertIn("evolve", out["steps"])
 
     def test_evolve_promote_op_registered(self):
-        out = sie.run_maintenance(force=True, db_path=self.db)
+        out = self._run(force=True, db_path=self.db)
         self.assertIn("evolve_promote", out["steps"])
 
     def test_curate_op_registered(self):
-        out = sie.run_maintenance(force=True, db_path=self.db)
+        out = self._run(force=True, db_path=self.db)
         self.assertIn("curate", out["steps"])
 
     def test_insight_op_registered(self):
-        out = sie.run_maintenance(force=True, db_path=self.db)
+        out = self._run(force=True, db_path=self.db)
         self.assertIn("insight", out["steps"])
 
 
@@ -302,7 +326,11 @@ class TestSieLock(unittest.TestCase):
         lp.write_text("999999999", encoding="utf-8")  # implausible -> definitely-dead PID
         got = sie._acquire_lock()
         self.assertIsNotNone(got, "did not reclaim a lock owned by a dead PID")
-        self.assertEqual(lp.read_text(encoding="utf-8").strip(), str(os.getpid()))
+        self.assertEqual(
+            lp.read_text(encoding="utf-8").strip().split(":", 1)[0],
+            str(os.getpid()),
+        )
+        sie.fsio.releaseLock(got)
 
     def test_lock_held_by_live_owner_is_not_stolen(self):
         lp = sie._lock_path()

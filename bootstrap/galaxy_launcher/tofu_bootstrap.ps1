@@ -16,6 +16,8 @@ param(
     [switch] $SelfTestSingletonLeafSelection,
     [Parameter(ParameterSetName = 'ServiceQuery', Mandatory = $true)]
     [switch] $SelfTestMissingServiceQuery,
+    [Parameter(ParameterSetName = 'AnchorTaskContract', Mandatory = $true)]
+    [switch] $SelfTestAnchorTaskContract,
     [Parameter(ParameterSetName = 'Install', Mandatory = $true)]
     [string] $ProposalPath,
     [Parameter(ParameterSetName = 'Install', Mandatory = $true)]
@@ -86,6 +88,79 @@ function Get-Sha256Hex {
     finally {
         $sha.Dispose()
         $stream.Dispose()
+    }
+}
+
+function Get-Sha256BytesHex {
+    param([Parameter(Mandatory = $true)][byte[]] $Bytes)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return ([System.BitConverter]::ToString(
+            $sha.ComputeHash($Bytes))).Replace('-', '').ToLowerInvariant()
+    }
+    finally { $sha.Dispose() }
+}
+
+function Assert-PinnedHostSignature {
+    param([Parameter(Mandatory = $true)] $Proposal)
+    $host = Assert-NoReparsePath -Path ([string]$Proposal.host_path) `
+        -Label 'pinned PowerShell host'
+    $actualHost = Assert-NoReparsePath -Path (
+        [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName) `
+        -Label 'running PowerShell host'
+    if (-not $actualHost.Equals(
+            $host, [System.StringComparison]::OrdinalIgnoreCase) -or
+            (Get-Sha256Hex $actualHost) -cne [string]$Proposal.host_sha256) {
+        throw 'running PowerShell host differs from the proposal binding'
+    }
+    $hostSuffix = '\System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (-not $actualHost.EndsWith(
+            $hostSuffix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'running PowerShell host is outside the pinned Windows location'
+    }
+    $windowsRoot = $actualHost.Substring(0, $actualHost.Length - $hostSuffix.Length)
+    $systemModuleRoot = [System.IO.Path]::Combine(
+        $windowsRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'Modules')
+    [System.Environment]::SetEnvironmentVariable(
+        'PSModulePath', $systemModuleRoot,
+        [System.EnvironmentVariableTarget]::Process)
+    $signature = Microsoft.PowerShell.Security\Get-AuthenticodeSignature `
+        -LiteralPath $actualHost -ErrorAction Stop
+    if ($null -eq $signature -or $null -eq $signature.SignerCertificate) {
+        throw 'PowerShell host signer is unavailable'
+    }
+    $record = [ordered]@{
+        is_os_binary = [bool]$signature.IsOSBinary
+        signature_type = [string]$signature.SignatureType
+        signer_subject = [string]$signature.SignerCertificate.Subject
+        signer_thumbprint = (
+            [string]$signature.SignerCertificate.Thumbprint).ToLowerInvariant()
+        status = [string]$signature.Status
+    }
+    $expected = $Proposal.host_signature
+    $expectedNames = @($expected.PSObject.Properties.Name)
+    if ($expectedNames.Count -ne $record.Count) {
+        throw 'PowerShell host signature proposal fields drifted'
+    }
+    foreach ($name in $record.Keys) {
+        if ($name -notin $expectedNames -or
+                [string]$record[$name] -cne [string]$expected.$name) {
+            throw 'PowerShell host signature differs from the proposal binding'
+        }
+    }
+    if ($record.status -cne 'Valid' -or -not $record.is_os_binary -or
+            $record.signature_type -notin @('Catalog', 'Authenticode') -or
+            -not $record.signer_subject.StartsWith(
+                'CN=Microsoft Windows,', [System.StringComparison]::Ordinal) -or
+            -not [System.Text.RegularExpressions.Regex]::IsMatch(
+                $record.signer_thumbprint, '\A[0-9a-f]{40}\z')) {
+        throw 'PowerShell host signature is not valid and OS-owned'
+    }
+    $recordBytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes(
+        ($record | ConvertTo-Json -Compress))
+    if ((Get-Sha256BytesHex $recordBytes) -cne
+            [string]$Proposal.host_signature_sha256) {
+        throw 'PowerShell host signature record digest drift'
     }
 }
 
@@ -516,6 +591,19 @@ function Register-InactiveService {
     if ($created.ExitCode -ne 0) { throw "service creation failed: $($created.Output)" }
     $sidType = Invoke-ServiceControl @('sidtype', $name, 'restricted')
     if ($sidType.ExitCode -ne 0) { throw "restricted service SID setup failed: $($sidType.Output)" }
+    $operatorSid = [string]$Proposal.operator_sid
+    $serviceSid = [string]$Proposal.service_sid
+    if ($operatorSid -notmatch '^S-1(?:-[0-9]+)+$' -or
+            $serviceSid -notmatch '^S-1(?:-[0-9]+)+$') {
+        throw 'service DACL principal SID is malformed'
+    }
+    $serviceSddl = 'D:' +
+        '(A;;CCLCSWRPWPDTLOCRRC;;;SY)' +
+        '(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)' +
+        '(A;;LCRP;;;' + $operatorSid + ')' +
+        '(A;;CCLCSWLOCRRC;;;' + $serviceSid + ')'
+    $secured = Invoke-ServiceControl @('sdset', $name, $serviceSddl)
+    if ($secured.ExitCode -ne 0) { throw "service DACL setup failed: $($secured.Output)" }
     $start = Invoke-ServiceControl @('start', $name)
     if ($start.ExitCode -ne 0) { throw "inactive service rehearsal start failed: $($start.Output)" }
     Wait-ServiceState -Name $name -State 4
@@ -524,10 +612,163 @@ function Register-InactiveService {
     Wait-ServiceState -Name $name -State 1
     $configuration = Invoke-ServiceControl @('qc', $name)
     $sidQuery = Invoke-ServiceControl @('qsidtype', $name)
+    $daclQuery = Invoke-ServiceControl @('sdshow', $name)
     if ($configuration.ExitCode -ne 0 -or $configuration.Output -notmatch 'DEMAND_START' -or
             $configuration.Output -notmatch 'LocalSystem' -or
             $sidQuery.ExitCode -ne 0 -or $sidQuery.Output -notmatch 'RESTRICTED') {
         throw 'inactive service launch record did not reread exactly'
+    }
+    if ($daclQuery.ExitCode -ne 0 -or
+            $daclQuery.Output -notmatch [regex]::Escape($operatorSid) -or
+            $daclQuery.Output -notmatch [regex]::Escape($serviceSid)) {
+        throw 'inactive service DACL did not reread its exact principals'
+    }
+}
+
+function Get-InactiveAnchorTaskContract {
+    return [pscustomobject][ordered]@{
+        activation_authority = $false
+        anchor_source = 'singularity_anchor.ps1'
+        fresh_host_flags = @('-NoLogo', '-NoProfile', '-NonInteractive')
+        operator_service_rights = 'query-status+start-only'
+        registration_state = 'on_demand_inactive'
+        schema = 'galaxy.singularity-anchor-task/v1'
+        service_host_role = 'restricted-sid-lifecycle-only'
+    }
+}
+
+function ConvertTo-TaskXmlText {
+    param([Parameter(Mandatory = $true)][string] $Value)
+    $escaped = [System.Security.SecurityElement]::Escape($Value)
+    if ($null -eq $escaped) { throw 'task XML value could not be escaped' }
+    return $escaped
+}
+
+function Find-ExactScheduledTask {
+    param(
+        [Parameter(Mandatory = $true)] $RootFolder,
+        [Parameter(Mandatory = $true)][string] $Name
+    )
+    $matches = @()
+    $tasks = $RootFolder.GetTasks(1)
+    for ($index = 1; $index -le $tasks.Count; $index++) {
+        $candidate = $tasks.Item($index)
+        if ([string]$candidate.Name -ceq $Name) { $matches += $candidate }
+    }
+    if ($matches.Count -gt 1) { throw 'anchor task identity is ambiguous' }
+    if ($matches.Count -eq 1) { return $matches[0] }
+    return $null
+}
+
+function Register-InactiveAnchorTask {
+    param([Parameter(Mandatory = $true)] $Proposal)
+    $name = [string]$Proposal.anchor_task_name
+    $launch = $Proposal.anchor_launch_record
+    if ($name -cne '9to5SingularityAnchor' -or
+            [string]$launch.schema -cne 'galaxy.singularity-anchor-launch/v1' -or
+            [string]$launch.activation_state -cne 'inactive' -or
+            [string]$launch.host_path -cne [string]$Proposal.host_path -or
+            [string]$launch.host_sha256 -cne [string]$Proposal.host_sha256 -or
+            [string]$launch.anchor_path -cne [string]$Proposal.anchor_source_path -or
+            [string]$launch.anchor_sha256 -cne [string]$Proposal.anchor_source_sha256) {
+        throw 'inactive anchor task proposal binding mismatch'
+    }
+    $arguments = @($launch.arguments)
+    if ($arguments.Count -lt 5 -or
+            [string]$arguments[0] -cne '-NoLogo' -or
+            [string]$arguments[1] -cne '-NoProfile' -or
+            [string]$arguments[2] -cne '-NonInteractive' -or
+            [string]$arguments[3] -cne '-File' -or
+            [string]$arguments[4] -cne [string]$Proposal.anchor_source_path) {
+        throw 'inactive anchor task fresh-host arguments drift'
+    }
+    $workingDirectory = ConvertTo-CanonicalDrivePath ([string]$launch.working_directory)
+    if ([System.IO.File]::Exists($workingDirectory)) {
+        throw 'inactive anchor working directory is a file'
+    }
+    if (-not [System.IO.Directory]::Exists($workingDirectory)) {
+        [void][System.IO.Directory]::CreateDirectory($workingDirectory)
+    }
+    [void](Assert-NoReparsePath -Path $workingDirectory `
+        -Label 'inactive anchor working directory')
+    if ([System.IO.Directory]::GetFileSystemEntries($workingDirectory).Length -ne 0) {
+        throw 'inactive anchor working directory is not empty'
+    }
+
+    $hostPath = ConvertTo-TaskXmlText ([string]$Proposal.host_path)
+    $argumentLine = (($arguments | ForEach-Object {
+        ConvertTo-NativeArgument ([string]$_)
+    }) -join ' ')
+    $argumentsXml = ConvertTo-TaskXmlText $argumentLine
+    $workingDirectoryXml = ConvertTo-TaskXmlText $workingDirectory
+    $description = ConvertTo-TaskXmlText `
+        '9to5 Singularity native anchor; installed inactive with no triggers.'
+    $taskXml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>$description</Description></RegistrationInfo>
+  <Principals>
+    <Principal id="AnchorPrincipal">
+      <UserId>S-1-5-18</UserId>
+      <LogonType>ServiceAccount</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>false</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>true</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT15M</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="AnchorPrincipal">
+    <Exec>
+      <Command>$hostPath</Command>
+      <Arguments>$argumentsXml</Arguments>
+      <WorkingDirectory>$workingDirectoryXml</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
+"@
+    $scheduler = New-Object -ComObject 'Schedule.Service'
+    $scheduler.Connect()
+    $rootFolder = $scheduler.GetFolder('\')
+    if ($null -ne (Find-ExactScheduledTask -RootFolder $rootFolder -Name $name)) {
+        throw 'Singularity anchor task already exists'
+    }
+    # TASK_CREATE=2 and TASK_LOGON_SERVICE_ACCOUNT=5.  Registration has no
+    # triggers and this installer never calls IRegisteredTask.Run().
+    $registered = $rootFolder.RegisterTask(
+        $name, $taskXml, 2, 'SYSTEM', $null, 5, $null)
+    $reread = Find-ExactScheduledTask -RootFolder $rootFolder -Name $name
+    if ($null -eq $registered -or $null -eq $reread) {
+        throw 'inactive anchor task was not durably registered'
+    }
+    $definition = $reread.Definition
+    if ($definition.Triggers.Count -ne 0 -or $definition.Actions.Count -ne 1) {
+        throw 'inactive anchor task gained a trigger or ambiguous action'
+    }
+    $action = $definition.Actions.Item(1)
+    $principal = [string]$definition.Principal.UserId
+    if ([string]$action.Path -cne [string]$Proposal.host_path -or
+            [string]$action.Arguments -cne $argumentLine -or
+            [string]$action.WorkingDirectory -cne $workingDirectory -or
+            ($principal -cne 'S-1-5-18' -and
+                -not $principal.Equals('SYSTEM', [System.StringComparison]::OrdinalIgnoreCase)) -or
+            [int]$definition.Principal.LogonType -ne 5 -or
+            -not [bool]$definition.Settings.AllowDemandStart -or
+            -not [bool]$definition.Settings.Enabled -or
+            [bool]$definition.Settings.RunOnlyIfNetworkAvailable -or
+            $reread.GetInstances(0).Count -ne 0) {
+        throw 'inactive anchor task did not reread exactly'
     }
 }
 
@@ -554,6 +795,7 @@ function Install-ExactInactiveClosure {
             [string]$proposalObject.operator_sid -cne $actualOperatorSid) {
         throw 'proposal staging root or operator SID binding mismatch'
     }
+    Assert-PinnedHostSignature -Proposal $proposalObject
     $stagePython = Assert-NoReparsePath -Path ([string]$proposalObject.interpreter_staging_path) `
         -Label 'staged interpreter'
     $stageVerifier = Assert-NoReparsePath `
@@ -603,6 +845,7 @@ function Install-ExactInactiveClosure {
         -OperatorSid ([string]$proposalObject.operator_sid) `
         -ServiceSid ([string]$proposalObject.service_sid)
     Register-InactiveService -Proposal $proposalObject
+    Register-InactiveAnchorTask -Proposal $proposalObject
     $installedFinalizer = Get-ExactProposalLeaf -Leaves @($proposalObject.source_leaves) `
         -LogicalPath 'bootstrap/tofu_finalize.py'
     $finalOutput = Invoke-ClosedProcess `
@@ -666,6 +909,11 @@ try {
             throw 'missing-service query did not fail closed with 1060'
         }
         [System.Console]::Out.WriteLine('missing-service-query:1060')
+        exit 0
+    }
+    if ($PSCmdlet.ParameterSetName -eq 'AnchorTaskContract') {
+        [System.Console]::Out.WriteLine(
+            ((Get-InactiveAnchorTaskContract) | ConvertTo-Json -Compress))
         exit 0
     }
     if ($PSCmdlet.ParameterSetName -eq 'Install' -and $InstallInactive) {

@@ -149,6 +149,7 @@ class _AttemptHost(OrchestratorExecuteMixin):
     def __init__(self):
         import threading
         self._state_lock = threading.RLock()
+        self._fully_injected = True
         self.calls = 0
 
     def _seedResumeContext(self, _subtask):

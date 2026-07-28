@@ -16,17 +16,17 @@ EXPORTS:
   device() -> str
   summary() -> dict  -- Human-facing compute status for dashboards/reports.
   reset_cache() -> None  -- Clear the detection cache (tests / after a driver change).
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/execution/test_compute.py
 """
 from __future__ import annotations
 
 import shutil
-import subprocess
 from typing import Optional
 
 import config
+from platform_core.execution.sandbox_broker import runLegacyProcess
 
 LOG = config.getLogger("sie.compute")
 
@@ -51,8 +51,8 @@ def detect_gpu() -> dict:
     # Fallback: nvidia-smi (works even without torch installed).
     if shutil.which("nvidia-smi"):
         try:
-            out = subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-                                 capture_output=True, text=True, timeout=8)
+            out = runLegacyProcess(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                                   capture_output=True, text=True, timeout=8)
             name = (out.stdout or "").strip().splitlines()
             if out.returncode == 0 and name:
                 info = {"available": True, "name": name[0].strip(), "source": "nvidia-smi"}

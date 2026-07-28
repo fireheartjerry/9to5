@@ -5,9 +5,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 TOOL = ROOT / "tools" / "galaxy_plan_manifest.py"
+KERNEL_PLAN = (
+    ROOT
+    / "docs"
+    / "superpowers"
+    / "plans"
+    / "2026-07-13-galaxy-r3-transactional-kernel.md"
+)
 
 
 def _run(plan: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -58,3 +64,10 @@ def test_parser_rejects_a_valid_task_with_empty_requested_kind(tmp_path):
     result = _run(plan, "--task", "1", "--kind", "red-tests")
     assert result.returncode != 0
     assert "empty selection" in result.stderr.lower()
+
+
+def test_real_task1_manifest_has_no_missing_required_leaf() -> None:
+    result = _run(KERNEL_PLAN, "--task", "1", "--kind", "all")
+    assert result.returncode == 0, result.stderr
+    missing = [path for path in result.stdout.splitlines() if not (ROOT / path).is_file()]
+    assert missing == []

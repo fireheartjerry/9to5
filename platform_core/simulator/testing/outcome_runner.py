@@ -9,21 +9,25 @@ CI proof path; live runners can use the identical outcome-evaluation interface.
 EXPORTS:
   run_builder_lifecycle(task: EvaluationTask, workspace: Path) -> dict[str, Any]  -- Execute one evaluation task through the full simulated orchestration lifecycle.
   run_live_lifecycle(task: EvaluationTask, workspace: Path) -> dict[str, Any]  -- Run the real planner/executor/verifier/reviewer only after explicit opt-in.
-DEPENDS-ON: agents.verifier, config, learning.outcome_evaluation, orchestrator, platform_core.simulator.simulation, state.task
+DEPENDS-ON: agents.verifier, config, learning.outcome_evaluation, orchestrator, platform_core.execution, platform_core.simulator.simulation, state.task
 SIDE-EFFECTS: unannotated
 RUN/TEST: (no mapped test)
 """
 from __future__ import annotations
 
-import tempfile
 import os
-import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
 
 import config
 from learning.outcome_evaluation import EvaluationTask
+from platform_core.execution.pre_execution import (
+    globLegacy,
+    mutateLegacyPath,
+)
+from platform_core.execution.sandbox_broker import runLegacyProcess
 from state.task import TaskState
 
 
@@ -37,7 +41,7 @@ def run_builder_lifecycle(task: EvaluationTask, workspace: Path) -> dict[str, An
             for name, leaf in (("STATE_DIR", "tasks"), ("CONTROL_DIR", "control"), ("HEARTBEAT_DIR", "heartbeats"),
                                ("LAUNCH_DIR", "launch"), ("IPC_DIR", "ipc")):
                 value = root / leaf
-                value.mkdir(parents=True, exist_ok=True)
+                mutateLegacyPath(value.mkdir,parents=True, exist_ok=True)
                 setattr(config, name, value)
             state = TaskState.create(task.prompt, 1.0)
             state.setElaboratedGoal(task.prompt)
@@ -47,7 +51,7 @@ def run_builder_lifecycle(task: EvaluationTask, workspace: Path) -> dict[str, An
             final = TaskState.loadSafe(state.task_id)
             subtasks = list(getattr(final, "subtasks", []) or [])
             verify_passed = bool(subtasks) and all(bool((item.get("verify_result") or {}).get("passed")) for item in subtasks)
-            artifacts = [str(path) for path in workspace.glob("feature_*.py")]
+            artifacts = [str(path) for path in globLegacy(workspace, "feature_*.py")]
             return {"passed": bool(final and final.meta.get("status") == "done" and verify_passed),
                     "semantic_passed": bool(artifacts), "actual_mode": "simulated", "attempts": 1,
                     "artifacts": artifacts, "detail": str(summary)[:1000]}
@@ -87,7 +91,7 @@ def run_live_lifecycle(task: EvaluationTask, workspace: Path) -> dict[str, Any]:
             for name, leaf in (("STATE_DIR", "tasks"), ("CONTROL_DIR", "control"), ("HEARTBEAT_DIR", "heartbeats"),
                                ("LAUNCH_DIR", "launch"), ("IPC_DIR", "ipc")):
                 value = root / leaf
-                value.mkdir(parents=True, exist_ok=True)
+                mutateLegacyPath(value.mkdir,parents=True, exist_ok=True)
                 setattr(config, name, value)
             # A benchmark must fail in bounded time; it is evidence collection,
             # not an unattended production session. One contained Claude attempt
@@ -146,7 +150,7 @@ def run_live_lifecycle(task: EvaluationTask, workspace: Path) -> dict[str, Any]:
             final_state = TaskState.loadSafe(state.task_id)
             council = dict((getattr(final_state, "meta", {}) or {}).get("pre_execution_council") or {})
             verification = verifier.runVerification(task.verify, str(workspace), {}) if task.verify.get("cmd") else {"passed": False}
-            changed = subprocess.run(["git", "-C", str(workspace), "diff", "--name-only"], capture_output=True, text=True, timeout=30).stdout.splitlines()
+            changed = runLegacyProcess(["git", "-C", str(workspace), "diff", "--name-only"], capture_output=True, text=True, timeout=30).stdout.splitlines()
             orchestration_completed = bool(isinstance(summary, dict) and summary.get("status") == "done")
             notifications = list((getattr(state, "data", {}) or {}).get("notifications", []) or [])
             replan_count = sum(1 for item in notifications if isinstance(item, dict) and item.get("kind") in {"replan", "root_cause_replan"})

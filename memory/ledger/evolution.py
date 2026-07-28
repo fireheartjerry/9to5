@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import config
-from memory.experience_schema import _WRITE_LOCK, _connect, _j, _nowIso
+from memory.experience_schema import _connect, _j, _nowIso, _writeConnect
 
 LOG = config.getLogger("sie.experience_evolution")
 
@@ -36,7 +36,7 @@ def record_insight(*, scope: str, text: str, poignancy: float, support_count: in
                    db_path: Optional[Path] = None) -> Optional[int]:
     """Insert a cited insight (deduped by scope+text). Bumps support_count on conflict."""
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             now = _nowIso()
             cur = conn.execute(
                 """INSERT INTO insights
@@ -72,7 +72,7 @@ def register_candidate(*, kind: str, target: str, body: str,
     """Register a capability candidate (deduped by kind+target+body hash)."""
     h = hashlib.sha256(body.encode("utf-8")).hexdigest()
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             row = conn.execute(
                 "SELECT id FROM evolution_candidates WHERE kind=? AND target=? AND body_hash=?",
                 (kind, target, h)).fetchone()
@@ -103,7 +103,7 @@ def register_invention(*, target: str, body: str, measured_novelty: float = 0.0,
     columns are queryable by the QD archive / dashboard / SIE report."""
     h = hashlib.sha256(body.encode("utf-8")).hexdigest()
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             row = conn.execute(
                 "SELECT id FROM evolution_candidates WHERE kind='feature' AND target=? AND body_hash=?",
                 (target, h)).fetchone()
@@ -149,7 +149,7 @@ def get_candidate(candidate_id: int, db_path: Optional[Path] = None) -> Optional
 def set_candidate_state(candidate_id: int, state: str,
                         db_path: Optional[Path] = None) -> bool:
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute(
                 "UPDATE evolution_candidates SET state=?, updated_at=? WHERE id=?",
                 (state, _nowIso(), candidate_id))
@@ -172,7 +172,7 @@ def promote_candidate(candidate_id: int, db_path: Optional[Path] = None) -> bool
     """Flip a candidate to champion; retire the prior champion of the same kind+target.
     Atomic single transaction so there is never two champions or none."""
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             cand = conn.execute(
                 "SELECT kind, target FROM evolution_candidates WHERE id=?",
                 (candidate_id,)).fetchone()
@@ -200,7 +200,7 @@ def record_innovation(*, run_id: str, title: str, claim: str = "", status: str =
                       db_path: Optional[Path] = None) -> Optional[int]:
     """Persist one fact-backed innovation entry (deduped by run_id+title+status)."""
     try:
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             now = _nowIso()
             cur = conn.execute(
                 """INSERT INTO run_innovations

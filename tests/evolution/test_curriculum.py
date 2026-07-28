@@ -142,6 +142,23 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
         mock.patch.object(config, "SELFPLAY_ENABLED", False).start()
         mock.patch.object(config, "SIE_BOOTSTRAP", False).start()
         retrieval.reset_embed_cache()
+        from platform_core.runtime.controller_state import issueDiagnosticControllerStateAuthority
+        from platform_core.runtime.effect_guard import issueDiagnosticMaintenanceAuthority
+
+        capability = object()
+        self.controller_state_authority = issueDiagnosticControllerStateAuthority(
+            root=self.dir / "controller",
+            repository_id="repo_curriculum_test",
+            controller_generation=1,
+            process_capability=capability,
+            expires_at="2099-01-01T00:00:00+00:00",
+        )
+        self.maintenance_authority = issueDiagnosticMaintenanceAuthority(
+            operations={"sie_maintenance"},
+            controller_generation=1,
+            process_capability=capability,
+            expires_at="2099-01-01T00:00:00+00:00",
+        )
 
     def tearDown(self):
         mock.patch.stopall()
@@ -175,6 +192,13 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
                 db_path=self.db,
             )
 
+    def _run_maintenance(self, **kwargs):
+        return sie.run_maintenance(
+            maintenance_authority=self.maintenance_authority,
+            controller_state_authority=self.controller_state_authority,
+            **kwargs,
+        )
+
     def test_adaptive_trigger_fires_on_five_new_feedback(self):
         """When >=5 feedback records exist AND the opt-in auto-queue flag is enabled,
         curriculum goals are auto-queued. The auto-queue bypasses the human approval gate,
@@ -186,7 +210,7 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
             mock.patch.object(work_launcher, "spawn", return_value=12345) as mock_spawn,
         ):
             # First run with no feedback should not queue goals.
-            out1 = sie.run_maintenance(force=True, db_path=self.db)
+            out1 = self._run_maintenance(force=True, db_path=self.db)
             self.assertIn("curriculum_and_report", out1["steps"])
 
             # Deterministically backdate the consolidation watermark. Both last_full_at
@@ -206,7 +230,7 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
             self._seed_feedback(5)
 
             # Force another maintenance run; adaptive trigger should fire and queue goals.
-            out2 = sie.run_maintenance(force=True, db_path=self.db)
+            out2 = self._run_maintenance(force=True, db_path=self.db)
             curriculum_result = out2["steps"]["curriculum_and_report"]
             self.assertIn("curriculum_and_report", out2["steps"])
             self.assertGreater(
@@ -244,7 +268,7 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
         with mock.patch.object(work_launcher, "spawn", return_value=12345) as mock_spawn,                 mock.patch.object(config, "CURRICULUM_AUTO_QUEUE_ENABLED", False):
             self._seed_curriculum_context()
             self._seed_feedback(5)
-            out = sie.run_maintenance(force=True, db_path=self.db)
+            out = self._run_maintenance(force=True, db_path=self.db)
             curriculum_result = out["steps"]["curriculum_and_report"]
         mock_spawn.assert_not_called()
         self.assertEqual(curriculum_result.get("auto_queued", 0), 0)
@@ -260,7 +284,7 @@ class TestAdaptiveCurriculumTrigger(unittest.TestCase):
 
         # Run maintenance with mocked spawn to verify it's NOT called.
         with mock.patch.object(work_launcher, "spawn", return_value=12345) as mock_spawn:
-            out = sie.run_maintenance(force=True, db_path=self.db)
+            out = self._run_maintenance(force=True, db_path=self.db)
             curriculum_result = out["steps"]["curriculum_and_report"]
             self.assertIn("curriculum_and_report", out["steps"])
             # Goals may or may not be generated (depends on family stats),

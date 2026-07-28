@@ -9,7 +9,7 @@ EXPORTS:
   Epoch
   snapshot(*, universe: Optional[dict]=None, brain_tag: Optional[str]=None) -> Epoch  -- Freeze governing state at process/run start
   diverged(pinned: Epoch) -> bool  -- True iff the on-disk self.code differs from what was pinned at snapshot time.
-DEPENDS-ON: config, platform_core.core.identity, platform_core.runtime.perf
+DEPENDS-ON: config, platform_core.core.identity, platform_core.execution, platform_core.runtime, platform_core.runtime.perf
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_epoch.py
 """
@@ -19,20 +19,23 @@ from __future__ import annotations
 import contextlib
 import copy
 import hashlib
-import sqlite3
-import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
 import platform_core.core.identity as identity
+from platform_core.execution.pre_execution import (
+    observeLegacyPath,
+    openLegacyBuiltin,
+)
+from platform_core.execution.sandbox_broker import runLegacyProcess
 from platform_core.runtime import perf
 
 
 def _gitSha() -> Optional[str]:
     try:
-        out = subprocess.run(
+        out = runLegacyProcess(
             ["git", "rev-parse", "HEAD"],
             cwd=str(identity.PROJECT_ROOT),
             capture_output=True,
@@ -45,28 +48,41 @@ def _gitSha() -> Optional[str]:
 
 
 def _cachePath() -> "Any":
-    return getattr(config, "PROJECT_ROOT", identity.PROJECT_ROOT) / "state" / "epoch_fingerprint_cache.db"
+    # Under capsule configuration EXPERIENCE_DB_PATH is already projected into
+    # the external controller root.  Never derive a cache under PROJECT_ROOT.
+    return Path(config.EXPERIENCE_DB_PATH).parent / "epoch_fingerprint_cache.db"
 
 
-def _cacheConn() -> sqlite3.Connection:
-    path = _cachePath()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path), timeout=30.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS file_hashes (
-            path     TEXT PRIMARY KEY,
-            size     INTEGER,
-            mtime_ns INTEGER,
-            sha256   TEXT
-        )"""
+def _cacheConn() -> Any:
+    """Pre-activation compatibility connection owned by the state-worker boundary.
+
+    Capsule mode refuses raw SQL, causing ``_fingerprintCached`` to fall back to
+    an exact full hash without writing any cache.
+    """
+
+    from platform_core.runtime.state_store_worker import (
+        legacyDiagnosticSqliteConnectionFromPath,
     )
+
+    conn = legacyDiagnosticSqliteConnectionFromPath(_cachePath)
+    try:
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS file_hashes (
+                path     TEXT PRIMARY KEY,
+                size     INTEGER,
+                mtime_ns INTEGER,
+                sha256   TEXT
+            )"""
+        )
+    except BaseException:
+        conn.close()
+        raise
     return conn
 
 
 def _hashFile(path: str) -> str:
     try:
-        with open(path, "rb") as fh:
+        with openLegacyBuiltin(path, "rb") as fh:
             return hashlib.sha256(fh.read()).hexdigest()
     except OSError:
         return hashlib.sha256(b"").hexdigest()
@@ -97,7 +113,7 @@ def _fingerprintCached(paths: list[str]) -> dict[str, str]:
                 for raw in paths:
                     key = str(raw).lower()
                     try:
-                        st = Path(raw).stat()
+                        st = observeLegacyPath(Path(raw).stat)
                     except Exception:
                         st = None
                     size = int(getattr(st, "st_size", -1)) if st is not None else -1

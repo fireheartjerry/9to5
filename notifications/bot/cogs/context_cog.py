@@ -8,7 +8,7 @@ without a gateway; the actual ContextMenu registration is gateway-only (``# prag
 EXPORTS:
   buildReply(kind: str, arg: str, *, state) -> str  -- Pure core for the three context menus
   setup(bot: dpy_commands.Bot) -> None
-DEPENDS-ON: config, memory.user_prefs, notifications.brain_dialogue, notifications.briefing, notifications.commands
+DEPENDS-ON: config, memory.user_prefs, notifications.brain_dialogue, notifications.briefing, notifications.commands, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/notifications/test_context_cog.py
 """
@@ -22,10 +22,10 @@ from discord import app_commands
 from discord.ext import commands as dpy_commands
 
 import config
-from notifications import brain_dialogue
-from notifications import briefing
-from notifications import commands as spine
 from memory import user_prefs
+from notifications import brain_dialogue, briefing
+from notifications import commands as spine
+from platform_core.runtime.effect_guard import legacyDiagnosticDiscordSend
 
 LOG = config.getLogger("cog.context")
 
@@ -52,19 +52,19 @@ async def setup(bot: dpy_commands.Bot) -> None:  # pragma: no cover -- registers
         await interaction.response.defer(thinking=True)
         state = await asyncio.to_thread(spine.resolveTargetTask)
         out = await asyncio.to_thread(buildReply, "explain", _extractSid(message), state=state)
-        await interaction.followup.send(out[:1900])
+        await legacyDiagnosticDiscordSend(interaction.followup.send, out[:1900])
 
     async def _why(interaction: discord.Interaction, message: discord.Message) -> None:
         await interaction.response.defer(thinking=True)
         state = await asyncio.to_thread(spine.resolveTargetTask)
         out = await asyncio.to_thread(buildReply, "why", _extractSid(message), state=state)
-        await interaction.followup.send(out[:1900])
+        await legacyDiagnosticDiscordSend(interaction.followup.send, out[:1900])
 
     async def _brief(interaction: discord.Interaction, message: discord.Message) -> None:
         await interaction.response.defer(thinking=True)
         state = await asyncio.to_thread(spine.resolveTargetTask)
         out = await asyncio.to_thread(buildReply, "brief", "", state=state)
-        await interaction.followup.send(out[:1900])
+        await legacyDiagnosticDiscordSend(interaction.followup.send, out[:1900])
 
     for label, cb in zip(CONTEXT_COMMAND_NAMES, (_explain, _why, _brief)):
         bot.tree.add_command(app_commands.ContextMenu(name=label, callback=cb))

@@ -1,0 +1,35 @@
+{
+  "intent": "product",
+  "freshness_mode": "balanced_recent",
+  "cluster_mode": "debate",
+  "subqueries": [
+    {
+      "label": "primary",
+      "search_query": "karpathy llm council multi agent peer review",
+      "ranking_query": "How does Andrej Karpathy's LLM Council work, and what are practitioners saying about it now?",
+      "sources": ["reddit", "x", "youtube", "tiktok", "instagram", "hackernews", "polymarket", "github"],
+      "weight": 1.0
+    },
+    {
+      "label": "recent_research",
+      "search_query": "multi agent debate diversity confidence council",
+      "ranking_query": "Which recent results show when multi-agent debate benefits from diversity and calibrated confidence?",
+      "sources": ["reddit", "youtube", "hackernews", "github"],
+      "weight": 0.8
+    },
+    {
+      "label": "judge_integrity",
+      "search_query": "LLM council anonymous peer review judge calibration",
+      "ranking_query": "What current evidence identifies self-preference, chairman influence, or calibration failures in LLM councils?",
+      "sources": ["reddit", "youtube", "hackernews", "github"],
+      "weight": 0.8
+    },
+    {
+      "label": "adaptive_efficiency",
+      "search_query": "cost aware multi agent debate cascade diversity retention",
+      "ranking_query": "What recent techniques make multi-agent deliberation more selective, diverse, and cost-efficient?",
+      "sources": ["reddit", "youtube", "hackernews", "github"],
+      "weight": 0.7
+    }
+  ]
+}

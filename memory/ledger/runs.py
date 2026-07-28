@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import config
-from memory.experience_schema import LOG, _WRITE_LOCK, _connect, _j, _nowIso
+from memory.experience_schema import LOG, _connect, _j, _nowIso, _writeConnect
 from platform_core.core.best_effort import best_effort
 
 _TERMINAL = ("done", "complete", "aborted", "partial", "blocked", "failed")
@@ -36,7 +36,7 @@ def record_run(run: dict[str, Any], db_path: Optional[Path] = None) -> bool:
         LOG.warning("record_run: missing or empty run_id, skipping")
         return False
     with best_effort("ledger.runs", log=LOG):   # ledger must never break a run
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             conn.execute(
                 """INSERT INTO runs
                    (run_id, task_id, goal_raw, goal_elaborated, universe_json,
@@ -98,7 +98,7 @@ def record_eval(score: dict[str, Any], *, suite_version: str = "v1",
                 passed_gate: Optional[bool] = None, db_path: Optional[Path] = None) -> Optional[int]:
     """Append an eval-harness result row; returns its rowid (or None on failure)."""
     with best_effort("ledger.eval_runs", log=LOG):
-        with _WRITE_LOCK, _connect(db_path) as conn:
+        with _writeConnect(db_path) as conn:
             cur = conn.execute(
                 """INSERT INTO eval_runs
                    (suite_version, prompt_set_id, adapter_id, ran_at, score_json, passed_gate)

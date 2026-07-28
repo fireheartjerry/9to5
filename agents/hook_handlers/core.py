@@ -15,14 +15,18 @@ EXPORTS:
   logAll(data)  -- PostToolUse / any: append one JSON line {time, tool_name} to the log.
   logTelemetry(data)  -- Any Claude hook: append compact non-blocking iteration telemetry.
   main()  -- Dispatch to the requested handler based on argv[1].
-DEPENDS-ON: agents.hooks_destructive, agents.hooks_obsidian, agents.hooks_selfmod, config, notifications.discord_bot
+DEPENDS-ON: agents.hooks_destructive, agents.hooks_obsidian, agents.hooks_selfmod, config, notifications.discord_bot, platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/orchestration/test_orch_core_bugs.py tests/slow/test_simulation_core.py
 """
 
-import sys
 import json
 import logging
+import sys
+
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+)
 
 LOG = logging.getLogger("hooks")
 
@@ -30,7 +34,9 @@ LOG = logging.getLogger("hooks")
 # Derive the repo root from THIS file's location so hooks always adds ITS OWN tree,
 # not a hardcoded install path -- this is correct under any checkout or git worktree.
 from pathlib import Path as _Path
+
 sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
+from platform_core.execution.pre_execution import openLegacyFile  # noqa: E402
 
 # config is safe to import at module load; project sub-modules are imported
 # lazily inside handlers so a broken import can never crash the dispatcher.
@@ -51,7 +57,9 @@ except Exception:
 # ---------------------------------------------------------------------------
 try:
     from agents.hooks_destructive import (  # noqa: E402,F401
-        blockDestructive, DESTRUCTIVE_PATTERNS, readHookCtx,
+        DESTRUCTIVE_PATTERNS,
+        blockDestructive,
+        readHookCtx,
     )
 except Exception:  # noqa: BLE001
     blockDestructive = None  # type: ignore[assignment]
@@ -63,15 +71,15 @@ except Exception:  # noqa: BLE001
     writeObsidian = None  # type: ignore[assignment]
 try:
     from agents.hooks_selfmod import (  # noqa: E402,F401
-        selfModificationGuard,
-        _classifyPath,
-        _scanDiff,
-        _shouldBlock,
-        _resolveState,
+        _bashHitsBoundary,
         _boundarySetFor,
+        _classifyPath,
         _coreLockFor,
         _envTaskRequested,
-        _bashHitsBoundary,
+        _resolveState,
+        _scanDiff,
+        _shouldBlock,
+        selfModificationGuard,
     )
 except Exception:  # noqa: BLE001
     selfModificationGuard = None  # type: ignore[assignment]
@@ -162,13 +170,13 @@ def logAll(data):
         from pathlib import Path
 
         log_path = Path(_hooksLogPath())
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        mutateLegacyPath(log_path.parent.mkdir,parents=True, exist_ok=True)
 
         entry = {
             "time": datetime.now().isoformat(timespec="seconds"),
             "tool_name": data.get("tool_name", ""),
         }
-        with log_path.open("a", encoding="utf-8") as fh:
+        with openLegacyFile(log_path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry) + "\n")
     except Exception as exc:  # noqa: BLE001 -- telemetry must never block tool use
         LOG.debug("Hook event log skipped: %s", exc)

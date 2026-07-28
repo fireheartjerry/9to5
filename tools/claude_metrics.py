@@ -11,7 +11,7 @@ EXPORTS:
   record_hook_event(hook_name: str, data: dict[str, Any]) -> None
   record_executor_event(entry: dict[str, Any]) -> None
   read_recent(path: Path, limit: int=20) -> list[dict[str, Any]]
-DEPENDS-ON: (stdlib only)
+DEPENDS-ON: platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/platform/test_iteration_telemetry.py
 """
@@ -19,12 +19,25 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
 
+# This module is also imported by ``tools/claude_statusline.py`` when the
+# process working directory is unrelated to the checkout.  Anchor the trusted
+# local import universe to this file before importing platform boundaries.
 REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+    openLegacyFile,
+    readLegacyText,
+)
+from platform_core.execution.sandbox_broker import runLegacyProcess
+
 METRICS_DIR = REPO_ROOT / "logs" / "claude_metrics"
 TURN_LOG = METRICS_DIR / "turns.jsonl"
 EXECUTOR_LOG = METRICS_DIR / "executor.jsonl"
@@ -32,8 +45,8 @@ EXECUTOR_LOG = METRICS_DIR / "executor.jsonl"
 
 def _git(args: list[str]) -> str:
     try:
-        cp = subprocess.run(["git", *args], cwd=REPO_ROOT, text=True,
-                            capture_output=True, timeout=2)
+        cp = runLegacyProcess(["git", *args], cwd=REPO_ROOT, text=True,
+                              capture_output=True, timeout=2)
         return (cp.stdout or "").strip() if cp.returncode == 0 else ""
     except Exception:
         return ""
@@ -49,8 +62,8 @@ def git_state() -> dict[str, Any]:
 
 
 def append_jsonl(path: Path, entry: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as fh:
+    mutateLegacyPath(path.parent.mkdir,parents=True, exist_ok=True)
+    with openLegacyFile(path, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, sort_keys=True, default=str) + "\n")
 
 
@@ -96,7 +109,7 @@ def record_executor_event(entry: dict[str, Any]) -> None:
 
 def read_recent(path: Path, limit: int = 20) -> list[dict[str, Any]]:
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()[-limit:]
+        lines = readLegacyText(path, encoding="utf-8").splitlines()[-limit:]
     except OSError:
         return []
     out: list[dict[str, Any]] = []

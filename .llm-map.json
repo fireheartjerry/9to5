@@ -183,7 +183,8 @@
       "depends_on": [
         "config",
         "learning.postmortem",
-        "memory.experience"
+        "memory.experience",
+        "platform_core.execution"
       ],
       "callers": [
         "agents.discovery"
@@ -357,7 +358,8 @@
         "agents.gemini_driver",
         "config",
         "notifications.lane_feed",
-        "platform_core.core.contracts"
+        "platform_core.core.contracts",
+        "platform_core.execution"
       ],
       "callers": [
         "agents.browser_executor",
@@ -376,7 +378,10 @@
         "send_prompt_to_project",
         "close_project_session"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.execution",
+        "platform_core.runtime"
+      ],
       "callers": [
         "agents.planning.pre_execution_council",
         "tools.chatgpt_browser_spike"
@@ -415,6 +420,7 @@
         "agents.playbook",
         "config",
         "memory.obsidian",
+        "platform_core.execution",
         "platform_core.execution.launch_guard"
       ],
       "callers": [
@@ -440,6 +446,7 @@
         "agents.workflow_resolver",
         "config",
         "notifications.discord_bot",
+        "platform_core.execution",
         "platform_core.runtime.action_risk"
       ],
       "callers": [
@@ -490,6 +497,7 @@
       "depends_on": [
         "agents.executor_stream_results",
         "config",
+        "platform_core.execution",
         "platform_core.execution.launch_guard"
       ],
       "callers": [
@@ -550,7 +558,8 @@
       "depends_on": [
         "agents.executor",
         "config",
-        "notifications.lane_feed"
+        "notifications.lane_feed",
+        "platform_core.execution"
       ],
       "callers": [
         "agents.native_executor"
@@ -604,7 +613,6 @@
       "callers": [
         "agents.execution.browser_executor",
         "agents.execution.native_executor",
-        "agents.review.verification",
         "orchestrator",
         "platform_core.orchestration.safety_mixin",
         "platform_core.orchestration.society.worker"
@@ -708,7 +716,8 @@
         "agents.hooks_obsidian",
         "agents.hooks_selfmod",
         "config",
-        "notifications.discord_bot"
+        "notifications.discord_bot",
+        "platform_core.execution"
       ],
       "callers": [
         "agents.hooks"
@@ -727,6 +736,7 @@
         "blockDestructive"
       ],
       "depends_on": [
+        "platform_core.execution",
         "platform_core.runtime.action_risk"
       ],
       "callers": [
@@ -765,6 +775,7 @@
       "depends_on": [
         "agents.hooks_destructive",
         "config",
+        "platform_core.execution",
         "platform_core.runtime.action_risk",
         "state.task"
       ],
@@ -951,7 +962,8 @@
         "CouncilContextPack"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution"
       ],
       "callers": [
         "agents.planning.council_roles",
@@ -968,7 +980,8 @@
         "CouncilRunLogger"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution"
       ],
       "callers": [
         "agents.planning.pre_execution_council"
@@ -1202,7 +1215,8 @@
         "vagueGoalBundle"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution"
       ],
       "callers": [
         "agents.planning.elaborator.core"
@@ -1235,7 +1249,9 @@
       "exports": [
         "splitVerified"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.execution"
+      ],
       "callers": [
         "agents.planning.elaborator.core"
       ],
@@ -1402,7 +1418,8 @@
         "agents.planning.council_logging",
         "agents.planning.council_prompts",
         "agents.planning.council_roles",
-        "config"
+        "config",
+        "platform_core.runtime"
       ],
       "callers": [
         "agents.planning.council_seam",
@@ -1634,18 +1651,22 @@
         "VResult",
         "verdictFor",
         "VerifyCancelled",
+        "VerificationCommandRefused",
+        "VerificationCommandRequest",
+        "VerificationCommandAuthority",
+        "issueDiagnosticVerificationCommandAuthority",
+        "validateVerificationCommandAuthority",
         "runReceipt",
         "receiptToVResult"
       ],
       "depends_on": [
-        "agents.executor",
         "agents.verification_diff",
         "agents.verifier_sanitize",
-        "config",
-        "platform_core.execution.launch_guard"
+        "config"
       ],
       "callers": [
-        "agents.verification"
+        "agents.verification",
+        "learning.model.eval_runner"
       ],
       "test": [
         "tests/review/test_verification.py"
@@ -1660,7 +1681,8 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core.git_io"
+        "platform_core.core.git_io",
+        "platform_core.execution"
       ],
       "callers": [
         "agents.verification_diff"
@@ -2118,6 +2140,7 @@
         "MountSpec",
         "ContainerSecurityProfile",
         "SealedHarnessRuntime",
+        "InertRoleResult",
         "ClosedAcceptance",
         "parse_closed_acceptance",
         "parse_runtime_profile_ledger",
@@ -2132,6 +2155,8 @@
         "ValidatedExternalReport",
         "EvidenceReplayGuard",
         "validate_external_report",
+        "issueKernelArtifactQualification",
+        "run_inert_role",
         "main"
       ],
       "depends_on": [
@@ -2212,6 +2237,12 @@
         "AmbiguousTask5Recovery",
         "Task5InputDrift",
         "BegunReservationCannotCancel",
+        "AdminProtocolRefused",
+        "AdminOperationUnavailable",
+        "InjectedAdminResponseLoss",
+        "AdminRequest",
+        "AdminTrustContext",
+        "parse_admin_request",
         "ProtectedAnchorRecord",
         "ServiceLaunchPlan",
         "PreAnchorLegacyReadiness",
@@ -2243,6 +2274,13 @@
         "TransitionBegin",
         "TransitionObservation",
         "TransitionState",
+        "ExternalPathManifestStore",
+        "AdminTransitionStore",
+        "AdminContainedRuntime",
+        "AdminSourceCommitStore",
+        "AdminCommandProcessor",
+        "run_sealed_admin_request",
+        "main",
         "DurableTransitionCoordinator",
         "TofuProposal",
         "TofuInstallReceipt",
@@ -2290,11 +2328,13 @@
         "select_verified_runtime",
         "require_offline_activation_artifacts",
         "verify_activation_images",
+        "inspect_oci_archive",
         "inspect_oci_layout"
       ],
       "depends_on": [],
       "callers": [
-        "tools.build_galaxy_launcher"
+        "tools.build_galaxy_launcher",
+        "tools.lock_galaxy_runtime"
       ],
       "test": [
         "tests/execution/test_controller_runtime_manifest.py"
@@ -2304,6 +2344,13 @@
       "path": "bootstrap/galaxy_launcher/singularity_service.py",
       "purpose": "Inactive Windows service host for the installed Singularity anchor.",
       "exports": [
+        "ExpectedPipeClient",
+        "AnchorLaunchBoundary",
+        "validate_pipe_client",
+        "build_pipe_sddl",
+        "resolve_anchor_launch_boundary",
+        "invoke_native_anchor",
+        "serve_pipe_once",
         "run_service_dispatcher",
         "self_test",
         "main"
@@ -2554,7 +2601,6 @@
         "platform_core.core.tracing",
         "platform_core.execution.backends.docker",
         "platform_core.execution.backends.remote",
-        "platform_core.execution.backends.worktree",
         "platform_core.execution.router",
         "platform_core.execution.security",
         "platform_core.ops.doctor",
@@ -3389,7 +3435,8 @@
         "read_letters"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution"
       ],
       "callers": [],
       "test": [
@@ -3485,13 +3532,15 @@
     },
     "human_nature.faculties.runtime.ab_harness": {
       "path": "human_nature/faculties/runtime/ab_harness.py",
-      "purpose": "A/B validation harness — behaviour-coupling gate before any flag goes ON-by-default.",
+      "purpose": "A/B validation harness over the isolated logical state worker.",
       "exports": [
         "record_run",
         "compare"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.app_config.paths",
+        "platform_core.runtime"
       ],
       "callers": [],
       "test": [
@@ -3589,7 +3638,7 @@
     },
     "human_nature.faculties.runtime.psyche_store": {
       "path": "human_nature/faculties/runtime/psyche_store.py",
-      "purpose": "Psyche Store — durable cross-run persistence for mood/drives/personality/scars.",
+      "purpose": "Psyche persistence over one isolated logical state-worker namespace.",
       "exports": [
         "PsycheStore",
         "open_store",
@@ -3598,7 +3647,9 @@
         "close_store"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.app_config.paths",
+        "platform_core.runtime"
       ],
       "callers": [],
       "test": [
@@ -4008,7 +4059,8 @@
       ],
       "depends_on": [
         "config",
-        "learning.compute"
+        "learning.compute",
+        "platform_core.execution"
       ],
       "callers": [
         "learning.bootstrap"
@@ -4053,7 +4105,8 @@
         "reset_cache"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution"
       ],
       "callers": [
         "learning.compute"
@@ -4090,7 +4143,8 @@
       ],
       "depends_on": [
         "config",
-        "memory.experience"
+        "memory.experience",
+        "platform_core.execution"
       ],
       "callers": [
         "learning.evolution.sie"
@@ -4110,7 +4164,8 @@
       "depends_on": [
         "config",
         "learning.lessons",
-        "memory.experience"
+        "memory.experience",
+        "platform_core.execution"
       ],
       "callers": [
         "learning.curriculum"
@@ -4131,7 +4186,9 @@
         "learning.safety",
         "learning.toolsmith",
         "memory.experience",
-        "platform_core.execution.launch_guard"
+        "platform_core.execution",
+        "platform_core.execution.launch_guard",
+        "platform_core.runtime"
       ],
       "callers": [
         "learning.evolution.sie",
@@ -4228,7 +4285,8 @@
         "learning.evolution.validate",
         "learning.prompts",
         "learning.safety",
-        "memory.experience"
+        "memory.experience",
+        "platform_core.execution"
       ],
       "callers": [
         "learning.evolution.sie"
@@ -4271,7 +4329,8 @@
         "config",
         "learning.compute",
         "learning.prompts",
-        "memory.experience"
+        "memory.experience",
+        "platform_core.execution"
       ],
       "callers": [
         "learning.release"
@@ -4315,7 +4374,8 @@
       "depends_on": [
         "config",
         "learning.curriculum",
-        "platform_core.core.fsio"
+        "platform_core.core.fsio",
+        "platform_core.runtime"
       ],
       "callers": [
         "learning.selfplay"
@@ -4347,7 +4407,9 @@
         "learning.sie_steps",
         "memory.experience",
         "notifications.work_launcher",
-        "platform_core.core.fsio"
+        "platform_core.core.fsio",
+        "platform_core.execution",
+        "platform_core.runtime"
       ],
       "callers": [
         "learning.sie"
@@ -4536,7 +4598,8 @@
       "depends_on": [
         "config",
         "memory.experience",
-        "memory.experience_schema"
+        "memory.experience_schema",
+        "platform_core.execution"
       ],
       "callers": [
         "learning.lessons"
@@ -4577,7 +4640,8 @@
         "config",
         "learning.dataset",
         "learning.lessons",
-        "memory.experience"
+        "memory.experience",
+        "platform_core.execution"
       ],
       "callers": [
         "learning.preferences"
@@ -4764,7 +4828,8 @@
       "depends_on": [
         "config",
         "learning.dataset",
-        "memory.experience"
+        "memory.experience",
+        "platform_core.execution"
       ],
       "callers": [
         "learning.distill"
@@ -4786,7 +4851,8 @@
       ],
       "depends_on": [
         "config",
-        "memory.experience"
+        "memory.experience",
+        "platform_core.execution"
       ],
       "callers": [
         "learning.eval_harness"
@@ -4806,6 +4872,7 @@
         "active_runner"
       ],
       "depends_on": [
+        "agents.review.verification",
         "agents.verifier",
         "config"
       ],
@@ -4836,7 +4903,8 @@
         "learning.compute",
         "learning.distill",
         "learning.preferences",
-        "memory.experience"
+        "memory.experience",
+        "platform_core.execution"
       ],
       "callers": [
         "learning.finetune"
@@ -4863,7 +4931,9 @@
         "combine_outcome_evaluations",
         "promote_candidate"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.execution"
+      ],
       "callers": [
         "learning.council_quality",
         "platform_core.simulator.testing.outcome_runner",
@@ -5129,7 +5199,8 @@
       ],
       "depends_on": [
         "config",
-        "notifications.lane_feed"
+        "notifications.lane_feed",
+        "platform_core.execution"
       ],
       "callers": [
         "agents.discovery.inventor",
@@ -5149,10 +5220,13 @@
         "human_nature.faculties.signals.instinct",
         "human_nature.faculties.signals.momentary",
         "human_nature.faculties.signals.opinions",
+        "memory.retrievals.core",
         "notifications.ask",
         "notifications.brain_dialogue",
         "notifications.briefing",
         "notifications.instinct",
+        "orchestrator",
+        "platform_core.ops.doctor",
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.llm_mixin"
       ],
@@ -5205,14 +5279,16 @@
     },
     "memory.conviction_ledger": {
       "path": "memory/conviction_ledger.py",
-      "purpose": "Conviction Ledger — SQLite store of judgment -> outcome calibration.",
+      "purpose": "Conviction calibration ledger over the isolated logical state worker.",
       "exports": [
         "record_judgment",
         "score_judgment",
         "track_record"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.app_config.paths",
+        "platform_core.runtime"
       ],
       "callers": [
         "human_nature.faculties.signals.instinct",
@@ -5607,7 +5683,7 @@
     },
     "memory.ledger.index": {
       "path": "memory/ledger/index.py",
-      "purpose": "Swappable ANN index for Layer-1 retrieval (fail-open to the O(n) cosine scan).",
+      "purpose": "Swappable vector index for Layer-1 retrieval (fail-open to the O(n) cosine scan).",
       "exports": [
         "AnnIndex",
         "NullIndex",
@@ -5616,7 +5692,9 @@
         "resetIndex"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.app_config.paths",
+        "platform_core.runtime"
       ],
       "callers": [
         "memory.exp_index"
@@ -5775,7 +5853,8 @@
       "depends_on": [
         "config",
         "memory.experience_ddl",
-        "platform_core.core.best_effort"
+        "platform_core.core.best_effort",
+        "platform_core.runtime"
       ],
       "callers": [
         "memory.experience_schema"
@@ -5896,7 +5975,9 @@
       ],
       "depends_on": [
         "config",
-        "memory.retrieval"
+        "memory.retrieval",
+        "platform_core.app_config.paths",
+        "platform_core.runtime"
       ],
       "callers": [
         "memory.novelty_store"
@@ -6036,6 +6117,7 @@
       ],
       "depends_on": [
         "config",
+        "llm_io",
         "memory.exp_index",
         "memory.experience",
         "memory.experience_content",
@@ -6110,7 +6192,9 @@
       "depends_on": [
         "config",
         "platform_core.core.best_effort",
-        "platform_core.core.fsio"
+        "platform_core.core.fsio",
+        "platform_core.execution",
+        "platform_core.runtime"
       ],
       "callers": [
         "memory.obsidian"
@@ -6260,7 +6344,8 @@
         "notifications.commands",
         "notifications.console_hud",
         "notifications.cv2",
-        "notifications.discord_bot"
+        "notifications.discord_bot",
+        "platform_core.runtime"
       ],
       "callers": [],
       "test": [
@@ -6280,6 +6365,7 @@
         "notifications.audit",
         "notifications.commands",
         "notifications.views",
+        "platform_core.runtime",
         "platform_core.runtime.control"
       ],
       "callers": [],
@@ -6299,7 +6385,8 @@
         "memory.user_prefs",
         "notifications.brain_dialogue",
         "notifications.briefing",
-        "notifications.commands"
+        "notifications.commands",
+        "platform_core.runtime"
       ],
       "callers": [],
       "test": [
@@ -6318,6 +6405,7 @@
         "notifications.commands",
         "notifications.slash",
         "notifications.views",
+        "platform_core.runtime",
         "platform_core.runtime.control"
       ],
       "callers": [],
@@ -6360,7 +6448,8 @@
         "notifications.brain_dialogue",
         "notifications.briefing",
         "notifications.commands",
-        "notifications.slash"
+        "notifications.slash",
+        "platform_core.runtime"
       ],
       "callers": [],
       "test": [
@@ -6383,6 +6472,7 @@
         "notifications.slash",
         "notifications.views",
         "platform_core.ops.health",
+        "platform_core.runtime",
         "platform_core.runtime.control"
       ],
       "callers": [],
@@ -6426,6 +6516,7 @@
         "notifications.commands",
         "notifications.views",
         "notifications.work_launcher",
+        "platform_core.runtime",
         "platform_core.runtime.control"
       ],
       "callers": [],
@@ -6451,6 +6542,7 @@
         "notifications.work_launcher",
         "orchestrator",
         "platform_core.orchestration.work_profile",
+        "platform_core.runtime",
         "state.task"
       ],
       "callers": [],
@@ -6474,6 +6566,7 @@
         "notifications.views",
         "notifications.views_feedback",
         "notifications.views_terminal",
+        "platform_core.runtime",
         "platform_core.runtime.control",
         "platform_core.runtime.heartbeat"
       ],
@@ -6505,6 +6598,7 @@
         "config",
         "notifications.audit",
         "notifications.commands",
+        "platform_core.runtime",
         "platform_core.runtime.control"
       ],
       "callers": [
@@ -6688,7 +6782,8 @@
         "resolve_transcript_path"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution"
       ],
       "callers": [
         "notifications.surfaces.dashboard",
@@ -6787,7 +6882,8 @@
         "truncate"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.runtime"
       ],
       "callers": [
         "notifications.discord_client"
@@ -6974,10 +7070,8 @@
         "notifications.surfaces.terminal_surface",
         "notifications.surfaces.webdash",
         "platform_core.execution.router",
-        "platform_core.orchestration.execute_attempt_mixin",
         "platform_core.orchestration.run_phase_surface_mixin",
         "platform_core.orchestration.society.coordinator",
-        "platform_core.orchestration.step_sink",
         "platform_core.runtime.cost_budget"
       ],
       "test": [
@@ -7063,7 +7157,9 @@
         "recordOutcome"
       ],
       "depends_on": [
-        "platform_core.core.best_effort"
+        "platform_core.core.best_effort",
+        "platform_core.execution",
+        "platform_core.runtime"
       ],
       "callers": [
         "platform_core.orchestration.control_mixin"
@@ -7308,6 +7404,7 @@
         "notifications.audit",
         "notifications.commands",
         "notifications.icons",
+        "platform_core.runtime",
         "platform_core.runtime.control"
       ],
       "callers": [
@@ -7326,7 +7423,8 @@
       "depends_on": [
         "config",
         "notifications.slash",
-        "notifications.views_control"
+        "notifications.views_control",
+        "platform_core.runtime"
       ],
       "callers": [
         "notifications.views_feedback"
@@ -7350,7 +7448,8 @@
         "notifications.audit",
         "notifications.commands",
         "notifications.work_launcher",
-        "platform_core.orchestration.work_profile"
+        "platform_core.orchestration.work_profile",
+        "platform_core.runtime"
       ],
       "callers": [
         "notifications.views_run"
@@ -7369,7 +7468,8 @@
       ],
       "depends_on": [
         "notifications.views_control",
-        "platform_core.ops.wipe"
+        "platform_core.ops.wipe",
+        "platform_core.runtime"
       ],
       "callers": [
         "notifications.views_subtask"
@@ -7387,7 +7487,8 @@
       "depends_on": [
         "notifications.commands",
         "notifications.discord_bot",
-        "notifications.terminal_ipc"
+        "notifications.terminal_ipc",
+        "platform_core.runtime"
       ],
       "callers": [
         "notifications.views_terminal"
@@ -7466,7 +7567,8 @@
         "config",
         "human_nature",
         "notifications.commands",
-        "notifications.slash"
+        "notifications.slash",
+        "platform_core.runtime"
       ],
       "callers": [],
       "test": [
@@ -7526,7 +7628,9 @@
       ],
       "depends_on": [],
       "callers": [
-        "notifications.event_bus"
+        "notifications.event_bus",
+        "platform_core.orchestration.execute_attempt_mixin",
+        "platform_core.orchestration.step_sink"
       ],
       "test": [
         "tests/notifications/test_event_bus.py"
@@ -7560,6 +7664,7 @@
       "depends_on": [
         "config",
         "notifications.discord_bot",
+        "platform_core.execution",
         "platform_core.orchestration.innovation_report"
       ],
       "callers": [
@@ -7599,7 +7704,9 @@
         "notifications.event_bus"
       ],
       "callers": [
-        "notifications.subprocess_feed"
+        "notifications.subprocess_feed",
+        "platform_core.orchestration.execute_attempt_mixin",
+        "platform_core.orchestration.step_sink"
       ],
       "test": [
         "tests/notifications/test_subprocess_feed.py"
@@ -7634,7 +7741,9 @@
         "default_providers"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution",
+        "platform_core.runtime"
       ],
       "callers": [
         "notifications.tunnel_providers"
@@ -7667,6 +7776,7 @@
         "notifications.commands",
         "notifications.work_launcher_readiness",
         "platform_core.core.fsio",
+        "platform_core.execution",
         "platform_core.ops.external_project",
         "platform_core.orchestration.work_profile",
         "platform_core.runtime.control",
@@ -7688,7 +7798,8 @@
         "externalReadiness"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution"
       ],
       "callers": [
         "notifications.work_launcher_readiness"
@@ -7705,6 +7816,7 @@
         "config",
         "notifications.audit",
         "notifications.commands",
+        "platform_core.runtime",
         "platform_core.runtime.control",
         "state.task"
       ],
@@ -7727,10 +7839,7 @@
       "depends_on": [
         "notifications.runtime.subprocess_feed"
       ],
-      "callers": [
-        "platform_core.orchestration.execute_attempt_mixin",
-        "platform_core.orchestration.step_sink"
-      ],
+      "callers": [],
       "test": [
         "tests/notifications/test_subprocess_feed.py"
       ]
@@ -7804,6 +7913,7 @@
         "notifications.visuals",
         "platform_core.core.best_effort",
         "platform_core.core.clock",
+        "platform_core.execution",
         "state.task"
       ],
       "callers": [
@@ -7832,6 +7942,9 @@
       "path": "notifications/surfaces/terminal_ipc.py",
       "purpose": "Filesystem bridge for the Live Terminal paginator across the bot <-> orchestrator",
       "exports": [
+        "TerminalIpcStoreUnavailable",
+        "TerminalIpcStoreBinding",
+        "installTerminalIpcStore",
         "read_nav",
         "write_nav",
         "bump_nav",
@@ -7841,7 +7954,10 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core.fsio"
+        "platform_core.app_config.paths",
+        "platform_core.core.fsio",
+        "platform_core.execution",
+        "platform_core.runtime"
       ],
       "callers": [
         "notifications.terminal_ipc"
@@ -8317,6 +8433,7 @@
         "agents.verifier",
         "config",
         "learning.eval_runner",
+        "llm_io",
         "memory.obsidian",
         "notifications.dashboard",
         "notifications.webdash",
@@ -8376,6 +8493,8 @@
       "path": "platform_core/app_config/_env.py",
       "purpose": "Env bootstrap + never-crash env-coercion helpers (single home for BOTH).",
       "exports": [
+        "ControllerConfigPosture",
+        "controllerConfigActive",
         "locateRepoRoot",
         "installRoot",
         "loadEnvOnce",
@@ -8389,6 +8508,7 @@
         "platform_core.app_config.inventor_flags",
         "platform_core.app_config.llm",
         "platform_core.app_config.paths",
+        "platform_core.app_config.prompts",
         "platform_core.app_config.settings"
       ],
       "test": [
@@ -8480,17 +8600,35 @@
       "purpose": "9TO5 file-system paths: the frozen ``PathsCfg`` domain of the config registry.",
       "exports": [
         "PathsCfg",
+        "buildControllerPathsCfg",
+        "ControllerPathsInstallReservation",
+        "reserveControllerPathsInstallation",
+        "installControllerPaths",
+        "controllerPathsActive",
+        "controllerPathsActivationFence",
         "buildPathsCfg",
         "ensureDirs"
       ],
       "depends_on": [
         "platform_core.app_config._env",
-        "platform_core.app_config.settings"
+        "platform_core.app_config.settings",
+        "platform_core.runtime"
       ],
       "callers": [
         "config",
+        "human_nature.faculties.runtime.ab_harness",
+        "human_nature.faculties.runtime.psyche_store",
+        "memory.conviction_ledger",
+        "memory.ledger.index",
+        "memory.novelty.store",
+        "notifications.surfaces.terminal_ipc",
         "platform_core.app_config.settings",
-        "platform_core.orchestration.society.society_batch"
+        "platform_core.orchestration.society.society_batch",
+        "platform_core.orchestration.validation_cache",
+        "platform_core.runtime.control_store",
+        "platform_core.runtime.heartbeat",
+        "platform_core.runtime.operator_launch",
+        "state.task_io"
       ],
       "test": [
         "tests/orchestration/test_society_coordinator.py",
@@ -8505,7 +8643,9 @@
       "exports": [
         "PromptsCfg"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.app_config._env"
+      ],
       "callers": [
         "platform_core.app_config.settings"
       ],
@@ -8737,6 +8877,8 @@
       "depends_on": [
         "config",
         "platform_core.core.identity",
+        "platform_core.execution",
+        "platform_core.runtime",
         "platform_core.runtime.perf"
       ],
       "callers": [
@@ -8752,6 +8894,15 @@
       "path": "platform_core/core/fsio.py",
       "purpose": "Crash-safe file IO kernel: atomic writes, robust JSON load/update, pid file locks.",
       "exports": [
+        "assertNoReparsePath",
+        "readNoFollowBytes",
+        "NativeFileIdentity",
+        "NativeDirectoryEntry",
+        "NativeDirectoryHandle",
+        "openNativeDirectory",
+        "fsyncDirectory",
+        "exclusiveCreateBytes",
+        "durableAtomicReplaceBytes",
         "atomicWriteText",
         "atomicWriteJson",
         "loadJson",
@@ -8770,7 +8921,9 @@
         "notifications.runtime.work_launcher",
         "notifications.surfaces.terminal_ipc",
         "platform_core.app_config.settings",
+        "platform_core.core.research_transfer",
         "platform_core.runtime.heartbeat",
+        "platform_core.runtime.worktree",
         "state.task_io"
       ],
       "test": [
@@ -8811,7 +8964,9 @@
       "callers": [
         "agents.execution.executor_preflight",
         "agents.planning.preplanning_clarification",
-        "platform_core.core.galaxy_experiments"
+        "platform_core.core.galaxy_experiments",
+        "platform_core.core.research_transfer",
+        "platform_core.runtime.worktree"
       ],
       "test": [
         "tests/platform/test_galaxy_evidence.py"
@@ -8860,15 +9015,16 @@
         "gitPreflight",
         "gateCommands"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.execution"
+      ],
       "callers": [
         "agents.review.verification_diff",
         "platform_core.ops.doctor",
         "platform_core.ops.health",
         "platform_core.orchestration.github",
         "platform_core.orchestration.pr_feedback",
-        "platform_core.orchestration.run_loop",
-        "platform_core.runtime.worktree"
+        "platform_core.orchestration.run_loop"
       ],
       "test": [
         "tests/platform/test_git_io.py"
@@ -8903,7 +9059,9 @@
         "iterRecords",
         "readTail"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.execution"
+      ],
       "callers": [
         "learning.feedback.adversary_trust",
         "notifications.audit",
@@ -8966,6 +9124,33 @@
         "tests/platform/test_provenance.py"
       ]
     },
+    "platform_core.core.research_transfer": {
+      "path": "platform_core/core/research_transfer.py",
+      "purpose": "Fail-closed intake for research discovered after the frozen GALAXY registry.",
+      "exports": [
+        "ResearchTransferLedgerError",
+        "ResearchSourceStatus",
+        "ResearchSourceClass",
+        "ResearchConsumer",
+        "ResearchControl",
+        "ResearchBlocker",
+        "ResearchClaim",
+        "ResearchTransferRecord",
+        "ResearchTrialBinding",
+        "ResearchQualificationContext",
+        "ResearchTrialAdmissionDecision",
+        "evaluate_research_trial",
+        "load_research_transfer_ledger"
+      ],
+      "depends_on": [
+        "platform_core.core.fsio",
+        "platform_core.core.galaxy_evidence"
+      ],
+      "callers": [],
+      "test": [
+        "tests/platform/test_research_transfer.py"
+      ]
+    },
     "platform_core.core.surfaces": {
       "path": "platform_core/core/surfaces.py",
       "purpose": "Surface & tool catalog -- rich automation across EVERY reachable surface.",
@@ -8999,7 +9184,8 @@
         "recentRunIds"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution"
       ],
       "callers": [
         "agents.trace.replay",
@@ -9013,13 +9199,83 @@
     },
     "platform_core.execution": {
       "path": "platform_core/execution/__init__.py",
-      "purpose": "Cloud Execution Fabric -- pluggable ExecutionEnvironment backends for the Executor.",
+      "purpose": "Lazy public facade for the cloud execution fabric.",
       "exports": [],
-      "depends_on": [
-        "platform_core.execution.environment",
-        "platform_core.execution.router"
+      "depends_on": [],
+      "callers": [
+        "agents.discovery.digest",
+        "agents.execution.browser_executor",
+        "agents.execution.chatgpt_browser_driver",
+        "agents.execution.executor",
+        "agents.execution.executor_env",
+        "agents.execution.executor_stream",
+        "agents.execution.native_executor",
+        "agents.hook_handlers.core",
+        "agents.hook_handlers.destructive",
+        "agents.hook_handlers.selfmod",
+        "agents.planning.council_context",
+        "agents.planning.council_logging",
+        "agents.planning.elaborator.grounding",
+        "agents.planning.elaborator.path_verify",
+        "agents.review.verification_diff",
+        "human_nature.faculties.identity.continuity",
+        "learning.evolution.bootstrap",
+        "learning.evolution.compute",
+        "learning.evolution.curator",
+        "learning.evolution.curriculum",
+        "learning.evolution.evolver",
+        "learning.evolution.promote",
+        "learning.evolution.release",
+        "learning.evolution.sie",
+        "learning.feedback.lessons",
+        "learning.feedback.preferences",
+        "learning.model.distill",
+        "learning.model.eval_harness",
+        "learning.model.finetune",
+        "learning.outcome_evaluation",
+        "llm_io",
+        "memory.stores.obsidian",
+        "notifications.council_transcript",
+        "notifications.jerry_client",
+        "notifications.runtime.reflection_post",
+        "notifications.runtime.tunnel_providers",
+        "notifications.runtime.work_launcher",
+        "notifications.runtime.work_launcher_readiness",
+        "notifications.surfaces.dashboard",
+        "notifications.surfaces.terminal_ipc",
+        "platform_core.core.epoch",
+        "platform_core.core.git_io",
+        "platform_core.core.jsonl_io",
+        "platform_core.core.tracing",
+        "platform_core.execution.backends.docker",
+        "platform_core.execution.backends.remote",
+        "platform_core.execution.router",
+        "platform_core.execution.security",
+        "platform_core.knowledge_base.compress",
+        "platform_core.knowledge_base.scraper",
+        "platform_core.ops.external_project",
+        "platform_core.ops.health",
+        "platform_core.ops.retention",
+        "platform_core.ops.wipe",
+        "platform_core.orchestration.compaction",
+        "platform_core.orchestration.evidence_gate",
+        "platform_core.orchestration.github",
+        "platform_core.orchestration.knowledge_refresh",
+        "platform_core.orchestration.plan_context",
+        "platform_core.orchestration.run_loop",
+        "platform_core.orchestration.society.blackboard",
+        "platform_core.orchestration.subtask",
+        "platform_core.orchestration.validation_cache",
+        "platform_core.runtime.control_store",
+        "platform_core.runtime.heartbeat",
+        "platform_core.runtime.perf",
+        "platform_core.runtime.trajectory",
+        "platform_core.simulator.testing.outcome_runner",
+        "selfmod",
+        "state.task_io",
+        "tools.claude_metrics",
+        "tools.size_audit"
       ],
-      "callers": [],
       "test": []
     },
     "platform_core.execution.backends": {
@@ -9027,7 +9283,10 @@
       "purpose": "Execution-fabric backends package marker (one module per backend).",
       "exports": [],
       "depends_on": [],
-      "callers": [],
+      "callers": [
+        "platform_core.execution.backends.worktree",
+        "platform_core.execution.router"
+      ],
       "test": []
     },
     "platform_core.execution.backends.docker": {
@@ -9038,6 +9297,7 @@
       ],
       "depends_on": [
         "config",
+        "platform_core.execution",
         "platform_core.execution.environment",
         "platform_core.execution.security"
       ],
@@ -9050,7 +9310,7 @@
     },
     "platform_core.execution.backends.local": {
       "path": "platform_core/execution/backends/local.py",
-      "purpose": "LocalEnvironment -- the default backend; identity in every method (== today's behavior).",
+      "purpose": "LocalEnvironment -- the explicitly trusted, unconfined host backend.",
       "exports": [
         "LocalEnvironment"
       ],
@@ -9072,6 +9332,7 @@
       ],
       "depends_on": [
         "config",
+        "platform_core.execution",
         "platform_core.execution.environment",
         "platform_core.execution.security"
       ],
@@ -9084,14 +9345,13 @@
     },
     "platform_core.execution.backends.worktree": {
       "path": "platform_core/execution/backends/worktree.py",
-      "purpose": "WorktreeEnvironment -- rung 1 isolation: a per-subtask git worktree (Epic 1's worktree seam).",
+      "purpose": "Compatibility facade for the retired linked-worktree backend preference.",
       "exports": [
         "WorktreeEnvironment"
       ],
       "depends_on": [
-        "config",
-        "platform_core.execution.environment",
-        "platform_core.runtime.worktree"
+        "platform_core.execution.backends",
+        "platform_core.execution.environment"
       ],
       "callers": [
         "platform_core.execution.router"
@@ -9107,20 +9367,24 @@
         "EnvironmentUnavailable",
         "Capability",
         "EnvHandle",
-        "FinalizationOutcome",
         "PreparedFinalization",
-        "FinalizationReceipt",
         "ExecutionContext",
+        "ResolvedExecutionPolicy",
+        "AttemptProvisionScope",
         "ExecutionEnvironment"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.runtime"
+      ],
       "callers": [
-        "platform_core.execution",
         "platform_core.execution.backends.docker",
         "platform_core.execution.backends.local",
         "platform_core.execution.backends.remote",
         "platform_core.execution.backends.worktree",
-        "platform_core.execution.router"
+        "platform_core.execution.router",
+        "platform_core.execution.wiring",
+        "platform_core.orchestration.execute_attempt_mixin",
+        "platform_core.orchestration.execute_mixin"
       ],
       "test": [
         "tests/execution/test_execution_environment.py"
@@ -9137,7 +9401,6 @@
       "callers": [
         "agents.execution.executor",
         "agents.execution.executor_stream",
-        "agents.review.verification",
         "learning.evolution.evolver",
         "main",
         "orchestrator",
@@ -9169,6 +9432,10 @@
       "path": "platform_core/execution/router.py",
       "purpose": "Fail-closed execution-environment selection and finalization.",
       "exports": [
+        "ExecutionBackendRegistry",
+        "buildInstalledExecutionBackendRegistry",
+        "validateLocalRunnerEligibility",
+        "resolveInstalledLandingEnvironment",
         "selectEnvironment",
         "provision",
         "prepare",
@@ -9178,15 +9445,17 @@
       "depends_on": [
         "config",
         "notifications.event_bus",
+        "platform_core.execution",
+        "platform_core.execution.backends",
         "platform_core.execution.backends.docker",
         "platform_core.execution.backends.local",
         "platform_core.execution.backends.remote",
         "platform_core.execution.backends.worktree",
         "platform_core.execution.environment",
-        "platform_core.execution.trust"
+        "platform_core.execution.trust",
+        "platform_core.runtime"
       ],
       "callers": [
-        "platform_core.execution",
         "platform_core.execution.wiring"
       ],
       "test": [
@@ -9203,6 +9472,7 @@
       ],
       "depends_on": [
         "config",
+        "platform_core.execution",
         "platform_core.runtime.action_risk"
       ],
       "callers": [
@@ -9241,13 +9511,20 @@
       "purpose": "Orchestration glue that wraps a subtask's attempt loop in an ExecutionEnvironment lifecycle.",
       "exports": [
         "envHandsKw",
+        "resolveExecutionPolicy",
+        "provisionForAttempt",
+        "finalizeAttemptContextQuietly",
         "provisionForSubtask",
-        "finalizeQuietly"
+        "finalizeQuietly",
+        "prepareQuietly",
+        "completeQuietly"
       ],
       "depends_on": [
+        "platform_core.execution.environment",
         "platform_core.execution.launch_guard",
         "platform_core.execution.router",
-        "platform_core.orchestration.work_profile"
+        "platform_core.orchestration.work_profile",
+        "platform_core.runtime"
       ],
       "callers": [
         "platform_core.orchestration.execute_attempt_mixin",
@@ -9299,6 +9576,7 @@
       ],
       "depends_on": [
         "platform_core.app_config",
+        "platform_core.execution",
         "platform_core.knowledge_base.builder",
         "platform_core.knowledge_base.scraper"
       ],
@@ -9321,7 +9599,9 @@
       ],
       "depends_on": [
         "platform_core.app_config",
-        "platform_core.core.provenance"
+        "platform_core.core.provenance",
+        "platform_core.execution",
+        "platform_core.runtime"
       ],
       "callers": [
         "knowledge",
@@ -9371,6 +9651,7 @@
       "depends_on": [
         "config",
         "learning.compute",
+        "llm_io",
         "platform_core.core.best_effort",
         "platform_core.core.git_io"
       ],
@@ -9389,7 +9670,8 @@
         "cloneRepo"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution"
       ],
       "callers": [
         "notifications.runtime.work_launcher",
@@ -9411,7 +9693,9 @@
         "config",
         "platform_core.core.concurrency",
         "platform_core.core.git_io",
-        "platform_core.execution.provider_probe"
+        "platform_core.execution",
+        "platform_core.execution.provider_probe",
+        "platform_core.runtime"
       ],
       "callers": [
         "main",
@@ -9435,7 +9719,9 @@
         "sweepAll"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution",
+        "platform_core.runtime"
       ],
       "callers": [
         "platform_core.orchestration.run_phase_mixin"
@@ -9485,7 +9771,9 @@
         "restartBot"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution",
+        "platform_core.runtime"
       ],
       "callers": [
         "notifications.presentation.views_subtask"
@@ -9632,6 +9920,7 @@
       ],
       "depends_on": [
         "config",
+        "platform_core.execution",
         "platform_core.orchestration.brain_io"
       ],
       "callers": [
@@ -9840,6 +10129,7 @@
         "agents.verifier",
         "config",
         "platform_core.core.best_effort",
+        "platform_core.execution",
         "platform_core.orchestration.work_profile"
       ],
       "callers": [
@@ -9877,9 +10167,10 @@
         "config",
         "human_nature",
         "notifications.dashboard",
-        "notifications.event_bus",
-        "notifications.subprocess_feed",
+        "notifications.runtime.event_bus",
+        "notifications.runtime.subprocess_feed",
         "platform_core.core.surfaces",
+        "platform_core.execution.environment",
         "platform_core.execution.wiring",
         "platform_core.orchestration.brain_io",
         "platform_core.orchestration.human_nature_bridge",
@@ -9940,11 +10231,11 @@
         "notifications.discord_bot",
         "platform_core.core.best_effort",
         "platform_core.core.surfaces",
+        "platform_core.execution.environment",
         "platform_core.execution.wiring",
         "platform_core.orchestration.execute_attempt_mixin",
         "platform_core.orchestration.execute_delegates_mixin",
         "platform_core.orchestration.solution_space",
-        "platform_core.orchestration.subtask",
         "platform_core.runtime.control",
         "state.task"
       ],
@@ -10031,6 +10322,7 @@
       "depends_on": [
         "config",
         "platform_core.core.git_io",
+        "platform_core.execution",
         "platform_core.orchestration.validation_cache"
       ],
       "callers": [
@@ -10422,6 +10714,7 @@
         "knowledge",
         "memory.obsidian",
         "platform_core.app_config",
+        "platform_core.execution",
         "state.task"
       ],
       "callers": [
@@ -10524,6 +10817,7 @@
       "depends_on": [
         "config",
         "developer_tools.introspection",
+        "platform_core.execution",
         "platform_core.orchestration.llm_navigation"
       ],
       "callers": [
@@ -10744,6 +11038,7 @@
         "platform_core.core.clock",
         "platform_core.core.concurrency",
         "platform_core.core.git_io",
+        "platform_core.execution",
         "platform_core.orchestration.parallel_safety",
         "platform_core.runtime.control",
         "state.task"
@@ -10994,7 +11289,8 @@
         "Blackboard"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution"
       ],
       "callers": [
         "platform_core.orchestration.society",
@@ -11176,8 +11472,8 @@
       "depends_on": [
         "config",
         "memory.experience",
-        "notifications.event_bus",
-        "notifications.subprocess_feed",
+        "notifications.runtime.event_bus",
+        "notifications.runtime.subprocess_feed",
         "platform_core.orchestration.step_resume"
       ],
       "callers": [
@@ -11194,12 +11490,12 @@
       "depends_on": [
         "agents.verifier",
         "config",
-        "platform_core.core.epoch"
+        "platform_core.core.epoch",
+        "platform_core.execution"
       ],
       "callers": [
         "orchestrator",
         "platform_core.orchestration.control_mixin",
-        "platform_core.orchestration.execute_mixin",
         "platform_core.orchestration.fork_policy",
         "platform_core.orchestration.plan_mixin",
         "platform_core.orchestration.run_loop_mixin",
@@ -11253,7 +11549,10 @@
       ],
       "depends_on": [
         "config",
+        "platform_core.app_config.paths",
         "platform_core.core.epoch",
+        "platform_core.execution",
+        "platform_core.runtime",
         "platform_core.runtime.perf"
       ],
       "callers": [
@@ -11353,7 +11652,56 @@
       "purpose": "Runtime control, recovery, and resilience infrastructure.",
       "exports": [],
       "depends_on": [],
-      "callers": [],
+      "callers": [
+        "agents.execution.chatgpt_browser_driver",
+        "agents.planning.pre_execution_council",
+        "human_nature.faculties.runtime.ab_harness",
+        "human_nature.faculties.runtime.psyche_store",
+        "learning.evolution.evolver",
+        "learning.evolution.selfplay",
+        "learning.evolution.sie",
+        "memory.conviction_ledger",
+        "memory.ledger.index",
+        "memory.ledger.schema",
+        "memory.novelty.store",
+        "memory.stores.obsidian",
+        "notifications.bot.cogs.admin",
+        "notifications.bot.cogs.ask_cog",
+        "notifications.bot.cogs.context_cog",
+        "notifications.bot.cogs.control_cog",
+        "notifications.bot.cogs.log_cog",
+        "notifications.bot.cogs.observe_cog",
+        "notifications.bot.cogs.plan_cog",
+        "notifications.bot.cogs.runs_cog",
+        "notifications.bot.core",
+        "notifications.bot.ui.dynamic",
+        "notifications.discord.client",
+        "notifications.jerry_client",
+        "notifications.presentation.views_control",
+        "notifications.presentation.views_feedback",
+        "notifications.presentation.views_run",
+        "notifications.presentation.views_subtask",
+        "notifications.presentation.views_terminal",
+        "notifications.psyche_cog",
+        "notifications.runtime.tunnel_providers",
+        "notifications.slash",
+        "notifications.surfaces.terminal_ipc",
+        "platform_core.app_config.paths",
+        "platform_core.core.epoch",
+        "platform_core.execution.environment",
+        "platform_core.execution.router",
+        "platform_core.execution.wiring",
+        "platform_core.knowledge_base.scraper",
+        "platform_core.ops.health",
+        "platform_core.ops.retention",
+        "platform_core.ops.wipe",
+        "platform_core.orchestration.validation_cache",
+        "platform_core.runtime.control_store",
+        "platform_core.runtime.heartbeat",
+        "platform_core.runtime.operator_launch",
+        "platform_core.runtime.worktree",
+        "state.task_io"
+      ],
       "test": []
     },
     "platform_core.runtime.action_risk": {
@@ -11453,8 +11801,12 @@
     },
     "platform_core.runtime.control_store": {
       "path": "platform_core/runtime/control_store.py",
-      "purpose": "Transactional SQLite backing store for the run control plane (``state/control.db``).",
+      "purpose": "Authority-bound native control-plane store.",
       "exports": [
+        "ControlStoreUnavailable",
+        "ControlStoreCorrupt",
+        "ControlStoreBinding",
+        "installControlStore",
         "setFlag",
         "getFlag",
         "setDecision",
@@ -11470,7 +11822,10 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core.clock"
+        "platform_core.app_config.paths",
+        "platform_core.core.clock",
+        "platform_core.execution",
+        "platform_core.runtime"
       ],
       "callers": [
         "platform_core.runtime.autonomy_allowance",
@@ -11516,6 +11871,9 @@
       "path": "platform_core/runtime/heartbeat.py",
       "purpose": "One cross-process liveness primitive: heartbeat files under ``state/heartbeats/``.",
       "exports": [
+        "HeartbeatStoreUnavailable",
+        "HeartbeatStoreBinding",
+        "installHeartbeatStore",
         "heartbeatPath",
         "writeHeartbeat",
         "beat",
@@ -11527,8 +11885,12 @@
       ],
       "depends_on": [
         "config",
+        "platform_core.app_config.paths",
         "platform_core.core.clock",
-        "platform_core.core.fsio"
+        "platform_core.core.fsio",
+        "platform_core.execution",
+        "platform_core.runtime",
+        "state.task_io"
       ],
       "callers": [
         "main",
@@ -11552,17 +11914,24 @@
         "OperatorApprovalRefused",
         "OperatorCapabilityRefused",
         "OperatorCapabilityPidMismatch",
+        "CapsuleBootstrapAuthority",
+        "OperatorChildQuiescenceEvidence",
+        "OperatorChildContainmentFailure",
         "PreSpecAnalysisAuthority",
         "SpecProposal",
         "OperatorApprovalFrame",
         "OperatorLaunchCapability",
         "OperatorSpecApprovalCapability",
         "AuthorizedOuterCapabilities",
+        "validate_authorized_outer_capabilities",
         "OperatorSpawnResult",
         "consume_outer_capabilities",
         "OperatorLauncher"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.app_config.paths",
+        "platform_core.runtime"
+      ],
       "callers": [],
       "test": [
         "tests/control/test_operator_launch.py"
@@ -11577,7 +11946,8 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core.jsonl_io"
+        "platform_core.core.jsonl_io",
+        "platform_core.execution"
       ],
       "callers": [
         "memory.retrievals.core",
@@ -11659,7 +12029,8 @@
       "depends_on": [
         "config",
         "platform_core.core.clock",
-        "platform_core.core.jsonl_io"
+        "platform_core.core.jsonl_io",
+        "platform_core.execution"
       ],
       "callers": [
         "platform_core.orchestration.execute_delegates_mixin"
@@ -11689,10 +12060,21 @@
     },
     "platform_core.runtime.worktree": {
       "path": "platform_core/runtime/worktree.py",
-      "purpose": "Git-worktree-per-subtask isolation backend (Epic 1, unit c; hermes/guild pattern port).",
+      "purpose": "Private-clone leases plus fail-closed retirement of legacy linked worktrees.",
       "exports": [
+        "PrivateCloneRefused",
+        "CloneRecoveryRefused",
+        "LegacyWorktreeRefused",
+        "LegacyWorktreeInspection",
+        "LegacyWorktreeRetirement",
+        "LegacyWorktreeRetirer",
         "WorktreeLease",
         "WorktreeResult",
+        "validateCloneLease",
+        "CloneLeaseProvisioner",
+        "CloneRecoveryCheckpoint",
+        "CloneRecoveryResult",
+        "CloneLeaseRecovery",
         "enterWorktree",
         "enterWorktreeLease",
         "collectChanges",
@@ -11704,10 +12086,11 @@
       ],
       "depends_on": [
         "config",
-        "platform_core.core.git_io"
+        "platform_core.core.fsio",
+        "platform_core.core.galaxy_evidence",
+        "platform_core.runtime"
       ],
       "callers": [
-        "platform_core.execution.backends.worktree",
         "platform_core.orchestration.adversary_loop",
         "platform_core.orchestration.fork_seams",
         "platform_core.orchestration.review_mixin",
@@ -11870,6 +12253,7 @@
         "config",
         "learning.outcome_evaluation",
         "orchestrator",
+        "platform_core.execution",
         "platform_core.simulator.simulation",
         "state.task"
       ],
@@ -11955,7 +12339,8 @@
         "safety_gate"
       ],
       "depends_on": [
-        "config"
+        "config",
+        "platform_core.execution"
       ],
       "callers": [
         "platform_core.orchestration.control_mixin"
@@ -12056,7 +12441,13 @@
       "purpose": "TaskState file I/O: atomic save, load, iteration, and list helpers.",
       "exports": [
         "validateTaskId",
+        "TaskStateStoreUnavailable",
+        "TaskStateSnapshotReceiptRefused",
+        "TaskStateStoreBinding",
+        "TaskStateSnapshotReceipt",
+        "installTaskStateStore",
         "save",
+        "saveDataSnapshot",
         "load",
         "loadSafe",
         "iterStored",
@@ -12066,12 +12457,16 @@
       ],
       "depends_on": [
         "config",
+        "platform_core.app_config.paths",
         "platform_core.core.fsio",
+        "platform_core.execution",
+        "platform_core.runtime",
         "platform_core.runtime.heartbeat",
         "state.task_schema"
       ],
       "callers": [
         "notifications.runtime.work_launcher",
+        "platform_core.runtime.heartbeat",
         "state.task_schema"
       ],
       "test": [
@@ -12164,6 +12559,7 @@
         "require_docker_desktop_network_closed",
         "build_offline_closure",
         "load_activation_image_lock",
+        "verify_offline_closure",
         "main"
       ],
       "depends_on": [
@@ -12241,7 +12637,9 @@
         "record_executor_event",
         "read_recent"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.execution"
+      ],
       "callers": [],
       "test": [
         "tests/platform/test_iteration_telemetry.py"
@@ -12479,13 +12877,16 @@
       "purpose": "Prepare and verify an inactive, exact-challenge GALAXY runtime closure.",
       "exports": [
         "RuntimeLockRefused",
+        "write_reviewed_source_lock",
+        "verify_reviewed_source_lock",
         "prepare_runtime",
         "verify_proposal",
         "main"
       ],
       "depends_on": [
         "bootstrap.galaxy_launcher.activation_crypto",
-        "bootstrap.galaxy_launcher.activation_dpapi"
+        "bootstrap.galaxy_launcher.activation_dpapi",
+        "bootstrap.galaxy_launcher.runtime_manifest"
       ],
       "callers": [],
       "test": []
@@ -12567,6 +12968,7 @@
       "exports": [
         "is_test_path",
         "iter_py_files",
+        "iter_test_files",
         "validate_header_prefix",
         "iter_header_files",
         "module_dotted",
@@ -12628,7 +13030,9 @@
         "collect",
         "main"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "platform_core.execution"
+      ],
       "callers": [],
       "test": [
         "tests/platform/test_dev_commands.py"

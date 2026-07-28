@@ -1,108 +1,124 @@
-"""WorktreeEnvironment lifecycle against a real temp git repo (offline, cross-platform).
+"""The historical worktree preference is a truthful private-clone facade."""
+from __future__ import annotations
 
-ADAPTATION (Epic 1 brownfield): WorktreeEnvironment is a thin adapter over the landed
-``platform_core/runtime/worktree.py`` (enterWorktree/exitWorktree/removeWorktree/isIsolated),
-which key off ``config.PROJECT_ROOT`` / ``config.STATE_DIR``. The ``repo`` fixture redirects both
-at those globals to the temp git repo so the REAL worktree module exercises the temp tree (never
-the live 9TO5 repo). All provision/collect/teardown assertions are unchanged from the plan.
-"""
-import os
-import shutil
-import subprocess
+from pathlib import Path
 
 import pytest
 
-import config
 from platform_core.execution.backends.worktree import WorktreeEnvironment
-from platform_core.execution.environment import Capability
-
-pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
-
-
-def _git(args, cwd):
-    subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True,
-                   check=True, timeout=20)
-
-
-@pytest.fixture()
-def repo(tmp_path, monkeypatch):
-    base = tmp_path / "repo"
-    base.mkdir()
-    _git(["init", "-b", "main"], base)
-    _git(["config", "user.email", "t@t.io"], base)
-    _git(["config", "user.name", "t"], base)
-    (base / "seed.txt").write_text("seed\n", encoding="utf-8")
-    _git(["add", "-A"], base)
-    _git(["commit", "-m", "seed"], base)
-    # Redirect the landed worktree module's globals at the sandbox repo (offline + non-destructive).
-    monkeypatch.setattr(config, "PROJECT_ROOT", str(base))
-    monkeypatch.setattr(config, "STATE_DIR", str(base))
-    return str(base)
+from platform_core.execution.environment import (
+    Capability,
+    EnvHandle,
+    EnvironmentUnavailable,
+    FinalizationReceipt,
+    PreparedFinalization,
+)
 
 
-class _TS:
-    task_id = "abcd1234ef"
-    meta = {"work_dir": None}
+class _CloneDelegate:
+    def __init__(self, checkout: Path) -> None:
+        self.checkout = checkout
+        self.torn_down = False
+
+    def healthCheck(self) -> bool:
+        return True
+
+    def provision(self, **kwargs) -> EnvHandle:
+        del kwargs
+        self.checkout.mkdir(parents=True)
+        return EnvHandle(
+            work_dir=str(self.checkout),
+            backend="clone",
+            meta={"transaction_id": "tx-001", "linked_worktree": False},
+            capabilities=Capability.FILE_RW | Capability.EXEC | Capability.SNAPSHOT,
+            requires_canonical_landing=True,
+            runtime_token=object(),
+        )
+
+    def wrapLauncher(self, run_cmd, handle):
+        return run_cmd, handle.work_dir
+
+    def collectChanges(self, handle, **kwargs):
+        del handle, kwargs
+        return {"backend": "clone", "merged": False, "canonical_mutation": False}
+
+    def prepareChanges(self, handle, **kwargs):
+        del kwargs
+        return PreparedFinalization(
+            backend="clone",
+            work_dir=handle.work_dir,
+            accepted=True,
+            proposed_revision="a" * 40,
+            summary={"transaction_id": "tx-001"},
+            runtime_token=handle.runtime_token,
+        )
+
+    def preparedChangesIntact(self, prepared):
+        return prepared.accepted
+
+    def completeChanges(self, prepared, **kwargs):
+        del kwargs
+        return FinalizationReceipt(
+            backend="clone",
+            accepted=prepared.accepted,
+            requires_canonical_landing=True,
+            error="authorization required for staged promotion",
+        )
+
+    def checkpointRecovery(self, handle, **kwargs):
+        del handle, kwargs
+        return {"available": True}
+
+    def teardown(self, handle):
+        del handle
+        self.torn_down = True
 
 
-def test_healthcheck_true_when_git_present():
-    assert WorktreeEnvironment().healthCheck() is True
+class _State:
+    task_id = "task-001"
 
 
-def test_provision_creates_isolated_worktree_with_snapshot_cap(repo):
+def test_unconfigured_worktree_preference_is_typed_unavailable(tmp_path: Path) -> None:
     env = WorktreeEnvironment()
-    h = env.provision(task_state=_TS(), subtask={"subtask_id": "st-001"},
-                      base_dir=repo, policy=None)
-    assert os.path.isdir(h.work_dir)
-    assert os.path.abspath(h.work_dir) != os.path.abspath(repo)   # isolated tree
-    assert h.backend == "worktree"
-    assert Capability.SNAPSHOT in h.capabilities
-    assert h.meta["branch"].startswith("wt/")
-    env.teardown(h)
+    assert env.healthCheck() is False
+    with pytest.raises(EnvironmentUnavailable):
+        env.provision(
+            task_state=_State(),
+            subtask={"subtask_id": "subtask-001"},
+            base_dir=str(tmp_path),
+            policy=None,
+        )
 
 
-def test_wraplauncher_is_identity_on_worktree_dir(repo):
-    env = WorktreeEnvironment()
-    h = env.provision(task_state=_TS(), subtask={"subtask_id": "st-002"},
-                      base_dir=repo, policy=None)
-    cmd = ["claude", "--print"]
-    out_cmd, out_work = env.wrapLauncher(cmd, h)
-    assert out_cmd == cmd                 # the process runs natively, just in another dir
-    assert out_work == h.work_dir
-    env.teardown(h)
+def test_worktree_preference_delegates_without_linked_checkout(tmp_path: Path) -> None:
+    delegate = _CloneDelegate(tmp_path / "external" / "candidate")
+    env = WorktreeEnvironment(delegate)  # type: ignore[arg-type]
+    handle = env.provision(
+        task_state=_State(),
+        subtask={"subtask_id": "subtask-001"},
+        base_dir=str(tmp_path / "canonical"),
+        policy=None,
+    )
 
+    assert handle.backend == "worktree"
+    assert handle.meta["requested_backend"] == "worktree"
+    assert handle.meta["effective_backend"] == "private-clone"
+    assert handle.meta["linked_worktree"] is False
+    assert Capability.SNAPSHOT in handle.capabilities
+    summary = env.collectChanges(
+        handle,
+        task_state=_State(),
+        subtask={"subtask_id": "subtask-001"},
+    )
+    assert summary["canonical_mutation"] is False
+    assert summary["merged"] is False
 
-def test_collect_merges_back_then_teardown_removes(repo):
-    env = WorktreeEnvironment()
-    h = env.provision(task_state=_TS(), subtask={"subtask_id": "st-003"},
-                      base_dir=repo, policy=None)
-    # the "executor" writes a new file inside the isolated worktree
-    new_file = os.path.join(h.work_dir, "made_in_worktree.txt")
-    with open(new_file, "w", encoding="utf-8") as fh:
-        fh.write("hello from the worktree\n")
-    summary = env.collectChanges(h, task_state=_TS(), subtask={"subtask_id": "st-003"})
-    assert summary["merged"] is True
-    # the edit is now in the base tree on the main branch
-    assert os.path.isfile(os.path.join(repo, "made_in_worktree.txt"))
-    env.teardown(h)
-    assert not os.path.isdir(h.work_dir)   # worktree pruned
-
-
-def test_collect_with_no_changes_is_clean(repo):
-    env = WorktreeEnvironment()
-    h = env.provision(task_state=_TS(), subtask={"subtask_id": "st-004"},
-                      base_dir=repo, policy=None)
-    summary = env.collectChanges(h, task_state=_TS(), subtask={"subtask_id": "st-004"})
-    assert summary["backend"] == "worktree"
-    assert summary.get("merged") in (True, False)   # nothing to merge is not a failure
-    env.teardown(h)
-
-
-def test_worktree_handle_requires_staged_canonical_landing(repo):
-    env = WorktreeEnvironment()
-    h = env.provision(task_state=_TS(), subtask={"subtask_id": "st-landing"},
-                      base_dir=repo, policy=None)
-    try:
-        assert h.requires_canonical_landing is True
-    finally:
-        env.teardown(h)
+    prepared = env.prepareChanges(
+        handle,
+        task_state=_State(),
+        subtask={"subtask_id": "subtask-001"},
+    )
+    assert prepared.backend == "worktree"
+    assert prepared.summary["linked_worktree"] is False
+    env.teardown(handle)
+    assert delegate.torn_down

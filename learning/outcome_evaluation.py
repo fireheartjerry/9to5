@@ -19,7 +19,7 @@ EXPORTS:
   evaluation_from_dict(raw: dict[str, Any]) -> OutcomeEvaluation  -- Rehydrate a persisted evaluation artifact for champion comparison.
   combine_outcome_evaluations(candidate: str, evaluations: list[OutcomeEvaluation], *, artifact_dir: str | Path | None=None) -> OutcomeEvaluation  -- Merge distinct held-out task receipts into one comparable benchmark record.
   promote_candidate(candidate: OutcomeEvaluation, champion_path: str | Path, *, minimum_live_tasks: int=8) -> dict[str, Any]  -- Atomically establish or improve the champion only with sufficient live evidence.
-DEPENDS-ON: (stdlib only)
+DEPENDS-ON: platform_core.execution
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/evolution/test_outcome_evaluation.py
 """
@@ -27,12 +27,19 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from statistics import mean
 from typing import Any, Callable
+
+from platform_core.execution.pre_execution import (
+    globLegacy,
+    mutateLegacyPath,
+    observeLegacyPath,
+    readLegacyText,
+)
+from platform_core.execution.sandbox_broker import runLegacyProcess
 
 
 @dataclass(frozen=True)
@@ -140,8 +147,8 @@ class EvaluationSuite:
     def load(cls, path: str | Path, *, held_out: bool = False) -> "EvaluationSuite":
         base = Path(path)
         tasks: list[EvaluationTask] = []
-        for item in sorted(base.glob("*.json")):
-            raw = json.loads(item.read_text(encoding="utf-8"))
+        for item in sorted(globLegacy(base, "*.json")):
+            raw = json.loads(readLegacyText(item, encoding="utf-8"))
             raw.setdefault("id", item.stem)
             tasks.append(EvaluationTask.fromDict(raw))
         return cls(version=base.name or "v1", tasks=tuple(tasks), held_out=held_out)
@@ -227,19 +234,19 @@ class DisposableWorkspace:
     def __enter__(self) -> Path:
         self._root = Path(tempfile.mkdtemp(prefix="9to5-outcome-"))
         self.path = self._root / self.task_id
-        proc = subprocess.run(["git", "-C", str(self.source_repo), "worktree", "add", "--detach", str(self.path), "HEAD"],
-                              capture_output=True, text=True, timeout=60)
+        proc = runLegacyProcess(["git", "-C", str(self.source_repo), "worktree", "add", "--detach", str(self.path), "HEAD"],
+                                capture_output=True, text=True, timeout=60)
         if proc.returncode:
-            self._root.rmdir()
+            mutateLegacyPath(self._root.rmdir)
             raise RuntimeError(f"worktree provisioning failed: {proc.stderr.strip()}")
         return self.path
 
     def __exit__(self, *_exc) -> None:
         if self.path is not None:
-            subprocess.run(["git", "-C", str(self.source_repo), "worktree", "remove", "--force", str(self.path)],
-                           capture_output=True, text=True, timeout=60)
+            runLegacyProcess(["git", "-C", str(self.source_repo), "worktree", "remove", "--force", str(self.path)],
+                             capture_output=True, text=True, timeout=60)
         if self._root is not None:
-            shutil.rmtree(self._root, ignore_errors=True)
+            mutateLegacyPath(shutil.rmtree,self._root, ignore_errors=True)
 
 
 def run_outcome_evaluation(
@@ -264,9 +271,9 @@ def run_outcome_evaluation(
     if artifact_dir is None:
         return evaluation
     output = Path(artifact_dir) / f"outcome-evaluation-{candidate}.json"
-    output.parent.mkdir(parents=True, exist_ok=True)
+    mutateLegacyPath(output.parent.mkdir,parents=True, exist_ok=True)
     payload = evaluation.toDict() | {"artifact_path": str(output)}
-    output.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    mutateLegacyPath(output.write_text,json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     return OutcomeEvaluation(suite.version, candidate, tuple(receipts), status, str(output))
 
 
@@ -287,8 +294,8 @@ def run_disposable_evaluation(
             with DisposableWorkspace(source_repo, task.task_id) as workspace:
                 result = dict(lifecycle_runner(task, workspace))
                 result.setdefault("artifacts", [])
-                changed = subprocess.run(["git", "-C", str(workspace), "diff", "--name-only"],
-                                         capture_output=True, text=True, timeout=30).stdout.splitlines()
+                changed = runLegacyProcess(["git", "-C", str(workspace), "diff", "--name-only"],
+                                           capture_output=True, text=True, timeout=30).stdout.splitlines()
                 forbidden = [path for path in changed if task.forbidden_paths and any(
                     path == item or path.startswith(item.rstrip("/") + "/") for item in task.forbidden_paths)]
                 outside_scope = [path for path in changed if task.allowed_paths and not any(
@@ -300,19 +307,19 @@ def run_disposable_evaluation(
                 artifacts = [*result["artifacts"]]
                 if evidence_root is not None:
                     task_evidence = evidence_root / task.task_id
-                    task_evidence.mkdir(parents=True, exist_ok=True)
+                    mutateLegacyPath(task_evidence.mkdir,parents=True, exist_ok=True)
                     diff_path = task_evidence / "diff.patch"
-                    diff = subprocess.run(["git", "-C", str(workspace), "diff", "--binary"],
-                                          capture_output=True, text=True, timeout=30)
-                    diff_path.write_text(diff.stdout, encoding="utf-8")
+                    diff = runLegacyProcess(["git", "-C", str(workspace), "diff", "--binary"],
+                                            capture_output=True, text=True, timeout=30)
+                    mutateLegacyPath(diff_path.write_text,diff.stdout, encoding="utf-8")
                     receipt_path = task_evidence / "lifecycle-receipt.json"
-                    receipt_path.write_text(json.dumps({
+                    mutateLegacyPath(receipt_path.write_text,json.dumps({
                         "verification": result.get("verification_receipt", {}),
                         "run_summary": result.get("run_summary", {}),
                         "detail": result.get("detail", ""),
                     }, indent=2, sort_keys=True, default=str), encoding="utf-8")
                     artifacts.extend((str(diff_path), str(receipt_path)))
-                    result["evidence_complete"] = bool(diff_path.exists() and receipt_path.exists())
+                    result["evidence_complete"] = bool(observeLegacyPath(diff_path.exists) and observeLegacyPath(receipt_path.exists))
                 result["artifacts"] = artifacts
                 return result
         except Exception as exc:  # noqa: BLE001 -- provisioning failure is a visible failed outcome
@@ -416,9 +423,9 @@ def combine_outcome_evaluations(
     if artifact_dir is None:
         return combined
     output = Path(artifact_dir) / f"outcome-evaluation-{candidate}.json"
-    output.parent.mkdir(parents=True, exist_ok=True)
+    mutateLegacyPath(output.parent.mkdir,parents=True, exist_ok=True)
     payload = combined.toDict() | {"artifact_path": str(output)}
-    output.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    mutateLegacyPath(output.write_text,json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     return OutcomeEvaluation(combined.suite_version, candidate, receipts, combined.status, str(output))
 
 
@@ -426,14 +433,14 @@ def promote_candidate(candidate: OutcomeEvaluation, champion_path: str | Path, *
     """Atomically establish or improve the champion only with sufficient live evidence."""
     path = Path(champion_path)
     readiness = promotion_readiness(candidate, minimum_live_tasks=minimum_live_tasks)
-    baseline = evaluation_from_dict(json.loads(path.read_text(encoding="utf-8"))) if path.exists() else None
+    baseline = evaluation_from_dict(json.loads(readLegacyText(path, encoding="utf-8"))) if observeLegacyPath(path.exists) else None
     if not readiness["ready"]:
         return {"promote": False, "reason": readiness["reason"], "champion": baseline.candidate if baseline else ""}
     verdict = {"promote": True, "reason": "first sufficiently evidenced champion"} if baseline is None else compare_to_champion(candidate, baseline)
     if not verdict["promote"]:
         return {**verdict, "champion": baseline.candidate if baseline else ""}
-    path.parent.mkdir(parents=True, exist_ok=True)
+    mutateLegacyPath(path.parent.mkdir,parents=True, exist_ok=True)
     temp = path.with_suffix(path.suffix + ".tmp")
-    temp.write_text(json.dumps(candidate.toDict(), indent=2, sort_keys=True), encoding="utf-8")
-    temp.replace(path)
+    mutateLegacyPath(temp.write_text,json.dumps(candidate.toDict(), indent=2, sort_keys=True), encoding="utf-8")
+    mutateLegacyPath(temp.replace,path)
     return {**verdict, "champion": candidate.candidate, "champion_path": str(path)}

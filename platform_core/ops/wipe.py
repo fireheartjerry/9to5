@@ -4,9 +4,9 @@
 EXPORTS:
   backupState(keys: list[str]) -> Optional[Path]  -- Tarball the paths about to be wiped
   deleteCategory(key: str) -> tuple[bool, str]  -- Delete one category
-  executeWipe(keys: list[str], backup: bool=False) -> dict[str, str]  -- Run wipe on selected categories
+  executeWipe(keys: list[str], backup: bool=False, *, effect_authority=None, controller_state_authority=None) -> dict[str, str]  -- Run wipe on selected categories
   restartBot() -> None  -- Spawn a FRESH detached bot process, then exit this one
-DEPENDS-ON: config
+DEPENDS-ON: config, platform_core.execution, platform_core.runtime
 SIDE-EFFECTS: unannotated
 RUN/TEST: python -m pytest tests/control/test_wipe.py
 """
@@ -16,12 +16,17 @@ import os
 import shutil
 import subprocess
 import sys
-import tarfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import config
+from platform_core.execution.pre_execution import (
+    mutateLegacyPath,
+    observeLegacyPath,
+    openLegacyTar,
+)
+from platform_core.execution.sandbox_broker import popenLegacyProcess
 
 LOG = config.getLogger("wipe")
 
@@ -76,15 +81,15 @@ BACKUP_DIR = ROOT / "state" / "backups"
 
 def backupState(keys: list[str]) -> Optional[Path]:
     """Tarball the paths about to be wiped. Returns path or None on failure."""
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    mutateLegacyPath(BACKUP_DIR.mkdir,parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = BACKUP_DIR / f"wipe-backup-{stamp}.tar.gz"
     try:
-        with tarfile.open(dest, "w:gz") as tar:
+        with openLegacyTar(dest, "w:gz") as tar:
             for key in keys:
                 cat = CATEGORIES.get(key, {})
                 for p in cat.get("paths", []):
-                    if p.exists():
+                    if observeLegacyPath(p.exists):
                         tar.add(p, arcname=str(p.relative_to(ROOT)))
         LOG.info("Backup saved → %s", dest)
         return dest
@@ -105,10 +110,10 @@ def _holdsPythonSource(path: Path) -> bool:
     longer blocks a legitimate vault wipe. Fails CLOSED (refuses) if the path cannot be inspected --
     a guard that exists to prevent source deletion must never green-light on an error."""
     try:
-        if path.is_file():
+        if observeLegacyPath(path.is_file):
             return path.suffix == ".py"
-        if path.is_dir():
-            return (path / "__init__.py").exists()
+        if observeLegacyPath(path.is_dir):
+            return observeLegacyPath((path / "__init__.py").exists)
     except OSError:
         return True   # cannot prove it is safe -> refuse
     return False
@@ -121,20 +126,20 @@ def deleteCategory(key: str) -> tuple[bool, str]:
         return False, f"Unknown category: {key}"
     errors: list[str] = []
     for p in cat["paths"]:
-        if not p.exists():
+        if not observeLegacyPath(p.exists):
             continue
         # Data-only invariant: refuse to delete anything that is/holds Python source code.
         if _holdsPythonSource(p):
             errors.append(f"{p.name}: refused -- holds Python source (data-only wipe)")
             continue
         try:
-            if p.is_dir() and cat.get("keep_dir"):
-                for child in p.iterdir():
-                    shutil.rmtree(child) if child.is_dir() else child.unlink()
-            elif p.is_dir():
-                shutil.rmtree(p)
+            if observeLegacyPath(p.is_dir) and cat.get("keep_dir"):
+                for child in observeLegacyPath(p.iterdir):
+                    mutateLegacyPath(shutil.rmtree,child) if observeLegacyPath(child.is_dir) else mutateLegacyPath(child.unlink)
+            elif observeLegacyPath(p.is_dir):
+                mutateLegacyPath(shutil.rmtree,p)
             else:
-                p.unlink()
+                mutateLegacyPath(p.unlink)
         except Exception as exc:
             errors.append(f"{p.name}: {exc}")
     if errors:
@@ -142,8 +147,26 @@ def deleteCategory(key: str) -> tuple[bool, str]:
     return True, cat["label"]
 
 
-def executeWipe(keys: list[str], backup: bool = False) -> dict[str, str]:
+def executeWipe(
+    keys: list[str],
+    backup: bool = False,
+    *,
+    effect_authority=None,
+    controller_state_authority=None,
+) -> dict[str, str]:
     """Run wipe on selected categories. Returns ordered {key: status_line} dict."""
+    del keys, backup, effect_authority, controller_state_authority
+    from platform_core.runtime.effect_guard import maintenanceDeferred
+
+    return maintenanceDeferred(
+        "wipe",
+        reason="wipe requires the future durable effect-command authority",
+    )
+
+
+def _executeWipeUnsafe(keys: list[str], backup: bool = False) -> dict[str, str]:
+    """Legacy implementation retained for migration tests; not a public boundary."""
+
     results: dict[str, str] = {}
     if backup:
         path = backupState(keys)
@@ -166,9 +189,9 @@ def restartBot() -> None:
         creationflags = 0
         if os.name == "nt":
             creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-        subprocess.Popen([sys.executable, "-m", "notifications.command_bot"],
-                         cwd=str(config.INSTALL_ROOT), stdin=subprocess.DEVNULL,
-                         close_fds=True, creationflags=creationflags)
+        popenLegacyProcess([sys.executable, "-m", "notifications.command_bot"],
+                           cwd=str(config.INSTALL_ROOT), stdin=subprocess.DEVNULL,
+                           close_fds=True, creationflags=creationflags)
     except Exception:  # noqa: BLE001
         LOG.exception("failed to spawn fresh bot instance; NOT exiting current bot")
         return

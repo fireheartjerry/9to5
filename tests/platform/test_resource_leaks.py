@@ -28,6 +28,21 @@ class TestNewConnNoLeakOnSchemaFailure(unittest.TestCase):
         self.assertEqual(len(experience._all_conns), before, "connection leaked on schema failure")
         self.assertNotIn(str(self.db), experience._schema_ready)   # not marked -> next call retries clean
 
+    def test_failed_lexical_close_remains_registered_and_propagates(self):
+        class FailingConnection:
+            def close(self):
+                raise OSError("injected close failure")
+
+        connection = FailingConnection()
+        experience_schema._all_conns.append(connection)
+        try:
+            with self.assertRaises(OSError):
+                experience_schema._evict(str(self.db), connection)
+            self.assertIn(connection, experience_schema._all_conns)
+        finally:
+            if connection in experience_schema._all_conns:
+                experience_schema._all_conns.remove(connection)
+
 
 class TestGeminiSessionNoLeak(unittest.TestCase):
     def test_session_closed_when_startconversation_fails(self):
