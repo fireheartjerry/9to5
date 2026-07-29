@@ -1157,6 +1157,25 @@ AJ15c. [ ] Remove self-mintable clone snapshot admission, require fresh sealed
          re-observation entrypoint without that guard, or satisfy the clause
          only on the first-destruction path? `_markDestroyed`'s independent
          re-proof consumes whatever that decision produces and was not started.
+       - 2026-07-28 (Claude executor, VPS): **clause (b) IMPLEMENTED and
+         independently reviewed 4/4.** Operator chose a replay-only
+         re-observation entrypoint. `reobserveDeletedForReplay` does the same
+         filesystem absence proof as `observeDeleted` minus the two
+         terminal-state guards, mints nothing, and can only refuse. Placement
+         was load-bearing: `_destroyGuarded` now decides
+         replay-vs-first-destruction BEFORE `_remove_channel`, because doing it
+         after made the proof trivially true (the replay deleted the resurrected
+         channel itself). Broker half included: `_markDestroyed` re-checks
+         absence via its own `_channelPath` before any persistence. Two RED-first
+         tests; the two recovery paths the earlier attempt stranded now pass.
+         390 passed/9 skipped/1 xfailed on BOTH lanes, FAILED list byte-identical
+         to HEAD. Independent review VERIFIED all four claims: single call site
+         and no minted authority, `_remove_channel` only on the first-destruction
+         branch, broker check precedes all persistence and is atomic under
+         `_channelGuard`, and a crash between receipt persistence and broker
+         metadata still recovers. Caveat recorded: broker TOCTOU safety holds
+         only for writers going through `_channelGuard`; raw filesystem writers
+         are outside the threat model.
        - PRE-EXISTING FAILURE (not caused by the above, proved by temporary
          revert + byte-compare restore):
          `tests/control/test_external_controller_state.py::test_runtime_install_constructor_cleanup_ambiguity_poison_is_permanent`
@@ -1352,6 +1371,25 @@ AJ17. [ ] Retain native journal-root identities/handles through mutation and
         8 path-based operations, plus a Windows decision about holding a
         directory handle open for the journal's lifetime. That is its own
         packet with its own independent review.
+      - 2026-07-28 (Claude executor, VPS): **IMPLEMENTED on the operator's
+        chosen shape — open-validate-close per operation**, explicitly NOT
+        retaining a handle for the journal's lifetime, so Windows deletion and
+        rename semantics are unchanged. `_requireBoundRootObject()` opens the
+        root, reads identity from the OPENED handle, closes immediately,
+        captures identity on first successful observation (the root may
+        legitimately not exist at construction), and refuses any later mismatch
+        with "attempt journal root object changed beneath its path". Called from
+        `_append_event` (the seam all 11 mutation sites funnel through) and from
+        `create()` after `root.mkdir` but BEFORE `fileLock` — placement was
+        load-bearing, since guarding only `_append_event` still let `fileLock`
+        create a `.locks` directory inside the impostor. The pinned
+        `xfail(strict=True)` fixture now PASSES and its marker is removed.
+        391 passed on BOTH lanes; non-staged-revision FAILED list identical to
+        HEAD; ruff ok, mypy unchanged. SCOPE STATED PLAINLY: this closes the
+        POSIX rename/replace race at OPERATION granularity. The Windows
+        short-name/alias case still has no fixture, and per-operation validation
+        is narrower than holding one handle across an operation's internal
+        steps. Independent review dispatched.
 
 ### O3. Task 3 fresh-attempt transaction wiring
 

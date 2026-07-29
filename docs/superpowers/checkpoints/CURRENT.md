@@ -421,6 +421,30 @@ security, qualification, or activation decisions.
   first-destruction path? `_markDestroyed`'s independent re-proof depends on
   that answer and was not started.
 
+- 2026-07-28 **AJ15c (b) and AJ17 both landed; the AJ packet is one operator
+  action and one review from complete.** (b): operator chose a replay-only
+  re-observation entrypoint; `reobserveDeletedForReplay` re-proves absence with
+  the terminal-state guards dropped, mints nothing, and can only refuse.
+  `_destroyGuarded` decides replay-vs-first-destruction BEFORE `_remove_channel`
+  — doing it after made the proof trivially true. `_markDestroyed` re-checks
+  absence independently before any persistence. **Independently reviewed 4/4**,
+  including confirmation that a crash between receipt persistence and broker
+  metadata still recovers. AJ17: operator chose open-validate-close per
+  operation, so no directory handle is held across the journal's lifetime and
+  Windows deletion/rename semantics are unchanged;
+  `_requireBoundRootObject()` reads identity from the OPENED handle and refuses
+  a swapped root, guarded before `fileLock` so nothing is left in an impostor.
+  The pinned strict-xfail fixture now passes and its marker is removed.
+  391 passed on both lanes for both changes, FAILED lists identical to HEAD.
+  **Remaining:** (1) the AJ15e matrix needs Docker socket access — the daemon is
+  installed and active on this host, the executor is simply not in the `docker`
+  group, so `sudo usermod -aG docker $USER` is an operator action;
+  `test_staged_revision.py` stays 56-failing until the SHA1DC oracle can be
+  built. (2) AJ17's independent review, and its Windows short-name/alias fixture,
+  are outstanding — AJ17 closes the POSIX race at operation granularity only.
+  Evidence:
+  `docs/superpowers/reports/2026-07-28-aj-packet-closure-progress.md`.
+
 ## Non-negotiable continuation rules
 
 - Treat the seven 2026-07-14 specification files as immutable requirements.
