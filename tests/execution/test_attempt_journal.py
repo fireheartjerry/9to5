@@ -1406,6 +1406,37 @@ def _persistence_authority(
     os.name == "nt",
     reason="POSIX rename-swap of a live directory; Windows needs its own alias case",
 )
+def test_every_mutating_entrypoint_refuses_a_swapped_root_before_locking(
+    tmp_path: Path,
+) -> None:
+    """AJ17: no mutating entrypoint may take a lock on an unvalidated root.
+
+    A re-review found the guard was only ahead of the lock on three of thirteen
+    entrypoints; the rest wrote a lock-lease file into a possibly-impostor root
+    before anything validated it. ``transition`` is exercised here as the
+    representative ``_append_event``-only path.
+    """
+
+    journal = AttemptJournal(tmp_path / "journals")
+    record = _record(tmp_path)
+    journal.create(record, require_new=True)
+    established = os.stat(journal.root)
+
+    os.rename(journal.root, tmp_path / "moved-away")
+    (tmp_path / "journals").mkdir()
+    assert os.stat(journal.root).st_ino != established.st_ino
+
+    with pytest.raises((JournalCorruption, OSError, RuntimeError)):
+        journal.transition(
+            record.transaction_id,
+            AttemptPhase.RUNNING,
+        )
+
+    assert not list((tmp_path / "journals").iterdir()), (
+        "a mutating entrypoint wrote lock scaffolding into an impostor root"
+    )
+
+
 def test_resource_writes_also_refuse_after_the_root_object_is_swapped(
     tmp_path: Path,
 ) -> None:

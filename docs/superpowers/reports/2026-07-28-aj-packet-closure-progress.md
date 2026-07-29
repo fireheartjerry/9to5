@@ -678,6 +678,44 @@ leaves nothing behind — the same lock-ordering lesson `create()` already taugh
 Post-fix, both lanes: **392 passed / 9 skipped**, FAILED list byte-identical to
 the HEAD baseline; ruff ok; mypy unchanged at 20.
 
+### AJ17 re-review of the fixed code — found the fix was still partial
+
+Because the previous fix landed *after* its review, the shipped code was
+re-reviewed. It refuted the fix as incomplete, and again it was right:
+
+- **Guard-before-lock existed on only 3 of 13 mutating entrypoints.**
+  `transition`, `bind_promotion_plan`, `bind_promotion_artifact_identities`,
+  `bind_commit_metadata`, `set_recovery_axes`,
+  `mark_task_state_acknowledged`, `mark_terminal_state_persisted`, and the three
+  `append_*_receipt` methods acquired `fileLock` — writing a lock-lease file —
+  on an unvalidated root, with the guard only firing later inside
+  `_append_event`. Worse, on a journal whose identity was not yet bound, that
+  late guard would *bind to the impostor* rather than refuse.
+- **`_reserve_resource_set_unfenced` was unguarded** even inside the "fixed"
+  `register_resources`, creating reservation directories directly.
+- **`create()` ran `root.mkdir(...)` before its guard**, contradicting its own
+  comment: a bound-then-vanished root got re-fabricated instead of refused.
+
+All three are now closed. The guard is the first statement of every mutating
+entrypoint, ahead of any lock; `_reserve_resource_set_unfenced` binds for
+itself; and `create()` validates before its `mkdir`. To make a pre-`mkdir` check
+possible, `_requireBoundRootObject` now returns quietly when **nothing is bound
+yet and the root does not exist** — first use only — and refuses once an
+identity is bound. 19 guard call sites in total.
+
+New RED-first test
+`test_every_mutating_entrypoint_refuses_a_swapped_root_before_locking` covers a
+representative `_append_event`-only path (`transition`) and asserts the impostor
+is left completely empty — no `.locks` scaffolding.
+
+Both lanes after this: **393 passed / 9 skipped**, FAILED list byte-identical to
+the HEAD baseline; ruff ok; mypy unchanged at 20.
+
+The trust-on-first-use property remains and is inherent to the shape: an
+impostor already in place before a journal's first operation becomes the
+baseline. The reviewer classed it as out of scope for "re-prove after swap", and
+it is recorded here rather than hidden.
+
 ## 10. Ledger effect
 
 - AJ10–AJ14: implementation independently confirmed; dual-lane POSIX evidence

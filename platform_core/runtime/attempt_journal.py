@@ -3092,6 +3092,8 @@ class AttemptJournal:
         allow_create: bool,
         orphan_resources_present: bool,
     ) -> None:
+        # AJ17: this reserves directories directly, so it binds the root too.
+        self._requireBoundRootObject()
         """Create or validate the manifest-bound first authority marker."""
 
         _require_digest(intent_digest, "resource-set intent digest")
@@ -3639,6 +3641,7 @@ class AttemptJournal:
         deletion and rename semantics are unchanged.
         """
 
+        bound = getattr(self, "_root_object_identity", None)
         try:
             with openNativeDirectory(self.root) as opened:
                 identity = opened.identity
@@ -3651,10 +3654,13 @@ class AttemptJournal:
                     identity.reparse_tag,
                 )
         except OSError as exc:
+            if bound is None:
+                # Nothing is bound yet and the root legitimately may not exist
+                # before the first create(); binding happens once it does.
+                return
             raise JournalCorruption(
                 "attempt journal root identity is unobservable"
             ) from exc
-        bound = getattr(self, "_root_object_identity", None)
         if bound is None:
             object.__setattr__(self, "_root_object_identity", observed)
             return
@@ -3813,6 +3819,9 @@ class AttemptJournal:
             raise InvalidAttemptTransition("first event cannot have a previous digest")
         _validate_phase(record)
         self._validate_storage_boundaries(record)
+        # AJ17: validate before the mkdir too -- once an identity is bound, a
+        # vanished or swapped root must refuse rather than be re-fabricated.
+        self._requireBoundRootObject()
         self.root.mkdir(parents=True, exist_ok=True)
         try:
             assertNoReparsePath(self.root)
@@ -4569,6 +4578,8 @@ class AttemptJournal:
         phase: AttemptPhase,
         **changes: object,
     ) -> AttemptRecord:
+        # AJ17: bind the root object before any lock or write.
+        self._requireBoundRootObject()
         _require_id(transaction_id, "transaction_id")
         if not isinstance(phase, AttemptPhase):
             raise TypeError("phase must be AttemptPhase")
@@ -4696,6 +4707,8 @@ class AttemptJournal:
         This is a monotonic same-phase append, not permission to rewrite prepared
         evidence.  Replays must present the exact original values.
         """
+        # AJ17: bind the root object before any lock or write.
+        self._requireBoundRootObject()
 
         plan: dict[str, object] = {
             "intent_ref": intent_ref,
@@ -4762,6 +4775,8 @@ class AttemptJournal:
         canonical_ref_lock_identity_digest: str | None = None,
     ) -> AttemptRecord:
         """Append exact post-create identities without granting new authority."""
+        # AJ17: bind the root object before any lock or write.
+        self._requireBoundRootObject()
 
         requested = {
             "custom_lock_identity_digest": custom_lock_identity_digest,
@@ -4819,6 +4834,8 @@ class AttemptJournal:
         metadata_digest: str,
     ) -> AttemptRecord:
         """Persist reconstructible exact commit metadata before object creation."""
+        # AJ17: bind the root object before any lock or write.
+        self._requireBoundRootObject()
 
         _require_id(transaction_id, "transaction_id")
         _require_digest(metadata_digest, "commit_metadata_digest")
@@ -4881,6 +4898,8 @@ class AttemptJournal:
         terminal_state_persisted: bool | None = None,
         authority: object = None,
     ) -> AttemptRecord:
+        # AJ17: bind the root object before any lock or write.
+        self._requireBoundRootObject()
         _require_id(transaction_id, "transaction_id")
         requested = {
             "task_state_acknowledged": task_state_acknowledged,
@@ -4972,6 +4991,8 @@ class AttemptJournal:
         receipt_id: str,
     ) -> AttemptRecord:
         """Bind one persisted immutable finalization node to terminal attempt truth."""
+        # AJ17: bind the root object before any lock or write.
+        self._requireBoundRootObject()
 
         _require_digest(receipt_id, "finalization_receipt_id")
         with fileLock(
@@ -5014,6 +5035,8 @@ class AttemptJournal:
         complete: bool,
     ) -> AttemptRecord:
         """Append cleanup evidence; only a complete receipt may close cleanup."""
+        # AJ17: bind the root object before any lock or write.
+        self._requireBoundRootObject()
 
         _require_digest(receipt_id, "cleanup receipt ID")
         _require_digest(finalization_receipt_id, "finalization_receipt_id")
@@ -5082,6 +5105,8 @@ class AttemptJournal:
         outcome: str,
     ) -> AttemptRecord:
         """Append one immutable recovery observation without rewriting phase truth."""
+        # AJ17: bind the root object before any lock or write.
+        self._requireBoundRootObject()
 
         _require_digest(receipt_id, "reconciliation receipt ID")
         if not isinstance(outcome, str) or not outcome.strip():
@@ -5129,6 +5154,8 @@ class AttemptJournal:
         *,
         authority: object = None,
     ) -> AttemptRecord:
+        # AJ17: bind the root object before any lock or write.
+        self._requireBoundRootObject()
         _require_id(transaction_id, "transaction_id")
         issuer, validated_authority = self._resolve_recovery_authority_unfenced(
             authority,
@@ -5151,6 +5178,8 @@ class AttemptJournal:
         *,
         authority: object = None,
     ) -> AttemptRecord:
+        # AJ17: bind the root object before any lock or write.
+        self._requireBoundRootObject()
         _require_id(transaction_id, "transaction_id")
         issuer, validated_authority = self._resolve_recovery_authority_unfenced(
             authority,
