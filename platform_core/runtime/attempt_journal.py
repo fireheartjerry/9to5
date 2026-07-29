@@ -2626,6 +2626,9 @@ class AttemptJournal:
         sequence: int,
         previous_digest: str,
     ) -> _LoadedResourceEvent:
+        # AJ17: the resource sub-chain writes without going through
+        # _append_event, so it binds the root object for itself.
+        self._requireBoundRootObject()
         raw = self._resource_event_bytes(
             resource,
             sequence=sequence,
@@ -2879,6 +2882,9 @@ class AttemptJournal:
         transaction_id: str,
         resources: tuple[RuntimeResourceLease, ...],
     ) -> str:
+        # AJ17: the resource sub-chain writes without going through
+        # _append_event, so it binds the root object for itself.
+        self._requireBoundRootObject()
         raw = self._resource_set_intent_bytes(transaction_id, resources)
         if len(raw) > _MAX_RESOURCE_SET_INTENT_BYTES:
             raise InvalidAttemptTransition("runtime resource-set intent exceeds quota")
@@ -2940,6 +2946,9 @@ class AttemptJournal:
         intent_digest: str,
         registrations: tuple[_LoadedResourceEvent, ...],
     ) -> str:
+        # AJ17: the resource sub-chain writes without going through
+        # _append_event, so it binds the root object for itself.
+        self._requireBoundRootObject()
         proofs = tuple(
             (
                 self._resource_identity(
@@ -4058,6 +4067,9 @@ class AttemptJournal:
             raise InvalidAttemptTransition("runtime resource-set count exceeds quota")
         if len({resource.resource_id for resource in resources}) != len(resources):
             raise InvalidAttemptTransition("runtime resource identities must be unique")
+        # AJ17: validate the root object before taking any lock, so a swapped
+        # root leaves nothing behind -- not even lock scaffolding.
+        self._requireBoundRootObject()
         with fileLock(
             self._lock_path(transaction_id),
             timeout=30,
@@ -4277,6 +4289,8 @@ class AttemptJournal:
     ) -> RuntimeResourceLease:
         """Append one monotonic resource-state observation for crash recovery."""
 
+        # AJ17: bind the root object before any lock or write.
+        self._requireBoundRootObject()
         from platform_core.runtime.candidate import (
             CredentialResourceState,
             ProcessResourceState,

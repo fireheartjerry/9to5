@@ -1406,6 +1406,39 @@ def _persistence_authority(
     os.name == "nt",
     reason="POSIX rename-swap of a live directory; Windows needs its own alias case",
 )
+def test_resource_writes_also_refuse_after_the_root_object_is_swapped(
+    tmp_path: Path,
+) -> None:
+    """AJ17: the resource sub-chain must honour the root binding too.
+
+    ``register_resources`` and ``transition_resource`` write through
+    ``_append_resource_*`` helpers rather than ``_append_event``. An independent
+    review found they were unguarded, so a root swapped after ``create()`` bound
+    its identity would take full resource-chain writes -- registration proofs and
+    credential/process state transitions -- against an impostor directory.
+    """
+
+    journal = AttemptJournal(tmp_path / "journals")
+    record = _record(tmp_path)
+    journal.create(record, require_new=True)
+    established = os.stat(journal.root)
+
+    os.rename(journal.root, tmp_path / "moved-away")
+    (tmp_path / "journals").mkdir()
+    assert os.stat(journal.root).st_ino != established.st_ino
+
+    with pytest.raises((JournalCorruption, OSError, RuntimeError)):
+        journal.register_resources(record.transaction_id, ())
+
+    assert not list((tmp_path / "journals").iterdir()), (
+        "resource write landed in an impostor root after the object was swapped"
+    )
+
+
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX rename-swap of a live directory; Windows needs its own alias case",
+)
 def test_journal_refuses_after_its_root_object_is_swapped(
     tmp_path: Path,
 ) -> None:

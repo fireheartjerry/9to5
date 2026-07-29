@@ -637,6 +637,47 @@ rename/replace race at operation granularity. The Windows short-name/alias case
 still has no fixture, and per-operation validation is a narrower guarantee than
 holding one handle across an operation's internal steps.
 
+### AJ17 independent review — REFUTED my central claim, and it was right
+
+The reviewer was told to refute first, and did:
+
+- **"`_append_event` is the single seam for all mutations" — REFUTED.** It holds
+  for `create`, `transition`, `bind_promotion_plan`,
+  `bind_promotion_artifact_identities`, `bind_commit_metadata`,
+  `set_recovery_axes`, `mark_task_state_acknowledged`,
+  `mark_terminal_state_persisted`, and the three `append_*_receipt` methods —
+  but **not** for `register_resources` or `transition_resource`, which write via
+  `_append_resource_set_intent`, `_append_resource_event`, and
+  `_append_resource_set_completion`. None of those reached the guard. Verified
+  independently before fixing: all three helpers contained zero references to
+  `_append_event` or `_requireBoundRootObject`. The reviewer's framing was
+  correct — a root swapped after `create()` bound identity would take **full
+  resource-chain writes**, including credential and process state transitions,
+  against an impostor.
+- **"open-validate-close closes the race" — REFUTED as stated; it narrows.**
+  The handle is closed before the write, and every subsequent operation
+  re-resolves paths, so a window remains between the check and
+  `event_dir.mkdir`/`exclusiveCreateBytes`. This is a per-check binding, not a
+  held lease. The wording in this report and the ledger has been corrected to
+  say *narrows at operation granularity*, not *closes*.
+- **Trust-on-first-use caveat — accepted.** Identity is captured on the first
+  successful observation, so a swap **before** any observation binds the
+  impostor as the baseline. Strictly better than pre-fix (where every swap was
+  silent) but a real residual gap, now recorded rather than glossed.
+- **Handle lifetime — VERIFIED, no issue.** `with openNativeDirectory(...)`
+  closes immediately; nothing holds a directory handle across an operation, so
+  the Windows semantics the operator chose this shape to protect are intact.
+
+**Fix applied for the uncovered hole.** RED-first test
+`test_resource_writes_also_refuse_after_the_root_object_is_swapped` reproduced it
+("resource write landed in an impostor root"). The guard now runs in all three
+`_append_resource_*` helpers **and** at the `register_resources` and
+`transition_resource` entrypoints before their `fileLock`, so a swapped root
+leaves nothing behind — the same lock-ordering lesson `create()` already taught.
+
+Post-fix, both lanes: **392 passed / 9 skipped**, FAILED list byte-identical to
+the HEAD baseline; ruff ok; mypy unchanged at 20.
+
 ## 10. Ledger effect
 
 - AJ10–AJ14: implementation independently confirmed; dual-lane POSIX evidence
