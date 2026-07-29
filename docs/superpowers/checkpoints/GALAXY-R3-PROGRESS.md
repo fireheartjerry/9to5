@@ -1308,10 +1308,29 @@ AJ16. [ ] Use bounded authority-ID collision retry and retire expired authority,
         AJ16's written clauses are now all implemented -- bounded collision
         retry in the persistence issuer AND the snapshot mint, expired-authority
         retirement, and retirement for all three registries, each deleting only
-        the exact record so nothing is retargeted. It stays `[ ]` for one reason
-        only: **no independent review yet**, which is the standing bar for a
-        packet of this kind, and it is not being ticked on the executor's own
-        say-so.
+        the exact record so nothing is retargeted.
+      - 2026-07-28 (Claude executor, VPS): **independent review obtained —
+        VERIFIED on all four claims, zero findings.** Reviewer had no prior
+        context and was told to refute first. (1) Bounded retry: lock order is
+        always `_issued_lock` -> registry lock; every acquisition was grepped
+        (lines 104, 1603, 1630, 2199) and the only other one is standalone, so
+        there is **no deadlock path**; both `continue` branches fire before
+        either registry is mutated and both writes happen under one
+        continuously-held lock, so no half-bound state is observable.
+        (2) Expired retirement re-reads under the lock and compares by identity,
+        so a concurrent reissue of the same id is not retired by mistake.
+        (3) Weak records: the reviewer checked EVERY comparison site and found
+        none comparing two dereferenced possibly-`None` values — each check pins
+        one side to a live strongly-held object (`self`, `exact_verifier`, or
+        the strong attribute `self._journal`), so a dead weakref can only make a
+        check FAIL, never spuriously pass. (4) Finalizer `id()` capture is only
+        ever a dict key, never dereferenced, and each `_retire*` guard requires
+        the slot to still hold the exact record instance, so a dead object's
+        finalizer cannot delete a successor that reused the address. The
+        reviewer attempted races for each claim and reported "Concrete failure
+        scenarios constructed: none."
+        **AJ16's clauses are implemented, green on both lanes plus native POSIX,
+        and independently reviewed.**
 AJ17. [ ] Retain native journal-root identities/handles through mutation and
       close rename, alias, short-name, mount, and reparse TOCTOU races.
       - 2026-07-28 (Claude executor, VPS): **the gap is now DEMONSTRATED, not
