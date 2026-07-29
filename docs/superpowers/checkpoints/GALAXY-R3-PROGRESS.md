@@ -1064,6 +1064,21 @@ AJ15b. [ ] Close bounded native child-name, enumeration, prospective debris,
          compile, diff-check clean. STILL `[ ]`: Python 3.12 lane, POSIX/WSL replay
          (89 skips), and corrected independent review are NOT done. Evidence:
          `docs/superpowers/reports/2026-07-28-aj15b-prospective-debris-ceiling-fix.md`.
+       - 2026-07-28 (Claude executor, VPS): **two of the three open clauses are
+         now closed.** The AJ15b surface (`test_fsio.py` +
+         `test_credential_broker.py`, 383 cases) ran on native Linux ext4 on
+         BOTH lanes: Python 3.11.15 **338 passed/45 skipped/0 failed** and
+         Python 3.12.3 **338 passed/45 skipped/0 failed** (the 3.11 venv lives
+         outside the worktree, so the dirty inventory is unchanged). The
+         89-skip replay clause is now arithmetic rather than assertion: all 45
+         POSIX skips come from static `skipif(os.name != "nt")` decorators (15
+         sites, all in `test_fsio.py`), so they execute on Windows; solving
+         against the Windows lane gives executed-on-both = 294-45 = 249 and
+         POSIX-only-executed = 338-249 = **89**, exactly the Windows skip count.
+         No case in this surface is dark on both lanes. STILL `[ ]`: corrected
+         independent review, and the bounded-semantics clauses are only green,
+         which is not the same as reviewed. Evidence:
+         `docs/superpowers/reports/2026-07-28-aj15b-posix-dual-lane-replay.md`.
 AJ15c. [ ] Remove self-mintable clone snapshot admission, require fresh sealed
        credential absence before terminal broker/journal truth, reject a
        missing runtime manifest before provisioning mutation, and obtain
@@ -1087,6 +1102,25 @@ AJ15c. [ ] Remove self-mintable clone snapshot admission, require fresh sealed
          satisfied at `worktree.py:664` so its intended target is unclear; plus
          Python 3.12, POSIX/WSL, and corrected independent review. Evidence:
          `docs/superpowers/reports/2026-07-28-aj15c-run-admission-use-time-revalidation.md`.
+       - 2026-07-28 (Claude executor, VPS): **operator decisions received; the
+         three questions are no longer open.** (a) Replace the kernel-owned
+         `object()` snapshot capability with a sealed issuance record mirroring
+         the reviewed-PASS opaque persistence-authority pattern
+         (`attempt_journal.py:1058-1089`). (b) YES to both — `_markDestroyed`
+         must independently re-prove absence on top of the fenced journal path,
+         and the `_existing_terminal_receipt` replay short-circuit must
+         re-observe; fail closed. (c) Audit first — **done, and the clause is
+         satisfied by existing code**: of ten provisioning entrypoints, only
+         `PrivateCloneProvisioner.provision` mutates journal or repository state
+         (`worktree.py:673` attest, `:765` `journal.create`), and its manifest
+         gate at `:664` precedes both; entrypoints 1-9 are pass-through
+         dispatchers that mutate nothing. Caveat from the trace:
+         `clone.py`'s `clone_factory` is wired only by
+         `buildInstalledCloneEnvironment` (`clone.py:1602`) with no production
+         call site outside tests, so the audited mutation path is not yet
+         reachable in production and the gate ordering must be re-confirmed when
+         that wiring lands. (a) and (b) remain to implement. Evidence:
+         `docs/superpowers/reports/2026-07-28-aj-packet-closure-progress.md`.
        - PRE-EXISTING FAILURE (not caused by the above, proved by temporary
          revert + byte-compare restore):
          `tests/control/test_external_controller_state.py::test_runtime_install_constructor_cleanup_ambiguity_poison_is_permanent`
@@ -1109,6 +1143,21 @@ AJ15e. [ ] Run the full AJ10--AJ15 affected matrix on both Python lanes after
          is FLAKY (non-deterministic across back-to-back isolated runs). The matrix
          requires retaining every DETERMINISTIC failure as a fixture; a flaky test
          cannot serve as evidence and must be stabilised first.
+       - 2026-07-28 (Claude executor, VPS): **that BLOCKER is addressed.** The
+         flake does not reproduce on Linux (12/12 idle, then 15/15 under 2x CPU
+         oversubscription), but the barrier structure carries a real defect that
+         explains the reported signature: the readiness and `go` barriers were
+         20 s and covered interpreter start plus the `platform_core` import, so
+         a slow process birth was reported as a lock-semantics failure; and the
+         child's `release` wait was 20 s while the parent's worst case after
+         `go` is 40 s, so a slow-but-correct election could make the winner exit
+         73 before the parent ever wrote `release`. Fixed by splitting the
+         budgets — `STARTUP_TIMEOUT_SECONDS=120` for process birth,
+         `ELECTION_TIMEOUT_SECONDS=20` kept tight for the actual invariant, and
+         `RELEASE_TIMEOUT_SECONDS=4x ELECTION` so it strictly dominates the
+         parent. The measured property is unchanged. Post-fix regression on both
+         lanes: 338 passed/45 skipped/0 failed each. Honest limit: the flake was
+         never reproduced on this host, so Windows must re-run to confirm.
        - 2026-07-28 (Claude executor, VPS): native-Linux lane added (Ubuntu
          24.04, Python 3.12.3, ext4, **no Docker**). `test_fsio.py` 298 passed/45
          skipped/0 failed — the WSL AJ15b figure replicates on a second POSIX

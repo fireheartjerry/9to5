@@ -2571,6 +2571,17 @@ def test_concurrent_process_lock_acquisition_has_one_exact_winner(
     lock_path = tmp_path / "contended.lock"
     control = tmp_path / "control"
     control.mkdir()
+    # Two separate budgets. STARTUP covers interpreter start plus the
+    # `platform_core` import in each child and measures nothing this test
+    # asserts, so it must be generous or slow process births are reported as
+    # lock-semantics failures. ELECTION covers only the post-`go` window, which
+    # is the actual invariant, so it stays tight. RELEASE must exceed the
+    # parent's worst case after `go` (ELECTION for the winner plus ELECTION for
+    # the loser's refusal) or the winner can time out at exit 73 before the
+    # parent ever writes `release`.
+    STARTUP_TIMEOUT_SECONDS = 120.0
+    ELECTION_TIMEOUT_SECONDS = 20.0
+    RELEASE_TIMEOUT_SECONDS = 4.0 * ELECTION_TIMEOUT_SECONDS
     child = r"""
 import os
 import sys
@@ -2580,8 +2591,10 @@ from platform_core.core import fsio
 
 lock_path = Path(sys.argv[1])
 control = Path(sys.argv[2])
+startup_timeout = float(sys.argv[3])
+release_timeout = float(sys.argv[4])
 (control / f"{os.getpid()}.ready").write_text("ready", encoding="ascii")
-deadline = time.monotonic() + 20.0
+deadline = time.monotonic() + startup_timeout
 while not (control / "go").exists():
     if time.monotonic() >= deadline:
         raise SystemExit(72)
@@ -2590,7 +2603,7 @@ lease = fsio.tryAcquireLockLease(lock_path)
 if lease is None:
     raise SystemExit(83)
 (control / f"{os.getpid()}.winner").write_text("winner", encoding="ascii")
-deadline = time.monotonic() + 20.0
+deadline = time.monotonic() + release_timeout
 while not (control / "release").exists():
     if time.monotonic() >= deadline:
         raise SystemExit(73)
@@ -2600,13 +2613,21 @@ raise SystemExit(0)
 """
     children = [
         subprocess.Popen(
-            [sys.executable, "-c", child, str(lock_path), str(control)],
+            [
+                sys.executable,
+                "-c",
+                child,
+                str(lock_path),
+                str(control),
+                str(STARTUP_TIMEOUT_SECONDS),
+                str(RELEASE_TIMEOUT_SECONDS),
+            ],
             cwd=_ROOT,
         )
         for _ in range(2)
     ]
     try:
-        deadline = time.monotonic() + 20.0
+        deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
         while len(list(control.glob("*.ready"))) != 2:
             if any(process.poll() is not None for process in children):
                 raise AssertionError("lock contender exited before barrier")
@@ -2614,12 +2635,12 @@ raise SystemExit(0)
                 raise AssertionError("lock contenders missed readiness")
             time.sleep(0.005)
         (control / "go").write_text("go", encoding="ascii")
-        deadline = time.monotonic() + 20.0
+        deadline = time.monotonic() + ELECTION_TIMEOUT_SECONDS
         while len(list(control.glob("*.winner"))) != 1:
             if time.monotonic() >= deadline:
                 raise AssertionError("lock contender did not elect one winner")
             time.sleep(0.005)
-        deadline = time.monotonic() + 20.0
+        deadline = time.monotonic() + ELECTION_TIMEOUT_SECONDS
         while 83 not in {
             process.poll()
             for process in children

@@ -362,6 +362,46 @@ security, qualification, or activation decisions.
   files and 251 must_split functions** against a bar of zero. Evidence:
   `docs/superpowers/reports/2026-07-28-vps-posix-lane-consolidation.md`.
 
+- 2026-07-28 **AJ15b: two of three open clauses closed.** The AJ15b surface
+  (`test_fsio.py` + `test_credential_broker.py`, 383 cases) ran on native Linux
+  ext4 on BOTH Python lanes — 3.11.15 **338 passed/45 skipped/0 failed** and
+  3.12.3 **338 passed/45 skipped/0 failed** — so the missing Python 3.12 lane
+  clause is closed and the POSIX replay is no longer WSL-only. The "replay the
+  89 skips" clause is now proved arithmetically, not asserted: all 45 POSIX
+  skips come from static `skipif(os.name != "nt")` decorators (15 sites, all in
+  `test_fsio.py`), so each executes on Windows; solving against the Windows lane
+  (294 passed/89 skipped) gives executed-on-both = 249 and POSIX-only-executed =
+  **89**, exactly the Windows skip count. No case in this surface is dark on
+  both lanes. AJ15b stays `[ ]`: the corrected independent review is still open,
+  and the bounded-semantics clauses are only green, which is not reviewed.
+  Evidence:
+  `docs/superpowers/reports/2026-07-28-aj15b-posix-dual-lane-replay.md`.
+
+- 2026-07-28 **AJ packet progress: reviews obtained, AJ10--AJ14 evidenced, the
+  AJ15e flake blocker addressed, and all three AJ15c questions decided.**
+  Independent review (no prior context, told to refute first) returned **PASS on
+  both AJ15b changed functions** and **IMPLEMENTED with zero dark gates** for
+  AJ10--AJ14, correcting three line references. AJ10--AJ14 dual-lane POSIX
+  evidence: `test_attempt_journal.py` + `test_kernel_artifacts.py` **229
+  passed/5 skipped/0 failed on 3.11.15 AND 3.12.3**, and the Windows-comparable
+  scoped selection is **59 passed on both**, matching the Windows figure exactly
+  — three lanes now agree. The 5 new skips are the same Windows-only capsule
+  scope, guarded at one fixture seam (`test_attempt_journal.py:89`). The AJ15e
+  flake is fixed at the harness level by splitting one 20 s budget into
+  process-birth (120 s) versus invariant (20 s) versus release (4x invariant);
+  the old child `release` wait was 20 s while the parent's worst case after `go`
+  was 40 s, so a slow-but-correct election could fail the test on its own.
+  Post-fix both lanes still 338 passed/45 skipped/0 failed. **Operator ruled on
+  AJ15c:** (a) replace the `object()` sentinel with a sealed issuance record on
+  the persistence-authority pattern; (b) yes to both absence re-proofs, fail
+  closed; (c) audit first — completed, and the clause is **satisfied by existing
+  code**, since only `PrivateCloneProvisioner.provision` mutates and its gate at
+  `worktree.py:664` precedes `:673` and `:765`. Still open: AJ15c (a) and (b)
+  implementations, AJ16, AJ17, the AJ15e matrix itself, and a new review finding
+  — `OSError` escaping `tryAcquireLock`'s documented `-> bool` contract
+  (pre-existing, needs its own packet). Evidence:
+  `docs/superpowers/reports/2026-07-28-aj-packet-closure-progress.md`.
+
 ## Non-negotiable continuation rules
 
 - Treat the seven 2026-07-14 specification files as immutable requirements.

@@ -85,6 +85,12 @@ def _run_installed_journal_case(
     tmp_path: Path,
     body: str,
 ) -> subprocess.CompletedProcess[str]:
+    if os.name != "nt":
+        pytest.skip(
+            "spawned child builds a capsule bootstrap scope, which requires "
+            "exact local Windows absolute roots "
+            "(bootstrap_scope._require_canonical_windows_root)"
+        )
     root = Path(__file__).resolve().parents[2]
     case_root = tmp_path / "installed-journal-case"
     code = f"""
