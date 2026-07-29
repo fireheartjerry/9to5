@@ -1255,6 +1255,25 @@ AJ16. [ ] Use bounded authority-ID collision retry and retire expired authority,
         (4 pre-existing `saveDataSnapshot` failures). STILL `[ ]`:
         `_CREDENTIAL_VERIFIER_BINDINGS` and `_CREDENTIAL_COORDINATORS` remain
         `id()`-keyed with no retirement — same shape, natural next increment.
+      - 2026-07-28 **CORRECTION to the entry above, measured after shipping it.**
+        The journal-binding retirement is **conditional, not unconditional**.
+        `_IssuedCredentialVerifierBinding` holds STRONG references to both the
+        verifier and the journal (`attempt_journal.py:2016-2017`), so a live
+        verifier binding pins the journal, the finalizer never runs, and the
+        entry is not retired. Probed directly: with one verifier binding
+        present, `del journal; gc.collect()` leaves the binding in place.
+        The retirement fires only when no verifier binding references the
+        journal. `_CREDENTIAL_VERIFIER_BINDINGS` is self-pinning for the same
+        reason (the record strongly references the verifier it is keyed by), so
+        that registry can never shrink. Closing this needs THREE files:
+        `.verifier`/`.journal` become weakrefs (the `is not` identity checks at
+        `attempt_journal.py:4301-4302` survive, since a dead weakref
+        dereferences to `None`), `CredentialChannelAbsenceVerifier`
+        (`credential_channel.py:1208`) gains `__weakref__`, and
+        `_CREDENTIAL_COORDINATORS` gets the same treatment. Deliberately NOT
+        attempted late in the session: it is authority-lifetime surgery in a hot
+        validation path and deserves its own failing-test-first packet with
+        independent review.
 AJ17. [ ] Retain native journal-root identities/handles through mutation and
       close rename, alias, short-name, mount, and reparse TOCTOU races.
 

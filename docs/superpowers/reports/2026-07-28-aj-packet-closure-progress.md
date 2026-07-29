@@ -362,9 +362,48 @@ pytest attempt_journal + kernel_artifacts + worktree + execution_clone +
 mypy unchanged: 20 pre-existing errors in `attempt_journal.py` and 14 in
 `candidate.py`, with and without these patches. ruff ok on both.
 
-Still open in AJ16: `_CREDENTIAL_VERIFIER_BINDINGS` and `_CREDENTIAL_COORDINATORS`
-remain `id()`-keyed with no retirement. They are the same shape as the journal
-binding just fixed and are the natural next increment. AJ16 stays `[ ]`.
+### Correction — the journal-binding retirement is narrower than first stated
+
+Measured after shipping it: `_IssuedCredentialVerifierBinding` holds
+**strong references** to both the verifier and the journal
+(`attempt_journal.py:2016-2017`). A live verifier binding therefore pins the
+journal, the `weakref.finalize` never runs, and the entry is **not** retired.
+Probe:
+
+```txt
+register journal              -> binding present
+insert one verifier binding holding journal=j
+del j; gc.collect()
+journal binding retired?      -> False
+```
+
+So the shipped retirement is real but conditional: it fires only when no
+credential-verifier binding references the journal. The commit message and the
+first version of this section overstated it, and this paragraph is the
+correction. The `_CREDENTIAL_VERIFIER_BINDINGS` registry is also self-pinning
+for the same reason — the record strongly references the verifier it is keyed
+by, so that registry can never shrink and `weakref.finalize` on the verifier
+could never fire either.
+
+Fixing this properly is a packet, not an increment, and it was deliberately not
+attempted late in this session:
+
+- `_IssuedCredentialVerifierBinding.verifier` and `.journal` must become
+  weakrefs. The two identity checks that consume them
+  (`attempt_journal.py:4301-4302`, `is not exact_verifier` / `is not self`)
+  survive the change — a dead weakref dereferences to `None`, which still fails
+  an `is` comparison — but they sit in a hot authority-validation path.
+- `CredentialChannelAbsenceVerifier` (`credential_channel.py:1208`) declares
+  `__slots__` without `__weakref__`, so it is not weak-referenceable either and
+  a third file must change.
+- `_CREDENTIAL_COORDINATORS` is the same shape again.
+
+That is three files of authority-lifetime change and deserves its own
+failing-test-first packet with independent review — particularly after this
+session already produced one plausible-looking change in this area (AJ15c(b))
+that tests proved would strand crash recovery.
+
+AJ16 stays `[ ]`.
 
 ## 9. Ledger effect
 
