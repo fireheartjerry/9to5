@@ -330,12 +330,41 @@ also gives 4 failed, and that file run alone gives 3 failed both with and
 without this change (the fourth is a pre-existing test-order interaction).
 ruff ok; mypy unchanged at 20 pre-existing errors with and without the patch.
 
-Not covered by this change and still open in AJ16: journal-binding and
-credential-verifier registries (`_ATTEMPT_JOURNAL_BINDINGS`,
-`_CREDENTIAL_VERIFIER_BINDINGS`, `_CREDENTIAL_COORDINATORS`) are `id()`-keyed
-and were not audited for expiry retirement here, and the new
-`_SNAPSHOT_ADMISSION_RECORDS` mint refuses on collision rather than retrying.
-AJ16 stays `[ ]`.
+**Defect 3 — `id()`-keyed journal bindings were never retired.**
+`_ATTEMPT_JOURNAL_BINDINGS` is keyed by `id(journal)` and had no removal path at
+all, so an entry outlived its object indefinitely. Because CPython reuses
+addresses, an unrelated later object allocated at the same address inherits the
+dead entry. That fails closed today — the stale record's `binding` is not the
+new object's `__binding`, so validation refuses — but it is a false refusal plus
+unbounded growth, and AJ16 names journal-binding retirement explicitly.
+`AttemptJournal` was not even weak-referenceable (`__slots__` carried
+`__binding` and `__dict__` but no `__weakref__`). Added `__weakref__`, and a
+`weakref.finalize` that calls `_retireAttemptJournalBinding`, which deletes the
+entry **only while it is still that exact record** — so a same-address successor
+that has already registered is never retired out from under itself. RED-first
+test `test_dead_journal_binding_is_retired_without_retargeting_a_live_one`
+collects one journal and asserts its key leaves the registry while a sibling's
+key and binding survive intact.
+
+**Also aligned:** the `_SNAPSHOT_ADMISSION_RECORDS` mint added in §6 refused
+outright on a repeated identifier; it now uses the same bounded retry
+(`_MAX_SNAPSHOT_ADMISSION_ID_ATTEMPTS = 32`) and additionally retries against
+already-consumed identifiers, so a consumed id can never be re-minted.
+
+Verification after the remainder (hermetic git config):
+
+```txt
+pytest attempt_journal + kernel_artifacts + worktree + execution_clone +
+       candidate + attempt_state_transaction + credential_broker -q
+  Python 3.12.3  ->  374 passed, 9 skipped, 4 failed (the pre-existing §F4 set)
+```
+
+mypy unchanged: 20 pre-existing errors in `attempt_journal.py` and 14 in
+`candidate.py`, with and without these patches. ruff ok on both.
+
+Still open in AJ16: `_CREDENTIAL_VERIFIER_BINDINGS` and `_CREDENTIAL_COORDINATORS`
+remain `id()`-keyed with no retirement. They are the same shape as the journal
+binding just fixed and are the natural next increment. AJ16 stays `[ ]`.
 
 ## 9. Ledger effect
 

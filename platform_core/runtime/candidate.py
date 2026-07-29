@@ -135,6 +135,7 @@ _SNAPSHOT_ADMISSION_RECORDS: dict[str, "_IssuedCloneSnapshotAdmission"] = {}
 # Consumed identifiers are retained so a replay of a genuine admission is
 # refused as a replay, not misreported as a forged binding.
 _SNAPSHOT_ADMISSION_CONSUMED: set[str] = set()
+_MAX_SNAPSHOT_ADMISSION_ID_ATTEMPTS = 32
 
 
 def _require_id(value: str, name: str) -> None:
@@ -5500,29 +5501,41 @@ class _CloneSnapshotAdmissionIssuer:
             raise StagedRevisionRefused(
                 "snapshot admission requires exact process-local quiescence"
             )
-        token = object()
-        admission = _CloneSnapshotAdmission(
-            admission_id=secrets.token_hex(32),
-            _token=token,
-        )
-        record = _IssuedCloneSnapshotAdmission(
-            admission=admission,
-            token=token,
-            issuer=self,
-            issuer_identity=self._identity,
-            seal=self._seal,
-            lease=lease,
-            quiescence=quiescence,
-        )
-        with self._lock:
-            self._admissions[admission.admission_id] = (admission, lease, quiescence)
-        with _SNAPSHOT_ADMISSION_RECORD_LOCK:
-            if admission.admission_id in _SNAPSHOT_ADMISSION_RECORDS:
-                raise StagedRevisionRefused(
-                    "clone snapshot admission identifier is not exact"
+        # AJ16: bounded collision retry, never a retarget. A repeated or
+        # already-consumed identifier is retried rather than overwriting or
+        # refusing outright.
+        for _attempt in range(_MAX_SNAPSHOT_ADMISSION_ID_ATTEMPTS):
+            token = object()
+            admission = _CloneSnapshotAdmission(
+                admission_id=secrets.token_hex(32),
+                _token=token,
+            )
+            record = _IssuedCloneSnapshotAdmission(
+                admission=admission,
+                token=token,
+                issuer=self,
+                issuer_identity=self._identity,
+                seal=self._seal,
+                lease=lease,
+                quiescence=quiescence,
+            )
+            with _SNAPSHOT_ADMISSION_RECORD_LOCK:
+                if (
+                    admission.admission_id in _SNAPSHOT_ADMISSION_RECORDS
+                    or admission.admission_id in _SNAPSHOT_ADMISSION_CONSUMED
+                ):
+                    continue
+                _SNAPSHOT_ADMISSION_RECORDS[admission.admission_id] = record
+            with self._lock:
+                self._admissions[admission.admission_id] = (
+                    admission,
+                    lease,
+                    quiescence,
                 )
-            _SNAPSHOT_ADMISSION_RECORDS[admission.admission_id] = record
-        return admission
+            return admission
+        raise StagedRevisionRefused(
+            "clone snapshot admission ID collision budget exhausted"
+        )
 
     def _forget(self, admission: _CloneSnapshotAdmission) -> None:
         """Drop the issuer-side view after the record has been consumed."""

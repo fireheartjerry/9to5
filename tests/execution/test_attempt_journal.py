@@ -1402,6 +1402,45 @@ def _persistence_authority(
     )
 
 
+def test_dead_journal_binding_is_retired_without_retargeting_a_live_one(
+    tmp_path: Path,
+) -> None:
+    """AJ16: a collected journal's binding leaves the registry.
+
+    The registry is keyed by ``id()``, so an entry that outlives its object can
+    be inherited by an unrelated later object allocated at the same address.
+    Retirement must drop exactly the dead entry and never a live one.
+    """
+
+    import gc
+
+    import platform_core.runtime.attempt_journal as journal_mod
+
+    survivor = AttemptJournal(tmp_path / "survivor")
+    survivor_key = id(survivor)
+    doomed = AttemptJournal(tmp_path / "doomed")
+    doomed_key = id(doomed)
+
+    assert doomed_key in journal_mod._ATTEMPT_JOURNAL_BINDINGS
+    assert survivor_key in journal_mod._ATTEMPT_JOURNAL_BINDINGS
+
+    del doomed
+    gc.collect()
+
+    assert doomed_key not in journal_mod._ATTEMPT_JOURNAL_BINDINGS, (
+        "collected journal left its binding behind for id() reuse"
+    )
+    assert survivor_key in journal_mod._ATTEMPT_JOURNAL_BINDINGS, (
+        "retirement retargeted a live journal binding"
+    )
+    # The survivor's binding still validates after its sibling was retired.
+    assert survivor.root == tmp_path / "survivor"
+    assert (
+        journal_mod._ATTEMPT_JOURNAL_BINDINGS[survivor_key].binding
+        is survivor._AttemptJournal__binding
+    )
+
+
 def test_persistence_authority_id_collision_retries_without_retargeting(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

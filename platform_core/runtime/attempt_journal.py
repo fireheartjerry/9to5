@@ -29,6 +29,7 @@ import re
 import secrets
 import stat
 import threading
+import weakref
 from collections.abc import Callable
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, fields, replace
@@ -1999,6 +2000,17 @@ _ATTEMPT_JOURNAL_BINDING_LOCK = threading.RLock()
 _ATTEMPT_JOURNAL_BINDINGS: dict[int, _IssuedAttemptJournalBinding] = {}
 
 
+def _retireAttemptJournalBinding(
+    binding_key: int,
+    issued: _IssuedAttemptJournalBinding,
+) -> None:
+    """AJ16: drop one dead journal binding without retargeting a live one."""
+
+    with _ATTEMPT_JOURNAL_BINDING_LOCK:
+        if _ATTEMPT_JOURNAL_BINDINGS.get(binding_key) is issued:
+            del _ATTEMPT_JOURNAL_BINDINGS[binding_key]
+
+
 @dataclass(frozen=True, slots=True)
 class _IssuedCredentialVerifierBinding:
     verifier: object
@@ -2020,7 +2032,7 @@ _CREDENTIAL_VERIFIER_BINDINGS: dict[int, _IssuedCredentialVerifierBinding] = {}
 
 class AttemptJournal:
     __binding: _AttemptJournalBinding
-    __slots__ = ("__binding", "__dict__")
+    __slots__ = ("__binding", "__dict__", "__weakref__")
 
     @property
     def _binding(self) -> _AttemptJournalBinding:
@@ -2119,15 +2131,26 @@ class AttemptJournal:
                 bootstrap_authorities=bootstrap_authorities,
             )
             object.__setattr__(self, "_AttemptJournal__binding", binding)
+            issued_binding = _IssuedAttemptJournalBinding(
+                binding=binding,
+                normalized_root=os.path.normcase(
+                    os.path.abspath(resolved_root)
+                ),
+                diagnostic=diagnostic,
+                bootstrap_authorities=bootstrap_authorities,
+            )
             with _ATTEMPT_JOURNAL_BINDING_LOCK:
-                _ATTEMPT_JOURNAL_BINDINGS[id(self)] = _IssuedAttemptJournalBinding(
-                    binding=binding,
-                    normalized_root=os.path.normcase(
-                        os.path.abspath(resolved_root)
-                    ),
-                    diagnostic=diagnostic,
-                    bootstrap_authorities=bootstrap_authorities,
-                )
+                _ATTEMPT_JOURNAL_BINDINGS[id(self)] = issued_binding
+            # AJ16: the registry is id()-keyed, so an entry that outlives its
+            # object could be inherited by an unrelated later object allocated
+            # at the same address. Retire exactly this entry when the journal
+            # is collected, and only while it is still this exact record.
+            weakref.finalize(
+                self,
+                _retireAttemptJournalBinding,
+                id(self),
+                issued_binding,
+            )
 
     @staticmethod
     def _authorityIssuer(

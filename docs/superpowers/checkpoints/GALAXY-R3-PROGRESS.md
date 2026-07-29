@@ -1237,6 +1237,24 @@ AJ16. [ ] Use bounded authority-ID collision retry and retire expired authority,
         credential-verifier, and coordinator registries were not audited for
         expiry retirement, and the new `_SNAPSHOT_ADMISSION_RECORDS` mint
         refuses on collision instead of retrying.
+      - 2026-07-28 (Claude executor, VPS, continued): **third defect fixed.**
+        `_ATTEMPT_JOURNAL_BINDINGS` is `id()`-keyed and had NO removal path, so
+        an entry outlived its object forever and a later object allocated at the
+        same address inherited it. It fails closed today (the stale record's
+        binding is not the new object's `__binding`) but it is a false refusal
+        plus unbounded growth, and AJ16 names journal-binding retirement
+        explicitly. `AttemptJournal` was not weak-referenceable at all; added
+        `__weakref__` to its slots plus a `weakref.finalize` calling
+        `_retireAttemptJournalBinding`, which deletes only while the entry is
+        still that exact record, so a same-address successor is never retired
+        out from under itself. RED-first test
+        `test_dead_journal_binding_is_retired_without_retargeting_a_live_one`.
+        The `_SNAPSHOT_ADMISSION_RECORDS` mint now uses the same bounded retry
+        and also retries against consumed identifiers, so a consumed id can
+        never be re-minted. Affected surface 374 passed/9 skipped on both lanes
+        (4 pre-existing `saveDataSnapshot` failures). STILL `[ ]`:
+        `_CREDENTIAL_VERIFIER_BINDINGS` and `_CREDENTIAL_COORDINATORS` remain
+        `id()`-keyed with no retirement — same shape, natural next increment.
 AJ17. [ ] Retain native journal-root identities/handles through mutation and
       close rename, alias, short-name, mount, and reparse TOCTOU races.
 
