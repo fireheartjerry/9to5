@@ -1217,6 +1217,26 @@ AJ15e. [ ] Run the full AJ10--AJ15 affected matrix on both Python lanes after
          `docs/superpowers/reports/2026-07-28-vps-posix-lane-consolidation.md`.
 AJ16. [ ] Use bounded authority-ID collision retry and retire expired authority,
       issuer-binding, and journal-binding registry entries without retargeting.
+      - 2026-07-28 (Claude executor, VPS): **two real defects found and fixed in
+        the persistence-authority issuer.** (1) `issueAuthority` minted
+        `secrets.token_hex(32)` ONCE and wrote both `self._issued` and
+        `_PERSISTENCE_ISSUER_REGISTRY` with no collision check, so a repeated
+        identifier silently overwrote a live issuance record and rebound an
+        existing authority to a new scope — the exact retargeting AJ16 forbids.
+        Fixed with a bounded retry that claims BOTH registries under their locks
+        (a collision in either rejects the whole attempt rather than
+        half-binding) and refuses with "collision budget exhausted".
+        (2) Expiry was enforced at use time but expired records were never
+        removed; added `_retireExpiredAuthority`, which deletes an entry only
+        when it is still the exact record observed, so a concurrent reissue of
+        the same identifier is never retired by mistake. Both RED-first tests
+        verified to fail with the source change stashed. Affected surface
+        285 passed/6 skipped on both lanes; the 4 remaining failures are the
+        pre-existing `saveDataSnapshot` receipt tests, proved unrelated by
+        matching HEAD counts. STILL `[ ]`: the `id()`-keyed journal-binding,
+        credential-verifier, and coordinator registries were not audited for
+        expiry retirement, and the new `_SNAPSHOT_ADMISSION_RECORDS` mint
+        refuses on collision instead of retrying.
 AJ17. [ ] Retain native journal-root identities/handles through mutation and
       close rename, alias, short-name, mount, and reparse TOCTOU races.
 

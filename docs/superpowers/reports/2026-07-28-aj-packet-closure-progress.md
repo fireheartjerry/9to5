@@ -282,7 +282,62 @@ answered, and it is a question about authority semantics, so it was not guessed:
 `_markDestroyed`'s independent re-proof was not started, because it consumes
 whatever the resolution above produces.
 
-## 8. Ledger effect
+## 8. AJ16 — two real defects found and fixed
+
+AJ16 asks for bounded authority-ID collision retry and retirement of expired
+authority, issuer-binding, and journal-binding registry entries without
+retargeting. `controller_state._registerControllerStateAuthority` already had
+the reference implementation (`_MAX_AUTHORITY_ID_ATTEMPTS = 32`, `continue` on
+collision, refusal on exhaustion). The persistence-authority issuer did not.
+
+**Defect 1 — silent retarget on ID collision.**
+`AttemptPersistenceAuthorityIssuer.issueAuthority` minted `secrets.token_hex(32)`
+once and wrote `self._issued[authority_id] = issued` plus
+`_PERSISTENCE_ISSUER_REGISTRY[authority_id] = self` with **no collision check at
+all**. A repeated identifier silently overwrote the live issuance record,
+rebinding an existing authority to a new scope — exactly what AJ16 forbids.
+Demonstrated by RED-first test
+`test_persistence_authority_id_collision_retries_without_retargeting`, which
+forces one collision and observed the second authority reusing the first's
+identifier. Fixed with a bounded retry loop that claims **both** registries
+under their locks, so a collision in either rejects the whole attempt rather
+than half-binding, and exhaustion refuses with "collision budget exhausted".
+
+**Defect 2 — expired entries were never retired.** Expiry was enforced at use
+time (fail closed, correct) but the expired record stayed in `self._issued` and
+`_PERSISTENCE_ISSUER_REGISTRY` forever. Added `_retireExpiredAuthority`, called
+at the expiry refusal, which re-reads both registries under their locks and
+deletes the entry **only when it is still the exact record observed**, so a
+concurrent reissue of the same identifier is never retired by mistake. RED-first
+test `test_expired_persistence_authority_is_retired_without_retargeting_others`
+asserts the expired entry leaves both registries while a second live authority
+from the same issuer keeps its record and binding.
+
+Both tests were verified genuinely RED: stashing only the source change makes
+both fail, restoring makes both pass.
+
+Verification (hermetic git config):
+
+```txt
+pytest test_attempt_journal test_kernel_artifacts test_worktree \
+       test_execution_clone test_attempt_state_transaction -q
+  Python 3.12.3  ->  285 passed, 6 skipped, 4 failed
+```
+
+The 4 failures are the §F4 `saveDataSnapshot` receipt tests and are
+**pre-existing and unrelated**, proved twice over: the same combined run at HEAD
+also gives 4 failed, and that file run alone gives 3 failed both with and
+without this change (the fourth is a pre-existing test-order interaction).
+ruff ok; mypy unchanged at 20 pre-existing errors with and without the patch.
+
+Not covered by this change and still open in AJ16: journal-binding and
+credential-verifier registries (`_ATTEMPT_JOURNAL_BINDINGS`,
+`_CREDENTIAL_VERIFIER_BINDINGS`, `_CREDENTIAL_COORDINATORS`) are `id()`-keyed
+and were not audited for expiry retirement here, and the new
+`_SNAPSHOT_ADMISSION_RECORDS` mint refuses on collision rather than retrying.
+AJ16 stays `[ ]`.
+
+## 9. Ledger effect
 
 - AJ10–AJ14: implementation independently confirmed; dual-lane POSIX evidence
   obtained. Still gated on AJ15e per the ledger's own policy.

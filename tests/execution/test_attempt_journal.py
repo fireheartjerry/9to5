@@ -1402,6 +1402,132 @@ def _persistence_authority(
     )
 
 
+def test_persistence_authority_id_collision_retries_without_retargeting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AJ16: a colliding authority ID must be retried, never retargeted.
+
+    Minting an ID that already exists must not rebind the existing issuance
+    record to a new scope, and an exhausted collision budget must refuse
+    instead of silently reusing an identifier.
+    """
+
+    import platform_core.runtime.attempt_journal as journal_mod
+
+    journal = AttemptJournal(tmp_path / "journals")
+    promoted = _through_promoted(journal, _record(tmp_path))
+    issuers: list[object] = []
+    first = _persistence_authority(journal, promoted, issuer_capture=issuers)
+    issuer = issuers[0]
+    first_scope = issuer._issued[first.authority_id].scope
+
+    # Force the next mint to collide with the live identifier once, then
+    # succeed with a fresh one.
+    minted = [first.authority_id, "b" * 64]
+    monkeypatch.setattr(journal_mod.secrets, "token_hex", lambda _n: minted.pop(0))
+    second = issuer.issueAuthority(
+        transaction_id=promoted.transaction_id,
+        task_id=promoted.task_id,
+        subtask_id=promoted.subtask_id,
+        process_capability=issuer._AttemptPersistenceAuthorityIssuer__binding.process_capability,
+        deadline=datetime(2098, 1, 1, tzinfo=timezone.utc),
+    )
+
+    assert second.authority_id != first.authority_id
+    assert issuer._issued[first.authority_id].scope is first_scope, (
+        "colliding mint retargeted the live authority"
+    )
+    assert journal_mod._PERSISTENCE_ISSUER_REGISTRY[first.authority_id] is issuer
+
+    # An always-colliding generator must exhaust a bounded budget and refuse.
+    monkeypatch.setattr(
+        journal_mod.secrets,
+        "token_hex",
+        lambda _n: first.authority_id,
+    )
+    with pytest.raises(
+        journal_mod.AttemptPersistenceAuthorityRefused,
+        match="collision budget",
+    ):
+        issuer.issueAuthority(
+            transaction_id=promoted.transaction_id,
+            task_id=promoted.task_id,
+            subtask_id=promoted.subtask_id,
+            process_capability=issuer._AttemptPersistenceAuthorityIssuer__binding.process_capability,
+            deadline=datetime(2098, 1, 1, tzinfo=timezone.utc),
+        )
+    assert issuer._issued[first.authority_id].scope is first_scope
+
+
+def test_expired_persistence_authority_is_retired_without_retargeting_others(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AJ16: an expired authority is retired from both registries on use.
+
+    Retirement must remove exactly the expired entry -- a second live authority
+    from the same issuer keeps its issuance record and registry binding.
+    """
+
+    import platform_core.runtime.attempt_journal as journal_mod
+
+    journal = AttemptJournal(tmp_path / "journals")
+    promoted = _through_promoted(journal, _record(tmp_path))
+    active_generation = [7]
+    process_capability = object()
+    controller_authority = issueDiagnosticControllerStateAuthority(
+        root=journal.root.parent,
+        repository_id=promoted.repository_id,
+        controller_generation=active_generation[0],
+        process_capability=process_capability,
+        expires_at="2099-06-01T00:00:00+00:00",
+    )
+    current = [datetime(2026, 1, 1, tzinfo=timezone.utc)]
+    issuer = journal_mod.AttemptPersistenceAuthorityIssuer(
+        journal_root=journal.root,
+        controller_state_authority=controller_authority,
+        controller_generation_probe=lambda: active_generation[0],
+        watchdog_generation=3,
+        watchdog_generation_probe=lambda: 3,
+        process_capability=process_capability,
+        clock=lambda: current[0],
+    )
+    expiring = issuer.issueAuthority(
+        transaction_id=promoted.transaction_id,
+        task_id=promoted.task_id,
+        subtask_id=promoted.subtask_id,
+        process_capability=process_capability,
+        deadline=datetime(2026, 6, 1, tzinfo=timezone.utc),
+    )
+    live = issuer.issueAuthority(
+        transaction_id=promoted.transaction_id,
+        task_id=promoted.task_id,
+        subtask_id=promoted.subtask_id,
+        process_capability=process_capability,
+        deadline=datetime(2099, 1, 1, tzinfo=timezone.utc),
+    )
+
+    assert expiring.authority_id in issuer._issued
+    assert journal_mod._PERSISTENCE_ISSUER_REGISTRY[expiring.authority_id] is issuer
+
+    current[0] = datetime(2027, 1, 1, tzinfo=timezone.utc)
+    with pytest.raises(
+        journal_mod.AttemptPersistenceAuthorityRefused,
+        match="expired",
+    ):
+        issuer._validateJournalScope(
+            expiring,
+            journal=journal,
+            transaction_id=promoted.transaction_id,
+        )
+
+    assert expiring.authority_id not in issuer._issued
+    assert expiring.authority_id not in journal_mod._PERSISTENCE_ISSUER_REGISTRY
+    assert live.authority_id in issuer._issued, "retirement retargeted a live authority"
+    assert journal_mod._PERSISTENCE_ISSUER_REGISTRY[live.authority_id] is issuer
+
+
 def test_attempt_persistence_authority_exposes_only_an_opaque_handle(
     tmp_path: Path,
 ) -> None:

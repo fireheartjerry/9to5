@@ -102,6 +102,7 @@ _MAX_RESOURCE_CHAIN_BYTES = 4 * 1024 * 1024
 _BUCKET_RE = re.compile(r"^[0-9a-f]{2}$")
 _PERSISTENCE_ISSUER_REGISTRY_LOCK = threading.RLock()
 _PERSISTENCE_ISSUER_REGISTRY: dict[str, "AttemptPersistenceAuthorityIssuer"] = {}
+_MAX_PERSISTENCE_AUTHORITY_ID_ATTEMPTS = 32
 _MISSING = object()
 
 if TYPE_CHECKING:
@@ -1558,12 +1559,6 @@ class AttemptPersistenceAuthorityIssuer:
                 "persistence deadline is outside controller authority"
             )
         self._validateLiveScope()
-        authority_id = secrets.token_hex(32)
-        token = object()
-        authority = AttemptPersistenceAuthority(
-            authority_id=authority_id,
-            _token=token,
-        )
         scope = _AttemptPersistenceScope(
             transaction_id=transaction_id,
             task_id=task_id,
@@ -1576,17 +1571,67 @@ class AttemptPersistenceAuthorityIssuer:
             watchdog_generation=self._watchdog_generation,
             deadline=normalized_deadline,
         )
-        issued = _IssuedAttemptPersistenceAuthority(
-            authority=authority,
-            token=token,
-            scope=scope,
-            scope_digest=_attemptPersistenceScopeDigest(scope),
+        scope_digest = _attemptPersistenceScopeDigest(scope)
+        # AJ16: a colliding identifier is retried within a bounded budget and
+        # never retargets a live issuance record. Both registries are claimed
+        # under their locks, so a collision in either one rejects the whole
+        # attempt rather than half-binding an authority.
+        for _attempt in range(_MAX_PERSISTENCE_AUTHORITY_ID_ATTEMPTS):
+            authority_id = secrets.token_hex(32)
+            if (
+                type(authority_id) is not str
+                or re.fullmatch(r"[0-9a-f]{64}", authority_id) is None
+            ):
+                raise AttemptPersistenceAuthorityRefused(
+                    "attempt persistence authority ID generator is invalid"
+                )
+            token = object()
+            authority = AttemptPersistenceAuthority(
+                authority_id=authority_id,
+                _token=token,
+            )
+            issued = _IssuedAttemptPersistenceAuthority(
+                authority=authority,
+                token=token,
+                scope=scope,
+                scope_digest=scope_digest,
+            )
+            with self._issued_lock:
+                if authority_id in self._issued:
+                    continue
+                with _PERSISTENCE_ISSUER_REGISTRY_LOCK:
+                    if authority_id in _PERSISTENCE_ISSUER_REGISTRY:
+                        continue
+                    _PERSISTENCE_ISSUER_REGISTRY[authority_id] = self
+                self._issued[authority_id] = issued
+            return authority
+        raise AttemptPersistenceAuthorityRefused(
+            "attempt persistence authority ID collision budget exhausted"
         )
+
+    def _retireExpiredAuthority(
+        self,
+        authority: AttemptPersistenceAuthority,
+        issued: _IssuedAttemptPersistenceAuthority,
+    ) -> None:
+        """AJ16: drop one exact expired issuance without retargeting.
+
+        Both registries are re-read under their locks and the entry is removed
+        only when it is still the exact record observed, so a concurrent
+        reissue of the same identifier is never retired by mistake.
+        """
+
+        authority_id = authority.authority_id
         with self._issued_lock:
-            self._issued[authority_id] = issued
-        with _PERSISTENCE_ISSUER_REGISTRY_LOCK:
-            _PERSISTENCE_ISSUER_REGISTRY[authority_id] = self
-        return authority
+            current = self._issued.get(authority_id)
+            if current is issued:
+                del self._issued[authority_id]
+            with _PERSISTENCE_ISSUER_REGISTRY_LOCK:
+                if (
+                    current is issued
+                    and _PERSISTENCE_ISSUER_REGISTRY.get(authority_id) is self
+                ):
+                    del _PERSISTENCE_ISSUER_REGISTRY[authority_id]
 
     def _validateJournalScope(
         self,
@@ -1630,6 +1675,7 @@ class AttemptPersistenceAuthorityIssuer:
                 "attempt persistence authority journal root differs"
             )
         if self._now() >= scope.deadline:
+            self._retireExpiredAuthority(authority, issued)
             raise AttemptPersistenceAuthorityRefused(
                 "attempt persistence authority expired"
             )
