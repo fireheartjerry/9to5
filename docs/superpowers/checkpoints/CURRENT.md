@@ -6,6 +6,18 @@ This is the stable entrypoint for resuming the long-running GALAXY R3
 implementation after context compaction, agent replacement, or machine restart.
 It is a navigation aid, not a new specification and not activation authority.
 
+> **START HERE (2026-07-28):**
+> `../reports/2026-07-28-session-close-findings-and-next-actions.md`
+> is the single continuation entrypoint. It carries three findings that exist
+> nowhere else: (1) **AJ10--AJ14 are already implemented and test-covered** — the
+> `[ ]` marks are an evidence policy, not missing code, so do not rewrite them;
+> (2) the activation ladder does not exist as documented — the embargo is
+> unconditional, nothing ever writes `activation_state="active"`, and shadow
+> evidence must come from a standalone harness rather than the run loop;
+> (3) an unverified hypothesis for the controller-state failure. It also lists the
+> exact next actions and the three AJ15c questions that need an operator decision
+> rather than more code.
+
 ## Read these first
 
 1. [Detailed session checkpoint](2026-07-19-galaxy-r3-session-checkpoint.md)
