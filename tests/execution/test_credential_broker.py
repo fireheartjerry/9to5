@@ -1395,6 +1395,91 @@ def test_destroy_replay_adopts_receipt_persisted_before_broker_metadata(
     assert len(tuple((root / "destruction-receipts").glob("*.json"))) == 1
 
 
+def test_destroy_replay_refuses_when_the_channel_reappeared(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AJ15c(b): replay re-proves absence instead of trusting a stored receipt.
+
+    A crash between receipt persistence and broker metadata leaves a terminal
+    receipt on disk. If the secret channel is present again when the replay
+    runs, terminal truth must NOT be adopted from that receipt -- the replay has
+    to observe absence for itself and refuse when absence does not hold.
+    """
+
+    root = tmp_path / "credential-store"
+    mod, resource, revoked, broker, process_capability, journal = _issue_and_revoke(
+        root=root
+    )
+    broker_type = type(broker)
+
+    def crash_before_metadata(*_args: object) -> None:
+        raise RuntimeError("crash after receipt persistence")
+
+    monkeypatch.setattr(broker_type, "_markDestroyed", crash_before_metadata)
+    with pytest.raises(RuntimeError, match="after receipt persistence"):
+        broker.channelDestroyer(
+            process_capability=process_capability,
+            resource=revoked,
+        ).destroy(revoked)
+    monkeypatch.undo()
+
+    channel_path = broker._channelPath(resource.secret_channel_id)
+    assert not channel_path.exists()
+    # The channel comes back -- restored from a backup, a stale writer, anything.
+    channel_path.write_text("resurrected-secret", encoding="utf-8")
+
+    def later() -> datetime:
+        return _clock() + timedelta(minutes=5)
+
+    restarted_capability = object()
+    restarted = mod.CredentialBroker(
+        metadata_root=root,
+        secret_provider=lambda _provider: pytest.fail("replay must not derive a secret"),
+        process_capability=restarted_capability,
+        attempt_journal=journal,
+        issuer_id=resource.issuer_id,
+        clock=later,
+    )
+    with pytest.raises(Exception, match="remains present|absence"):
+        restarted.channelDestroyer(
+            process_capability=restarted_capability,
+            resource=journal.load_resources(resource.transaction_id)[0],
+        ).destroy(revoked)
+
+
+def test_mark_destroyed_independently_reproves_absence(
+    tmp_path: Path,
+) -> None:
+    """AJ15c(b): the broker re-proves absence rather than trusting the receipt.
+
+    ``_markDestroyed`` writes terminal broker truth. It must not do so on the
+    strength of a receipt alone -- if the secret channel is present when it
+    runs, it has to refuse, independently of the journal fence that got it here.
+    """
+
+    root = tmp_path / "credential-store"
+    _mod, resource, revoked, broker, process_capability, _journal = _issue_and_revoke(
+        root=root
+    )
+    destroyer = broker.channelDestroyer(
+        process_capability=process_capability,
+        resource=revoked,
+    )
+    receipt = destroyer.destroy(revoked)
+
+    # Terminal truth is established and the channel is gone.
+    assert not broker._channelPath(resource.secret_channel_id).exists()
+
+    # The channel comes back, then terminal broker truth is re-asserted.
+    broker._channelPath(resource.secret_channel_id).write_text(
+        "resurrected-secret",
+        encoding="utf-8",
+    )
+    with pytest.raises(Exception, match="present|absence"):
+        type(broker)._markDestroyed(broker, revoked, receipt)
+
+
 def test_prepared_intent_never_claims_destruction_before_exact_delete(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -512,6 +512,57 @@ comparison) and reported: "Concrete failure scenarios constructed: none."
 With the clauses implemented, both lanes green, and an independent review
 returning no findings, **AJ16's own bar is met.**
 
+## 8b. AJ15c (b) — implemented on the operator's chosen shape
+
+The operator chose a **replay-only re-observation entrypoint**: leave the live
+first-destruction path and its terminal-state guard untouched, and give the
+replay path its own way to re-prove absence.
+
+`CredentialChannelAbsenceVerifier.reobserveDeletedForReplay` performs the same
+filesystem absence proof as `observeDeleted` minus the two terminal-state guards
+that made replay impossible (`_terminal_intent_absent`,
+`_broker_terminal_metadata_absent`). It mints no observation and grants no
+authority — it can only refuse.
+
+The placement mattered more than the entrypoint. A first attempt called it after
+`_remove_channel`, which made the proof trivially true: the replay deleted the
+resurrected channel itself and then observed absence. `_destroyGuarded` now
+decides replay-versus-first-destruction **before** removing anything:
+
+```python
+receipt = self._existing_terminal_receipt(observed)
+if receipt is None:
+    self._remove_channel(observed.secret_channel_id)      # first destruction
+    ... observeDeleted -> _select_terminal_receipt ...
+else:
+    self._absence_verifier.reobserveDeletedForReplay(observed, intent)
+```
+
+The broker half was also implemented, per the same ruling. `_markDestroyed`
+re-checks channel absence through its own `_channelPath` before writing terminal
+metadata, independently of the journal fence that allowed the call, and refuses
+with "credential channel remains present at terminal destruction".
+
+Two RED-first tests, both demonstrating real gaps before the fix:
+`test_destroy_replay_refuses_when_the_channel_reappeared` (replay adopted
+terminal truth while the secret channel was present again — "DID NOT RAISE") and
+`test_mark_destroyed_independently_reproves_absence`.
+
+Crucially, the two legitimate recovery paths that the earlier reordering
+stranded now pass: `test_destroy_replay_adopts_receipt_persisted_before_broker_metadata`
+and `test_recovery_reuses_broker_terminal_receipt_after_prejournal_crash`. A
+crash between receipt persistence and broker metadata still recovers; only a
+channel that actually came back is refused.
+
+```txt
+8 suites, hermetic git config, exact FAILED-list diff vs HEAD:
+  3.12.3  -> 8 failed (byte-identical to HEAD), 390 passed, 9 skipped, 1 xfailed
+  3.11.15 -> 8 failed,                          390 passed, 9 skipped, 1 xfailed
+```
+
+ruff ok; mypy unchanged (9 in `credential_channel.py`, 1 in
+`credential_broker.py`) with and without.
+
 ## 9. AJ17 — gap demonstrated and pinned, implementation not started
 
 AJ17 was untouched. It still is, as an implementation — but its contract is no

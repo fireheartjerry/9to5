@@ -1094,9 +1094,15 @@ class CredentialChannelDestroyer:
         broker = _exact_broker(self._broker)
         CredentialBroker._zeroSecret(broker, observed.resource_id)
         intent = self._prepare_intent(observed)
-        self._remove_channel(observed.secret_channel_id)
+        # AJ15c(b): decide replay-vs-first-destruction BEFORE removing the
+        # channel. A replay must re-prove absence for itself rather than trust
+        # the prior ceremony's receipt, and that proof is only meaningful while
+        # the channel is still whatever it currently is -- removing it first
+        # would make the observation trivially true and silently destroy a
+        # channel that had come back.
         receipt = self._existing_terminal_receipt(observed)
         if receipt is None:
+            self._remove_channel(observed.secret_channel_id)
             deletion_observation = self._absence_verifier.observeDeleted(
                 observed,
                 intent,
@@ -1105,6 +1111,8 @@ class CredentialChannelDestroyer:
                 observed,
                 deletion_observation,
             )
+        else:
+            self._absence_verifier.reobserveDeletedForReplay(observed, intent)
         persisted = self._persist_receipt(receipt)
         CredentialBroker._markDestroyed(broker, observed, persisted)
         self._revalidate_root()
@@ -1424,6 +1432,43 @@ class CredentialChannelAbsenceVerifier:
                 "credential channel absence is unobservable"
             ) from exc
         self._revalidate_directories()
+
+    def reobserveDeletedForReplay(
+        self,
+        resource: object,
+        intent: CredentialChannelDestructionIntent,
+    ) -> None:
+        """AJ15c(b): re-prove channel absence on a replay, and only on a replay.
+
+        ``observeDeleted`` refuses once terminal state exists, which is correct
+        for a first destruction -- it stops a second ceremony re-minting
+        terminal truth -- but it makes a replay unable to re-prove anything, so
+        terminal truth would rest on a prior ceremony's word. This entrypoint
+        performs the same filesystem absence proof **without** the terminal-state
+        guards, so a replay that finds the channel present again refuses instead
+        of adopting a stored receipt. It mints no observation and grants no
+        authority; it can only refuse.
+        """
+
+        self._requireIssued()
+        from platform_core.runtime.candidate import RuntimeResourceLease
+
+        if type(resource) is not RuntimeResourceLease:
+            raise CredentialChannelEvidenceRefused(
+                "credential deletion observation requires an exact runtime resource"
+            )
+        observed = cast(Any, resource)
+        if observed.issuer_id != self._issuer_id:
+            raise CredentialChannelEvidenceRefused(
+                "credential deletion observation resource differs"
+            )
+        if type(intent) is not CredentialChannelDestructionIntent:
+            raise CredentialChannelEvidenceRefused(
+                "credential deletion observation requires exact prepared intent"
+            )
+        _validate_intent_binding(intent, observed)
+        self._revalidate_directories()
+        self._observe_channel_absent(observed)
 
     def observeDeleted(
         self,

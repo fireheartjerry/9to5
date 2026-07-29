@@ -1096,6 +1096,22 @@ class CredentialBroker:
             raise CredentialBrokerRefused(
                 "credential destruction metadata binding differs"
             )
+        # AJ15c(b): terminal broker truth does not rest on the receipt alone.
+        # Re-prove channel absence here, independently of the journal fence that
+        # allowed this call, so a channel that came back cannot be recorded as
+        # destroyed.
+        try:
+            channel_present = self._channelPath(
+                observed_resource.secret_channel_id
+            ).exists()
+        except OSError as exc:
+            raise CredentialBrokerRefused(
+                "credential channel absence is unobservable"
+            ) from exc
+        if channel_present:
+            raise CredentialBrokerRefused(
+                "credential channel remains present at terminal destruction"
+            )
         if current.state == "destroyed":
             if (
                 current.destruction_receipt_digest != receipt.receipt_digest
