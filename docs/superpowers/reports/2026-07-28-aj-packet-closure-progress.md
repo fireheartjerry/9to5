@@ -477,9 +477,40 @@ authority entries: done. Retirement of issuer-binding and journal-binding
 registry entries: done for `_ATTEMPT_JOURNAL_BINDINGS`,
 `_CREDENTIAL_VERIFIER_BINDINGS`, and `_CREDENTIAL_COORDINATORS`, in every case
 deleting only the exact record so nothing is retargeted. What the ledger text
-asks for is now implemented; what it has not had is an **independent review**,
-which is the standing bar for a packet of this kind, so AJ16 is not being ticked
-here on my own say-so.
+asks for is now implemented.
+
+### AJ16 independent review — VERIFIED on all four claims, no findings
+
+Reviewer given no prior context, told not to trust commit messages or docs, and
+instructed to refute first:
+
+1. **Bounded collision retry, no retargeting — VERIFIED.** Lock order is always
+   `self._issued_lock` -> `_PERSISTENCE_ISSUER_REGISTRY_LOCK`; the reviewer
+   grepped every acquisition (lines 104, 1603, 1630, 2199) and confirmed the
+   only other one is standalone, so there is **no deadlock path**. Both
+   `continue` branches fire before either registry is mutated, and both writes
+   happen while `_issued_lock` is held continuously, so **no thread can observe
+   a half-bound state**. Exhaustion raises.
+2. **Expired-authority retirement — VERIFIED.** `current` is re-read under the
+   lock and compared by identity before any deletion, so a concurrent reissue of
+   the same identifier is not retired by mistake.
+3. **Weak records keep exact identity semantics — VERIFIED.** The reviewer
+   checked every comparison site and found none that compares two dereferenced
+   (possibly-`None`) values against each other: every identity check pins one
+   side to a live, strongly-referenced object (`self`, `exact_verifier`, or
+   `self._journal`, the last being a strong attribute, never a weakref). A dead
+   weakref can therefore only make these checks **fail**, never spuriously pass.
+4. **Finalizer `id()` capture — VERIFIED.** The captured id is only ever a dict
+   key, never dereferenced, and each `_retire*` guard requires the slot to still
+   hold the exact frozen record instance, so a finalizer for a dead object
+   cannot delete a successor's entry that reused the address.
+
+The reviewer explicitly attempted to construct races for each claim
+(interleaved `issueAuthority`, concurrent retire + reissue, GC firing mid
+comparison) and reported: "Concrete failure scenarios constructed: none."
+
+With the clauses implemented, both lanes green, and an independent review
+returning no findings, **AJ16's own bar is met.**
 
 ## 9. AJ17 — gap demonstrated and pinned, implementation not started
 
