@@ -1109,6 +1109,27 @@ AJ15e. [ ] Run the full AJ10--AJ15 affected matrix on both Python lanes after
          is FLAKY (non-deterministic across back-to-back isolated runs). The matrix
          requires retaining every DETERMINISTIC failure as a fixture; a flaky test
          cannot serve as evidence and must be stabilised first.
+       - 2026-07-28 (Claude executor, VPS): native-Linux lane added (Ubuntu
+         24.04, Python 3.12.3, ext4, **no Docker**). `test_fsio.py` 298 passed/45
+         skipped/0 failed — the WSL AJ15b figure replicates on a second POSIX
+         filesystem. The flaky lock test passed 3/3 in 0.41-0.50 s here; that is
+         a non-reproduction, NOT a stabilisation, so this BLOCKER stands.
+         `tests/control/` went 75 failed/502 passed → 4 failed/502 passed/140
+         skipped after adding the POSIX skip guards sibling suites already had
+         (fixture seams only; no-ops on Windows). Three NEW blockers for the
+         matrix, all decisions rather than code: Ubuntu git 2.43 prints no
+         `SHA-1:` build option so `object_parser_entrypoint.py:152` refuses the
+         runtime (54 of 56 `test_staged_revision.py` failures on this host — the
+         attestation was deliberately NOT widened, since that weakens a
+         collision-detection gate); global `rerere.enabled=true` creates
+         `.git/MERGE_RR` which `canonical_repo.py:914` refuses; and
+         `state/task_io.py:483 saveDataSnapshot` never calls
+         `_issueSnapshotReceipt` (zero callers), failing four
+         `test_attempt_state_transaction.py` contract tests on EVERY platform.
+         Note also that the deterministic controller-state failure cannot be
+         triaged on POSIX — it now skips at Windows-root scope validation before
+         reaching the patched `threading.RLock`. Evidence:
+         `docs/superpowers/reports/2026-07-28-vps-posix-lane-consolidation.md`.
 AJ16. [ ] Use bounded authority-ID collision retry and retire expired authority,
       issuer-binding, and journal-binding registry entries without retargeting.
 AJ17. [ ] Retain native journal-root identities/handles through mutation and

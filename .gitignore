@@ -42,6 +42,7 @@ state/ab_runs.db-shm
 # SIE runtime artifacts (LoRA adapters, datasets, sie state)
 state/adapters/
 state/ann_index/
+state/.ann_index.*/
 state/epoch_fingerprint_cache.db
 state/perf.jsonl
 state/validation_cache.db

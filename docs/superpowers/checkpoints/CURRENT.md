@@ -315,6 +315,41 @@ security, qualification, or activation decisions.
   do not cite the old number. Evidence:
   `docs/superpowers/reports/2026-07-28-staged-revision-manifest-contract-recovery.md`.
 
+- 2026-07-28 **Branch consolidation and first native-Linux lane.** The two
+  divergent Stage 2 tips are merged onto one truth: the branch now equals the
+  GitHub transport commit `5c33df1` with an empty diff, and the VPS-side
+  `b24a99a` "stuff" sibling — a strict subset that additionally tracked the
+  runtime SQLite index — is retained only as tag `backup/vps-stuff-b24a99a`.
+  `state/.ann_index.*/` is now ignored. Remote `github` added; the bundle remote
+  `origin` is untouched. Nothing was pushed.
+  Measured on Ubuntu 24.04 / Python 3.12.3 / **no Docker**: `test_fsio.py`
+  **298 passed / 45 skipped / 0 failed**, independently replicating the WSL ext4
+  AJ15b figure on a second POSIX filesystem; the AJ15e flake
+  (`test_concurrent_process_lock_acquisition_has_one_exact_winner`) **passed 3/3
+  in 0.41-0.50 s and does not reproduce here** — it remains unstabilised, and a
+  non-reproduction is not a fix. `tests/control/` was **75 failed / 502 passed**
+  and is now **4 failed / 502 passed / 140 skipped** after adding the POSIX skip
+  guards that sibling suites already had (test-fixture seams only, production
+  code untouched, no-ops on Windows). Consequently the single deterministic
+  controller-state failure **cannot be triaged on POSIX at all**: the case now
+  skips at Windows-root scope validation and never reaches the patched
+  `threading.RLock`, so the test-versus-code ordering hypothesis needs Windows.
+  Three blockers stay OPEN and are decisions, not code: (F2) Ubuntu git
+  `2.43.0-1ubuntu7.3` prints no `SHA-1:` build option, so
+  `object_parser_entrypoint.py:152` refuses the runtime and causes **54 of the 56**
+  `test_staged_revision.py` failures on this host — widening that attestation
+  would weaken a collision-detection gate and was refused; (F3) the operator's
+  global `rerere.enabled=true` creates `.git/MERGE_RR`, which
+  `canonical_repo.py:914` refuses as an unknown file surface; (F4)
+  `state/task_io.py:483 saveDataSnapshot` returns a `Path` and never calls
+  `_issueSnapshotReceipt` (**zero callers**), so four
+  `test_attempt_state_transaction.py` contract tests fail on **every** platform —
+  the same drift class as the staged-revision manifest, and the concrete face of
+  the already-recorded unproved-snapshot-durability blocker. Also recorded so no
+  later wave can claim it green: `tools/size_audit.py` reports **55 must_split
+  files and 251 must_split functions** against a bar of zero. Evidence:
+  `docs/superpowers/reports/2026-07-28-vps-posix-lane-consolidation.md`.
+
 ## Non-negotiable continuation rules
 
 - Treat the seven 2026-07-14 specification files as immutable requirements.

@@ -63,6 +63,11 @@ class _SameProcessChildFactory:
 
 
 def _scope(tmp_path: Path, *, suffix: str = "a") -> CapsuleBootstrapScope:
+    if os.name != "nt":
+        pytest.skip(
+            "capsule bootstrap scope requires exact local Windows absolute "
+            "roots (bootstrap_scope._require_canonical_windows_root)"
+        )
     source = str((tmp_path / f"source-{suffix}").resolve())
     installed = str((tmp_path / f"installed-{suffix}").resolve())
     state = str((tmp_path / f"state-{suffix}").resolve())
@@ -1227,6 +1232,13 @@ def test_derive_first_serializes_path_activation_then_replays_exact_bundle(
     )
 
 
+@pytest.mark.skipif(
+    os.name != "nt",
+    reason=(
+        "spawned child builds a capsule bootstrap scope, which requires exact "
+        "local Windows absolute roots"
+    ),
+)
 def test_cold_activation_first_refuses_before_authority_descendant_imports(
     tmp_path: Path,
 ) -> None:

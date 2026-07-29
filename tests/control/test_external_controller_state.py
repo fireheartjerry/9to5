@@ -112,6 +112,11 @@ print("posix-nested-controller-state-green")
 
 
 def _runtime_install_prelude(tmp_path: Path) -> str:
+    if os.name != "nt":
+        pytest.skip(
+            "installed-runtime bootstrap scope requires exact local Windows "
+            "absolute roots (bootstrap_scope._require_canonical_windows_root)"
+        )
     root = Path(__file__).resolve().parents[2]
     case_root = tmp_path / "runtime-install-case"
     return f"""

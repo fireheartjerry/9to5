@@ -56,6 +56,11 @@ def _bootstrap_scope(
         source_root = rf"C:\GalaxyOperatorLaunchTests\Source\{path_tag}"
         installed_root = rf"C:\GalaxyOperatorLaunchTests\Installed\{path_tag}"
     else:
+        if os.name != "nt":
+            pytest.skip(
+                "tmp_path-rooted capsule scopes require exact local Windows "
+                "absolute roots (bootstrap_scope._require_canonical_windows_root)"
+            )
         base = Path(tmp_path).resolve()
         state_root = str(base / f"controller-state-{path_tag}")
         source_root = str(base / f"source-{path_tag}")
