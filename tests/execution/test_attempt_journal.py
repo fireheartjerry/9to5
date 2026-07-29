@@ -1510,6 +1510,64 @@ class _WeakVerifierStub:
     """Minimal weak-referenceable stand-in for a credential absence verifier."""
 
 
+class _WeakCoordinatorStub:
+    """Minimal weak-referenceable stand-in for a credential coordinator."""
+
+
+def test_coordinator_binding_does_not_pin_its_journal_or_itself(
+    tmp_path: Path,
+) -> None:
+    """AJ16: the coordinator registry must not be self-pinning either.
+
+    Same shape as the verifier binding: keyed by ``id(coordinator)`` while
+    holding the coordinator and journal strongly, so neither could ever be
+    collected and the registry could never shrink.
+    """
+
+    import gc
+    import weakref
+
+    import platform_core.runtime.attempt_journal as journal_mod
+
+    journal = AttemptJournal(tmp_path / "journals")
+    journal_key = id(journal)
+    coordinator = _WeakCoordinatorStub()
+    coordinator_key = id(coordinator)
+    issued = journal_mod._IssuedCredentialCoordinator(
+        coordinator_ref=weakref.ref(coordinator),
+        journal_ref=weakref.ref(journal),
+        journal_binding=journal._AttemptJournal__binding,
+        registration=object(),
+        registration_contract_digest=DIGEST_A,
+        broker=object(),
+        broker_authority=object(),
+        broker_root=str(tmp_path / "broker"),
+    )
+    with journal_mod._CREDENTIAL_COORDINATORS_LOCK:
+        journal_mod._CREDENTIAL_COORDINATORS[coordinator_key] = issued
+    weakref.finalize(
+        coordinator,
+        journal_mod._retireCredentialCoordinator,
+        coordinator_key,
+        issued,
+    )
+
+    assert issued.coordinator is coordinator
+    assert issued.journal is journal
+
+    del journal
+    gc.collect()
+    assert journal_key not in journal_mod._ATTEMPT_JOURNAL_BINDINGS, (
+        "a coordinator binding pinned its journal"
+    )
+
+    del coordinator
+    gc.collect()
+    assert coordinator_key not in journal_mod._CREDENTIAL_COORDINATORS, (
+        "collected coordinator left its record behind for id() reuse"
+    )
+
+
 def test_dead_journal_binding_is_retired_without_retargeting_a_live_one(
     tmp_path: Path,
 ) -> None:

@@ -1293,8 +1293,25 @@ AJ16. [ ] Use bounded authority-ID collision retry and retire expired authority,
         property still holds on all three parametrisations. Verified by exact
         FAILED-list diff, not counts: HEAD 8 failed vs change 8 failed,
         byte-identical; 387 passed/9 skipped/1 xfailed on BOTH lanes; mypy
-        unchanged (20 / 9). STILL `[ ]`: `_CREDENTIAL_COORDINATORS` is the same
-        `id()`-keyed shape with no retirement, now with a proven template.
+        unchanged (20 / 9).
+      - 2026-07-28 (Claude executor, VPS): **last registry converted.**
+        `_IssuedCredentialCoordinator` had the identical self-pinning shape and
+        now holds `coordinator_ref`/`journal_ref` weakly with dereferencing
+        properties, so `issued.coordinator is not self` and
+        `issued.journal is not self._journal` keep their exact wording; added
+        `_retireCredentialCoordinator` plus a `weakref.finalize`, and
+        `_CredentialJournalCoordinator` gained `__weakref__`. RED-first test
+        `test_coordinator_binding_does_not_pin_its_journal_or_itself`. All three
+        retirement paths now pass together and journal retirement is
+        unconditional. Exact FAILED-list diff vs HEAD is byte-identical;
+        388 passed/9 skipped/1 xfailed on BOTH lanes; ruff ok, mypy unchanged.
+        AJ16's written clauses are now all implemented -- bounded collision
+        retry in the persistence issuer AND the snapshot mint, expired-authority
+        retirement, and retirement for all three registries, each deleting only
+        the exact record so nothing is retargeted. It stays `[ ]` for one reason
+        only: **no independent review yet**, which is the standing bar for a
+        packet of this kind, and it is not being ticked on the executor's own
+        say-so.
 AJ17. [ ] Retain native journal-root identities/handles through mutation and
       close rename, alias, short-name, mount, and reparse TOCTOU races.
       - 2026-07-28 (Claude executor, VPS): **the gap is now DEMONSTRATED, not

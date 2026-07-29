@@ -449,9 +449,37 @@ the `test_receipts` authorization group, and the environmental
 legacy-retirement failure). mypy unchanged: 20 in `attempt_journal.py`, 9 in
 `credential_channel.py`, with and without. ruff ok on both.
 
-`_CREDENTIAL_COORDINATORS` remains `id()`-keyed with no retirement — the same
-shape, now with a proven template to follow. AJ16 stays `[ ]` for that reason
-alone.
+### `_CREDENTIAL_COORDINATORS` — the last registry, same treatment
+
+`_IssuedCredentialCoordinator` had the identical shape: keyed by
+`id(coordinator)` while holding `coordinator` and `journal` strongly. Converted
+to `coordinator_ref`/`journal_ref` with dereferencing properties, so
+`issued.coordinator is not self` and `issued.journal is not self._journal`
+(`attempt_journal.py:5321-5330`) keep their exact wording; added
+`_retireCredentialCoordinator` plus a `weakref.finalize` on the coordinator that
+deletes only the exact record; and `_CredentialJournalCoordinator` gained
+`__weakref__`. RED-first test
+`test_coordinator_binding_does_not_pin_its_journal_or_itself`.
+
+All three retirement paths — journal binding, verifier binding, coordinator —
+now pass together, and journal retirement is unconditional in every case.
+
+```txt
+8 suites, hermetic git config, exact FAILED-list diff vs HEAD:
+  3.12.3  -> 8 failed (byte-identical to HEAD), 388 passed, 9 skipped, 1 xfailed
+```
+
+ruff ok; mypy unchanged at 20 in `attempt_journal.py`.
+
+**AJ16 clause status.** Bounded authority-ID collision retry: done, in both the
+persistence issuer and the snapshot admission mint. Retirement of expired
+authority entries: done. Retirement of issuer-binding and journal-binding
+registry entries: done for `_ATTEMPT_JOURNAL_BINDINGS`,
+`_CREDENTIAL_VERIFIER_BINDINGS`, and `_CREDENTIAL_COORDINATORS`, in every case
+deleting only the exact record so nothing is retargeted. What the ledger text
+asks for is now implemented; what it has not had is an **independent review**,
+which is the standing bar for a packet of this kind, so AJ16 is not being ticked
+here on my own say-so.
 
 ## 9. AJ17 — gap demonstrated and pinned, implementation not started
 

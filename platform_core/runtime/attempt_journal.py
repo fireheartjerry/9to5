@@ -2392,19 +2392,24 @@ class AttemptJournal:
             broker_root=normalized_root,
             _factory=_CREDENTIAL_COORDINATOR_FACTORY,
         )
+        issued_coordinator = _IssuedCredentialCoordinator(
+            coordinator_ref=weakref.ref(coordinator),
+            journal_ref=weakref.ref(self),
+            journal_binding=self._binding,
+            registration=registration,
+            registration_contract_digest=contract_digest,
+            broker=broker,
+            broker_authority=broker_authority,
+            broker_root=normalized_root,
+        )
         with _CREDENTIAL_COORDINATORS_LOCK:
-            _CREDENTIAL_COORDINATORS[id(coordinator)] = (
-                _IssuedCredentialCoordinator(
-                    coordinator=coordinator,
-                    journal=self,
-                    journal_binding=self._binding,
-                    registration=registration,
-                    registration_contract_digest=contract_digest,
-                    broker=broker,
-                    broker_authority=broker_authority,
-                    broker_root=normalized_root,
-                )
-            )
+            _CREDENTIAL_COORDINATORS[id(coordinator)] = issued_coordinator
+        weakref.finalize(
+            coordinator,
+            _retireCredentialCoordinator,
+            id(coordinator),
+            issued_coordinator,
+        )
         return coordinator
 
     @_diagnosticPersistenceOperation
@@ -5255,8 +5260,16 @@ _CREDENTIAL_COORDINATOR_FACTORY = object()
 
 @dataclass(frozen=True, slots=True)
 class _IssuedCredentialCoordinator:
-    coordinator: object
-    journal: AttemptJournal
+    """AJ16: holds the coordinator and journal weakly so the registry shrinks.
+
+    Keyed by ``id(coordinator)``; strong references here made the record
+    self-pinning. The ``coordinator`` and ``journal`` properties dereference, so
+    ``issued.coordinator is not self`` and ``issued.journal is not self._journal``
+    keep their exact meaning -- a dead reference yields ``None`` and still fails.
+    """
+
+    coordinator_ref: object
+    journal_ref: object
     journal_binding: _AttemptJournalBinding
     registration: object
     registration_contract_digest: str
@@ -5264,9 +5277,34 @@ class _IssuedCredentialCoordinator:
     broker_authority: object
     broker_root: str
 
+    @staticmethod
+    def _deref(value: object) -> object:
+        if isinstance(value, weakref.ReferenceType):
+            return value()
+        return value
+
+    @property
+    def coordinator(self) -> object:
+        return self._deref(self.coordinator_ref)
+
+    @property
+    def journal(self) -> object:
+        return self._deref(self.journal_ref)
+
 
 _CREDENTIAL_COORDINATORS_LOCK = threading.RLock()
 _CREDENTIAL_COORDINATORS: dict[int, _IssuedCredentialCoordinator] = {}
+
+
+def _retireCredentialCoordinator(
+    coordinator_key: int,
+    issued: _IssuedCredentialCoordinator,
+) -> None:
+    """AJ16: drop one dead coordinator record without retargeting a live one."""
+
+    with _CREDENTIAL_COORDINATORS_LOCK:
+        if _CREDENTIAL_COORDINATORS.get(coordinator_key) is issued:
+            del _CREDENTIAL_COORDINATORS[coordinator_key]
 
 
 class _CredentialJournalCoordinator:
@@ -5279,6 +5317,9 @@ class _CredentialJournalCoordinator:
         "_journal",
         "_registration",
         "_registration_contract_digest",
+        # AJ16: weak-referenceable so its registry record can be retired on
+        # collection instead of pinning this object for the process lifetime.
+        "__weakref__",
     )
 
     def __init__(
