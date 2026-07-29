@@ -405,7 +405,41 @@ that tests proved would strand crash recovery.
 
 AJ16 stays `[ ]`.
 
-## 9. Ledger effect
+## 9. AJ17 — gap demonstrated and pinned, implementation not started
+
+AJ17 was untouched. It still is, as an implementation — but its contract is no
+longer a paragraph, it is an executable fixture.
+
+`AttemptJournal.root` is a path, and `_root_identity` (`attempt_journal.py:581`)
+re-stats that path at validation time, so journal work is bound to a **name**
+rather than to the object that was validated. Demonstrated directly:
+
+```txt
+establish journal at <tmp>/journals        inode 3415324
+os.rename(<tmp>/journals, <tmp>/moved)
+mkdir <tmp>/journals                       inode 3415325
+journal.create(second record)              -> DID NOT RAISE
+```
+
+The journal silently wrote into the impostor directory. New test
+`test_journal_refuses_after_its_root_object_is_swapped` encodes the required
+behaviour — refuse rather than write, and leave the impostor empty — and is
+retained as `xfail(strict=True)`. Strict matters: if AJ17 lands and the test
+starts passing while the marker is still present, the suite fails, so the
+fixture cannot rot into a silent pass. This is the AJ15e rule ("retain every
+deterministic failure as a fixture") applied to a failure that had no fixture.
+
+Both lanes after adding it: 220 passed / 5 skipped / **1 xfailed**.
+
+Implementation deliberately not started. Closing AJ17 means moving journal I/O
+onto retained `NativeDirectoryHandle` children (`fsio.py:1827`,
+`openNativeDirectory` at `:4521`) across 3 `_root_identity` call sites and 8
+path-based operations, and it carries a Windows design question — holding a
+directory handle open for the journal's lifetime changes deletion and rename
+behaviour on exactly the platform this kernel targets. The POSIX case is pinned;
+the Windows short-name/alias case still needs its own fixture.
+
+## 10. Ledger effect
 
 - AJ10–AJ14: implementation independently confirmed; dual-lane POSIX evidence
   obtained. Still gated on AJ15e per the ledger's own policy.

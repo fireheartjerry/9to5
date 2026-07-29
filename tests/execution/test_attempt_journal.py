@@ -1402,6 +1402,50 @@ def _persistence_authority(
     )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "AJ17 OPEN: journal work is path-bound, not handle-bound, so a swapped "
+        "root object is not detected. Retained as a deterministic failing "
+        "fixture; remove this marker when AJ17 lands."
+    ),
+)
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX rename-swap of a live directory; Windows needs its own alias case",
+)
+def test_journal_refuses_after_its_root_object_is_swapped(
+    tmp_path: Path,
+) -> None:
+    """AJ17: journal work must bind to the validated root OBJECT, not its path.
+
+    ``AttemptJournal.root`` is a path. Once the journal has been established,
+    renaming that directory away and putting a fresh one in its place leaves the
+    path resolving to a different filesystem object. Every later operation must
+    refuse rather than silently writing into the impostor, because the identity
+    that was validated no longer backs the name being used.
+    """
+
+    journal = AttemptJournal(tmp_path / "journals")
+    journal.create(_record(tmp_path), require_new=True)
+    established = os.stat(journal.root)
+
+    os.rename(journal.root, tmp_path / "moved-away")
+    (tmp_path / "journals").mkdir()
+    impostor = os.stat(journal.root)
+    assert impostor.st_ino != established.st_ino, "test did not actually swap the root"
+
+    with pytest.raises((JournalCorruption, OSError, RuntimeError)):
+        journal.create(
+            _record(tmp_path, transaction_id="tx-002"),
+            require_new=True,
+        )
+
+    assert not list((tmp_path / "journals").iterdir()), (
+        "journal wrote into an impostor root after its validated object was swapped"
+    )
+
+
 def test_dead_journal_binding_is_retired_without_retargeting_a_live_one(
     tmp_path: Path,
 ) -> None:

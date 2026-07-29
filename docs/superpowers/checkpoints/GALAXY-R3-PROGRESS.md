@@ -1276,6 +1276,25 @@ AJ16. [ ] Use bounded authority-ID collision retry and retire expired authority,
         independent review.
 AJ17. [ ] Retain native journal-root identities/handles through mutation and
       close rename, alias, short-name, mount, and reparse TOCTOU races.
+      - 2026-07-28 (Claude executor, VPS): **the gap is now DEMONSTRATED, not
+        asserted, and pinned as a deterministic failing fixture.**
+        `AttemptJournal.root` is a path and `_root_identity`
+        (`attempt_journal.py:581`) re-stats that path, so journal work is
+        path-bound rather than bound to the validated object. New test
+        `test_journal_refuses_after_its_root_object_is_swapped` establishes a
+        journal, renames its root away, puts a fresh directory at the same path,
+        and performs another `create()`: the journal **silently wrote into the
+        impostor** ("DID NOT RAISE"). Retained as `xfail(strict=True)` so it is
+        a real fixture rather than a green claim, and so it flips the moment
+        AJ17 lands (strict xfail fails the suite if it starts passing with the
+        marker still present). POSIX-only for now; Windows needs its own
+        short-name/alias case. Both lanes: 220 passed/5 skipped/1 xfailed.
+        Implementation NOT started: closing this means moving journal I/O onto
+        retained `NativeDirectoryHandle` children (`fsio.py:1827`,
+        `openNativeDirectory` `:4521`) across 3 `_root_identity` call sites and
+        8 path-based operations, plus a Windows decision about holding a
+        directory handle open for the journal's lifetime. That is its own
+        packet with its own independent review.
 
 ### O3. Task 3 fresh-attempt transaction wiring
 
