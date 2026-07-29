@@ -1446,6 +1446,70 @@ def test_journal_refuses_after_its_root_object_is_swapped(
     )
 
 
+def test_verifier_binding_does_not_pin_its_journal_or_itself(
+    tmp_path: Path,
+) -> None:
+    """AJ16: the verifier-binding registry must not be self-pinning.
+
+    The record is keyed by ``id(verifier)`` and previously held strong
+    references to both the verifier and the journal, so neither could ever be
+    collected: the registry could not shrink, and a journal that had a verifier
+    binding could never have its own binding retired either.
+    """
+
+    import gc
+    import weakref
+
+    import platform_core.runtime.attempt_journal as journal_mod
+
+    journal = AttemptJournal(tmp_path / "journals")
+    journal_key = id(journal)
+    verifier = object.__new__(_WeakVerifierStub)
+    verifier_key = id(verifier)
+    binding = journal_mod._IssuedCredentialVerifierBinding(
+        verifier_ref=weakref.ref(verifier),
+        journal_ref=weakref.ref(journal),
+        journal_binding=journal._AttemptJournal__binding,
+        transaction_id="tx-001",
+        resource_id="res-001",
+        secret_channel_id="chan-001",
+        issuer_id="issuer-001",
+        cleanup_locator_digest=DIGEST_A,
+        broker_root=str(tmp_path / "broker"),
+        broker=object(),
+        broker_authority=object(),
+    )
+    with journal_mod._CREDENTIAL_VERIFIER_BINDINGS_LOCK:
+        journal_mod._CREDENTIAL_VERIFIER_BINDINGS[verifier_key] = binding
+    weakref.finalize(
+        verifier,
+        journal_mod._retireCredentialVerifierBinding,
+        verifier_key,
+        binding,
+    )
+
+    # The record must still answer identity questions while everything is live.
+    assert binding.verifier is verifier
+    assert binding.journal is journal
+
+    del journal
+    gc.collect()
+    assert journal_key not in journal_mod._ATTEMPT_JOURNAL_BINDINGS, (
+        "a verifier binding pinned its journal, defeating journal retirement"
+    )
+    assert binding.journal is None
+
+    del verifier
+    gc.collect()
+    assert verifier_key not in journal_mod._CREDENTIAL_VERIFIER_BINDINGS, (
+        "collected verifier left its binding behind for id() reuse"
+    )
+
+
+class _WeakVerifierStub:
+    """Minimal weak-referenceable stand-in for a credential absence verifier."""
+
+
 def test_dead_journal_binding_is_retired_without_retargeting_a_live_one(
     tmp_path: Path,
 ) -> None:
@@ -3147,6 +3211,9 @@ def test_credential_verifier_copy_and_reflection_cannot_replay_terminal_truth(
     else:
         forged = object.__new__(verifier_type)
         for slot in verifier_type.__slots__:
+            # __weakref__/__dict__ are slot machinery, not copyable state.
+            if slot in ("__weakref__", "__dict__"):
+                continue
             object.__setattr__(forged, slot, getattr(verifier, slot))
     resource_root = journal.event_directory(record.transaction_id).parent / "resources"
     before = {

@@ -403,7 +403,55 @@ failing-test-first packet with independent review — particularly after this
 session already produced one plausible-looking change in this area (AJ15c(b))
 that tests proved would strand crash recovery.
 
-AJ16 stays `[ ]`.
+### Update — the self-pinning packet was then done
+
+RED-first test `test_verifier_binding_does_not_pin_its_journal_or_itself`
+asserts that a collected journal loses its binding even while a verifier binding
+exists, and that a collected verifier loses its own. It failed exactly as
+predicted ("a verifier binding pinned its journal, defeating journal
+retirement").
+
+Implemented across the three files identified above:
+
+- `_IssuedCredentialVerifierBinding` now stores `verifier_ref` and `journal_ref`
+  and exposes `verifier` / `journal` as **dereferencing properties**. That keeps
+  the two identity checks at `attempt_journal.py:4301-4302` written exactly as
+  they were (`binding.verifier is not exact_verifier`,
+  `binding.journal is not self`) — a dead weakref yields `None`, which still
+  fails an `is` comparison, so the authority semantics are unchanged while the
+  strong references are gone.
+- `_retireCredentialVerifierBinding` plus a `weakref.finalize` on the verifier,
+  deleting only while the entry is still that exact record.
+- `CredentialChannelAbsenceVerifier` (`credential_channel.py:1208`) gained
+  `__weakref__` so it can be referenced weakly at all.
+
+One genuine regression surfaced and was fixed correctly rather than papered
+over: `test_credential_verifier_copy_and_reflection_cannot_replay_terminal_truth[object-new]`
+builds a reflected forgery by looping `verifier_type.__slots__` and
+`object.__setattr__`-ing each slot, which now hit
+`attribute '__weakref__' ... is not writable`. `__weakref__` is slot machinery,
+not copyable state, so the loop skips it (and `__dict__`); the test's actual
+property — a reflected copy cannot replay terminal truth — is untouched and
+still passes on all three parametrisations.
+
+Verification, by exact failure-list diff rather than by counts:
+
+```txt
+8 suites, hermetic git config
+  at HEAD          -> 8 failed
+  with the change  -> 8 failed, byte-identical FAILED list  (diff exit 0)
+  3.12.3: 387 passed, 9 skipped, 1 xfailed
+  3.11.15: 387 passed, 9 skipped, 1 xfailed
+```
+
+All 8 are the pre-existing sets already attributed above (§F4 `saveDataSnapshot`,
+the `test_receipts` authorization group, and the environmental
+legacy-retirement failure). mypy unchanged: 20 in `attempt_journal.py`, 9 in
+`credential_channel.py`, with and without. ruff ok on both.
+
+`_CREDENTIAL_COORDINATORS` remains `id()`-keyed with no retirement — the same
+shape, now with a proven template to follow. AJ16 stays `[ ]` for that reason
+alone.
 
 ## 9. AJ17 — gap demonstrated and pinned, implementation not started
 

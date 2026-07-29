@@ -2013,8 +2013,18 @@ def _retireAttemptJournalBinding(
 
 @dataclass(frozen=True, slots=True)
 class _IssuedCredentialVerifierBinding:
-    verifier: object
-    journal: object
+    """AJ16: holds the verifier and journal weakly so the registry can shrink.
+
+    The registry is keyed by ``id(verifier)``. Strong references here made the
+    record self-pinning -- the verifier could never be collected, and a journal
+    with any verifier binding could never have its own binding retired. The
+    ``verifier`` and ``journal`` properties dereference, so identity checks
+    written as ``binding.verifier is not exact_verifier`` keep their exact
+    meaning: a dead reference yields ``None`` and still fails the comparison.
+    """
+
+    verifier_ref: object
+    journal_ref: object
     journal_binding: _AttemptJournalBinding
     transaction_id: str
     resource_id: str
@@ -2025,9 +2035,34 @@ class _IssuedCredentialVerifierBinding:
     broker: object
     broker_authority: object
 
+    @staticmethod
+    def _deref(value: object) -> object:
+        if isinstance(value, weakref.ReferenceType):
+            return value()
+        return value
+
+    @property
+    def verifier(self) -> object:
+        return self._deref(self.verifier_ref)
+
+    @property
+    def journal(self) -> object:
+        return self._deref(self.journal_ref)
+
 
 _CREDENTIAL_VERIFIER_BINDINGS_LOCK = threading.RLock()
 _CREDENTIAL_VERIFIER_BINDINGS: dict[int, _IssuedCredentialVerifierBinding] = {}
+
+
+def _retireCredentialVerifierBinding(
+    binding_key: int,
+    issued: _IssuedCredentialVerifierBinding,
+) -> None:
+    """AJ16: drop one dead verifier binding without retargeting a live one."""
+
+    with _CREDENTIAL_VERIFIER_BINDINGS_LOCK:
+        if _CREDENTIAL_VERIFIER_BINDINGS.get(binding_key) is issued:
+            del _CREDENTIAL_VERIFIER_BINDINGS[binding_key]
 
 
 class AttemptJournal:
@@ -2262,8 +2297,8 @@ class AttemptJournal:
                 "credential verifier durable resource binding differs"
             )
         binding = _IssuedCredentialVerifierBinding(
-            verifier=verifier,
-            journal=self,
+            verifier_ref=weakref.ref(verifier),
+            journal_ref=weakref.ref(self),
             journal_binding=self._binding,
             transaction_id=observed.transaction_id,
             resource_id=observed.resource_id,
@@ -2276,6 +2311,12 @@ class AttemptJournal:
         )
         with _CREDENTIAL_VERIFIER_BINDINGS_LOCK:
             _CREDENTIAL_VERIFIER_BINDINGS[id(verifier)] = binding
+        weakref.finalize(
+            verifier,
+            _retireCredentialVerifierBinding,
+            id(verifier),
+            binding,
+        )
 
     def _credentialRegistration(
         self,

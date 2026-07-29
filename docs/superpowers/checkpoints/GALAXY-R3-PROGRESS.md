@@ -1274,6 +1274,27 @@ AJ16. [ ] Use bounded authority-ID collision retry and retire expired authority,
         attempted late in the session: it is authority-lifetime surgery in a hot
         validation path and deserves its own failing-test-first packet with
         independent review.
+      - 2026-07-28 (Claude executor, VPS): **the self-pinning packet was then
+        done.** RED-first test
+        `test_verifier_binding_does_not_pin_its_journal_or_itself` failed exactly
+        as predicted. `_IssuedCredentialVerifierBinding` now holds `verifier_ref`
+        and `journal_ref` weakly and exposes `verifier`/`journal` as
+        dereferencing properties, so the identity checks at
+        `attempt_journal.py:4301-4302` keep their exact wording and meaning (a
+        dead weakref yields `None`, which still fails `is`); added
+        `_retireCredentialVerifierBinding` plus a `weakref.finalize` on the
+        verifier that deletes only the exact record; and
+        `CredentialChannelAbsenceVerifier` (`credential_channel.py:1208`) gained
+        `__weakref__`. Journal retirement is now unconditional — the earlier
+        correction no longer applies. One real regression surfaced and was fixed
+        properly: the reflection-forgery test copied `__slots__` entries and hit
+        `'__weakref__' is not writable`; `__weakref__`/`__dict__` are slot
+        machinery, not state, so the copy loop skips them and the test's actual
+        property still holds on all three parametrisations. Verified by exact
+        FAILED-list diff, not counts: HEAD 8 failed vs change 8 failed,
+        byte-identical; 387 passed/9 skipped/1 xfailed on BOTH lanes; mypy
+        unchanged (20 / 9). STILL `[ ]`: `_CREDENTIAL_COORDINATORS` is the same
+        `id()`-keyed shape with no retirement, now with a proven template.
 AJ17. [ ] Retain native journal-root identities/handles through mutation and
       close rename, alias, short-name, mount, and reparse TOCTOU races.
       - 2026-07-28 (Claude executor, VPS): **the gap is now DEMONSTRATED, not

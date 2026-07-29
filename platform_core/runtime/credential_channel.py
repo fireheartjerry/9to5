@@ -1216,6 +1216,9 @@ class CredentialChannelAbsenceVerifier:
         "_root",
         "_root_identity",
         "_seal",
+        # AJ16: weak-referenceable so the journal's verifier-binding registry
+        # can hold this object weakly and retire the entry on collection.
+        "__weakref__",
     )
 
     def __init__(
