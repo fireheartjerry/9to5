@@ -1402,14 +1402,6 @@ def _persistence_authority(
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "AJ17 OPEN: journal work is path-bound, not handle-bound, so a swapped "
-        "root object is not detected. Retained as a deterministic failing "
-        "fixture; remove this marker when AJ17 lands."
-    ),
-)
 @pytest.mark.skipif(
     os.name == "nt",
     reason="POSIX rename-swap of a live directory; Windows needs its own alias case",

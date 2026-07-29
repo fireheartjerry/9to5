@@ -3616,7 +3616,46 @@ class AttemptJournal:
             canonical_json_bytes(head),
         )
 
+    def _requireBoundRootObject(self) -> None:
+        """AJ17: open-validate-close the journal root before mutating it.
+
+        ``root`` is a path, so the object behind it can be renamed away and
+        replaced between operations. Opening the directory and reading identity
+        from the OPENED handle binds this operation to the object that was
+        actually opened, rather than to a name that may now resolve elsewhere.
+        The identity is captured on first successful observation -- the root may
+        legitimately not exist when the journal is constructed -- and every
+        later operation must match it. The handle is closed immediately, so no
+        directory handle is held across the journal's lifetime and Windows
+        deletion and rename semantics are unchanged.
+        """
+
+        try:
+            with openNativeDirectory(self.root) as opened:
+                identity = opened.identity
+                observed = (
+                    identity.volume_id,
+                    identity.file_id,
+                    identity.is_directory,
+                    identity.is_reparse,
+                    identity.mount_id,
+                    identity.reparse_tag,
+                )
+        except OSError as exc:
+            raise JournalCorruption(
+                "attempt journal root identity is unobservable"
+            ) from exc
+        bound = getattr(self, "_root_object_identity", None)
+        if bound is None:
+            object.__setattr__(self, "_root_object_identity", observed)
+            return
+        if bound != observed:
+            raise JournalCorruption(
+                "attempt journal root object changed beneath its path"
+            )
+
     def _append_event(self, record: AttemptRecord) -> _LoadedEvent:
+        self._requireBoundRootObject()
         envelope = {
             "schema": _SCHEMA,
             "transaction_id": record.transaction_id,
@@ -3770,6 +3809,9 @@ class AttemptJournal:
             assertNoReparsePath(self.root)
         except OSError as exc:
             raise JournalCorruption("journal root traverses a reparse point") from exc
+        # AJ17: validate the root object before taking any lock, so a swapped
+        # root leaves nothing behind -- not even lock scaffolding.
+        self._requireBoundRootObject()
         with fileLock(
             self._lock_path(record.transaction_id),
             timeout=30,

@@ -597,6 +597,46 @@ directory handle open for the journal's lifetime changes deletion and rename
 behaviour on exactly the platform this kernel targets. The POSIX case is pinned;
 the Windows short-name/alias case still needs its own fixture.
 
+## 9b. AJ17 implemented — open-validate-close, the operator's chosen shape
+
+The operator chose **open-validate-close per operation** over retaining a handle
+for the journal's lifetime, specifically to avoid changing Windows deletion and
+rename semantics.
+
+`AttemptJournal._requireBoundRootObject()` opens the journal root, reads
+identity **from the opened handle**, and closes it immediately. The identity is
+captured on first successful observation — the root may legitimately not exist
+when the journal is constructed — and every later operation must match it, or
+the journal refuses with "attempt journal root object changed beneath its path".
+No directory handle is held across the journal's lifetime, so the Windows
+semantics the operator was protecting are untouched.
+
+It is called at two points:
+
+- `_append_event`, the single seam every mutation funnels through (11 call
+  sites), so all mutating entrypoints inherit the check.
+- `create()`, immediately after `root.mkdir(...)` and **before `fileLock`**.
+  Placement was load-bearing: with the guard only at `_append_event`, a swapped
+  root still refused correctly but `fileLock` had already created a `.locks`
+  directory inside the impostor. Validating before the lock means a swapped root
+  leaves nothing behind at all.
+
+`test_journal_refuses_after_its_root_object_is_swapped` — retained earlier as a
+`xfail(strict=True)` fixture — now **passes**, and the marker has been removed
+(strict xfail would otherwise fail the suite, which is exactly the ratchet it
+was there to provide).
+
+```txt
+9 suites, hermetic git config:
+  3.12.3  -> 391 passed, 13 skipped; non-staged-revision FAILED list identical to HEAD
+  3.11.15 -> 391 passed,  9 skipped, 8 failed (the same pre-existing set)
+```
+
+ruff ok; mypy unchanged at 20. Scope stated plainly: this closes the POSIX
+rename/replace race at operation granularity. The Windows short-name/alias case
+still has no fixture, and per-operation validation is a narrower guarantee than
+holding one handle across an operation's internal steps.
+
 ## 10. Ledger effect
 
 - AJ10–AJ14: implementation independently confirmed; dual-lane POSIX evidence
