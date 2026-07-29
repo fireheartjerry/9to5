@@ -179,7 +179,110 @@ transport commit, but it means the audited mutation path is not yet reachable in
 production. Whoever lands the wiring must re-confirm the gate ordering survives
 it.
 
-## 6. Ledger effect
+## 6. AJ15c (a) implemented — sealed issuance record
+
+Per the operator's ruling, the kernel-owned `object()` snapshot capability is
+gone and the admission handle is now opaque, ported from the reviewed-PASS
+persistence-authority pattern.
+
+Before, `_CloneSnapshotAdmission` was a `__slots__` object carrying `_lease`,
+`_quiescence`, `_issuer`, `_issuer_identity`, `_seal`, `_consumed`, `_lock`, and
+its construction was fenced by a module-level `_SNAPSHOT_ADMISSION_FACTORY =
+object()` sentinel. The scope a caller held *was* the authority.
+
+After:
+
+- `_CloneSnapshotAdmission` is a frozen, slotted, kw-only dataclass with exactly
+  two fields: `admission_id: str` (a `secrets.token_hex(32)` opaque identifier)
+  and `_token: object`.
+- `_IssuedCloneSnapshotAdmission` holds the issuer-owned truth — the exact
+  handle, token, issuer, issuer identity, seal, lease, and quiescence — in a
+  module registry `_SNAPSHOT_ADMISSION_RECORDS` under its own lock.
+- `_consumeCloneSnapshotAdmission()` validates the exact handle object identity,
+  the token identity, the exact lease and quiescence objects, and the issuer's
+  identity, seal, and registration, then retires the record.
+- `_SNAPSHOT_ADMISSION_FACTORY` is **deleted**. There is no sentinel left to
+  mint or bypass.
+
+Forgery is now defeated by record binding rather than by guarding construction,
+which is strictly stronger: a field-for-field reconstruction with the *same*
+opaque id and the *same* token object is refused, because the record binds one
+exact handle object. The RED-first test
+`test_snapshot_admission_handle_is_opaque_and_scope_stays_with_the_issuer`
+asserts the handle exposes no `_lease`/`_quiescence`/`_issuer`/`_issuer_identity`/
+`_seal`, and that such a forgery refuses with "binding differs" while the genuine
+handle succeeds. The pre-existing forgery test was extended to cover
+`dataclasses.replace` as a fourth attack, which the old sentinel design could
+not express because the handle was not a dataclass.
+
+One correctness detail found by test: retiring the record on consume made a
+replay indistinguishable from a forgery. Consumed identifiers are therefore
+retained in `_SNAPSHOT_ADMISSION_CONSUMED`, so a genuine replay is still refused
+as "already consumed" while the lease and quiescence references are dropped with
+the record.
+
+Verification (hermetic git config, since the host's `rerere.enabled=true` is a
+known unrelated blocker — see §F3 of the consolidation report):
+
+```txt
+pytest test_execution_clone test_candidate test_kernel_artifacts test_worktree \
+       test_attempt_journal test_credential_broker -q
+  Python 3.12.3  ->  361 passed, 8 skipped, 1 failed
+```
+
+The single failure is
+`test_worktree.py::test_legacy_retirement_checkpoints_dirty_and_moves_every_entry_outside`,
+which is **pre-existing and environmental**: proved by stashing this change and
+re-running the same suites at HEAD, where it is the *only* failure (1 failed / 65
+passed). ruff ok; mypy unchanged at 14 pre-existing `ctypes.get_last_error`
+errors with and without the patch.
+
+## 7. AJ15c (b) — attempted, reverted, and escalated again
+
+The operator ruled "yes to both, fail closed". The replay half was implemented
+by hoisting the fresh absence observation above the replay short-circuit in
+`_destroyGuarded` and `_select_terminal_receipt`, so returning an existing
+terminal receipt would still cost a re-observation.
+
+**It was reverted, because it is not implementable at that layer.**
+`CredentialChannelAbsenceVerifier.observeDeleted` deliberately refuses once
+terminal state exists:
+
+```txt
+credential_channel.py:1464  self._terminal_intent_absent(observed)
+credential_channel.py:1465-1468  if self._broker_terminal_metadata_absent(observed) is not True:
+                                     raise CredentialChannelEvidenceRefused(
+                                         "credential broker terminal metadata already exists")
+```
+
+So "always re-observe" and "observation requires terminal state to be absent"
+are contradictory as the code stands. With the reordering in place, two
+legitimate recovery tests break —
+`test_credential_broker.py::test_destroy_replay_adopts_receipt_persisted_before_broker_metadata`
+and `test_worktree.py::test_recovery_reuses_broker_terminal_receipt_after_prejournal_crash`
+— both failing with "terminal credential destruction state already exists". That
+is not fail-closed; that is stuck, and it would strand any crash that died
+between receipt persistence and broker metadata.
+
+Measured attribution, not assumed: at HEAD those suites are 1 failed / 65 passed
+(the environmental legacy-retirement failure); with the reordering they are
+3 failed / 63 passed. The two extra failures are caused by the change.
+
+The clause is therefore blocked on a narrower question than the one already
+answered, and it is a question about authority semantics, so it was not guessed:
+
+> **Open for the operator:** the terminal-state guard inside `observeDeleted`
+> (`credential_channel.py:1464-1468`) is exactly what makes replay
+> re-observation impossible. Should (i) that guard be dropped so absence can be
+> re-observed after terminal state exists, (ii) a separate replay-only
+> re-observation entrypoint be added that performs the filesystem absence check
+> without the terminal guard, or (iii) the clause be satisfied only for the
+> first-destruction path, leaving replay on the stored receipt?
+
+`_markDestroyed`'s independent re-proof was not started, because it consumes
+whatever the resolution above produces.
+
+## 8. Ledger effect
 
 - AJ10–AJ14: implementation independently confirmed; dual-lane POSIX evidence
   obtained. Still gated on AJ15e per the ledger's own policy.

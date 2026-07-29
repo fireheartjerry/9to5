@@ -120,7 +120,6 @@ _STAGING_BUNDLE_SCHEMA = "galaxy.staging-manifest-bundle/v1"
 _CANDIDATE_SNAPSHOT_SCHEMA = "galaxy.candidate-snapshot/v1"
 _MAX_MANIFEST_BUNDLE_BYTES = 64 * 1024 * 1024
 _MAX_SNAPSHOT_MANIFEST_BYTES = 64 * 1024 * 1024
-_SNAPSHOT_ADMISSION_FACTORY = object()
 _SNAPSHOT_ISSUER_FACTORY = object()
 _SNAPSHOT_ISSUER_REGISTRY_LOCK = threading.RLock()
 _SNAPSHOT_ISSUER_CONSTRUCTION_GRANTS: dict[
@@ -131,6 +130,11 @@ _SNAPSHOT_ISSUERS: dict[
     int,
     tuple[object, object, object, object],
 ] = {}
+_SNAPSHOT_ADMISSION_RECORD_LOCK = threading.RLock()
+_SNAPSHOT_ADMISSION_RECORDS: dict[str, "_IssuedCloneSnapshotAdmission"] = {}
+# Consumed identifiers are retained so a replay of a genuine admission is
+# refused as a replay, not misreported as a forged binding.
+_SNAPSHOT_ADMISSION_CONSUMED: set[str] = set()
 
 
 def _require_id(value: str, name: str) -> None:
@@ -5316,58 +5320,78 @@ class CloneQuiescenceProof:
         }
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
 class _CloneSnapshotAdmission:
-    """One-use, process-local authority for one exact lease/proof pair."""
+    """Opaque process-local handle for one exact one-use snapshot admission.
 
-    __slots__ = (
-        "_consumed",
-        "_issuer_identity",
-        "_issuer",
-        "_lease",
-        "_lock",
-        "_quiescence",
-        "_seal",
-    )
+    AJ15c(a): the handle a caller holds carries no authority-bearing scope. The
+    lease, quiescence proof, originating issuer, and seal live only in the
+    issuer-owned issuance record, so a copied, reflected, or field-for-field
+    reconstructed handle proves nothing on its own.
+    """
 
-    def __init__(
-        self,
-        *,
-        lease: CloneLease,
-        quiescence: CloneQuiescenceProof,
-        issuer: _CloneSnapshotAdmissionIssuer,
-        _factory: object,
-    ) -> None:
-        if _factory is not _SNAPSHOT_ADMISSION_FACTORY:
+    admission_id: str
+    _token: object
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _IssuedCloneSnapshotAdmission:
+    """Issuer-owned truth binding one exact handle, token, issuer, and scope."""
+
+    admission: _CloneSnapshotAdmission
+    token: object
+    issuer: "_CloneSnapshotAdmissionIssuer"
+    issuer_identity: int
+    seal: object
+    lease: CloneLease
+    quiescence: CloneQuiescenceProof
+
+
+def _consumeCloneSnapshotAdmission(
+    admission: object,
+    lease: CloneLease,
+    quiescence: CloneQuiescenceProof,
+) -> None:
+    """Consume one opaque admission against its exact issuance record."""
+
+    if type(admission) is not _CloneSnapshotAdmission:
+        raise StagedRevisionRefused(
+            "snapshot requires an exact one-use process-local admission"
+        )
+    with _SNAPSHOT_ADMISSION_RECORD_LOCK:
+        if admission.admission_id in _SNAPSHOT_ADMISSION_CONSUMED:
             raise StagedRevisionRefused(
-                "clone snapshot admission requires its sealed issuer"
+                "clone snapshot admission was already consumed"
             )
-        if type(issuer) is not _CloneSnapshotAdmissionIssuer:
+        record = _SNAPSHOT_ADMISSION_RECORDS.get(admission.admission_id)
+        if (
+            record is None
+            or type(record) is not _IssuedCloneSnapshotAdmission
+            or record.admission is not admission
+            or record.token is not admission._token
+            or record.lease is not lease
+            or record.quiescence is not quiescence
+        ):
             raise StagedRevisionRefused(
-                "clone snapshot admission requires its exact originating issuer"
+                "one-use clone snapshot admission binding differs"
             )
-        self._lease = lease
-        self._quiescence = quiescence
-        self._issuer = issuer
-        self._issuer_identity = issuer._identity
-        self._seal = issuer._seal
-        self._consumed = False
-        self._lock = threading.Lock()
-
-    def _consume(
-        self,
-        lease: CloneLease,
-        quiescence: CloneQuiescenceProof,
-    ) -> None:
-        issuer = self._issuer
+        issuer = record.issuer
         if (
             type(issuer) is not _CloneSnapshotAdmissionIssuer
-            or self._issuer_identity != issuer._identity
-            or self._seal is not issuer._seal
+            or record.issuer_identity != issuer._identity
+            or record.seal is not issuer._seal
         ):
             raise StagedRevisionRefused(
                 "clone snapshot admission originating issuer seal differs"
             )
-        issuer._consume(self, lease, quiescence)
+        issuer._requireRegistered()
+        # Retiring the record IS the one-use consumption. The identifier is
+        # remembered so a replay of this exact admission reports a replay
+        # rather than a forged binding, while the lease and quiescence
+        # references are dropped with the record.
+        del _SNAPSHOT_ADMISSION_RECORDS[admission.admission_id]
+        _SNAPSHOT_ADMISSION_CONSUMED.add(admission.admission_id)
+    issuer._forget(admission)
 
 
 class _CloneSnapshotAdmissionIssuer:
@@ -5407,7 +5431,7 @@ class _CloneSnapshotAdmissionIssuer:
         self._identity = id(self)
         self._seal = object()
         self._admissions: dict[
-            int,
+            str,
             tuple[_CloneSnapshotAdmission, CloneLease, CloneQuiescenceProof],
         ] = {}
         self._lock = threading.Lock()
@@ -5476,41 +5500,35 @@ class _CloneSnapshotAdmissionIssuer:
             raise StagedRevisionRefused(
                 "snapshot admission requires exact process-local quiescence"
             )
+        token = object()
         admission = _CloneSnapshotAdmission(
+            admission_id=secrets.token_hex(32),
+            _token=token,
+        )
+        record = _IssuedCloneSnapshotAdmission(
+            admission=admission,
+            token=token,
+            issuer=self,
+            issuer_identity=self._identity,
+            seal=self._seal,
             lease=lease,
             quiescence=quiescence,
-            issuer=self,
-            _factory=_SNAPSHOT_ADMISSION_FACTORY,
         )
         with self._lock:
-            self._admissions[id(admission)] = (admission, lease, quiescence)
+            self._admissions[admission.admission_id] = (admission, lease, quiescence)
+        with _SNAPSHOT_ADMISSION_RECORD_LOCK:
+            if admission.admission_id in _SNAPSHOT_ADMISSION_RECORDS:
+                raise StagedRevisionRefused(
+                    "clone snapshot admission identifier is not exact"
+                )
+            _SNAPSHOT_ADMISSION_RECORDS[admission.admission_id] = record
         return admission
 
-    def _consume(
-        self,
-        admission: _CloneSnapshotAdmission,
-        lease: CloneLease,
-        quiescence: CloneQuiescenceProof,
-    ) -> None:
-        self._requireRegistered()
+    def _forget(self, admission: _CloneSnapshotAdmission) -> None:
+        """Drop the issuer-side view after the record has been consumed."""
+
         with self._lock:
-            if admission._consumed:
-                raise StagedRevisionRefused(
-                    "clone snapshot admission was already consumed"
-                )
-            registered = self._admissions.pop(id(admission), None)
-            if (
-                registered is None
-                or registered[0] is not admission
-                or registered[1] is not lease
-                or registered[2] is not quiescence
-                or admission._lease is not lease
-                or admission._quiescence is not quiescence
-            ):
-                raise StagedRevisionRefused(
-                    "one-use clone snapshot admission binding differs"
-                )
-            admission._consumed = True
+            self._admissions.pop(admission.admission_id, None)
 
 
 def _createCloneSnapshotAdmissionIssuer(
@@ -5820,8 +5838,7 @@ def snapshotCloneTree(
     except OSError as exc:
         raise StagedRevisionRefused("snapshot root traverses a reparse point") from exc
 
-    assert isinstance(admission, _CloneSnapshotAdmission)
-    admission._consume(lease, quiescence)
+    _consumeCloneSnapshotAdmission(admission, lease, quiescence)
     records = _scanCloneTree(
         checkout,
         policy=policy,

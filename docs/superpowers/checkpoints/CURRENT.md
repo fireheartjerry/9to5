@@ -402,6 +402,25 @@ security, qualification, or activation decisions.
   (pre-existing, needs its own packet). Evidence:
   `docs/superpowers/reports/2026-07-28-aj-packet-closure-progress.md`.
 
+- 2026-07-28 **AJ15c (a) landed; (b) reverted and re-escalated.** (a): the
+  kernel-owned `object()` snapshot capability is **deleted**. The admission
+  handle is now a frozen dataclass carrying only an opaque `admission_id` and a
+  `_token`; lease, quiescence, issuer, identity, and seal moved into an
+  issuer-owned issuance record, and `_SNAPSHOT_ADMISSION_FACTORY` no longer
+  exists. Forgery is defeated by exact-handle record binding instead of by
+  guarding construction, so even a same-id/same-token reconstruction refuses.
+  Dual-lane affected surface 361 passed/8 skipped on both 3.12 and 3.11, with
+  one pre-existing environmental failure proved by stash-and-rerun.
+  (b): **NOT implementable as ruled.** Requiring a fresh absence observation on
+  the replay path contradicts `observeDeleted`, which refuses once terminal
+  state exists (`credential_channel.py:1464-1468`); with the reordering, two
+  legitimate crash-recovery paths break with "terminal credential destruction
+  state already exists" — stuck rather than fail-closed. Reverted. **New
+  operator question:** drop that terminal-state guard, add a replay-only
+  re-observation entrypoint without it, or satisfy the clause only on the
+  first-destruction path? `_markDestroyed`'s independent re-proof depends on
+  that answer and was not started.
+
 ## Non-negotiable continuation rules
 
 - Treat the seven 2026-07-14 specification files as immutable requirements.

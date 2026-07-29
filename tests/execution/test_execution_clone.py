@@ -754,6 +754,65 @@ def _capture_legitimate_snapshot_admission(
     )
 
 
+def test_snapshot_admission_handle_is_opaque_and_scope_stays_with_the_issuer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AJ15c(a): the caller-visible admission carries no authority-bearing scope.
+
+    The handle must expose only an opaque identifier and an issuer-minted token.
+    Lease, quiescence, issuer, and seal are issuance-record truth and must never
+    be readable from, or forgeable through, the handle a caller holds.
+    """
+
+    lease = _private_clone(tmp_path)
+    expected = ObjectManifest(
+        expected_revision=lease.expected_base_revision,
+        entries=(),
+        attribute_rules=(),
+        policy=_policy(),
+    )
+    coordinator = _FlowCoordinator(lease, expected, tmp_path / "controller")
+    kernel = _flow_kernel(tmp_path, lease, expected, coordinator)
+    admission, quiescence = _capture_legitimate_snapshot_admission(
+        monkeypatch,
+        kernel,
+        lease,
+    )
+
+    assert isinstance(admission.admission_id, str) and admission.admission_id
+    for leaked in ("_lease", "_quiescence", "_issuer", "_issuer_identity", "_seal"):
+        assert not hasattr(admission, leaked), (
+            f"admission handle must not expose {leaked}"
+        )
+
+    # An exact field-for-field forgery -- same opaque id, same token object --
+    # must still refuse, because the issuance record binds the exact handle.
+    forged = type(admission)(
+        admission_id=admission.admission_id,
+        _token=admission._token,
+    )
+    with pytest.raises(StagedRevisionRefused, match="binding differs"):
+        candidate_mod.snapshotCloneTree(
+            lease,
+            quiescence=quiescence,
+            admission=forged,
+            policy=expected.policy,
+            snapshot_root=tmp_path / "controller" / "forged-opaque",
+            expected=expected,
+        )
+
+    snapshot = candidate_mod.snapshotCloneTree(
+        lease,
+        quiescence=quiescence,
+        admission=admission,
+        policy=expected.policy,
+        snapshot_root=tmp_path / "controller" / "accepted-opaque",
+        expected=expected,
+    )
+    assert snapshot.transaction_id == lease.transaction_id
+
+
 def test_reflection_cannot_issue_snapshot_without_fresh_journal_validation(
     tmp_path: Path,
 ) -> None:
@@ -847,27 +906,21 @@ def test_snapshot_admission_rejects_construction_copy_replace_and_reflection(
     )
     admission_type = type(admission)
 
-    with pytest.raises(StagedRevisionRefused, match="sealed issuer"):
-        admission_type(
-            lease=lease,
-            quiescence=quiescence,
-            issuer=admission._issuer,
-            _factory=object(),
-        )
-    with pytest.raises(TypeError):
-        dataclasses.replace(admission)
+    # AJ15c(a): there is no sealed-sentinel constructor left to bypass. The
+    # handle is a plain opaque record, so forgery is defeated by the issuance
+    # record binding one exact handle object, not by guarding construction.
+    assert not hasattr(candidate_mod, "_SNAPSHOT_ADMISSION_FACTORY")
 
     constructed = admission_type(
-        lease=lease,
-        quiescence=quiescence,
-        issuer=admission._issuer,
-        _factory=candidate_mod._SNAPSHOT_ADMISSION_FACTORY,
+        admission_id=admission.admission_id,
+        _token=admission._token,
     )
     reflected = object.__new__(admission_type)
     for slot in admission_type.__slots__:
         object.__setattr__(reflected, slot, getattr(admission, slot))
     for label, forged in (
         ("constructor-bypass", constructed),
+        ("dataclass-replace", dataclasses.replace(admission)),
         ("shallow-copy", copy.copy(admission)),
         ("reflected-copy", reflected),
     ):

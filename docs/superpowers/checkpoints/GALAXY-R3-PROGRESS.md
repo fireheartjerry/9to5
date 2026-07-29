@@ -1121,6 +1121,42 @@ AJ15c. [ ] Remove self-mintable clone snapshot admission, require fresh sealed
          reachable in production and the gate ordering must be re-confirmed when
          that wiring lands. (a) and (b) remain to implement. Evidence:
          `docs/superpowers/reports/2026-07-28-aj-packet-closure-progress.md`.
+       - 2026-07-28 (Claude executor, VPS): **clause (a) is IMPLEMENTED.** The
+         kernel-owned `object()` snapshot capability is gone.
+         `_CloneSnapshotAdmission` is now a frozen slotted dataclass carrying
+         only `admission_id` (`secrets.token_hex(32)`) and `_token`; the lease,
+         quiescence, issuer, identity, and seal live in
+         `_IssuedCloneSnapshotAdmission` inside the issuer-owned
+         `_SNAPSHOT_ADMISSION_RECORDS` registry; `_consumeCloneSnapshotAdmission`
+         validates exact handle identity, token identity, exact lease/quiescence
+         objects, and issuer identity/seal/registration; and
+         `_SNAPSHOT_ADMISSION_FACTORY` is DELETED, so no sentinel remains to
+         mint or bypass. Forgery is now defeated by record binding rather than
+         by guarding construction, which is strictly stronger: a field-for-field
+         reconstruction with the same opaque id and same token object refuses.
+         RED-first test
+         `test_snapshot_admission_handle_is_opaque_and_scope_stays_with_the_issuer`;
+         the pre-existing forgery test gained `dataclasses.replace` as a fourth
+         attack. Consumed identifiers are retained so a genuine replay still
+         reports "already consumed" instead of "binding differs". Dual-lane
+         affected surface (hermetic git config): **361 passed/8 skipped on 3.12
+         and 3.11**, with one pre-existing environmental failure
+         (`test_legacy_retirement_...`) proved by stash-and-rerun at HEAD.
+       - 2026-07-28 (Claude executor, VPS): **clause (b) attempted, REVERTED,
+         and re-escalated — it is not implementable as ruled.** Hoisting the
+         fresh absence observation above the replay short-circuit contradicts
+         `observeDeleted`, which refuses once terminal state exists
+         (`credential_channel.py:1464-1468`). With the reordering, two
+         legitimate recovery paths break (`test_destroy_replay_adopts_receipt_persisted_before_broker_metadata`,
+         `test_recovery_reuses_broker_terminal_receipt_after_prejournal_crash`)
+         with "terminal credential destruction state already exists" — stuck,
+         not fail-closed, stranding any crash between receipt persistence and
+         broker metadata. Attribution measured: HEAD 1 failed/65 passed, with
+         the change 3 failed/63 passed. NEW operator question: drop the
+         terminal-state guard in `observeDeleted`, add a replay-only
+         re-observation entrypoint without that guard, or satisfy the clause
+         only on the first-destruction path? `_markDestroyed`'s independent
+         re-proof consumes whatever that decision produces and was not started.
        - PRE-EXISTING FAILURE (not caused by the above, proved by temporary
          revert + byte-compare restore):
          `tests/control/test_external_controller_state.py::test_runtime_install_constructor_cleanup_ambiguity_poison_is_permanent`
